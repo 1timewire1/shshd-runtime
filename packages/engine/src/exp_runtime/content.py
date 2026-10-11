@@ -113,9 +113,13 @@ def _inspect_ipa(package: ZipFile):
     game = _ipa_game(identifier)
     if game == 'cod':
         from .cod.assets import validate_assets
+        from .cod.profile import base_resource, profile_for
+        profile = profile_for(identifier)
+        validate_assets(lambda resource: _zip_read(
+            package, root + 'res_generated/' + str(base_resource(profile, resource))))
     else:
         from .shs.ios_assets import validate_assets
-    validate_assets(lambda resource: _zip_read(package, root + 'res_generated/' + str(resource)))
+        validate_assets(lambda resource: _zip_read(package, root + 'res_generated/' + str(resource)))
     # Version fields are informative. Source identity is the complete
     # archive hash, including repacks or differently encrypted executables.
     details = {key: info[key] for key in ('CFBundleIdentifier', 'CFBundleShortVersionString', 'CFBundleVersion')
@@ -385,7 +389,11 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, *,
                     (staged / records[sha]['file']).write_bytes(data)
         if not records:
             raise ContentError('No episodes found; supply episode EXP files')
-        profile = COD_IOS if source_game == 'cod' else IOS_PROFILE if kind == 'ipa' else PROFILE
+        if source_game == 'cod':
+            from .cod.profile import profile_for
+            profile = profile_for(app_info['CFBundleIdentifier'])
+        else:
+            profile = IOS_PROFILE if kind == 'ipa' else PROFILE
         manifest = dict(format='exp-content-library', version=1, game=source_game, profile=profile,
                         episodes=list(records.values()))
         manifest[kind] = dict(file=f'content/{apk_hash}.{kind}', sha256=apk_hash,
@@ -458,6 +466,10 @@ class ContentLibrary:
                 self.app_root, self.app_info = _inspect_ipa(self.package)
                 if _ipa_game(self.app_info['CFBundleIdentifier']) != self.game_id:
                     raise ContentError('IPA game does not match the library profile')
+                if self.game_id == 'cod':
+                    from .cod.profile import profile_for
+                    if profile_for(self.app_info['CFBundleIdentifier']) != self.profile:
+                        raise ContentError('IPA edition does not match the library profile')
                 self.asset_root = self.app_root + 'res_generated/'
             else:
                 native_hash = _inspect_apk(self.package)
@@ -483,6 +495,9 @@ class ContentLibrary:
             relative = name.removeprefix(self.asset_root)
             if name.startswith(self.asset_root) and re.fullmatch(r'(0|[1-9][0-9]*)', relative):
                 self.base_members[int(relative)] = name
+        if self.game_id == 'cod':
+            from .cod.profile import translate_members
+            self.base_members = translate_members(self.profile, self.base_members)
         for name in self.apk.namelist() if self.kind == 'apk' else ():
             if re.fullmatch(r'assets/Assets/audio/(music/[1-9][0-9]*\.mp3|sfx/[1-9][0-9]*\.wav)', name):
                 stem = Path(name).stem

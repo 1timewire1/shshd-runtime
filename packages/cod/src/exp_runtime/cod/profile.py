@@ -1,4 +1,15 @@
-"""Cause of Death content and host-service profile (iOS 1.3.4 reference)."""
+"""Cause of Death content and host-service profile (iOS 1.3.4 reference).
+
+The free edition (com.ea.causeofdeathfree.*, inspected at 1.4.7) carries the
+same script-visible banks (Volume One at 12, backgrounds, portraits, audio,
+relationship art) but inserts a second copy of the Volume One EXP at 13, so
+every host UI resource from the string bank onward sits one ID higher than in
+the 1.3.4 paid build: strings 14, layouts 15, image pack 17, box skins
+205/221/237/253, portrait mask 269, fonts 292-298. ``translate_members`` maps
+that bank back onto the reference numbering so the rest of the engine is
+unchanged; script-visible IDs are never translated.
+"""
+import re
 from .audio import music_cue as MUSIC_CUE
 from .content import BUILTIN, extract_builtin
 from .services import dispatch as DISPATCH
@@ -12,8 +23,38 @@ CATALOG_FILENAME = 'cod_options.sav'
 # Native loadOptions 00019098 / saveOptions 000195b4: five flag bytes and
 # two s32 values precede the current entry; EOF follows the rename table.
 CATALOG_LAYOUTS = {17: ((33, 0),)}
-PROFILES = {'cod-ios-assets-v1': 'ipa'}
-BUNDLE_PATTERN = r'com\.ea\.causeofdeath(?:\.[A-Za-z0-9-]+)*'
+PROFILES = {'cod-ios-assets-v1': 'ipa', 'cod-ios-free-assets-v1': 'ipa'}
+FREE_PROFILE = 'cod-ios-free-assets-v1'
+FREE_BUNDLE = re.compile(r'com\.ea\.causeofdeathfree(?:\.[A-Za-z0-9-]+)*', re.IGNORECASE)
+# Reference (1.3.4) host UI IDs that the free edition stores one slot higher.
+SHIFTED_UI = range(13, 299)
+
+
+def profile_for(identifier):
+    return FREE_PROFILE if FREE_BUNDLE.fullmatch(identifier or '') else 'cod-ios-assets-v1'
+
+
+def base_resource(profile, resource):
+    """The package member number holding reference resource ``resource``."""
+    if profile == FREE_PROFILE and resource in SHIFTED_UI:
+        return resource + 1
+    return resource
+
+
+def translate_members(profile, members):
+    """Re-key a package's numeric members by reference resource ID."""
+    if profile != FREE_PROFILE:
+        return members
+    translated = {}
+    for number, member in members.items():
+        if number == 13:
+            continue                      # duplicate Volume One EXP; 12 is canonical
+        if number - 1 in SHIFTED_UI:
+            translated[number - 1] = member
+        else:
+            translated[number] = member
+    return translated
+BUNDLE_PATTERN = r'com\.ea\.causeofdeath(?:free)?(?:\.[A-Za-z0-9-]+)*'
 NAME_FONT = ('VerdanaBoldItalic', 291)
 # SHSEngine::initFonts 000234da..000237ee; normal/gray/default dialogue
 # uses black body text and dark-red names. Theme 2 retains its rose color.

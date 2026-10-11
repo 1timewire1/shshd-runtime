@@ -27,7 +27,9 @@ for _key in ('shs', 'cod'):
 SHS_ANDROID = 'shs-android-1.0.9'
 SHS_IOS = 'shs-ios-assets-v1'
 COD_IOS = 'cod-ios-assets-v1'
-PROFILES = {SHS_ANDROID: ('shs', 'apk'), SHS_IOS: ('shs', 'ipa'), COD_IOS: ('cod', 'ipa')}
+COD_IOS_FREE = 'cod-ios-free-assets-v1'
+PROFILES = {SHS_ANDROID: ('shs', 'apk'), SHS_IOS: ('shs', 'ipa'), COD_IOS: ('cod', 'ipa'),
+            COD_IOS_FREE: ('cod', 'ipa')}
 
 
 def game_id(resources):
