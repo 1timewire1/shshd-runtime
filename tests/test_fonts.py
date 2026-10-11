@@ -42,6 +42,19 @@ class FontTests(unittest.TestCase):
         with self.assertRaisesRegex(FontError, 'no defined glyph'):
             layout_text(self.font, 'Q', 100, self.style)
 
+    def test_tab_and_0x19_fall_back_to_space_and_apostrophe_only_when_undefined(self):
+        # A few Cause of Death scripts carry a tab or a 0x19 byte (for an
+        # apostrophe) inside dialogue; the bitmap fonts define neither.
+        self.assertIs(self.font.glyph('\t'), self.font.glyph(' '))
+        with self.assertRaisesRegex(FontError, 'U\\+0019'):
+            self.font.glyph('\x19')
+        with_apostrophe = BitmapFont.parse(descriptor().replace(
+            b'chars count=1', b'chars count=1\r\nchar id=39 x=0 y=0 width=1 height=3 xoffset=0 yoffset=2 xadvance=2 page=0 chnl=0'))
+        self.assertEqual(with_apostrophe.glyph('\x19').advance, 2)
+        own_tab = BitmapFont.parse(descriptor().replace(
+            b'chars count=1', b'chars count=1\r\nchar id=9 x=0 y=0 width=1 height=3 xoffset=0 yoffset=2 xadvance=9 page=0 chnl=0'))
+        self.assertEqual(own_tab.glyph('\t').advance, 9)
+
     def test_kerning_moves_only_drawn_glyph_and_never_changes_wrapping(self):
         result = layout_text(self.font, 'AVX', 18, self.style)
         self.assertEqual(result.width, 18)

@@ -103,12 +103,19 @@ class BitmapFont:
             raise FontError(f'Invalid bitmap-font descriptor: {error}') from error
 
     def glyph(self, character: str) -> Glyph:
+        code = ord(character)
+        if character in ('\t', '\x19') and code not in self.glyphs:
+            # CoD's authoring tool stored U+2009 THIN SPACE and U+2019 RIGHT
+            # SINGLE QUOTATION MARK truncated to one byte: 0x09 in seven packs
+            # (Volumes 2, 7, 10, 11, 12, 14, SS05) and 0x19 in three (Volumes
+            # 6, 7, 8: "I'll", "You're"). The bitmap fonts define neither code.
+            character = ' ' if character == '\t' else "'"
         try:
             return self.glyphs[ord(character)]
         except KeyError:
             # The native font table leaves absent advances uninitialized;
             # there is no verified replacement-glyph or system-font fallback.
-            raise FontError(f'{self.face}: no defined glyph for U+{ord(character):04X}') from None
+            raise FontError(f'{self.face}: no defined glyph for U+{code:04X}') from None
 
 
 Color = tuple[int, int, int]
