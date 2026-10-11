@@ -16,6 +16,12 @@
 - Publish all six Python distributions to PyPI from version-tag CI after
   package, desktop and iOS checks pass, using Trusted Publishing and verified
   build artifacts. Reject tags that differ from the common package version.
+- Import the free iOS edition of Cause of Death (`com.ea.causeofdeathfree.*`,
+  1.4.7). It bundles a second Volume One pack at resource 13, shifting every
+  host-UI resource from the string bank onward up by one; a
+  `cod-ios-free-assets-v1` profile maps that block back onto the reference
+  numbering. Script-visible banks are unchanged. Libraries record the edition
+  and refuse a mismatched IPA.
 
 ### Changed
 
@@ -23,6 +29,18 @@
   or `[engine,cod]` for headless playback and `[player]` or `[desktop]` for
   the app. Game discovery, minigame state restoration and app builders support
   the component layout without changing library or save formats.
+
+### Fixed
+
+- Render the one-byte remnants of U+2009 THIN SPACE (0x09, seven Cause of
+  Death packs) and U+2019 RIGHT SINGLE QUOTATION MARK (0x19, three packs) in
+  dialogue as a space and an apostrophe, instead of stopping with a font
+  error when the line is reached.
+- Resume an incremental timed choice with its raw default when that default
+  is outside the option table. Cause of Death scripts pass -1 and branch on it
+  as the "too slow" outcome; the engine refused the timeout in every volume.
+- Accept spaces in Cause of Death text answers ("Wheel chair", "Christian
+  Rose"); the scripts store no space-free spelling.
 
 ## v0.4.2
 

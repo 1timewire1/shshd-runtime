@@ -44,6 +44,16 @@ class NameInputTests(unittest.TestCase):
         self.assertEqual(accept_name_character(sixteen[:-1], 'A'), (sixteen, None))
         self.assertEqual(accept_name_character(sixteen, 'a'), (sixteen, NAME_ENTRY_ERROR))
 
+    def test_spaces_are_accepted_only_when_the_game_allows_them(self):
+        # Cause of Death guess prompts store answers such as 'Wheel chair'.
+        metrics = dict(font=font(), cursor_width=12)
+        with self.assertRaisesRegex(ValueError, 'alphanumeric'):
+            validate_name('Wheel chair', **metrics)
+        validate_name('Wheel chair', allow_space=True, **metrics)
+        for value in ('Wheel-chair', ' ', 'Wheel chair!'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_name(value, allow_space=True, **metrics)
+
     def test_native_width_gate_checks_existing_text_and_cursor_before_append(self):
         metrics = dict(font=font(19), cursor_width=12)
         # Exactly 240 fails, despite ink being narrower from AA kerning.

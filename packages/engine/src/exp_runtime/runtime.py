@@ -249,7 +249,7 @@ class Session:
             self._game_sound(game, before)
             return action
         elif action.name == 'text_input':
-            validate_name(value, **self.name_input_metrics())
+            validate_name(value, allow_space=self.engine.game_key == 'cod', **self.name_input_metrics())
             self.engine.dynamic_strings[0] = self.engine.last_input = value
             self.vm.resume(0x7ff5)  # FUN_000d3f5c
             self.pending = None

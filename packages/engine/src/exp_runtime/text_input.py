@@ -41,15 +41,18 @@ def accept_name_character(current: str, char: str, *, font: BitmapFont | None = 
     return current + char, None
 
 
-def validate_name(value: str, *, font: BitmapFont | None = None, cursor_width: float = 0):
+def validate_name(value: str, *, font: BitmapFont | None = None, cursor_width: float = 0, allow_space: bool = False):
     """Validate a confirmed value without recasing script defaults or callers.
 
     A final character may cross the width threshold: native checks the prefix
     before accepting it. Empty Return hides the keyboard; it never resumes.
     """
-    if not isinstance(value, str) or len(value) > MAX_NAME_LENGTH or not _alphanumeric(value):
+    # CoD guess prompts expect answers with spaces ('Wheel chair', 'Denture
+    # cream', 'Christian Rose'); its scripts store no space-free spelling.
+    checked = value.replace(' ', '') if allow_space and isinstance(value, str) else value
+    if not isinstance(value, str) or len(value) > MAX_NAME_LENGTH or not _alphanumeric(checked):
         raise ValueError(NAME_ENTRY_ERROR)
-    if not value:
+    if not checked:
         raise ValueError('Enter a name before continuing.')
     if not _has_room(value[:-1], font, cursor_width):
         raise ValueError(NAME_ENTRY_ERROR)
