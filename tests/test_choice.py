@@ -17,13 +17,13 @@ from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
-def timed_resources(service=1, timeout=2000, count=3):
+def timed_resources(service=1, timeout=2000, count=3, default=1):
     labels = [f'Option {i}' for i in range(count)]
     words, refs = text_words('Choose', 'A question.', '|'.join(labels), *labels)
     if service == 1:
-        calls = host_call(1, refs[0], refs[2], refs[1], timeout, 1, -1, -1, 1)
+        calls = host_call(1, refs[0], refs[2], refs[1], timeout, default, -1, -1, 1)
     else:
-        calls = host_call(2, refs[0], refs[1], timeout, 1, -1, 1)
+        calls = host_call(2, refs[0], refs[1], timeout, default, -1, 1)
         for i, ref in enumerate(refs[3:]):
             calls += host_call(3, ref, 100 + i, 1)
         calls += host_call(4, 0)
@@ -64,6 +64,15 @@ class ChoiceTimingTests(unittest.TestCase):
                 self.assertEqual(restored.engine.result_cells[0], result)
                 # A click at exactly zero still wins before the next active tick.
                 self.assertEqual(s.answer(2).request.args, (2 if service == 1 else 102,))
+
+    def test_incremental_timeout_index_outside_the_table_resumes_with_the_raw_value(self):
+        # Cause of Death scripts pass -1 as the default of an incremental timed
+        # menu and branch on that value as the "too slow" outcome.
+        for default in (-1, 3):
+            with self.subTest(default=default):
+                s = Session(timed_resources(2, default=default)); s.advance()
+                self.assertEqual(s.tick(2001).request.args, (default,))
+                self.assertEqual(s.engine.result_cells[0], default)
 
     def test_nonpositive_durations_have_no_timer_and_do_not_expire(self):
         for service in (1, 2):

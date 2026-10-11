@@ -406,9 +406,12 @@ class Session:
                 details = self.pending.details
                 selected = details['timeout_result']
                 if self.pending.request.yield_id == 4:
-                    if not 0 <= selected < len(details['values']):
-                        raise VMError('Incremental choice timeout index is out of range')
-                    selected = details['values'][selected]
+                    # CoD scripts routinely pass -1 as the default index of an
+                    # incremental timed menu and branch on that raw value (a
+                    # "too slow" outcome). Pass an out-of-range index through
+                    # unchanged instead of refusing the timeout.
+                    if 0 <= selected < len(details['values']):
+                        selected = details['values'][selected]
                 self._complete_choice(selected)
                 return self.advance()
         return self.advance()
