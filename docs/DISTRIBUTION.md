@@ -149,6 +149,9 @@ without external codec dependencies or CLI tools. CI runs this before tests;
 the desktop builder includes its library and license notices. Source users
 can run the same helper, or use a system libarchive on Linux. macOS and iOS
 use their OS library, so Apple builds need no additional dependency download.
+Source checkouts locate the helper's `build/rar/install` output at the workspace
+root, including when launched from another directory. Frozen downloads load
+their bundled decoder first; installed Python wheels use the system library.
 The builder also disables unused POSIX regex support explicitly: libarchive
 3.8.9's automatic provider search otherwise requires libgcc on MSVC even with
 PCRE disabled.

@@ -15,18 +15,31 @@ class RarError(ValueError):
     pass
 
 
+def _library_candidates():
+    if sys.platform in ('darwin', 'ios'):
+        yield '/usr/lib/libarchive.2.dylib'
+        return
+    name = 'archive.dll' if sys.platform == 'win32' else 'libarchive.so.13'
+    if bundle := getattr(sys, '_MEIPASS', None):
+        yield str(Path(bundle) / name)
+    else:
+        # The decoder is built at the workspace root, while this module lives
+        # in a component package. Locate the owning build helper instead of
+        # assuming a fixed source depth or using the caller's working directory.
+        # Installed wheels need no build tools and fall through to the system
+        # library. Frozen apps must not borrow a surrounding checkout's decoder.
+        for root in Path(__file__).resolve().parents:
+            if (root / 'tools/build_rar.py').is_file():
+                yield str(root / 'build/rar/install' / ('bin' if sys.platform == 'win32' else 'lib') / name)
+                break
+    from ctypes.util import find_library
+    if system := find_library('archive'):
+        yield system
+
+
 @lru_cache(maxsize=1)
 def library():
-    if sys.platform in ('darwin', 'ios'):
-        candidates = ['/usr/lib/libarchive.2.dylib']
-    else:
-        from ctypes.util import find_library
-        name = 'archive.dll' if sys.platform == 'win32' else 'libarchive.so.13'
-        root = Path(__file__).resolve().parents[2]
-        candidates = [str(Path(getattr(sys, '_MEIPASS', root)) / name),
-                      str(root / 'build/rar/install' / ('bin' if sys.platform == 'win32' else 'lib') / name),
-                      find_library('archive')]
-    for path in filter(None, candidates):
+    for path in _library_candidates():
         try:
             lib = c.CDLL(path)
             signatures = {
