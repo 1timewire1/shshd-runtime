@@ -6,17 +6,29 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: 'Update GitHub release files from a tested tag run (leave empty for builds)'
+        type: string
+        required: false
+        default: ''
+      retry_pypi:
+        description: 'Also retry missing PyPI uploads from release_run_id'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: desktop-${{ github.workflow }}-${{ inputs.release_run_id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.release_run_id == '' }}
 
 jobs:
   packages:
     name: Python wheels (${{ matrix.python }})
+    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     strategy:
@@ -63,10 +75,12 @@ jobs:
 
   ios:
     name: iOS
+    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     uses: ./.github/workflows/ios-builds.yml
 
   build:
     name: ${{ matrix.target }}
+    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -157,19 +171,95 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  release-source:
+    name: Select tested release artifacts
+    if: >-
+      ${{ always() && !cancelled() && (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+         needs.build.result == 'success' && needs.ios.result == 'success' && needs.packages.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.release_run_id != '')
+      ) }}
+    needs: [build, ios, packages]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run-id: ${{ steps.source.outputs.run-id }}
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Verify the source tag and all required build results
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EXP_SOURCE_RUN: ${{ inputs.release_run_id || github.run_id }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+          def github(path):
+              request = Request('https://api.github.com/repos/' + os.environ['GH_REPO'] + path,
+                                headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                                         'Accept': 'application/vnd.github+json'})
+              with urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          run_id = os.environ['EXP_SOURCE_RUN']
+          if not run_id.isdecimal():
+              raise SystemExit('release_run_id must be a numeric GitHub Actions run ID')
+          run = github('/actions/runs/' + run_id)
+          tag = run['head_branch']
+          if (run['event'] != 'push' or run['path'] != '.github/workflows/desktop-builds.yml'
+                  or not re.fullmatch(r'v[0-9][0-9A-Za-z.!+_-]*', tag or '')):
+              raise SystemExit('Artifacts must come from a version-tag push to the Builds workflow')
+          ref = github('/git/ref/tags/' + quote(tag, safe=''))['object']
+          for _ in range(10):
+              if ref['type'] != 'tag':
+                  break
+              ref = github('/git/tags/' + ref['sha'])['object']
+          if ref['type'] != 'commit' or ref['sha'] != run['head_sha']:
+              raise SystemExit('The release tag no longer matches the source run commit')
+
+          required = {'Python wheels (3.10)', 'Python wheels (3.14)', 'windows-x64',
+                      'linux-x64', 'macos-arm64', 'macos-x64', 'iOS / Unsigned iPhone app'}
+          passed = set()
+          page = 1
+          while True:
+              jobs = github(f'/actions/runs/{run_id}/jobs?filter=latest&per_page=100&page={page}')['jobs']
+              passed.update(job['name'] for job in jobs if job['conclusion'] == 'success')
+              if len(jobs) < 100:
+                  break
+              page += 1
+          if required - passed:
+              raise SystemExit('Required source checks have not passed: ' + ', '.join(sorted(required - passed)))
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write(f'run-id={run_id}\ntag={tag}\nsha={run["head_sha"]}\n')
+          print(f'Using tested {tag} artifacts from run {run_id} ({run["head_sha"]})')
+          PY
+
   publish-pypi:
     name: Publish Python distributions to PyPI
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build, ios, packages]
+    if: github.event_name == 'push' || inputs.retry_pypi
+    needs: release-source
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/p/exp-runtime
     permissions:
+      actions: read
       id-token: write
     env:
-      EXP_TAG: ${{ github.ref_name }}
+      EXP_TAG: ${{ needs.release-source.outputs.tag }}
     steps:
       # Reuse the audited artifacts; do not build or install project code in
       # the job that can request PyPI credentials.
@@ -178,41 +268,79 @@ jobs:
         with:
           name: python-packages
           path: dist/packages
+          run-id: ${{ needs.release-source.outputs.run-id }}
+          github-token: ${{ github.token }}
 
-      - name: Verify checksums and stage only publishable distributions
+      - name: Verify checksums and stage missing distributions
+        id: stage
         working-directory: dist/packages
         shell: bash
         run: |
-          version="${EXP_TAG#v}"
-          mkdir ../pypi
-          for name in exp_runtime exp_runtime_formats exp_runtime_engine exp_runtime_player exp_runtime_shs exp_runtime_cod; do
-            for suffix in -py3-none-any.whl .tar.gz; do
-              file="$name-$version$suffix"
-              sha256sum --check --strict "$file.sha256"
-              cp -- "$file" ../pypi/
-            done
-          done
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          from urllib.error import HTTPError
+          from urllib.parse import quote
+          from urllib.request import urlopen
+
+          version = os.environ['EXP_TAG'].removeprefix('v')
+          pending = []
+          for project in ('exp-runtime', 'exp-runtime-formats', 'exp-runtime-engine',
+                          'exp-runtime-player', 'exp-runtime-shs', 'exp-runtime-cod'):
+              try:
+                  with urlopen(f'https://pypi.org/pypi/{project}/{quote(version, safe="")}/json', timeout=30) as response:
+                      published = {item['filename']: item['digests']['sha256'] for item in json.load(response)['urls']}
+              except HTTPError as error:
+                  error.close()
+                  if error.code != 404:
+                      raise
+                  published = {}
+              for suffix in ('-py3-none-any.whl', '.tar.gz'):
+                  path = Path(f'{project.replace("-", "_")}-{version}{suffix}')
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  recorded, filename = path.with_name(path.name + '.sha256').read_text().split()
+                  if filename != path.name or recorded != digest:
+                      raise SystemExit(f'Artifact checksum mismatch: {path.name}')
+                  if path.name in published:
+                      if published[path.name] != digest:
+                          raise SystemExit(f'PyPI already has different bytes for {path.name}; refusing to replace or skip it')
+                      print(f'Already published with matching SHA-256: {path.name}')
+                  else:
+                      pending.append(path)
+          destination = Path('../pypi')
+          destination.mkdir()
+          for path in pending:
+              shutil.copy2(path, destination / path.name)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write(f'pending={str(bool(pending)).lower()}\n')
+          print(f'{len(pending)} distributions remain to publish')
+          PY
 
       - name: Publish wheels and source archives with Trusted Publishing
+        if: steps.stage.outputs.pending == 'true'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/pypi/
 
   release:
     name: Publish versioned downloads
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build, ios, packages]
+    needs: release-source
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: write
     env:
-      EXP_TAG: ${{ github.ref_name }}
+      EXP_TAG: ${{ needs.release-source.outputs.tag }}
     steps:
       - name: Check out release notes
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ needs.release-source.outputs.sha }}
 
       - name: Download desktop archives and checksums
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -220,12 +348,34 @@ jobs:
           pattern: desktop-*
           path: dist/release
           merge-multiple: true
+          run-id: ${{ needs.release-source.outputs.run-id }}
+          github-token: ${{ github.token }}
 
       - name: Download unsigned IPA and checksum
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ios-arm64-unsigned
           path: dist/release
+          run-id: ${{ needs.release-source.outputs.run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Download tested Python wheels and checksums
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: python-packages
+          path: dist/python-packages
+          run-id: ${{ needs.release-source.outputs.run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Include all six wheels in the release
+        working-directory: dist/python-packages
+        shell: bash
+        run: |
+          version="${EXP_TAG#v}"
+          for name in exp_runtime exp_runtime_formats exp_runtime_engine exp_runtime_player exp_runtime_shs exp_runtime_cod; do
+            file="$name-$version-py3-none-any.whl"
+            cp -- "$file" "$file.sha256" ../release/
+          done
 
       - name: Verify downloaded checksums
         working-directory: dist/release
