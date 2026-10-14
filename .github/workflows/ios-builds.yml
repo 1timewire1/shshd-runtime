@@ -39,6 +39,26 @@ jobs:
       - name: Install locked host dependencies
         run: uv sync --locked --extra desktop
 
+      - name: Restore iOS dependencies
+        id: ios-dependencies-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ios/dependencies
+          key: ios-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('ios/dependencies.json', 'tools/build_ios.py') }}
+
+      - name: Prepare iOS dependencies
+        run: |
+          uv run --locked --extra desktop python tools/build_ios.py --prepare --sdk iphonesimulator
+          uv run --locked --extra desktop python tools/build_ios.py --prepare --sdk iphoneos
+
+      # Cache both SDKs before tests or simulator boot can fail.
+      - name: Save iOS dependencies
+        if: steps.ios-dependencies-cache.outputs.cache-primary-key != '' && steps.ios-dependencies-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ios/dependencies
+          key: ${{ steps.ios-dependencies-cache.outputs.cache-primary-key }}
+
       - name: Run authored engine and packaging tests
         run: uv run --locked --extra desktop python -m unittest discover -s tests
 

@@ -107,8 +107,35 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked --extra build
 
+      - name: Identify native build image
+        if: runner.os != 'macOS'
+        id: rar-image
+        # The hosted image version covers compiler, SDK and CMake updates.
+        # If unavailable, skip caching and build normally.
+        run: echo "version=${ImageVersion:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore RAR decoder
+        if: runner.os != 'macOS' && steps.rar-image.outputs.version != ''
+        id: rar-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/rar/install
+            build/rar/libarchive-*.tar.xz
+          key: rar-v1-${{ matrix.runner }}-${{ runner.arch }}-${{ steps.rar-image.outputs.version }}-${{ hashFiles('tools/build_rar.py') }}
+
       - name: Prepare RAR decoder
         run: uv run --locked --extra build python tools/build_rar.py
+
+      # Persist a successful dependency build even if later tests fail.
+      - name: Save RAR decoder
+        if: steps.rar-cache.outputs.cache-primary-key != '' && steps.rar-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/rar/install
+            build/rar/libarchive-*.tar.xz
+          key: ${{ steps.rar-cache.outputs.cache-primary-key }}
 
       - name: Run tests without game content
         run: uv run --locked --extra build python -m unittest discover -s tests
