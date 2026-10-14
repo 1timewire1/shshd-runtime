@@ -19,6 +19,11 @@ import tempfile
 import urllib.request
 from zipfile import ZipFile
 
+if __package__:
+    from .components import check_versions, source_files
+else:
+    from components import check_versions, source_files
+
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ROOT / 'build/ios/dependencies'
 PYTHON = DEPENDENCIES / 'python/Python.xcframework'
@@ -26,7 +31,7 @@ SDKS = ('iphoneos', 'iphonesimulator')
 
 
 def project_version():
-    return re.search(r'^version = "([^"]+)"', (ROOT / 'pyproject.toml').read_text(), re.M)[1]
+    return check_versions(ROOT)
 
 
 def stage_metadata(directory):
@@ -86,7 +91,7 @@ def prepare(sdk, *, offline=False):
 def icons():
     """Render only the authored SVG logo, never a player's artwork."""
     directory = ROOT / 'build/ios/Assets.xcassets/AppIcon.appiconset'
-    source = ROOT / 'src/exp_runtime/assets/kiwi.svg'
+    source = ROOT / 'packages/player/src/exp_runtime/assets/kiwi.svg'
     if (directory / 'Contents.json').is_file() and (directory / 'kiwi.png').is_file() and (directory / 'kiwi.png').stat().st_mtime > source.stat().st_mtime:
         return
     os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
@@ -108,6 +113,14 @@ def _copy_clean(source, destination):
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.a', '*.h', '*.c',
                                                  'libpython*.dylib', 'test', 'tests', 'idlelib',
                                                  'tkinter', 'turtledemo', 'ensurepip'))
+
+
+def stage_runtime(destination):
+    """Merge the same disjoint namespace components used by Python installs."""
+    for relative, source in source_files(ROOT).items():
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _frameworks(bundle, base):
@@ -145,7 +158,7 @@ def stage(bundle, sdk):
     _copy_clean(PYTHON / slice_name / 'lib-arm64', bundle / 'python/lib')
     shutil.copytree(PYTHON / slice_name / 'Python.framework', bundle / 'Frameworks/Python.framework',
                     ignore=shutil.ignore_patterns('Headers', 'Modules'))
-    _copy_clean(ROOT / 'src/exp_runtime', bundle / 'app/exp_runtime')
+    stage_runtime(bundle / 'app')
     stage_metadata(bundle / 'app')
     _copy_clean(ROOT / 'ios/probe', bundle / 'app')
     with ZipFile(wheel) as archive:

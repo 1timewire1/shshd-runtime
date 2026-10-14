@@ -21,7 +21,7 @@ Cause of Death uses its own supplied iOS executable as the reference for
 game-specific contracts; see [COD.md](COD.md). Its native decompilations and
 original assets also remain private research inputs.
 
-The [kiwi fruit app logo](../src/exp_runtime/assets/kiwi.svg) was drawn for
+The [kiwi fruit app logo](../packages/player/src/exp_runtime/assets/kiwi.svg) was drawn for
 EXP Runtime and is covered by this project's MIT license. It is independent
 of the original games' artwork. Native app icons are generated from this SVG.
 

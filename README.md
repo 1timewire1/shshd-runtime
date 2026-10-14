@@ -169,8 +169,34 @@ directly. This is initial support, not a claim that every CoD episode finishes;
 unverified services and presentation differences are tracked in [COD.md](docs/COD.md).
 
 Game-specific import, UI/audio bindings and services live in
-`src/exp_runtime/shs/` and `src/exp_runtime/cod/`. The EXP parser, KiWi VM,
+`packages/shs/src/exp_runtime/shs/` and `packages/cod/src/exp_runtime/cod/`. The EXP parser, KiWi VM,
 session/save system, common panels and launcher remain shared.
+
+## Utilize the SDK
+
+```sh
+# EXP readers, bytecode decoders and the inspect/extract CLI
+python -m pip install "exp-runtime[tools]>=0.5.0"
+
+# Headless VM and engine without game adapters or a player UI
+python -m pip install "exp-runtime[engine]>=0.5.0"
+
+# Headless engine with one game, for a custom player UI
+python -m pip install "exp-runtime[engine,shs]>=0.5.0"
+python -m pip install "exp-runtime[engine,cod]>=0.5.0"
+
+# Headless engine with both games
+python -m pip install "exp-runtime[engine,shs,cod]>=0.5.0"
+
+# Full desktop player with both games
+python -m pip install "exp-runtime[player]>=0.5.0"
+```
+
+The bare `exp-runtime` install supplies file tools; `[desktop]` is an alias
+for `[player]`. All components use the `exp_runtime` namespace and share one
+version, including `exp_runtime.shs` and `exp_runtime.cod` when installed.
+Pip installs do not require uv. The tools provide `exp-tool`; launch the full
+player with `exp-runtime` after installation.
 
 ## Specifications and development
 
@@ -187,6 +213,7 @@ To contribute code, tests, documentation or compatibility reports, start with
 - [Mini games](docs/MINIGAMES.md) and [story services](docs/STORY_SERVICES.md).
 - [Development and tests](docs/DEVELOPMENT.md), [distribution](docs/DISTRIBUTION.md)
   and [project provenance](docs/PROVENANCE.md).
+- [Python components and custom UIs](docs/SDK.md).
 - [Release notes](RELEASE.md) and [changelog](CHANGELOG.md).
 
 Run the full test suite from the repository root with the command below.

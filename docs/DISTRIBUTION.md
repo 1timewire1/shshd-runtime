@@ -19,6 +19,13 @@ extracted desktop download. It also calls the reusable
 engine and native presentation in a simulator before packaging the unsigned
 device app. Third-party actions are pinned to verified commit hashes.
 
+The Python packaging job builds all component wheels and source archives,
+then checks isolated pip installs on Python 3.10 and 3.14. Its
+`python-packages` Actions artifact contains the six distributions and their
+checksums. Version-tag runs also publish these tested wheels and source
+archives to PyPI after all checks pass. See [PyPI publishing](#pypi-publishing)
+for the required one-time setup and [SDK.md](SDK.md) for component installs.
+
 | Download target | GitHub runner | Archive |
 | --- | --- | --- |
 | `windows-x64` | `windows-2022` | ZIP containing the full executable directory |
@@ -35,12 +42,14 @@ then the app archive (or sign the IPA). The simulator report is a separate
 These artifacts expire after 30 days. GitHub requires
 sign-in and repository read access for [Actions artifact downloads](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
 
-The owner can publish a version by pushing a tag such as `v0.1.0`. Once all
-four desktop builds and the iOS build/verification pass, the release job
+The owner can publish a version by pushing a tag such as `v0.5.0`. The tag
+must be exactly `v` followed by the version shared by all six `pyproject.toml`
+files; a mismatch fails before building Python distributions. Once all
+four desktop builds, the iOS build/verification and the Python packaging checks
+pass, the release job
 requires all five downloads and their checksum files, verifies the checksums,
 and publishes the desktop archives plus the unsigned IPA and their checksums
-on **Releases**. A tag containing a hyphen,
-such as `v0.1.0-rc.1`, creates a prerelease. Ordinary pushes and pull requests
+on **Releases**. Ordinary pushes and pull requests
 never create releases. Their jobs have read-only repository permissions; only
 the version-tag release job has `contents: write`, using GitHub's built-in
 token. No personal token or signing secrets are required.
@@ -49,10 +58,11 @@ The release body comes from [RELEASE.md](../RELEASE.md) at the repository root.
 Update it before tagging a version. [CHANGELOG.md](../CHANGELOG.md) records
 release history, with upcoming changes under **Unreleased**.
 
-The prepared release notes describe **v0.4.2**: optional launch-time update
-checks, script-controlled music looping, recovered dialogue animations and
-lifecycle, and a separate iOS simulator installation timeout. Earlier releases
-remain documented in the changelog.
+The prepared release notes describe **v0.5.0**: separately installable Python
+components, public EXP file tools, isolated pip installation checks and PyPI
+Trusted Publishing. The bare install provides file tools; use `[player]` or
+`[desktop]` for the app with both games. Earlier releases remain documented
+in the changelog.
 
 Rerunning a version-tag workflow updates matching assets on an existing
 release using `gh release upload --clobber`, then publishes any draft left by
@@ -62,6 +72,50 @@ push code or create a tag; the release command requires the tag to exist.
 
 Workflow changes take effect for tags containing the updated files. Local
 validation does not replace a successful GitHub run on all five targets.
+
+### PyPI publishing
+
+The `publish-pypi` job runs only for pushed `v*` tags, after both Python
+packaging jobs, all desktop builds and iOS verification succeed. It downloads
+the same run's `python-packages` artifact, verifies every SHA-256 checksum and
+stages only the six wheels and six source archives. The publishing job does
+not check out, build or install the project. Metadata validation and PyPI
+attestations remain enabled in the pinned PyPA publishing action.
+
+Before the first tag using this workflow, configure
+[PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
+for **each** project: `exp-runtime`, `exp-runtime-formats`,
+`exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs` and
+`exp-runtime-cod`. Each registration uses the same values:
+
+| Publisher field | Value |
+| --- | --- |
+| Owner | `joshrmcdaniel` |
+| Repository | `exp-runtime` |
+| Workflow filename | `desktop-builds.yml` |
+| Environment | `pypi` |
+
+For an existing project you own, add this publisher in its PyPI **Publishing**
+settings. For a new project, register a pending publisher through your
+[account's Publishing page](https://pypi.org/manage/account/publishing/);
+[PyPI creates the project on its first successful upload](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+A pending publisher does not reserve a name. Configure all six before
+releasing, since every component is pinned to the common version.
+
+In GitHub **Settings → Environments**, create `pypi` and restrict its deployment
+tags to `v*`. The PyPI environment field must match this name exactly. No
+PyPI API token or repository secret is needed: only the publishing job has
+`id-token: write`, allowing the action to obtain short-lived PyPI credentials.
+Branch pushes, pull requests and manual runs build artifacts without uploading
+to PyPI.
+
+PyPI files cannot be replaced. The workflow intentionally fails on an existing
+filename rather than silently skipping it. After a successful upload, rerun
+only failed jobs if an unrelated release job needs another attempt. If an
+upload fails after publishing some files, inspect that PyPI release before
+retrying; a full retry will reject those existing files. Use a new common
+version and tag for changed distributions. The GitHub app release and PyPI
+upload are separate jobs, so check both when releasing.
 
 ### Adding an IPA to an existing release
 
@@ -133,8 +187,12 @@ and skip when those inputs are absent; ordinary tests use synthetic fixtures.
 - `.gitignore` excludes known local game/research paths and generated output
   from normal Git staging. It does not exclude already tracked files.
 - `MANIFEST.in` explicitly selects authored source, tests, tools, docs and the
-  kiwi SVG logo for source packages. Setuptools limits Python packages to
-  `src/exp_runtime` and explicitly includes only `assets/kiwi.svg` as package data.
+  kiwi SVG logo for source packages. Each component has its own restrictive
+  manifest and package discovery under `packages/<component>/src/exp_runtime`.
+  Only the player wheel includes `assets/kiwi.svg` as package data. The root
+  `exp-runtime` wheel contains dependency metadata; its source archive includes
+  the authored workspace. See [SDK.md](SDK.md) for local wheel builds, pip
+  installs and isolation checks. These tools do not publish to a package index.
 - `tools/build_desktop.py` bundles the runtime and its dependencies. Licenses,
   runtime metadata and the authored kiwi SVG are explicitly collected
   as executable data. The build renders the SVG into a macOS ICNS or Windows

@@ -13,6 +13,11 @@ import subprocess
 import sys
 import tempfile
 
+if __package__:
+    from .components import COMPONENTS, check_versions, source_roots
+else:
+    from components import COMPONENTS, check_versions, source_roots
+
 
 def build_icon(svg, destination):
     """Render the single SVG source into a native ICO or ICNS container."""
@@ -30,6 +35,7 @@ def build_icon(svg, destination):
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    check_versions(root)
     output = root / 'dist' / 'desktop'
     work = root / 'build' / 'desktop'
     work.mkdir(parents=True, exist_ok=True)
@@ -37,15 +43,23 @@ def main():
         stage = Path(temporary)
         entry = stage / 'exp_launcher.py'
         entry.write_text('from exp_runtime.application import main\n\nif __name__ == "__main__":\n    main()\n', encoding='utf-8')
-        logo = root / 'src' / 'exp_runtime' / 'assets' / 'kiwi.svg'
+        logo = root / 'packages/player/src/exp_runtime/assets/kiwi.svg'
         # pygame's hook supplies its bundled fallback font and SDL libraries.
         # Only authored runtime modules are reachable through this entry point.
         args = ['--windowed', '--onedir', '--name', 'EXP Runtime',
-                '--specpath', str(stage), '--paths', str(root / 'src'), '--noupx',
+                '--specpath', str(stage), '--noupx',
                 '--add-data', str(root / 'LICENSE') + ':.',
                 '--add-data', str(logo) + ':exp_runtime/assets',
                 '--copy-metadata', 'exp-runtime',
                 '--exclude-module', 'tkinter']
+        for source in source_roots(root):
+            args += ['--paths', str(source)]
+        for component in COMPONENTS:
+            args += ['--copy-metadata', f'exp-runtime-{component}']
+        # Profiles are discovered dynamically in minimal Python installs.
+        # Standalone apps deliberately include both available games.
+        args += ['--hidden-import', 'exp_runtime.shs.profile',
+                 '--hidden-import', 'exp_runtime.cod.profile']
         if sys.platform in ('darwin', 'win32'):
             icon = stage / ('kiwi.icns' if sys.platform == 'darwin' else 'kiwi.ico')
             build_icon(logo, icon)

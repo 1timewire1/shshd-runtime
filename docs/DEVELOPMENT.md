@@ -3,9 +3,15 @@
 See [MAINTAINERS.md](../MAINTAINERS.md) for contributor setup, reporting issues,
 compatibility requirements and pull request guidance.
 
-The project is self-contained under `src/exp_runtime`. It does not import
+The project is a single uv workspace with component source under
+`packages/{formats,engine,player,shs,cod}/src/exp_runtime`. It does not import
 modules from the old decoder checkout or require any extracted game files
 to install, test its synthetic fixtures, or build an executable.
+
+The `exp_runtime` namespace and existing module imports are preserved. See
+[SDK.md](SDK.md) for wheel ownership, optional pip installs and custom UI APIs.
+The default development environment includes both games and the player;
+minimal installs are verified independently with `tools/test_packages.py`.
 
 ## Environment and commands
 
@@ -86,7 +92,7 @@ does not establish complete episode playback or pixel/timing equivalence.
 
 | Research project | Standalone project |
 | --- | --- |
-| `src/exp_file` Python package | `src/exp_runtime` |
+| `src/exp_file` Python package | `exp_runtime` namespace across `packages/*/src` |
 | `exp-file` command | `exp-tool` |
 | `shs` desktop launcher | `exp-runtime` (`shs` alias retained) |
 | Heuristic AST/Ren'Py conversion | Retained only in the old research project |

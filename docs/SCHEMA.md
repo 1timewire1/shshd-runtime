@@ -4,7 +4,7 @@ Revision: 2026-09-13. Profile: the local **Surviving High School** corpus and th
 
 The ordinary archive, record, compression, and metadata layouts account for every indexed payload in the audited corpus. Native grouped resources and the EXPD prefix are documented separately because no matching fixtures have been identified. This does not establish compatibility with every other game or iOS engine version.
 
-The compatible runtime's strict reader is [`content.ExpArchive`](../src/exp_runtime/content.py). Its user-supplied APK/episode library, resource-bank selection, supported-input restrictions, and new JSON save format are documented in [RUNTIME.md](RUNTIME.md); those are separate from the EXP wire format. Current reader restrictions are listed in section 10 below. Evidence snapshot names refer to private research files; see [PROVENANCE.md](PROVENANCE.md).
+The compatible runtime's strict reader is [`content.ExpArchive`](../packages/engine/src/exp_runtime/content.py). Its user-supplied APK/episode library, resource-bank selection, supported-input restrictions, and new JSON save format are documented in [RUNTIME.md](RUNTIME.md); those are separate from the EXP wire format. Current reader restrictions are listed in section 10 below. Evidence snapshot names refer to private research files; see [PROVENANCE.md](PROVENANCE.md).
 
 ## 1. Evidence and notation
 

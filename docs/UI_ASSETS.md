@@ -8,7 +8,7 @@ All artwork and layout records come from each player's APK/IPA and episodes.
 The numeric IDs below describe Android. [IPA.md](IPA.md#resource-banks-and-local-extraction)
 records the inspected iOS mapping and its separate host UI role lookup.
 
-The compatible readers live in `src/exp_runtime/ui_assets.py`. Signed counts must
+The compatible readers live in `packages/formats/src/exp_runtime/ui_assets.py`. Signed counts must
 be nonnegative in supported inputs; reads must fit the payload, and decoded
 pixel allocations are bounded. Reject unsupported encodings explicitly.
 The defensive checks are reader policy, not evidence that the original engine

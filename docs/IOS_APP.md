@@ -277,7 +277,9 @@ and releases it while idle. Native font callbacks supply glyphs and metrics;
 font roles and colors stay in Python. User-selected files are data and cannot
 supply Python modules or native extensions. JIT is not enabled.
 
-The build copies `src/exp_runtime` directly. Native Python extensions become
+The build merges the authored `exp_runtime` namespace from the five component
+source directories, checking that no files overlap. It uses the same Python
+code as pip installs and desktop builds. Native Python extensions become
 individual frameworks using CPython's `.fwork` loader. Packaging audits every
 binary's arm64 iPhone platform, absence of signatures/provisioning material,
 loader references and the same original-content exclusions as desktop.

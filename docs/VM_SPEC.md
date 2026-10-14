@@ -462,7 +462,7 @@ At the request: issuing PC=3, encoded byte offset=22, next PC=4, SP=1, arguments
 
 ### 10.3 Current verification and limits
 
-[bytecode.py](../src/exp_runtime/decode/bytecode.py) round-trips all 987 corpus scripts exactly: 1,566,964 instructions and 56,761 static branch instructions. [vm.py](../src/exp_runtime/vm.py) implements the recovered core with explicit validation, and [engine.py](../src/exp_runtime/engine.py) implements the verified host subset. The legacy heuristic action parser remains in the research project and is not included here.
+[bytecode.py](../packages/formats/src/exp_runtime/decode/bytecode.py) round-trips all 987 corpus scripts exactly: 1,566,964 instructions and 56,761 static branch instructions. [vm.py](../packages/engine/src/exp_runtime/vm.py) implements the recovered core with explicit validation, and [engine.py](../packages/engine/src/exp_runtime/engine.py) implements the verified host subset. The legacy heuristic action parser remains in the research project and is not included here.
 
 ```sh
 uv run --locked python -m unittest discover -s tests

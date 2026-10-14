@@ -84,7 +84,7 @@ Neither package's native code is executed.
 
 `MANIFEST.in` explicitly selects runtime source and authored documentation for
 the source distribution. Setuptools package discovery is restricted to
-`src/exp_runtime`. Original APKs/IPAs/EXPs, extracted art/audio, decompiled native C,
+`packages/*/src/exp_runtime`. Original APKs/IPAs/EXPs, extracted art/audio, decompiled native C,
 generated Ren'Py games, and saved progress are excluded from Python packages
 and executable builds. Players can clone the engine's source and build their
 own executable before supplying any game content. See

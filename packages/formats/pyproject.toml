@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools >= 61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exp-runtime-formats"
+version = "0.5.0"
+description = "EXP containers, KiWi decoding and native resource parsers"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+images = ["Pillow>=10"]
+
+[project.scripts]
+exp-tool = "exp_runtime.cli:main"
+shs-tool = "exp_runtime.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["exp_runtime", "exp_runtime.*"]
+namespaces = true

@@ -164,7 +164,7 @@ Its external-application lifecycle and resume flag still need implementation.
 
 ## 3. Verified state-service contracts
 
-These contracts define the subset implemented in [engine.py](../src/exp_runtime/engine.py). The implementation checks exact argument counts for these fixed forms. Persistence, rendering, and other noted native side effects are separate from its in-memory state model.
+These contracts define the subset implemented in [engine.py](../packages/engine/src/exp_runtime/engine.py). The implementation checks exact argument counts for these fixed forms. Persistence, rendering, and other noted native side effects are separate from its in-memory state model.
 
 ### 3.1 Numeric variables
 

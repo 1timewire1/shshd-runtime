@@ -2,6 +2,16 @@ version = 1
 revision = 3
 requires-python = ">=3.10"
 
+[manifest]
+members = [
+    "exp-runtime",
+    "exp-runtime-cod",
+    "exp-runtime-engine",
+    "exp-runtime-formats",
+    "exp-runtime-player",
+    "exp-runtime-shs",
+]
+
 [[package]]
 name = "altgraph"
 version = "0.17.5"
@@ -13,29 +23,151 @@ wheels = [
 
 [[package]]
 name = "exp-runtime"
-version = "0.4.2"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
-    { name = "pillow" },
+    { name = "exp-runtime-formats" },
 ]
 
 [package.optional-dependencies]
 build = [
-    { name = "pygame-ce" },
+    { name = "exp-runtime-cod" },
+    { name = "exp-runtime-player", extra = ["desktop"] },
+    { name = "exp-runtime-shs" },
     { name = "pyinstaller" },
 ]
+cod = [
+    { name = "exp-runtime-cod" },
+]
+desktop = [
+    { name = "exp-runtime-cod" },
+    { name = "exp-runtime-player", extra = ["desktop"] },
+    { name = "exp-runtime-shs" },
+]
+engine = [
+    { name = "exp-runtime-engine" },
+]
+player = [
+    { name = "exp-runtime-cod" },
+    { name = "exp-runtime-player", extra = ["desktop"] },
+    { name = "exp-runtime-shs" },
+]
+shs = [
+    { name = "exp-runtime-shs" },
+]
+tools = [
+    { name = "exp-runtime-formats" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "exp-runtime-cod" },
+    { name = "exp-runtime-player", extra = ["desktop"] },
+    { name = "exp-runtime-shs" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "exp-runtime-cod", marker = "extra == 'build'", editable = "packages/cod" },
+    { name = "exp-runtime-cod", marker = "extra == 'cod'", editable = "packages/cod" },
+    { name = "exp-runtime-cod", marker = "extra == 'desktop'", editable = "packages/cod" },
+    { name = "exp-runtime-cod", marker = "extra == 'player'", editable = "packages/cod" },
+    { name = "exp-runtime-engine", marker = "extra == 'engine'", editable = "packages/engine" },
+    { name = "exp-runtime-formats", editable = "packages/formats" },
+    { name = "exp-runtime-formats", marker = "extra == 'tools'", editable = "packages/formats" },
+    { name = "exp-runtime-player", extras = ["desktop"], marker = "extra == 'build'", editable = "packages/player" },
+    { name = "exp-runtime-player", extras = ["desktop"], marker = "extra == 'desktop'", editable = "packages/player" },
+    { name = "exp-runtime-player", extras = ["desktop"], marker = "extra == 'player'", editable = "packages/player" },
+    { name = "exp-runtime-shs", marker = "extra == 'build'", editable = "packages/shs" },
+    { name = "exp-runtime-shs", marker = "extra == 'desktop'", editable = "packages/shs" },
+    { name = "exp-runtime-shs", marker = "extra == 'player'", editable = "packages/shs" },
+    { name = "exp-runtime-shs", marker = "extra == 'shs'", editable = "packages/shs" },
+    { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.16,<7" },
+]
+provides-extras = ["tools", "engine", "shs", "cod", "player", "desktop", "build"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "exp-runtime-cod", editable = "packages/cod" },
+    { name = "exp-runtime-player", extras = ["desktop"], editable = "packages/player" },
+    { name = "exp-runtime-shs", editable = "packages/shs" },
+]
+
+[[package]]
+name = "exp-runtime-cod"
+version = "0.5.0"
+source = { editable = "packages/cod" }
+dependencies = [
+    { name = "exp-runtime-engine", extra = ["fonts"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "exp-runtime-engine", extras = ["fonts"], editable = "packages/engine" }]
+
+[[package]]
+name = "exp-runtime-engine"
+version = "0.5.0"
+source = { editable = "packages/engine" }
+dependencies = [
+    { name = "exp-runtime-formats" },
+]
+
+[package.optional-dependencies]
+fonts = [
+    { name = "pillow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "exp-runtime-formats", editable = "packages/formats" },
+    { name = "pillow", marker = "extra == 'fonts'", specifier = ">=10" },
+]
+provides-extras = ["fonts"]
+
+[[package]]
+name = "exp-runtime-formats"
+version = "0.5.0"
+source = { editable = "packages/formats" }
+
+[package.optional-dependencies]
+images = [
+    { name = "pillow" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pillow", marker = "extra == 'images'", specifier = ">=10" }]
+provides-extras = ["images"]
+
+[[package]]
+name = "exp-runtime-player"
+version = "0.5.0"
+source = { editable = "packages/player" }
+dependencies = [
+    { name = "exp-runtime-engine", extra = ["fonts"] },
+]
+
+[package.optional-dependencies]
 desktop = [
     { name = "pygame-ce" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pillow", specifier = ">=10" },
-    { name = "pygame-ce", marker = "extra == 'build'", specifier = ">=2.5.7,<3" },
+    { name = "exp-runtime-engine", extras = ["fonts"], editable = "packages/engine" },
     { name = "pygame-ce", marker = "extra == 'desktop'", specifier = ">=2.5.7,<3" },
-    { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.16,<7" },
 ]
-provides-extras = ["desktop", "build"]
+provides-extras = ["desktop"]
+
+[[package]]
+name = "exp-runtime-shs"
+version = "0.5.0"
+source = { editable = "packages/shs" }
+dependencies = [
+    { name = "exp-runtime-engine", extra = ["fonts"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "exp-runtime-engine", extras = ["fonts"], editable = "packages/engine" }]
 
 [[package]]
 name = "macholib"

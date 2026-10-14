@@ -20,6 +20,12 @@ player's local content is absent. Do not add original assets as test fixtures.
 
 ## Architecture and contracts
 
+One uv workspace produces the `exp-runtime` umbrella and five component wheels.
+Source lives under `packages/{formats,engine,player,shs,cod}/src/exp_runtime`.
+Keep the shared `exp_runtime` namespace free of a root `__init__.py`, and give
+each source file one wheel owner. `tools/build_packages.py` audits the wheels;
+`tools/test_packages.py` checks isolated pip installs. See docs/SDK.md.
+
 - `shs/`, `cod/`: game-specific import, asset/audio bindings and host services.
 - `content.py`: validated EXP/APK/IPA import, exact resource IDs, relocatable
   per-game libraries and separation of base versus episode resource banks.

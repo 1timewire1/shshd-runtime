@@ -15,6 +15,52 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  packages:
+    name: Python wheels (${{ matrix.python }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.14']
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.13'
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-suffix: python-${{ matrix.python }}
+
+      - name: Install locked build dependencies
+        run: uv sync --locked --extra build
+
+      - name: Build and audit wheels and source archives
+        shell: bash
+        run: |
+          flags=()
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            flags+=(--tag "$GITHUB_REF_NAME")
+          fi
+          uv run --locked --extra build python tools/build_packages.py "${flags[@]}"
+
+      - name: Verify isolated pip installs and component removal
+        run: uv run --locked --extra build python tools/test_packages.py
+
+      - name: Upload Python distributions and checksums
+        if: matrix.python == '3.14'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-packages
+          path: dist/packages/*
+          if-no-files-found: error
+          retention-days: 30
+
   ios:
     name: iOS
     uses: ./.github/workflows/ios-builds.yml
@@ -84,10 +130,51 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  publish-pypi:
+    name: Publish Python distributions to PyPI
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build, ios, packages]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/exp-runtime
+    permissions:
+      id-token: write
+    env:
+      EXP_TAG: ${{ github.ref_name }}
+    steps:
+      # Reuse the audited artifacts; do not build or install project code in
+      # the job that can request PyPI credentials.
+      - name: Download tested Python distributions and checksums
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: python-packages
+          path: dist/packages
+
+      - name: Verify checksums and stage only publishable distributions
+        working-directory: dist/packages
+        shell: bash
+        run: |
+          version="${EXP_TAG#v}"
+          mkdir ../pypi
+          for name in exp_runtime exp_runtime_formats exp_runtime_engine exp_runtime_player exp_runtime_shs exp_runtime_cod; do
+            for suffix in -py3-none-any.whl .tar.gz; do
+              file="$name-$version$suffix"
+              sha256sum --check --strict "$file.sha256"
+              cp -- "$file" ../pypi/
+            done
+          done
+
+      - name: Publish wheels and source archives with Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/pypi/
+
   release:
     name: Publish versioned downloads
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build, ios]
+    needs: [build, ios, packages]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
