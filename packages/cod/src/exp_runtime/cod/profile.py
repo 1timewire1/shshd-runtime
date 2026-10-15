@@ -62,6 +62,12 @@ RELATIONSHIP_LOSS = {3000: 3004, 3001: 3006, 3002: 3008}
 CLICK_SOUND = 8005
 # SHSEngine::buttonPressed pause branch (00024d86).
 PAUSE_SOUND = 8006
+# CoD 1.4.7's Options (ui_sound.py): the click for all three -- switching Sound on (setSoundEnabled 0001f4e4, the
+# other effects stopped), the Sound FX slider (getToggleSoundID 0001971c) and the Music slider (sliderChanged
+# 00043888, at its own volume).
+SOUND_ON_SOUND = 8005
+SOUND_SLIDER_SOUND = 8005
+MUSIC_SLIDER_SOUND = 8005
 # A timed incremental choice (services 2-4) whose timeout selection is -1, "no option" (Volume 7's "Let go." /
 # "Hang on."): SHSUIMenu::tick (0003f12c) takes the timeout selection, and setReturnValue (0003e994) returns
 # mapping[-1], the short at +0x98 just before the table at +0x9a. Only loadElement (0003ed88) writes that slot, and

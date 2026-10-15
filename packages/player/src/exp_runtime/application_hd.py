@@ -203,12 +203,18 @@ class HdShell:
 
     def set_volume(self, which, value):
         value = min(1.0, max(0.0, value))
-        if which == 'music':
-            self.app.state.music_volume = round(value * 100)
-        else:
-            self.app.state.sound_volume = round(value * 100)
-        self.app.state.persist()
+        state = self.app.state
+        key = 'music_volume' if which == 'music' else 'sound_volume'
+        changed = round(value * 100) != getattr(state, key)
+        setattr(state, key, round(value * 100))
+        state.persist()
         self.app.menu_music_changed()
+        if changed:
+            # `SHSWidgetMenu::sliderChanged` previews (ui_sound.py), as in the pause menu (desktop.Desktop._set_volume).
+            if which == 'music' and state.music and value > 0:
+                self.app.ui_sound('MUSIC_SLIDER_SOUND', volume=value, when_idle=True)
+            elif which != 'music':
+                self.app.ui_sound('SOUND_SLIDER_SOUND', when_idle=True)
 
     def toggle(self, which):
         if which == 'check_updates':
@@ -218,6 +224,9 @@ class HdShell:
         setattr(state, which, not getattr(state, which))
         state.persist()
         self.app.menu_music_changed()
+        if which == 'sound' and state.sound:
+            # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.
+            self.app.ui_sound('SOUND_ON_SOUND', stop_others=True)
 
     # ------------------------------------------------------------ rendering
 

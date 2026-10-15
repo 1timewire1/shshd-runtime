@@ -49,6 +49,7 @@ from .runtime import SaveError, Session
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress
 from .text_input import accept_name_character, validate_name
+from .ui_sound import UiSounds
 from .ui_assets import ImagePack, Rect
 from .vm import VMError
 
@@ -141,7 +142,7 @@ class Desktop:
         self.pause_renderer = None
         self.pause_elapsed_ms = PAUSE_OPEN_MS
         self.gear_pointer_down = False
-        self.ui_sounds = {}
+        self.ui_sounds = UiSounds()
         self.episode_title = episode_title if episode_title is not None else session.resources.record['titles'][0]
         if not capture:
             pygame.display.set_caption(GAMES[game_id(session.resources)].TITLE + ' — ' + self.episode_title)
@@ -596,8 +597,12 @@ class Desktop:
     def _hd_choice_closes(self, action, index):
         """Whether a pick of `index` closes the HD choice panel natively (pressed row, then a fade) rather than at once:
         an enabled row of an HD-drawn choice."""
+        return self._choice_enabled(action, index) and self._hd_choice_drawn()
+
+    @staticmethod
+    def _choice_enabled(action, index):
         enabled = action.details.get('enabled', ())
-        return 0 <= index < len(enabled) and enabled[index] and self._hd_choice_drawn()
+        return 0 <= index < len(enabled) and bool(enabled[index])
 
     def _hd_choice_drawn(self):
         return hasattr(self.choice_renderer.cached_page, 'rows_top')
@@ -657,17 +662,17 @@ class Desktop:
         self._attempt(lambda: self.session.answer(value))
 
     def _menu_sound(self, *, opening=False):
+        self._ui_sound('PAUSE_SOUND' if opening else 'CLICK_SOUND')
+
+    def _ui_sound(self, name, *, volume=None, stop_others=False, when_idle=False):
+        """Play the game profile's interface sound `name` from the base bank (ui_sound.py): at the Sound FX volume,
+        and only with Sound on, unless a `volume` of its own is given (the Music slider's preview)."""
         library = self.session.resources.library
-        if not self.audio or not self.sound_enabled or not hasattr(library, 'read_asset'):
+        if not self.audio or not hasattr(library, 'read_asset') or (volume is None and not self.sound_enabled):
             return
-        profile = GAMES[game_id(self.session.resources)]
-        asset = profile.PAUSE_SOUND if opening else profile.CLICK_SOUND
-        try:
-            if asset not in self.ui_sounds:
-                self.ui_sounds[asset] = pygame.mixer.Sound(file=BytesIO(library.read_asset(asset)))
-            self.ui_sounds[asset].play()
-        except (ContentError, pygame.error) as error:
-            logging.debug('Pause sound %s unavailable: %s', asset, error)
+        asset = getattr(GAMES[game_id(self.session.resources)], name)
+        self.ui_sounds.play(library, asset, self.sound_volume if volume is None else volume,
+                            stop_others=stop_others, when_idle=when_idle)
 
     def render(self):
         self.buttons = []
@@ -1322,12 +1327,21 @@ class Desktop:
 
     def _set_volume(self, which, value):
         value = min(1., max(0., value))
+        changed = value != (self.music_volume if which == 'music' else self.sound_volume)
         if which == 'music':
             self.music_volume = value
             if self.audio:
                 pygame.mixer.music.set_volume(value)
         else:
             self.sound_volume = value
+        if changed:
+            # `SHSWidgetMenu::sliderChanged`: the Music slider previews its sound at its own volume while Music is on
+            # (a volume of 0 plays nothing); the Sound FX slider previews at the new Sound FX volume. Neither restarts
+            # a preview still playing.
+            if which == 'music' and self.music_enabled and value > 0:
+                self._ui_sound('MUSIC_SLIDER_SOUND', volume=value, when_idle=True)
+            elif which != 'music':
+                self._ui_sound('SOUND_SLIDER_SOUND', when_idle=True)
         if self.on_settings:
             self.on_settings()
 
@@ -1372,10 +1386,14 @@ class Desktop:
         if self.fade and kind == 'menu':
             return                                   # the pause button is off during a transition
         if kind == 'pause_open':
+            # A row of the menu (`SHSWidgetMenu::itemSelected`) and its back button (`buttonPressed`, tags 1-4) both
+            # click; switches and sliders do not.
             self.pause_hd.state.screen, self.pause_hd.state.scroll = command[1], 0.
+            self._menu_sound()
             return
         if kind == 'pause_back':
             self.pause_hd.back()
+            self._menu_sound()
             return
         if kind == 'pause_link':
             # A link in a help page's text (an About page's override): behind the game's "Exit Game?" prompt, as the
@@ -1399,6 +1417,9 @@ class Desktop:
                 self.hd_backdrop = not self.hd_backdrop
             else:
                 self.sound_enabled = not self.sound_enabled
+                if self.sound_enabled:
+                    # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.
+                    self._ui_sound('SOUND_ON_SOUND', stop_others=True)
             if self.on_settings:
                 self.on_settings()
             return
@@ -1462,14 +1483,18 @@ class Desktop:
                 pass                    # `SHSMenu`: one selection per menu; input is over until it has closed
             elif ask is not None:
                 if kind == 'choose' and 0 <= command[1] < len(ask['options']):
+                    self._menu_sound()
                     if self._hd_choice_drawn():
                         self.choice_closing = dict(action=action, index=command[1], ms=0, prompt=ask)
                     else:
                         self.host_prompt = None
                         ask['resolve'](command[1])
             elif kind == 'choose' and action and action.name == 'choice' and self._hd_choice_closes(action, command[1]):
+                self._menu_sound()      # `SHSUIMenu::handleMenuSelection`, modes 1 and 3 (a timeout is silent)
                 self.choice_closing = dict(action=action, index=command[1], ms=0)
             elif kind == 'choose' and action and action.name == 'choice':
+                if self._choice_enabled(action, command[1]):
+                    self._menu_sound()
                 self._pick(action, command[1])
             elif kind == 'choose' and action and action.name == 'word_game':
                 self._answer(command[1])

@@ -40,6 +40,12 @@ RELATIONSHIP_LOSS = {3010: 3014, 3011: 3016, 3012: 3018}
 CLICK_SOUND = 8010
 # SHSEngine::buttonPressed pause branch (iOS 00051214).
 PAUSE_SOUND = 8011
+# SHS HD's Options (ui_sound.py): switching Sound on plays 0x1f44 with the other effects stopped
+# (SHSEngine::setSoundEnabled 00022280, from SHSWidgetMenu::buttonPressed tag 11); the Sound FX slider previews
+# getToggleSoundID (0001ae18, 0x1f47) and the Music slider 0x1f49 at its own volume (sliderChanged 0004f1cc).
+SOUND_ON_SOUND = 8004
+SOUND_SLIDER_SOUND = 8007
+MUSIC_SLIDER_SOUND = 8009
 # Original quiz scripts dispatch these through service 79 for correct/wrong
 # feedback (Football Star's shared classroom routine also covers finals).
 # They are fixed SHS base-bank IDs, not episode counters or text heuristics.

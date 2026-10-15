@@ -32,7 +32,7 @@ class MusicPlaybackTests(unittest.TestCase):
                 app = Application.__new__(Application)
                 app.selected_game, app.audio = game, True
                 app.library = Mock(read_asset=Mock(return_value=b'authored click'))
-                app.state = Mock(sound=False, music=True)
+                app.state = Mock(sound=False, music=True, sound_volume=100)
                 with patch('pygame.mixer.Sound') as sound:
                     app._click_sound()
                     sound.assert_not_called()

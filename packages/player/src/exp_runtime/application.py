@@ -29,6 +29,7 @@ from . import episode_thumbnails
 from .languages import TITLE_LANGUAGES
 from .launcher import APP_NAME
 from .games import GAMES
+from .ui_sound import UiSounds
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    default_library, group_episodes, remember_library)
 from .runtime import SaveError, Session
@@ -50,6 +51,7 @@ UPDATE_WAIT = 2.5
 class Application:
     shell = None            # the HD launch flow / main menu, when an HD bundle is imported
     menu_sound = None       # the main menu's music (a Sound, so a paused episode keeps its own stream)
+    ui_sounds = None        # the selected game's interface sounds (ui_sound.py), loaded on first use
     end_record = None
 
     def __init__(self, directory=None, *, audio=True, game_key=None, file_picker=None,
@@ -241,8 +243,7 @@ class Application:
         self.library = self.state = self.game = None
         self.saved = set()
         self.selected = None
-        if hasattr(self, 'click_sound'):
-            del self.click_sound
+        self.ui_sounds = None
 
     def switch_games(self):
         other = next((key for key in GAMES if key != self.selected_game
@@ -318,8 +319,7 @@ class Application:
         from .application_cod import CodShell
         self.shell = (CodShell(self) if CodShell.available(library) else HdShell(self) if HdShell.available(library)
                       else None)
-        if hasattr(self, 'click_sound'):
-            del self.click_sound
+        self.ui_sounds = None
         self.screen, self.history, self.selected = 'main', [], state.selected
         self.menu_age, self.intro = 0, True
         self.message = state.warning
@@ -629,7 +629,8 @@ class Application:
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             pressed = shell.pressed
             shell.pointer_up(self.picker_point(event.pos))
-            if pressed is not None and pressed[0] not in ('pause_slider', 'pause_scroll'):
+            # Switches and sliders do not click (`SHSWidgetMenu::buttonPressed` tags 10-12, `sliderChanged`).
+            if pressed is not None and pressed[0] not in ('pause_slider', 'pause_scroll', 'pause_toggle'):
                 self._click_sound()
         return True
 
@@ -675,14 +676,18 @@ class Application:
             logging.warning('%s', error)
 
     def _click_sound(self):
-        sound = GAMES[self.selected_game].CLICK_SOUND if self.selected_game else None
-        if self.audio and self.library and self.state.sound and sound is not None:
-            try:
-                if not hasattr(self, 'click_sound'):
-                    self.click_sound = pygame.mixer.Sound(file=BytesIO(self.library.read_asset(sound)))
-                self.click_sound.play()
-            except (ContentError, pygame.error) as error:
-                logging.debug('Menu sound unavailable: %s', error)
+        self.ui_sound('CLICK_SOUND')
+
+    def ui_sound(self, name, *, volume=None, stop_others=False, when_idle=False):
+        """Play the selected game's interface sound `name` (a profile attribute) from its base bank: at the Sound FX
+        volume and only with Sound on, unless a `volume` of its own is given (the Music slider's preview)."""
+        if not (self.audio and self.library and self.selected_game) or (volume is None and not self.state.sound):
+            return
+        if self.ui_sounds is None:
+            self.ui_sounds = UiSounds()
+        self.ui_sounds.play(self.library, getattr(GAMES[self.selected_game], name),
+                            self.state.sound_volume / 100 if volume is None else volume,
+                            stop_others=stop_others, when_idle=when_idle)
 
     def _sync_menu_music(self):
         if not self.audio:

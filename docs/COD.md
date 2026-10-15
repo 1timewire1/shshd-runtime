@@ -200,9 +200,12 @@ inspection of `SHSEngine::buttonPressed` (`000249d0`) and
 `SHSWidgetMenu::buttonPressed` (`0003fd60`). These pass `false, -1` to
 `SHSSoundManager::playSound` (`000431cc`). The shared application now plays
 that source from the CoD base library when Sound is enabled, independently of
-Music. Native `SHSUIMenu::handleMenuSelection` (`000395ac`) also uses 8005 for
-ordinary modes 1/3; scored-choice mode 2 selects distinct feedback. This menu
-binding does not establish those story-choice or relationship sound rules.
+Music. Native `SHSUIMenu::handleMenuSelection` (1.4.7 `0003cbc0`) also plays
+8005 when a story choice is picked (modes 1/3), and the runtime now plays it
+there too. Scored-choice mode 2 plays 8003 / 8004 instead. CoD's Options
+switch and sliders also sound 8005. See
+[MAIN_MENU.md, "Interface sounds"](MAIN_MENU.md#interface-sounds) for the full
+table.
 
 ## Services and current coverage
 

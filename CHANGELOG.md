@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **Interface sounds now match the originals**
+  ([1timewire1/shshd-runtime#1](https://github.com/1timewire1/shshd-runtime/issues/1)).
+  Picking a story choice clicks again, as do the pause menu's rows and back
+  button.
+  - Switching Sound on plays its own sound. Dragging a volume slider previews
+    it, as SHS HD and CoD 1.4.7 do.
+  - Clicks follow the Sound FX volume.
+  - Switches no longer click, in the main menu either.
+  - Every call to the native sound player in both games was checked; the table
+    is in docs/MAIN_MENU.md, "Interface sounds".
 - **Cause of Death's typed answers now capitalize their first letter.** On an
   iPhone the keyboard capitalizes the first letter, and CoD's puzzles expect it
   ("Ipconfig"). The desktop didn't, and CoD also used Android's rules, which

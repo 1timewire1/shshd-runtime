@@ -426,6 +426,51 @@ story sound service or alter the saved VM/audio state. Objective-C decompilation
 stops prematurely at some UIKit calls; these paths were followed in assembly
 and checked against Ghidra memory without changing its analysis.
 
+### Interface sounds
+
+The table lists every direct `SHSSoundManager::playSound` call in SHS HD
+(`000538c8`) and CoD 1.4.7 (`00046eb4`) that belongs to the interface. They
+were found by a Capstone scan of both binaries for calls to it, and each
+caller was read. The sounds come from the game's base bank (`ui_sound.py`).
+SHS HD's own bundle holds byte-identical copies of 8004, 8007, 8009, 8010 and
+8011.
+
+| Control | SHS HD | CoD 1.4.7 | Native path |
+| --- | --- | --- | --- |
+| Main menu button | 8010 | 8005 | `SHSEngine::buttonPressed` |
+| Pause button | 8011 | 8006 | `SHSEngine::buttonPressed`, pause branch |
+| Story choice picked (ordinary, mode 1; incremental, mode 3) | 8010 | 8005 | `SHSUIMenu::handleMenuSelection` `00046138` / `0003cbc0` |
+| Choice timing out | none | none | `SHSUIMenu::tick` `00046814` / `0003d298` calls `finishUI` directly |
+| Menu row (pause and Options rows, Resume, Main Menu) | 8010 | 8005 | `SHSWidgetMenu::itemSelected` `0004f028` / `000436e8` |
+| Menu button (back, tags 1-4) | 8010 | 8005 | `SHSWidgetMenu::buttonPressed` `0004f288` / `00043944` |
+| Switches (tags 10-12) | none | none | `buttonPressed` |
+| Sound switched on | 8004 | 8005 | `SHSEngine::setSoundEnabled(true, true)` `00022280` / `0001f4e4` |
+| Sound FX slider | 8007 | 8005 | `sliderChanged` `0004f1cc` / `00043888`, `getToggleSoundID` |
+| Music slider, while Music is on | 8009 | 8005 | `sliderChanged` |
+| Portrait swap / confirm | 8013 / 8010 | 8005 / 8005 | `SHSUIPortraitSelect::touchesEnded` (`PICKER_SOUNDS`) |
+
+How the sounds play:
+- **Volume.** A volume of -1 plays at the Sound FX volume and only with Sound
+  on, which covers every click.
+- **Music slider.** It passes its own value instead, so its sound plays even
+  with Sound off. A value of 0 plays nothing.
+- **Sound switch.** Its sound stops the other effects first.
+- **Slider previews** (`playFXVolumeFeedbackEffect` `0001c1e4` / `0001a8a8`)
+  play only while no effect is playing, so dragging never stacks them. Ours
+  counts only the interface's own effects, not the story's.
+- **Scored action menu** (mode 2, the quiz) plays its answer sounds instead
+  (`WORD_GAME_SOUNDS`).
+
+Not applied:
+- The Decision Tree zoom toggle (`-[SHSViewController toggleDTZ]`, 8011 and
+  8017). Ours zooms with the wheel and has no such button.
+- The store pages' clicks (`SHSMTXMenu`). Their stand-ins, the episode pickers,
+  click as rows.
+
+Rows and switches this player adds follow the same rule: a row clicks
+(Options categories, Data Management actions, Title Language), a switch does
+not.
+
 Rows fill only the 296-pixel interior; the three-pixel sides come from frame
 74. Stretching the row art across all 302 pixels covered those borders.
 `SHSMenuCell::setSelected:animated:` **0005d018**, palette setup **000a2f80**,
