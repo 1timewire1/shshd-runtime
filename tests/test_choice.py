@@ -12,6 +12,7 @@ from exp_runtime.choice import ChoiceLayout
 from exp_runtime.content import ContentLibrary
 from exp_runtime.fonts import BitmapFont, Glyph, layout_text
 from exp_runtime.runtime import Session
+from exp_runtime.vm import VMError
 from exp_runtime.ui_assets import Layout, LayoutBank, LayoutNode
 from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
@@ -48,31 +49,56 @@ def authored_layout():
 
 class ChoiceTimingTests(unittest.TestCase):
     def test_both_choice_forms_expire_after_zero_and_keep_their_result_mapping(self):
-        for service, result in ((1, 1), (2, 101)):
-            with self.subTest(service=service):
-                r = timed_resources(service); s = Session(r); s.advance()
-                s.engine.result_cells[0] = 42
-                held = s.vm.snapshot()
-                s.tick(2000)
-                self.assertEqual(s.remaining_ms, 0)
-                self.assertEqual(s.vm.snapshot(), held)
-                self.assertEqual(s.engine.result_cells[0], 42)
-                saved = json.loads(json.dumps(s.snapshot()))
-                restored = Session.from_snapshot(r, saved)
-                self.assertEqual(restored.tick(0).name, 'choice')
-                self.assertEqual(restored.tick(1).request.args, (result,))
-                self.assertEqual(restored.engine.result_cells[0], result)
-                # A click at exactly zero still wins before the next active tick.
-                self.assertEqual(s.answer(2).request.args, (2 if service == 1 else 102,))
+        for game in ('shs', 'cod'):
+            for service, result in ((1, 1), (2, 101)):
+                with self.subTest(game=game, service=service):
+                    r = timed_resources(service); r.library.game_id = game
+                    s = Session(r); s.advance()
+                    s.engine.result_cells[0] = 42
+                    held = s.vm.snapshot()
+                    s.tick(2000)
+                    self.assertEqual(s.remaining_ms, 0)
+                    self.assertEqual(s.vm.snapshot(), held)
+                    self.assertEqual(s.engine.result_cells[0], 42)
+                    saved = json.loads(json.dumps(s.snapshot()))
+                    restored = Session.from_snapshot(r, saved)
+                    self.assertEqual(restored.tick(0).name, 'choice')
+                    self.assertEqual(restored.tick(1).request.args, (result,))
+                    self.assertEqual(restored.engine.result_cells[0], result)
+                    # A click at exactly zero still wins before the next active tick.
+                    self.assertEqual(s.answer(2).request.args, (2 if service == 1 else 102,))
 
-    def test_incremental_timeout_index_outside_the_table_resumes_with_the_raw_value(self):
-        # Cause of Death scripts pass -1 as the default of an incremental timed
-        # menu and branch on that value as the "too slow" outcome.
-        for default in (-1, 3):
+    def test_cod_observed_timeout_sentinels_survive_save_and_resume_once(self):
+        # Explicit compatibility policy; the native out-of-bounds read has no
+        # defined callback. In-range indices still use the mapped values above.
+        for default in (-1, 1000):
             with self.subTest(default=default):
-                s = Session(timed_resources(2, default=default)); s.advance()
-                self.assertEqual(s.tick(2001).request.args, (default,))
-                self.assertEqual(s.engine.result_cells[0], default)
+                r = timed_resources(2, default=default); r.library.game_id = 'cod'
+                s = Session(r); s.advance(); held = s.vm.snapshot()
+                s.tick(2000)
+                self.assertEqual(s.vm.snapshot(), held)
+                restored = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
+                self.assertEqual(restored.tick(0).name, 'choice')
+                self.assertEqual(restored.tick(1).request.args, (default,))
+                self.assertEqual(restored.engine.result_cells[0], default)
+                after = restored.vm.snapshot()
+                restored.tick(100)
+                self.assertEqual(restored.vm.snapshot(), after)
+
+    def test_other_invalid_timeouts_keep_the_pending_call_in_both_games(self):
+        for game in ('shs', 'cod'):
+            defaults = (-2, 3, 32767) if game == 'cod' else (-2, -1, 3, 1000, 32767)
+            for default in defaults:
+                with self.subTest(game=game, default=default):
+                    r = timed_resources(2, default=default); r.library.game_id = game
+                    s = Session(r); action = s.advance()
+                    s.engine.result_cells[0] = 42
+                    held = s.vm.snapshot()
+                    with self.assertRaisesRegex(VMError, 'timeout index is out of range'):
+                        s.tick(2001)
+                    self.assertIs(s.pending, action)
+                    self.assertEqual(s.vm.snapshot(), held)
+                    self.assertEqual(s.engine.result_cells[0], 42)
 
     def test_nonpositive_durations_have_no_timer_and_do_not_expire(self):
         for service in (1, 2):

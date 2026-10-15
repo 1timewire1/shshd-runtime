@@ -457,7 +457,11 @@ update, matching the native comparison. At exactly zero the frame remains
 pending and can still be selected or saved; a zero-length tick does not expire it. An incremental
 choice's timeout selection passes through the same mapping as a clicked option.
 An invalid mapped timeout is an explicit runtime error, rather than a native
-out-of-bounds read. `portrait_mode` is not an expression: `FUN_000ae5d4` passes
+out-of-bounds read, except for CoD's documented `-1` and `1000` compatibility
+sentinels. Only those observed out-of-range defaults pass through unchanged;
+this is not a recovered native callback contract. See
+[CoD compatibility adaptations](COD.md#explicit-compatibility-adaptations).
+`portrait_mode` is not an expression: `FUN_000ae5d4` passes
 expression zero to `FUN_0009e810`/`FUN_0009e5d8`, with the mode separately.
 The art loader flips mode 2 except for theme 3; character property 651 selects
 the choice palette. The choice renderer does not reuse the previous dialogue's

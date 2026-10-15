@@ -1,15 +1,11 @@
-"""Cause of Death content and host-service profile (iOS 1.3.4 reference).
+"""Cause of Death asset layouts, normalized to the iOS 1.3.4 reference.
 
-The free edition (com.ea.causeofdeathfree.*, inspected at 1.4.7) carries the
-same script-visible banks (Volume One at 12, backgrounds, portraits, audio,
-relationship art) but inserts a second copy of the Volume One EXP at 13, so
-every host UI resource from the string bank onward sits one ID higher than in
-the 1.3.4 paid build: strings 14, layouts 15, image pack 17, box skins
-205/221/237/253, portrait mask 269, fonts 292-298. ``translate_members`` maps
-that bank back onto the reference numbering so the rest of the engine is
-unchanged; script-visible IDs are never translated.
+Free packages share a duplicate Volume One at 13 and English strings at 14.
+The compact layout shifts later UI members by one; the reported multilingual
+layout inserts four more string banks and shifts them by five. Bundle IDs do
+not distinguish these layouts. See docs/COD.md for evidence and limits.
 """
-import re
+from ..exp import ContentError
 from .audio import music_cue as MUSIC_CUE
 from .content import BUILTIN, extract_builtin
 from .services import dispatch as DISPATCH
@@ -23,38 +19,19 @@ CATALOG_FILENAME = 'cod_options.sav'
 # Native loadOptions 00019098 / saveOptions 000195b4: five flag bytes and
 # two s32 values precede the current entry; EOF follows the rename table.
 CATALOG_LAYOUTS = {17: ((33, 0),)}
-PROFILES = {'cod-ios-assets-v1': 'ipa', 'cod-ios-free-assets-v1': 'ipa'}
+PAID_PROFILE = 'cod-ios-assets-v1'
 FREE_PROFILE = 'cod-ios-free-assets-v1'
-FREE_BUNDLE = re.compile(r'com\.ea\.causeofdeathfree(?:\.[A-Za-z0-9-]+)*', re.IGNORECASE)
-# Reference (1.3.4) host UI IDs that the free edition stores one slot higher.
-SHIFTED_UI = range(13, 299)
+LOCALIZED_FREE_PROFILE = 'cod-ios-free-localized-assets-v1'
+UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
+PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
+# Reference UI members. Character/background/audio banks retain their IDs.
+SHIFTED_UI = range(14, 298)
 
-
-def profile_for(identifier):
-    return FREE_PROFILE if FREE_BUNDLE.fullmatch(identifier or '') else 'cod-ios-assets-v1'
-
-
-def base_resource(profile, resource):
-    """The package member number holding reference resource ``resource``."""
-    if profile == FREE_PROFILE and resource in SHIFTED_UI:
-        return resource + 1
-    return resource
-
-
-def translate_members(profile, members):
-    """Re-key a package's numeric members by reference resource ID."""
-    if profile != FREE_PROFILE:
-        return members
-    translated = {}
-    for number, member in members.items():
-        if number == 13:
-            continue                      # duplicate Volume One EXP; 12 is canonical
-        if number - 1 in SHIFTED_UI:
-            translated[number - 1] = member
-        else:
-            translated[number] = member
-    return translated
 BUNDLE_PATTERN = r'com\.ea\.causeofdeath(?:free)?(?:\.[A-Za-z0-9-]+)*'
+# Explicit compatibility exceptions for observed out-of-range script defaults.
+# Native setReturnValue reads outside the mapping; it does not define a result.
+# Preserve these sentinels instead of guessing heap contents. See docs/COD.md.
+CHOICE_TIMEOUT_FALLBACKS = frozenset((-1, 1000))
 NAME_FONT = ('VerdanaBoldItalic', 291)
 # SHSEngine::initFonts 000234da..000237ee; normal/gray/default dialogue
 # uses black body text and dark-red names. Theme 2 retains its rose color.
@@ -75,3 +52,49 @@ CLICK_SOUND = 8005
 PAUSE_SOUND = 8006
 # SHS answer-feedback resource IDs do not establish semantics for CoD assets.
 CHOICE_FEEDBACK_SOUNDS = {}
+
+
+def profile_for(read):
+    """Select the one layout whose complete required asset bank validates.
+
+    Import and reopen use payload validation rather than bundle suffixes.
+    Keep the compact-free profile ID readable for existing libraries.
+    """
+    from .assets import validate_assets
+
+    matches, failures = [], []
+    for profile in PROFILES:
+        try:
+            validate_assets(lambda resource: read(base_resource(profile, resource)))
+        except ContentError as error:
+            failures.append(f'{profile}: {error}')
+        else:
+            matches.append(profile)
+    if len(matches) > 1:
+        raise ContentError('Ambiguous CoD asset layout: multiple resource banks validate')
+    if not matches:
+        raise ContentError('Unsupported CoD asset layout; ' + '; '.join(failures))
+    return matches[0]
+
+
+def base_resource(profile, resource):
+    """The package member number holding reference resource ``resource``."""
+    shift = UI_SHIFTS[profile]
+    if shift and resource == 13:
+        return 14  # English precedes any other language banks.
+    if resource in SHIFTED_UI:
+        return resource + shift
+    return resource
+
+
+def translate_members(profile, members):
+    """Re-key a package's numeric members by reference resource ID."""
+    if profile == PAID_PROFILE:
+        return members
+    aliases = {base_resource(profile, resource): resource for resource in (13, *SHIFTED_UI)}
+    omitted = {13, *range(15, 19)} if profile == LOCALIZED_FREE_PROFILE else {13}
+    translated = {}
+    for number, member in members.items():
+        if number not in omitted:
+            translated[aliases.get(number, number)] = member
+    return translated

@@ -104,11 +104,10 @@ class BitmapFont:
 
     def glyph(self, character: str) -> Glyph:
         code = ord(character)
-        if character in ('\t', '\x19') and code not in self.glyphs:
-            # CoD's authoring tool stored U+2009 THIN SPACE and U+2019 RIGHT
-            # SINGLE QUOTATION MARK truncated to one byte: 0x09 in seven packs
-            # (Volumes 2, 7, 10, 11, 12, 14, SS05) and 0x19 in three (Volumes
-            # 6, 7, 8: "I'll", "You're"). The bitmap fonts define neither code.
+        if character in ('\t', '\x18', '\x19') and code not in self.glyphs:
+            # SHS/CoD dialogue contains these control bytes in positions
+            # consistent with truncated Unicode spaces/quotes. Substitution is
+            # a readability adaptation, not verified native glyph behavior.
             character = ' ' if character == '\t' else "'"
         try:
             return self.glyphs[ord(character)]

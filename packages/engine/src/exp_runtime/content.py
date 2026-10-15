@@ -112,19 +112,18 @@ def _inspect_ipa(package: ZipFile):
     identifier = info.get('CFBundleIdentifier')
     game = _ipa_game(identifier)
     if game == 'cod':
-        from .cod.assets import validate_assets
-        from .cod.profile import base_resource, profile_for
-        profile = profile_for(identifier)
-        validate_assets(lambda resource: _zip_read(
-            package, root + 'res_generated/' + str(base_resource(profile, resource))))
+        from .cod.profile import profile_for
+        profile = profile_for(lambda resource: _zip_read(
+            package, root + 'res_generated/' + str(resource)))
     else:
         from .shs.ios_assets import validate_assets
         validate_assets(lambda resource: _zip_read(package, root + 'res_generated/' + str(resource)))
+        profile = IOS_PROFILE
     # Version fields are informative. Source identity is the complete
     # archive hash, including repacks or differently encrypted executables.
     details = {key: info[key] for key in ('CFBundleIdentifier', 'CFBundleShortVersionString', 'CFBundleVersion')
                if isinstance(info.get(key), str)}
-    return root, details
+    return root, details, profile
 
 
 @dataclass(frozen=True)
@@ -355,12 +354,13 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, *,
         try:
             with ZipFile(final_apk) as apk:
                 if kind == 'ipa':
-                    root, app_info = _inspect_ipa(apk)
+                    root, app_info, profile = _inspect_ipa(apk)
                     source_game = _ipa_game(app_info['CFBundleIdentifier'])
                     assets = root + 'res_generated/'
                 else:
                     native_hash = _inspect_apk(apk)
                     source_game = 'shs'
+                    profile = PROFILE
                     root = assets = 'assets/Assets/'
                 if game is not None and source_game != game:
                     raise ContentError(f'This package belongs to {GAMES[source_game].TITLE}; '
@@ -389,11 +389,6 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, *,
                     (staged / records[sha]['file']).write_bytes(data)
         if not records:
             raise ContentError('No episodes found; supply episode EXP files')
-        if source_game == 'cod':
-            from .cod.profile import profile_for
-            profile = profile_for(app_info['CFBundleIdentifier'])
-        else:
-            profile = IOS_PROFILE if kind == 'ipa' else PROFILE
         manifest = dict(format='exp-content-library', version=1, game=source_game, profile=profile,
                         episodes=list(records.values()))
         manifest[kind] = dict(file=f'content/{apk_hash}.{kind}', sha256=apk_hash,
@@ -463,13 +458,11 @@ class ContentLibrary:
             # Retain the existing APK API for clients and old test fixtures.
             self.apk = self.package
             if self.kind == 'ipa':
-                self.app_root, self.app_info = _inspect_ipa(self.package)
+                self.app_root, self.app_info, profile = _inspect_ipa(self.package)
                 if _ipa_game(self.app_info['CFBundleIdentifier']) != self.game_id:
                     raise ContentError('IPA game does not match the library profile')
-                if self.game_id == 'cod':
-                    from .cod.profile import profile_for
-                    if profile_for(self.app_info['CFBundleIdentifier']) != self.profile:
-                        raise ContentError('IPA edition does not match the library profile')
+                if profile != self.profile:
+                    raise ContentError('IPA asset layout does not match the library profile')
                 self.asset_root = self.app_root + 'res_generated/'
             else:
                 native_hash = _inspect_apk(self.package)

@@ -21,8 +21,9 @@ def input_fonts(resources):
     return NAME_FONT, CURSOR_FONT
 
 
-def _alphanumeric(text: str) -> bool:
-    return all('a' <= c <= 'z' or 'A' <= c <= 'Z' or '0' <= c <= '9' for c in text)
+def _alphanumeric(text: str, *, allow_space: bool = False) -> bool:
+    return all('a' <= c <= 'z' or 'A' <= c <= 'Z' or '0' <= c <= '9'
+               or (allow_space and c == ' ') for c in text)
 
 
 def _has_room(current: str, font: BitmapFont | None, cursor_width: float) -> bool:
@@ -32,27 +33,36 @@ def _has_room(current: str, font: BitmapFont | None, cursor_width: float) -> boo
 
 
 def accept_name_character(current: str, char: str, *, font: BitmapFont | None = None,
-                          cursor_width: float = 0) -> tuple[str, str | None]:
-    if (len(char) != 1 or not _alphanumeric(char) or len(current) >= MAX_NAME_LENGTH
-            or not _alphanumeric(current) or not _has_room(current, font, cursor_width)):
+                          cursor_width: float = 0, allow_space: bool = False,
+                          capitalize_first: bool = False) -> tuple[str, str | None]:
+    if (len(char) != 1 or not _alphanumeric(char, allow_space=allow_space)
+            or len(current) >= MAX_NAME_LENGTH or not _alphanumeric(current, allow_space=allow_space)
+            or not _has_room(current, font, cursor_width)):
         return current, NAME_ENTRY_ERROR
-    if current and 'A' <= char <= 'Z':
+    if capitalize_first:
+        # CoD 0003b872..0003b89e capitalizes an initial lowercase character;
+        # subsequent characters retain their input case.
+        if not current and 'a' <= char <= 'z':
+            char = char.upper()
+    elif current and 'A' <= char <= 'Z':
         char = char.lower()
     return current + char, None
 
 
-def validate_name(value: str, *, font: BitmapFont | None = None, cursor_width: float = 0, allow_space: bool = False):
+def validate_name(value: str, *, font: BitmapFont | None = None, cursor_width: float = 0,
+                  allow_space: bool = False):
     """Validate a confirmed value without recasing script defaults or callers.
 
     A final character may cross the width threshold: native checks the prefix
     before accepting it. Empty Return hides the keyboard; it never resumes.
     """
-    # CoD guess prompts expect answers with spaces ('Wheel chair', 'Denture
-    # cream', 'Christian Rose'); its scripts store no space-free spelling.
-    checked = value.replace(' ', '') if allow_space and isinstance(value, str) else value
-    if not isinstance(value, str) or len(value) > MAX_NAME_LENGTH or not _alphanumeric(checked):
+    # CoD spaces are an owner-requested convenience. The native filter rejects
+    # them; inspected puzzles also have space-free solutions. Do not trim or
+    # recase confirmed values before the script's exact string comparisons.
+    if (not isinstance(value, str) or len(value) > MAX_NAME_LENGTH
+            or not _alphanumeric(value, allow_space=allow_space)):
         raise ValueError(NAME_ENTRY_ERROR)
-    if not checked:
+    if not value.strip(' '):
         raise ValueError('Enter a name before continuing.')
     if not _has_room(value[:-1], font, cursor_width):
         raise ValueError(NAME_ENTRY_ERROR)

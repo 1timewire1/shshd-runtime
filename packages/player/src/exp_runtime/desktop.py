@@ -673,7 +673,9 @@ class Desktop:
             if not self.input_error:
                 metrics = self.session.name_input_metrics()
                 for char in event.text:
-                    draft, error = accept_name_character(action.details['draft'], char, **metrics)
+                    draft, error = accept_name_character(action.details['draft'], char,
+                                                         capitalize_first=self.session.engine.game_key == 'cod',
+                                                         **metrics)
                     action.details['draft'] = draft
                     if error:
                         self.input_error, self.input_keyboard = error, False

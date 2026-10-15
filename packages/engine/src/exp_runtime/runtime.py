@@ -132,12 +132,13 @@ class Session:
                                                     names=self.engine.speaker_names)
 
     def name_input_metrics(self):
-        """Use the selected game's glyph advances for both input paths."""
+        """Share glyph limits and the CoD space policy across every input path."""
+        policy = dict(allow_space=self.engine.game_key == 'cod')
         if not hasattr(self.resources, 'dialogue_layout'):
-            return dict(font=None, cursor_width=0)
+            return dict(font=None, cursor_width=0, **policy)
         layout = self.resources.dialogue_layout()
         name, cursor = input_fonts(self.resources)
-        return dict(font=layout.font(name), cursor_width=layout.font(cursor).glyph('|').advance)
+        return dict(font=layout.font(name), cursor_width=layout.font(cursor).glyph('|').advance, **policy)
 
     def _prepare_dialogue(self, *, new_name=False):
         details = self.pending.details
@@ -249,7 +250,7 @@ class Session:
             self._game_sound(game, before)
             return action
         elif action.name == 'text_input':
-            validate_name(value, allow_space=self.engine.game_key == 'cod', **self.name_input_metrics())
+            validate_name(value, **self.name_input_metrics())
             self.engine.dynamic_strings[0] = self.engine.last_input = value
             self.vm.resume(0x7ff5)  # FUN_000d3f5c
             self.pending = None
@@ -406,12 +407,13 @@ class Session:
                 details = self.pending.details
                 selected = details['timeout_result']
                 if self.pending.request.yield_id == 4:
-                    # CoD scripts routinely pass -1 as the default index of an
-                    # incremental timed menu and branch on that raw value (a
-                    # "too slow" outcome). Pass an out-of-range index through
-                    # unchanged instead of refusing the timeout.
+                    # Only explicit game compatibility sentinels bypass the
+                    # table. Unknown indices keep their pending VM arguments.
+                    fallbacks = getattr(GAMES[self.engine.game_key], 'CHOICE_TIMEOUT_FALLBACKS', ())
                     if 0 <= selected < len(details['values']):
                         selected = details['values'][selected]
+                    elif selected not in fallbacks:
+                        raise VMError('Incremental choice timeout index is out of range')
                 self._complete_choice(selected)
                 return self.advance()
         return self.advance()
