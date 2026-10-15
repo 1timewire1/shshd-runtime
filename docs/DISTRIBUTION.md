@@ -49,9 +49,11 @@ four desktop builds and the Python packaging checks pass, the release job
 requires all four desktop downloads and their checksum files, verifies the
 checksums, and publishes the desktop archives and wheels with their checksums
 on **Releases**. In this fork the iOS job still runs on every push, but the
-release neither waits for nor includes it until the fork's iOS build is
-verified (its `macos-26` runner can also queue for a long time); its IPA stays
-an Actions artifact. Ordinary pushes and pull requests
+release neither waits for nor includes it. The fork's iOS build does not work
+yet: the simulator app builds, then fails on launch because the HD screens
+import pygame, which the iOS app does not embed (see
+[IOS_APP.md](IOS_APP.md)). Its `macos-26` runner can also queue for a long
+time. Ordinary pushes and pull requests
 never create releases. Their jobs have read-only repository permissions; only
 the version-tag release job has `contents: write`, using GitHub's built-in
 token. No personal token or signing secrets are required.

@@ -40,11 +40,13 @@ for CI triggers, packaging and the first-launch requirements.
 
 The [iPhone/iPad app](docs/IOS_APP.md) shares the Python engine, menus and
 renderers with desktop, using native iOS drawing, audio and Files access.
-Releases do not include it yet: the iOS build of this fork has not been
-verified. When an Actions run's iOS job succeeds, its `ios-arm64-unsigned`
-artifact holds `shshd-runtime-<version>-ios-arm64-unsigned.ipa` and its
-checksum, to sign and install yourself. The Xcode project also supports
-running directly on your device.
+**The iOS app does not work in this fork yet.** This fork's SHS HD and Cause
+of Death screens draw with pygame directly, which the iOS app does not
+include. They still need porting to its native drawing layer, which also lacks
+several features they use. The iOS job builds the simulator app but fails on
+launch, so releases carry the desktop downloads only. See
+[the iOS status](docs/IOS_APP.md) for details; the port is planned after
+v1.0.0.
 
 ## Build your own app
 

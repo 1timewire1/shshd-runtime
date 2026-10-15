@@ -338,7 +338,16 @@ The first release of this fork. Earlier sections are upstream exp-runtime's hist
     id are the fork's own.
   - The release workflow names the fork's downloads and never publishes to
     PyPI. Releases carry the desktop downloads and wheels. The iOS job runs
-    but no longer gates or joins a release until its build is verified.
+    but no longer gates or joins a release.
+
+### Known issues
+
+- **The iOS app does not work in this fork.** The tests pass and the simulator
+  app builds, but it stops on launch with "No module named 'pygame'". The HD
+  and CoD screens import pygame directly, while the iOS app draws through
+  `exp_runtime.graphics` and embeds no pygame. Its backend also lacks several
+  features those screens use: file fonts, blend-mode masks, `PixelArray`, some
+  draw calls and `image.save`. Set aside after v1.0.0; see docs/IOS_APP.md.
   - `RELEASE.md` has v1.0.0 notes.
 - **Commands and documentation name the fork.**
   - The app is `shshd-runtime` and the file tools `shshd-tool`. Upstream's

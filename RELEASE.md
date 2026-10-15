@@ -28,9 +28,10 @@ No game files are included. You supply your own.
 
 - **Windows, macOS, Linux:** `shshd-runtime-<version>-<platform>` archives. Unzip
   and run SHSHD Runtime. Builds are unsigned (macOS: ad-hoc signed, not notarized).
-- **iOS:** not part of this release. The iOS build has not been verified for this
-  fork yet; development IPAs appear under the repository's Actions runs
-  (`ios-arm64-unsigned`) when that build succeeds.
+- **iOS:** not available. This fork's HD screens draw with pygame directly,
+  which the iOS app does not include, and they still need porting to its
+  native drawing layer. The iOS build fails on launch in CI; see
+  docs/IOS_APP.md. The port is planned after this release.
 
 Each download has a SHA-256 checksum beside it.
 

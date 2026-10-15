@@ -1,5 +1,31 @@
 # iOS app
 
+> **Status in SHSHD Runtime: not working yet, set aside after v1.0.0.** The iOS app below is upstream
+> exp-runtime's. This fork's SHS HD and Cause of Death screens have only ever run on desktop, and its iOS
+> build fails in our tested setup (GitHub Actions, `macos-26` runners; there is no local Mac). Releases
+> carry the desktop downloads only. What we hit:
+>
+> - **The simulator check stops with "No module named 'pygame'".** The iOS app deliberately embeds no
+>   pygame: drawing goes through `exp_runtime.graphics`, whose iOS backend (`platforms/drawing.py` and the
+>   Swift host) implements the subset of pygame upstream's screens use. The fork's 24 HD and CoD player
+>   modules (the HD UI, menus, episode grid and lists, pause menu, football and word game, side panels,
+>   vector text) import pygame directly. The tests and the simulator build pass; the app fails on launch
+>   (Actions run 38761529245, `ios-simulator-diagnostics`).
+> - **Switching those imports is not enough.** The HD code uses pygame features the iOS backend lacks:
+>   - TrueType fonts loaded from `.ttf` files (`vector_text`, the library's `fonts/` folder);
+>   - the `BLEND_RGBA_MULT` / `MIN` / `MAX` masks;
+>   - `PixelArray` (CoD's recoloured popup card);
+>   - `draw.ellipse`, `draw.lines`, `draw.aalines`;
+>   - `font.match_font`;
+>   - `image.save` (the episode screenshots).
+>
+>   Each needs a backend and Swift counterpart, checked in the simulator.
+> - **Slow feedback.** Each attempt is a push and a CI run, and the `macos-26` runner can queue for 10 minutes
+>   or more.
+>
+> The iOS job still runs on every push and fails at that step. It no longer gates or joins a release
+> (`docs/DISTRIBUTION.md`). Porting the HD screens to the iOS backend is planned after the first release.
+
 Introduced in **v0.4.0**. The v0.3.0 release supports importing
 original IPA assets on desktop; it does not include this iPhone/iPad app.
 
