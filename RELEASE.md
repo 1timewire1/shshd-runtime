@@ -1,6 +1,19 @@
-# SHSHD Runtime v1.0.0
+# SHSHD Runtime v1.0.1
 
-The first release of SHSHD Runtime, a fork of
+**This release fixes HD art for standard episodes.** In v1.0.0, libraries made
+by importing your files never got their HD twin store, so standard episodes
+showed the **SD** mark and drew their pictures at 2x instead of using the HD
+release's versions.
+
+v1.0.1 ships a small map of which pictures match. It holds fingerprints only,
+no game art. On first launch the app builds the store from your own HD
+episodes; this takes about a minute, during "Preparing episodes". If you
+imported with v1.0.0, just open the app: your library is updated once, with
+no re-import needed.
+
+---
+
+SHSHD Runtime is a fork of
 [exp-runtime](https://github.com/joshrmcdaniel/exp-runtime) that plays
 Surviving High School (including its iPad HD release) and Cause of Death with
 your own game files. It is a separate app: its own data folder, window and app

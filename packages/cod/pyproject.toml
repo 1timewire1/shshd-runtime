@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shshd-runtime-cod"
-version = "1.0.0"
+version = "1.0.1"
 description = "Cause of Death adapter for EXP Runtime"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["shshd-runtime-engine[fonts]==1.0.0"]
+dependencies = ["shshd-runtime-engine[fonts]==1.0.1"]
 
 [tool.setuptools]
 include-package-data = false

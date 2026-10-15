@@ -25,7 +25,7 @@ you need:
 For example:
 
 ```sh
-python -m pip install --find-links ./wheels 'shshd-runtime[engine,cod]==1.0.0'
+python -m pip install --find-links ./wheels 'shshd-runtime[engine,cod]==1.0.1'
 ```
 
 Pip uses standard wheel metadata; it does not need uv or workspace support.
@@ -41,7 +41,7 @@ The independently installable distributions are `shshd-runtime-formats`,
 `shshd-runtime-cod`. For a desktop player containing just CoD:
 
 ```sh
-python -m pip install --find-links ./wheels 'shshd-runtime-player[desktop]==1.0.0' 'shshd-runtime-cod==1.0.0'
+python -m pip install --find-links ./wheels 'shshd-runtime-player[desktop]==1.0.1' 'shshd-runtime-cod==1.0.1'
 ```
 
 The launcher lists installed game adapters. Calling an uninstalled game's

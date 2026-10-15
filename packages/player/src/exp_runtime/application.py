@@ -472,18 +472,39 @@ class Application:
             logging.warning('Could not save a screenshot: %s', error)
 
     def prepare_previews(self):
-        """First-time setup for the HD picker: index episodes and render the missing previews, off the UI thread."""
+        """First-time setup for the HD picker: index episodes, build the HD twin store from the shipped twin map when
+        it is due (this fork), and render the missing previews, off the UI thread."""
         if self.busy or not self.picker_available():
             return
-        if (not self.library.unindexed()
+        if (not self.library.unindexed() and not self.hd_art_due()
                 and not episode_thumbnails.missing_records(self.library, self.ensure_picker().model.records)):
             return
         self.job_kind = 'previews'
         self.progress_text = 'Starting...'
         self.job = self.executor.submit(self._prepare_previews, self.library)
 
+    def twin_map(self):
+        """The library's game's shipped HD twin map (SHS's), or None."""
+        loader = getattr(GAMES.get(self.library.game_id), 'twin_map', None) if self.library else None
+        return loader() if loader else None
+
+    def hd_art_due(self):
+        """Whether the library's twin store still has to be built (or rebuilt) from the shipped twin map: an SHS
+        library with HD episodes whose store did not come from this map version. A v1.0.0 library (no store) gets
+        it on its next open; no re-import is needed (the HD episodes it holds are the source)."""
+        twin_map = self.twin_map()
+        if twin_map is None or not any(r.get('variant') == 'hd' for r in self.library.episodes):
+            return False
+        return self.library.twin_store().source().get('map') != twin_map.VERSION
+
     def _prepare_previews(self, library):
         library.index_missing()
+        if self.hd_art_due():
+            from .hd_twins import build_from_map
+
+            def found(done, total):
+                self.progress_text = f'HD art: {done + 1} of {total} episodes'[:44]
+            build_from_map(library, self.twin_map(), found)
         model = PickerModel(library)
 
         def progress(done, total, title):

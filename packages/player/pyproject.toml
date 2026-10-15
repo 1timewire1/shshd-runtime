@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shshd-runtime-player"
-version = "1.0.0"
+version = "1.0.1"
 description = "Shared EXP Runtime player and native/desktop rendering"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["shshd-runtime-engine[fonts]==1.0.0"]
+dependencies = ["shshd-runtime-engine[fonts]==1.0.1"]
 
 [project.optional-dependencies]
 desktop = ["pygame-ce>=2.5.7,<3"]

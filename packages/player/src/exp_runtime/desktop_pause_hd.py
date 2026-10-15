@@ -73,7 +73,7 @@ SEPIA = (0.779, 0.166, 0.0, 102.1,
 # string bank's ~276~ token appears at all is the About page (checked against a real HD string bank), and only
 # this project's own override of it (`help_text_overrides.py`) is ever shown, so this reports shshd-runtime's
 # own release instead. The one line to edit on a release; nothing else about the About text needs to change.
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 # A text page's own body never carries a literal URL natively (EULA/Privacy/Terms are full menu rows, never
 # inline text); these only ever match inside override text (`help_text_overrides.py`), making it tappable: a bare
 # URL, or `[label](url)` shown as the label (this fork, 2026-10-15: the About page's project links). A page may have

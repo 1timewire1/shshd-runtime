@@ -155,3 +155,10 @@ working directory. Source and wheel archives were inspected for the intended
 package, required docs/tools/tests, and exclusion of original game files and
 legacy conversion code. These migration checks do not add Windows/Linux or
 full original-game visual-equivalence coverage.
+
+## HD twin map (this fork)
+
+`tools/export_hd_twin_map.py --library LIBRARY` regenerates
+`packages/shs/src/exp_runtime/shs/hd_twin_map.py` from a library's reviewed
+twin store (fingerprints, sizes and resource ids; no art). The app builds
+each player's store from it; see [RUNTIME.md](RUNTIME.md#hd-art-for-standard-episodes-this-fork).

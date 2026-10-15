@@ -259,7 +259,7 @@ wheels = [
 
 [[package]]
 name = "shshd-runtime"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "shshd-runtime-formats" },
@@ -331,7 +331,7 @@ dev = [
 
 [[package]]
 name = "shshd-runtime-cod"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/cod" }
 dependencies = [
     { name = "shshd-runtime-engine", extra = ["fonts"] },
@@ -342,7 +342,7 @@ requires-dist = [{ name = "shshd-runtime-engine", extras = ["fonts"], editable =
 
 [[package]]
 name = "shshd-runtime-engine"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/engine" }
 dependencies = [
     { name = "shshd-runtime-formats" },
@@ -362,7 +362,7 @@ provides-extras = ["fonts"]
 
 [[package]]
 name = "shshd-runtime-formats"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/formats" }
 
 [package.optional-dependencies]
@@ -376,7 +376,7 @@ provides-extras = ["images"]
 
 [[package]]
 name = "shshd-runtime-player"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/player" }
 dependencies = [
     { name = "shshd-runtime-engine", extra = ["fonts"] },
@@ -396,7 +396,7 @@ provides-extras = ["desktop"]
 
 [[package]]
 name = "shshd-runtime-shs"
-version = "1.0.0"
+version = "1.0.1"
 source = { editable = "packages/shs" }
 dependencies = [
     { name = "shshd-runtime-engine", extra = ["fonts"] },

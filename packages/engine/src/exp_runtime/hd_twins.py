@@ -28,6 +28,7 @@ from PIL import Image
 DIRECTORY = 'hd_twins'
 INDEX, PACK = 'index.json', 'pack.bin'
 COVERAGE = 'coverage.json'      # how much of a standard episode's own art has an HD twin (tools/build_hd_coverage.py)
+SOURCE = 'source.json'          # which shipped twin map last built the store (`build_from_map`)
 MODES = ('off', 'twins', 'fill')
 LOCAL_ART = 26000               # resource ids from here are the episode's own; below are the app's shared bank
 RATIO = (1.6, 2.6)              # an HD twin is about twice the standard picture in each direction (HD pads its sprite sheets)
@@ -220,6 +221,38 @@ class TwinStore:
                     continue
                 stream.write(hd)
                 index[key] = [offset, len(hd), list(image_size(standard)), list(image_size(hd))]
+                offset += len(hd)
+                added += 1
+        (self.directory / INDEX).write_text(json.dumps(index, separators=(',', ':')), encoding='utf-8')
+        self._index = index
+        return added
+
+    def source(self) -> dict:
+        """What last built the store from a shipped twin map (`build_from_map`): {'map': version}, or {}."""
+        try:
+            data = json.loads((self.directory / SOURCE).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def mark_source(self, version: str) -> None:
+        self.directory.mkdir(parents=True, exist_ok=True)
+        (self.directory / SOURCE).write_text(json.dumps({'map': version}), encoding='utf-8')
+
+    def add_pictures(self, pictures: dict) -> int:
+        """Add `pictures` ({standard fingerprint: (standard size, hd bytes)}) that the store does not hold yet: the
+        shipped twin map's form, which names the standard picture by fingerprint and size only. Returns how many."""
+        self.directory.mkdir(parents=True, exist_ok=True)
+        index = dict(self.index)
+        pack = self.directory / PACK
+        offset = pack.stat().st_size if pack.exists() else 0
+        added = 0
+        with pack.open('ab') as stream:
+            for key, (size, hd) in pictures.items():
+                if key in index:
+                    continue
+                stream.write(hd)
+                index[key] = [offset, len(hd), list(size), list(image_size(hd))]
                 offset += len(hd)
                 added += 1
         (self.directory / INDEX).write_text(json.dumps(index, separators=(',', ':')), encoding='utf-8')
@@ -508,3 +541,84 @@ def best_by_source_count(matches):
         _, best = max(variants.values(), key=lambda item: item[0])
         found[std_fp] = (best.std_bytes, best.hd_bytes)
     return found
+
+
+# ---------------------------------------------------------------------------------------------------- the shipped twin map
+
+def coverage_counts(library, resources, ids):
+    """(total, matched) for a standard episode's counted pictures `ids` (tools/build_hd_coverage.py chooses them): a
+    picture is matched when the HD app bundle replaces it by id (shared bank, ids below LOCAL_ART), when the twin store
+    holds it, or when it is already HD-sized in the standard file (Set_12's pool)."""
+    store = library.twin_store()
+    total = matched = 0
+    for resource_id in ids:
+        if resource_id < 0 or not resources.exists(resource_id):
+            continue
+        total += 1
+        if resource_id < LOCAL_ART and library.hd_asset(resource_id) is not None:
+            matched += 1
+            continue
+        data = resources.raw_asset(resource_id)
+        if store.twin(data) is not None or is_hd_size(image_size(data)):
+            matched += 1
+    return total, matched
+
+
+def build_from_map(library, twin_map, progress=None) -> bool:
+    """Build (or update) the library's twin store and coverage cache from a shipped twin map (this fork; SHS's is
+    `shs/hd_twin_map.py`, exported by tools/export_hd_twin_map.py from the owner's reviewed library).
+
+    The map names pictures by fingerprint only -- no art ships with the app. Each HD picture is found in the
+    player's own episodes, and copied into the store under its standard twin's fingerprint; a picture the player's
+    files cannot supply is left out, and coverage is counted from what was actually built, so a standard episode loses
+    its SD mark only when it really plays entirely in HD. Returns False when the store already came from this map.
+    `progress(done, total)` reports the episodes searched. Runs off the UI thread (the app's preview job)."""
+    store = library.twin_store()
+    if store.source().get('map') == twin_map.VERSION:
+        return False
+    wanted = {}                                         # hd fingerprint -> [standard fingerprint]
+    for standard, (hd, width, height) in twin_map.TWINS.items():
+        if standard not in store.index:
+            wanted.setdefault(hd, []).append((standard, (width, height)))
+    # HD episodes first: in the owner's library every HD picture the map names is in one.
+    records = sorted(library.episodes, key=lambda record: record.get('variant') != 'hd')
+    found = set()
+    for done, record in enumerate(records):
+        if progress is not None:
+            progress(done, len(records))
+        if len(found) == len(wanted):
+            break
+        try:
+            archive = library.open_episode(record['id']).archive
+        except Exception as error:                      # one unreadable episode must not stop the rest
+            logging.warning('HD art: skipped %s: %s', record.get('name'), error)
+            continue
+        pictures = {}
+        for resource_id in archive.entries:
+            try:
+                data = archive.read(resource_id)
+            except Exception:
+                continue
+            key = fingerprint(data)
+            if key in wanted and key not in found:
+                found.add(key)
+                for standard, size in wanted[key]:
+                    pictures[standard] = (size, data)
+        if pictures:
+            store.add_pictures(pictures)
+    store.coverage('')                                  # loads the cache: other episodes' entries are kept
+    coverage = dict(store._coverage or {})
+    ids_by_record = {record['id']: record for record in library.episodes}
+    for record_id, ids in twin_map.COVERAGE.items():
+        if record_id not in ids_by_record:
+            continue
+        try:
+            total, matched = coverage_counts(library, library.open_episode(record_id), ids)
+        except Exception as error:
+            logging.warning('HD art: no coverage for %s: %s', ids_by_record[record_id].get('name'), error)
+            continue
+        coverage[record_id] = {'total': total, 'matched': matched}
+    store.write_coverage(coverage)
+    store.mark_source(twin_map.VERSION)
+    logging.info('HD art: %d of %d HD pictures found; %d episodes measured', len(found), len(wanted), len(coverage))
+    return True

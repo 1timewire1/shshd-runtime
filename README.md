@@ -226,14 +226,14 @@ fork does not publish to PyPI. Install from a release's downloaded wheels:
 
 ```sh
 # EXP readers, bytecode decoders and the inspect/extract CLI
-python -m pip install --find-links ./wheels "shshd-runtime[tools]==1.0.0"
+python -m pip install --find-links ./wheels "shshd-runtime[tools]==1.0.1"
 
 # Headless engine with one or both games, for a custom player UI
-python -m pip install --find-links ./wheels "shshd-runtime[engine,shs]==1.0.0"
-python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.0.0"
+python -m pip install --find-links ./wheels "shshd-runtime[engine,shs]==1.0.1"
+python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.0.1"
 
 # Full desktop player with both games
-python -m pip install --find-links ./wheels "shshd-runtime[player]==1.0.0"
+python -m pip install --find-links ./wheels "shshd-runtime[player]==1.0.1"
 ```
 
 The bare `shshd-runtime` install supplies file tools; `[desktop]` is an alias

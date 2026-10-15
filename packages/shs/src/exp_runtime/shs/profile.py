@@ -12,6 +12,13 @@ KEY = 'shs'
 TITLE = 'Surviving High School'
 SOURCES = 'SHS Android 1.0.9 APK or SHS IPA'
 CATALOG_FILENAME = 'shs_options.sav'
+
+
+def twin_map():
+    """This fork's shipped HD twin map (`hd_twin_map.py`, fingerprints only), which `hd_twins.build_from_map` turns
+    into a library's twin store from the player's own HD episodes."""
+    from . import hd_twin_map
+    return hd_twin_map
 # Legacy and Android envelopes: (current-entry offset, trailing flag count).
 CATALOG_LAYOUTS = {version: ((32, version - 16), (36, version - 16)) for version in (16, 17, 18)}
 PROFILES = {'shs-android-1.0.9': 'apk', 'shs-ios-assets-v1': 'ipa'}

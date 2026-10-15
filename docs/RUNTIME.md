@@ -339,6 +339,48 @@ are a supported-input policy; the native reader is less defensive and, for
 example, ignores compression flag bits other than bit 0. Native grouped
 fallback and EXPD variants remain unsupported.
 
+### HD art for standard episodes (this fork)
+
+A standard (non-HD) SHS episode can draw HD pictures where another
+episode's HD release has the same picture: the library's **twin store**
+(`hd_twins/` in the library: `index.json` and `pack.bin`) maps a standard
+picture's fingerprint to its HD twin's bytes. `hd_art` in `player.json`
+(or `SHS_HD_ART`) picks the mode: `off`; `twins` (twinned pictures only);
+or `fill`, the default (twins, and every other standard picture drawn at 2x
+so the episode keeps HD's density). `hd_twins/coverage.json` records how much
+of each standard episode has a twin. An episode whose counted pictures are
+all HD loses the picker's **SD** mark.
+
+The store holds extracted art, so it is never shipped. It is built on the
+player's machine from **SHS's shipped twin map**
+(`packages/shs/src/exp_runtime/shs/hd_twin_map.py`), which contains no art:
+- each standard picture's fingerprint and size, with its HD twin's
+  fingerprint;
+- per standard episode, the resource ids its coverage counts.
+
+**The build** (`hd_twins.build_from_map`):
+- **When:** during the picker's first-time preparation ("HD art: n of m
+  episodes"), for any SHS library with HD episodes whose store did not come
+  from the shipped map's `VERSION`. A library imported by an earlier version
+  gets it on its next open; nothing is re-imported.
+- **How:** it searches the library's own episodes for each HD fingerprint
+  (HD episodes first), copies what it finds, and counts coverage from what
+  was actually built. A picture the player's files cannot supply stays
+  standard, and the episode keeps its SD mark.
+- **Time:** on the owner's 284-episode library it found all 1,795 twins in
+  about 45 seconds.
+
+**Making the map.** The map comes from a library that holds both the standard
+and HD copies of the stories:
+1. `tools/build_hd_twins.py` pairs them story by story.
+2. `tools/extend_hd_twins.py` adds season bundles, reused backgrounds and the
+   hand-confirmed pairs (`--confirmed`).
+3. `tools/build_hd_coverage.py` measures coverage.
+4. `tools/export_hd_twin_map.py --library LIBRARY` writes the map.
+
+Rerun the export after improving that library's store; the new `VERSION`
+makes every library rebuild once.
+
 ## Resource and execution boundaries
 
 | Layer | Responsibility |

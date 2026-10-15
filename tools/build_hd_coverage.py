@@ -14,38 +14,28 @@ import time
 from export_art_catalog import picture             # this folder's own catalogue tool
 from exp_runtime.content import ContentLibrary, is_bundled
 from exp_runtime.episode_index import HD, STANDARD, duplicates
-from exp_runtime.hd_twins import LOCAL_ART, collect_art, image_size, is_hd_size
+from exp_runtime.hd_twins import collect_art, coverage_counts
 
 
-def episode_coverage(library, record):
-    """(total, matched) pictures the episode registers while played through: matched when the HD app bundle replaces a
-    shared-bank picture (ids below 26000) by id, or when the twin store holds the picture.
-
-    A portrait's expression slots past the first count only when they hold a portrait: `SHSEntityTable::setPortrait`
-    fills a missing expression with whatever resource follows the character's art in the file (2_8's Zach: three
-    backgrounds), which the script never shows (tools/export_art_catalog.py, `portrait_slot`)."""
-    resources = library.open_episode(record['id'])
+def coverage_ids(resources):
+    """The pictures a standard episode registers while played through (one deterministic `collect_art` walk): its
+    backgrounds, and each portrait's expression slots. A slot past the first counts only when it holds a portrait:
+    `SHSEntityTable::setPortrait` fills a missing expression with whatever resource follows the character's art in the
+    file (2_8's Zach: three backgrounds), which the script never shows (tools/export_art_catalog.py, `portrait_slot`).
+    tools/export_hd_twin_map.py ships these per episode, so the app counts coverage without walking."""
     variants, backgrounds, _ = collect_art(resources)
     ids = set(backgrounds)
     for portraits in variants.values():
         for slot, resource_id in enumerate(portraits):
             if slot == 0 or resource_id != portraits[0] and masked(resources, resource_id):
                 ids.add(resource_id)
-    store = library.twin_store()
-    total = matched = 0
-    for resource_id in ids:
-        if resource_id < 0 or not resources.exists(resource_id):
-            continue
-        total += 1
-        # A shared-bank picture is HD when the HD app bundle replaces it by id, else (like the episode's own art) when
-        # the twin store has it: `EpisodeResources.read_asset` puts a standard episode's bank pictures through the store.
-        if resource_id < LOCAL_ART and library.hd_asset(resource_id) is not None:
-            matched += 1
-        elif store.twin(resources.raw_asset(resource_id)) is not None:
-            matched += 1
-        elif is_hd_size(image_size(resources.raw_asset(resource_id))):
-            matched += 1                    # already HD in the standard file (Set_12's pool)
-    return total, matched
+    return sorted(ids)
+
+
+def episode_coverage(library, record):
+    """(total, matched) pictures the episode registers while played through (`hd_twins.coverage_counts`)."""
+    resources = library.open_episode(record['id'])
+    return coverage_counts(library, resources, coverage_ids(resources))
 
 
 def masked(resources, resource_id):

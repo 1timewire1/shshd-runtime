@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.1 (shshd-runtime)
+
+### Fixed
+
+- **HD art for standard episodes now works in imported libraries.** In 1.0.0
+  only a library prepared by the developer's tools had an HD twin store, so
+  every imported library showed **SD** on episodes that play fully in HD and
+  drew their pictures at 2x instead of HD.
+  - The app now ships SHS's twin map. It holds fingerprints only, no art.
+  - From it, the app builds the store from the player's own HD episodes
+    during first-time preparation, in about 45 seconds. A 1.0.0 library gets
+    it on its next open, with no re-import.
+  - Built from a zip import, it matches the reference library: 1,795 twins
+    and the same SD marks.
+- Two tests that passed only on Windows: one depended on folder-listing order,
+  the other gave a test app no screenshot cache.
+
 ## 1.0.0 (shshd-runtime)
 
 The first release of this fork. Earlier sections are upstream exp-runtime's history.
