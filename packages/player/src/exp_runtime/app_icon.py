@@ -8,5 +8,6 @@ from . import graphics as pygame
 
 @lru_cache(maxsize=8)
 def icon_surface(size=128):
-    data = files('exp_runtime').joinpath('assets/kiwi.svg').read_bytes()
+    # Python 3.10 namespace readers resolve only one child per joinpath call.
+    data = files('exp_runtime').joinpath('assets').joinpath('kiwi.svg').read_bytes()
     return pygame.image.load_sized_svg(BytesIO(data), (size, size))

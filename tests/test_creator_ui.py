@@ -87,16 +87,19 @@ class CreatorUITests(unittest.TestCase):
 
     def test_failed_preview_removes_temporary_export_and_reports_error(self):
         from PySide6.QtTest import QTest
+        from exp_runtime.creator import export_project
         from exp_runtime.creator.ui import Editor
         editor = Editor(discover_library=False)
         try:
             with tempfile.TemporaryDirectory() as temporary:
                 editor.project.library = temporary
                 missing = str(Path(temporary) / 'missing-python')
-                with patch('exp_runtime.creator.ui.sys.executable', missing), patch.object(editor, 'error') as error:
+                with patch('exp_runtime.creator.ui.sys.executable', missing), patch.object(editor, 'error') as error, \
+                        patch('exp_runtime.creator.ui.export_project', wraps=export_project) as export:
                     editor.preview()
-                    staging = Path(editor.preview_directory.name)
-                    self.assertTrue((staging / 'preview.exp').exists())
+                    export.assert_called_once()
+                    # FailedToStart may clean up synchronously on Windows.
+                    staging = Path(export.call_args.args[1]).parent
                     for _ in range(100):
                         if editor.preview_process is None:
                             break

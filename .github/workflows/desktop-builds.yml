@@ -49,6 +49,13 @@ jobs:
           enable-cache: true
           cache-suffix: python-${{ matrix.python }}
 
+      - name: Install Linux Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0
+
       - name: Install locked build dependencies
         run: uv sync --locked --extra build --extra creator --extra creator-mcp
 
@@ -123,6 +130,14 @@ jobs:
           python-version: '3.14'
           enable-cache: true
           cache-suffix: ${{ matrix.target }}
+
+      - name: Install Linux Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-render-util0
 
       - name: Install locked dependencies
         run: uv sync --locked --extra build --extra creator --extra creator-mcp
