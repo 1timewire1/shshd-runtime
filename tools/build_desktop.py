@@ -14,9 +14,9 @@ import sys
 import tempfile
 
 if __package__:
-    from .components import COMPONENTS, check_versions, source_roots
+    from .components import RUNTIME_COMPONENTS, check_versions, source_roots
 else:
-    from components import COMPONENTS, check_versions, source_roots
+    from components import RUNTIME_COMPONENTS, check_versions, source_roots
 
 
 def build_icon(svg, destination):
@@ -52,9 +52,9 @@ def main():
                 '--add-data', str(logo) + ':exp_runtime/assets',
                 '--copy-metadata', 'exp-runtime',
                 '--exclude-module', 'tkinter']
-        for source in source_roots(root):
+        for source in source_roots(root, RUNTIME_COMPONENTS):
             args += ['--paths', str(source)]
-        for component in COMPONENTS:
+        for component in RUNTIME_COMPONENTS:
             args += ['--copy-metadata', f'exp-runtime-{component}']
         # Profiles are discovered dynamically in minimal Python installs.
         # Standalone apps deliberately include both available games.

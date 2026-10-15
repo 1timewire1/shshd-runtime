@@ -2,6 +2,19 @@
 
 ## Added
 
+- Add an optional desktop episode creator with a visual story graph, dialogue,
+  timed choices, variables and conditional branches, undo/redo, editable
+  projects and native EXP export for EXP Runtime and the original games.
+- Export a separate replacement for an existing original-game episode slot,
+  preserving its catalog IDs. Validate compiled scripts against the original
+  SHS Android, SHS iOS and CoD iOS KiWi loaders/interpreters; full original-app
+  playback remains unverified.
+- Browse images from imported SHS/CoD libraries or embed custom PNG/JPEG
+  images. Keep base-game references separate from portable episode assets.
+  Preview with the shared player and temporary saves.
+- Add the `exp-runtime-creator` component and `[creator]` extra, plus a
+  headless authoring API and deterministic native EXP/metadata writers.
+  Keep the editor and its optional Qt dependency out of player/iOS bundles.
 - Support compact and multilingual free CoD IPA asset layouts, detected by
   validating their resources. Existing compact-free libraries remain readable.
 
@@ -19,19 +32,6 @@
 - Preserve CoD text-entry case after capitalizing an initial lowercase letter,
   matching the inspected native input path.
 
-# v0.5.0
-
-## Added
-
-- Split EXP Runtime into formats, engine, player, SHS and CoD component wheels
-  within one project and shared `exp_runtime` namespace. Pip extras select
-  only the required source and dependencies; the player/desktop extras
-  include both games by default. Existing source development commands and
-  import paths remain supported.
-
-## Changed
-
-- A bare Python package install now provides file tools. Use `[engine,shs]`
-  or `[engine,cod]` for headless playback and `[player]` or `[desktop]` for
-  the app. Game discovery, minigame state restoration and app builders support
-  the component layout without changing library or save formats.
+Run from source with `uv run --locked --extra creator exp-creator`.
+See [the creator guide](docs/CREATOR.md) for original-app installation and
+verification limits. No game assets are included.

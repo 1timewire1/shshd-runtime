@@ -242,23 +242,25 @@ explain why the dependency is needed. Do not include generated build output.
 The repository owner handles merges, version tags and publication. Before a
 release, update the root [RELEASE.md](RELEASE.md), which supplies the GitHub
 release body, and move the relevant changelog entries into a versioned section
-with the release date. Keep the root and all five component `pyproject.toml`
+with the release date. Keep the root and all six component `pyproject.toml`
 versions and exact component dependency pins, `uv.lock`, both Xcode
 `MARKETING_VERSION` settings in `ios/EXPRuntime.xcodeproj/project.pbxproj`, and
 the intended release tag consistent. The macOS bundle and command-line iOS
 build read the package version; direct Xcode builds use the project settings.
-The workflow publishes app downloads to GitHub Releases and all six Python
+The workflow publishes app downloads to GitHub Releases and all seven Python
 distributions to PyPI after all four desktop builds, iOS verification and
 isolated Python package checks pass for a pushed version tag. The tag must
 equal `v` plus the common package version. Ordinary pushes, pull requests
 and manual runs produce development artifacts without publishing.
 
 Build and audit the Python distributions with `tools/build_packages.py`, then
-run `tools/test_packages.py` through the locked build environment. These check
-real pip installs of tools, engine, single-game and full-player combinations.
-All six distributions are one release; the scripts never publish them.
+run `tools/test_packages.py` through the locked build environment with
+`--extra creator`. These check real pip installs of tools, engine, single-game,
+full-player and headless/GUI creator combinations.
+All seven distributions are one release; the scripts never publish them.
 See [SDK.md](docs/SDK.md) for local wheel installation and component boundaries.
-Before the first PyPI release, register all six projects with the
+Before the next PyPI release, register the new `exp-runtime-creator` project
+alongside the existing six projects with the
 [`desktop-builds.yml` Trusted Publisher and `pypi` environment](docs/DISTRIBUTION.md#pypi-publishing).
 The publish job uses short-lived OIDC credentials, not a stored API token.
 PyPI rejects existing filenames; rerun only failed jobs after a successful

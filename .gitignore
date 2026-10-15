@@ -23,6 +23,7 @@ dist/
 *.[sS][aA][vV]
 *.shs-save.json
 *.shs-auto.json
+*.expproj
 .shs-library/
 .shs-import-*/
 .exp-import-*/

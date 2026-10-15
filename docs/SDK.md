@@ -6,9 +6,14 @@ umbrella wheel. All components use the same `exp_runtime` import namespace;
 they remain one project, repository, version and uv workspace. No game
 behavior or renderer is copied between packages.
 
+The unreleased [episode creator](CREATOR.md) adds a sixth optional component.
+It is available in this checkout; the published v0.5.0 packages do not include
+it. Headless authoring needs only the formats component, and its desktop extra
+adds Qt and the existing player. Player and iOS bundles exclude it.
+
 ## Choose an install
 
-Version-tag CI publishes all six distributions to PyPI after the required
+Version-tag CI publishes the component distributions to PyPI after the required
 [Trusted Publishing setup](DISTRIBUTION.md#pypi-publishing). Once that release
 is available, select the parts you need:
 
@@ -21,6 +26,7 @@ is available, select the parts you need:
 | `exp-runtime[engine,shs,cod]` | Headless engine with both games |
 | `exp-runtime[player]` | Desktop player with both games by default |
 | `exp-runtime[desktop]` | Compatibility alias for the full desktop player install |
+| `exp-runtime[creator]` (unreleased) | Visual desktop editor, native EXP export and player preview with both games |
 
 For example:
 
@@ -38,7 +44,9 @@ to the formats wheel; `exp-runtime` and `shs` belong to the player wheel.
 
 The independently installable distributions are `exp-runtime-formats`,
 `exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs` and
-`exp-runtime-cod`. For a desktop player containing just CoD:
+`exp-runtime-cod`, plus the unreleased `exp-runtime-creator`. The creator's
+bare install provides its headless model/compiler without Qt or the player.
+For a desktop player containing just CoD:
 
 ```sh
 python -m pip install 'exp-runtime-player[desktop]' exp-runtime-cod
@@ -61,15 +69,15 @@ No package publication is performed by these tools. From this checkout:
 
 ```sh
 uv run --locked --extra build python tools/build_packages.py
-uv run --locked --extra build python tools/test_packages.py
+uv run --locked --extra build --extra creator python tools/test_packages.py
 ```
 
-The build writes six wheels, six source archives and SHA-256 checksums to
+The current build writes seven wheels, seven source archives and SHA-256 checksums to
 `dist/packages/`. It rebuilds each wheel from its source archive and audits the
 file ownership, source bytes, versions and content exclusions. The test creates
 fresh virtual environments and uses real pip resolution outside the checkout,
-including single-game and tools-only installs. It downloads the locked Pillow
-and Pygame wheels once into `build/package-test-dependencies/`; `--offline`
+including single-game, tools-only and headless/GUI creator installs. It downloads
+the locked Pillow, Pygame and Qt wheels once into `build/package-test-dependencies/`; `--offline`
 reuses that cache. It does not read original game content.
 
 Test your own project against the local wheels:
@@ -82,7 +90,7 @@ python -m venv /tmp/my-exp-project
 For a game/player install, omit `--no-index` to obtain third-party dependencies,
 or also pass `--find-links build/package-test-dependencies` after running the
 test tool. On Windows use the virtual environment's `Scripts/python.exe`.
-Keep all six wheels together so pip can resolve the selected components.
+Keep all component wheels together so pip can resolve the selected components.
 Components are pinned to the same release version; mixing versions is rejected
 by the dependency resolver. Until publication, plain index installs do not
 refer to the new local component builds.
@@ -105,6 +113,11 @@ assert program.to_bytes() == script   # Lossless bytecode representation.
 game from an EXP or substitute another resource ID. `archive.programs()`
 returns all KiWi programs indexed by resource ID. Malformed content raises
 `ContentError`; invalid bytecode raises `KiwiFormatError`.
+
+The unreleased writer `exp_runtime.formats.encode_exp(resources)` constructs
+a native archive from an ID-to-bytes mapping, and `Metadata.to_bytes()` encodes
+resource 1. It emits deterministic literal records; use the creator compiler
+to generate story bytecode. See [CREATOR.md](CREATOR.md) for the authoring API.
 
 ```sh
 exp-tool inspect episode.exp

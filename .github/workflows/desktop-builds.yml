@@ -50,7 +50,12 @@ jobs:
           cache-suffix: python-${{ matrix.python }}
 
       - name: Install locked build dependencies
-        run: uv sync --locked --extra build
+        run: uv sync --locked --extra build --extra creator
+
+      - name: Test the creator and native EXP exports
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run --locked --extra build --extra creator python -m unittest discover -s tests -p 'test_creator*.py'
 
       - name: Build and audit wheels and source archives
         shell: bash
@@ -62,7 +67,7 @@ jobs:
           uv run --locked --extra build python tools/build_packages.py "${flags[@]}"
 
       - name: Verify isolated pip installs and component removal
-        run: uv run --locked --extra build python tools/test_packages.py
+        run: uv run --locked --extra build --extra creator python tools/test_packages.py
 
       - name: Upload Python distributions and checksums
         if: matrix.python == '3.14'
@@ -288,8 +293,12 @@ jobs:
 
           version = os.environ['EXP_TAG'].removeprefix('v')
           pending = []
-          for project in ('exp-runtime', 'exp-runtime-formats', 'exp-runtime-engine',
-                          'exp-runtime-player', 'exp-runtime-shs', 'exp-runtime-cod'):
+          projects = ['exp-runtime', 'exp-runtime-formats', 'exp-runtime-engine',
+                      'exp-runtime-player', 'exp-runtime-shs', 'exp-runtime-cod']
+          # Keep manual recovery compatible with the six-wheel v0.5.0 run.
+          if Path(f'exp_runtime_creator-{version}-py3-none-any.whl').is_file():
+              projects.append('exp-runtime-creator')
+          for project in projects:
               try:
                   with urlopen(f'https://pypi.org/pypi/{project}/{quote(version, safe="")}/json', timeout=30) as response:
                       published = {item['filename']: item['digests']['sha256'] for item in json.load(response)['urls']}
@@ -367,7 +376,7 @@ jobs:
           run-id: ${{ needs.release-source.outputs.run-id }}
           github-token: ${{ github.token }}
 
-      - name: Include all six wheels in the release
+      - name: Include component wheels in the release
         working-directory: dist/python-packages
         shell: bash
         run: |
@@ -376,6 +385,10 @@ jobs:
             file="$name-$version-py3-none-any.whl"
             cp -- "$file" "$file.sha256" ../release/
           done
+          file="exp_runtime_creator-$version-py3-none-any.whl"
+          if [[ -f "$file" ]]; then
+            cp -- "$file" "$file.sha256" ../release/
+          fi
 
       - name: Verify downloaded checksums
         working-directory: dist/release

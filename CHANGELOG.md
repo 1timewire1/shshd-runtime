@@ -4,6 +4,19 @@
 
 ### Added
 
+- Add an optional desktop episode creator with a visual story graph, dialogue,
+  timed choices, variables and conditional branches, undo/redo, editable
+  projects and native EXP export for EXP Runtime and the original games.
+- Export a separate replacement for an existing original-game episode slot,
+  preserving its catalog IDs. Validate compiled scripts against the original
+  SHS Android, SHS iOS and CoD iOS KiWi loaders/interpreters; full original-app
+  playback remains unverified.
+- Browse images from imported SHS/CoD libraries or embed custom PNG/JPEG
+  images. Keep base-game references separate from portable episode assets.
+  Preview with the shared player and temporary saves.
+- Add the `exp-runtime-creator` component and `[creator]` extra, plus a
+  headless authoring API and deterministic native EXP/metadata writers.
+  Keep the editor and its optional Qt dependency out of player/iOS bundles.
 - Import compact and multilingual free Cause of Death IPA layouts. Validate
   the actual asset banks instead of selecting a layout from the bundle ID;
   preserve existing compact-free libraries and keep each game's assets isolated.

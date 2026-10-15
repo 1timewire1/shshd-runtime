@@ -1,4 +1,4 @@
-"""Build and audit the six Python distributions; never publish them."""
+"""Build and audit the Python component distributions; never publish them."""
 import argparse
 from email.parser import BytesParser
 import hashlib
@@ -47,7 +47,7 @@ def audit(directory, root=ROOT):
             if not all(m.name.startswith(prefix) and not (m.issym() or m.islnk()) for m in archive.getmembers() if not m.isdir()):
                 raise ValueError(f'{name}: unsafe source archive member')
             for path in paths:
-                if (Path(path).suffix.lower() in ('.apk', '.ipa', '.exp', '.rar', '.sav', '.so', '.dylib', '.dll')
+                if (Path(path).suffix.lower() in ('.apk', '.ipa', '.exp', '.expproj', '.rar', '.sav', '.so', '.dylib', '.dll')
                         or any(part in ('decomp', 'build', '.shs-library', '__pycache__') for part in Path(path).parts)
                         or path.endswith('Signing.local.xcconfig')):
                     raise ValueError(f'{name}: private or generated input in source archive: {path}')

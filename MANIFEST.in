@@ -9,7 +9,9 @@ recursive-include packages/engine/src/exp_runtime *.py
 recursive-include packages/player/src/exp_runtime *.py
 recursive-include packages/shs/src/exp_runtime *.py
 recursive-include packages/cod/src/exp_runtime *.py
+recursive-include packages/creator/src/exp_runtime *.py
 include packages/player/src/exp_runtime/assets/kiwi.svg
+include packages/creator/src/exp_runtime/creator/kiwi-hammer.svg
 recursive-include tests test_*.py
 include docs/SCHEMA.md docs/VM_SPEC.md
 include docs/DISTRIBUTION.md docs/DEVELOPMENT.md docs/PROVENANCE.md
@@ -17,6 +19,7 @@ include docs/ENGINE_ABI.md docs/RUNTIME.md docs/VM_EXECUTION.md
 include docs/UI_FIDELITY.md docs/UI_ASSETS.md docs/MINIGAMES.md
 include docs/GRID_UI.md
 include docs/SDK.md
+include docs/CREATOR.md
 include docs/FOOTBALL_UI.md
 include docs/TITLE_SCREENS.md
 include docs/NAME_INPUT.md
@@ -25,6 +28,7 @@ include docs/COD.md
 include docs/MAIN_MENU.md docs/STORY_SERVICES.md docs/EPISODE_CATALOG.md
 include tools/build_desktop.py tools/audit_format.py tools/audit_vm.py
 include tools/components.py tools/build_packages.py tools/test_packages.py
+include tools/test_creator_native.py
 include tools/audit_runtime.py tools/audit_ui_assets.py
 include tools/package_desktop.py
 include tools/build_rar.py

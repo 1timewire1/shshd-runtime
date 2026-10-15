@@ -1,6 +1,6 @@
 """Verify real pip installs outside the checkout, including missing components.
 
-Build with tools/build_packages.py first. Download the two locked third-party
+Build with tools/build_packages.py first. Download the locked third-party
 wheels once into ignored build output, then resolve every install offline.
 --offline reuses that dependency cache without contacting a package index.
 """
@@ -41,13 +41,16 @@ expected, games, player = json.loads(sys.argv[1])
 actual = {d.metadata['Name'].lower().replace('_', '-') for d in distributions()
           if d.metadata['Name'].lower().startswith('exp-runtime')}
 assert actual == set(expected), (actual, expected)
-for name in ('engine', 'shs', 'cod', 'application'):
+for name in ('engine', 'shs', 'cod', 'application', 'creator'):
     installed = find_spec('exp_runtime.' + name) is not None
-    wanted = player if name == 'application' else name in games if name in ('shs', 'cod') else 'exp-runtime-engine' in actual
+    wanted = (player if name == 'application' else name in games if name in ('shs', 'cod')
+              else 'exp-runtime-creator' in actual if name == 'creator' else 'exp-runtime-engine' in actual)
     assert installed == wanted, (name, installed, wanted)
 for module in ('PIL', 'pygame'):
     wanted = bool(games or player) if module == 'PIL' else player
     assert (find_spec(module) is not None) == wanted, module
+creator = 'exp-runtime-creator' in actual
+assert (find_spec('PySide6') is not None) == (creator and player)
 
 def program(*instructions, words=()):
     from exp_runtime.decode.bytecode import OPERAND_OPCODES
@@ -128,6 +131,25 @@ if player:
             assert app.selected_game == game
     finally:
         app.close()
+if creator:
+    from exp_runtime.creator import Project, compile_project, save_project, load_project
+    project = Project()
+    save_project(project, Path('story.expproj'))
+    assert load_project(Path('story.expproj')) == project
+    assert ExpArchive(compile_project(project)).metadata().title == project.title
+    result = subprocess.run([sys.executable, '-I', '-m', 'exp_runtime.creator', 'story.expproj',
+                             '--export', 'story.exp'], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert Path('story.exp').read_bytes() == compile_project(project)
+    if player:
+        from PySide6.QtWidgets import QApplication
+        from exp_runtime.creator.ui import Editor
+        qt = QApplication([])
+        editor = Editor()
+        editor.show()
+        qt.processEvents()
+        assert not editor.grab().isNull()
+        editor.close()
 print('Verified pip install:', ', '.join(sorted(actual)))
 '''
 
@@ -149,7 +171,8 @@ def verify(directory, *, offline=False):
     cache = ROOT / 'build/package-test-dependencies'
     cache.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, PYTHONNOUSERSITE='1', PIP_DISABLE_PIP_VERSION_CHECK='1',
-               SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', PYGAME_HIDE_SUPPORT_PROMPT='1')
+               SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', PYGAME_HIDE_SUPPORT_PROMPT='1',
+               QT_QPA_PLATFORM='offscreen')
     env.pop('PYTHONPATH', None)
     with tempfile.TemporaryDirectory(prefix='exp-pip-tests-') as temporary:
         root = Path(temporary)
@@ -158,7 +181,9 @@ def verify(directory, *, offline=False):
             venv.EnvBuilder(with_pip=True).create(bootstrap)
             run([str(python_in(bootstrap)), '-m', 'pip', 'download', '--only-binary=:all:',
                  '--no-deps', '--dest', str(cache), f'Pillow=={installed_version("Pillow")}',
-                 f'pygame-ce=={installed_version("pygame-ce")}'], cwd=root, env=env)
+                 f'pygame-ce=={installed_version("pygame-ce")}',
+                 f'PySide6-Essentials=={installed_version("PySide6-Essentials")}',
+                 f'shiboken6=={installed_version("shiboken6")}'], cwd=root, env=env)
         cases = (
             ('tools', ('exp-runtime[tools]',), (), False, True),
             ('engine', ('exp-runtime[engine]',), (), False, True),
@@ -167,6 +192,8 @@ def verify(directory, *, offline=False):
             ('both', ('exp-runtime[engine,shs,cod]',), ('shs', 'cod'), False, True),
             ('player', ('exp-runtime[player]',), ('shs', 'cod'), True, True),
             ('desktop', ('exp-runtime[desktop]',), ('shs', 'cod'), True, True),
+            ('creator-core', ('exp-runtime-creator',), (), False, False),
+            ('creator', ('exp-runtime[creator]',), ('shs', 'cod'), True, True),
             ('cod-player', ('exp-runtime-player[desktop]', 'exp-runtime-cod'), ('cod',), True, False),
         )
         import json
@@ -179,8 +206,10 @@ def verify(directory, *, offline=False):
                  *(f'{req}=={version}' for req in requirements)], cwd=case, env=env)
             run([*pip, 'check'], cwd=case, env=env)
             expected = ['exp-runtime-formats'] + (['exp-runtime'] if umbrella else [])
-            if label != 'tools':
+            if label not in ('tools', 'creator-core'):
                 expected.append('exp-runtime-engine')
+            if label in ('creator', 'creator-core'):
+                expected.append('exp-runtime-creator')
             if player:
                 expected.append('exp-runtime-player')
             expected.extend(f'exp-runtime-{game}' for game in games)

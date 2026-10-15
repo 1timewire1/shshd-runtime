@@ -3,24 +3,26 @@ from pathlib import Path
 import re
 
 
-COMPONENTS = ('formats', 'engine', 'player', 'shs', 'cod')
+RUNTIME_COMPONENTS = ('formats', 'engine', 'player', 'shs', 'cod')
+COMPONENTS = (*RUNTIME_COMPONENTS, 'creator')
+PACKAGE_ASSETS = frozenset(('exp_runtime/assets/kiwi.svg', 'exp_runtime/creator/kiwi-hammer.svg'))
 
 
-def source_roots(root):
-    return tuple(Path(root) / 'packages' / name / 'src' for name in COMPONENTS)
+def source_roots(root, components=COMPONENTS):
+    return tuple(Path(root) / 'packages' / name / 'src' for name in components)
 
 
-def source_files(root):
-    """Enumerate only distributable Python source and the authored app logo.
+def source_files(root, components=COMPONENTS):
+    """Enumerate only distributable Python source and the authored app logos.
 
     Namespace directories may overlap; files must not. In particular no
     component may install exp_runtime/__init__.py and hide its neighbors.
     """
     files = {}
-    for source in source_roots(root):
+    for source in source_roots(root, components):
         for path in sorted((source / 'exp_runtime').rglob('*')):
             relative = path.relative_to(source)
-            if not path.is_file() or (path.suffix != '.py' and relative.as_posix() != 'exp_runtime/assets/kiwi.svg'):
+            if not path.is_file() or (path.suffix != '.py' and relative.as_posix() not in PACKAGE_ASSETS):
                 continue
             if relative.as_posix() == 'exp_runtime/__init__.py':
                 raise ValueError('The shared exp_runtime namespace must not have an initializer')

@@ -21,7 +21,7 @@ device app. Third-party actions are pinned to verified commit hashes.
 
 The Python packaging job builds all component wheels and source archives,
 then checks isolated pip installs on Python 3.10 and 3.14. Its
-`python-packages` Actions artifact contains the six distributions and their
+`python-packages` Actions artifact contains the component distributions and their
 checksums. Version-tag runs also publish these tested wheels and source
 archives to PyPI after all checks pass. See [PyPI publishing](#pypi-publishing)
 for the required one-time setup and [SDK.md](SDK.md) for component installs.
@@ -43,7 +43,7 @@ These artifacts expire after 30 days. GitHub requires
 sign-in and repository read access for [Actions artifact downloads](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
 
 The owner can publish a version by pushing a tag such as `v0.5.0`. The tag
-must be exactly `v` followed by the version shared by all six `pyproject.toml`
+must be exactly `v` followed by the version shared by all component `pyproject.toml`
 files; a mismatch fails before building Python distributions. Once all
 four desktop builds, the iOS build/verification and the Python packaging checks
 pass, the release job
@@ -58,11 +58,11 @@ The release body comes from [RELEASE.md](../RELEASE.md) at the repository root.
 Update it before tagging a version. [CHANGELOG.md](../CHANGELOG.md) records
 release history, with upcoming changes under **Unreleased**.
 
-The prepared release notes describe **v0.5.0**: separately installable Python
-components, public EXP file tools, isolated pip installation checks and PyPI
-Trusted Publishing. The bare install provides file tools; use `[player]` or
-`[desktop]` for the app with both games. Earlier releases remain documented
-in the changelog.
+The prepared release notes describe the **unreleased episode creator**. Its
+seventh distribution, `exp-runtime-creator`, is optional: existing player
+downloads and the unsigned IPA do not include Qt or the editor. Register its
+PyPI publisher before the next release. The owner has released v0.5.0 and has
+not assigned a new version yet; bump all versions before publishing these changes.
 
 Rerunning a version-tag workflow updates matching assets on an existing
 release using `gh release upload --clobber`, then publishes any draft left by
@@ -78,15 +78,16 @@ validation does not replace a successful GitHub run on all five targets.
 The `publish-pypi` job runs only for pushed `v*` tags, after both Python
 packaging jobs, all desktop builds and iOS verification succeed. It downloads
 the same run's `python-packages` artifact, verifies every SHA-256 checksum and
-stages only the six wheels and six source archives. The publishing job does
+stages only the component wheels and source archives. The publishing job does
 not check out, build or install the project. Metadata validation and PyPI
 attestations remain enabled in the pinned PyPA publishing action.
 
 Before the first tag using this workflow, configure
 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
 for **each** project: `exp-runtime`, `exp-runtime-formats`,
-`exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs` and
-`exp-runtime-cod`. Each registration uses the same values:
+`exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs`,
+`exp-runtime-cod` and `exp-runtime-creator`. The creator is new since v0.5.0 and
+needs its own publisher registration. Each registration uses the same values:
 
 | Publisher field | Value |
 | --- | --- |
@@ -99,7 +100,7 @@ For an existing project you own, add this publisher in its PyPI **Publishing**
 settings. For a new project, register a pending publisher through your
 [account's Publishing page](https://pypi.org/manage/account/publishing/);
 [PyPI creates the project on its first successful upload](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
-A pending publisher does not reserve a name. Configure all six before
+A pending publisher does not reserve a name. Configure every component before
 releasing, since every component is pinned to the common version.
 
 In GitHub **Settings → Environments**, create `pypi` and restrict its deployment

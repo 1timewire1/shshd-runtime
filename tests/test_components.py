@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from exp_runtime.cli import main
 from tools import build_ios, build_packages
-from tools.components import COMPONENTS, check_versions, source_files, source_roots
+from tools.components import COMPONENTS, RUNTIME_COMPONENTS, check_versions, source_files, source_roots
 from test_content import archive, metadata
 from test_vm import program
 
@@ -60,7 +60,9 @@ for name in ('exp_runtime.engine', 'exp_runtime.application', 'exp_runtime.shs',
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_ios_stages_every_component_without_namespace_overlap_or_private_files(self):
-        expected = source_files(ROOT)
+        expected = source_files(ROOT, RUNTIME_COMPONENTS)
+        self.assertTrue(source_files(ROOT).keys() - expected.keys())
+        self.assertFalse(any('creator' in p.parts for p in expected))
         self.assertNotIn(Path('exp_runtime/__init__.py'), expected)
         self.assertTrue(check_versions(ROOT))
         for component in COMPONENTS:

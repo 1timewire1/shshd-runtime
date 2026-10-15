@@ -200,6 +200,19 @@ player with `exp-runtime` after installation.
 
 ## Specifications and development
 
+The **unreleased desktop episode creator** supports visual dialogue, choices,
+branching, optional imported images and native `.exp` export for EXP Runtime
+and the original games. Native loader/VM checks pass; full original-app
+playback remains unverified. Run it from this checkout:
+
+```sh
+uv run --locked --extra creator exp-creator
+```
+
+See [the creator guide](docs/CREATOR.md) for saving editable projects, using
+your imported game libraries and previewing through the shared player. The
+creator is optional and is not included in v0.5.0's published downloads.
+
 To contribute code, tests, documentation or compatibility reports, start with
 [MAINTAINERS.md](MAINTAINERS.md).
 
