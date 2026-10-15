@@ -238,6 +238,7 @@ class MusicPlaybackTests(unittest.TestCase):
         # Exercise application lifecycle without original menu art or writes.
         app = Application.__new__(Application)
         app.selected_game = 'shs'
+        app.shot_cache = {}             # __init__ is skipped here; save_screenshot drops the episode's cached shot
         app.game, app.selected, app.audio, app.active = ui, resources.record['id'], True, True
         app.window = ui.window
         app.library = resources

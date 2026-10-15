@@ -59,7 +59,7 @@ class BulkImportTests(unittest.TestCase):
                 self.assertIn(title, [t for e in opened.episodes for t in e['titles']])
                 if game == 'cod':
                     self.assertEqual(opened.hd_asset(268), b'HD portrait mask')
-        self.assertEqual([p.name for p in (self.root / 'libraries').iterdir()], ['cod', 'shs'])  # stage removed
+        self.assertEqual(sorted(p.name for p in (self.root / 'libraries').iterdir()), ['cod', 'shs'])  # stage removed
 
     def test_a_zip_with_the_layout_at_its_root_imports_both_games(self):
         imported, errors = import_bulk(self.make_zip(), self.targets)
