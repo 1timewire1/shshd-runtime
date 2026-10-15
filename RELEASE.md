@@ -28,8 +28,9 @@ No game files are included. You supply your own.
 
 - **Windows, macOS, Linux:** `shshd-runtime-<version>-<platform>` archives. Unzip
   and run SHSHD Runtime. Builds are unsigned (macOS: ad-hoc signed, not notarized).
-- **iOS:** `shshd-runtime-<version>-ios-arm64-unsigned.ipa`, to sign and install
-  yourself. The iOS build is untested on devices for this release.
+- **iOS:** not part of this release. The iOS build has not been verified for this
+  fork yet; development IPAs appear under the repository's Actions runs
+  (`ios-arm64-unsigned`) when that build succeeds.
 
 Each download has a SHA-256 checksum beside it.
 

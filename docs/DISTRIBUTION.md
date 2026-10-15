@@ -42,14 +42,16 @@ then the app archive (or sign the IPA). The simulator report is a separate
 These artifacts expire after 30 days. GitHub requires
 sign-in and repository read access for [Actions artifact downloads](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
 
-The owner can publish a version by pushing a tag such as `v0.5.0`. The tag
+The owner can publish a version by pushing a tag such as `v1.0.0`. The tag
 must be exactly `v` followed by the version shared by all six `pyproject.toml`
 files; a mismatch fails before building Python distributions. Once all
-four desktop builds, the iOS build/verification and the Python packaging checks
-pass, the release job
-requires all five downloads and their checksum files, verifies the checksums,
-and publishes the desktop archives plus the unsigned IPA and their checksums
-on **Releases**. Ordinary pushes and pull requests
+four desktop builds and the Python packaging checks pass, the release job
+requires all four desktop downloads and their checksum files, verifies the
+checksums, and publishes the desktop archives and wheels with their checksums
+on **Releases**. In this fork the iOS job still runs on every push, but the
+release neither waits for nor includes it until the fork's iOS build is
+verified (its `macos-26` runner can also queue for a long time); its IPA stays
+an Actions artifact. Ordinary pushes and pull requests
 never create releases. Their jobs have read-only repository permissions; only
 the version-tag release job has `contents: write`, using GitHub's built-in
 token. No personal token or signing secrets are required.

@@ -173,13 +173,16 @@ jobs:
 
   release-source:
     name: Select tested release artifacts
+    # This fork: releases carry the desktop downloads and wheels only. The iOS job still runs, but neither waits for
+    # nor requires it (its macos-26 runner can queue for a long time, and the fork's iOS build is not yet verified);
+    # its IPA stays an Actions artifact until it is.
     if: >-
       ${{ always() && !cancelled() && (
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
-         needs.build.result == 'success' && needs.ios.result == 'success' && needs.packages.result == 'success') ||
+         needs.build.result == 'success' && needs.packages.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.release_run_id != '')
       ) }}
-    needs: [build, ios, packages]
+    needs: [build, packages]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     permissions:
@@ -230,7 +233,7 @@ jobs:
               raise SystemExit('The release tag no longer matches the source run commit')
 
           required = {'Python wheels (3.10)', 'Python wheels (3.14)', 'windows-x64',
-                      'linux-x64', 'macos-arm64', 'macos-x64', 'iOS / Unsigned iPhone app'}
+                      'linux-x64', 'macos-arm64', 'macos-x64'}
           passed = set()
           page = 1
           while True:
@@ -352,14 +355,6 @@ jobs:
           run-id: ${{ needs.release-source.outputs.run-id }}
           github-token: ${{ github.token }}
 
-      - name: Download unsigned IPA and checksum
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: ios-arm64-unsigned
-          path: dist/release
-          run-id: ${{ needs.release-source.outputs.run-id }}
-          github-token: ${{ github.token }}
-
       - name: Download tested Python wheels and checksums
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -382,7 +377,7 @@ jobs:
         working-directory: dist/release
         shell: bash
         run: |
-          for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip ios-arm64-unsigned.ipa; do
+          for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip; do
             test -s "shshd-runtime-$EXP_TAG-$target"
             test -s "shshd-runtime-$EXP_TAG-$target.sha256"
           done

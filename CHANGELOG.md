@@ -337,7 +337,8 @@ The first release of this fork. Earlier sections are upstream exp-runtime's hist
   - The iOS app's metadata, its simulator test's bundle id and the macOS bundle
     id are the fork's own.
   - The release workflow names the fork's downloads and never publishes to
-    PyPI.
+    PyPI. Releases carry the desktop downloads and wheels. The iOS job runs
+    but no longer gates or joins a release until its build is verified.
   - `RELEASE.md` has v1.0.0 notes.
 - **Commands and documentation name the fork.**
   - The app is `shshd-runtime` and the file tools `shshd-tool`. Upstream's

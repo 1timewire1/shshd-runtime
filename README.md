@@ -40,11 +40,11 @@ for CI triggers, packaging and the first-launch requirements.
 
 The [iPhone/iPad app](docs/IOS_APP.md) shares the Python engine, menus and
 renderers with desktop, using native iOS drawing, audio and Files access.
-Download `shshd-runtime-<version>-ios-arm64-unsigned.ipa` and its checksum from
-the release files, then sign and install the IPA. Development runs provide the
-same format in the `ios-arm64-unsigned` Actions artifact. The Xcode project
-also supports running directly on your device. The iOS build of this fork has
-not yet been tested on devices.
+Releases do not include it yet: the iOS build of this fork has not been
+verified. When an Actions run's iOS job succeeds, its `ios-arm64-unsigned`
+artifact holds `shshd-runtime-<version>-ios-arm64-unsigned.ipa` and its
+checksum, to sign and install yourself. The Xcode project also supports
+running directly on your device.
 
 ## Build your own app
 
