@@ -121,9 +121,11 @@ class IPAImportTests(unittest.TestCase):
             self.assertEqual(library.ensure_builtin_episodes(), 0)
 
     def test_versions_are_informational_and_executable_is_not_required(self):
-        for version, native in (('9.9.9', b'a different executable'), ('unversioned', None)):
+        for version, native, bundle in (('9.9.9', b'a different executable', 'com.ea.shs.us'),
+                                        ('unversioned', None, 'com.ea.shs.us'),
+                                        ('1.4.3.53', b'the free edition', 'com.ea.shslite.row')):
             with self.subTest(version=version):
-                info = dict(CFBundleIdentifier='com.ea.shs.us', CFBundleVersion=version)
+                info = dict(CFBundleIdentifier=bundle, CFBundleVersion=version)
                 make_ipa(self.source, self.episode, info=info, native=native)
                 path = self.root / version
                 manifest = import_game(self.source, [], path)

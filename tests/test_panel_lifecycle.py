@@ -14,7 +14,16 @@ from test_vm import program
 
 
 class PanelLifecycleTests(unittest.TestCase):
-    def test_close_discards_only_its_frame_and_panel_state(self):
+    def test_close_discards_its_frame_and_panel_state_but_keeps_the_background(self):
+        # Real device correction: this used to assert a fully blank
+        # PanelState() after close, matching an earlier bug where closing
+        # the dialogue panel also discarded background_id (whose own
+        # dataclass default is -1) -- confirmed live as the real cause of a
+        # black background right after the football minigame, whose script
+        # closes the panel via this yield just before entering it. The
+        # scene background is conceptually a separate layer from the
+        # closing text-box widget, not something a bare panel-close should
+        # erase.
         for args in ((), (123, -4)):
             for dynamic_count in (False, True):
                 with self.subTest(args=args, dynamic_count=dynamic_count):
@@ -35,7 +44,7 @@ class PanelLifecycleTests(unittest.TestCase):
                     self.assertTrue(action.completed)
                     self.assertEqual(action.name, 'close_dialogue_panel')
                     self.assertEqual(vm.run().args, (77, 0))
-                    self.assertEqual(engine.panel, PanelState())
+                    self.assertEqual(engine.panel, PanelState(background_id=1045))
                     self.assertIsNone(engine.dialogue_animation)
                     self.assertEqual((engine.notice, engine.notice_ms, engine.next_dialogue_notice), ('', 0, ''))
                     for key in ('numbers', 'strings', 'character_names', 'scheduled_scripts', 'result_cells',
@@ -63,6 +72,25 @@ class PanelLifecycleTests(unittest.TestCase):
                 self.assertTrue(motion.changed)
                 self.assertIsNone(motion.previous)
                 self.assertEqual(Session.from_snapshot(resources, session.snapshot()).snapshot(), session.snapshot())
+
+    def test_a_negative_background_base_other_than_2_also_keeps_the_current_background(self):
+        # Real device correction: only base == -2 was treated as "keep the
+        # current background" -- base == -1 fell through and got written
+        # literally, rendering as a blank/black background. Confirmed live:
+        # the real dialogue line immediately after the football minigame
+        # (whose script sets base=-1 right beforehand) rendered solid black
+        # instead of the story scene already on screen. The sibling KiWi
+        # engine's own native disassembly (reference/codkiwi-main's
+        # KIWI_CALL_REFERENCE.txt, "Locations": "GameModel::
+        # setLocationImageID returns without change for negative base")
+        # confirms this is a KEEP sentinel for any negative base.
+        words, (text,) = text_words('Still here.')
+        resources = Resources(program(
+            *host_call(34, 0, 1045), *host_call(34, 0, -1),
+            *host_call(13, text, 0), 0x33, words=words))
+        session = Session(resources)
+        session.advance()
+        self.assertEqual(session.engine.panel.background_id, 1045)
 
     def test_existing_unsupported_save_continues_without_replaying_prior_script(self):
         words, refs = text_words('Next scene.')
@@ -101,7 +129,11 @@ class PanelLifecycleTests(unittest.TestCase):
                 answer_screen(session)
             self.assertEqual(seen[0], (65, 312))
             self.assertEqual((session.pending.name, session.pending.request.pc), ('finished', 14))
-            self.assertEqual(session.engine.panel, PanelState())
+            # background_id=1045 survives the close (see the real-device
+            # correction on test_close_discards_its_frame_and_panel_state_
+            # but_keeps_the_background above) -- confirmed against this
+            # same real scene, not just the synthetic case.
+            self.assertEqual(session.engine.panel, PanelState(background_id=1045))
 
 
 if __name__ == '__main__':

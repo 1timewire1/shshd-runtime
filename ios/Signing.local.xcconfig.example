@@ -2,4 +2,4 @@
 // The local file is excluded from Git and source distributions.
 // Use your Apple Team ID, not its display name.
 // DEVELOPMENT_TEAM = ABCDE12345
-// PRODUCT_BUNDLE_IDENTIFIER = com.yourname.expruntime
+// PRODUCT_BUNDLE_IDENTIFIER = com.yourname.shshdruntime

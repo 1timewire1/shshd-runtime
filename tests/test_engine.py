@@ -30,6 +30,21 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(action.name, 'unhandled_yield')
         self.assertIs(vm.run(), event)
 
+    def test_get_character_art_base_on_an_unset_character_reads_zero(self):
+        # Real HD Football Star bytecode calls yield 73 (0x49) without a
+        # prior yield 72 (0x48) for that character -- confirmed live: HD's
+        # scene 25001 is byte-identical to Android's own script up through
+        # this exact point, then diverges (Android calls a subroutine here;
+        # HD's compiled script goes straight to this yield instead). Native's
+        # entity table is zero-initialized storage, not a sentinel/error
+        # path -- raising here was an untested assumption from Android-only
+        # evidence, and made real HD content unplayable.
+        vm = KiwiVM(program((0x1A, 0), (0x1F, 0x4901)))
+        engine = EngineState()
+        vm.run()
+        action = engine.dispatch(vm)
+        self.assertEqual(action.details['result'], 0)
+
     def test_packed_and_dynamic_text_default(self):
         # '$X\0' at word 0, 'Zoe\0' at word 2.
         vm = KiwiVM(program((0x1A, 0), (0x1A, 2), (0x1A, -1), (0x1F, 0x2F03),

@@ -11,7 +11,11 @@ from .ui_assets import Rect, read_ui
 class LoadingRenderer:
     def __init__(self, resources, text_renderer, artwork):
         self.resources, self.text, self.art = resources, text_renderer, artwork
-        self.canvas = pygame.Surface((320, 480)).convert(32)
+        # SRCALPHA: the background is composited separately by Desktop, at
+        # real window resolution -- see desktop_dialogue.py's DialogueRenderer.
+        self.canvas = pygame.Surface((320, 480), pygame.SRCALPHA).convert_alpha()
+        self.pending_background = None
+        self.pending_background_origin = (160, 180)
 
     @lru_cache(maxsize=1)
     def panel(self):
@@ -36,10 +40,96 @@ class LoadingRenderer:
         return layer
 
     def draw(self, target, session):
-        self.canvas.fill((0, 0, 0))
-        self.art.draw_background(self.canvas, session.engine)
+        self.canvas.fill((0, 0, 0, 0))
+        self.pending_background = self.art.image(session.engine.panel.background_id)
+        self.pending_background_origin = self.art.background_origin(self.pending_background, session.engine)
         self.canvas.blit(self.panel(), (0, 0))
         icon = self.art.frame(126, session.engine.loading.frame)
         self.canvas.blit(icon, icon.get_rect(center=(155, 317)))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return []  # Completion comes from the active timer, never a click.
+
+
+class HdLoadingRenderer:
+    """HD's loading overlay in the whole 768 x 1024 frame (photographed on the iPad).
+
+    A white band (243/255 opaque) between two blue rules spans the frame's width: rules at y 402-408 and
+    626-631, "Loading" and "Please wait..." in bold blue sans centered on x 384 (ink 447-483 and 531-551), and
+    the runner wheel straddling the lower rule -- the choice timer's wheel (gray rim, white ring, light-gray
+    disc), the frame's blue border bulging around it -- with resource 155's runner frames 28-32 (500 ms each)
+    in the disc. Drawn 2x supersampled.
+    """
+    S = 2
+    FRAME = (768, 1024)
+    hd_layer = True
+    edge_bar = 'bar'
+    footer_text = ''
+    BLUE = (41, 104, 221)
+    TOP_RULE, BOTTOM_RULE, RULE_THICKNESS = 402, 626, 6
+    TITLE = dict(width=150, ink_top=447, ink_bottom=476)     # "Loading": cap top and baseline
+    MESSAGE = dict(width=188, ink_top=531, ink_bottom=546)   # "Please wait...": cap top and baseline
+    WHEEL_CENTER, WHEEL_RADIUS = (384, 621), 59
+
+    def __init__(self, resources, art):
+        self.resources, self.art = resources, art
+        self.canvas = pygame.Surface((self.FRAME[0] * self.S, self.FRAME[1] * self.S), pygame.SRCALPHA).convert_alpha()
+        self.pending_background = None
+        self.pending_background_origin = (160, 180)
+
+    def available(self):
+        try:
+            return self.art.hd_chrome() and bool(pygame.font.match_font('arial', bold=True))
+        except (AttributeError, ValueError):
+            return False
+
+    @lru_cache(maxsize=8)
+    def font_for(self, text, width):
+        """Arial Bold at the size whose `text` is `width` frame px wide."""
+        path = pygame.font.match_font('arial', bold=True)
+        size = 40 * self.S
+        measured = pygame.font.Font(path, size).size(text)[0] / self.S
+        return pygame.font.Font(path, max(8, round(size * width / measured)))
+
+    def line(self, text, spec):
+        font = self.font_for(text, spec['width'])
+        surface = font.render(text, True, self.BLUE)
+        # Place by the capital top: the font's ascent, less the cap height, is the gap above capitals.
+        cap = font.render('H', True, (0, 0, 0)).get_bounding_rect()
+        x = (self.FRAME[0] * self.S - surface.get_width()) // 2
+        self.canvas.blit(surface, (x, spec['ink_top'] * self.S - cap.y))
+
+    @lru_cache(maxsize=1)
+    def strings(self):
+        hd = MenuStrings.parse(self.resources.library.hd_raw_resource(15))
+        return hd[28], hd[32], hd[33]
+
+    def runner(self, index):
+        native = self.art.frame_native(155, 28 + index)
+        return pygame.transform.smoothscale(native, (native.get_width() * self.S, native.get_height() * self.S))
+
+    def draw(self, target, session):
+        S, canvas = self.S, self.canvas
+        canvas.fill((0, 0, 0, 0))
+        self.pending_background = self.art.image(session.engine.panel.background_id)
+        width = self.FRAME[0] * S
+        top, bottom, thick = self.TOP_RULE * S, self.BOTTOM_RULE * S, self.RULE_THICKNESS * S
+        pygame.draw.rect(canvas, (255, 255, 255, 243), (0, top, width, bottom - top + thick))
+        pygame.draw.rect(canvas, self.BLUE, (0, top, width, thick))
+        pygame.draw.rect(canvas, self.BLUE, (0, bottom, width, thick))
+        title, message, self.footer_text = self.strings()
+        self.line(title, self.TITLE)
+        self.line(message, self.MESSAGE)
+        cx, cy = self.WHEEL_CENTER[0] * S, self.WHEEL_CENTER[1] * S
+        r = self.WHEEL_RADIUS * S
+        # Below the lower rule the blue border bulges around the wheel; above it the wheel has a gray rim.
+        clip = canvas.get_clip()
+        canvas.set_clip(pygame.Rect(0, bottom - S, width, canvas.get_height()))
+        pygame.draw.circle(canvas, self.BLUE, (cx, cy), round(r * 1.1))
+        canvas.set_clip(pygame.Rect(0, 0, width, bottom - S))
+        pygame.draw.circle(canvas, (177, 177, 177), (cx, cy), r)
+        canvas.set_clip(clip)
+        pygame.draw.circle(canvas, (255, 255, 255), (cx, cy), round(r * 0.965))
+        pygame.draw.circle(canvas, (224, 224, 224), (cx, cy), round(r * 0.81))
+        runner = self.runner((session.engine.loading.frame - 23) % 5)
+        canvas.blit(runner, runner.get_rect(center=(cx, cy)))
+        return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

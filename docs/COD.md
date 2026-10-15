@@ -1,22 +1,35 @@
 # Cause of Death support
 
-EXP Runtime opens SHS and CoD as separate games. Choose **Cause of Death** in
+SHSHD Runtime opens SHS and CoD as separate games. Choose **Cause of Death** in
 the launcher and supply its IPA, then add CoD EXP files to that library. A CoD
 APK profile has not been established. No original files, screenshots, fonts
 or decompilations ship with the engine.
 
 ```sh
 uv run --locked exp-tool import --game cod --ipa /path/to/CoD.ipa --episodes /path/to/CoD-Episodes --library /path/to/cod-library
-uv run --locked --extra desktop exp-runtime --game cod --library /path/to/cod-library
+uv run --locked --extra desktop shshd-runtime --game cod --library /path/to/cod-library
 uv run --locked exp-tool trace /path/to/episode.exp --game cod
 ```
 
 ## Identification and isolation
 
-Import recognizes `com.ea.causeofdeath`, with optional dot-separated suffixes,
-and validates the required `res_generated` payloads. Version numbers and the
-native executable are informational; native code is never executed. The
-inspected package is 1.3.4 (`com.ea.causeofdeath.bv`), with 348 numeric assets.
+Import recognizes `com.ea.causeofdeath` and the free edition's
+`com.ea.causeofdeathfree`, with optional dot-separated suffixes, and validates
+the required `res_generated` payloads. Version numbers and the native
+executable are informational; native code is never executed. The inspected
+packages are 1.3.4 (`com.ea.causeofdeath.bv`, 348 numeric assets) and 1.4.7
+(`com.ea.causeofdeathfree.bv`, 353).
+
+1.4.7 renumbers the low bank. Its revised Volume One stays at 12 and the old
+one is kept at 13. The English string bank is 14, followed by French,
+Italian, German and Spanish banks (15–18). 1.3.4's resources 14–999 sit five
+higher (layout bank 19, skins 209/225/241/257, mask 273, fonts 295–302). Ids
+1–12 and 1000 and up keep their numbers. Everything except the string bank's
+credits year and resource 15 (→ 20) is byte-identical; backgrounds 1000–1050
+are re-encoded at the same size. `cod/assets.py` (`logical_members`) exposes
+such an IPA under the 1.3.4 ids, so every contract below applies unchanged.
+The layout is recognized by its contents (1.3.4 has nothing between 17 and
+125), not by its version string. Only the English bank is exposed.
 
 Its base resource **12** is a complete EXP containing **Volume One** (metadata
 pack 101 / episode 1 and scripts 25001–25008). Import retains that EXP as a
@@ -246,6 +259,748 @@ Complete episode routes, all CoD service variants, exact iOS animation/font
 parity and CoD story-choice/relationship feedback sounds still require verification.
 Unknown services stop explicitly; no score, choice, random result or next scene
 is invented to continue an unsupported episode.
+
+## HD presentation through the SHS HD bundle (optional)
+
+CoD has no iPad edition. A CoD library may link the owner's SHS HD (iPad)
+IPA as a presentation-only art source (`exp-tool add-hd-art --ipa ...
+--library ...`, `ContentLibrary.add_shs_hd_art`; manifest `shs_hd_art`,
+validated by the same executable hash as SHS's HD supplement). Without it,
+CoD plays exactly as before. The link never becomes `hd_ipa`, so none of SHS
+HD's screens, strings, scripts or fonts apply; `hd_asset` serves only CoD's own
+verified map. With it:
+
+- **Skins.** CoD's skin packs 204/220/236/252 share SHS's geometry. 252 and
+  the portrait mask 268 are byte-identical to SHS Android's; 204 and 236 are
+  grey recolours of the blue and gold; every box frame caps the opaque interior
+  at alpha 242. `cod/hd_art.py` turns SHS HD's 2x packs (247/263/279/295) into
+  CoD's look. Each literal frame keeps or recolours its RGB (a table on
+  min(R,G,B)) and alpha, whichever scales back closest to CoD's 1x frame. The
+  remaining differences equal SHS HD's own redraw differences: 252, identical
+  at 1x, shows the same. 268 uses SHS HD's 311 as it stands.
+- **Text.** `vector_text.cod_vector_font` draws CoD's own CSFonts as vector
+  text at their iPhone point sizes. The faces come from `SHSEngine::initFonts`
+  (1.3.4 armv7 `00025e68`):
+
+  | Slot | Face |
+  | --- | --- |
+  | +0x1e4 | TimesNewRomanPS-ItalicMT |
+  | +0x1e8 | TrebuchetMS-Bold |
+  | +0x1ec | TrebuchetMS-Italic |
+  | +0x1f4 | ArialRoundedMTBold |
+  | +0x1f0 | ArialMT, measured with Arial Rounded's advances |
+  | +0x1e0 / +0x1f8 | the two faces bundled in `res_generated` |
+
+  Narration is +0xe254, TrebuchetMS-Italic 16 in black (SHS's narrator gold
+  does not apply). Its `` ` `` switches to +0xfa74 (0xffb46d1a). Body text
+  switches only on `` ` `` (`CSFont::handleSwitchChar` `00004b54` toggles the
+  base font's own characters, so `;` is plain text): theme 1 goes to red
+  0xfffe3535 TrebuchetMS-Italic with stroke 0.5, theme 2 to blue. Names use the
+  bundled face, dark red, with `setStroke(4.0)` at 26. The player's own
+  `fonts/` folder supplies Arial Rounded when it is not installed; the IPA atlas
+  path checks it too.
+
+- **Common frames.** CoD's pack 126 is SHS's with recolours. Its frames get
+  SHS HD's pack-155 drawings, derived the same way (`cod/hd_art.COMMON_FRAMES`):
+  Continue tabs 3-6 (155 #8-11), timer wedges 7-22 (#12-27), ring 37 (#46,
+  unchanged), picker rings 43/44 (#47/48) and gear 49/50 (#58/59). Bar 47 is
+  composed from cap #55 and strip #56. On the bottom edge CoD then takes SHS
+  HD's layout (`DialogueRenderer.hd_bar`): the bar runs across the whole
+  384-unit frame and the gear sits flush left, where it is also tapped. Its
+  iPhone layout puts both in the 320-unit column, which left gaps at the 3:4
+  frame's sides. They are served through
+  `ContentLibrary.cod_hd_common`, never as `hd_asset(155)`, so none of SHS HD's
+  own chrome behaviour switches on. Each stand-in is drawn at its own 2x size:
+  the wedges are 19x50 for Android's 10x25, and only tile at their own size.
+  Alpha follows CoD's change proportionally (the median ratio on opaque pixels:
+  a 242 cap, or a 242 strip raised to 254), never per value. The discs 38-40
+  are flat greys (207, 207, 149), so they become SHS HD's vector circle, 105
+  units, in the frame's own colour.
+
+Since ported from CoD's own code (sections below): the choice geometry,
+choice-panel colours and title placement, the chapter card and the score
+banner. Still open: the highlight's face change (colour only so far) and the
+free edition's scene-caption offset (see "Dialogue geometry").
+
+## Dialogue geometry
+
+CoD has its own `SHSUIDialog`, and its text uses CoD's iPhone rules
+(`dialogue.DialogueLayout.page`). It does so with or without the art
+source; SHS HD's photo-fitted placements never apply.
+
+- **Narration** (`animateTextLayer`, 1.3.4 armv7 `0003c4e4`, speaker
+  type 4).
+  - The narration font measures and draws. `+0xcc` is set in `init`
+    (`0003d8d8`) to engine `+0xe254`; Android measures with the body font
+    instead.
+  - The block is wrapped at 220. Its width is the widest line + 1, rounded
+    up to even and at least 120. Its height is the text height + 4, rounded
+    up to even.
+  - The bubble is that block plus 10. The text layer sits at the
+    constructor's (30, 120).
+  - 1.4.7 anchors at (30, 135) when `SHSEngine::g_bEnableInGameBanner` is
+    set (constructor `0003c27c`). The flag sits in zero-filled memory and is
+    set at run time by the ad code. The owner's 1.4.7 device shows the
+    shifted layout (IMG_0309), so a free-edition library keeps it
+    (`cod.profile.in_game_banner`).
+  - The flag also moves the schedule caption from y 10 to 55
+    (`GameModel::init` `00012964`, `+0x1c20`, read by
+    `displayScheduleCaption`) and is read by
+    `SHSUIChapterScreen::initChapterScreen`. The chapter card's use is ported
+    (`desktop_title.CodTitleRenderer.BANNER`); the scene caption's is still
+    to port.
+- **Typed lines** (`-[SHSTextLayer setupTypingLayers]` `0004db50`).
+  - Each line is its own layer inside a container placed at
+    (x − 4, line top − 4). The line layer sits at (−4, −4) in it
+    (`positionLayer:boundsPadding:` `0004e7e4`), with its text at (4, 4).
+    Every line therefore sits 4 units up and left of the text layer's origin.
+  - Lines step by `FPToFixed(gap + cap)`: 20 for narration, 21 for body.
+  - The device's baseline is a further 2.4 units lower in both faces
+    (IMG_0309, IMG_0310). This is photo-measured and not found in the
+    decompile (`COD_BASELINE_DROP`).
+- **Footer hints** come from CoD's own bank. It lacks three of SHS's strings,
+  so roles 36/38/40 are CoD's 33/35/37 (`cod.assets.STRING_IDS`).
+
+Measured against IMG_0309 and IMG_0310 at 1.4 px per unit, every edge and
+line is within about half a unit: line breaks, box edges, text x and line
+tops and bottoms.
+
+## The portrait housing
+
+CoD's iPhone `SHSPortraitLayer` (1.3.4 armv7) has SHS HD's layer at one point
+per unit. This applies with or without the art source:
+
+- `init` (`0004c680`) builds 128x160 character layers, anchored bottom-centre
+  on the 128-point housing.
+- `drawLayer:inContext:` (`0004c3f0`) applies mask frame 0 at (0, 10, 128,
+  150), the immediates at `0004c502`-`0004c518`. It translates to
+  ((128 - w) / 2, 160 - h). Portraits therefore sit flush on the housing's
+  bottom edge; SHS HD uses 318 of 320 points.
+- A right-hand speaker is flipped unless theme 3.
+- `drawInContext:` (`0004bfcc`) draws ring 37 even-odd clipped against the
+  bubble outline, then the disc unclipped (38/39/40 by theme; 43/44 in the
+  portrait picker).
+- `GameModel::clipPortraitHousingAgainstBubble` (`00010850`) and
+  `clipPortraitHousing` (`00010768`) give SHS HD's outline: the box plus 7.
+  Its top corners are cut 10 points, which is 10 units here (SHS HD: 5).
+- `SHSUIMenu::addPortraitToMenu` (`0003f2b4`) calls the same clip, so choices
+  share this housing.
+
+## The choice panel
+
+CoD 1.4.7's iPhone `SHSWidgetMenu` is SHS HD's code with every constant
+halved, laid out in a 480-point screen (`hd_choice.COD_GEOMETRY`). The
+runtime draws it with SHS HD's port (`hd_choice_page`, `ChoiceRenderer.draw_hd`)
+from CoD's own layout bank (resource 14; `hd_layout.BankLayouts`) and CoD's
+packs: slot 0 is common pack 126, slot 2 the theme's box pack. It needs vector
+fonts, so it applies with the SHS HD art source; a plain IPA library keeps the
+Android page.
+
+| | SHS HD (iPad points) | CoD (iPhone points) |
+| --- | --- | --- |
+| `setMetrics` (`generateNewMenu` `000453d8`) | x 104, width 560 | x 20, width 280 |
+| Rows; panel limit; screen | 88; 964; 1024 | 44; 450; 480 |
+| Portrait description minimum; extra without a character | 136; 20 | 68; 10 |
+| `ARR_LINE_OFFSETS_MENU_LEFT` | 190, 170, 130 | 95, 85, 65 |
+| `ARR_TITLE_LINE_OFFSETS_LEFT` / `_RIGHT` | (0, 40) / (0, 10) | (0, 20) / (0, 5) |
+| Table and separator inset; side strips; label padding | 6; 6; 24 x 12 | 3; 3; 12 x 6 |
+| Box line above the header's bottom (normal, tall) | 36, 100 | 18, 50 |
+| Housing centre x (left / right) | x + 74 / 694 - x | x + 37 / 283 - x |
+| Housing; `clipPortraitHousing` inset | 256; 6 | 128; 3 |
+| Circle timer (`updateTimerLayers` `0003c878`) | (385, footer + 61), 100 | (161, footer + 30), 50 |
+| Label fly-in offset (`cellForRowAtIndexPath:`) | -600 | -200 |
+
+- The table is from `solveMetrics` (`0004422c`), `drawSelf` (`00044b60`), `SHSMenu` (`000337b0`...) and
+  `addPortraitToMenu` (`0003d3f0`). The line-offset arrays were read from the binary's data.
+- The label fly-in offset is the one constant that is not halved.
+- `setPortrait` (`00043aa0`) sets SHS HD's row colours per theme.
+- Fonts come from `initFonts` (`00026234`):
+  - Title: the bundled name face, 26 points, dark red (theme 2 rose), with a 4.0 stroke twin and gap 8.
+  - Description: Arial Rounded 16, black (theme 2 rose), gap 10. A backtick switches it to Trebuchet italic.
+  - Options: Arial Rounded 15, black (theme 2 rose), gap 8.
+- `drawSelf` raises the title by the field at CSFont +0x18 (SHS HD reads +0x14). This is read as the same
+  descent in CoD's older CSFont layout, not separately confirmed.
+- **Checked against the 1x photos (2 px per point).**
+  - IMG_0483 (no character): every rule (210, 254, 298, 342), both panel edges and all text within half a
+    point.
+  - IMG_0406 (portrait, two-line description) and IMG_0482 (timed): same layout. Side-by-side images are in
+    `reference/screenshots/verify/cod_choice_*`.
+- **Not yet ported:** the rapid-fire quiz (service 71) still uses the Android page.
+
+## Speaker names
+
+CoD 1.4.7's `SHSUIDialog::updateTitleBounds` (0003a030) and `animateTitleLayer` (0003a174) are SHS HD's. Names are
+laid out by `speaker_names.hd_speaker_label` over CoD's own layout 17 (resource 14, column units):
+- **Normal title regions:** nodes 0x2e / 0x4c / 0x6a. A name taller than its region takes the tall node 0x25 /
+  0x43 / 0x61, with the header extra 40 instead of 8.
+- **x nudge:** +1 for speaker type 1, -2 for type 2.
+- **Flags:** 0x19 / 0x1b / 0x1a. Title lines are indented (0, 20) / (0, 5), with gap 8.
+
+Two constants are not halved: a title is short under 135 of CoD's points and then shifts 15. SHS HD's 135 and 15
+are iPad points, so 67.5 and 7.5 units (`points_per_unit=1, shift=15`). The names used to take Android's
+shrink-to-one-line fit.
+
+Checked against IMG_0392 (Natara Williams, two lines), IMG_0415 (Realtor, right) and IMG_0310 (Sophie, left). The
+side-by-side images are in `reference/screenshots/verify/cod_name_*`.
+
+## The score notice ("Detective Score Up!")
+
+Service 88's notice is SHS HD's letter effect, not Android's typed notice (`cod.profile.LETTER_NOTICE`).
+- **Same code.** CoD 1.4.7's `SHSUIDialog::startLetterEffectAnimation` (00038d84) has SHS HD's code and timings:
+  letters 0.05 s apart, a 0.2 s rise, 1.2 s, spacing 3, and an empty letter 5. It starts 0.25 s after the portrait
+  animation, with spacing 3.0, as `setup` calls it.
+- **CoD's own constants.** The raise is 30 (SHS HD 60) and the right limit 300 (748), over the 128-point portrait
+  layer. The padding is not in that function; 10 is fitted to the photos (`dialogue_notice.COD_NOTICE`).
+- **Fonts** (`updateFonts` 00038b18). Every CoD speaker seen is theme 1: TrebuchetMS-Italic 20 in 0xf0513c with a
+  1.5 stroke (+0x17328), over a black twin with a 6 stroke (+0x18b48). IMG_0322 / IMG_0412 show red letters edged in
+  black inside a white outline, drawn as a white 6-point outline, the red fill and a black 1.5-point edge
+  (`DialogueRenderer.cod_notice_font`).
+  - Themes 0 and 3 use TrebuchetMS-Bold 20, black; theme 2 uses rose. Neither is drawn yet.
+- **Checked against IMG_0322.** The outline's left and right edges are within half a point; the height is within
+  about a point.
+
+## The background window
+
+**Native.** CoD's iPhone screen shows a scene's 480x720 art at 1 px per point. In IMG_0483 the screen starts at the
+art's (0, 180), exactly `background_origin`'s focal point. Its chapter card (`SHSUIChapterScreen::animate`: bounds
+320 x 480 at (160, 240)) shows the whole picture fitted to the screen (IMG_0479: the art at 2/3, error 2.0 of 255).
+
+**In the 3:4 frame (owner's choice, 2026-10-14).** Backgrounds behave as SHS's SD backgrounds do, filling the frame:
+- **Scenes** pan with the speaker (`location_pan`, the art's width given as 960 HD points) with `HD_BG_SHIFT`'s
+  vertical offset, so the window always stays inside the art.
+- **The chapter card** scales the picture evenly until it covers the frame, centred on the column's centre (`'cover'`).
+  SHS HD's own card stretches its picture to the frame, which would distort CoD's 2:3 art.
+  - The card itself is drawn on the whole 768 x 1024 frame, as SHS HD's is, so its black opening layer covers the
+    picture. Drawn in the CoD column it left the picture showing around a black column (owner's test, 2026-10-14).
+  - **Text.** Wrapping, alignment and each glyph's place stay CoD's (fonts 528 / 530, in CoD points mapped at 2x from
+    the column's origin). With the SHS HD art source each glyph is SHS HD's 2x one (589 / 590, 591 / 592): the same
+    faces at exactly twice the height (66 / 46 against 33 / 23), centred on CoD's cell, since SHS HD's cells are a
+    little wider (2.05-2.14x). Without the art source, CoD's own glyphs are drawn at 2x.
+
+Plain iPhone placement reached past the art's left edge and left dead space. A window that does run past an art's
+edge keeps the art's scale rather than stretching it: the old stretch made CoD's art about 26% wider. SHS's
+backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
+
+## The portrait picker
+
+Service 78 draws CoD's `SHSUIPortraitSelect`: SHS HD's at iPhone size, without the frame offset
+(`desktop_picker.CodCharacterPickerRenderer`).
+- **Box.** Widget 47 sits at (0, 120, 320 x 240).
+- **Portraits.** `ARR_PORTRAIT_POSITIONS` are (160, 275), (52, 241), (115, 170), (206, 170) and (269, 241), which is
+  SHS HD's halved. The scales are the same as SHS HD's.
+- **Each portrait** is the picker ring (frame 43 or 44 of pack 126) and the art in its housing, at opacity
+  scale x scale (`selectPortrait` 0004fc5c).
+  - The opacity is applied to the ring and the art separately: iOS of CoD's era has no group opacity.
+  - Where ring and art overlap, the side portraits therefore read stronger than one flattened layer would.
+- **Title.** The title is drawn in the speaker theme's name face (26), its ink centred at (160, 112).
+- **Check button.** It is frame 41 at (205, 347).
+- **Hint.** The hint goes on the shared bottom bar.
+
+Checked against Fallon Family Christmas (IMG_0458) and Volume 8 (IMG_0499). The side-by-side images are
+`reference/screenshots/verify/cod_picker_*`.
+
+## Name entry
+
+Services 17/40 draw CoD's `SHSUITextEntry` (`desktop_input.InputRenderer._draw_cod`).
+
+**Same code as SHS HD at iPhone size.** CoD 1.4.7's `initTextEntry` (0003f620) is SHS HD's with m30/m20 for m60/m40:
+- It uses the same widget 0x2e and sub-elements 0x12/0x17/0x2c.
+- It picks the same one-line or two-line header (root 10 or 1) by comparing the title's height with node 18's.
+- Its `tick` (the alphanumeric filter) is unchanged.
+
+**Layout.** The panel is CoD's own layout 46 in screen points:
+- **Position.** x = (320 - 280) / 2, and y = 151 - promptHeight. That is the base IPA's rule (000a0238). The height
+  is the prompt's cap height (0.716 x 16), plus one line per extra prompt line.
+- **Art.** The nodes are tiled from pack 126 (slot 0) and the theme-1 box pack 204 (slot 2), which gives the grey
+  border.
+  - With the SHS HD art source, both come at 2x. The border is SHS HD's 247 recoloured (`cod/hd_art.py`).
+  - The white fill and the field's nine-piece outline are SHS HD's 155 frames 4 and 60-68, in CoD's look
+    (`COMMON_FRAMES` 0 and 51-59). Each is an exact 2x of CoD's frame. The fill is unchanged; the outline corners fit
+    at about 9 mean error.
+
+**Fonts** (`initFonts`). All three are 0xff000000, black:
+- engine +0x4a768, Arial Rounded 30 (title);
+- +0x4bf88, Arial Rounded 16 (prompt);
+- +0x4d7a8, the bundled name face 24 (typed text).
+
+`cod.profile.NAME_COLORS['PajamaHip24']` had been SHS's blue; it is now black.
+
+**Text placement.**
+- **Title.** `drawTextCentered` uses node 18's rectangle. That rectangle is read before the tall header is shown and
+  never read again. So a two-line title is centred on the one-line slot and runs down toward the prompt, as in
+  IMG_0493 ("What do you / type?").
+- **Prompt.** It sits 0.6 right of node 23, with its baseline 12.3 below the node's top (SHS HD's anchors).
+- **Typed text.** Its baseline is 18.7 below node 44's top (measured).
+- **Cursor.** It is a solid bar in the name font's dark red (139, 0, 0), 3 x 24 points. Its top is 2.5 below node 44,
+  and it sits 3.5 past the text's ink (measured on IMG_0493/0505).
+
+**Checked** against Fallon (IMG_0457), Volume 8 Chapter Eight (IMG_0493) and Your Case's first name, last name and
+hometown (IMG_0502/0505/0507):
+- The title, prompt and typed text are within half a point.
+- Volume 8's two-line title is within a point.
+
+The images are `reference/screenshots/verify/cod_name_entry_*`.
+
+**Background.** In these photos the screen shows the art from (80, 180), CoD's plain centred placement. In the frame,
+the art keeps following the last speaker's pan, so it always covers the frame (owner's choice, above).
+
+## The quiz
+
+Service 71's timed word quiz is drawn on CoD's own panel (`ChoiceRenderer.cod_page(scored=True)`), with SHS HD's pacing
+(`WordGame.hd`).
+
+**Same code at iPhone size.** CoD 1.4.7's `setScored`, `drawScore` and `drawScoreEffect` are SHS HD's with every
+size halved (m41/m18/m19/m15 for m82/m36/m38/m30).
+- **Score layer.** 41 x 19 at the timed footer's node 17, (187, 21). The text is TrebuchetMS-Bold 25, white, with a
+  0.3 stroke (+0x3e668): SHS HD's 50 / 0.6 at half size.
+- **Score effect.** 18 x 15 at node 18, (247, 12). "+N" is TrebuchetMS-Bold 16 green (+0x3fe88); "-N" is red
+  (+0x416a8).
+- **Effect rise.** `doScoreEffectAnimation` is byte-identical to SHS HD's: the label still rises 30 points, which is
+  twice as far in column units.
+- **Running man.** `updateTimerLayers` (0003c878) puts it at (161, footer top + 1 + 6 + 24), one point below the
+  circle timer. It is common pack 126 frames 23-27, 0.07 s each.
+
+All of these sit in `hd_choice.COD_GEOMETRY`; SHS HD's are the `PanelGeometry` defaults.
+
+**HD mirroring (SHS HD art source).**
+- The timer pie was already mirrored.
+- The running man is now SHS HD's 155 frames 28-32, recoloured from SHS HD's blue to CoD's grey
+  (`cod/hd_art.COMMON_FRAMES`). These are the same five poses, though not exact doubles, so they keep their own size.
+- The score capsule and timer notch are slot-2 frames 9-12 of the theme box pack, already SHS HD's recoloured skins.
+- CoD's style is kept: black description and options, its own row colours, and the bundled name face for the title.
+
+**Hint.** `initActionMenu` calls `setTimed`, so the quiz shows "Touch choice before time runs out", as the photos do.
+This applies in SHS HD too.
+
+**Checked** against 14_2 Accelerant's "Identify the IP address!" (IMG_0516, and IMG_0519-0521 / 0517-0518 during
+play): the panel, rows, capsule, digit, runner and "+1" sit where the photos have them.
+- `reference/screenshots/verify/cod_quiz_IMG0516_vs.png`
+- `reference/screenshots/verify/cod_quiz_score_effect_IMG0520_vs.png`
+
+The quiz is in 18 calls over 15 episodes. Single-chapter ones include Accelerant, Unfinished Business, New World
+Order 1 and 2, True Faces, Sunset and City of Love Part 2.
+
+## The Exit Game? prompt
+
+**Native.** CoD 1.4.7's service 100 saves, then calls `CSEngine::exitAndShowURL`, which is `UIApplication openURL`
+with no prompt. Its menu engine does have the prompt:
+- **Menu 16** (logical resource 15; strings in resource 13) is "Exit Game?", with the message "If you follow this
+  link you will exit Cause of Death and open your browser. Proceed?".
+- **No** is a back step. **Yes** is engine action 24 (`doMenuEngineAction` case 0x18: `goBack`, then
+  `exitAndShowURL` with the stored link).
+
+**Ours.** As with SHS's script and wall links, the runtime offers a script's link behind that alert
+(`Desktop._offer_link`, `exit_menu` / `exit_action`). That is this player's addition, so a desktop browser never opens
+unasked. Like the SHS notices, it dims the scene sepia and holds the game.
+
+Only two CoD episodes call service 100. Both go to an App Store page:
+- Halloween Special Dead Man Walking 1, for Ghost Harvest;
+- What Happened To Colt Part 2, for SHS's free edition.
+
+**The window** (`desktop_cod_menu.CodMenuWindows`). Since 2026-10-14 it is SHS HD's window
+(`desktop_hd_menu.HdMenuWindows`: the 604-point card centred in the 768 x 1024 frame, its title, message, button strip
+and 156 x 58 buttons) in CoD's dress, by the owner's rule for every CoD menu. The same class draws CoD's other
+menu-engine windows (see "The title screen and launch").
+- **Card.** CoD's window drawn as vectors at HD's size (`draw_cod_card`, measured on pack 16 frames 78-80 and pack
+  204 frame 3): the (85, 95, 176) border around the top 112 points and the footer's 86, the grey edge (89, 90, 90)
+  beside the body between them (IMG_0514), a white face at alpha 242.
+- **Text.** Arial Rounded; titles and messages black, rows (60, 60, 62) on lavender / pink; rules (166, 166, 166).
+- **Buttons.** CoD's blue button (frames 90-92, pressed 93-95) at HD's size with a white label, or the back arrow
+  (frame 89). CoD has no orange alert buttons, so its notices' OK is blue too.
+- **HD mirroring.** With the SHS HD art source, the buttons take SHS HD's pack 32 frames 13-18 (exact doubles) as
+  their outline, filled with CoD's colours sampled by position (`cod/hd_art.positional_menu_buttons`).
+  - The colour-keyed recolour that the skins use banded these. SHS HD's button has an inner bevel and a lighter
+    gradient, so shades from different places shared a key and painted CoD's dark rim across the middle.
+  - The card has no SHS HD counterpart, since SHS HD's windows use its dialogue skin, so it stays CoD's.
+
+**Superseded.** The first version drew the window at CoD's own iPhone geometry (layout 39's slots, a 302-wide card,
+TrebuchetMS labels) and matched IMG_0514 within half a point. The owner's rule replaced that with HD's layout.
+
+## The bottom hint
+
+Both iOS builds draw the hint in an ArialMT 11 CSFont (CoD +0xca48, white at alpha 0xb0). Both `initFonts` build the
+ArialMT advance table from the Arial Rounded MT Bold face:
+- CoD case 4: `CSFontInfo::init(+0x7010, *(+0x208))`.
+- SHS HD 0002b04a: the faceplace text's bug.
+
+So the hint is Arial's letters at Arial Rounded's advances (`DialogueRenderer.footer_font`). "Touch the screen to
+continue" now measures:
+
+| Source | Width |
+| --- | --- |
+| SHS HD photos IMG_0132 / IMG_0133 | 154.0 units |
+| Arial Rounded advances (predicted) | 154.4 units |
+| Plain Arial (ours before) | 141.2 units |
+| CoD photo IMG_0496 | 152 points |
+| Ours now (CoD) | 154 points |
+
+Android's bitmap hint is unchanged.
+
+## The pause menu and Options
+
+CoD's gear opens its menu engine's windows (logical resource 15, strings in bank 13; `desktop_cod_pause.CodPauseMenu`):
+
+| Window | Menu | Items |
+| --- | --- | --- |
+| Pause | 24 | Resume (engine 33), Options (queue 20), Help & About (queue 13), Main Menu (engine 34), and an "Alert" item with condition flag 16 |
+| Options | 20 | Vibration (condition 8, hidden on the photographed iPad), Game Music, Music Volume, Sound FX, Sound FX Volume, Play My Music, back |
+| Help & About | 13 | Introduction, Controls, Now Airing, Episodes On Demand, Network, About, back. The pages are menus 0-5. |
+
+**Same structure as SHS HD.** The string ids are SHS HD's (8, 9, 10, 20, 120, 12-15; the pages 133-140, 16 / 0),
+and as in SHS HD the rows are a UIKit table with a UISwitch and a UISlider.
+
+**SHS HD's layout in CoD's style (owner's choice, 2026-10-14; it applies to every CoD menu).** `CodPauseMenu` is
+`desktop_pause_hd.HdPauseMenu` with only its style overridden. From SHS HD it keeps:
+- the 604-point card in the 768 x 1024 frame, with 112-point headers, 88-point rows (130 for a slider row) and an
+  86-point footer;
+- the centring;
+- the UIKit switch and slider sizes;
+- the taller text pages;
+- the hit areas.
+
+CoD's own card is the same width, but its iPhone controls are twice HD's size in frame points; those are not used.
+CoD's styling, measured on IMG_0460 (Pause), IMG_0461 (Options; IMG_0342 at 2x agrees) and IMG_0462 / 0463 (Help &
+About):
+
+| Part | CoD style |
+| --- | --- |
+| Card | CoD's window as vectors at HD's size, as SHS HD draws its own (`desktop_cod_menu.draw_cod_card`): a 6-point (85, 95, 176) border with 20-point corners around a white face, both at alpha 242 (pack 16 frames 78-80), the grey edge (89, 90, 90) beside the body (pack 204 frame 3) and the footer's rule (166, 166, 166) (frame 74). Stretching the 1x pieces 2x left their corners soft and off the grey strips. |
+| Text | Arial Rounded. Titles are black, row labels (60, 60, 62), and a help page's text black on white (255, 255, 254). |
+| Rows and rules | Rows alternate lavender (240, 240, 248) and pink (255, 243, 253) from the first. Rules are (166, 166, 166). |
+| Art | The back button, its arrow and the slider row's speakers are CoD's (pack 16 frames 89-92; common pack 126 frames 45 / 46) at SHS HD's sizes. |
+| Controls | The switches keep UIKit's own bold ON / OFF label. |
+
+**HD mirroring.** With the SHS HD art source, the back button, arrow and speakers are SHS HD's doubles filled with
+CoD's colours (`cod/hd_art.positional_frames`).
+
+**Owner's choices (2026-10-14).**
+- **Sliders.** CoD's photos show no slider between the speakers: CoD ships no slider art, and its stock UISlider did
+  not draw on the device. One is drawn as SHS HD's is.
+- **Options categories (2026-10-14, both games).** Options lists categories, laid out like Help & About's list, and
+  each opens a page of its own rows (`desktop_pause_hd.OPTION_CATEGORIES`):
+  - **General:** Side Panels (in a story, SHS only), Choice Hints, Ask to Skip Mini-Games and Skip Ad Intros (SHS
+    only: CoD has neither mini-game nor ad intros), and SHS HD Backdrop (both games, where a collage exists).
+  - **Sound:** Game Music and Sound FX, with their sliders.
+  - **On the main menu only:**
+    - **Episode Titles** ends General. It is a button (SHS HD's orange footer button; CoD's blue) that steps
+      through the title languages. It is offered where some episode has a translated title, so not in CoD (none of
+      its 74 has one).
+    - **Data Management:** Add Episodes, Open Another Library.
+  - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
+    79 x 27 switch, and the Episode Titles button at 104 x 34 with an 18-point label.
+
+  Every switch is stored in each game's own `player.json`, not shared between games (yet).
+- **Left out.** Play My Music: it opens the device's music library, which a desktop doesn't have.
+
+**Help & About.** The pages use SHS HD's page layout (a long title, such as "Episodes On Demand", takes two lines,
+as in SHS HD).
+- **Now Airing and Episodes On Demand** describe this player's library rather than EA's paid store. They are SHS's
+  rewrites adapted to CoD (`help_text_overrides.COD_HELP_TEXT_OVERRIDES`):
+  - the two release stages (On Demand, then Now Airing), with episodes listed by their first release;
+  - why most dates are exact: the Cause of Death Facebook page announced each release. The few it never announced are
+    approximated from the weekly schedule, the wiki or the App Store listing (docs/COD_RELEASE_DATES.md);
+  - the tile grid selector behind Play/Resume, which is planned for CoD;
+  - no SD tag, which is SHS-only.
+- **Introduction, Controls and Network** keep CoD's own text.
+- **About** is the owner's: CoD's credits plus this project's credits, the fan-preservation disclaimer SHS's page has,
+  and the Cause of Death Discord link. Its editing copy is `SHSHD/cod_about_page.txt`.
+- **Version token.** CoD's is `~259~` (SHS HD's `~276~`); both are replaced with this player's version.
+- **Push Notifications** (main menu only) is CoD's menu 6: "Push Notifications" (235) and "Do you want to be notified
+  when new episodes are released?..." (237), as on IMG_0522. SHS HD's ids (238 / 240) are, in CoD's bank, the iOS
+  permission prompt ('"Cause of Death" Would Like to Send You Push Notifications').
+- **Links.** A URL in a page's text becomes a link. In a story it now goes through the game's own "Exit Game?" prompt
+  (`Desktop.command('pause_link')`), for SHS too, as the main menu's copy of the page already did.
+- SHS's own overrides are not applied to CoD.
+
+## The title screen and launch
+
+CoD's front end is SHS HD's (`application_hd.HdShell`) on CoD's menu engine (`application_cod.CodShell`), in SHS HD's
+layout with CoD's art (owner's choice, 2026-10-14).
+
+**Same as SHS HD.**
+- **Main menu layouts.** CoD's layouts 74 / 75 / 77 / 79 are exactly half of SHS HD's. CoD's layout units are points,
+  SHS HD's are half points, so the numbers agree.
+- **Button art.** CoD's pack 272 is SHS HD's 315 at 1x, except frames 14 / 15 (the info button's two states), which
+  are swapped.
+- **Label fonts.** CoD's 532 / 533 are SHS HD's 593 / 594 at 1x.
+- **Buttons.** Play/Resume, Now Airing, Episodes On Demand, More EA Games, the gear and the info button, in the same
+  places. The labels are CoD's strings 118 / 119 / 83 / 227.
+
+**Different.**
+- **The picture.** CoD's title is one 320 x 480 painting (resource 6), not SHS HD's four animated layers; resources 7-9
+  are empty. It fills the 3:4 frame's width (2.4x, against the buttons' 2x). It is placed so that the device's
+  Play/Resume top (CoD point 346 on IMG_0464) falls on ours (frame point 753). The logo then sits just above the wedge,
+  as on the device, and the taller picture loses 77 points of sky and 51 of the brick floor.
+- **The entrance.** Only the buttons slide in, since there is one layer (owner's choice).
+- **The launch screen.** CoD's own `Default@2x.png` (the EA logo on a flat grey of 105, 640 x 960) is fitted to the
+  frame's height on the same grey, under "Play with sound?" (menu 7; IMG_0473). After the answer the screen fades to
+  black and the main menu fades in from it, as the owner describes the device: CoD has no EA flash. The fade (0.5 s
+  each way) is not decompiled: it is in CoD's engine view's `setRenderArg`.
+- **Menu music.** `doSoundManagerTransition` (00025c60) plays 0x2011 (8209) once, unlooped, where SHS HD plays 0x2017
+  (8215). The menu was silent because the app always asked for SHS's asset; it now takes the game profile's
+  `MENU_MUSIC`.
+- **Beside the frame.** With the SHS HD art source, the window around the frame shows SHS HD's faded collage
+  (resource 10), on the menus and in episodes, as SHS HD's do. Options has a "SHS HD Backdrop" switch (player.json
+  `hd_backdrop`, on by default; this player's own) that leaves the dark fill instead. The title painting stretched to
+  the window is gone (owner's choice).
+
+**Menu numbers.** CoD's menu engine has SHS HD's windows under other numbers; `CodShell` translates them.
+
+| Window | SHS HD | CoD |
+| --- | --- | --- |
+| Play with sound? / Continue playing your music? | 7 / 8 | 7 / 8 |
+| Privacy Policy / EULA / Terms | 16 | 15 |
+| Exit Game? | 17 | 16 |
+| Disable / Enable Usage Sharing | 19 / 20 | 18 / 19 |
+| Delete Saved Game? (`~260~`; SHS HD's `~277~`) | 12 | 52 |
+| Connection Error | 41 | 38 |
+| Want More Content? / Miss An Episode? | 23 / 24 | 22 / 23 |
+
+**Engine actions.** CoD's numbers and the SHS HD actions they map to:
+
+| Action | CoD | SHS HD |
+| --- | --- | --- |
+| The sound answers | 0-4 | 0-4 |
+| EULA / privacy / terms links (strings 201 / 202 / 200) | 21 / 22 / 23 | 14 / 15 / 16 |
+| Exit Game's Yes | 24 | 18 |
+| Close the window | 25 | 9 |
+| Disable / enable usage sharing | 26 / 27 | 19 / 20 |
+| End menus: More EA Games / Main Menu / Replay | 30 / 31 / 32 | 23 / 24 / 25 |
+| Delete Saved Game's Yes | 36 | 10 |
+
+Outside the end menus, Main Menu (31) only closes the window.
+
+**Privacy list.** Its usage-sharing rows are two items with conditions (`checkItemConditions`), not SHS HD's `~275~`
+label:
+- flag 2, "Enable Usage Sharing", shows only while sharing is disabled;
+- flag 4, "Disable Usage Sharing", shows only while it is on.
+
+`CodMenuWindows.items` hides the one that fails, and also Vibration (8) and the pause "Alert" row (16).
+
+This fork hides both usage-sharing rows in either state, as it does SHS HD's (owner, 2026-10-15): the runtime sends
+no usage data, so the switch would only confuse. A row is hidden by the window it opens (CoD's 18 / 19, SHS HD's
+19 / 20) or the engine action it runs (SHS HD's 17; `HdMenuWindows.HIDDEN_ACTIONS` / `HIDDEN_MENUS`).
+
+**Episode buttons.** Play/Resume, Now Airing and Episodes On Demand (the main menu's and the end menus') open SHS
+HD's pickers in CoD's dress (see "The episode screens"). Without the SHS HD art source they open the plain episode
+browser.
+
+**Switch Game.** "More EA Games" switches to the other game in both HD front ends (owner's choice, 2026-10-14):
+- **Where.** The main menu's fourth button and the end menus' row (SHS HD action 23, CoD's 30).
+- **What it runs.** Upstream's Switch Game (`Application.switch_games`). With the other game's library set up, that
+  game opens; otherwise the game chooser does. A switch is not a launch, so there is no loading screen or "Play with
+  sound?" again.
+- **Fades (owner's choice).** The frame fades to black (0.5 s); the backdrop beside it stays. Then the other game
+  arrives:
+  - Cause of Death: its menu fades in from black, as after its EA screen.
+  - SHS: SHS HD's flash (the flare and the white, with the EA jingle) over black, then the main menu's entrance.
+
+  Opening a library makes one frame last about half a second. The shell's animations advance at most 1/20 s a frame
+  (`MAX_STEP`), so that frame no longer skips the fade-in (it used to cut straight to CoD's menu).
+- **Labels.** Each carries the other game's name: "Cause of Death" in SHS HD, and in CoD "Surviving HS". The full
+  "Surviving High School" (455 points in the green label font) is too wide for the 310-point button; "Cause of Death"
+  (297) fits, about as snugly as "More EA Games" (283). The end menus' rows take the full title.
+- **Libraries.** A test setup can say where each game's library is with `--game-library GAME PATH` (repeatable; this
+  fork's option). Those paths are used for the switch and never written to the launcher's remembered locations.
+  `play-hd-art-test.ps1` passes `test-library` and `cod-library`.
+
+## The episode screens
+
+By the owner's choice (2026-10-14) CoD uses SHS HD's three episode screens, not its own iPhone "Play My Episodes"
+list (IMG_0467):
+- **Play/Resume** is the tile grid (`desktop_episode_picker.HdEpisodePicker`), with a title-card preview per episode.
+- **Episodes On Demand** is the list grouped by category (`desktop_episode_list_hd.HdEpisodeList`).
+- **Now Airing** is the same list grouped by year of first release.
+
+`desktop_cod_episodes.py` gives them CoD's style. The grouping and dates are CoD's own (`cod/episodes.py`). The
+screens need the SHS HD art source, for the tile masks (resources 13 / 14), the popup card and the row divider.
+
+**Categories.** SHS's rules misfile CoD: the bundled base game becomes "Mega Packs", and uncatalogued episodes take a
+season from SHS's pack numbering. So CoD uses its catalogue's own categories:
+
+| Category | Contents | Source |
+| --- | --- | --- |
+| Volume One | the base game, captioned "Volume One: The Maskmaker" | the catalogue's synthetic entry (pack 0, episode 0); bank 13 strings 79 / 182 |
+| Volume Two - Volume Six, Season 7 - Season 15 | the Volume sets | both device catalogues name the sets this way |
+| Volume 13 | shares Season 13's row: Interlude: Perfect Getaway | 1.4.7's episode catalogue, (1201, 45) |
+| Volume 14, Volume 16 | their chapters | catalogue |
+| Side Stories | the Side Stories and the Halloween special | catalogue |
+| Premium Content | with A Fallon Family Christmas | catalogue; owner's placement (1.3.4 filed its byte copy `1_1_Magic_School.exp` under "Interlude") |
+| Now Airing Special | the free Now Airing promo, captioned "Now Airing Special" | no catalogue lists it; 1.4.7's store listing gives it this category and name (product 840878). Owner, 2026-10-15: follow the store (it was first in Side Stories as "Now Airing Special: Just Another Day") |
+
+Anything else uncatalogued goes to Premium Content, SHS's fallback.
+
+**Order.**
+- **Categories:** the volumes by number first, then Side Stories, then Premium Content, as SHS HD's rule puts its
+  seasons before the generic categories, then any other category (Now Airing Special). CoD's own list and 1.4.7's
+  catalogue put Premium Content and Side Stories right after Volume One instead.
+- **Episodes in a category** go by first release, which is the order the owner listed Premium Content in.
+
+**Now Airing.** Episodes are grouped by the year of their first release (docs/COD_RELEASE_DATES.md); a Volume set takes
+its Chapter One's date, as SHS's season bundles do. Nothing is set apart:
+- CoD has no vote packs and no redundant bundles.
+- Its one overlap, Perfect Getaway's Now Airing file, repeats an interlude inside the Volume 13 set, which is the only
+  copy of that volume's other chapters. Both stay, each at its own date (both 2013).
+
+**Previews** are generated title cards, as for SHS's non-bundled episodes: about 29 seconds for all 74, cached in the
+library's `thumbs/`. Volume One's "Prologue" card is black with the title, as on the device (IMG_0474). A Volume set
+shows its Chapter One card.
+
+Two episodes have no preview and keep the picker's flat card, because the capture can't reach a title card:
+- Volume 16's Chapter Seven: Sunset reaches a quiz before its card, and the capture doesn't answer quizzes.
+- Fourth of July Special, Part 2's opening fight loops on the first choice.
+
+**Styling.** The structure is SHS HD's; only these parts are CoD's:
+
+| Part | CoD style | Source |
+| --- | --- | --- |
+| Backdrop | the title painting, placed as on the main menu and dimmed as SHS HD dims its own | `desktop_cod_main.title_layer` |
+| Buttons | blue back arrow and a blue Restore (CoD has no orange button) | `desktop_cod_menu.CodButtons` |
+| Popup | SHS HD's `popupBackground.png` with its (117, 137, 255) border recoloured to CoD's (85, 95, 176); black labels and alert text | `recolor_border` |
+| Category bands | (85, 95, 176) | pack 16 frames 73 / 76 |
+| Rows | (239, 243, 247) and white, starting with the tinted one as IMG_0467 does; selected (181, 195, 236) | frames 82 / 83 / 84 |
+| Separators | (222, 222, 222) | measured on IMG_0467 |
+| Icons | ring (102, 120, 213) at alpha 128; play (60, 85, 205) at 102; pause (50, 70, 161) at 128 | frames 101 / 96, their own alphas |
+| Text and card | black text; card border (85, 95, 176) | frame 81 |
+
+**Strings** come from bank 13:
+- New Game 19 and Continue 26;
+- Restore 194, and "Restore Not Necessary" 188 / 189 (SHS HD's 197 and 191 / 192);
+- the list titles, Episodes On Demand 83 and Now Airing 119.
+
+A message over the picker is titled with the game's name, no longer always "Surviving High School".
+
+**Checked** against IMG_0467 side by side (`verify/cod_picker_on_demand_IMG0467_vs.png`): bands, rows, icons, text,
+card border and buttons agree. CoD's list has a "MY SAVED GAMES" section that SHS HD's list doesn't; saved episodes
+show a pause icon in their own rows instead, as in SHS HD.
+
+### Episode info (this fork, 2026-10-15)
+
+With 1.4.7's store listing imported, every episode gets an info button:
+- **On the grid** it sits at the tile's bottom-right corner, where SHS's SD mark goes, in the SD mark's style: its dark
+  plate, with an "i" in a ring in the mark's text colour (owner, 2026-10-15).
+- **In the lists** it sits left of the play / pause icon: that icon's ring with an "i", in CoD's icon colours.
+
+It opens a card on the alert's card, showing:
+- the picker's own title;
+- the airdate from docs/COD_RELEASE_DATES.md (as in the lists, not the store's upload date);
+- the original price;
+- the store description, at the largest size from 20 down to 15 points that fits above OK.
+
+There is no native screen to follow.
+
+**The store listing** is `Documents/mtxprods` from a 1.4.7 device backup (`cod/store.py`). Its format, what the
+library keeps of it, and its coverage are in [COD_STORE.md](COD_STORE.md).
+- **Importing it:** it goes in `cod_episodes/` or beside the IPAs in the import folder or a bulk archive, or comes
+  through Add Episodes or a drop.
+- **What the library keeps** (`store` in library.json, `content/<sha>.json`): every product field except `granted`,
+  each product's `binPack` byte for byte, and its parsed contents. So the chapters inside the Volume sets keep their
+  own entries, for splitting the sets later. The file's user record (device and account identifiers, push token,
+  analytics) is never kept.
+- **Which product an episode takes:** the single-file product named after its file. The store's `_NA` / `_OD` /
+  `_airing` / `_NOW_AIRING_ONLY` suffixes fold. When there are two, the On Demand (paid) copy wins. The Now Airing
+  Special was only ever free, so it takes its free copy.
+- **Bundles:** a Volume set takes its own set product. Products naming several files (bundles, combos) describe a set
+  and are skipped.
+- **Price:** "Free" or the store's amount, e.g. "$0.99".
+- **Volume One** was never sold. Its card uses the App Store listing's description, supplied by the owner, priced
+  Free, and is shown only when a store listing is imported.
+
+The owner's listing gives all 74 of their episodes a card.
+
+## Audit: services 71 and 78, and 1.4.7's dispatcher (2026-10-08)
+
+Addresses in this section are from the **armv7** slices (the older audits
+below cite armv6). In 1.3.4 the dispatcher is `SHSScript::syscall`
+`0003831c`; in 1.4.7 it is in the same function. Both versions were analysed
+with Ghidra headless, and constants were read with Capstone.
+
+**Service 71, the timed word quiz (18 calls in 15 episodes).** Dispatcher
+case 0x47 builds an `SHSUIMenu` with `initActionMenu`, the same iOS action
+menu that SHS HD uses (`WordGame.hd`). Android's `FUN_000af010` pacing does
+not apply.
+
+| Item | Value | Where |
+| --- | --- | --- |
+| Arguments | title, description, good list, bad list, duration ms, character, portrait mode, refresh ms | case 0x47 |
+| Fly durations | 0.3 s on, 0.5 s off | `setFlyDurations`, `0004003e` |
+| Fly-on finish | 0.7 s timer | `flyOnNewChoices` `0003fed8`, literal `0003ff40` |
+| Skip input / tick | 400.0 / 0.2 s | `00040ab8` / `00040aac` |
+| Deal | arc4random, one good, two bad, a fourth of either, 20 swaps | `resetActionMenu` `0003fb60` |
+| Sounds | **8003** for a positive weight, **8004** for a negative one, none for zero | `handleMenuSelection` `0003ea4e` |
+
+The runtime gives CoD the `WordGame.hd` pacing (`IOS_ACTION_MENU`) and these
+sounds (`WORD_GAME_SOUNDS`). SHS keeps 8001/8002, and Android pacing unless
+the HD bundle is present.
+
+**Service 78, the portrait selector (2 calls).** "Choose your look!" appears
+in Fallon Family Christmas ("A Christmas Curse", script 25003) and in
+Volume 8's script 25017. Case 0x4e calls `createUIElement(5)`, an
+`SHSUIPortraitSelect` (`createUIElement` `00037e5c`). It reads the same text,
+count and character-array arguments. `selectPortrait` (`0004fc5c`) swaps the
+tapped portrait with the front one, and `setReturnValue` (`0004f840`) returns
+the front portrait's original index, matching `CharacterPicker`.
+`touchesEnded` (`0004fe00`) plays **8005**, CoD's click, for a swap and for
+the confirm button; tapping the front portrait is silent. The runtime uses
+these sounds (`PICKER_SOUNDS`); SHS's 8013/8010 do not exist in CoD's bank.
+Its presentation is ported ("The portrait picker" above). `createUIElement`
+type 16 is `SHSUIChapterScreen`, the chapter title card.
+
+**1.4.7 compared with 1.3.4.** The functions were compared case by case and
+function by function, with the decompiler's renaming normalised.
+
+- **Service 70:** same selectors, plus selector 11, which now returns 1 when
+  two engine fields match (`+0x62bdc` and `+0x6483c`) instead of 0. No
+  supplied CoD script calls service 70.
+- **Service 99:** calls `SHSEngine::getInterstitialType` before
+  `showFullPageAd`. The offline no-ad completion is unchanged.
+- **Service 100:** now has its own case and no longer reaches the default
+  branch. If the second argument is nonzero, it sets GameModel +0x1f, the
+  `endGame` flag that `runScript09` checks to end the game when the current
+  script finishes instead of returning to a caller. It then calls
+  `SHSEngine::saveGame` and `CSEngine::exitAndShowURL`, and the script
+  continues. All four supplied calls pass -1 from the top-level script 25001,
+  whose end already ends the episode, so the visible difference is the link
+  opening. The runtime keeps 1.3.4's local continuation and offers the link
+  behind CoD's own "Exit Game?" alert ("The Exit Game? prompt" above).
+- **Unchanged:** the quiz, choice and timeout code (`setReturnValue`
+  `0003cb88`; +0x98 is still written only by `loadElement`), the quiz sounds
+  and fly durations, and `SHSUIPortraitSelect`'s logic. Services 9, 91 and 95
+  have the same calls.
+
+## Timed choices with no timeout option
+
+Many CoD action scenes build a timed incremental choice (services 2–4) whose
+timeout selection is -1. Volume 7's "Let go." / "Hang on." is one example, and
+it appears in most Volume bundles and Side Stories 18. CoD 1.3.4 handles the
+timeout in three steps, checked read-only with Capstone:
+
+- **`SHSUIMenu::tick` (`0003f12c`):** with no selection pending, it copies the
+  timeout selection (+0x3c) into the selection (+0x30).
+- **`setReturnValue` (`0003e994`):** for an incremental menu (mode 3, mapping
+  flag +0x10d, always set by `initTextMenuWait` at `0003f934`), it returns
+  `mapping[selection]` from the table at +0x9a. For -1, that is the short at
+  +0x98.
+- **The +0x98 slot:** only `loadElement` (`0003ed88`) writes it, and
+  `saveElement` reads it. Each service-2 call allocates a new menu with
+  operator new, so the slot keeps the allocation's initial memory.
+
+The runtime returns **0** for this case (`cod/profile.py`,
+`TIMEOUT_NO_OPTION_RESULT`). That is the value of fresh heap memory, and a
+reused menu-sized block leaves the slot untouched too. It is not guaranteed
+natively. The scripts examined compare the result with their options' values,
+so any value that matches no option takes the same branch. Volume 7 tests
+`== 1` ("Hang on.") and sends everything else to the "Let go." path.
+
+One choice in the supplied library has a timeout selection past its options:
+the number puzzle in Volume 2's script 25011 ("Pick the right number!",
+6 s). It times out to 1000, with values 0–3. Natively that reads
+`mapping[1000]`, far past the 0x114-byte menu, which is undefined memory. As
+an adaptation the owner chose (`TIMEOUT_PAST_OPTIONS_UNMAPPED`), the runtime
+returns the selection unmapped. It matches no option, so the script's
+wrong-answer branch plays, which is what players would almost always have
+seen. The owner will compare this on device. Other negative selections, and
+SHS, keep the explicit error.
 
 ## Native audit: service 100
 

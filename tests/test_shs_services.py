@@ -142,7 +142,9 @@ class ShsServiceTests(unittest.TestCase):
                         self.assertEqual((vm.pc, vm.steps_executed), (pc, steps))
                         self.assertEqual(vm.run().args, (77, 0))
         # These are explicit SHS cases, not a blanket fallback for any game.
-        for game, services in (('shs', (12, 19, 100, 101)), ('cod', (14, 21))):
+        # (This fork's SHS follows HD's syscall table, where 12, 19 and 100 take the default case and 101
+        # enables the Decision Tree.)
+        for game, services in (('cod', (14, 21)),):
             for service in services:
                 vm = KiwiVM(program(*host_call(service, 123, -1)))
                 vm.run(); before = vm.snapshot(); engine = EngineState(); engine.game_key = game

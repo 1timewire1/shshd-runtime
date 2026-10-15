@@ -134,10 +134,24 @@ def speaker_label(text: str, mode: int, theme: int, bank: LayoutBank, font_loade
             text = {'The Mayor': 'Th e Mayor', 'Judge Tigh': 'Judge Ti gh',
                     'Animal Thief': 'Animal Th ief'}.get(text, text)
             state.width, state.height, flags = w + 20, h + 32, 0x19
+            # Unlike the hand-measured hardcoded names above (tight enough to force their own wrap),
+            # this padding (`w + 20`) is sized for breathing room, not for actually constraining the
+            # wrap -- and for a name not covered by any of them, can end up wider than the name's own
+            # natural width, leaving a name already known not to fit one line (`large`, checked above)
+            # on one line anyway, in a box sized for two (confirmed live: "Mrs. Sworelin," not in the
+            # list above, floated above the box as one unwrapped line with the box left empty under
+            # it). Clamp the wrap width down to strictly less than the natural width (not just equal
+            # to it: layout_text only breaks a line once content exceeds the given width, so a width
+            # that merely matches the natural one still renders as a single line) so layout_label's
+            # own word-wrap (flags 0x19 sets bit 4) actually breaks it.
+            if large and state.width >= unwrapped:
+                state.width = max(1, int(unwrapped) - 1)
         elif len(text) < 19:
             state.width, state.height, scale = w + 80, h + 30, .8
             if text == 'Spud The Stud':
                 text, scale = 'Spud Th e Stud', .7
+            elif large and state.width >= unwrapped:          # see the same correction just above
+                state.width = max(1, int(unwrapped) - 1)
         else:
             state.width, state.height, scale = 300, h + 32, .7
         state.indents = [0, 5]
@@ -214,6 +228,69 @@ def outline_speaker_label(text, mode, font_name, bank, font):
                       if line.start <= g.index < line.end)
     layout = replace(layout, lines=tuple(lines), glyphs=tuple(glyphs))
     origin = (rect.x + offset, rect.y + (rect.height - layout.height) / 2)
+    return SpeakerLabel(text, font_name, layout, origin, 1, 40 if large else 8,
+                        (rect.width, rect.height), flags, rect)
+
+
+# SHSUIDialog (HD 1.4.38), in iPad points: animateTitleLayer's "short title" test and shift (getDisplayLength of the
+# pre-render font < 0x87, then x -/+ 0xf), the title's line gap (SHSEngine::initFonts sets +0x20 = 16.0 on every title
+# font), and its line offsets (ARR_TITLE_LINE_OFFSETS_LEFT {0, 40} / _RIGHT {0, 10}). Layout units are half a point.
+HD_TITLE_SHORT_POINTS = 135
+HD_TITLE_SHIFT = 7.5
+HD_TITLE_GAP = 8
+HD_TITLE_INDENTS = {1: (0, 20), 2: (0, 5)}
+
+
+def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_unit=2, shift=HD_TITLE_SHIFT):
+    """The HD build's own speaker title, which replaces Android's label history and per-name cases.
+
+    `updateTitleBounds` (000432f8): the title region is layout 17's node 0x2e / 0x4c / 0x6a (speaker type 1 / 2 /
+    3) and, when `CSFont::getTextHeight` at that width exceeds its height, the tall node 0x25 / 0x43 / 0x61 with the
+    header extra +0xb4 = 80 points (40 units) instead of 16 (8); then x += 2 points for type 1, -= 4 for type 2.
+    `animateTitleLayer` (0004343c): type 1 uses flags 0x19 when tall, else 0x1b, shifted -15 points when the title is
+    shorter than 135 points; type 2 flags 0x19, shifted +15 points when short; type 3 flags 0x1a, no shift.
+    `positionLayer:boundsPadding:` then draws in exactly that region, and `CSFont::drawTextInRegion` (00005778)
+    wraps at its width (0x10), aligns lines by flags & 3 (2 centre, 3 right, else left) and centres the block
+    vertically (flags & 0xc == 8). Lines are `cap` apart plus the gap, each baseline `cap` below its line's top.
+
+    `rectangle(node)` is the HD layout bank's node in this module's column units.
+
+    Cause of Death 1.4.7 has the same `updateTitleBounds` (0003a030: nodes, x +1 / -2, header extra 8 / 40 in its own
+    points) and `animateTitleLayer` (0003a174: the same flags), over its own layout 17. Two constants are not halved
+    for its 320-point screen: a title is short under 135 points and shifts 15 (SHS HD: 135 and 15 iPad points, half
+    that in units), so CoD passes `points_per_unit=1, shift=15`.
+    """
+    style = TextStyle(cap, HD_TITLE_GAP)
+    rect = rectangle({1: 0x2e, 2: 0x4c, 3: 0x6a}[mode])
+    large = layout_text(font, text, rect.width, style).height > rect.height
+    if large:
+        rect = rectangle({1: 0x25, 2: 0x43, 3: 0x61}[mode])
+    if mode == 1:
+        rect = replace(rect, x=rect.x + 1)
+    elif mode == 2:
+        rect = replace(rect, x=rect.x - 2)
+    # getDisplayLength -> FPToFixed: whole points.
+    short = int(layout_text(font, text, 2**31, style).width * points_per_unit) < HD_TITLE_SHORT_POINTS
+    step = shift
+    flags, shift = 0x1a, 0
+    if mode == 1:
+        flags = 0x19 if large else 0x1b
+        shift = -step if short and not large else 0
+    elif mode == 2:
+        flags, shift = 0x19, (step if short else 0)
+    style = replace(style, indents=HD_TITLE_INDENTS.get(mode, ()))
+    layout = layout_text(font, text, rect.width, style)
+    alignment = {2: .5, 3: 1}.get(flags & 3, 0)
+    lines, glyphs = [], []
+    for index, line in enumerate(layout.lines):
+        indent = style.indents[index] if index < len(style.indents) else 0
+        offset = (rect.width - abs(indent) - line.width) * alignment
+        lines.append(replace(line, x=line.x + offset))
+        glyphs.extend(replace(g, x=g.x + offset) for g in layout.glyphs if line.start <= g.index < line.end)
+    layout = replace(layout, lines=tuple(lines), glyphs=tuple(glyphs))
+    top = rect.y + (rect.height - layout.height) / 2
+    # layout_text puts a baseline at line.y + height - line_height + base; CSFont puts it at line.y + cap.
+    origin = (rect.x + shift, top + font.line_height - font.base)
     return SpeakerLabel(text, font_name, layout, origin, 1, 40 if large else 8,
                         (rect.width, rect.height), flags, rect)
 

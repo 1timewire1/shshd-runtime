@@ -15,7 +15,9 @@ CATALOG_FILENAME = 'shs_options.sav'
 # Legacy and Android envelopes: (current-entry offset, trailing flag count).
 CATALOG_LAYOUTS = {version: ((32, version - 16), (36, version - 16)) for version in (16, 17, 18)}
 PROFILES = {'shs-android-1.0.9': 'apk', 'shs-ios-assets-v1': 'ipa'}
-BUNDLE_PATTERN = r'com\.ea\.shs(?:\.[A-Za-z0-9-]+)*'
+# `com.ea.shslite.row` is the free edition of the same app (1.4.2, build 1.4.3.53): its res_generated passes the
+# full ios_assets contract and it ships the same three bundled stories (shshd-runtime).
+BUNDLE_PATTERN = r'com\.ea\.shs(?:lite)?(?:\.[A-Za-z0-9-]+)*'
 NAME_FONT = ('PajamaHip', 505)
 DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (108, 108, 108), -1: (223, 163, 52)}
 NAME_COLORS = {'PajamaHip24': (41, 104, 221), 'PajamaHip26': (41, 104, 221),
@@ -35,3 +37,15 @@ PAUSE_SOUND = 8011
 # feedback (Football Star's shared classroom routine also covers finals).
 # They are fixed SHS base-bank IDs, not episode counters or text heuristics.
 CHOICE_FEEDBACK_SOUNDS = {8007: 1, 8003: -1}
+# Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
+IOS_ACTION_MENU = False
+WORD_GAME_SOUNDS = (8001, 8002)
+# Service 78's portrait selector: swapping a portrait to the front, then confirming (Android FUN_000d1b48).
+PICKER_SOUNDS = (8013, 8010)
+# Curly single quotes truncated to one byte by the authoring tool, as in Cause of Death (cod/profile.py): U+2019 as
+# 0x19 (23 strings: "Ben\x19s", "haven\x19t") and U+2018 as 0x18 (6: cupcakes that say "\x18BEN\x19"). Neither
+# font has a glyph for them. Adaptation, owner's choice (2026-10-14): show the straight quote. Display only
+# (engine.substitute); 0x09 already lays out as a space.
+DISPLAY_CHARACTERS = {'\x18': "'", '\x19': "'"}
+# Android's typed notice; an HD build (engine.hd_version) uses the letter effect instead.
+LETTER_NOTICE = False

@@ -134,9 +134,18 @@ class MusicPlaybackTests(unittest.TestCase):
 
     def test_two_cues_in_one_track_restart_and_muting_preserves_the_request(self):
         ui, r = self.make_ui(music=8213)
-        with patch('pygame.mixer.music') as music:
+        with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
             ui._sync_audio()
             ui.session.engine.music_id = 8214
+            ui._sync_audio()
+            # The playing cue fades out over 1000 ms before the new one starts (SHSSoundManager::playMusic).
+            self.assertEqual(music.play.call_count, 1)
+            clock.return_value = 10500
+            ui._sync_audio()
+            self.assertAlmostEqual(music.set_volume.call_args.args[0], .5 * ui.music_volume)
+            self.assertEqual(music.play.call_count, 1)
+            clock.return_value = 11000
             ui._sync_audio()
             self.assertEqual([call.kwargs['start'] for call in music.play.call_args_list], [4., 39.2])
             self.assertEqual([call.args for call in r.read_asset.call_args_list], [(8212,), (8212,)])
@@ -235,7 +244,7 @@ class MusicPlaybackTests(unittest.TestCase):
         app.menu_music = Mock()
         app.menu_music_token = None
         app.menu_music_loaded = app.menu_music_paused = False
-        app.state = Mock(music=True, sound=True)
+        app.state = Mock(music=True, sound=True, music_volume=100, sound_volume=100)
         app.state.title.return_value = resources.record['titles'][0]
         app.show = Mock(side_effect=lambda screen, **_: setattr(app, 'screen', screen))
         app.refresh_saves = Mock()

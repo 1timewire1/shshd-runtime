@@ -17,13 +17,13 @@ from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
-def timed_resources(service=1, timeout=2000, count=3):
+def timed_resources(service=1, timeout=2000, count=3, selection=1):
     labels = [f'Option {i}' for i in range(count)]
     words, refs = text_words('Choose', 'A question.', '|'.join(labels), *labels)
     if service == 1:
-        calls = host_call(1, refs[0], refs[2], refs[1], timeout, 1, -1, -1, 1)
+        calls = host_call(1, refs[0], refs[2], refs[1], timeout, selection, -1, -1, 1)
     else:
-        calls = host_call(2, refs[0], refs[1], timeout, 1, -1, 1)
+        calls = host_call(2, refs[0], refs[1], timeout, selection, -1, 1)
         for i, ref in enumerate(refs[3:]):
             calls += host_call(3, ref, 100 + i, 1)
         calls += host_call(4, 0)
@@ -64,6 +64,23 @@ class ChoiceTimingTests(unittest.TestCase):
                 self.assertEqual(restored.engine.result_cells[0], result)
                 # A click at exactly zero still wins before the next active tick.
                 self.assertEqual(s.answer(2).request.args, (2 if service == 1 else 102,))
+
+    def test_an_incremental_timeout_selecting_no_option(self):
+        from exp_runtime.vm import VMError
+        # CoD reads the never-written slot before its mapping table (cod/profile.py, TIMEOUT_NO_OPTION_RESULT);
+        # SHS keeps the explicit error, as does any other out-of-range selection.
+        # A selection past the options returns itself unmapped for CoD (the adaptation for Volume 2's 1000).
+        for game, selection, expected in (('cod', -1, 0), ('shs', -1, None), ('cod', -2, None), ('cod', 3, 3),
+                                          ('cod', 1000, 1000), ('shs', 1000, None)):
+            with self.subTest(game=game, selection=selection):
+                r = timed_resources(2, selection=selection); r.library.game_id = game
+                s = Session(r); s.advance()
+                if expected is None:
+                    with self.assertRaisesRegex(VMError, 'out of range'):
+                        s.tick(2001)
+                else:
+                    self.assertEqual(s.tick(2001).request.args, (expected,))
+                    self.assertEqual(s.engine.result_cells[0], expected)
 
     def test_nonpositive_durations_have_no_timer_and_do_not_expire(self):
         for service in (1, 2):
@@ -109,10 +126,12 @@ class ChoiceTimerRenderTests(unittest.TestCase):
             return surface
         art = DialogueRenderer.__new__(DialogueRenderer)
         art.frame, art.image = frame, lambda _: None
+        art.frame_scaled = lambda asset, index, scale: frame(asset, index)
+        art.draw_bottom_bar = lambda *args, **kwargs: None
         art.box = lambda *args, **kwargs: None
         text = SimpleNamespace(layout=lambda name, value, width, style:
                                layout_text(layout.font(name), value, width, style),
-                               draw_layout=lambda *args: None)
+                               draw_layout=lambda *args, **kwargs: None)
         renderer = ChoiceRenderer(None, text, art)
         renderer.layout = layout
         return renderer

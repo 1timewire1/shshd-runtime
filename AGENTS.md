@@ -1,8 +1,9 @@
-# EXP Runtime
+# SHSHD Runtime
 
-This is an experimental compatible engine for Surviving High School and Cause
-of Death. Users supply SHS Android 1.0.9 APK / SHS IPA or CoD IPA assets and
-additional EXP episodes. `exp_runtime` executes
+This is SHSHD Runtime, a fork of exp-runtime: an experimental compatible engine
+for Surviving High School (including its iPad HD release) and Cause of Death.
+Users supply SHS Android 1.0.9 APK (optionally with the SHS HD IPA) / SHS IPA or
+CoD IPA assets and additional EXP episodes. `exp_runtime` executes
 original KiWi bytecode and renders user-supplied resources. It is not a static
 ARM recompilation or a Ren'Py conversion.
 
@@ -11,7 +12,7 @@ ARM recompilation or a Ren'Py conversion.
 ```sh
 uv sync --locked --extra desktop
 uv run --locked --extra desktop python -m unittest discover -s tests
-uv run --locked --extra desktop exp-runtime
+uv run --locked --extra desktop shshd-runtime
 uv run --locked --extra build python tools/build_desktop.py
 ```
 
@@ -20,11 +21,29 @@ player's local content is absent. Do not add original assets as test fixtures.
 
 ## Architecture and contracts
 
-One uv workspace produces the `exp-runtime` umbrella and five component wheels.
+One uv workspace produces the `shshd-runtime` umbrella and five component wheels.
 Source lives under `packages/{formats,engine,player,shs,cod}/src/exp_runtime`.
 Keep the shared `exp_runtime` namespace free of a root `__init__.py`, and give
 each source file one wheel owner. `tools/build_packages.py` audits the wheels;
 `tools/test_packages.py` checks isolated pip installs. See docs/SDK.md.
+
+This fork (shshd-runtime) keeps that layout so upstream merges line up file for
+file, but its distributions are `shshd-runtime` and `shshd-runtime-<component>`,
+never upstream's `exp-runtime` names, so pip never mistakes one for the other.
+It is also a distinct app, "SHSHD Runtime" (`launcher.APP_NAME`): its data
+folder, window title, desktop build and iOS bundle identifier
+(`org.shshd.runtime`) are its own, and it never reads upstream's "EXP Runtime"
+or "SHS Runtime" folders. Keep it that way when merging upstream changes.
+Do not install upstream's PyPI `exp-runtime` into the same environment: both
+fill the one `exp_runtime` namespace. The fork's own modules keep their import
+names and live by role: anything that draws or imports pygame in `player`,
+headless state and layout math in `engine`, CoD art helpers in `cod`. The
+engine must stay importable without the player (a headless session loads no
+pygame) and without either game package. The user-facing "Install
+exp-runtime[...]" hints and the disabled `publish-pypi` workflow job are kept as
+upstream wrote them; this fork publishes no wheels to PyPI (its GitHub releases
+attach them). The commands are `shshd-runtime` / `shshd-tool`, with upstream's
+`exp-runtime` / `exp-tool` and `shs` / `shs-tool` as aliases.
 
 - `shs/`, `cod/`: game-specific import, asset/audio bindings and host services.
 - `content.py`: validated EXP/APK/IPA import, exact resource IDs, relocatable

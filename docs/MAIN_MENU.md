@@ -5,7 +5,7 @@ Reference: SHS Android 1.0.9, `libshs09.so`, SHA-256
 Addresses below refer to that loaded binary. The Android interface is the
 working reference for the shared interface described by the user.
 
-EXP Runtime first presents an asset-free game chooser. SHS and CoD each open
+SHSHD Runtime first presents an asset-free game chooser (or, on a first launch, Bulk Import). SHS and CoD each open
 their own validated library and game menu; the SHS evidence below does not
 establish complete CoD presentation parity. [COD.md](COD.md) records its bindings.
 
@@ -41,7 +41,7 @@ differ: string 127 is "Weekly Free Episode", and 91 is "More Episodes".
 Native labels are loaded from the player's APK, not embedded as copied game
 data. The fourth button is the authored **Switch Game** action; it retains
 the original 533 glyph font, artwork, placement and entrance/pressed states.
-Help/About displays the installed EXP Runtime version, independently of the
+Help/About displays the installed SHSHD Runtime version, independently of the
 imported game's version. Its GitHub button opens the configured public project
 URL in the system browser only when selected, on desktop and iOS.
 
@@ -56,6 +56,12 @@ servers nor pretends that a local episode is the latest weekly release.
 
 ### Runtime update check
 
+This fork asks its own repository's releases (`app_info.UPDATE_REPOSITORY`,
+`1timewire1/shshd-runtime`), never upstream's, which are a different program.
+A release tag must be a plain version newer than the running one, such as
+`v1.0.1` or `1.0.1` (the running version is the packages' own, 1.0.0 at the
+first release).
+
 On each application launch, the shared application checks the project's
 [latest public release](https://docs.github.com/en/rest/releases/releases#get-the-latest-release)
 on GitHub. This is a runtime feature, separate from the original games'
@@ -64,6 +70,28 @@ game files, saves or player identifiers in the request. Numeric version
 comparison ignores older, equal, draft, prerelease and malformed releases.
 Unknown development versions skip the check. Network failures and rate limits
 do not show an error or delay startup/shutdown.
+
+**In the HD menus** (both games) the switch is **Options → General → Check for
+Updates**, on the main menu only. The offer is an HD card, "Update Available",
+with No and Yes, drawn with the game's own footer buttons, over the launch's
+loading screen, before "Play with sound?" (owner, 2026-10-15). The launch waits
+up to `UPDATE_WAIT` (2.5 s) past the loading screen for the check, which
+usually answers during it. An answer arriving later, or a launch that skipped
+the loading screen (a game switch), waits for the main menu with no window,
+Options card or fade over it. Escape, Enter and Space mean No; only a click on
+Yes acts.
+
+**The offer's text and Yes** (owner, 2026-10-15; `updates.update_message`):
+- **Desktop:** "SHSHD Runtime x.y.z is available. Would you like to update?
+  (Clicking Yes will close the game and open your browser)". Yes opens the
+  release page in the system browser, then closes the game the way its window's
+  close button does (`Application.quit_requested`; `close()` checkpoints as
+  usual). Nothing is downloaded, installed or restarted.
+- **iOS** (`platforms/ios.Host` passes `can_quit=False`): an app cannot update
+  or quit itself there, and a new build is signed and installed from a
+  computer. So the offer only informs ("... To update, download the new IPA
+  from the release page on a computer, then sign and install it.") with one
+  **OK**, which carries on.
 
 **Options → Update checks** defaults to On. It is accessible from the game
 chooser even before importing assets and persists in the app's `settings.json`,
@@ -293,7 +321,7 @@ and reports the write error. See the [exit contract](STORY_SERVICES.md#episode-e
 
 | File, relative to the library | Schema / behavior |
 | --- | --- |
-| `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", title_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English titles |
+| `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", title_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English titles. `names` (object of `$KEY` to string, at most 4096) is the name table every episode shares ([RUNTIME.md](RUNTIME.md#names-shared-across-episodes)) |
 | `saves/<episode-sha>.shs-save.json` | Existing manual F5/F9 slot, [runtime save schema](RUNTIME.md#runtime-save-schema-version-13) |
 | `saves/<episode-sha>.shs-auto.json` | Automatic checkpoint on menu return and application exit, same schema |
 
@@ -325,25 +353,29 @@ the theme currently plays once on entering the menu.
 
 ## 5. Executable and content boundary
 
-`exp-runtime`, `python -m exp_runtime.application`, and `exp-tool play` launch
-the game chooser. `shs` / `shs-tool` remain command aliases. `--game shs|cod`
+`shshd-runtime`, `python -m exp_runtime.application`, and `shshd-tool play` launch
+the game chooser. `exp-runtime` / `exp-tool` and `shs` / `shs-tool` remain command aliases. `--game shs|cod`
 opens one game directly; `--library` opens a specified relocatable library.
 New libraries default to per-user application data, replacing `<game>` with
 `shs` or `cod`:
 
-- macOS: `~/Library/Application Support/EXP Runtime/libraries/<game>`
-- Windows: `%LOCALAPPDATA%/EXP Runtime/libraries/<game>`
-- Linux: `$XDG_DATA_HOME/EXP Runtime/libraries/<game>`, defaulting to `~/.local/share`
+- macOS: `~/Library/Application Support/SHSHD Runtime/libraries/<game>`
+- Windows: `%LOCALAPPDATA%/SHSHD Runtime/libraries/<game>`
+- Linux: `$XDG_DATA_HOME/SHSHD Runtime/libraries/<game>`, defaulting to `~/.local/share`
+
+This fork keeps its data under its own name, `SHSHD Runtime` (`launcher.APP_NAME`), so it is a distinct app from
+upstream's EXP Runtime: neither reads, writes or remembers the other's libraries, saves or settings.
 
 A frozen executable uses application data independently of its working directory
 or extraction location. **Open Library remembers the chosen folder** in
-`EXP Runtime/launcher.json`. Its schema is
+`SHSHD Runtime/launcher.json`. Its schema is
 `{version:2, libraries:{shs:absolute_path, cod:absolute_path}}`; either game
 may be absent. Publication is atomic and preserves the other game's location.
 Selecting a game uses its remembered library across working directories.
-Existing v1 launcher preferences in `SHS Runtime` and its default `library`
-folder remain discoverable in place. Source checkouts additionally discover
-`.shs-library`. No original player files are moved or rewritten by discovery.
+Upstream's folders (`EXP Runtime`, and its older `SHS Runtime` with a v1
+launcher and default `library` folder) are not discovered in this fork; a
+library there can be opened with Open Library. Source checkouts additionally
+discover `.shs-library`. No original player files are moved or rewritten by discovery.
 An explicit `--library` is a launch override and does not change the remembered
 default. Imported episodes appear in Play/Resume even before they have saves.
 
@@ -412,6 +444,20 @@ choices, including their actual randomized/custom return values. Service 71
 word quizzes use the current deal's explicit good/bad weights, including bad
 answers at score zero and duplicate words with different weights.
 
+**Options → Cheats → Ask to skip mini-games** (HD Options: "Ask to Skip
+Mini-Games") is another authored, opt-in preference, off by default:
+- **When:** a football game or word grid waits on a narrator-styled choice
+  (no portrait, the HD choice panel and its fades). Its clocks don't start
+  until the choice is made.
+- **The prompt:** it states the game's half, side and starting score, or the
+  grid's target, time and words.
+- **Win and Lose** finish the game through `Session.skip_minigame`, giving the
+  script the result a real game would. Football ends 7 points over the higher
+  starting score for the winning side and records that as the scores. The grid
+  passes or fails.
+- **Play** starts the game, and the same game is not asked again.
+- **Not included:** the rapid-fire word quiz (service 71).
+
 The preview executes isolated copies of the current session, bounded to
 6,000 VM steps/48 panels per path, 16 options per decision, four decisions
 including the current one, and 192 branch copies across the whole preview.
@@ -456,8 +502,8 @@ uv sync --locked --extra build
 uv run --locked --extra build python tools/build_desktop.py
 ```
 
-The build creates `dist/desktop/EXP Runtime.app` on macOS and a
-`dist/desktop/EXP Runtime` executable directory on other systems. Distribute the
+The build creates `dist/desktop/SHSHD Runtime.app` on macOS and a
+`dist/desktop/SHSHD Runtime` executable directory on other systems. Distribute the
 whole app/directory. The build entry point is a temporary authored launcher;
 LICENSE and the authored kiwi SVG logo are the only repository files explicitly
 collected as data. The game chooser and window use this logo; macOS and Windows

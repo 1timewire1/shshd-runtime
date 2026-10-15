@@ -140,14 +140,13 @@ class SurveyTests(unittest.TestCase):
             s.vm.run()
             held = s.vm.snapshot()
             random = s.engine.random.state, s.engine.random48.state
-            self.assertEqual(s.advance().name, 'unhandled_yield')
+            # This fork treats them as HD's poll download (shs/services.py), not an unsupported stop.
+            self.assertEqual(s.advance().name, 'download_poll')
             self.assertEqual(s.vm.snapshot(), held)
             self.assertEqual((s.engine.random.state, s.engine.random48.state), random)
             self.assertIsNone(s.engine.message_panel)
-            with self.assertRaises(VMError):
-                s.answer()
             restored = Session.from_snapshot(r, s.snapshot())
-            self.assertEqual(restored.pending.name, 'unhandled_yield')
+            self.assertEqual(restored.pending.name, 'download_poll')
             self.assertEqual(restored.vm.snapshot(), held)
 
     def test_missing_submission_arguments_and_unbounded_branches_do_not_mutate_vm(self):
@@ -155,11 +154,8 @@ class SurveyTests(unittest.TestCase):
             r = Resources(program(*code))
             s = Session(r); s.vm.run()
             before = s.vm.snapshot()
-            if len(s.vm.pending.args) < 2:
-                with self.assertRaises(VMError):
-                    s.advance()
-            else:
-                self.assertEqual(s.advance().name, 'unhandled_yield')
+            # Neither is a verified survey, so this fork waits on HD's poll download (shs/services.py).
+            self.assertEqual(s.advance().name, 'download_poll')
             self.assertEqual(s.vm.snapshot(), before)
             self.assertIsNone(s.engine.message_panel)
 

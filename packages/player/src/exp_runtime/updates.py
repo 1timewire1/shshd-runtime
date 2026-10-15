@@ -17,15 +17,27 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from .app_info import PROJECT_REPOSITORY, PROJECT_URL, runtime_version
+from .app_info import PROJECT_URL, UPDATE_REPOSITORY, runtime_version
+from .launcher import APP_NAME
 
 
-RELEASE_API = f'https://api.github.com/repos/{PROJECT_REPOSITORY}/releases/latest'
+RELEASE_API = f'https://api.github.com/repos/{UPDATE_REPOSITORY}/releases/latest'
 MAX_RESPONSE = 1024 * 1024
 TIMEOUT = 8
 REQUEST_HEADERS = {'Accept': 'application/vnd.github+json',
-                   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'EXP-Runtime-update-check'}
-UPDATE_MESSAGE = 'Update available. Download here.'
+                   'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'SHSHD-Runtime-update-check'}
+UPDATE_TITLE = 'Update Available'
+
+
+def update_message(version, *, can_quit=True):
+    """The offer's text (owner, 2026-10-15). On desktop Yes opens the release page and closes the game. On iOS an app
+    cannot update itself or quit, and a new build is installed from a computer (README), so the offer only informs,
+    with an OK."""
+    if can_quit:
+        return (f'{APP_NAME} {version} is available. Would you like to update? '
+                '(Clicking Yes will close the game and open your browser)')
+    return (f'{APP_NAME} {version} is available. To update, download the new IPA from the release page on a computer, '
+            'then sign and install it.')
 
 
 @dataclass(frozen=True)
@@ -118,6 +130,8 @@ class UpdateCheck:
     def start(self):
         if self.started or _version(self.current) is None:
             return
+        if self.fetcher is fetch_release and UPDATE_REPOSITORY is None:
+            return                  # no release source configured for this fork (app_info.UPDATE_REPOSITORY)
         self.started = True
         try:
             self.future = self.fetcher()

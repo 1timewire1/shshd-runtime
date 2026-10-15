@@ -8,7 +8,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_ID = 'org.expruntime.player'
+APP_ID = 'org.shshd.runtime'          # tools/build_ios.py's PRODUCT_BUNDLE_IDENTIFIER
 
 
 def simctl(*args, timeout=60, check=True):

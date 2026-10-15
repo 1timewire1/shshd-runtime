@@ -85,7 +85,8 @@ class CoDServiceTests(unittest.TestCase):
                             action = answer_screen(s)
                         self.assertEqual(action.name, 'episode_exit')
                         self.assertEqual(s.vm.sp, 0)
-        for game, services in (('cod', (9, 91, 95, 101, 255)), ('shs', (100,))):
+        # (This fork's SHS takes HD's default case for 100: test_shs_services.py.)
+        for game, services in (('cod', (9, 91, 95, 101, 255)),):
             for service in services:
                 with self.subTest(game=game, service=service):
                     vm = KiwiVM(caller(service, (1, -1)))
@@ -297,6 +298,22 @@ class CoDServiceTests(unittest.TestCase):
                 self.assertEqual(restored.snapshot(), fresh.snapshot())
                 self.assertFalse(restored.engine.dialogue_animation.changed)
 
+
+
+class DisplayCharacterTests(unittest.TestCase):
+    def test_the_truncated_quotes_show_as_apostrophes_and_scripts_keep_the_byte(self):
+        # U+2019 stored as 0x19 (Volume 6 "You\x19re not Janice!"): the device draws a missing-glyph box (IMG_0513);
+        # the owner chose to show the apostrophe. Display only.
+        words, refs = text_words('You\x19re not Janice!')
+        vm = KiwiVM(program(0x33, words=words))
+        cod, shs = EngineState(), EngineState()
+        cod.game_key = 'cod'
+        self.assertEqual(cod.resolve_text(vm, refs[0]), "You're not Janice!")
+        self.assertEqual(cod.read_text(vm, refs[0]), 'You\x19re not Janice!')
+        self.assertEqual(cod.substitute('You\x19re', display=False), 'You\x19re')
+        # SHS has the same truncated quotes (11_3_The_Endorsement: cupcakes that say "\x18BEN\x19") and shows them too.
+        self.assertEqual(shs.resolve_text(vm, refs[0]), "You're not Janice!")
+        self.assertEqual(shs.substitute('say \x18BEN\x19?'), "say 'BEN'?")
 
 if __name__ == '__main__':
     unittest.main()

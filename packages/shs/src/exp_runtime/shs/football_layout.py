@@ -66,9 +66,13 @@ class HelpMotion:
     coach_alpha: float
 
 
-def help_motion(game, coach_width):
-    """000be110: 800ms panel entry/exit and the coach's 700+100ms slide."""
-    coach_x = 320 - coach_width
+def help_motion(game, coach_width, frame_width=320):
+    """000be110: 800ms panel entry/exit and the coach's 700+100ms slide. `frame_width` is the coach's own resting
+    right edge -- 320 (this module's native SD coordinates) for the standard renderer, but the HD renderer's own
+    768-wide frame for its own coach art, which is a different, independently-measured image, not an SD one
+    scaled up; everything else here is a resolution-independent progress/easing fraction or a delta already
+    relative to `coach_width`, so only this edge needs to move."""
+    coach_x = frame_width - coach_width
     if game.phase == 25:
         remaining = clamp(game.phase_ms / 800)
         keep_coach = game.half == 1 and not game.extra_help and bool(game.extra_instructions[int(game.defense)])

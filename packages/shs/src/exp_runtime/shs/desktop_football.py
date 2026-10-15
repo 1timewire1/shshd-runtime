@@ -310,10 +310,10 @@ class FootballRenderer:
             motion = countdown_motion(game.phase_ms)
             self.blit(self.frame(motion.frame), 159.5, 240, scale=motion.scale,
                       alpha=motion.alpha, angle=motion.angle, center=True)
-        self.canvas.blit(self.art.frame(126, 47), (0, 431))
-        draw_pause_gear(self.canvas, self.art)
+        # Desktop draws the bar and gear edge to edge (see DialogueRenderer.bottom_bar_layer).
+        self.edge_bar = 'bar'
         footer = footer_id(game)
         if footer is not None:
             self.label(self.strings()[footer], 180, 462, center=True)
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
-        return [(pygame.Rect(0, 422, 60, 58), ('menu',))]
+        return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

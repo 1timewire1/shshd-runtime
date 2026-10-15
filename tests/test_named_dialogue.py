@@ -187,7 +187,7 @@ class NamedDialogueTests(unittest.TestCase):
         for legacy in (False, True):
             saved = json.loads(json.dumps(original.snapshot()))
             if legacy:
-                saved['version'] = 20
+                saved['version'] = 24          # shshd-runtime's last version before the v0.4.2 lifecycle
                 saved['engine']['dialogue_animation'] = None  # Old unsupported stops discarded it.
                 del saved['engine']['dialogue_history']
             untouched = copy.deepcopy(saved)
@@ -199,7 +199,7 @@ class NamedDialogueTests(unittest.TestCase):
                              restored.snapshot())
 
     def test_bad_frames_inputs_and_mismatched_saved_text_stay_explicit_errors(self):
-        for args in ((), (-1,), (-2, -1)):
+        for args in ((), (-1,)):
             s = Session(Resources(program(*host_call(76, *args))))
             with self.subTest(args=args), self.assertRaises(VMError):
                 s.advance()

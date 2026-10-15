@@ -2,6 +2,12 @@
 
 See docs/NAME_INPUT.md. The width check is on the existing text plus the
 cursor, before appending the next character (FUN_000d3cb0).
+
+`hd=True` selects the iOS HD build's rules, read from the HD binary's own
+`SHSUITextEntry::tick` (see docs/NAME_INPUT.md, "iOS HD build"): the same
+alphanumeric and width gates, but no 16-character cap, and only the *first*
+letter is capitalized -- later letters keep the case they were typed in,
+where Android lowercases uppercase letters after the first.
 """
 from .fonts import BitmapFont
 
@@ -32,22 +38,27 @@ def _has_room(current: str, font: BitmapFont | None, cursor_width: float) -> boo
 
 
 def accept_name_character(current: str, char: str, *, font: BitmapFont | None = None,
-                          cursor_width: float = 0) -> tuple[str, str | None]:
-    if (len(char) != 1 or not _alphanumeric(char) or len(current) >= MAX_NAME_LENGTH
+                          cursor_width: float = 0, hd: bool = False) -> tuple[str, str | None]:
+    if (len(char) != 1 or not _alphanumeric(char) or (not hd and len(current) >= MAX_NAME_LENGTH)
             or not _alphanumeric(current) or not _has_room(current, font, cursor_width)):
         return current, NAME_ENTRY_ERROR
-    if current and 'A' <= char <= 'Z':
+    if hd:
+        if not current and 'a' <= char <= 'z':
+            char = char.upper()
+    elif current and 'A' <= char <= 'Z':
         char = char.lower()
     return current + char, None
 
 
-def validate_name(value: str, *, font: BitmapFont | None = None, cursor_width: float = 0):
+def validate_name(value: str, *, font: BitmapFont | None = None, cursor_width: float = 0,
+                  hd: bool = False):
     """Validate a confirmed value without recasing script defaults or callers.
 
     A final character may cross the width threshold: native checks the prefix
     before accepting it. Empty Return hides the keyboard; it never resumes.
     """
-    if not isinstance(value, str) or len(value) > MAX_NAME_LENGTH or not _alphanumeric(value):
+    if (not isinstance(value, str) or (not hd and len(value) > MAX_NAME_LENGTH)
+            or not _alphanumeric(value)):
         raise ValueError(NAME_ENTRY_ERROR)
     if not value:
         raise ValueError('Enter a name before continuing.')

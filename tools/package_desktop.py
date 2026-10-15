@@ -39,13 +39,13 @@ def host_target():
 
 
 def bundle_name(target):
-    return 'EXP Runtime.app' if target.startswith('macos-') else 'EXP Runtime'
+    return 'SHSHD Runtime.app' if target.startswith('macos-') else 'SHSHD Runtime'
 
 
 def executable(bundle, target):
     if target.startswith('macos-'):
-        return bundle / 'Contents' / 'MacOS' / 'EXP Runtime'
-    return bundle / ('EXP Runtime.exe' if target.startswith('windows-') else 'EXP Runtime')
+        return bundle / 'Contents' / 'MacOS' / 'SHSHD Runtime'
+    return bundle / ('SHSHD Runtime.exe' if target.startswith('windows-') else 'SHSHD Runtime')
 
 
 def audit_bundle(bundle):
@@ -94,7 +94,7 @@ def package(root, target, label):
     output = root / 'dist' / 'downloads'
     output.mkdir(parents=True, exist_ok=True)
     suffix = '.tar.gz' if target.startswith('linux-') else '.zip'
-    destination = output / f'exp-runtime-{label}-{target}{suffix}'
+    destination = output / f'shshd-runtime-{label}-{target}{suffix}'      # this fork's downloads, not upstream's
     with tempfile.TemporaryDirectory(prefix='exp-package-', dir=output) as temporary:
         archive = Path(temporary) / destination.name
         if target.startswith('macos-'):

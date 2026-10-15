@@ -16,7 +16,11 @@ BLUE = (41, 104, 221)
 class MessageRenderer:
     def __init__(self, resources, text_renderer, artwork):
         self.resources, self.text, self.art = resources, text_renderer, artwork
-        self.canvas = pygame.Surface((320, 480)).convert(32)
+        # SRCALPHA: the background is composited separately by Desktop, at
+        # real window resolution -- see desktop_dialogue.py's DialogueRenderer.
+        self.canvas = pygame.Surface((320, 480), pygame.SRCALPHA).convert_alpha()
+        self.pending_background = None
+        self.pending_background_origin = (160, 240)
 
     @lru_cache(maxsize=1)
     def strings(self):
@@ -90,11 +94,9 @@ class MessageRenderer:
 
     def draw(self, target, session):
         panel = session.engine.message_panel
-        self.canvas.fill((0, 0, 0))
-        background = self.art.image(session.engine.panel.background_id)
-        if background is not None:
-            # 000ac4dc places this panel's background at GL (160,240).
-            self.canvas.blit(background, background.get_rect(center=(160, 240)))
+        self.canvas.fill((0, 0, 0, 0))
+        # 000ac4dc places this panel's background at GL (160,240).
+        self.pending_background = self.art.image(session.engine.panel.background_id)
         layer, button_y = self.panel(panel.title, panel.text)
         self.canvas.blit(layer, (0, 0))
         strings = self.strings()
@@ -112,12 +114,12 @@ class MessageRenderer:
         self.canvas.blit(pygame.transform.smoothscale(control, (max(1, round(140 * scale)),
                                                                max(1, round(60 * scale)))),
                          (round(245 - 60 * scale), round(button_y - 30 * scale)))
-        self.canvas.blit(self.art.frame(126, 47), (0, 431))
-        draw_pause_gear(self.canvas, self.art)
+        # Desktop draws the bar and gear edge to edge (see DialogueRenderer.bottom_bar_layer).
+        self.edge_bar = 'bar'
         hint = self.text.layout('ArialRoundedMTBold11', strings[36 if panel.ready else 39],
                                 247, TextStyle(11, 0, (185, 185, 185)))
         self.text.draw_layout(self.canvas, 'ArialRoundedMTBold11', hint,
                               63 + (252 - hint.width) / 2, 460)
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
-        return [(pygame.Rect(0, 422, 60, 58), ('menu',)),
+        return [(pygame.Rect(-32, 422, 92, 58), ('menu',)),
                 (pygame.Rect(0, 0, 320, 480), ('continue',))]

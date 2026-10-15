@@ -4,7 +4,7 @@ Revision: 2026-09-13. Companion to [VM_SPEC.md](VM_SPEC.md) and [SCHEMA.md](SCHE
 
 This document inventories **every explicit service ID 0–100** in Android 1.0.9 `FUN_0009fe3c`. It includes verified state contracts and unresolved helper calls. Rows marked unresolved are research boundaries, not implemented semantics. Android default cases must not automatically be assumed to have the same meaning in an iOS build.
 
-The EXP Runtime launcher selects the game's host profile from its validated
+The launcher selects the game's host profile from its validated
 library. SHS-specific handlers live in `exp_runtime/shs/services.py`;
 [COD.md](COD.md) records CoD's separate handlers and native evidence. Both games
 support service 15's named dialogue; SHS also implements its verified optional
@@ -44,7 +44,7 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 | 6 (`06`) | a1, a2 destination | Gets the named character string via `FUN_00096c64`; writes to VM address a2 or, for negative a2, dynamic slot `~a2`. | address / handle | X |
 | 7 (`07`) | none read; all supplied words ignored | Ends the episode through `0007e614`: dispose panels, reset hosts/numeric state, cancel scheduled scripts and retire native resume progress. [Contract](STORY_SERVICES.md#episode-exit-services-7-and-63). | terminal scene exit | P (terminal) |
 | 8 (`08`) | a1 title ref, T(2), a3, a4 | Episode/week title card, UI type 16; negative a1 means empty title, a3 is the background asset, a4 a retained flag. Original fonts, layout, entrance and input gate; Android promotional branches remain unmodeled. See [TITLE_SCREENS.md](TITLE_SCREENS.md). | 0 on acknowledgement | P |
-| 9 (`09`) | a1 poll ID, a2 upload type; remaining words opaque | `0009f0cc` builds then discards the poll parameters, returns `EMPTY`; sender `0007b448` is empty in Android 1.0.9. The runtime implements owner-requested offline completion for type 2 with a verified script continuation. [Contract](STORY_SERVICES.md#offline-surveys-service-9). | native waits; offline R=0 | P (offline) |
+| 9 (`09`) | a1 poll ID, a2 upload type; remaining words opaque | Android: `0009f0cc` builds then discards the poll parameters, returns `EMPTY`; sender `0007b448` is empty in Android 1.0.9. HD: poll download (`getPollURL`, `pollID=&upType=&upValue(s)=`), the "Loading / Please wait..." bar, waits for the request; on failure `finishPollDownload(false)` returns 0. Type 2 with a verified script continuation completes offline with a local receipt ([contract](STORY_SERVICES.md#offline-surveys-service-9), `survey_confirmation`); any other call shows the bar for `POLL_WAIT_MS` (1 s) and returns 0 (`download_poll`). | native waits; offline R=0 | P (offline) |
 | 10 (`0a`) | a1, bool(a2) | Schedules script resource a1 and its flag through `FUN_0007b44c`; LIFO consumption after HALT. | 0 | C |
 | 11 (`0b`) | a1, a2 | Sets panel background base a2, variant a1 through `FUN_000a92f4`, then requests speaker-side alignment. | 0 | C (background and pan) |
 | 12 (`0c`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
@@ -457,7 +457,11 @@ update, matching the native comparison. At exactly zero the frame remains
 pending and can still be selected or saved; a zero-length tick does not expire it. An incremental
 choice's timeout selection passes through the same mapping as a clicked option.
 An invalid mapped timeout is an explicit runtime error, rather than a native
-out-of-bounds read. `portrait_mode` is not an expression: `FUN_000ae5d4` passes
+out-of-bounds read. The one exception is Cause of Death, whose action choices
+time out to selection -1 ("no option"). Its `SHSUIMenu::setReturnValue`
+(`0003e994`) then returns the short just before the mapping table. Only a save
+load writes that slot, so it holds the new allocation's zero, and the runtime
+returns 0. See [COD.md](COD.md#timed-choices-with-no-timeout-option). `portrait_mode` is not an expression: `FUN_000ae5d4` passes
 expression zero to `FUN_0009e810`/`FUN_0009e5d8`, with the mode separately.
 The art loader flips mode 2 except for theme 3; character property 651 selects
 the choice palette. The choice renderer does not reuse the previous dialogue's
@@ -505,3 +509,282 @@ timer and continues into Football Star's first match. Remaining blockers include
 other state/panel services, native save/resource extensions, audio and outstanding
 mini-game presentation. The corpus's presence of a service does not prove the
 Android helper matches its original iOS semantics.
+
+## 6. iOS HD-build-only services (Faceplace / DT view)
+
+Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,
+`CFBundleShortVersionString` 1.4.38, 32-bit Mach-O armv7), extracted from the
+player-supplied `.ipa` and imported into a separate Ghidra program from the
+Android `.so`. SHA-256 `327cf59ddb8efd704795099d5b5e9a04ceec51f6c084bf7d0962e78e3ae7e875`.
+Unlike the stripped Android `.so`, this binary retains its full C++ symbol
+table, so its dispatcher is named directly: `SHSScript::syscall(int)`, a
+dense Thumb-2 `TBH` jump table over ids `0`–`0x78`. Its low ids (at least
+through the low 70s) decompile identically in shape to Android's
+`FUN_0009fe3c` handlers; ids above the documented Android range diverge and
+are new to this build. As with the Android table above, presence in this
+build's dispatcher is not evidence the same id means anything on Android or
+in an original iOS build without its own dispatcher.
+
+**The entire DTView/Faceplace cluster (services 101–120, native cases
+`0x65`–`0x78`) is now decompiled and implemented.** Ghidra's decompiler is
+not trustworthy for this specific function at the argument level (several
+cases visibly fetch real strings off the VM stack and then appear to
+discard them, passing empty placeholders to the actual `objc_msgSend`
+instead, which cannot be real behavior; the function also triggers 300+
+"unreachable block" warnings during decompilation). Every case below was
+instead verified from raw Thumb disassembly: the jump table's targets were
+computed by hand from the table base (the same dense Thumb-2 `TBH` table
+`SHSScript::syscall` uses for ids `0`–`0x78`) and disassembled directly with
+capstone, bypassing the decompiler entirely.
+
+That raw-disassembly pass resolved the one fact that mattered for safety:
+**every case in this cluster discards its `objc_msgSend` return value** --
+confirmed directly in the instructions (the call result is never stored in
+a register or branched on; execution falls straight through to argument-
+buffer cleanup and `break`), the same shape already proven safe for
+`scriptEnable`. That is what made the whole cluster safe to implement as
+no-ops first, without yet resolving which of the script's own arguments
+maps to which named parameter -- keeping the VM running doesn't depend on
+content fidelity for rendering a decision-tree diagram or Faceplace
+message. That harder question (which turned out not to be a separate
+"resource-table" scheme at all -- see 6.2) was resolved in a later session,
+and every case below is now backed by a real, verified data model.
+
+| ID decimal (hex) | Native selector / behavior | Python |
+| --- | --- | --- |
+| 101 (`65`) | `objc_msgSend(g_engineDTView, @selector(scriptEnable))`. Bare. | C (no-op) |
+| 102 (`66`) | `addNode:innerLabel:upperLabel:lowerLabel:exw:` on `g_engineDTView`. | Modeled: `DTView.add_node(args[0], read_text(args[1]), exw=0)` -- see 6.2 |
+| 103 (`67`) | `addNode:innerLabel:upperLabel:lowerLabel:exw:` on `g_engineDTView`, different argument shape. | Modeled: `DTView.add_node(args[0], read_text(args[1]), exw=args[2])` -- see 6.2 |
+| 106 (`6a`) | `addResult:exitLabel:` on `g_engineDTView`, dynamic exit-label string. | Modeled: `DTView.add_result(args[0], read_text(args[1]))` -- see 6.2 |
+| 107 (`6b`) | `addResult:exitLabel:` on `g_engineDTView`, sprintf-formatted exit-label. | Modeled: `DTView.add_result(args[0], str(args[0]))` -- see 6.2 |
+| 108 (`6c`) | `objc_msgSend(g_engineDTView, @selector(clearGlobalAccumulator), <value>)`. | C (`setIntProperty(entity id, 0x197, 0)` for an id below 600, else `setIntProperty(0, id, 0)`, and the id joins `DTView.accumulators` -- see `dt_state.py`) |
+| 113 (`71`) | t(key), t(value): stores key = value only while `$USR` is empty, then `setNeedsDisplay` on `g_engineFSView`. | C |
+| 114 (`72`) | `objc_msgSend(g_engineFSView, @selector(scriptEnable))`. Bare. | C (no-op) |
+| 115 (`73`) | `incomingMessage:from:expression:` on `g_engineFSView`. | Modeled: `FaceplaceWall.incoming_message(read_text(args[0]), args[1], args[2])` -- see 6.2 |
+| 116 (`74`) | `incomingContinuationMessageText:url:` on `g_engineFSView`. | Modeled: `FaceplaceWall.incoming_continuation_text(read_text(args[0]), read_text(args[1]))` -- see 6.2 |
+| 117 (`75`) | `incomingContinuationMessageImage:url:` on `g_engineFSView`, **and** `incomingContinuationMessageText:url:` on the same call -- see 6.2. | Modeled: `FaceplaceWall.incoming_continuation_image(args[0], read_text(args[1]), read_text(args[2]))` -- see 6.2 |
+| 118 (`76`) | `objc_msgSend(g_engineFSView, @selector(clearWall))`. Bare. | Modeled: `FaceplaceWall.clear()` |
+| 119 (`77`) | `objc_msgSend(g_engineFSView, @selector(nameChosen:))`. Observed with zero pushed arguments despite the colon. | C (no-op) |
+| 120 (`78`) | `objc_msgSend(g_engineFSView, @selector(faceChosen:))`. Same as 119. | C (no-op) |
+
+Yield 113 (HD `SHSScript::syscall` case 0x71) reads its key, then its value,
+as yield 46 does, and stores them only while `getNameReplacement("$USR")`
+is empty. Football Star 25008 is the one caller: ("$USR", "John"), the name
+a fresh install's `shs_options.sav` holds before any is typed.
+
+Yields 43, 46, 47 and 113 share one name-replacement table
+(`SHSEntityTable` renames). The app saves it in `shs_options.sav`, loads it
+at start and never clears it, so it spans every episode and new game.
+`SHSDTView warpToNode:` keeps `$USR` across a warp. This runtime keeps the
+table in the library's `player.json` (`names`): every session the desktop
+plays shares it (`Session.share_names`), and keys only an older save holds
+join it. See [RUNTIME.md](RUNTIME.md#names-shared-across-episodes).
+
+**Yield 120 (`faceChosen:`) is confirmed live to be the same mechanism as
+an earlier, separately-documented avatar/name-picker gap from the original
+KiWi-bytecode-only research** (a `derefPointer`-fed portrait picker whose
+real ids were never recovered there). Running the HD build's own native
+Football Star through this engine, with the full cluster above implemented,
+reached the real `character_picker` action with
+`characters=[88, 89, 90, 91, 92]` -- the actual 5 portrait ids -- and its
+already-correctly-implemented completion path (built independently, not
+new this session) resumes straight into yield 120, exactly as this cluster
+predicts.
+
+With the full cluster implemented, HD's own native Football Star runs
+cleanly from scene 25001 through the entire "New Girl" story opening: 278
+unique dialogue lines, zero further unhandled services or VM errors, all
+the way into the real football minigame and a word-grid puzzle (both
+pre-existing, unrelated systems). The run only stops because a driver
+without interactive input can't *play* those minigames, not from any
+remaining engine gap.
+
+One real, still-open gap remains: `VMError("Art requested for uninitialized
+character 0")`. Root-caused (not just observed): diffing every yield
+instruction in HD's `25001` against Android's copy of the same script shows
+both are byte-identical through instruction 182, after which HD inserts a
+new block (the `scriptEnable` calls, then character-art queries for ids
+0/13/14) that queries those ids' art *before* this scene ever sets it --
+those ids are properly `set_character_art_base`'d moments later in the same
+block, so the query almost certainly expects app-wide state established
+outside Football Star entirely (name/avatar creation), which a standalone
+test of one episode never runs. This blocks launching Football Star (HD)
+directly and cold in the real desktop app, confirmed by attempting exactly
+that; it does not block the regular story-episode path, which reaches the
+same character-picker moment without it (verified live in the desktop app
+with the real APK and the built-in "The New Girl" episode).
+
+**Correction, recorded for anyone reading the history:** an earlier pass of
+this investigation suspected yields 74/75 (called shortly after the
+character-art block) might collide with this table's Faceplace cluster.
+That was wrong -- decimal 74/75 are native cases `0x4a`/`0x4b`
+(`SHSUIDialog::setPrimarySpeaker`/`setEventSpeaker`), a different case value
+that looks similar in hex. `engine.py`'s existing `y in (74, 75)` handler
+already correctly implements this; there was no bug. Caught before being
+recorded as fact, not after.
+
+### 6.1 DTView/Faceplace real argument semantics (from Objective-C method decompiles)
+
+The table above names each yield's native selector but treats several
+argument shapes as opaque ("different argument shape", "drained, not
+rendered"). Decompiling the actual `-[SHSDTView ...]`/`-[SHSFSView ...]`
+Objective-C method implementations (not just their call sites in
+`SHSScript::syscall`) resolves the real parameter meanings:
+
+**DTView** (`addNode:innerLabel:upperLabel:lowerLabel:exw:`, `addBranchNode:
+condition:innerLabel:upperLabel:lowerLabel:exw:`, `addResult:exitLabel:`):
+confirmed to build a real, persistent decision-tree data structure (`DTNode`,
+with a `DTNode::root`), not a one-shot visual effect:
+
+- `addNode`'s five arguments are, in order: a node-type/id (`int`), then
+  `innerLabel`/`upperLabel`/`lowerLabel` (each a `CSString`, converted via
+  `CSString::toCharArray` straight into a `DT2LineText`, i.e. real on-node
+  label text), then `exw` (`int`, a KiWi fixed-point value divided down after
+  `FixedToFP`, stored as the node's width scale). Each call appends a child
+  to `_cur_node` if one exists, else starts a new root; either way it
+  auto-saves a `tree_<serial>.sav` file via `SHSEngine::saveGameFile` --
+  DTView state is meant to persist across sessions, independent of the
+  episode's own save.
+- `addBranchNode` is `addNode` plus one extra `condition` (`int`) argument,
+  stored on the new node at a fixed offset -- a conditional branch point in
+  the tree, not a separate visual element.
+- `addResult:exitLabel:` records which branch/child index the current node
+  resolved to (`param_3`) and its exit label text, guarded by an
+  `_awaiting_result` flag that `addNode` sets and `addResult` clears --
+  `puts()`-based assertions fire (visible in a console, not the UI) if a
+  script calls `addNode` twice without an intervening `addResult`, or
+  `addResult` twice without an intervening `addNode`. This confirms the
+  script's calls to this cluster are meant to be paired, not independent.
+
+**Faceplace** (`incomingMessage:from:expression:`, `incomingContinuation
+MessageText:url:`, `incomingContinuationMessageImage:url:`): a real,
+ordered, timestamped message wall, not a placeholder:
+
+- `incomingMessage:from:expression:` takes the message text (`CSString`),
+  a `from` id and an `expression` id (both `int` -- the same shape as a
+  dialogue portrait's character id + expression code). It resolves a slot
+  via `getMessageIndex:from:expression:`, then pushes onto four parallel
+  arrays: `mCurMessages` (the slot's encoded key string), `mCurTimeStamps`
+  (a real `CFAbsoluteTimeGetCurrent()` capture), `mCurMessageStates` (state
+  code `5`, "new"), and two pre-measured heights (`mCurMessageHeightP`/`L`,
+  against wrap widths `204.0`/`224.0` -- the wall's portrait/landscape
+  column widths).
+- Each message's identity is packed into one `std::string` "key" as
+  `"%d %d "` (two ints), read back with `sscanf` elsewhere
+  (`getImageResIDWithMessageIndex:`, `isFaceMessageWithIndex:`,
+  `isContinuationMessageWithIndex:`): the first int is the `from` id, or
+  `-1` for a system/attachment message; when it's `-1`, the second int's
+  sign/parity distinguishes a face-expression message
+  (`(-second & 1) == 0`) from a continuation message (`second < -10`), and
+  an image message's actual resource id is appended as extra text after the
+  two ints and recovered with `atoi` past the second space. This encoding
+  was reconstructed from the accessor methods, not guessed -- it has not
+  been round-tripped against a real captured message yet.
+- `incomingContinuationMessageText:url:`/`incomingContinuationMessageImage:
+url:` insert a message associated with an *existing* one (shifting the
+  parallel arrays to keep it adjacent) rather than always appending, using
+  `sscanf`-parsed existing keys to find the right slot -- the shape a
+  threaded reply or a caption-after-photo needs.
+
+Services 102/103/106/107 (DTView) and 115/116/117/118 (Faceplace) are now
+implemented, modeling this real content -- see section 6.2. Reference:
+`reference/ghidra_scripts/dtview_faceplace_decompile_report.txt` (raw
+decompiles) and `legacy/findings.md`'s DTView/Faceplace layout section (the
+layout half of this same investigation).
+
+### 6.2 DTView/Faceplace real per-argument mapping (from raw Thumb disassembly)
+
+Section 6.1 recovered the ObjC methods' own parameter meanings from their
+decompiled bodies. It did not resolve which of *this engine's* `args[i]`
+(the yield's own VM-stack words, 0-indexed in push order -- see `vm.py`'s
+`arguments = tuple(stack_word(i) for i in range(sp-count, sp))`) maps to
+which parameter at the actual `SHSScript::syscall` call site, because
+Ghidra's decompile of that specific function is demonstrably wrong at the
+argument level for these cases: for native case `0x66` it shows a real
+string fetched via `getStringFromStackNoTranslation` and then destroyed
+(`decUsage`) without ever reaching `objc_msgSend`, and the visible call
+only has 2 of the selector's 5 real arguments. This is a known decompiler
+failure mode for `objc_msgSend`, not a real behavior.
+
+Resolved instead by pulling the HD ipa's own `Surviving_HS` binary
+(`com.ea.shs.ipad.inc`, SHA-256 `327cf59d...e875`, armv7 Mach-O, matching
+the executable this project's `content.py` already validates against),
+locating `SHSScript::syscall`'s dense Thumb-2 `TBH` jump table by hand
+(base `0x3da5c`, `pc_base = 0x3da60`, target `= pc_base + 2 * table[case]`),
+and disassembling each case block directly with capstone (Thumb mode),
+tracing literal-pool loads (`movw`/`movt`/`add reg,pc`/`ldr`) to their real
+selector strings and register arguments -- bypassing the decompiler
+entirely, the same rigor already used for yields 101/114/119/120. Full
+per-case traces live in this investigation's working notes
+(`legacy/findings.md`, "DTView/Faceplace: real per-argument mapping from
+raw disassembly").
+
+**The key structural finding:** `getStringFromStackNoTranslation(dest, this,
+index)` -- called at every DTView/Faceplace string argument -- reads
+`argBuffer[index - 1 + (arg32 - arg74)]`, where `arg32`/`arg74` are the same
+`this+0x32`/`this+0x74` fields every other already-implemented yield in
+this engine already reads its own arguments through. That is: native
+1-based `index` **is** this engine's `args[index - 1]`, not a separate
+resource-table addressing scheme requiring its own model. The "resource-
+table-relative" language in section 6's original writeup was this
+uncertainty before it was resolved; it turned out to be the same mechanism
+`args`/`need()` already implement everywhere else in `engine.py`.
+
+**Per-case real argument mapping**, each cross-checked against the yield's
+already-empirically-verified argument count (`need()`, established live
+against HD's own Football Star before this session):
+
+- Case `0x66` (yield 102, `need(2)`): `addNode(nodeType=args[0],
+  innerLabel="", upperLabel="", lowerLabel=read_text(args[1]), exw=0)`.
+  `innerLabel`/`upperLabel`/`exw` are hardcoded (empty-string literals and
+  a literal `0`), not read from the script at all at this call site.
+- Case `0x67` (yield 103, `need(3)`): same selector, `exw=args[2]` instead
+  of the hardcoded `0`; `innerLabel`/`upperLabel` are still hardcoded empty.
+- Case `0x6a` (yield 106, `need(2)`): `addResult(index=args[0],
+  exitLabel=read_text(args[1]))`.
+- Case `0x6b` (yield 107, `need(1)`): `addResult(index=args[0],
+  exitLabel=str(args[0]))` -- the exit label is `sprintf("%d", args[0])`
+  of the *same* value, not a second script argument.
+- Case `0x73` (yield 115, `need(3)`): `incomingMessage(
+  message=read_text(args[0]), from=args[1], expression=args[2])` -- `from`/
+  `expression` are raw shorts read directly off the argument buffer, not
+  resolved through `getStringFromStackNoTranslation`.
+- Case `0x74` (yield 116, `need(2)`): `incomingContinuationMessageText(
+  text=read_text(args[0]), url=read_text(args[1]))`.
+- Case `0x75` (yield 117): **not** the same shape as `0x74` despite the
+  similar selector name -- reads 3 words, not 2 (the previous `need(2)`
+  shared with 116 was an unverified guess; 117 had never been reached live
+  before this session). Fires two `objc_msgSend` calls back to back:
+  `incomingContinuationMessageImage(imageId=args[0],
+  url=read_text(args[2]))` immediately followed by
+  `incomingContinuationMessageText(text=read_text(args[1]),
+  url=read_text(args[2]))` -- the same `url` both times. Modeled as one
+  logical wall entry carrying both the image and its caption. **`need(2)`
+  changed to `need(3)` this session** to match.
+- Case `0x76` (yield 118, `need(0)`): bare `clearWall`.
+
+**Verified against real content, not just in theory:** running HD's own
+Football Star (`tools/audit_hd_football.py`) with this mapping wired into
+`engine.py` produces a `DTView` tree whose node labels read as a real,
+coherent progression outline -- `"Week 1"` -> `"Meet Beth"` -> `"What are
+you into?"` -> `"Flirt with Beth"` -> `"Meet Adam"` -> `"Speak to Adam"` ->
+`"Fight!"` -> `"Meet Raven"` -> ... -- matching the actual story beats this
+project already confirmed live (Beth, the Adam fight, Raven, Howard). The
+`FaceplaceWall` fills with real, in-voice social-wall posts (`"Potential
+fight in the main hallway! Twenty bucks says the new kid loses a tooth!"`)
+including one genuine cross-promotion ad with a real `itunes.apple.com` URL
+via the continuation-text path. Coherent, in-character text at every
+resolved `args[i]` position -- not garbage, not empty, not a type error --
+is strong independent confirmation the index mapping above is correct, on
+top of the register-level disassembly it was derived from.
+
+**Not modeled:** native's full tree persistence/backtracking (`_cur_node`
+result-slot reuse, `warpToNode:animatedScroll:`, `tree_<serial>.sav`
+auto-save) -- this engine's `DTView` always creates a fresh child rather
+than reusing one from a prior save when a script revisits an already-built
+branch; no real content traced so far exercises that path. Also still
+unmodeled: the actual on-screen diagram/wall layout and drawing routines
+(`layoutNodeInSubview:withParent:`, `drawMessage:index:atX:atY:
+withWidth:portraitMode:isTouched:`, `drawFace:expr:withScale:hflip:atX:
+atY:`) -- not yet decompiled. The data captured above is real and content-
+accurate; nothing renders it on screen yet.

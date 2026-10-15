@@ -5,8 +5,6 @@ the authored kiwi logo are explicitly collected as data. User game files,
 screenshots, saves and native decompilations have no path into the executable's
 resource collection.
 """
-import ast
-from importlib.metadata import version as package_version
 from pathlib import Path
 import os
 import subprocess
@@ -46,50 +44,43 @@ def main():
         logo = root / 'packages/player/src/exp_runtime/assets/kiwi.svg'
         # pygame's hook supplies its bundled fallback font and SDL libraries.
         # Only authored runtime modules are reachable through this entry point.
-        args = ['--windowed', '--onedir', '--name', 'EXP Runtime',
+        args = [sys.executable, '-m', 'PyInstaller', '--windowed', '--onedir', '--noconfirm',
+                '--name', 'SHSHD Runtime', '--distpath', str(output), '--workpath', str(work),
                 '--specpath', str(stage), '--noupx',
                 '--add-data', str(root / 'LICENSE') + ':.',
                 '--add-data', str(logo) + ':exp_runtime/assets',
-                '--copy-metadata', 'exp-runtime',
+                '--copy-metadata', 'shshd-runtime',
                 '--exclude-module', 'tkinter']
         for source in source_roots(root):
             args += ['--paths', str(source)]
         for component in COMPONENTS:
-            args += ['--copy-metadata', f'exp-runtime-{component}']
+            args += ['--copy-metadata', f'shshd-runtime-{component}']
         # Profiles are discovered dynamically in minimal Python installs.
         # Standalone apps deliberately include both available games.
         args += ['--hidden-import', 'exp_runtime.shs.profile',
                  '--hidden-import', 'exp_runtime.cod.profile']
-        if sys.platform in ('darwin', 'win32'):
-            icon = stage / ('kiwi.icns' if sys.platform == 'darwin' else 'kiwi.ico')
-            build_icon(logo, icon)
-            args += ['--icon', str(icon)]
+        # (exp-runtime's kiwi app icon is not applied: this fork's executable keeps its earlier look.)
         if sys.platform == 'darwin':
-            args += ['--osx-bundle-identifier', 'org.expruntime.player']
+            args += ['--osx-bundle-identifier', 'org.shshd.runtime']       # this fork's own (never upstream's)
         else:
-            from build_rar import build
-            binary, license = build()
-            args += ['--add-binary', str(binary) + ':.', '--add-data', str(license) + ':.']
+            # RAR import needs the pinned libarchive (tools/build_rar.py, which downloads its source and needs
+            # CMake and a C compiler). Bundle it when it has been built; otherwise the app imports EXP/ZIP only.
+            binary = root / 'build/rar/install' / ('bin/archive.dll' if sys.platform == 'win32' else 'lib/libarchive.so.13')
+            if binary.is_file():
+                from build_rar import build
+                binary, license = build(offline=True)
+                args += ['--add-binary', str(binary) + ':.', '--add-data', str(license) + ':.']
+            else:
+                print('warning: libarchive is not built (tools/build_rar.py); this build cannot import RAR archives')
         env = dict(os.environ, PYINSTALLER_CONFIG_DIR=str(work / 'pyinstaller-cache'))
-        subprocess.run([sys.executable, '-m', 'PyInstaller.utils.cliutils.makespec', *args, str(entry)],
-                       cwd=stage, env=env, check=True)
-        spec = stage / 'EXP Runtime.spec'
-        if sys.platform == 'darwin':
-            # The CLI exposes only Windows executable version resources.
-            # Set the macOS bundle version in the generated spec, before
-            # PyInstaller creates and signs Info.plist (default: 0.0.0).
-            tree = ast.parse(spec.read_text(encoding='utf-8'))
-            bundles = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
-                       and isinstance(node.func, ast.Name) and node.func.id == 'BUNDLE']
-            if len(bundles) != 1:
-                raise ValueError('Expected one macOS application bundle in the generated spec')
-            bundle = bundles[0]
-            bundle.keywords = [key for key in bundle.keywords if key.arg != 'version']
-            bundle.keywords.append(ast.keyword(arg='version', value=ast.Constant(package_version('exp-runtime'))))
-            spec.write_text(ast.unparse(tree) + '\n', encoding='utf-8')
-        subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm',
-                        '--distpath', str(output), '--workpath', str(work), str(spec)],
-                       cwd=stage, env=env, check=True)
+        subprocess.run([*args, str(entry)], cwd=stage, env=env, check=True)
+    # An empty staging folder beside the executable, ready for a player to drop their own APK, HD ipa, CoD ipa,
+    # font and episodes into before first launch (staged_import.py). Only on the onedir layout PyInstaller produces
+    # on Windows/Linux -- macOS's .app bundle has no such sibling-of-_internal location to match.
+    app_dir = output / 'SHSHD Runtime'
+    if app_dir.is_dir():
+        for name in ('shs_episodes', 'shshd_episodes', 'cod_episodes'):
+            (app_dir / 'import' / name).mkdir(parents=True, exist_ok=True)
     print(f'Built desktop app in {output}')
 
 

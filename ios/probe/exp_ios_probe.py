@@ -50,7 +50,8 @@ def _authored_exp(service=1):
         if len(text) % 2:
             text.append(0)
     instructions = [(0x1a, n) for n in (refs[0], refs[1], refs[2], 1000, 1, -1, -1, 0)]
-    instructions += [(0x1f, service << 8 | 8), (0x21, None), (0x1f, 101 << 8 | 1)]
+    # 255 is an unsupported service in every game (this fork's SHS uses 101 for the Decision Tree).
+    instructions += [(0x1f, service << 8 | 8), (0x21, None), (0x1f, 255 << 8 | 1)]
     code = bytearray()
     for op, arg in instructions:
         code.append(op)

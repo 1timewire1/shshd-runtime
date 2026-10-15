@@ -40,6 +40,21 @@ def options(entries, *, prefix=32, version=18):
             + bytes([1] * (version - 16)))
 
 
+def entry_v19(pack, episode, title, category, filename, alias=None):
+    titles = [title] * 5
+    return (struct.pack('>BHH', 1, pack, episode)
+            + b''.join(text(s) for s in [*titles, *([category] * 5), filename])
+            + text(alias or title) + struct.pack('>i', -1))
+
+
+def options_v19(entries):
+    # Reproduces the iOS HD envelope: no separate current-episode slot, a u16
+    # entry count at byte 38, and a fixed 200-byte reserved trailer after the
+    # string-pair table (see _read_v19_catalog).
+    header = b'SHS_OPTIONS\0' + struct.pack('>i', 19) + bytes(22)
+    return (header + struct.pack('>H', len(entries)) + b''.join(entries)
+            + struct.pack('>h', 1) + text('$PLAYER') + text('Private player name')
+            + bytes(200))
 def cod_options(entries, *, current=b'\0'):
     # CoD 1.3.4 writes five preference flags and two integers after version
     # and the discarded integer. There are no flags after the rename table.
@@ -97,6 +112,17 @@ class CatalogTests(unittest.TestCase):
                     self.assertNotIn('Private player name', json.dumps(serialized))
                     self.assertEqual(EpisodeCatalog.from_data(serialized).entries, catalog.entries)
 
+    def test_reads_ios_hd_version_19_envelope(self):
+        entries = [entry_v19(7, 2005, "O.M.G.! It's St. Patrick's Day!", 'Special',
+                              'OMG_St_Patricks_Day.exp', alias='OMG Its St Patricks Day'),
+                   entry_v19(301, 58, 'Second', 'Season Four', 'two.exp')]
+        catalog = read_options_catalog(options_v19(entries))
+        self.assertEqual([e.category for e in catalog.entries], ['Special', 'Season Four'])
+        self.assertEqual(catalog.category(record(1, 301, 58, 'Second', 'renamed.exp')), 'Season Four')
+        serialized = catalog.to_data()
+        self.assertNotIn('Private player name', json.dumps(serialized))
+        self.assertEqual(EpisodeCatalog.from_data(serialized).entries, catalog.entries)
+
     def test_invalid_catalog_does_not_accept_partial_records_or_scan_for_magic(self):
         good = options([entry(1, 2, 'Story', 'Chapter Set', 'story.exp')])
         bad_count = bytearray(good)
@@ -105,7 +131,8 @@ class CatalogTests(unittest.TestCase):
         struct.pack_into('>H', invalid_string, 42, 32768)
         corruptions = [good[:length] for length in (0, 12, 32, 37, len(good) - 1)]
         corruptions += [good + b'junk', b'prefix' + good, bytes(bad_count), bytes(invalid_string),
-                        options([], version=19), good[:-1] + b'\x02']
+                        options([], version=19), good[:-1] + b'\x02',
+                        options_v19([])[:-1], options_v19([]) + b'junk']
         for data in corruptions:
             with self.subTest(size=len(data)), self.assertRaises(ContentError):
                 read_options_catalog(data)

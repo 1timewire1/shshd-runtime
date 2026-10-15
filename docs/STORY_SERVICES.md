@@ -672,7 +672,7 @@ effects   : no UI result-cell, string-slot, timer, audio or random-state writes
 
 `FUN_0009fe3c`, case `0x46`, switches on the first argument. Its fixed results
 are properties of the inspected Android 1.0.9 build. They do not change with
-the operating system running EXP Runtime.
+the operating system running the app.
 
 | Selector | Native result | Runtime behavior |
 | --- | --- | --- |

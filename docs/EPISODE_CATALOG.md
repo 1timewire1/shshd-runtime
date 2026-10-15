@@ -49,7 +49,9 @@ runtime.
 
 The supported catalog reader validates the entire following envelope. Numeric
 fields below are big endian unless explicitly marked as uninterpreted bytes.
-It accepts versions 16–18; later versions are rejected.
+It accepts versions 16–18 through this envelope, and version 19 (the iOS HD
+build) through the distinct envelope in [Version 19](#version-19-ios-hd-build)
+below; other versions are rejected.
 
 ```text
 OptionsCatalog :=
@@ -92,6 +94,53 @@ recorded as a legacy envelope variant; it is not evidence that the platform
 save formats are identical. Versions 16/17 and the 36-byte envelope have
 authored test coverage; the original supplied file verifies version 18 and
 the 32-byte envelope.
+
+### Version 19 (iOS HD build)
+
+A user-supplied HD iPad `shs_options.sav` (48549 bytes) uses signature
+version 19, and does not fit either 16-18 layout: the entry count is not an
+`s32` and no combination of the two fixed prefixes validates through EOF.
+Byte-level analysis of that one file (cross-checked against `read_page`-style
+manual decoding, not guessed) found a distinct, self-consistent envelope,
+implemented in `_read_v19_catalog`:
+
+```text
+OptionsCatalogV19 :=
+    signature       : bytes[12] = "SHS_OPTIONS\0"
+    version         : s32 = 19
+    ignored_header  : bytes[22]
+    entry_count     : u16, 0..4096
+    entries         : CatalogEntryV19[entry_count]
+    pair_count      : s16, 0..4096
+    ignored_pairs   : (String, String)[pair_count]
+    ignored_trailer : bytes[200]
+    EOF
+
+CatalogEntryV19 :=
+    present         : u8 = 0 | 1
+    pack_id         : u16
+    episode_id      : u16
+    titles          : String[5]
+    categories      : String[5]
+    filename        : String
+    alias           : String   -- plain-text, punctuation-stripped title;
+                                   not present in versions 16-18, unused here
+    download_id     : s32
+```
+
+There is no separate current-episode slot: the list starts immediately after
+`entry_count`, and its first record in the one sample seen is a built-in
+`pack_id=0, episode_id=0, download_id=-1` placeholder ("Football Season" /
+"MEGA PACKS"). The 200-byte trailer's structure is unconfirmed -- it was
+entirely zero in the one sample available, so the reader only requires it to
+be present and to land exactly on EOF afterward; it does not validate its
+content. This decode recovered 195 real serialized entries (183 after
+deduplication, 25 categories, including "A New Start", numbered "Season N"
+groups, "PREMIUM CONTENT", and several "Classic Set" packs) with filenames
+matching the known EXP corpus, plus real string pairs such as `$USR`. That
+end-to-end coverage across every entry is the evidence for this layout;
+version 19 has authored synthetic test coverage in `test_episode_catalog.py`,
+but only one real file has verified it so far.
 
 Most strings decode as UTF-8. Some translated strings in the original options
 file contain legacy byte values, so this reader falls back to Latin-1 for

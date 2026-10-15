@@ -89,7 +89,7 @@ def package(root, label='local'):
     executables = audit_ios(bundle)
     output = root / 'dist/downloads'
     output.mkdir(parents=True, exist_ok=True)
-    target = output / f'exp-runtime-{label}-ios-arm64-unsigned.ipa'
+    target = output / f'shshd-runtime-{label}-ios-arm64-unsigned.ipa'      # this fork's download name
     with tempfile.TemporaryDirectory(prefix='exp-ios-package-', dir=output) as temporary:
         archive = Path(temporary) / target.name
         with ZipFile(archive, 'w', ZIP_DEFLATED) as stream:

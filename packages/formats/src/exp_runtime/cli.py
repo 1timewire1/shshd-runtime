@@ -48,6 +48,9 @@ def _build_parser() -> argparse.ArgumentParser:
                                help="Optional Android 1.0.9 APK supplying missing IPA music.")
     import_parser.add_argument("--episodes", type=Path, nargs="+", action="extend", default=[],
                                help="EXP files, episode ZIPs/RARs or directories; subfolders are scanned recursively.")
+    import_parser.add_argument("--hd-ipa", type=Path, default=None,
+                               help="Optional, with --apk: your SHS HD (iPad) 1.4.38 ipa, unlocking its HD art, "
+                                    "fonts and Football Star scripts. Never required.")
     import_parser.add_argument("--library", type=Path, required=True,
                                help="New library directory for this game.")
 
@@ -60,6 +63,10 @@ def _build_parser() -> argparse.ArgumentParser:
     music_parser = subparsers.add_parser("add-music", help="Add missing music to an existing IPA library.")
     music_parser.add_argument("--apk", type=Path, required=True, help="Your SHS Android 1.0.9 APK.")
     music_parser.add_argument("--library", type=Path, required=True, help="Existing IPA library.")
+    art_parser = subparsers.add_parser("add-hd-art", help="Link the SHS HD (iPad) IPA to a Cause of Death library "
+                                                          "for HD presentation art.")
+    art_parser.add_argument("--ipa", type=Path, required=True, help="Your SHS HD (iPad) 1.4.38 IPA.")
+    art_parser.add_argument("--library", type=Path, required=True, help="Existing Cause of Death library.")
 
     play_parser = subparsers.add_parser("play", help="Open the main menu, or start a selected episode.")
     play_parser.add_argument("--library", type=Path, help="Content library; defaults to the existing local library or user application data.")
@@ -113,23 +120,25 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(str(error))
         return
 
-    if args.command in ('import', 'list', 'play', 'add-music', 'trace'):
+    if args.command in ('import', 'list', 'play', 'add-music', 'add-hd-art', 'trace'):
         if find_spec('exp_runtime.engine') is None:
             parser.error('This command needs the engine and a game adapter. '
                          'Install "exp-runtime[engine,shs]" or "exp-runtime[engine,cod]".')
     if args.command == 'play' and find_spec('exp_runtime.application') is None:
         parser.error('The player is not installed. Install "exp-runtime[player]".')
 
-    if args.command in ("import", "list", "play", "add-music"):
+    if args.command in ("import", "list", "play", "add-music", "add-hd-art"):
         from .content import ContentError, ContentLibrary, import_game
         from .runtime import SaveError
         from .vm import VMError
 
         try:
             if args.command == "import":
-                manifest = import_game(args.apk or args.ipa, args.episodes, args.library,
+                manifest = import_game(args.apk or args.ipa, args.episodes, args.library, hd_ipa_path=args.hd_ipa,
                                        music_apk=args.music_apk, game=args.game)
                 print(f"Imported {len(manifest['episodes'])} episodes into {args.library}")
+                if "hd_ipa" in manifest:
+                    print("Imported HD ipa: real HD chrome assets are available where verified.")
                 return
             if args.command == 'play':
                 if (args.load or args.resume) and not args.episode:
@@ -157,6 +166,10 @@ def main(argv: list[str] | None = None) -> None:
                 if args.command == 'add-music':
                     count = library.add_music_apk(args.apk)
                     print(f'Added {count} missing music tracks.' if count else 'No missing music tracks to add.')
+                    return
+                if args.command == 'add-hd-art':
+                    linked = library.add_shs_hd_art(args.ipa)
+                    print('Linked the SHS HD art source.' if linked else 'That SHS HD IPA is already linked.')
                     return
                 library.ensure_builtin_episodes()
                 if args.command == "list":

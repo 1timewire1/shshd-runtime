@@ -134,3 +134,43 @@ is not reproduced as a drawn desktop keyboard. Cross-label global kerning,
 native panel transitions, inherited mutable layout/font state from other UI
 paths, and exact cursor animation timing still require a live reference
 comparison. No unsupported native service is acknowledged to reach this UI.
+
+## iOS HD build
+
+Read from the HD binary's own `SHSUITextEntry` (Ghidra, `initTextEntry`,
+`tick`, `render`, `setReturnValue`, `alertViewDismissed`; addresses
+`0004a0f0`, `00049860`, `00049f04`, `000497f0`, `00049670`). This is a native
+UIKit modal, not scripted content, and it matches Android's rules in most
+places and differs in a few:
+
+| Behavior | HD | Android (above) |
+| --- | --- | --- |
+| Widget | `getWidget(0x2e)` -- the same layout 46; sub-elements 0x12 (title), 0x17 (prompt), 0x2c (field) match Android's rectangles 18/23/44 | layout 46 |
+| Editing | a real `UITextView`, keyboard type 6 (`UIKeyboardTypeNamePhonePad`), return key 9 (Done), `enablesReturnKeyAutomatically` | native widget |
+| Accepted characters | `a-z A-Z 0-9` only; a newline means Done; anything else reverts the text and shows an alert | same |
+| Case | a lowercase **first** letter is capitalized; later letters keep the case typed | uppercase after the first is lowercased |
+| Length | no character cap in `tick`; only the width rule below | 16 characters |
+| Width | the text is trimmed until its display length fits the field width minus 55, then the last removed character is re-appended (so the final character may cross the threshold, as on Android) | existing width + cursor < 240 |
+| Done with empty text | clears the field; the call never resumes | same |
+| Rejection alert | a system `UIAlertView` (title/message/cancel from string bank entries 235/237/154) added to the engine view | APK art 707 with strings 258/260/164 |
+| Completion | `setReturnValue` copies the text to host `+0x94` and `+0x54` and calls `returnFromSyscall(0x7ff5)` | same callback |
+| Cursor | a `|` `SHSTextLayer` in an `SHSAnimationLayer` (0.2 s), positioned at the text's display length | Pajama Hip 26 `|` |
+
+The panel is positioned at `x = (0x300 - width) / 2`, `y = 0x13a - promptHeight`
+in the HD layer's own units (0x300 = 768, the iPad point width), and enters
+with `GameModel::setBubbleSex(1)`. Those units differ from this frontend's
+320 x 480 layout space, and the HD layout bank's geometry is not decoded, so
+the on-screen placement here still comes from Android's layout 46/15/43.
+
+The runtime applies the HD rules (`text_input.accept_name_character(hd=True)`,
+`validate_name(hd=True)`) whenever an HD app bundle is imported, and Android's
+otherwise (`Session.name_input_metrics`). Unverified: the exact character the
+capitalization step produces (its argument is not legible in the decompile;
+the test `byte + 0x9f < 26` selects lowercase letters, so it is read as
+upper-casing), the field width in HD units, and the HD alert's look, which
+this frontend approximates with Android's alert art.
+
+A caveat that applies to both builds: the same services drive in-story password
+prompts (Owen's Eleven), and these rules recase or reject anything that is not
+alphanumeric. That is native behavior on both builds, so it is preserved rather
+than special-cased.

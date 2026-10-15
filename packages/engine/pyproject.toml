@@ -3,13 +3,13 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exp-runtime-engine"
-version = "0.5.0"
+name = "shshd-runtime-engine"
+version = "1.0.0"
 description = "Headless KiWi VM, sessions, content libraries and saves"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["exp-runtime-formats==0.5.0"]
+dependencies = ["shshd-runtime-formats==1.0.0"]
 
 [project.optional-dependencies]
 fonts = ["Pillow>=10"]

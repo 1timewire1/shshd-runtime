@@ -1,7 +1,9 @@
-# Contributing to EXP Runtime
+# Contributing to SHSHD Runtime
 
-EXP Runtime is an experimental compatible engine for Surviving High School
-and Cause of Death.
+SHSHD Runtime is an experimental compatible engine for Surviving High School
+(including its iPad HD release) and Cause of Death, a fork of
+[exp-runtime](https://github.com/joshrmcdaniel/exp-runtime). Changes that are not
+specific to this fork may also belong upstream.
 It executes original KiWi bytecode and imports resources from each player's
 SHS APK/IPA or CoD IPA and EXP episodes. The goal is to reproduce the original
 gameplay and interface. It is not an ARM recompilation or a Ren'Py conversion.
@@ -18,7 +20,7 @@ Install uv and run these commands from the repository root:
 ```sh
 uv sync --locked --extra desktop
 uv run --locked --extra desktop python -m unittest discover -s tests
-uv run --locked --extra desktop exp-runtime
+uv run --locked --extra desktop shshd-runtime
 ```
 
 The project supports Python 3.10 or newer; CI uses Python 3.14. The launcher

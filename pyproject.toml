@@ -3,14 +3,14 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exp-runtime"
-version = "0.5.0"
-description = "A compatible EXP engine for Surviving High School and Cause of Death using player-supplied game files"
+name = "shshd-runtime"
+version = "1.0.0"
+description = "A compatible EXP engine for Surviving High School (including its iPad HD release) and Cause of Death, using player-supplied game files"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 keywords = ["shs", "surviving-high-school", "cause-of-death", "kiwi", "exp", "game-engine", "shs-runtime", "cod-runtime"]
-dependencies = ["exp-runtime-formats==0.5.0"]
+dependencies = ["shshd-runtime-formats==1.0.0"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
@@ -19,18 +19,18 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-tools = ["exp-runtime-formats==0.5.0"]
-engine = ["exp-runtime-engine==0.5.0"]
-shs = ["exp-runtime-shs==0.5.0"]
-cod = ["exp-runtime-cod==0.5.0"]
-player = ["exp-runtime-player[desktop]==0.5.0", "exp-runtime-shs==0.5.0", "exp-runtime-cod==0.5.0"]
-desktop = ["exp-runtime-player[desktop]==0.5.0", "exp-runtime-shs==0.5.0", "exp-runtime-cod==0.5.0"]
-build = ["exp-runtime-player[desktop]==0.5.0", "exp-runtime-shs==0.5.0", "exp-runtime-cod==0.5.0", "pyinstaller>=6.16,<7"]
+tools = ["shshd-runtime-formats==1.0.0"]
+engine = ["shshd-runtime-engine==1.0.0"]
+shs = ["shshd-runtime-shs==1.0.0"]
+cod = ["shshd-runtime-cod==1.0.0"]
+player = ["shshd-runtime-player[desktop]==1.0.0", "shshd-runtime-shs==1.0.0", "shshd-runtime-cod==1.0.0"]
+desktop = ["shshd-runtime-player[desktop]==1.0.0", "shshd-runtime-shs==1.0.0", "shshd-runtime-cod==1.0.0"]
+build = ["shshd-runtime-player[desktop]==1.0.0", "shshd-runtime-shs==1.0.0", "shshd-runtime-cod==1.0.0", "pyinstaller>=6.16,<7"]
 
 # Source contributors get the full test/app environment. Published wheel
 # dependencies remain minimal; use --no-default-groups to develop a subset.
 [dependency-groups]
-dev = ["exp-runtime-player[desktop]==0.5.0", "exp-runtime-shs==0.5.0", "exp-runtime-cod==0.5.0"]
+dev = ["shshd-runtime-player[desktop]==1.0.0", "shshd-runtime-shs==1.0.0", "shshd-runtime-cod==1.0.0"]
 
 [tool.setuptools]
 include-package-data = false
@@ -40,8 +40,8 @@ packages = []
 members = ["packages/*"]
 
 [tool.uv.sources]
-exp-runtime-formats = { workspace = true }
-exp-runtime-engine = { workspace = true }
-exp-runtime-player = { workspace = true }
-exp-runtime-shs = { workspace = true }
-exp-runtime-cod = { workspace = true }
+shshd-runtime-formats = { workspace = true }
+shshd-runtime-engine = { workspace = true }
+shshd-runtime-player = { workspace = true }
+shshd-runtime-shs = { workspace = true }
+shshd-runtime-cod = { workspace = true }

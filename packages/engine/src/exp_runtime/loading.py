@@ -11,11 +11,27 @@ from .vm import KiwiVM, VMError, VMStop
 def loading_waits(vm: KiwiVM, request: VMStop) -> bool:
     """Read the dispatcher's first frame slot, even for a zero-word call.
 
-    FUN_0009fe3c reads stack[SP - argc] without checking argc. With no
-    arguments this is retained backing at SP, not an implicit zero. Unknown
-    backing must still stop explicitly through read_word().
+    FUN_0009fe3c (and HD's SHSScript::syscall, 0003d9b8) reads stack[SP - argc]
+    without checking argc. With no arguments this is retained backing at SP,
+    not an implicit zero.
+
+    shshd-runtime: a slot this session never wrote reads as 0 (no wait) instead
+    of stopping. HD allocates the script stack once, at launch, with
+    `new short[0x400]` (CSKiwiEngine::init, 0000f788; no fill), so natively the
+    slot holds whatever that allocation held: most plausibly zero for memory
+    claimed at startup and never written, but not verified. The value only
+    chooses whether the overlay holds the script for its 3 s; the story
+    continues either way. 4_The_Great_Float_Caper's first script reaches this
+    call before ever writing the slot, and used to stop there.
     """
-    return bool(request.args[0] if request.args else vm.read_word(vm.stack_base + vm.sp))
+    return bool(request.args[0] if request.args else retained_word(vm))
+
+
+def retained_word(vm: KiwiVM) -> int:
+    """The stack backing at SP, as a zero-word service 91 reads it; never written this session reads as 0 (above)."""
+    if 0 <= vm.sp < len(vm._stack) and vm._stack[vm.sp] is None:
+        return 0
+    return vm.read_word(vm.stack_base + vm.sp)
 
 
 @dataclass

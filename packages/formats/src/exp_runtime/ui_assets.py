@@ -5,6 +5,7 @@ records stay in user content; only the recovered decoding rules live here.
 See docs/UI_FIDELITY.md and docs/UI_ASSETS.md for the native evidence.
 """
 from dataclasses import dataclass
+from functools import lru_cache
 import struct
 
 from .exp import ContentError, MAX_PAYLOAD
@@ -144,7 +145,15 @@ class LayoutBank:
         layout = self.layouts[layout_id]
         yield from visit(layout_id, rect or Rect(0, 0, layout.width, layout.height), ())
 
+    @lru_cache(maxsize=512)
     def rectangle(self, layout_id: int, node_id: int, rect: Rect | None = None):
+        # A node's rectangle is a pure function of the bank's own static data plus these three arguments --
+        # every caller across the whole UI (dialogue, choice, menu, message, title, input) asks for the same
+        # handful of node ids over and over, often several times a frame for the same answer (profiled live:
+        # one dialogue screen's relationship-icon placement alone cost ~13 full tree walks every frame). `self`
+        # is part of the cache key and the bank is immutable once parsed, so this is safe for the bank's own
+        # lifetime; `walk()` itself stays uncached since its generator form doesn't fit lru_cache, but its
+        # handful of direct callers each run once per screen, not once per frame.
         if node_id == 0 and 0 <= layout_id < len(self.layouts):
             layout = self.layouts[layout_id]
             return rect or Rect(0, 0, layout.width, layout.height)
@@ -224,6 +233,9 @@ class ImagePack:
     sequences: tuple[tuple[int, ...], ...]
     parts: tuple[tuple[tuple[int, int, int], ...], ...]
     images: tuple[Raster, ...]
+    # Byte offset of each literal image's stored pixels (None for a generated one), so a derived pack can be written
+    # back into a copy of the original bytes (cod/hd_art.py).
+    pixel_offsets: tuple = ()
 
     @classmethod
     def parse(cls, data: bytes):
@@ -252,17 +264,19 @@ class ImagePack:
         marker = 0 if flags & 8 else reader.integer()
         if marker not in (-1, -2):
             raise UIAssetError(f'Unsupported image-pack pixel encoding {marker}')
-        images, total_bytes = [], 0
+        images, offsets, total_bytes = [], [], 0
         for _ in range(reader.count()):
             width = reader.integer('h' if flags & 32 else 'B')
             if width == 0:
                 images.append(None)  # Generated from an earlier literal image.
+                offsets.append(None)
                 continue
             height = reader.integer('h' if flags & 32 else 'B')
             size = width * height * (4 if marker == -1 else 1)
             total_bytes += size
             if width < 0 or height <= 0 or total_bytes > MAX_PAYLOAD:
                 raise UIAssetError('Invalid or excessive image-pack dimensions')
+            offsets.append(reader.pos)
             pixels = reader.take(size)
             if marker == -1:
                 rgba = bytearray(size)
@@ -282,4 +296,4 @@ class ImagePack:
             images[target] = images[source].transformed(transform)
         if any(image is None for image in images):
             raise UIAssetError('Unresolved image-pack placeholder')
-        return cls(flags, frames, tuple(sequences), tuple(parts), tuple(images))
+        return cls(flags, frames, tuple(sequences), tuple(parts), tuple(images), tuple(offsets))

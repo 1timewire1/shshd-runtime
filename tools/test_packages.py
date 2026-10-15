@@ -39,11 +39,11 @@ from exp_runtime.cli import main
 
 expected, games, player = json.loads(sys.argv[1])
 actual = {d.metadata['Name'].lower().replace('_', '-') for d in distributions()
-          if d.metadata['Name'].lower().startswith('exp-runtime')}
+          if d.metadata['Name'].lower().startswith('shshd-runtime')}
 assert actual == set(expected), (actual, expected)
 for name in ('engine', 'shs', 'cod', 'application'):
     installed = find_spec('exp_runtime.' + name) is not None
-    wanted = player if name == 'application' else name in games if name in ('shs', 'cod') else 'exp-runtime-engine' in actual
+    wanted = player if name == 'application' else name in games if name in ('shs', 'cod') else 'shshd-runtime-engine' in actual
     assert installed == wanted, (name, installed, wanted)
 for module in ('PIL', 'pygame'):
     wanted = bool(games or player) if module == 'PIL' else player
@@ -70,7 +70,7 @@ main(['extract', 'authored.exp', '--output', 'extracted'])
 assert Path('extracted/25001.bin').read_bytes() == data
 assert not any(n.startswith(('pygame', 'PIL', 'exp_runtime.engine', 'exp_runtime.shs', 'exp_runtime.cod')) for n in sys.modules)
 
-if 'exp-runtime-engine' not in actual:
+if 'shshd-runtime-engine' not in actual:
     result = subprocess.run([sys.executable, '-I', '-m', 'exp_runtime', 'trace', 'authored.exp'], text=True, capture_output=True)
     assert result.returncode == 2 and 'exp-runtime[engine' in result.stderr and 'Traceback' not in result.stderr
 else:
@@ -160,14 +160,14 @@ def verify(directory, *, offline=False):
                  '--no-deps', '--dest', str(cache), f'Pillow=={installed_version("Pillow")}',
                  f'pygame-ce=={installed_version("pygame-ce")}'], cwd=root, env=env)
         cases = (
-            ('tools', ('exp-runtime[tools]',), (), False, True),
-            ('engine', ('exp-runtime[engine]',), (), False, True),
-            ('shs', ('exp-runtime[engine,shs]',), ('shs',), False, True),
-            ('cod', ('exp-runtime[engine,cod]',), ('cod',), False, True),
-            ('both', ('exp-runtime[engine,shs,cod]',), ('shs', 'cod'), False, True),
-            ('player', ('exp-runtime[player]',), ('shs', 'cod'), True, True),
-            ('desktop', ('exp-runtime[desktop]',), ('shs', 'cod'), True, True),
-            ('cod-player', ('exp-runtime-player[desktop]', 'exp-runtime-cod'), ('cod',), True, False),
+            ('tools', ('shshd-runtime[tools]',), (), False, True),
+            ('engine', ('shshd-runtime[engine]',), (), False, True),
+            ('shs', ('shshd-runtime[engine,shs]',), ('shs',), False, True),
+            ('cod', ('shshd-runtime[engine,cod]',), ('cod',), False, True),
+            ('both', ('shshd-runtime[engine,shs,cod]',), ('shs', 'cod'), False, True),
+            ('player', ('shshd-runtime[player]',), ('shs', 'cod'), True, True),
+            ('desktop', ('shshd-runtime[desktop]',), ('shs', 'cod'), True, True),
+            ('cod-player', ('shshd-runtime-player[desktop]', 'shshd-runtime-cod'), ('cod',), True, False),
         )
         import json
         for label, requirements, games, player, umbrella in cases:
@@ -178,18 +178,18 @@ def verify(directory, *, offline=False):
             run([*pip, 'install', '--no-index', '--find-links', str(directory), '--find-links', str(cache),
                  *(f'{req}=={version}' for req in requirements)], cwd=case, env=env)
             run([*pip, 'check'], cwd=case, env=env)
-            expected = ['exp-runtime-formats'] + (['exp-runtime'] if umbrella else [])
+            expected = ['shshd-runtime-formats'] + (['shshd-runtime'] if umbrella else [])
             if label != 'tools':
-                expected.append('exp-runtime-engine')
+                expected.append('shshd-runtime-engine')
             if player:
-                expected.append('exp-runtime-player')
-            expected.extend(f'exp-runtime-{game}' for game in games)
+                expected.append('shshd-runtime-player')
+            expected.extend(f'shshd-runtime-{game}' for game in games)
             output = run([python, '-I', '-c', VERIFY, json.dumps((expected, games, player))], cwd=case, env=env)
             print(output.splitlines()[-1], flush=True)
         # Removing one namespace component must not delete another's files.
-        run([*pip, 'uninstall', '-y', 'exp-runtime-player'], cwd=case, env=env)
+        run([*pip, 'uninstall', '-y', 'shshd-runtime-player'], cwd=case, env=env)
         run([*pip, 'check'], cwd=case, env=env)
-        expected.remove('exp-runtime-player')
+        expected.remove('shshd-runtime-player')
         # Pip intentionally retains dependencies; remove pygame for the
         # assertion that this resulting headless environment has no SDL.
         run([*pip, 'uninstall', '-y', 'pygame-ce'], cwd=case, env=env)

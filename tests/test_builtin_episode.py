@@ -7,11 +7,11 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from exp_runtime.shs.builtin_episode import FOOTBALL_SCRIPTS, extract_football
+from exp_runtime.shs.builtin_episode import FOOTBALL_SCRIPTS, HD_FOOTBALL_SCRIPTS, extract_football
 from exp_runtime.content import ContentError, ContentLibrary, ExpArchive, digest, import_game, is_bundled
 from exp_runtime.randomness import NativeRandom
 from exp_runtime.runtime import Session
-from test_content import FAKE_NATIVE, archive, make_apk, metadata
+from test_content import FAKE_NATIVE, FAKE_HD_EXECUTABLE, archive, make_apk, make_hd_ipa, metadata
 from test_runtime import answer_screen
 from test_vm import program
 
@@ -68,6 +68,40 @@ class BuiltinExtractionTests(unittest.TestCase):
         moved = self.root / 'moved'; library_path.rename(moved); self.apk.unlink()
         with ContentLibrary(moved) as library:
             self.assertEqual(library.open_episode('Football Season').archive.data, data)
+
+    def test_the_hd_bundles_scripts_replace_the_apks_and_a_library_swaps_when_the_bundle_changes(self):
+        hd_profile = patch('exp_runtime.content.HD_APP_SHA256', digest(FAKE_HD_EXECUTABLE))
+        hd_profile.start(); self.addCleanup(hd_profile.stop)
+        ipa_path = self.root / 'hd.ipa'
+        make_hd_ipa(ipa_path, {i: program((0x1a, i), (0x1f, 0xfe02), (0x1f, 0xfe02)).to_bytes() for i in HD_FOOTBALL_SCRIPTS})
+        with ZipFile(self.apk) as apk, ZipFile(ipa_path) as ipa:
+            data = extract_football(apk, hd_ipa=ipa)
+            exp = ExpArchive(data)
+            self.assertEqual(set(exp.entries), {1, *HD_FOOTBALL_SCRIPTS})        # the APK's extra script 25023 is not in it
+            self.assertEqual(exp.read(25001), ipa.read('Payload/Surviving_HS.app/res_generated/25001'))
+            self.assertNotEqual(exp.read(25001), apk.read('assets/Assets/25001'))
+            self.assertNotEqual(data, extract_football(apk))
+        target = self.root / 'library'
+        import_game(self.apk, [], target)
+        with ContentLibrary(target) as library:
+            self.assertFalse(library.open_episode('footballseason').record['hd_scripts'])
+            library.close()
+        # The player later adds the HD bundle to the manifest: the built-in story now follows it.
+        manifest = json.loads((target / 'library.json').read_text(encoding='utf-8'))
+        ipa_hash = digest(ipa_path.read_bytes())
+        (target / 'content' / f'{ipa_hash}.ipa').write_bytes(ipa_path.read_bytes())
+        manifest['hd_ipa'] = dict(file=f'content/{ipa_hash}.ipa', sha256=ipa_hash, executable_sha256=digest(FAKE_HD_EXECUTABLE))
+        (target / 'library.json').write_text(json.dumps(manifest), encoding='utf-8')
+        with ContentLibrary(target) as library:
+            self.assertEqual(library.ensure_builtin_episodes(), 1)
+            builtin = [e for e in library.episodes if e.get('builtin')]
+            self.assertEqual(len(builtin), 1)
+            self.assertTrue(builtin[0]['hd_scripts'])
+            self.assertEqual(builtin[0]['scripts'], list(HD_FOOTBALL_SCRIPTS))
+            self.assertEqual(library.ensure_builtin_episodes(), 0)
+        import_game(self.apk, [], self.root / 'both', ipa_path)
+        with ContentLibrary(self.root / 'both') as library:
+            self.assertTrue(library.open_episode('footballseason').record['hd_scripts'])
 
     def test_existing_library_migration_keeps_selection_saves_and_other_episodes(self):
         target = self.root / 'library'

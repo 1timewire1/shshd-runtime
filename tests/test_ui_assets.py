@@ -1,6 +1,7 @@
 from pathlib import Path
 import struct
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 from exp_runtime.ui_assets import ImagePack, LayoutBank, Raster, Rect, UIAssetError
@@ -89,6 +90,29 @@ class UIAssetTests(unittest.TestCase):
             LayoutBank.parse(data[:-1])
         with self.assertRaises(UIAssetError):
             bank.rectangle(0, 4)
+
+    def test_rectangle_is_cached_not_rewalked_on_repeated_lookups(self):
+        # Every caller across the whole UI (dialogue, choice, menu, message, title, input) asks `rectangle()`
+        # for the same handful of node ids repeatedly, often several times a frame for the same answer -- a
+        # real dialogue screen's relationship-icon placement alone cost ~13 full tree walks every single
+        # frame before this cache existed, none of which could ever come back different for an immutable bank.
+        # An extra, otherwise-unused empty layout at the end (count 3, not 2) only to keep this bank's own bytes
+        # -- and so its value, which is what the lru_cache keys on -- distinct from the identical fixture the
+        # test above builds, so a hit here can only come from this test's own calls, not a cross-test collision.
+        data = (struct.pack('>bbbbh', 1, 0, 0, 0, 3)
+                + struct.pack('>hhh', 100, 100, 2)
+                + node((10, 20, 40, 40), (2048, 0, 2048, 0), 0x17, b'\x01')
+                + node((-5, -5, 5, 5))
+                + struct.pack('>hhh', 30, 20, 1) + node((1, 2, 29, 18))
+                + struct.pack('>hhh', 1, 1, 0))
+        bank = LayoutBank.parse(data)
+        resized = Rect(5, 10, 200, 100)
+        with patch.object(LayoutBank, 'walk', wraps=bank.walk, autospec=False) as walk:
+            for _ in range(5):
+                self.assertEqual(bank.rectangle(0, 1, resized), Rect(65, 30, 30, 20))
+            for _ in range(5):
+                self.assertEqual(bank.rectangle(0, 2, resized), Rect(66, 32, 28, 16))
+            self.assertEqual(walk.call_count, 2)                       # one real walk per distinct (id, rect)
 
     def test_recursive_layout_fails_explicitly(self):
         data = struct.pack('>bbbbhhhh', 0, 0, 0, 0, 1, 10, 10, 1) + node((0, 0, 10, 10), kind=7, payload=b'\0')

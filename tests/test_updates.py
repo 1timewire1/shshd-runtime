@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 
 from exp_runtime.app_info import PROJECT_URL
 from exp_runtime.settings import AppSettings
-from exp_runtime.updates import (MAX_RESPONSE, RELEASE_API, UPDATE_MESSAGE, UpdateCheck,
+from exp_runtime.updates import (MAX_RESPONSE, RELEASE_API, UpdateCheck, update_message,
                                   fetch_release, newer_release)
 
 
@@ -156,7 +156,7 @@ class ApplicationUpdateTests(unittest.TestCase):
         app.tick(0)
         with patch.object(app.renderer, 'label', wraps=app.renderer.label) as label:
             app.render()
-            self.assertIn(UPDATE_MESSAGE, [call.args[0] for call in label.call_args_list])
+            self.assertIn(update_message('0.5.0'), [call.args[0] for call in label.call_args_list])
         self.assertEqual([c for _, c in app.buttons], [('update_no',), ('update_yes',)])
         app.command(('choose_game', 'shs'))
         self.assertEqual(app.screen, 'games')  # Covered controls are inert.
@@ -167,14 +167,18 @@ class ApplicationUpdateTests(unittest.TestCase):
         opener.assert_not_called()
         self.fetcher.assert_called_once_with()
 
-    def test_yes_opens_only_the_release_page_and_does_not_repeat_on_focus_return(self):
+    def test_yes_opens_only_the_release_page_then_closes_the_game(self):
         app = self.app()
         opener = app.url_opener = Mock()
         self.future.set_result(release())
         app.tick(0); app.render()
         opener.assert_not_called()
+        self.assertFalse(app.quit_requested)
         app.command(('update_yes',))
         opener.assert_called_once_with(PROJECT_URL + '/releases/tag/v0.5.0')
+        self.assertTrue(app.quit_requested)          # run() ends after this event; close() checkpoints as usual
+        self.assertIn('close the game and open your browser', update_message('0.5.0'))
+        app.quit_requested = False
         app.active = False; app.tick(20)
         app.active = True; app.tick(20)
         self.assertIsNone(app.update_prompt)
@@ -196,7 +200,7 @@ class ApplicationUpdateTests(unittest.TestCase):
         renderer.bank = LayoutBank(0, 0, 0, (), (Layout(1, 1, ()),) * 39 + (Layout(302, 43, nodes),))
         renderer.strings = {25: 'Yes', 26: 'No'}
         with patch.object(renderer, 'layout'), patch.object(renderer, 'label') as label:
-            renderer.confirmation(UPDATE_MESSAGE)
+            renderer.confirmation(update_message('0.5.0'))
         no, yes = renderer.buttons
         self.assertEqual(no[1], ('update_no',))
         self.assertEqual(yes[1], ('update_yes',))
@@ -205,6 +209,7 @@ class ApplicationUpdateTests(unittest.TestCase):
         self.assertFalse(no[0].colliderect(yes[0]))
         self.assertEqual([call.args[0] for call in label.call_args_list][-2:], ['No', 'Yes'])
 
+    @patch('exp_runtime.desktop_menu.UPDATE_REPOSITORY', 'owner/repository')   # shown only with a release source
     def test_opt_out_survives_game_switch_and_restart_and_disabling_ignores_inflight_result(self):
         app = self.app()
         self.future.set_running_or_notify_cancel()
@@ -305,13 +310,53 @@ class NativeUpdateTests(unittest.TestCase):
             self.assertIsNone(host.request({'operation': 'frame'})['update_request'])
             shown = host.request(dict(operation='update_result', payload=release()))
             self.assertIsNotNone(host.app.update_prompt)
+            # iOS only informs: one OK, which dismisses; nothing opens and the app never quits (can_quit=False).
+            self.assertEqual([cmd for _, cmd in host.app.buttons], [('update_no',)])
             generation = shown['generation']
-            rect = next(rect for rect, cmd in host.app.buttons if cmd == ('update_yes',))
+            rect = host.app.buttons[0][0]
             point = [int(v * 1.5) for v in rect.center]
             stale = [dict(kind=kind, point=point, generation=generation - 1) for kind in ('down', 'up')]
             self.assertIsNone(host.request(dict(operation='frame', events=stale))['open_url'])
+            self.assertIsNotNone(host.app.update_prompt)
             events = [dict(kind=kind, point=point, generation=generation) for kind in ('down', 'up')]
             accepted = host.request(dict(operation='frame', events=events))
-            self.assertEqual(accepted['open_url'], PROJECT_URL + '/releases/tag/v0.5.0')
-            self.assertIsNone(host.request({'operation': 'frame'})['open_url'])
+            self.assertIsNone(accepted['open_url'])
             self.assertIsNone(host.app.update_prompt)
+            self.assertFalse(host.app.quit_requested)
+            host.app.command(('update_yes',))             # even a stray Yes never opens or quits there
+            self.assertFalse(host.app.quit_requested)
+
+
+class ForkUpdateSourceTests(unittest.TestCase):
+    def test_the_check_asks_this_forks_releases_never_upstreams(self):
+        from exp_runtime import app_info, updates
+        self.assertEqual(app_info.UPDATE_REPOSITORY, '1timewire1/shshd-runtime')
+        self.assertEqual(updates.RELEASE_API, 'https://api.github.com/repos/1timewire1/shshd-runtime/releases/latest')
+        self.assertTrue(app_info.PROJECT_URL.endswith('/1timewire1/shshd-runtime'))
+        self.assertNotIn('joshrmcdaniel', updates.RELEASE_API)
+
+    def test_no_release_source_means_no_network_check(self):
+        from exp_runtime import updates
+        with patch.object(updates, 'UPDATE_REPOSITORY', None), patch.object(updates, 'fetch_release') as fetch:
+            check = updates.UpdateCheck(current='1.0.0')
+            check.fetcher = updates.fetch_release        # the default, as Application builds it
+            check.start()
+            fetch.assert_not_called()
+            self.assertIsNone(check.future)
+
+
+
+class LaunchOfferTests(unittest.TestCase):
+    """The HD launch holds before "Play with sound?" for the update check (Application.update_holds_launch)."""
+
+    def test_the_launch_waits_briefly_for_an_answer_and_for_an_offer_to_be_answered(self):
+        from types import SimpleNamespace
+        from exp_runtime.application import UPDATE_WAIT, Application
+        app = lambda prompt=None, future=None, available=None: SimpleNamespace(
+            update_prompt=prompt, updates=SimpleNamespace(future=future, available=available))
+        holds = Application.update_holds_launch
+        self.assertFalse(holds(app(), 0))                               # no check out: straight on
+        self.assertTrue(holds(app(future=object()), 0))                 # the check is still out
+        self.assertFalse(holds(app(future=object()), UPDATE_WAIT))      # ... but only for UPDATE_WAIT
+        self.assertTrue(holds(app(available=object()), 0))             # an answer about to be shown
+        self.assertTrue(holds(app(prompt=object()), UPDATE_WAIT * 10))  # an offer on screen holds until answered

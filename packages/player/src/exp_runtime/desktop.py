@@ -3,6 +3,9 @@ from collections import OrderedDict
 from io import BytesIO
 import logging
 import os
+import re
+from types import SimpleNamespace
+import webbrowser
 
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 from . import graphics as pygame
@@ -14,12 +17,33 @@ from .games import GAMES, game_id
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
-from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer, draw_pause_gear
-from .desktop_picker import CharacterPickerRenderer
-from .desktop_loading import LoadingRenderer
+from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer
+try:
+    # SHS HD's football and word grid draw with SHS's own layout helpers (exp_runtime.shs), which a CoD-only install
+    # lacks; CoD never plays either (tools/test_packages.py's cod-player case).
+    from .desktop_football_hd import HdFootballRenderer
+    from .desktop_word_hd import HdWordRenderer
+except ImportError:
+    HdFootballRenderer = HdWordRenderer = None
+from .location_pan import LocationPan
+from .desktop_message_hd import HdMessageRenderer
+from . import scene_fade
+from .desktop_pause_hd import HdPauseMenu
+from .desktop_hd_menu import HdMenuWindows
+from .desktop_badge_hd import HdSceneBadge
+from .ad_intro import play_option
+from .hd_choice import SELECT_MS, TRANSITION_MS, panel_alpha
+from .hd_ui import FRAME as HD_FRAME, S as HD_S
+from .menu_engine import MenuEngineData, MenuEngineError, MenuStack
+from .desktop_picker import CharacterPickerRenderer, CodCharacterPickerRenderer, HdCharacterPickerRenderer
+from .desktop_loading import HdLoadingRenderer, LoadingRenderer
 from .desktop_message import MessageRenderer
-from .desktop_title import TitleRenderer
+from .desktop_panels import DTViewRenderer, FaceplacePanelRenderer
+from .desktop_title import CodTitleRenderer, HdTitleRenderer, TitleRenderer
+from .desktop_faceplace_alert import ALERT_SOUND as FACEPLACE_ALERT_SOUND, FaceplaceAlertRenderer
 from .desktop_input import InputRenderer, INPUT_RECT
+from .desktop_side_panels import SidePanels
+from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .runtime import SaveError, Session
 from .scene_badge import outline_badge_text
@@ -29,7 +53,26 @@ from .ui_assets import ImagePack, Rect
 from .vm import VMError
 
 
+def _decoded_size(data: bytes) -> tuple[int, int]:
+    if data.startswith((b'\x89PNG', b'\xff\xd8')):
+        return pygame.image.load(BytesIO(data)).get_size()
+    frame = ImagePack.parse(data).images[0]
+    return frame.width, frame.height
+
+
 SIZE = (480, 720)
+# Pixels per logical unit for screens drawn at HD density (see DialogueRenderer.scale).
+STORY_SCALE = 2
+# HD's own main game view is a fixed 768x1024 (3:4) in every orientation --
+# confirmed from SHSViewController::setupLocalInterfaceOrientation:, which
+# only ever rotates that rectangle, never resizes it (see docs/UI_FIDELITY.md
+# and legacy/findings.md's DTView/Faceplace layout section). The UI chrome
+# below stays at SIZE's 2:3 (Android-authored, unchanged); only the initial
+# window is wider so there's real room for the background layer to use it.
+DEFAULT_WINDOW_SIZE = (round(SIZE[1] * 3 / 4), SIZE[1])
+FRAME_UNITS = (384, 512)
+HD_BG_SHIFT = (48, -20.5)
+UI_BOTTOM_INSET = 5.5
 INK = (245, 241, 233)
 MUTED = (183, 187, 198)
 ACCENT = (247, 190, 94)
@@ -37,13 +80,62 @@ PANEL = (23, 29, 45)
 
 
 class Desktop:
-    def __init__(self, session: Session, *, audio: bool = True, window=None, on_main_menu=None,
-                 episode_title=None, on_menu_page=None):
+    story_layer = None
+    # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
+    # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
+    choice_closing = None
+    # A narrator-style choice of this player's own over the pending screen (`_open_prompt`): "Ask to skip mini-games"
+    # before a football game or word grid (Win, Lose or Play), and whether to skip the High School Story ad intros.
+    # {'action', 'session', 'options', 'resolve'} while it is up (`session` stands in for the real one when drawing it).
+    # `minigame_played` is the game the player chose to play and `ad_asked` the ad choice already asked about.
+    skip_minigames = False
+    skip_ad_intros = False
+    hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
+    host_prompt = None
+    minigame_played = None
+    ad_asked = None
+    panel_alpha = None          # the HD menu view's alpha for this frame (None: drawn whole)
+    panel_overlay = None        # the HD timer layers for this frame (outside the view's fades)
+    edge_layer = None
+    music_fade_since = None
+    fade = None
+    # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
+    # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
+    warp_unlocked = True
+    warp_lockout = 0
+    panels_open = False
+    panels_progress = 0.0
+    # Milliseconds spent computing Choice hints (choice_hints.preview_choices runs inside render()). That time shows
+    # up in the next frame's elapsed; tick() leaves it off the story clock so a slow preview never shortens a timed
+    # choice's countdown.
+    hint_discount_ms = 0
+    _panels_wide = False
+
+    # The library's name-replacement table (MenuState.names, player.json): every session this window plays shares it
+    # (Session.share_names), so a name typed in one episode is the one every later episode shows. None plays alone.
+    names = None
+    notice_stack = None             # the native notice/confirm windows, when an HD bundle provides them (see __init__)
+
+    @property
+    def session(self):
+        return self._session
+
+    @session.setter
+    def session(self, session):
+        if self.names is not None:
+            session.share_names(self.names)
+        self._session = session
+
+    def __init__(self, session: Session, *, audio: bool = True, window=None, on_main_menu=None, capture=False,
+                 episode_title=None, on_menu_page=None, names=None):
+        self.names = names
         pygame.display.init()
         pygame.font.init()
+        # A capture draws one clean frame into `window` (a plain surface): no display, caption, or edge bar.
+        self.capture = capture
         if window is None:
             pygame.display.set_icon(icon_surface())
-        self.window = window if window is not None else pygame.display.set_mode(SIZE, pygame.RESIZABLE)
+        self.window = window if window is not None else pygame.display.set_mode(DEFAULT_WINDOW_SIZE, pygame.RESIZABLE)
         self.on_main_menu = on_main_menu
         self.on_menu_page = on_menu_page
         self.pause_renderer = None
@@ -51,28 +143,88 @@ class Desktop:
         self.gear_pointer_down = False
         self.ui_sounds = {}
         self.episode_title = episode_title if episode_title is not None else session.resources.record['titles'][0]
-        pygame.display.set_caption(GAMES[game_id(session.resources)].TITLE + ' — ' + self.episode_title)
-        # Cocoa's default opaque surface still carries an alpha bitmask.
-        # Explicit RGB avoids its incorrect blending of translucent layers.
-        self.canvas = pygame.Surface(SIZE).convert(32)
+        if not capture:
+            pygame.display.set_caption(GAMES[game_id(session.resources)].TITLE + ' — ' + self.episode_title)
+        # SRCALPHA (was opaque .convert(32)): backgrounds for dialogue and
+        # the generic/text-input path are now composited separately by
+        # _present(), directly at window resolution instead of this fixed
+        # SIZE canvas, so this canvas is left transparent where a
+        # background belongs -- see _present() and self.pending_background.
+        self.canvas = pygame.Surface(SIZE, pygame.SRCALPHA).convert_alpha()
         self.font = pygame.font.Font(None, 27)
         self.heading = pygame.font.Font(None, 34)
         self.small = pygame.font.Font(None, 22)
         self.session = session
         self.story_text = BitmapTextRenderer(session.resources.library)
-        self.dialogue_renderer = DialogueRenderer(session.resources, self.story_text, self._image)
-        self.choice_renderer = ChoiceRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.dialogue_renderer = DialogueRenderer(session.resources, self.story_text, self._image, scale=STORY_SCALE)
+        self.choice_renderer = ChoiceRenderer(session.resources, self.story_text, self.dialogue_renderer,
+                                             scale=STORY_SCALE)
         self.grid_renderer = self.football_renderer = None
         if game_id(session.resources) == 'shs':
             from .shs.desktop_grid import GridRenderer
             from .shs.desktop_football import FootballRenderer
             self.grid_renderer = GridRenderer(session.resources, self.story_text, self.dialogue_renderer)
             self.football_renderer = FootballRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
+        self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
+        self.pause_hd = HdPauseMenu(session.resources)
+        if self.dialogue_renderer.game_id() == 'cod':
+            # Cause of Death's own Pause / Options / Help & About (its menu engine windows in its own art).
+            from .desktop_cod_pause import CodPauseMenu
+            self.pause_hd = CodPauseMenu(session.resources, self.dialogue_renderer, self.story_text)
+        self.badge_hd = HdSceneBadge(self.dialogue_renderer, self._image)
+        self.pause_buttons = []
+        self.music_volume = self.sound_volume = 1.0
+        self.on_settings = None       # called after the pause menu changes music / sound
         self.picker_renderer = CharacterPickerRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.picker_hd = HdCharacterPickerRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.picker_cod = CodCharacterPickerRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.loading_renderer = LoadingRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.loading_hd = HdLoadingRenderer(session.resources, self.dialogue_renderer)
         self.message_renderer = MessageRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.message_hd = HdMessageRenderer(session.resources, self.dialogue_renderer)
         self.title_renderer = TitleRenderer(session.resources, self.story_text, self.dialogue_renderer)
-        self.input_renderer = InputRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.title_hd = HdTitleRenderer(session.resources, self.dialogue_renderer)
+        self.title_cod = None
+        self.dtview_renderer = DTViewRenderer(session.resources, self.story_text, self._image)
+        self.faceplace_panel_renderer = FaceplacePanelRenderer(session.resources, self.story_text,
+                                                                self._image, self.dialogue_renderer)
+        self.input_renderer = InputRenderer(session.resources, self.story_text, self.dialogue_renderer,
+                                            scale=STORY_SCALE)
+        self.faceplace_alert = FaceplaceAlertRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.side_panels = SidePanels(session.resources, self.story_text, self.dialogue_renderer, self.faceplace_alert)
+        # The menu engine's own native notice/confirm windows (resource 17), drawn modally over the running
+        # episode instead of the game's usual toast: a faceplace wall link opens through the app's own
+        # "Exit Game?" confirmation (menu 17) instead of straight to the browser -- this player's own addition
+        # (see `_wall_pointer`'s own note) -- and the Decision Tree's own "Locked" notice (menu 28, string 271,
+        # `touchesEnded:` while `warp_unlocked` is false) reuses the same stack rather than a one-off. Absent
+        # without an HD bundle imported (no resource 17 to read); a wall link opens directly without confirming,
+        # and the lock falls back to the toast, matching the base app either way.
+        self.notice_data = self.notice_windows = self.notice_stack = None
+        # The "Exit Game?" window and its Yes action: SHS HD's menu 17 / action 18, CoD's menu 16 / action 24.
+        self.exit_menu, self.exit_action = 17, 18
+        raw = self.pause_hd.raw(17)
+        if raw is not None:
+            try:
+                self.notice_data = MenuEngineData(raw)
+                self.notice_windows = HdMenuWindows(session.resources.library, self.notice_data, self.dialogue_renderer)
+                self.notice_stack = MenuStack(self.notice_data, self._wall_perform)
+            except MenuEngineError as error:
+                logging.warning('Native notice/confirm windows unavailable: %s', error)
+        elif self.dialogue_renderer.game_id() == 'cod' and self.dialogue_renderer.cod_hd_common() is not None:
+            # Cause of Death's own menu engine (logical resource 15) and its "Exit Game?" alert (desktop_cod_menu.py),
+            # with the SHS HD art source like the rest of its HD presentation.
+            from .desktop_cod_menu import EXIT_ACTION, EXIT_GAME, CodMenuWindows
+            try:
+                self.notice_data = MenuEngineData(session.resources.library.android_asset(15))
+                self.notice_windows = CodMenuWindows(session.resources.library, self.notice_data, self.dialogue_renderer)
+                self.notice_stack = MenuStack(self.notice_data, self._wall_perform)
+                self.exit_menu, self.exit_action = EXIT_GAME, EXIT_ACTION
+            except (MenuEngineError, ContentError) as error:
+                logging.warning('Native notice/confirm windows unavailable: %s', error)
+                self.notice_data = self.notice_windows = self.notice_stack = None
+        self.wall_link = ''
+        self.notice_pressed = None
         self.input_action = None
         self.input_error = None
         self.input_keyboard = False
@@ -80,21 +232,38 @@ class Desktop:
         self.picker_pointer_down = False
         self.press = ButtonPress()
         self.images = OrderedDict()
+        self._background_layer_cache = None   # (key, scaled surface) from the last _draw_background_layer call
         self.buttons = []
         self.scroll = self.max_scroll = 0
         self.screen_token = None
         self.message = ''
         self.message_until = 0
         self.error = None
+        self.pending_background = None
+        self.pending_background_origin = (160, 180)
+        self.pending_background_alpha = 255
+        self.last_background_id = -1         # the last real scene background seen (render()); episode_exit clears
+                                              # panel.background_id to -1, so the end-of-episode screen falls back
+                                              # to this instead of showing no background at all
+        self.location_pan = LocationPan()
+        self.fade = None                     # the running scene transition (scene_fade.py)
         self.music_token = None
         self.music_loaded = False
         self.music_paused = False
+        self.music_fade_since = None
         self.sound_serial = session.engine.sound_serial
         self.audio = False
         self.music_enabled = self.sound_enabled = True
         self.choice_hints = False
         self.active = True
         self.menu_open = False
+        # DTView/Faceplace panels: toggled by a device rotation in the real
+        # app (see desktop_panels.py); this desktop app has no such
+        # gesture, so the user chose the Tab key instead. progress is a
+        # 0..1 slide fraction, not a recovered native animation constant.
+        self.panels_open = False
+        self.panels_progress = 0.0
+        self._panels_wide = False
         if audio:
             try:
                 pygame.mixer.init()
@@ -135,6 +304,28 @@ class Desktop:
                 self.images.popitem(last=False)
         self.images.move_to_end(asset_id)
         return self.images[asset_id]
+
+    def _chrome_image(self, asset_id):
+        """Like _image(), but normalized back to the Android apparent size
+        for small UI icons/badges that have no HD-scale compensation of
+        their own -- unlike backgrounds and portraits, which are meant to
+        gain real extra density and explicitly compensate for it elsewhere.
+        Confirmed live: relationship icons (ids 3010-3012) silently double
+        in size (22x24 -> 44x48) through the same HD_SHARED_CONTENT_RANGE
+        fallback that correctly upgrades backgrounds/portraits, because
+        nothing downstream of it was scaling these back down. See
+        legacy/findings.md, "Chrome icons render oversized with an HD ipa".
+        """
+        image = self._image(asset_id)
+        if image is None:
+            return None
+        try:
+            android_size = _decoded_size(self.session.resources.android_asset(asset_id))
+        except (ContentError, pygame.error, OSError):
+            return image
+        if image.get_size() != android_size:
+            image = pygame.transform.smoothscale(image, android_size)
+        return image
 
     def _lines(self, text, font, width):
         # Backticks delimit native emphasis. Font styling is currently simplified.
@@ -190,7 +381,22 @@ class Desktop:
             return
         engine = self.session.engine
         token = (engine.music_id, engine.music_flag, self.music_enabled)
+        paused = self.menu_open or not self.active or engine.music_paused
+        if (token != self.music_token and self.music_loaded and not paused and self.music_enabled
+                and self.music_token and self.music_token[2] and engine.music_id >= 0
+                and self.music_token[0] != engine.music_id):
+            # SHSSoundManager::playMusic: a different cue first fades the playing one out over 1000 ms.
+            now = pygame.time.get_ticks()
+            if self.music_fade_since is None:
+                self.music_fade_since = now
+            if now - self.music_fade_since < 1000:
+                try:
+                    pygame.mixer.music.set_volume(self.music_volume * (1 - (now - self.music_fade_since) / 1000))
+                except pygame.error as error:
+                    logging.warning('Music fade failed: %s', error)
+                return
         if token != self.music_token:
+            self.music_fade_since = None
             self.music_token = token
             self.music_loaded = self.music_paused = False
             try:
@@ -198,14 +404,17 @@ class Desktop:
                 if engine.music_id >= 0 and self.music_enabled:
                     cue = music_cue(engine.music_id, game=game_id(self.session.resources))
                     pygame.mixer.music.load(BytesIO(self.session.resources.read_asset(cue.asset_id)))
-                    # Both native iOS games pass service 80's flag to
-                    # SHSSound.setLoop: (-1 repeats, 0 plays once).
-                    pygame.mixer.music.play(loops=-1 if engine.music_flag else 0,
-                                            start=cue.start_ms / 1000)
+                    # Both native iOS games pass service 80's flag to SHSSound.setLoop: (-1 repeats, 0 plays
+                    # once). (Natively the old cue fades out over 1 s before the new one starts; here it stops.)
+                    # The iOS host's mixer (platforms/drawing.Mixer) has no volume: the slider is desktop-only.
+                    set_volume = getattr(pygame.mixer.music, 'set_volume', None)
+                    if set_volume is not None:
+                        set_volume(self.music_volume)
+                    pygame.mixer.music.play(loops=-1 if engine.music_flag else 0, start=cue.start_ms / 1000)
                     self.music_loaded = True
             except (ContentError, pygame.error) as error:
                 logging.warning('Music %s cannot be played: %s', engine.music_id, error)
-        paused = self.menu_open or not self.active
+        paused = self.menu_open or not self.active or engine.music_paused
         if self.music_loaded and paused != self.music_paused:
             self.music_paused = paused
             try:
@@ -223,15 +432,30 @@ class Desktop:
         engine = self.session.engine
         if engine.sound_serial != self.sound_serial:
             self.sound_serial = engine.sound_serial
-            if not self.sound_enabled:
-                return
-            try:
-                for asset in engine.sound_ids or [engine.sound_id]:
-                    pygame.mixer.Sound(file=BytesIO(self.session.resources.read_asset(asset))).play()
-            except (ContentError, pygame.error) as error:
-                logging.warning('Sound %s cannot be played: %s', engine.sound_id, error)
+            self._play_sounds(engine.sound_ids or [engine.sound_id])
+        # `animationDidStop:` of the alert's slide on: sound 0x1f52. The strip is only on show in portrait, so there is
+        # none while the panels are open.
+        toast = engine.faceplace_toast
+        if toast is not None and toast is not self.alert_sounded and toast.enter_progress >= 1 and not self.panels_open:
+            self.alert_sounded = toast
+            self._play_sounds([FACEPLACE_ALERT_SOUND])
+
+    alert_sounded = None        # the alert whose sound has played
+
+    def _play_sounds(self, assets):
+        if not self.sound_enabled:
+            return
+        try:
+            for asset in assets:
+                sound = pygame.mixer.Sound(file=BytesIO(self.session.resources.read_asset(asset)))
+                sound.set_volume(self.sound_volume)
+                sound.play()
+        except (ContentError, pygame.error) as error:
+            logging.warning('Sound %s cannot be played: %s', assets, error)
 
     def _sync_text_input(self):
+        if self.capture:
+            return
         action = self.session.pending
         if action is not None and action.name != 'text_input':
             action = None
@@ -251,6 +475,171 @@ class Desktop:
                 self.viewport.x + x * self.viewport.width / 320,
                 self.viewport.y + y * self.viewport.height / 480,
                 w * self.viewport.width / 320, h * self.viewport.height / 480))
+
+    def _answer(self, *value):
+        """Answer the pending element; a queued transition (service 16) runs around it: the frame as it was
+        stays up under the closing blinds while the script advances, then the new element is revealed."""
+        if self.fade:
+            return
+        before = self.window.copy() if self.session.engine.scene_value else None
+        # A choice that opens a link (service 100, a no-op in HD) and then ends the script -- the High School Story ad's
+        # "Go to the High School Story app!" -- would leave the episode stopped: it goes back to the choice instead.
+        choice = self.session.pending if self.session.pending and self.session.pending.name == 'choice' else None
+        state = self.session.snapshot() if choice is not None else None
+        self.session.engine.store_link = ''
+        self.session.transition_kind = 0
+        self._attempt(lambda: self.session.answer(*value))
+        link = self.session.engine.store_link
+        if state is not None and link and self.session.pending and self.session.pending.name == 'finished':
+            self.session = Session.from_snapshot(self.session.resources, state)
+            self._offer_link(link)
+            return
+        kind = self.session.transition_kind
+        if kind and before is not None and not self.error:
+            self.fade = dict(kind=kind, phase='out', since=pygame.time.get_ticks(), frozen=before)
+
+    def _offer_link(self, link):
+        """Open a script's link in the browser, behind the app's "Exit Game?" confirmation as the wall's links are. An
+        App Store link (`itms://`) becomes its web page."""
+        url = re.sub(r'^itms(-apps)?://itunes\.apple\.com/', 'https://apps.apple.com/', link)
+        if self.notice_stack is not None:
+            self.wall_link = url
+            self.notice_stack.queue(self.exit_menu)
+        else:
+            self._open_link(url)
+
+    SKIP_OPTIONS = ('Win', 'Lose', 'Play')
+
+    def _host_prompt(self):
+        """The host prompt over the pending screen, or None; the mini-game prompt opens the first time a football game or
+        word grid is seen."""
+        action = self.session.pending
+        prompt = self.host_prompt
+        if prompt is not None and prompt['action'] is not action:
+            prompt = self.host_prompt = None
+        if (prompt is None and self.skip_minigames and action is not None and action.name in ('football', 'word_grid')
+                and self.minigame_played is not action and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action), self.SKIP_OPTIONS,
+                                       lambda index: self._resolve_minigame(action, index))
+        return prompt
+
+    def _open_prompt(self, action, title, text, options, resolve):
+        """A narrator-style choice (no character: the gold theme, no portrait) over `action`; `resolve(index)` runs
+        once the pick has closed it."""
+        details = dict(title=title, text=text, options=list(options), values=list(range(len(options))),
+                       enabled=[True] * len(options), timeout_ms=0, timeout_result=0, character_id=-1, portrait_mode=0)
+        stand_in = SimpleNamespace(pending=SimpleNamespace(name='choice', details=details, request=None),
+                                   engine=self.session.engine, vm=SimpleNamespace(steps_executed=0),
+                                   scene=self.session.scene, remaining_ms=None, resources=self.session.resources)
+        self.host_prompt = dict(action=action, session=stand_in, options=tuple(options), resolve=resolve)
+        return self.host_prompt
+
+    def _pick(self, action, index):
+        """Answer the script's choice: the ad's "Play the Surviving High School episode!" first asks whether to skip
+        these intros from now on (ad_intro.py), unless the player already chose to."""
+        if play_option(action) == index and not self.skip_ad_intros and self.ad_asked is not action:
+            self.ad_asked = action
+            self._open_prompt(action, 'Skip ad intros?',
+                              'Go straight to the title card when an episode opens with High School Story news? '
+                              'It can be turned off again in Options.', ('Yes', 'No'),
+                              lambda answer: self._resolve_ad(action, index, answer))
+            return
+        self._answer(index)
+
+    def _resolve_ad(self, action, index, answer):
+        if answer == 0:
+            self.skip_ad_intros = True
+            if self.on_settings:
+                self.on_settings()
+        if self.session.pending is action:
+            self._answer(index)
+
+    def _minigame_summary(self, action):
+        """What the game about to start holds, for the skip prompt: football's half and starting score, the grid's
+        target and its puzzles' words."""
+        engine = self.session.engine
+        if action.name == 'football':
+            game = engine.football
+            try:
+                from .shs.football_layout import team_name
+                strings = self._football().strings()
+                home, away = team_name(strings, game.teams[0]) or 'Home', team_name(strings, game.teams[1]) or 'Away'
+            except (ContentError, pygame.error, OSError, ValueError, AttributeError, IndexError):
+                home, away = 'Home', 'Away'
+            half = {1: 'First half', 2: 'Second half'}.get(game.half, 'Overtime')
+            side = 'defense' if game.defense else 'offense'
+            return f'Football. {half}, starting on {side}. {home} {game.home}, {away} {game.away}.'
+        game = engine.word_grid
+        words = []
+        for problem in game.problems:
+            for word in problem.words:
+                if word.upper() not in words:
+                    words.append(word.upper())
+        shown = ', '.join(words[:8]) + (' ...' if len(words) > 8 else '')
+        seconds = round(game.remaining_ms / 1000)
+        return f'Word game. Score {game.target} in {seconds} seconds. Words: {shown}.'
+
+    def _resolve_minigame(self, action, index):
+        """The skip prompt's answer: Win / Lose finish the game with that result, Play starts it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            return
+        before = self.window.copy() if self.session.engine.scene_value else None
+        self.session.transition_kind = 0
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
+        kind = self.session.transition_kind
+        if kind and before is not None and not self.error:
+            self.fade = dict(kind=kind, phase='out', since=pygame.time.get_ticks(), frozen=before)
+
+    def _hd_choice_closes(self, action, index):
+        """Whether a pick of `index` closes the HD choice panel natively (pressed row, then a fade) rather than at once:
+        an enabled row of an HD-drawn choice."""
+        enabled = action.details.get('enabled', ())
+        return 0 <= index < len(enabled) and enabled[index] and self._hd_choice_drawn()
+
+    def _hd_choice_drawn(self):
+        return hasattr(self.choice_renderer.cached_page, 'rows_top')
+
+    def _tick_choice_closing(self, elapsed_ms):
+        closing = self.choice_closing
+        if closing['action'] is not self.session.pending:
+            self.choice_closing = None          # loaded, restarted or answered elsewhere
+            return
+        closing['ms'] += elapsed_ms
+        if closing['ms'] >= SELECT_MS + TRANSITION_MS:
+            self.choice_closing = None
+            if closing.get('prompt'):           # a host prompt (not the script's choice)
+                self.host_prompt = None
+                closing['prompt']['resolve'](closing['index'])
+            elif closing['index'] is None:      # timed out: let the clock run out now, as before
+                self._attempt(lambda: self.session.tick(max(1, self.session.remaining_ms or 0)))
+            else:
+                self._pick(closing['action'], closing['index'])
+
+    def _tick_fade(self, elapsed_ms):
+        fade = self.fade
+        ms = pygame.time.get_ticks() - fade['since']
+        if fade['phase'] == 'out' and ms >= scene_fade.out_ms(fade['kind']):
+            fade.update(phase='in', since=pygame.time.get_ticks(), frozen=None)
+        elif fade['phase'] == 'in' and ms >= scene_fade.in_ms(fade['kind']):
+            self.fade = None
+
+    def _draw_fade(self):
+        fade = self.fade
+        area = getattr(self, 'bg_viewport', self.window.get_rect()).clip(self.window.get_rect())
+        if fade['frozen'] is not None:
+            self.window.blit(fade['frozen'], (0, 0))
+        ms = pygame.time.get_ticks() - fade['since']
+        amount = scene_fade.coverage(fade['kind'], fade['phase'], ms)
+        if fade['kind'] == 6:
+            shade = pygame.Surface(area.size)
+            shade.set_alpha(round(255 * amount))
+            self.window.blit(shade, area)
+        else:
+            for x, y, w, h in scene_fade.blind_rects(fade['kind'], amount, area.size):
+                self.window.fill((0, 0, 0), (area.x + x, area.y + y, w, h))
 
     def _submit_input(self, action):
         if self.input_error:
@@ -283,37 +672,79 @@ class Desktop:
     def render(self):
         self.buttons = []
         action = self.session.pending
+        if self.session.engine.panel.background_id >= 0:
+            self.last_background_id = self.session.engine.panel.background_id
         self._sync_text_input()
         token = self._screen_token()
         self.press.validate(self._press_token())
         self.dialogue_renderer.gear_pressed = self.press.pressed == ('menu',) and not self.menu_open
         if token != self.screen_token:
             self.screen_token, self.scroll = token, 0
-        self.canvas.fill((14, 20, 32))
+        self.canvas.fill((0, 0, 0, 0))
+        self.story_layer = None
+        self.edge_layer = None
+        self.pending_background = None
+        self.pending_background_alpha = 255
         details = action.details if action else {}
-        if action and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
+        ask = self._host_prompt()
+        if action and not ask and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
             try:
-                renderer = {'word_grid': self.grid_renderer, 'football': self.football_renderer,
-                            'character_picker': self.picker_renderer, 'loading': self.loading_renderer,
-                            'message_panel': self.message_renderer, 'presentation': self.title_renderer,
-                            'survey_confirmation': self.message_renderer,
-                            'text_input': self.input_renderer}[action.name]
+                # A dict of values here would build every branch eagerly -- each an `available()` gate that
+                # reads and (pre-caching) re-decompressed an HD resource -- for the one the dict ends up
+                # indexing out; a dict of zero-argument callables evaluates only the selected action's own.
+                message = lambda: self.message_hd if self.message_hd.available() else self.message_renderer
+                selectors = {
+                    'word_grid': self._word_grid, 'football': self._football, 'character_picker': self._picker,
+                    'loading': lambda: self.loading_hd if self.loading_hd.available() else self.loading_renderer,
+                    'download_poll': lambda: self.loading_hd if self.loading_hd.available() else self.loading_renderer,
+                    'message_panel': message, 'survey_confirmation': message,
+                    'presentation': self._title_renderer,
+                    'text_input': lambda: self.input_renderer,
+                }
+                renderer = selectors[action.name]()
                 options = (dict(error=self.input_error,
                                 cursor_visible=self.text_input_started and pygame.time.get_ticks() % 1000 < 500)
                            if action.name == 'text_input' else {})
-                buttons = renderer.draw(self.canvas, self.session, **options)
+                # The name-entry screen draws at story density (see STORY_SCALE)
+                # and is composited by _present(), like dialogue and choices.
+                if action.name == 'download_poll':
+                    # `showLoadingBar` is the same band and runner wheel as service 91's overlay. The loading renderers are drawn
+                    # from a stand-in for the state they read (the scene's background and the runner's frame), so service 91's own
+                    # state and drawing are untouched; the poll's bar takes no clicks (`g_pauseButton setEnabled:NO`).
+                    engine = self.session.engine
+                    frame = 23 + (details['elapsed_ms'] // 500) % 5
+                    view = SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=SimpleNamespace(frame=frame)))
+                    renderer.draw(self.canvas, view)
+                    buttons = []
+                else:
+                    buttons = renderer.draw(None if action.name == 'text_input' else self.canvas,
+                                            self.session, **options)
+                if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
+                    self.story_layer = renderer.canvas
+                self.pending_background = getattr(renderer, 'pending_background', None)
+                self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
+                self.pending_background_alpha = getattr(renderer, 'pending_background_alpha', 255)
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
+                edge_bar = getattr(renderer, 'edge_bar', None)
+                if edge_bar:
+                    # Bar and gear (or the gear alone) run to the frame's edges;
+                    # the renderer's own canvas draws any hint text over them.
+                    self.edge_layer = self.dialogue_renderer.bottom_bar_layer(
+                        getattr(renderer, 'footer_text', ''), self.dialogue_renderer.gear_pressed,
+                        edge_bar == 'bar')
                 self.scroll = self.max_scroll = 0
                 self._present()
                 return
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Panel rendering stopped: %s', error)
-        if (action and action.name in ('choice', 'word_game') and not self.error
+        # The skip prompt (`_minigame_ask`) is drawn as a choice, from a stand-in for the session.
+        source = ask['session'] if ask else self.session
+        if (action and (action.name in ('choice', 'word_game') or ask) and not self.error
                 and hasattr(self.session.resources, 'read_asset')):
             try:
-                page = self.choice_renderer.page(self.session)
+                page = self.choice_renderer.page(source)
                 self.max_scroll = page.max_scroll * 1.5
                 self.scroll = min(self.scroll, self.max_scroll)
                 pointer = None
@@ -322,10 +753,27 @@ class Desktop:
                     if self.viewport.collidepoint(x, y):
                         pointer = ((x - self.viewport.x) * 320 / self.viewport.width,
                                    (y - self.viewport.y) * 480 / self.viewport.height)
-                _, buttons = self.choice_renderer.draw(self.canvas, self.session,
+                closing = self.choice_closing if self.choice_closing and self.choice_closing['action'] is action else None
+                pressed = self.press.pressed if not self.menu_open else None
+                if closing is not None:
+                    pointer, pressed = None, ('choose', closing['index'])
+                _, buttons = self.choice_renderer.draw(None, source,
                                                         scroll=self.scroll / 1.5, pointer=pointer,
-                                                        pressed=self.press.pressed if not self.menu_open else None,
-                                                        choice_hints=self.choice_hints)
+                                                        pressed=pressed, choice_hints=self.choice_hints and not ask)
+                if hasattr(page, 'rows_top'):
+                    # HD: the menu view fades in and, after a pick, out (hd_choice.panel_alpha); the timer layers do not
+                    # fade and are hidden when the fade-out starts.
+                    self.panel_alpha = panel_alpha(self.choice_renderer.age_ms, closing['ms'] if closing else None)
+                    if closing is None or closing['ms'] < SELECT_MS:
+                        self.panel_overlay = self.choice_renderer.overlay
+                if closing is not None:
+                    buttons = [button for button in buttons if button[1] == ('menu',)]
+                self.hint_discount_ms += self.choice_renderer.take_hint_ms()
+                self.story_layer = self.choice_renderer.wide
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.choice_renderer.footer_text,
+                                                                          self.dialogue_renderer.gear_pressed)
+                self.pending_background = self.choice_renderer.pending_background
+                self.pending_background_origin = self.choice_renderer.pending_background_origin
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 if pygame.time.get_ticks() < self.message_until:
@@ -337,10 +785,15 @@ class Desktop:
                 logging.error('Choice rendering stopped: %s', error)
         if action and action.name == 'dialogue' and not self.error:
             try:
-                self.dialogue_renderer.draw(self.canvas, self.session)
+                self.dialogue_renderer.draw(None, self.session)
+                self.story_layer = self.dialogue_renderer.wide
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.dialogue_renderer.footer_text,
+                                                                          self.dialogue_renderer.gear_pressed)
+                self.pending_background = self.dialogue_renderer.pending_background
+                self.pending_background_origin = self.dialogue_renderer.pending_background_origin
                 self.scroll = self.max_scroll = 0
-                draw_pause_gear(self.canvas, self.dialogue_renderer, scale=1.5)
-                self.buttons = [(pygame.Rect(0, 633, 90, 87), ('menu',)),
+                # The gear is flush with the frame's left edge, 48 canvas pixels (32 units) outside the UI column.
+                self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',)),
                                 (pygame.Rect(0, 0, *SIZE), ('continue',))]
                 if pygame.time.get_ticks() < self.message_until:
                     self._text(self.message, 20, 701, 450, font=self.small, color=MUTED)
@@ -349,10 +802,35 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Dialogue rendering stopped: %s', error)
-        background_id = details.get('asset_id', -1) if action and action.name == 'presentation' else self.session.engine.panel.background_id
+        if action and action.name in ('finished', 'episode_exit') and not self.error:
+            # Live gameplay never actually renders this state (application.py's `render()` calls
+            # `return_to_menu()` the moment `episode_exited` is set, instead of `Desktop.render()`), so the only
+            # real caller is `snapshot()` building the end-of-episode card's sepia backdrop. That backdrop should
+            # read as a frozen scene photo, the same as pausing mid-dialogue already does (a clean early return,
+            # no bar drawn over it) -- not this class's own placeholder "Episode complete" bar, title strip and
+            # Save/Load buttons below, which a real device never shows here and which this player only ever
+            # draws today because 'finished'/'episode_exit' fall to the same catch-all as a genuine error or the
+            # "not supported yet" screen, both of which do need that bar to stay usable.
+            background_id = self.session.engine.panel.background_id
+            if background_id < 0:
+                background_id = self.last_background_id
+            self.pending_background = self._image(background_id)
+            self.pending_background_origin = None
+            self._present()
+            return
+        if action and action.name == 'presentation':
+            background_id = details.get('asset_id', -1)
+        else:
+            # episode_exit (and 'finished') clear panel.background_id to -1 -- the episode is over, so the script
+            # no longer has a "current scene" -- but the screen behind "Episode complete" (and, through it, the
+            # end-of-episode card's sepia snapshot) should still freeze on the last real scene rather than show
+            # nothing, the same as pausing mid-scene already does by reading a still-valid panel.background_id.
+            background_id = self.session.engine.panel.background_id
+            if background_id < 0:
+                background_id = self.last_background_id
         background = self._image(background_id)
-        if background is not None:
-            self.canvas.blit(pygame.transform.smoothscale(background, SIZE), (0, 0))
+        self.pending_background = background
+        self.pending_background_origin = None  # stretch to fill, not centered-crop
         bar = pygame.Surface((480, 38), pygame.SRCALPHA)
         bar.fill((15, 20, 33, 230))
         self.canvas.blit(bar, (0, 0))
@@ -410,7 +888,8 @@ class Desktop:
             self._button('Continue  ›', pygame.Rect(310, 650, 148, 44), ('continue',), small=True)
         self._button('Save', pygame.Rect(22, 650, 83, 44), ('save',), small=True)
         self._button('Load', pygame.Rect(115, 650, 83, 44), ('load',), small=True)
-        message = self.message if pygame.time.get_ticks() < self.message_until else 'F5 save · F9 load · Esc menu'
+        message = (self.message if pygame.time.get_ticks() < self.message_until
+                  else 'F5 save · F9 load · Esc menu · Tab panels')
         self._text(message, 22, 700, 450, font=self.small, color=MUTED)
         self._present()
 
@@ -430,28 +909,282 @@ class Desktop:
                 (title.reveal_width == 320, title.ready) if title else None,
                 details.get('draft'), self.input_error, self.menu_open)
 
+    def _football(self):
+        """HD's football art when an HD app bundle is imported, else the Android renderer."""
+        return self.football_hd if self.football_hd is not None and self.football_hd.available() else self.football_renderer
+
+    def _picker(self):
+        if self.picker_cod.available():
+            return self.picker_cod
+        return self.picker_hd if self.picker_hd.available() else self.picker_renderer
+
+    def _word_grid(self):
+        """HD's word game art when an HD app bundle is imported, else the Android renderer."""
+        return self.word_hd if self.word_hd is not None and self.word_hd.available() else self.grid_renderer
+
+    _backdrop = (None, None)        # (window size, surface) of the last window backdrop
+
+    def _window_backdrop(self, size):
+        """While the "SHS HD Backdrop" switch is on, SHS HD's faded main-menu collage around the frame
+        (hd_ui.window_backdrop), else None (the dark fill)."""
+        key = size, self.hd_backdrop
+        if self._backdrop[0] != key:
+            surface = None
+            try:
+                collage = self.backdrop_collage() if self.hd_backdrop else None
+                if collage is not None:
+                    from .hd_ui import window_backdrop
+                    surface = window_backdrop(collage, size)
+            except (ContentError, pygame.error, OSError, ValueError, AttributeError):
+                surface = None
+            self._backdrop = (key, surface)
+        return self._backdrop[1]
+
+    _collage = ()                   # not looked up yet
+
+    def backdrop_collage(self):
+        """SHS HD's collage (resource 10): the HD bundle's for SHS, the SHS HD art source's for CoD; None without."""
+        if self._collage == ():
+            library = self.session.resources.library
+            try:
+                if getattr(library, 'game_id', None) == 'cod':
+                    from .desktop_cod_main import hd_collage
+                    self._collage = hd_collage(library)
+                else:
+                    self._collage = self.side_panels.collage()
+            except (ContentError, pygame.error, OSError, ValueError, AttributeError):
+                self._collage = None
+        return self._collage
+
+    def backdrop_switch(self):
+        """Whether the "SHS HD Backdrop" switch has a collage to show."""
+        return self.backdrop_collage() is not None
+
     def _present(self):
         engine = self.session.engine
-        if engine.scene_badge and not self.error:
+        hd_badge = None
+        if (engine.scene_badge or self.badge_hd.leaving()) and not self.error:
             try:
-                self._draw_scene_badge(engine.scene_badge)
+                if self.badge_hd.available():
+                    hd_badge = self.badge_hd.draw(engine.scene_badge, engine.panel.theme)
+                else:
+                    self._draw_scene_badge(engine.scene_badge)
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Scene label rendering stopped: %s', error)
-        if self.menu_open:
+        # Confirmed against a real device: the corner alert doesn't fire
+        # while the Faceplace panel itself is open -- the same content is
+        # already visible there, so the redundant popup is suppressed.
+        hd_alert = None
+        if engine.faceplace_toast and not self.panels_open and not self.error:
+            try:
+                if self.faceplace_alert.available():
+                    hd_alert = self.faceplace_alert.draw(engine, engine.faceplace_toast)
+                else:
+                    self._draw_faceplace_toast(engine.faceplace_toast)
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Faceplace alert rendering stopped: %s', error)
+        hd_pause = self.menu_open and self.pause_hd.available() and not self.error
+        if self.menu_open and not hd_pause:
             self._draw_menu()
         self._sync_audio()
         width, height = self.window.get_size()
-        scale = min(width / SIZE[0], height / SIZE[1])
-        scaled = pygame.transform.smoothscale(self.canvas, (max(1, int(480 * scale)), max(1, int(720 * scale))))
-        self.viewport = scaled.get_rect(center=(width // 2, height // 2))
-        self.window.fill((8, 12, 20))
+        # HD's frame is 384x512 layout units (an iPad's 768x1024 points at half
+        # size). The 320x480 UI column sits in it bottom-anchored and centered,
+        # 32 units in from each side, with a 32-unit band of background above
+        # it; the background fills the whole frame and the bottom bar and gear
+        # run to its edges. Measured from HD photos: the UI is ~3.9 px per
+        # unit at 1500x2000 (this build used to fit it to the window height at
+        # 4.17), with the bar's 24-unit strip exactly 24 units tall.
+        scale = min(width / FRAME_UNITS[0], height / FRAME_UNITS[1])
+        frame = pygame.Rect(0, 0, max(1, round(FRAME_UNITS[0] * scale)), max(1, round(FRAME_UNITS[1] * scale)))
+        frame.center = (width // 2, height // 2)
+        target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
+        scaled = pygame.transform.smoothscale(self.canvas, target_size)
+        alpha, overlay = self.panel_alpha, self.panel_overlay
+        self.panel_alpha = self.panel_overlay = None
+        if alpha is not None and alpha < 1:
+            scaled.set_alpha(round(255 * alpha))
+        # The column also sits 5.5 units above the frame's bottom edge (box
+        # top and bottom lines both measured 21.5 px lower than HD's at
+        # 3.9 px per unit; the right border matched to a pixel).
+        self.viewport = pygame.Rect(frame.x + round(32 * scale),
+                                    frame.bottom - target_size[1] - round(UI_BOTTOM_INSET * scale), *target_size)
+        self.bg_viewport = frame
+        bg_size = frame.size
+        backdrop = self._window_backdrop(self.window.get_size())
+        if backdrop is not None:
+            self.window.blit(backdrop, (0, 0))
+        else:
+            self.window.fill((8, 12, 20))
+        self._draw_background_layer(bg_size, self.bg_viewport)
+        if self.story_layer is not None:
+            # Drawn at HD density and resampled once, straight to the window.
+            layer = self.story_layer
+            if layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
+                # The whole 384x512-unit frame (HD's football).
+                area = self.bg_viewport
+            elif layer.get_width() * 480 == layer.get_height() * FRAME_UNITS[0]:
+                # A frame-wide layer (its column plus HD's 32-unit side margins).
+                area = pygame.Rect(self.bg_viewport.x, self.viewport.y, self.bg_viewport.width, self.viewport.height)
+            else:
+                area = self.viewport
+            layer = pygame.transform.smoothscale(layer, area.size)
+            if alpha is not None and alpha < 1:
+                layer.set_alpha(round(255 * alpha))
+            self.window.blit(layer, area)
+        if self.edge_layer is not None and not self.capture:
+            # HD's bottom bar and gear run to the edges of its frame.
+            edge_height = round(self.viewport.height * 72 / 480)
+            self.window.blit(pygame.transform.smoothscale(self.edge_layer, (self.bg_viewport.width, edge_height)),
+                             (self.bg_viewport.x, self.bg_viewport.bottom - edge_height))
         self.window.blit(scaled, self.viewport)
-        pygame.display.flip()
+        if overlay is not None:
+            self.window.blit(pygame.transform.smoothscale(overlay, target_size), self.viewport)
+        if hd_alert is not None:
+            # HD's alert is a strip of the frame, cut by the frame's own edge.
+            self.window.blit(pygame.transform.smoothscale(hd_alert, frame.size), frame)
+        if hd_badge is not None:
+            self.window.blit(pygame.transform.smoothscale(hd_badge, frame.size), frame)
+        if hd_pause:
+            self._draw_hd_pause(frame)
+        if self.notice_stack is not None and self.notice_stack.stack:
+            self._draw_notice(frame, dim=not hd_pause)
+        # Real device confirmed: panels occupy the window space *beside*
+        # the game view -- not overlaid on top of it -- and render at real
+        # window resolution instead of being funneled through self.canvas's
+        # fixed budget (see desktop_panels.py's module docstring).
+        #
+        # Real device correction: these margins used to start at
+        # self.viewport's own edge, but the background layer above is
+        # deliberately drawn *wider* than that (bg_viewport, showing more
+        # of HD's true 3:4 background beyond the narrower Android-authored
+        # UI canvas) -- so a panel starting at self.viewport's edge covered
+        # the outermost strip of that wider background instead of sitting
+        # fully beside it. Margins now start at bg_viewport's own edge.
+        if (self.panels_open or self.panels_progress > 0) and not self.error:
+            try:
+                left_margin = pygame.Rect(0, 0, self.bg_viewport.x, height)
+                right_margin = pygame.Rect(self.bg_viewport.right, 0, width - self.bg_viewport.right, height)
+                if self.side_panels.available():
+                    self.side_panels.warp_locked = not self.warp_unlocked
+                    self.side_panels.draw(self.window, self.session, self.panels_progress, left_margin, right_margin)
+                else:
+                    self.dtview_renderer.draw(self.window, self.session, self.panels_progress, left_margin)
+                    self.faceplace_panel_renderer.draw(self.window, self.session, self.panels_progress, right_margin)
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('DTView/Faceplace panel rendering stopped: %s', error)
+        if self.fade:
+            self._draw_fade()
+        if not self.capture:
+            pygame.display.flip()
+
+    def _draw_background_layer(self, target_size, viewport):
+        """Composited directly at window resolution, under the UI canvas.
+
+        self.canvas is left transparent where a background belongs (see
+        render()) specifically so this can source from the background's own
+        real pixel density in one resampling step, instead of that density
+        being capped by self.canvas's fixed 480x720 size first and then
+        resampled a second time to fit the window. A background asset wider
+        than the 480px Android reference (HD content; confirmed exactly 2x
+        in the one real case measured) is real extra detail, not something
+        to discard before it reaches the screen.
+
+        target_size/viewport cover a wider 3:4 area than the UI canvas's own
+        2:3 footprint (see DEFAULT_WINDOW_SIZE): HD's real game view is a
+        fixed 768x1024 regardless of orientation (confirmed from
+        SHSViewController::setupLocalInterfaceOrientation:, see
+        legacy/findings.md), so showing more background around the edges of
+        the unchanged, Android-authored UI chrome is closer to HD's own
+        proportions without needing HD's still-undeciphered chrome layout.
+        """
+        background = self.pending_background
+        if background is None:
+            return
+        if self.pending_background_origin == 'cover':
+            # Cause of Death's chapter card: its iPhone screen shows the whole picture fitted to the 320x480 column;
+            # here it is scaled evenly until it covers the 3:4 frame, centred where the column's centre is (owner:
+            # no dead space, as SHS fills the frame -- without the stretch SHS HD's own card applies).
+            bw, bh = background.get_size()
+            centre = 26.5 + 240                                  # the column's centre, frame units from the top
+            k = min(bw / 384, bh / (2 * centre), bh / (2 * (512 - centre)))   # art pixels per frame unit
+            crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(512 * k))
+            crop = crop.clip(background.get_rect())
+            key = (id(background), tuple(crop), target_size)
+            cached_key, cached_surface = self._background_layer_cache or (None, None)
+            if key != cached_key:
+                cached_surface = pygame.transform.smoothscale(background.subsurface(crop), target_size)
+                self._background_layer_cache = (key, cached_surface)
+            cached_surface.set_alpha(self.pending_background_alpha if self.pending_background_alpha < 255 else None)
+            self.window.blit(cached_surface, viewport)
+            return
+        if self.pending_background_origin is None:
+            key = (id(background), None, target_size)
+        else:
+            cx, cy = self.pending_background_origin
+            # In HD's frame the art sits 48 units further right and 20.5
+            # higher than its Android focal point implies: feature-matched
+            # against two HD photos of the same hall (the portrait one and the
+            # landscape IMG_0069 both gave dx=-188, dy=80 px at 1500x2000,
+            # i.e. this build's image lay that far left and down). Measured
+            # for the dialogue scene; assumed constant for other screens.
+            bw, bh = background.get_size()
+            bg_scale = bw / 480
+            # Cause of Death draws its scenes the way SHS draws its SD backgrounds in the HD frame (owner's choice,
+            # 2026-10-14): the 480x720 art panned with the speaker so the frame is always covered. Its own iPhone
+            # screen shows the art 1 px per point from the plain focal point (IMG_0483), which leaves the 3:4
+            # frame's margins past the art's edge.
+            if cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'):
+                # HD pans the location layer by speaker (location_pan.py): its center is `x` points from
+                # the frame's left edge, i.e. x / 2 - 32 in this crop's UI units. The pan takes the art's width in
+                # HD points: 960 for a 480-pixel picture as for its 960-pixel HD twin.
+                x = self.location_pan.x(self.session.engine.panel.location_align, bw / bg_scale * 2,
+                                        pygame.time.get_ticks())
+                cx = x / 2 - 32
+            else:
+                cx += HD_BG_SHIFT[0]
+            cy += HD_BG_SHIFT[1]
+            # Frame coordinates (see _present): the frame's top-left is UI
+            # (-32, -32) as far as this crop is concerned -- the 5.5-unit inset
+            # of the UI column was measured against the same photos after the
+            # background, so it moves the column, not the background. The image
+            # is drawn 1 px per unit (HD: 2) centered on (cx, cy) in that
+            # space, so crop exactly the frame's window out of it.
+            window = pygame.Rect(round(bw / 2 + (-32 - cx) * bg_scale), round(bh / 2 + (-32 - cy) * bg_scale),
+                                 round(384 * bg_scale), round(512 * bg_scale))
+            crop = window.clip(background.get_rect())
+            if crop.width <= 0 or crop.height <= 0:
+                return
+            # Where the window runs past the art's edge (Cause of Death's art is exactly its screen wide, so the
+            # frame's side margins can reach past it), the art keeps its scale and the rest stays uncovered: it
+            # used to be stretched across the whole frame.
+            sx, sy = target_size[0] / window.width, target_size[1] / window.height
+            viewport = pygame.Rect(viewport.x + round((crop.x - window.x) * sx),
+                                   viewport.y + round((crop.y - window.y) * sy),
+                                   round(crop.width * sx), round(crop.height * sy))
+            target_size = viewport.size
+            key = (id(background), tuple(crop), target_size)
+        # The location pan (above) is the only thing that can change this layer between two frames of the same
+        # scene -- and it settles after 0.25s, same as a static background the rest of the time -- so a frame
+        # whose key matches the last one reuses that scaled surface instead of smoothscaling the same pixels
+        # again. Alpha is set fresh every time regardless (never left over from a cache hit): a mid-transition
+        # frame's lowered alpha must not stick to a later, fully-opaque one reusing the same cached surface.
+        cached_key, cached_surface = self._background_layer_cache or (None, None)
+        if key == cached_key:
+            scaled_bg = cached_surface
+        else:
+            source = background if self.pending_background_origin is None else background.subsurface(crop)
+            scaled_bg = pygame.transform.smoothscale(source, target_size)
+            self._background_layer_cache = (key, scaled_bg)
+        scaled_bg.set_alpha(self.pending_background_alpha if self.pending_background_alpha < 255 else None)
+        self.window.blit(scaled_bg, viewport)
 
     def _draw_scene_badge(self, badge):
         layer = self.dialogue_renderer.frame(204 if badge.blue else 236, 13).copy()
-        icon = self._image(badge.asset_id)
+        icon = self._chrome_image(badge.asset_id)
         if icon is not None:
             layer.blit(icon, icon.get_rect(center=(38, 30)))  # Layout 67 node 2.
         color = (69, 107, 176) if badge.text == 'Free Time' else (223, 163, 52)
@@ -468,6 +1201,70 @@ class Desktop:
         left = -171 + (100 + 171 / 2) * badge.elapsed_ms / 200
         self.canvas.blit(pygame.transform.smoothscale(layer, (257, 90)), (round(left * 1.5), 15))
 
+    def _draw_faceplace_toast(self, toast):
+        """Corner alert for a newly-arrived Faceplace post: a card reading
+        "faceplace alert", the poster's portrait + name + message text,
+        persisting until explicitly dismissed -- confirmed from a real HD
+        gameplay screenshot and real-device testing (see
+        dtview_faceplace.FaceplaceToast), not decompiled; no method matching
+        an alert/toast/badge exists anywhere in SHSFSView or
+        SHSViewController's own symbol tables (checked exhaustively). Card
+        size/colors/exact wording are a best-effort visual match to that
+        screenshot, not a recovered native layout constant.
+        """
+        message = toast.message
+        width, margin, padding = 220, 12, 10
+        header_h, portrait_size = 26, 44
+        name = (self.session.engine.character_names.get(message.from_id, '')
+                if message.from_id >= 0 else '')
+        text_x = padding + (portrait_size + padding if name else 0)
+        text_width = width - padding * 2 - (portrait_size + padding if name else 0)
+        # The name leads the message text as one flowing paragraph (e.g.
+        # "Beth is remembering..."), not its own line -- matching the real
+        # reference screenshot.
+        combined = f'{name} {message.text}' if name else message.text
+        lines = self._lines(combined, self.small, text_width)
+        text_block_h = (self.small.get_linesize() + 3) * len(lines)
+        body_h = padding * 2 + max(portrait_size if name else 0, text_block_h)
+        layer = pygame.Surface((width, header_h + body_h), pygame.SRCALPHA)
+        header_color, border_color = (59, 89, 152), (120, 150, 210)
+        pygame.draw.rect(layer, header_color, (0, 0, width, header_h), border_top_left_radius=8,
+                         border_top_right_radius=8)
+        layer.blit(self.small.render('faceplace alert', True, (255, 255, 255)), (padding, 5))
+        pygame.draw.rect(layer, (255, 255, 255), (0, header_h, width, body_h))
+        if name:
+            portrait = self._faceplace_toast_portrait(message.from_id, message.expression)
+            if portrait is not None:
+                layer.blit(portrait, (padding, header_h + padding))
+        y = header_h + padding
+        for index, line in enumerate(lines):
+            if index == 0 and name and line.startswith(name):
+                name_surface = self.small.render(name, True, (41, 104, 221))
+                layer.blit(name_surface, (text_x, y))
+                rest = line[len(name):]
+                if rest:
+                    layer.blit(self.small.render(rest, True, (30, 30, 30)), (text_x + name_surface.get_width(), y))
+            else:
+                layer.blit(self.small.render(line, True, (30, 30, 30)), (text_x, y))
+            y += self.small.get_linesize() + 3
+        pygame.draw.rect(layer, border_color, (0, 0, width, header_h + body_h), 2,
+                         border_top_left_radius=8, border_top_right_radius=8,
+                         border_bottom_left_radius=8, border_bottom_right_radius=8)
+        layer.set_alpha(toast.alpha)
+        slide = round(16 * (1 - toast.enter_progress))
+        self.canvas.blit(layer, (SIZE[0] - width - margin, margin - slide))
+
+    def _faceplace_toast_portrait(self, character_id, expression):
+        variants = self.session.engine.character_art_variants.get(character_id)
+        if not variants:
+            return None
+        image = self.dialogue_renderer.portrait(variants[max(0, expression) % len(variants)], False)
+        if image is None:
+            return None
+        size = 44
+        scale = min(size / image.get_width(), size / image.get_height())
+        return pygame.transform.smoothscale(image, (round(image.get_width() * scale), round(image.get_height() * scale)))
+
     def _draw_menu(self):
         if self.pause_renderer is None:
             self.pause_renderer = PauseRenderer(self.session.resources.library,
@@ -481,20 +1278,143 @@ class Desktop:
         if pygame.time.get_ticks() < self.message_until:
             self._text(self.message, 30, 640, 420, font=self.small)
 
+    def _title_renderer(self):
+        """The chapter / week card: Cause of Death's own (SHS HD's at iPhone size), HD's with an HD bundle, else
+        Android's."""
+        if self.dialogue_renderer.game_id() == 'cod':
+            if self.title_cod is None:
+                self.title_cod = CodTitleRenderer(self.session.resources, self.dialogue_renderer, self.title_renderer)
+            return self.title_cod
+        return self.title_hd if self.title_hd.available() else self.title_renderer
+
+    def _draw_hd_pause(self, frame):
+        """HD's pause menu: the frame dimmed sepia with UIKit panels over it (desktop_pause_hd.py)."""
+        area = frame.clip(self.window.get_rect())
+        if area.width <= 0 or area.height <= 0:
+            return
+        self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
+        layer, self.pause_buttons = self.pause_hd.layout(
+            dict(music=self.music_enabled, sound=self.sound_enabled, music_volume=self.music_volume,
+                 sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
+                 skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                 **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {})),
+            message=self.message if pygame.time.get_ticks() < self.message_until else '')
+        self.window.blit(pygame.transform.smoothscale(layer, frame.size), frame)
+
+    def _draw_notice(self, frame, dim=True):
+        """Whichever native menu-engine window is on top of `self.notice_stack` -- the "Exit Game?" confirmation
+        (menu 17, a faceplace wall link tap, see `_wall_pointer`'s own note) or the Decision Tree's "Locked"
+        notice (menu 28, see `_tree_click`). The scene under it is dimmed sepia the same way the pause menu
+        dims it (an HD photo of the "Locked" notice over a dialogue scene shows exactly that), and the tint goes
+        when the window's button closes it. `dim` is False when the pause menu has already tinted the frame."""
+        area = frame.clip(self.window.get_rect())
+        if area.width <= 0 or area.height <= 0:
+            return
+        if dim:
+            self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
+        layer = pygame.Surface((HD_FRAME[0] * HD_S, HD_FRAME[1] * HD_S), pygame.SRCALPHA)
+        self.notice_windows.draw(layer, self.notice_stack.current, pressed=self.notice_pressed)
+        self.window.blit(pygame.transform.smoothscale(layer, area.size), area)
+
+    def _pause_point(self, position):
+        frame = self.bg_viewport
+        return ((position[0] - frame.x) * 768 / frame.width, (position[1] - frame.y) * 1024 / frame.height)
+
+    def _set_volume(self, which, value):
+        value = min(1., max(0., value))
+        if which == 'music':
+            self.music_volume = value
+            if self.audio:
+                pygame.mixer.music.set_volume(value)
+        else:
+            self.sound_volume = value
+        if self.on_settings:
+            self.on_settings()
+
+    def _pause_mouse(self, event):
+        """Pointer input for HD's pause menu; returns True when it consumed the event."""
+        state = self.pause_hd.state
+        if event.type == pygame.MOUSEWHEEL:
+            state.scroll = min(state.max_scroll, max(0., state.scroll - event.y * 40))
+            return True
+        if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+            return False
+        x, y = self._pause_point(event.pos)
+        if event.type == pygame.MOUSEBUTTONUP:
+            state.drag = None
+            return True
+        if event.type == pygame.MOUSEMOTION:
+            if state.drag and state.drag[0] == 'slider':
+                self._set_volume(state.drag[1], self.pause_hd.slider_value(x))
+            elif state.drag and state.drag[0] == 'scroll':
+                state.scroll = min(state.max_scroll, max(0., state.drag[1] - (y - state.drag[2])))
+            return True
+        if event.button != 1:
+            return True
+        for rect, command in self.pause_buttons:
+            if not rect.collidepoint(x, y):
+                continue
+            if command[0] == 'pause_slider':
+                state.drag = ('slider', command[1])
+                self._set_volume(command[1], self.pause_hd.slider_value(x))
+            elif command[0] == 'pause_scroll':
+                state.drag = ('scroll', state.scroll, y)
+            else:
+                self.command(command)
+            break
+        return True
+
     def command(self, command):
         self.press.cancel()
         self.gear_pointer_down = False
         self._sync_text_input()
         kind = command[0]
+        if self.fade and kind == 'menu':
+            return                                   # the pause button is off during a transition
+        if kind == 'pause_open':
+            self.pause_hd.state.screen, self.pause_hd.state.scroll = command[1], 0.
+            return
+        if kind == 'pause_back':
+            self.pause_hd.back()
+            return
+        if kind == 'pause_link':
+            # A link in a help page's text (an About page's override): behind the game's "Exit Game?" prompt, as the
+            # main menu's copy of the page already does (application_hd.HdShell.activate).
+            self._offer_link(command[1])
+            return
+        if kind == 'pause_toggle':
+            if command[1] == 'music':
+                self.music_enabled = not self.music_enabled
+                self._sync_music()
+            elif command[1] == 'side_panels':
+                self.toggle_panels()
+                return
+            elif command[1] == 'choice_hints':
+                self.choice_hints = not self.choice_hints
+            elif command[1] == 'skip_minigames':
+                self.skip_minigames = not self.skip_minigames
+            elif command[1] == 'skip_ad_intros':
+                self.skip_ad_intros = not self.skip_ad_intros
+            elif command[1] == 'hd_backdrop':
+                self.hd_backdrop = not self.hd_backdrop
+            else:
+                self.sound_enabled = not self.sound_enabled
+            if self.on_settings:
+                self.on_settings()
+            return
         if self.menu_open and kind in ('save', 'load'):
             self._menu_sound()
         if kind == 'menu':
             if self.menu_open:
                 return
+            self.pause_hd.reset()
             self.picker_pointer_down = False
             if self.session.engine.word_grid:
                 self.session.grid_pointer('cancel')
             self.menu_open = True
+            # Real device confirmed: pausing with the settings menu also
+            # dismisses a showing Faceplace toast (see FaceplaceToast).
+            self.session.engine.faceplace_toast = None
             self.pause_elapsed_ms = 0
             self._sync_music()
             self._menu_sound(opening=True)
@@ -505,9 +1425,13 @@ class Desktop:
         elif kind == 'pause_page' and self.on_menu_page:
             self.on_menu_page(command[1])
             self._menu_sound()
-        elif kind == 'main_menu' and self.on_main_menu:
-            self.on_main_menu()
-            self._menu_sound()
+        elif kind == 'main_menu':
+            # HD's Main Menu row saves the game, then returns to the main menu (the application's automatic
+            # checkpoint does the saving as it leaves the episode).
+            self.menu_open = False
+            if self.on_main_menu:
+                self.on_main_menu()
+                self._menu_sound()
         elif kind == 'save':
             try:
                 self.session.save()
@@ -524,7 +1448,7 @@ class Desktop:
                 self._notice('Progress loaded')
             except (SaveError, OSError) as error:
                 self._notice(str(error))
-        elif not self.error:
+        elif not self.error and not self.fade:
             action = self.session.pending
             if action and action.name == 'text_input' and not self.menu_open and self.active:
                 if kind in ('input_dismiss', 'input_focus'):
@@ -533,10 +1457,25 @@ class Desktop:
                     self._submit_input(action)
             if action and action.name == 'character_picker' and kind in ('choose', 'continue'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
-            if kind == 'choose' and action and action.name in ('choice', 'word_game'):
-                self._attempt(lambda: self.session.answer(command[1]))
-            elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel', 'survey_confirmation'):
-                self._attempt(self.session.answer)
+            ask = self.host_prompt if self.host_prompt and self.host_prompt['action'] is action else None
+            if self.choice_closing is not None and self.choice_closing['action'] is action:
+                pass                    # `SHSMenu`: one selection per menu; input is over until it has closed
+            elif ask is not None:
+                if kind == 'choose' and 0 <= command[1] < len(ask['options']):
+                    if self._hd_choice_drawn():
+                        self.choice_closing = dict(action=action, index=command[1], ms=0, prompt=ask)
+                    else:
+                        self.host_prompt = None
+                        ask['resolve'](command[1])
+            elif kind == 'choose' and action and action.name == 'choice' and self._hd_choice_closes(action, command[1]):
+                self.choice_closing = dict(action=action, index=command[1], ms=0)
+            elif kind == 'choose' and action and action.name == 'choice':
+                self._pick(action, command[1])
+            elif kind == 'choose' and action and action.name == 'word_game':
+                self._answer(command[1])
+            elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
+                                                                     'survey_confirmation'):
+                self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
         self._sync_text_input()
@@ -558,11 +1497,24 @@ class Desktop:
         self._sync_text_input()
         if event.type == pygame.QUIT:
             return False
+        if self.notice_stack is not None and self.notice_stack.stack:
+            # A native notice/confirm window (the wall's "Exit Game?" confirmation, or the Decision Tree's
+            # "Locked" notice) is modal: it takes every event ahead of everything else below, including the
+            # pause menu's own Escape handling right after this.
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.notice_stack.pop()
+            else:
+                self._notice_pointer(event)
+            return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
-                self.command(('resume',))
+                if not self.pause_hd.available() or self.pause_hd.back():
+                    self.command(('resume',))
                 return True
             self.command(('menu',))
+            return True
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_TAB and not self.menu_open:
+            self.toggle_panels()
             return True
         if event.type in (pygame.WINDOWFOCUSLOST, pygame.WINDOWFOCUSGAINED):
             self.active = event.type == pygame.WINDOWFOCUSGAINED
@@ -573,15 +1525,25 @@ class Desktop:
         action = self.session.pending
         if action and action.name == 'text_input' and (not self.active or self.error):
             return True
+        if self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error:
+            if self._tree_pointer(event):
+                return True
+        if self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error:
+            if self._wall_pointer(event):
+                return True
+        if (self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error
+                and event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self._tree_click(event.pos)):
+            return True
         pointer = (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                    and (event.type == pygame.MOUSEMOTION or event.button == 1))
-        if self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer:
+        if (self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer
+                and not (self.pause_hd.available() and not self.error)):
             self.press.cancel()
             return True
         if pointer and not self.menu_open and hasattr(self, 'viewport'):
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
-            hit = (self.viewport.collidepoint(event.pos) and any(
+            hit = self._gear_hit(event.pos) or (self.viewport.collidepoint(event.pos) and any(
                 command == ('menu',) and rect.collidepoint(x, y) for rect, command in self.buttons))
             if event.type == pygame.MOUSEBUTTONDOWN and hit:
                 self.gear_pointer_down = True
@@ -603,29 +1565,53 @@ class Desktop:
                 self.picker_pointer_down = 0 <= x <= 320 and 0 <= y <= 480
             elif self.picker_pointer_down:
                 self.picker_pointer_down = False
-                if self.picker_renderer.confirm_hit((x, y)):
+                if self._picker().confirm_hit((x, y)):
                     self.command(('continue',))
                 else:
                     index = self.session.engine.character_picker.hit((x, y))
                     if index is not None:
                         self.command(('choose', index))
             return True
-        if (action and action.name == 'football' and not self.menu_open and not self.error
+        asking = self.host_prompt is not None and self.host_prompt['action'] is action
+        if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            if self._football().__class__ is HdFootballRenderer:
+                frame = self.bg_viewport
+                x = (event.pos[0] - frame.x) * 768 / frame.width
+                y = (event.pos[1] - frame.y) * 1024 / frame.height
+                if 0 <= x < 150 and 880 <= y <= 1024:
+                    self.command(('menu',))
+                elif 0 <= x <= 768 and 0 <= y <= 1024:
+                    self._attempt(lambda: self.session.answer(self.football_hd.hit((x, y))))
+                return True
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
             if 0 <= x <= 320 and 0 <= y <= 480:
                 self._attempt(lambda: self.session.answer(self.football_renderer.hit((x, y))))
             return True
-        if (action and action.name == 'word_grid' and not self.menu_open and not self.error
+        if (action and action.name == 'word_grid' and not self.menu_open and not self.error and not asking
                 and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
-            x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
-            y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
-            phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEMOTION: 'move',
-                     pygame.MOUSEBUTTONUP: 'up'}[event.type]
-            index = self.grid_renderer.hit((x, y), self.session.engine.word_grid)
-            self._attempt(lambda: self.session.grid_pointer(phase, index))
+            hd = self._word_grid().__class__ is HdWordRenderer
+            if hd:
+                frame = self.bg_viewport
+                x = (event.pos[0] - frame.x) * 768 / frame.width
+                y = (event.pos[1] - frame.y) * 1024 / frame.height
+                gear = 0 <= x < 150 and 880 <= y <= 1024
+            else:
+                x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
+                y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
+                gear = 0 <= x < 60 and 422 <= y < 480
+            if event.type == pygame.MOUSEBUTTONDOWN and gear:
+                self.command(('menu',))
+            else:
+                phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEMOTION: 'move',
+                         pygame.MOUSEBUTTONUP: 'up'}[event.type]
+                renderer = self.word_hd if hd else self.grid_renderer
+                index = renderer.hit((x, y), self.session.engine.word_grid)
+                self._attempt(lambda: self.session.grid_pointer(phase, index))
+            return True
+        if self.menu_open and self.pause_hd.available() and self._pause_mouse(event):
             return True
         if self.menu_open and event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_F5, pygame.K_F9):
@@ -658,9 +1644,12 @@ class Desktop:
             elif action and action.name == 'character_picker' and pygame.K_1 <= event.key <= pygame.K_5:
                 if event.key - pygame.K_1 < len(self.session.engine.character_picker.characters):
                     self.command(('choose', event.key - pygame.K_1))
-            elif action and action.name in ('choice', 'word_game', 'football') and pygame.K_1 <= event.key <= pygame.K_9:
+            elif action and (action.name in ('choice', 'word_game', 'football') or asking) and pygame.K_1 <= event.key <= pygame.K_9:
                 index = event.key - pygame.K_1
-                if action.name == 'football' or (action.name == 'word_game' and index < 4) or (action.name == 'choice'
+                if asking:
+                    if index < len(self.host_prompt['options']):
+                        self.command(('choose', index))
+                elif action.name == 'football' or (action.name == 'word_game' and index < 4) or (action.name == 'choice'
                         and index < len(action.details['options']) and action.details['enabled'][index]):
                     self.command(('choose', index))
             elif action and action.name == 'text_input' and event.key == pygame.K_BACKSPACE:
@@ -683,7 +1672,9 @@ class Desktop:
             self.press.cancel()
             self.scroll = min(self.max_scroll, max(0, self.scroll - event.y * 40))
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.viewport.collidepoint(event.pos):
+            if self._gear_hit(event.pos):
+                self.command(('menu',))
+            elif self.viewport.collidepoint(event.pos):
                 x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
                 y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
                 for rect, command in self.buttons:
@@ -693,11 +1684,297 @@ class Desktop:
         self._sync_text_input()
         return True
 
+    # HD's gear (pack 155 frame 58, 74 x 72 units) sits flush with the frame's left and bottom edges, partly in the
+    # 32-unit margin outside the UI column, so its touch area is tested in frame units, not column units.
+    GEAR_FRAME_RECT = (-3.5, 441, 74, 71)
+
+    def _gear_hit(self, position):
+        if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open:
+            return False
+        try:
+            if self.dialogue_renderer.hd_bar() is None:
+                return False
+        except (AttributeError, ValueError, pygame.error):
+            return False
+        frame = self.bg_viewport
+        unit = frame.width / FRAME_UNITS[0]
+        x, y = (position[0] - frame.x) / unit, (position[1] - frame.y) / unit
+        left, top, width, height = self.GEAR_FRAME_RECT
+        return left <= x <= left + width and top <= y <= top + height
+
+    # -- warping through the story tree (SHSDTView touchesEnded / SHSDTTitleOverView / SHSDTHelpOverView) --------
+
+    tree_drag = None            # [pointer, scroll (y, x) at the start, moved] while a finger is down on the tree
+
+    def _tree_pointer(self, event):
+        """The wheel and a drag scroll a tree taller than its panel; a drag that moved is not a tap."""
+        panels = self.side_panels
+        area = panels.tree_rect
+        if area is None:
+            return False
+        s = panels.tree_scale or 1.0
+        if event.type == pygame.MOUSEWHEEL:
+            if not area.collidepoint(pygame.mouse.get_pos()):
+                return False
+            if pygame.key.get_mods() & pygame.KMOD_SHIFT:          # shift: the wheel scrolls instead of zooming
+                panels.scroll_tree(-event.y * 40 / s, event.x * 40 / s)
+            else:
+                panels.zoom_tree(event.y, pygame.mouse.get_pos())
+                panels.scroll_tree(0, event.x * 40 / s)
+            return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 2 and area.collidepoint(event.pos):
+            panels.reset_tree_zoom()                               # the middle button fits the tree to the panel again
+            return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and area.collidepoint(event.pos):
+            self.tree_drag = [event.pos, (panels.tree_scroll, panels.tree_scroll_x), False]
+            return True
+        elif event.type == pygame.MOUSEMOTION and self.tree_drag:
+            (x, y), (down, across) = event.pos, (self.tree_drag[0], self.tree_drag[1])
+            if max(abs(x - down[0]), abs(y - down[1])) > 6:
+                self.tree_drag[2] = True
+            if self.tree_drag[2]:
+                panels.tree_scroll = across[0] - (y - down[1]) / s
+                panels.tree_scroll_x = across[1] - (x - down[0]) / s
+                panels.tree_follow = False
+                return True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.tree_drag:
+            dragged, self.tree_drag = self.tree_drag[2], None
+            return dragged
+        return False
+
+    # -- the faceplace wall (`SHSFSView`'s scroll view and `SHSFSMessageContentView touchesEnded:`) -------------------
+
+    wall_drag = None            # [pointer, scroll at the start, moved] while a finger is down on the wall
+
+    def _wall_pointer(self, event):
+        """The wheel and a drag scroll the wall; a tap (a touch that did not move) on a linked message opens its
+        link -- natively straight to the browser (`SHSFSMessageContentView touchesEnded:`), but through the app's
+        own "Exit Game?" confirmation first when one is available (`self.notice_stack`; see its own setup note),
+        this player's own addition."""
+        panels = self.side_panels
+        area = panels.wall_rect
+        if area is None:
+            return False
+        s = panels.wall_scale or 1.0
+        if event.type == pygame.MOUSEWHEEL:
+            if not area.collidepoint(pygame.mouse.get_pos()):
+                return False
+            panels.scroll_wall(-event.y * 40 / s)
+            return True
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and area.collidepoint(event.pos):
+            self.wall_drag = [event.pos, panels.wall_scroll, False]
+            return True
+        if event.type == pygame.MOUSEMOTION and self.wall_drag:
+            down = self.wall_drag[0]
+            if max(abs(event.pos[0] - down[0]), abs(event.pos[1] - down[1])) > 6:
+                self.wall_drag[2] = True
+            if self.wall_drag[2]:
+                panels.wall_scroll = self.wall_drag[1] - (event.pos[1] - down[1]) / s
+                panels.wall_scrolled_at = pygame.time.get_ticks()
+                return True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.wall_drag:
+            dragged, self.wall_drag = self.wall_drag[2], None
+            if not dragged:
+                url = next((url for rect, url in panels.wall_targets if rect.collidepoint(event.pos)), None)
+                if url:
+                    if self.notice_stack is not None:
+                        self.wall_link = url
+                        self.notice_stack.queue(self.exit_menu)
+                    else:
+                        self._open_link(url)
+            return dragged or area.collidepoint(event.pos)
+        return False
+
+    def _wall_perform(self, number):
+        """`SHSEngine::doMenuEngineAction` action 18 ("Exit Game?" -> Yes; CoD: menu 16's action 24): the only action menu 17's two buttons
+        ever reach here -- its "No" button is a plain back step, popped by `MenuStack.press()` itself without
+        calling this (the Decision Tree's "Locked" notice, menu 28, is the same: its one OK button is also a
+        plain back step, so `self.notice_stack`'s shared `perform` callback never runs for it either)."""
+        self.notice_stack.clear()
+        if number == self.exit_action and self.wall_link:
+            self._open_link(self.wall_link)
+
+    def _notice_pointer(self, event):
+        """Pointer input while a native notice/confirm window is open (same hit-list convention as
+        `HdShell.pointer_down`/`pointer_up`, driven here instead of there)."""
+        if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+            return
+        point = self._pause_point(event.pos)
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            self.notice_pressed = next((c for r, c in reversed(self.notice_windows.hits) if r.collidepoint(point)), None)
+            return
+        pressed, self.notice_pressed = self.notice_pressed, None
+        if pressed is None:
+            return
+        for rect, command in reversed(self.notice_windows.hits):
+            if rect.collidepoint(point) and command == pressed:
+                self.notice_stack.press(self.notice_data.action(command[1]))
+                return
+
+    def _open_link(self, url):
+        """`UIApplication openURL:` -- the system's handler for the link."""
+        try:
+            opened = webbrowser.open(url)
+        except webbrowser.Error:
+            opened = False
+        if not opened:
+            logging.warning("failed to open URL: '%s'", url)
+
+    def _tree_click(self, position):
+        """A tap on the Decision Tree: a node warps to that scene, Rewind to the scene before the current one and
+        Fast Forward to the next one already seen. Returns whether the tap landed on the tree's controls."""
+        target = next((command for rect, command in self.side_panels.tree_targets if rect.collidepoint(position)), None)
+        if target is None:
+            return False
+        engine = self.session.engine
+        if self.fade or pygame.time.get_ticks() < self.warp_lockout or engine.dt_view.current is None:
+            return True
+        view = engine.dt_view
+        if not self.warp_unlocked:
+            # `touchesEnded:` -- while the lock flag is set a touch on any scene (or on Rewind / Fast Forward)
+            # shows the native "Locked" notice (menu 28, string 271) -- a modal window pausing the game behind
+            # it, not the toast `_notice()` draws for host-side messages; falls back to the toast only without
+            # an HD bundle imported (no resource 17 to read menu 28 from either).
+            if self.notice_stack is not None and self.exit_menu == 17:      # SHS HD's menus (CoD's 28 is an info page)
+                self.notice_stack.queue(28)
+            else:
+                self._notice(self._locked_message())
+            return True
+        if target[0] == 'node':
+            # Only a scene on the followed story (`DTNode` flag +0x1b1, `active`) is a target; the grayed ones and the automatic
+            # branches and joins are not.
+            node = target[1] if target[1].active and target[1].node_type not in NOT_WARPABLE else None
+        elif target[0] == 'rewind':
+            node = view.real_parent(view.current)
+        else:
+            node = view.real_child(view.current)
+        if node is None or not self.session.has_tree_state(node):
+            return True
+        self._warp(node)
+        return True
+
+    def _locked_message(self):
+        try:
+            from .menu import MenuStrings
+            return MenuStrings.parse(self.session.resources.library.hd_raw_resource(15))[271]
+        except (AttributeError, ContentError, ValueError, IndexError):
+            return 'Please complete Football Season episode to unlock this feature.'
+
+    def _warp(self, node):
+        """`SHSDTView warpToNode:animatedScroll:`: load the scene's saved game and fade the game back in from black; the
+        side panels stay open and the tree scrolls to the scene."""
+        try:
+            restored = self.session.warp(node)
+        except (SaveError, VMError, OSError, ValueError) as error:
+            self._notice(f'Could not warp: {error}')
+            return
+        self.session = restored
+        self.error, self.music_token = None, None
+        self.sound_serial = restored.engine.sound_serial
+        self.menu_open = False
+        self.side_panels.tree_follow = True
+        self.location_pan = LocationPan()
+        now = pygame.time.get_ticks()
+        self.fade = dict(kind=6, phase='in', since=now, frozen=None)
+        self.warp_lockout = now + 1000
+
+    def snapshot(self, size=(432, 580)):
+        """The game's frame as a saved-game screenshot for the episode picker (the pause menu left out)."""
+        opened, self.menu_open = self.menu_open, False
+        # A live (non-capture) Desktop's own render() ends with pygame.display.flip(), presenting straight to the
+        # real screen -- fine for its normal per-frame use, but this method also runs mid-transition (the
+        # end-of-episode card's sepia source, a resume tile's screenshot) purely to read pixels back off `window`,
+        # not to be seen. Without this, that flip briefly shows the live, un-sepia'd frame (this method's own
+        # render(), menu_open forced off) before the real next frame replaces it -- confirmed live: the
+        # "Want More Content?" card flashing over raw gameplay chrome first instead of appearing straight over
+        # the sepia backdrop, the one the pause menu's own equivalent path never does.
+        was_capture, self.capture = self.capture, True
+        try:
+            self.render()
+        finally:
+            self.menu_open = opened
+            self.capture = was_capture
+        frame = self.bg_viewport.clip(self.window.get_rect())
+        return pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
+
     def tick(self, elapsed_ms):
+        if self.hint_discount_ms:
+            discount = min(elapsed_ms, self.hint_discount_ms)
+            self.hint_discount_ms -= discount
+            elapsed_ms -= discount
         if self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
-        if self.active and not self.error and not self.menu_open:
-            self._attempt(lambda: self.session.tick(elapsed_ms))
+        if self.fade:
+            self._tick_fade(elapsed_ms)
+        # A native notice (the "Locked" notice, the wall link's "Exit Game?") holds the game like the pause menu does:
+        # it is modal, and the scene behind it is dimmed sepia, so typing and clocks wait for its button (owner's report).
+        notice_open = self.notice_stack is not None and bool(self.notice_stack.stack)
+        if (self.active and not self.error and not self.menu_open and not notice_open
+                and not (self.fade and self.fade['phase'] == 'out')):
+            pending, remaining = self.session.pending, self.session.remaining_ms
+            game = self.session.engine.word_game
+            if pending is not None and pending.name == 'word_game' and game is not None and game.hd:
+                remaining = game.remaining_ms if game.selected < 0 and game.duration_ms > 0 else None
+            ask = self._host_prompt()
+            if self.choice_closing is not None:
+                # The selection is pending: the menu's own clock no longer runs out (`SHSUIMenu::tick`).
+                self._tick_choice_closing(elapsed_ms)
+            elif ask is not None:
+                pass                            # the mini-game has not started: its clocks wait for the skip prompt
+            elif (pending is not None and pending.name in ('choice', 'word_game') and remaining is not None
+                  and remaining < elapsed_ms and self._hd_choice_drawn()):     # exactly 0 is still selectable
+                # `SHSUIMenu::tick`: out of time with nothing selected -> `finishUI`, the same fade-out (no pressed row);
+                # for the quiz this is how the game ends. The clock is held at 0 and runs out after the fade.
+                if pending.name == 'choice':
+                    self.session.remaining_ms = 0
+                else:
+                    game.remaining_ms = 0
+                self.choice_closing = dict(action=pending, index=None, ms=SELECT_MS)
+            else:
+                self._attempt(lambda: self.session.tick(elapsed_ms))
+            if self.session.pending is not None and (self.session.pending.name in ('choice', 'word_game')
+                                                     or self.host_prompt is not None):
+                self.choice_renderer.age_ms += elapsed_ms     # the HD panel's fade-in and its labels' fly-on
+        target = 1.0 if self.panels_open else 0.0
+        step = elapsed_ms / 250  # Not a recovered native duration; a reasonable slide speed.
+        if self.panels_progress < target:
+            self.panels_progress = min(target, self.panels_progress + step)
+        elif self.panels_progress > target:
+            self.panels_progress = max(target, self.panels_progress - step)
+        # The window itself snaps to its new shape instantly (like a real
+        # device's own rotation-driven bounds change), while the panel
+        # content slides into the newly-available margin over `progress`.
+        # Closing leaves the window as it is (owner's choice): the game stays
+        # centred in whatever shape the player has.
+        should_be_wide = self.panels_open or self.panels_progress > 0
+        if should_be_wide != self._panels_wide:
+            if should_be_wide:
+                self._widen_for_panels()
+            self._panels_wide = should_be_wide
+
+    def toggle_panels(self):
+        """Open or close the story tree and Faceplace panels (Tab, or the Side Panels switch in Options)."""
+        self.panels_open = not self.panels_open
+        self.side_panels.tree_follow = True
+        if self.panels_open:
+            # Real device confirmed: opening the side panels dismisses a
+            # showing Faceplace toast, not just hides it -- that data is
+            # visible in the panel already (see FaceplaceToast).
+            self.session.engine.faceplace_toast = None
+
+    def _widen_for_panels(self):
+        """Real device confirmed: opening both panels turns the window's
+        own 3:4 shape into 4:3, with the center game view keeping its
+        original 3:4 pixel size rather than shrinking -- see
+        desktop_panels.py's module docstring. Each panel is 224x768 points
+        beside the 576x768 game, so they fit at full height once the window
+        is 4:3 or wider: a window already that wide is left alone, and a
+        narrower one is widened to 4:3 at its own height (owner's choice)."""
+        width, height = self.window.get_size()
+        needed = max(1, round(height * 4 / 3))
+        if width >= needed - 1:          # a pixel of rounding either way
+            return
+        self.window = pygame.display.set_mode((needed, height), pygame.RESIZABLE)
 
     def run(self):
         clock = pygame.time.Clock()

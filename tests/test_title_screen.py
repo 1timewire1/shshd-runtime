@@ -172,7 +172,8 @@ class TitleRendererTests(unittest.TestCase):
         r = resources(title='A' * 35, subtitle='BC')
         r.read_asset = metrics.__getitem__
         r.dialogue_layout = lambda: SimpleNamespace(bank=bank())
-        renderer = TitleRenderer(r, Mock(), SimpleNamespace(image=images.get, frame=lambda *_: transparent))
+        renderer = TitleRenderer(r, Mock(), SimpleNamespace(image=images.get, frame=lambda *_: transparent,
+                                                     draw_bottom_bar=lambda *args, **kwargs: None))
         renderer.hint = Mock(return_value=None)
         s = Session(r)
         s.advance()
@@ -192,11 +193,15 @@ class TitleRendererTests(unittest.TestCase):
         self.assertEqual(buttons[0][1], ('menu',))
         s.tick(2000)
         renderer.draw(target, s)
-        for actual, expected in zip(target.get_at((100, 200))[:3], (30, 60, 90)):
-            self.assertAlmostEqual(actual, expected, delta=1)
+        # The background is no longer blitted into target/canvas directly --
+        # Desktop composites it separately, at real window resolution, from
+        # these tracked fields (see desktop.py's _draw_background_layer).
+        self.assertIs(renderer.pending_background, images[1000])
+        self.assertAlmostEqual(renderer.pending_background_alpha, 128, delta=1)
         s.tick(1500)
         renderer.draw(target, s)
-        self.assertEqual(target.get_at((100, 200))[:3], (60, 120, 180))
+        self.assertIs(renderer.pending_background, images[1000])
+        self.assertEqual(renderer.pending_background_alpha, 255)
 
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user content is absent')
     def test_original_week_and_episode_intro_render_pause_resize_and_saved_pixels(self):

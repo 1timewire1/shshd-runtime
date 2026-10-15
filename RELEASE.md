@@ -1,16 +1,36 @@
-# v0.5.0
+# SHSHD Runtime v1.0.0
 
-## Added
+The first release of SHSHD Runtime, a fork of
+[exp-runtime](https://github.com/joshrmcdaniel/exp-runtime) that plays
+Surviving High School (including its iPad HD release) and Cause of Death with
+your own game files. It is a separate app: its own data folder, window and app
+identifiers, so it never touches an installed copy of exp-runtime.
 
-- Split EXP Runtime into formats, engine, player, SHS and CoD component wheels
-  within one project and shared `exp_runtime` namespace. Pip extras select
-  only the required source and dependencies; the player/desktop extras
-  include both games by default. Existing source development commands and
-  import paths remain supported.
+No game files are included. You supply your own.
 
-## Changed
+## Highlights
 
-- A bare Python package install now provides file tools. Use `[engine,shs]`
-  or `[engine,cod]` for headless playback and `[player]` or `[desktop]` for
-  the app. Game discovery, minigame state restoration and app builders support
-  the component layout without changing library or save formats.
+- **Surviving High School HD.** With the SHS HD (iPad) IPA beside the Android
+  1.0.9 APK, the app uses SHS HD's own screens, ported from the original app:
+  the launch flow, main menu, episode grid and lists, dialogue, choices,
+  mini-games, side panels, the Decision Tree and Faceplace.
+- **HD art for standard episodes,** where a matching HD picture exists.
+- **Cause of Death in SHS HD's presentation,** with CoD's own styling, categories
+  and airdates. Linking the SHS HD IPA gives CoD its HD look too.
+- **Switch Game** moves between the two games from the main menu.
+- **Bulk Import.** On first boot, one ZIP or RAR (or an `import` folder beside
+  the app) sets up both games at once. See the README for the layout.
+- **Episode info for Cause of Death,** with each episode's store description and
+  price, from a 1.4.7 device backup's store listing (`mtxprods`).
+- **Update check** against this project's releases (Options → General).
+
+## Downloads
+
+- **Windows, macOS, Linux:** `shshd-runtime-<version>-<platform>` archives. Unzip
+  and run SHSHD Runtime. Builds are unsigned (macOS: ad-hoc signed, not notarized).
+- **iOS:** `shshd-runtime-<version>-ios-arm64-unsigned.ipa`, to sign and install
+  yourself. The iOS build is untested on devices for this release.
+
+Each download has a SHA-256 checksum beside it.
+
+See CHANGELOG.md for the full list of changes.

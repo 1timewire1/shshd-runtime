@@ -6,10 +6,11 @@ NATIVE_SHA256 = 'b17aa4c71bc46666d414cafae6fac92bbcd755f3dcccd73975cf05f4a119665
 BUILTIN = 'football-star'
 
 
-def extract_builtin(package, asset_root, *, ios):
-    from .builtin_episode import FOOTBALL_NAME, extract_football, football_source
-    data = extract_football(package, asset_root, ios=ios)
-    return None if data is None else (data, FOOTBALL_NAME, football_source())
+def extract_builtin(package, asset_root, *, ios, hd_ipa=None):
+    """`hd_ipa`: the optional SHS HD (iPad) bundle supplementing an APK library; Football Star then uses its scripts."""
+    from .builtin_episode import FOOTBALL_NAME, extract_football, football_source, hd_scripts_available
+    data = extract_football(package, asset_root, ios=ios, hd_ipa=hd_ipa)
+    return None if data is None else (data, FOOTBALL_NAME, football_source(hd_scripts_available(hd_ipa)))
 
 
 def _inspect_apk(apk: ZipFile):

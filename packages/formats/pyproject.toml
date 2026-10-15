@@ -3,8 +3,8 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exp-runtime-formats"
-version = "0.5.0"
+name = "shshd-runtime-formats"
+version = "1.0.0"
 description = "EXP containers, KiWi decoding and native resource parsers"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -15,6 +15,7 @@ dependencies = []
 images = ["Pillow>=10"]
 
 [project.scripts]
+shshd-tool = "exp_runtime.cli:main"
 exp-tool = "exp_runtime.cli:main"
 shs-tool = "exp_runtime.cli:main"
 

@@ -98,10 +98,10 @@ created under custom directory names must likewise remain local.
 From a source checkout:
 
 ```sh
-uv run --locked --extra desktop exp-runtime
+uv run --locked --extra desktop shshd-runtime
 ```
 
-`exp-runtime` (or `exp-tool play` without `--library` / `--game`) opens the
+`shshd-runtime` (or `shshd-tool play` without `--library` / `--game`) opens the
 game chooser. Choose SHS or Cause of Death, then import its assets or open its
 existing library. Options accepts additional episodes for the selected game;
 drag-and-drop also works. **Options → Switch Game** checkpoints the current
@@ -139,9 +139,9 @@ require matching font metrics; see [IPA fonts](IPA.md#fonts). Imports preserve s
 CLI import requires an explicit `--library` destination. `list` retains the
 legacy `.shs-library` default; supply `--library` for another game or location.
 The launcher remembers a separate path for each game and otherwise uses
-`EXP Runtime/libraries/shs` or `EXP Runtime/libraries/cod` in application data.
-It discovers prior `SHS Runtime` locations and a source checkout's `.shs-library`
-without moving them. An explicit `--library` opens that library directly;
+`SHSHD Runtime/libraries/shs` or `SHSHD Runtime/libraries/cod` in application data.
+It discovers a source checkout's `.shs-library` without moving it. It never reads
+upstream's `EXP Runtime` or older `SHS Runtime` folders (this fork is a separate app). An explicit `--library` opens that library directly;
 `--game shs|cod` opens a game directly and checks that supplied assets match.
 `--episode` accepts an exact title from any of the five metadata slots, filename, or unique hash prefix printed by
 `list`. Starting with `play --episode` begins a fresh session. To resume the
@@ -172,13 +172,14 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | Hold and drag across grid cells | Trace a word or picture sequence, including diagonal steps; no repeated cell |
 | Click a football target or press 1–9 | Commit that play; targets change over time |
 | Tap football help / Enter / Space | Continue after its native reading delay |
-| Gear on title, dialogue, choice or mini-game screens | Open Resume/Options/Help & About/Main Menu; active game time and music pause |
+| Gear on title, dialogue, choice or mini-game screens | Open the pause menu (Resume, Options, Help & About, Main Menu); active game time and music pause |
 | Type, Backspace, Enter | Edit a name (up to 16 ASCII letters/digits, subject to native font width); Enter submits a nonempty name or dismisses its alert |
-| Pause → Options → Save / F5 | Replace the current episode's local save slot |
-| Pause → Options → Load / F9 | Restore that slot |
+| F5 (also Pause → Options → Save without the HD app, and the fallback screen's Save button) | Replace the current episode's manual save slot |
+| F9 (also Pause → Options → Load, and its Load button) | Restore that slot |
 | Wheel, arrow keys, Page Up/Down | Scroll long option lists and other non-dialogue screens |
 | Escape | Open/close the pause menu during play; go back within application menus |
 | Main Menu / Close window | Save a separate automatic checkpoint and return to the menu / exit |
+| (nothing to press) | The automatic checkpoint is also written every 60 s of play and once when the window loses focus, as the app's `SHSEngine::onTick` / `onExit` do |
 
 ## Content library contract
 
@@ -253,6 +254,12 @@ discover this optional sidecar; users can also add it through the episode
 picker. The native envelope, normalized metadata schema, matching and fallback
 rules are in [EPISODE_CATALOG.md](EPISODE_CATALOG.md).
 
+The optional manifest field `store` (CoD libraries only; this fork) points at
+`content/<sha256>.json`, the products of Cause of Death 1.4.7's store listing
+(`Documents/mtxprods`) imported the same way. The device's user record in that
+file is never kept. The format and the kept schema are in
+[COD_STORE.md](COD_STORE.md).
+
 Import validates a private copy of the APK or IPA, decodes all imported EXP payloads,
 and parses their KiWi programs before publishing the library by directory
 rename. A failed import leaves no partially initialized destination. Archive
@@ -277,6 +284,52 @@ but has a different save identity. IPA saves use `ipa_sha256` in place of
 The optional music APK is hash-checked on open but excluded from save identity:
 adding audio does not alter the story, layout or fonts, and old IPA saves remain
 compatible. Its addition does not rewrite any manual or automatic save files.
+
+`import_game`/`shs-tool import --hd-ipa` optionally accepts the iOS HD
+(iPad) build's own `.ipa` alongside the required Android APK. It is never
+required. When present, the manifest gains an `hd_ipa` field shaped like
+`apk` (`file`, `sha256`, `executable_sha256`), validated the same way on
+every open. The supported executable is
+`Payload/Surviving_HS.app/Surviving_HS` from the SHS HD (iPad) 1.4.38
+build, with SHA-256:
+
+```text
+327cf59ddb8efd704795099d5b5e9a04ceec51f6c084bf7d0962e78e3ae7e875
+```
+
+`ContentLibrary.hd_asset(resource_id)`/`EpisodeResources.hd_asset(...)`
+return the HD ipa's raw bytes for a resource id, or `None` if no HD ipa was
+imported or the id isn't eligible -- every caller must keep working from
+the Android original alone. Two disjoint id ranges are eligible, per
+`content.HD_ASSET_MAP`/`HD_SHARED_CONTENT_RANGE`:
+
+- **`HD_SHARED_CONTENT_RANGE` (1000 <= id < 25000):** per-scene content
+  (backgrounds/portraits) ships at the *same* numeric id on both
+  platforms. Trusted directly by id, without a per-asset check: sampling
+  667 ids that exist in both banks found 606 genuine HD upgrades of the
+  identical asset (confirmed by rendering and comparing, not just size),
+  every mismatch found was a low chrome/icon id well outside this range,
+  and every Android base id inside it decodes as an image (KiWi bytecode
+  programs start at 25000, confirmed by their `kiwi` header -- never
+  substituted, or a script load would run the wrong dialect entirely).
+- **`HD_ASSET_MAP` (below 1000):** a small, individually-verified table
+  for the handful of chrome ids HD numbers or formats differently --
+  currently just the dialogue/choice/character-picker portrait mask
+  (Android id 268 -> HD id 311, confirmed identical shape at a clean
+  native 2x resolution). Never extended by id alone; low ids can
+  coincidentally collide with unrelated HD content (id 10 is a menu
+  button on Android, an unrelated loading-screen collage on HD).
+
+`ContentLibrary.read_asset`/`EpisodeResources.read_asset` (used by every
+`<26000` asset load, not a separate opt-in call) transparently prefer
+`hd_asset()`'s result when it returns something, so this upgrade reaches
+every background/portrait/mask consumer without per-call-site changes. See
+`legacy/findings.md`, "HD chrome assets may be directly usable after all"
+and "53% ... questioned and checked properly" for how this was verified.
+Audited live across the real 195-episode HD library: HD background
+coverage went from 53% to 100% of episodes with an HD ipa imported (1315
+vs 202 unique HD backgrounds found, 5956 vs 2926 unique HD portraits),
+zero decode errors either way.
 
 The runtime's strict EXP reader follows [SCHEMA.md](SCHEMA.md): BE outer
 fields, the LE LZMA wrapper, aliases, and five UTF-8 titles. It rejects partial
@@ -348,14 +401,31 @@ while data and PC/SP/FP reset according to the core VM contract.
 <a id="runtime-save-schema-version-17"></a>
 <a id="runtime-save-schema-version-18"></a>
 
-## Runtime save schema, version 21
+## Runtime save schema, version 25
 
 This is a new format for the reimplementation. No pickle, object deserialization,
-or original executable code is used. JSON fields are:
+or original executable code is used.
+
+This HD fork and upstream exp-runtime number their saves independently after
+the shared version 12. This fork's versions 13–22 add the Decision Tree,
+Faceplace, location pan, portrait expression changes, status icons and
+tree-free saves; version 23 adds exp-runtime v0.4.1's background pan, Continue
+tab expansion and word-grid tile effects (upstream's own versions 17–19), and
+its survey receipt; version 24 adds the HD word game's pacing (`WordGame.hd` and
+its selection, fly-off, fly-on and score-effect clocks; older saves load with
+`hd` false); version 25 adds exp-runtime v0.4.2's dialogue lifecycle (upstream's
+own versions 20 and 21, described below in their terms) and drops this fork's
+own expression memory it replaces (`engine.last_speaker`/`last_expressions`,
+the animation's `expression_committed`, the portraits' `from_asset_id`); the
+animation keeps this fork's uncapped `age_ms` for HD's emotion effects. An HD build's saved notice clock may also run past Android's
+lifetime, to the HD letters' start plus their own lifetime. The fork keeps the `shs-runtime-save` marker; upstream's
+`exp-runtime-save` saves are not accepted, because the same version numbers
+describe different fields there. Version-number references below that concern
+IPA libraries and survey receipts are upstream's numbering. JSON fields are:
 
 | Field | Contract |
 | --- | --- |
-| `format`, `version` | `"exp-runtime-save"`, `21` |
+| `format`, `version` | `"shs-runtime-save"`, `25` |
 | `content` | `profile`, `apk_sha256`, `episode_sha256`; must exactly match loaded content |
 | `scene` | Unsigned current script resource ID |
 | `script_sha256` | Hash of the losslessly encoded current program |
@@ -406,14 +476,13 @@ Old SHS/CoD stops at service 97 resume only that retained call and continuation.
 See [background panning](UI_FIDELITY.md#background-panning). Older runtime builds
 cannot read version-19 saves.
 
-Version 20 adds `dialogue_animation.box_grow:bool`. The existing elapsed
+Upstream's version 20 (this fork's 25) adds `dialogue_animation.box_grow:bool`. The existing elapsed
 clock also drives the native iOS bubble entrance now shared by both games.
 Versions 1–19 retain a full-size box for the saved dialogue without changing
 its revealed text, portrait/name clocks, pending call or VM. The next new
-portrait-speaker entrance uses the recovered 120+200 ms animation. Older
-runtime builds cannot read version-20 saves.
+portrait-speaker entrance uses the recovered 120+200 ms animation.
 
-Version 21 adds `engine.dialogue_history`, containing the hidden portrait's
+Upstream's version 21 (also this fork's 25) adds `engine.dialogue_history`, containing the hidden portrait's
 `anchor_mode` (0/1/2) and a character-ID map of signed last-expression bytes.
 Dialogue details also retain `initial_expression`. The animation adds
 `native_lifecycle:bool`, `anchor_mode:int`, nullable `initial_portrait`, integer
@@ -427,9 +496,10 @@ active, without ticking. Explicit panel removal and scene teardown clear the
 animation. A new scene clears both expression tables for IDs 0–199 while
 retaining the global portrait anchor. Loading validates typed fields, portrait
 identity, expression cache, text and progress without executing VM callbacks.
-Versions 1–20 remain readable: their current expression stays visible, their
-old shake/box timing continues, and no new fade or clipping is replayed. The
-next dialogue uses the new lifecycle. Older runtimes cannot read version 21.
+This fork's versions 1–24 remain readable: their current expression stays
+visible, their old shake/box timing continues, and no new fade or clipping is
+replayed. The next dialogue uses the new lifecycle. Older runtimes cannot read
+version 25.
 
 The `vm` object contains `pc`, `sp`, `fp`, `a`, `b`, `result`, `data`, `stack`,
 `pending`, `steps_executed`, `opcode_counts`, and `recent_pcs`.
@@ -627,7 +697,7 @@ recomputed from the retained `page_start`. Pre-v15 IPA saves also use the
 earlier history migration above. VM memory, pending arguments, random state,
 panel state and animation clocks remain unchanged. Version-16 page ends are
 strictly validated; APK version-10+ validation is unchanged.
-Versions 1–15 and the legacy `shs-runtime-save` marker remain accepted.
+Upstream accepts versions 1–15 and the legacy `shs-runtime-save` marker; this fork accepts `shs-runtime-save` 1–23.
 See [IPA dialogue](IPA.md#dialogue-text-placement) for geometry and font limits.
 
 Saves stopped at unsupported service 4 now validate the retained choice builder
@@ -672,6 +742,39 @@ at its native start offset.
 Implemented dialogue/title/mini-game animation clocks and both modeled random streams
 are serialized. Other native animation and panel-lifecycle state remains partial;
 newly modeled fields will require explicit save migrations.
+
+Version 21 leaves the story tree out of a save: `engine.dt_view` keeps `enabled`, `pending_result_index`, `awaiting_result` and `last_was_result`, `root` and `current` are null, and the current scene is `engine.dt_view.current_serial` (0 for none). `SHSDTView saveGame:` does the same (the tree is `tree_nodes.txt`, kept whatever the game); loading finds that serial in the library's own tree (`dtview_tree.json`). Older saves that embed a tree still load: the library's tree is used when it has the scene (same type and ids), the embedded one when it does not.
+
+## Names shared across episodes
+
+The app keeps one name-replacement table for the whole install: `SHSEntityTable`'s
+renames, the `$KEY` → text pairs that every shown `$KEY` is replaced with. It
+is saved in `shs_options.sav` after the catalog (`saveRenames`: a count, the
+pairs, then 200 persisted-expression bytes), loaded at start, and never
+cleared by a new game, an episode or a loaded save.
+
+The scripts write it:
+- Service 46 stores a key, a fixed text or one the player typed or picked.
+- Service 47 reads a key, storing the script's default when it is empty (and
+  saving the file at once).
+- Service 113 stores a key only while `$USR` is empty.
+
+Episodes use it to carry names forward. A series' first episode stores the
+lead's typed name (`$ZOE`, `$Scott`, `$Travis`, `$CADY`…); the later ones read
+it through service 47, falling back to the default only when it was never
+set. Football Star stores `$USR` and `$DATE`. The portrait a player picks is
+not kept: `SHSUIPortraitSelect` always starts at the first one.
+
+This runtime keeps the table in the library's `player.json` as `names`. The
+desktop shares it with every session it plays (`Session.share_names`):
+- Services 46, 47 and 113 write into it, and it is saved with `player.json`
+  (each checkpoint, save, episode change and exit).
+- A session's own save still records the table as it stood. When a save
+  loads, the shared table keeps its values and only adds keys it lacks, such
+  as names typed before the table was shared.
+- A warp keeps the table as it is, as the app keeps `$USR`.
+- Choice previews, the episode explorer and other copied sessions never
+  change it.
 
 ## Verified playback and remaining work
 

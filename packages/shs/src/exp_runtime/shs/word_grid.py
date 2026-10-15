@@ -69,8 +69,12 @@ class GridProblem:
         if self.fixed_board is None:
             if self.width * self.height < 2 or not self.alphabet:
                 raise ValueError('Generated grid needs an alphabet and at least two cells')
-            if any(c not in self.alphabet for word in self.words for c in word):
-                raise ValueError('Grid alphabet cannot form its target words')
+            # Target words need not be spellable from the alphabet: placement writes a word's own letters and the
+            # alphabet only fills the cells left empty (docs/MINIGAMES.md 5.2). Shipped puzzles rely on this
+            # (Best_Party_Ever's "crpstalhiy" has no e for creep/stealthily). They must still be drawable tiles
+            # (picture grids map other symbols to images, so only blank/unprintable characters are rejected).
+            if any(c.isspace() or not c.isprintable() for word in self.words for c in word):
+                raise ValueError('Grid target words contain blank or unprintable characters')
         elif len(self.fixed_board) < self.height * (self.width + 1) - 1:
             raise ValueError('Truncated tutorial grid')
 
@@ -265,7 +269,11 @@ class WordGrid(GameState):
                           for y in range(p.height) for x in range(p.width)]
             self.scan_starts()
             return
-        for _ in range(15):
+        # Native makes fifteen placement attempts, then falls back to alphabet-only boards. That fallback can never
+        # form a word using a letter outside the alphabet (natively it would keep shuffling), so for such problems
+        # keep making ordinary placement attempts instead (shshd-runtime; bounded like the fallback).
+        unspellable = any(c not in p.alphabet for word in p.words for c in word)
+        for _ in range(4096 if unspellable else 15):
             self.board = [''] * (p.width * p.height)
             if not all(self.place_word(p.words[random.below(len(p.words))], random)
                        for __ in range(p.minimum_starts)):
@@ -314,6 +322,8 @@ class WordGrid(GameState):
                 self.round_ms = min(self.round_limit_ms, self.round_ms + self.bonus_ms)
                 if not self.starts:
                     self.complete_round(True, random)
+            # Presentation only (not saved): which cells made the word, and how many words so far.
+            self.found_cells, self.found_serial = list(self.selection), getattr(self, 'found_serial', 0) + 1
             self.selection, self.bad_prefix = [], []
             self.sound(8110, 8111)  # 000c3874 requests both sounds, no random draw.
             return True
@@ -569,8 +579,14 @@ def read_grid(vm, args, read_text, resolve_text, *, tutorials_seen=False):
     problems = []
     for a in rows(args[11], args[12], 10):
         # Native 9f378 is substituted text; fixed board bytes use 9f258.
+        alphabet = resolve_text(a[5])
+        words = grid_words(resolve_text(a[4]))
+        # Every target word is kept, even one using a letter its alphabet lacks (46_Dance_Dance_Revelation's
+        # "dinah"/"learndip", 67_Basketball_Woes' "clydes"/"bonieclyd", Best_Party_Ever's "creep"/"stealthily"
+        # with "crpstalhiy"): the native walk places a word's own letters, and the alphabet only fills empty
+        # cells (docs/MINIGAMES.md 5.2). Dropping such words left Best_Party_Ever's second puzzle with none.
         problems.append(GridProblem(a[0], a[1], resolve_text(a[2]), resolve_text(a[3]),
-                                    grid_words(resolve_text(a[4])), resolve_text(a[5]),
+                                    words, alphabet,
                                     a[6] == 1, a[7] == 1, a[8], 1001 if a[9] == -1 else a[9]))
         # The shipped dispatcher ends the problem loop at this alphabet.
         if problems[-1].alphabet == 'inspirem':

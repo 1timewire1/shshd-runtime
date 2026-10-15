@@ -38,9 +38,10 @@ def stage_metadata(directory):
     # Embedded Python does not run pip for our authored package. Retain the
     # same distribution version lookup used by installed and frozen desktops.
     version = project_version()
-    path = directory / f'exp_runtime-{version}.dist-info'
+    # This fork's distribution name, which app_info.runtime_version looks up (else 'development', and no update check).
+    path = directory / f'shshd_runtime-{version}.dist-info'
     path.mkdir(parents=True)
-    (path / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: exp-runtime\nVersion: {version}\n')
+    (path / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: shshd-runtime\nVersion: {version}\n')
 
 
 def sha256(path):
@@ -130,7 +131,7 @@ def _frameworks(bundle, base):
         module = '.'.join((*relative.parts[:-1], binary.name.split('.')[0]))
         framework = bundle / 'Frameworks' / (module + '.framework')
         framework.mkdir(parents=True, exist_ok=True)
-        info = dict(CFBundleExecutable=module, CFBundleIdentifier='org.expruntime.python.' + module.replace('_', '-'),
+        info = dict(CFBundleExecutable=module, CFBundleIdentifier='org.shshd.runtime.python.' + module.replace('_', '-'),
                     CFBundleName=module, CFBundlePackageType='FMWK', CFBundleVersion='1',
                     CFBundleShortVersionString='1.0', MinimumOSVersion='15.0')
         (framework / 'Info.plist').write_bytes(plistlib.dumps(info))
@@ -199,7 +200,7 @@ def build(sdk, *, offline=False):
     derived = ROOT / 'build/ios' / sdk
     command = ['xcodebuild', '-project', str(ROOT / 'ios/EXPRuntime.xcodeproj'), '-target', 'EXPRuntime',
                '-configuration', 'Release', '-sdk', sdk, 'ARCHS=arm64', 'ONLY_ACTIVE_ARCH=YES',
-               'CODE_SIGNING_ALLOWED=NO', 'DEVELOPMENT_TEAM=', 'PRODUCT_BUNDLE_IDENTIFIER=org.expruntime.player',
+               'CODE_SIGNING_ALLOWED=NO', 'DEVELOPMENT_TEAM=', 'PRODUCT_BUNDLE_IDENTIFIER=org.shshd.runtime',
                f'EXP_BUILD_PYTHON={sys.executable}', f'MARKETING_VERSION={version}',
                f'CONFIGURATION_BUILD_DIR={ROOT / "dist/ios" / sdk}', f'OBJROOT={derived / "obj"}',
                f'SYMROOT={derived / "products"}', f'CLANG_MODULE_CACHE_PATH={derived / "ModuleCache"}',

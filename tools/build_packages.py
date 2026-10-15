@@ -23,7 +23,8 @@ def audit(directory, root=ROOT):
     installed = set()
     artifacts = []
     for component in ('', *COMPONENTS):
-        name = 'exp_runtime' + ('_' + component if component else '')
+        # This fork's distributions are shshd-runtime(-component); the import namespace inside stays exp_runtime.
+        name = 'shshd_runtime' + ('_' + component if component else '')
         wheel = directory / f'{name}-{version}-py3-none-any.whl'
         with ZipFile(wheel) as archive:
             if any(not n.startswith(('exp_runtime/', f'{name}-{version}.dist-info/'))

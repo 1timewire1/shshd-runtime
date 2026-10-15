@@ -4,7 +4,7 @@ No glyph metrics or images are embedded here. They come from the player's APK.
 This module does not depend on a window system. See docs/UI_FIDELITY.md for
 native addresses, scope, and the distinction between pen advances and kerning.
 """
-from dataclasses import dataclass, replace
+from dataclasses import KW_ONLY, dataclass, replace
 import math
 import re
 import shlex
@@ -51,6 +51,10 @@ class BitmapFont:
     page: str
     glyphs: dict[int, Glyph]
     kernings: dict[tuple[int, int], int]
+    # BMFont `common base`: the baseline's offset from the top of the line box. Keyword-only, so subclasses
+    # (ios_fonts.IOSFont) can still add positional fields.
+    _: KW_ONLY
+    base: int = 0
 
     @classmethod
     def parse(cls, data: bytes):
@@ -96,19 +100,36 @@ class BitmapFont:
             if page is None or not glyphs or not 0 < height <= 4096:
                 raise FontError('Incomplete font descriptor or unsupported line height')
             return cls(info.get('face', ''), _integer(info.get('size', '0')),
-                       height, page, glyphs, kernings)
+                       height, page, glyphs, kernings, base=_integer(common.get('base', '0')))
         except (KeyError, UnicodeError, ValueError) as error:
             if isinstance(error, FontError):
                 raise
             raise FontError(f'Invalid bitmap-font descriptor: {error}') from error
 
     def glyph(self, character: str) -> Glyph:
+        code = ord(character)
         try:
-            return self.glyphs[ord(character)]
+            return self.glyphs[code]
         except KeyError:
             # The native font table leaves absent advances uninitialized;
             # there is no verified replacement-glyph or system-font fallback.
-            raise FontError(f'{self.face}: no defined glyph for U+{ord(character):04X}') from None
+            if code >= 0x20:
+                raise FontError(f'{self.face}: no defined glyph for U+{ord(character):04X}') from None
+            # Real HD episode dialogue (confirmed, not hypothetical: three
+            # separate episodes) embeds low control-range bytes exactly
+            # where typographic punctuation reads naturally -- U+0019 in
+            # "Ben\x19s girlfriend", U+0018 before a quoted phrase, U+0009
+            # between two sentences -- none of which this font (sourced
+            # only from the Android APK) has a glyph for at all; its lowest
+            # defined code is the space at 32. Rendering these as an
+            # invisible, space-width gap rather than raising is a
+            # deliberately conservative guess at *presence* only, not at
+            # which specific mark was intended -- stopping the whole
+            # episode over a handful of missing glyphs is worse than a
+            # slightly-off gap. See legacy/findings.md.
+            space = self.glyphs.get(32)
+            return Glyph(code, 0, 0, 0, 0, 0, space.yoffset if space else 0,
+                        space.advance if space else 0)
 
 
 Color = tuple[int, int, int]

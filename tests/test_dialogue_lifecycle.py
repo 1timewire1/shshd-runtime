@@ -265,6 +265,9 @@ class DialogueLifecycleTests(unittest.TestCase):
 
 
 class PortraitLayerTests(unittest.TestCase):
+    @unittest.skip("shshd-runtime composes the housing in DialogueRenderer.portrait_parts / housing_polygon (HD's "
+                   "layered ring, disc and art; tested in test_desktop and test_cod_hd_art), not upstream's "
+                   "portrait_group(portrait, clip, old, old_alpha, alpha)")
     def test_housing_cut_preserves_beveled_corner_colored_ring_and_both_expression_layers(self):
         from exp_runtime import graphics
         from exp_runtime.desktop_dialogue import DialogueRenderer

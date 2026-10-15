@@ -1,4 +1,8 @@
-"""Per-game library locations, with read-only discovery of legacy SHS paths."""
+"""Per-game library locations.
+
+This fork (shshd-runtime) keeps its data under its own name, `APP_NAME`, never the original's "EXP Runtime" (or its
+older "SHS Runtime"), and does not look in the original's folders: the two are distinct apps that never open, write
+or remember each other's libraries, saves or settings (owner, 2026-10-14)."""
 import json
 import os
 from pathlib import Path
@@ -7,23 +11,25 @@ import tempfile
 
 from .games import GAMES
 
+APP_NAME = 'SHSHD Runtime'
+
 
 def user_data_directory() -> Path:
     if sys.platform == 'ios':
-        return Path.home() / 'Documents' / 'EXP Runtime'
+        return Path.home() / 'Documents' / APP_NAME
     if sys.platform == 'darwin':
         root = Path.home() / 'Library' / 'Application Support'
     elif sys.platform == 'win32':
         root = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local'))
     else:
         root = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local' / 'share'))
-    return root / 'EXP Runtime'
+    return root / APP_NAME
 
 
 def library_locations():
     root = user_data_directory()
     locations = {}
-    for directory in (root.with_name('SHS Runtime'), root):
+    for directory in (root,):
         try:
             data = json.loads((directory / 'launcher.json').read_text(encoding='utf-8'))
             if not isinstance(data, dict):
@@ -60,7 +66,7 @@ def default_library(game='shs') -> Path:
         # Preserve both source-checkout and installed-app libraries in place.
         if not getattr(sys, 'frozen', False) and Path('.shs-library/library.json').is_file():
             return Path('.shs-library').resolve()
-        for candidate in (root / 'library', root.with_name('SHS Runtime') / 'library'):
+        for candidate in (root / 'library',):
             if (candidate / 'library.json').is_file():
                 return candidate
     return root / 'libraries' / game

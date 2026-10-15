@@ -82,6 +82,16 @@ class FootballLayoutTests(unittest.TestCase):
         self.assertAlmostEqual(countdown_motion(300).alpha, 1 / 1.8)
         self.assertGreater(countdown_motion(120).angle, 0)
 
+    def test_an_explicit_frame_width_moves_the_coachs_resting_edge_with_it(self):
+        """The HD renderer's own 768-wide frame, not this module's native 320 (`desktop_football_hd.py`'s own
+        coach art is independently measured, not an SD image scaled up) -- a regression test for the coach
+        resting far short of the HD frame's own right edge instead of flush against it."""
+        s = game_session(); g = s.engine.football
+        for _ in range(14): s.tick(250)
+        s.answer(); s.tick(1)
+        self.assertEqual(help_motion(g, 92, frame_width=320).coach_x, 228)     # unchanged default: 320 - 92
+        self.assertEqual(help_motion(g, 92, frame_width=768).coach_x, 676)     # HD frame: 768 - 92
+
     def test_feedback_uses_native_yardage_next_down_scores_and_half_results(self):
         s = game_session(); g = s.engine.football
         strings = {i: f'Text {i}' for i in range(42, 180)}

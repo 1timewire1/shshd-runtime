@@ -9,6 +9,7 @@ from . import graphics as pygame
 from .app_icon import icon_surface
 from .app_info import runtime_version
 from .content import is_bundled
+from .launcher import APP_NAME
 from .desktop_dialogue import DialogueRenderer
 from .desktop_text import BitmapTextRenderer
 from .fonts import TextStyle
@@ -16,11 +17,14 @@ from .languages import TITLE_LANGUAGES
 from .games import GAMES
 from .menu import MenuFont, MenuStrings, main_button_rects
 from .ui_assets import ImagePack, LayoutBank, Rect, read_ui
-from .updates import UPDATE_MESSAGE
+from .vector_text import system_font_path
+from .app_info import UPDATE_REPOSITORY
+from .updates import update_message
 
 
 BLUE = (41, 104, 221)
 GRAY = (105, 105, 105)
+TEXT_SUPERSAMPLE = 3
 
 
 class MenuRenderer:
@@ -29,8 +33,11 @@ class MenuRenderer:
         self.canvas = pygame.Surface((320, 480)).convert(32)
         self.buttons = []
         self.pressed = None
-        self.fallback = pygame.font.Font(None, 20)
-        self.small = pygame.font.Font(None, 17)
+        # Before a library exists there's no player-supplied font yet (it's copied in during import), and no
+        # native bitmap font either -- a real installed face (same search `vector_text.py` uses for everything
+        # else) reads far more cleanly here than pygame's own built-in default font. `None` falls back to that
+        # default only if this machine has nothing matching 'arial' at all.
+        self.fallback_path = system_font_path('arial')
         if library:
             self.bank = LayoutBank.parse(read_ui(library, 14))
             self.strings = MenuStrings.load(library)
@@ -77,16 +84,33 @@ class MenuRenderer:
             # Desktop metadata is UTF-8, but Android's supplied bitmap fonts
             # only cover ASCII. Keep translated titles/language names intact;
             # this menu-only fallback never changes story layout or saves.
-            font = self.unicode_font(size) if self.library else self.small if size < 14 else self.fallback
+            if self.library:
+                font, hq = self.unicode_font(size), self.unicode_font(size * TEXT_SUPERSAMPLE)
+            else:
+                font, hq = self.fallback_font(size), self.fallback_font(size * TEXT_SUPERSAMPLE)
             y, line = rect.y, ''
             for word in (text + ' \n').split(' '):
                 if word == '\n' or (line and font.size(line + word)[0] > rect.width):
-                    image = font.render(line.rstrip(), True, color)
-                    self.canvas.blit(image, (rect.centerx - image.get_width() / 2 if center else rect.x, y))
+                    stripped = line.rstrip()
+                    width, height = font.size(stripped)
+                    if width > 0 and height > 0:
+                        image = pygame.transform.smoothscale(hq.render(stripped, True, color), (width, height))
+                        self.canvas.blit(image, (rect.centerx - width / 2 if center else rect.x, y))
                     y += font.get_linesize() + 3
                     line = ''
                 line += word + ' '
         self.canvas.set_clip(clip)
+
+    @lru_cache(maxsize=16)
+    def fallback_font(self, size):
+        # Before a library exists there's no player-supplied font yet (it's copied in during import), and no
+        # native bitmap font either -- a real installed face (same search `vector_text.py` uses for everything
+        # else) reads far more cleanly here than pygame's own built-in default font. `None` falls back to that
+        # default only if this machine has nothing matching 'arial' at all. Each label keeps its own size (this
+        # fork; one 20 px face for every size overflowed the setup and chooser text). The canvas is native
+        # 320x480 and smoothscaled up afterward, so `label` renders each line TEXT_SUPERSAMPLE times larger and
+        # downscales it -- the same trade `desktop_badge_hd.py` makes for HD badge text.
+        return pygame.font.Font(self.fallback_path, round(size + 1))
 
     @lru_cache(maxsize=8)
     def unicode_font(self, size):
@@ -184,7 +208,7 @@ class MenuRenderer:
         if screen == 'main':
             self.main(app)
         elif screen == 'games':
-            self.panel('EXP Runtime', back=False)
+            self.panel(APP_NAME, back=False)
             self.canvas.blit(icon_surface(64), (128, 0))
             self.label('Choose a game', (25, 128, 270, 30), size=20, center=True)
             for index, (key, game) in enumerate(GAMES.items()):
@@ -195,15 +219,32 @@ class MenuRenderer:
                            (25, y + 44, 270, 32), color=GRAY, center=True)
             self.label('Each game uses its own assets, episodes and saves.',
                        (30, 377, 260, 45), color=GRAY, center=True)
+            self.button('Bulk Import', (12, 436, 143, 29), ('bulk',))
             self.button('Options', (165, 436, 143, 29), ('options',))
+        elif screen == 'bulk':
+            # This fork's first-boot page: one .zip/.rar holding both games' files (staged_import.py).
+            self.panel('Bulk Import')
+            self.canvas.blit(icon_surface(64), (128, 0))
+            self.label('Bring your games', (25, 123, 270, 30), size=20)
+            self.label('Choose the one ZIP or RAR file that holds your game files: the SHS APK, the SHS HD '
+                       'and Cause of Death IPAs, the font, and the episode folders.',
+                       (25, 160, 268, 110), color=GRAY)
+            self.label(('Choose it below.' if app.file_picker else 'Drag it here, or choose it below.')
+                       + ' Back leads to each game\'s own setup.', (25, 268, 268, 55), color=GRAY)
+            if not app.file_picker:
+                self.label('Or put it in the import folder beside the app before starting it.',
+                           (25, 323, 268, 40), size=11, color=GRAY)
+            self.button('Choose File', (85, 370, 150, 32), ('browse', 'bulk'))
         elif screen == 'setup':
             self.panel(app.game_title)
             self.label('Bring your game', (25, 123, 270, 30), size=20)
             self.label(f'Choose your {GAMES[app.selected_game].SOURCES}. It includes the base assets and bundled episodes.',
-                       (25, 169, 265, 95), color=GRAY)
-            self.label('You can add EXP files or ZIP/RAR archives afterward. Choose your files below.' if app.file_picker else
-                       'Add EXP files, ZIP/RAR archives or folders afterward. Drag files here, or browse below.',
-                       (25, 265, 265, 85), color=GRAY)
+                       (25, 169, 265, 66), color=GRAY)
+            self.label(('You can add EXP files or ZIP/RAR archives afterward. Choose your files below.' if app.file_picker else
+                        'Add EXP files, ZIP/RAR archives or folders afterward. Drag files here, or browse below.')
+                       + (' Add your HD (iPad) ipa alongside the APK too, if you have one, for HD art.'
+                          if app.selected_game == 'shs' else ''),
+                       (25, 238, 265, 118), color=GRAY)
             self.button('Choose Game', (30, 362, 124, 32), ('browse', 'apk'))
             self.button('Open Library', (166, 362, 124, 32), ('browse', 'library'))
         elif screen == 'episodes':
@@ -228,10 +269,11 @@ class MenuRenderer:
                 if y + height <= clip.top or y >= clip.bottom:
                     continue
                 if record is None:
-                    # Native category strip: pack 16 frame 76, 296 x 12,
-                    # with registry font 2. Padding makes the fold target
-                    # usable with a mouse while retaining the original art.
-                    self.canvas.blit(self.art.frame(16, 76), (12, y + 6))
+                    # Native category strip: pack 16 frame 73 (blue, 296 x 12) or, for Mega Packs only, frame 76
+                    # (the same strip, orange) -- with registry font 2. Padding makes the fold target usable with
+                    # a mouse while retaining the original art.
+                    strip = 76 if section.title == self.strings[82] else 73
+                    self.canvas.blit(self.art.frame(16, strip), (12, y + 6))
                     expanded = bool(app.query) or section.key in app.expanded_groups
                     points = ((18, y + 9), (24, y + 9), (21, y + 15)) if expanded else (
                         (18, y + 8), (18, y + 16), (24, y + 12))
@@ -304,11 +346,13 @@ class MenuRenderer:
                     self.label(label, (31, y + 5, 147, 30), size=20)
                     self.button('On' if value else 'Off', (213, y, 78, 29), ('toggle', setting))
             y = 208 if app.state is not None else 120
-            self.label('Update checks', (31, y + 5, 173, 30), size=16)
-            self.button('On' if app.settings.check_for_updates else 'Off', (213, y, 78, 29), ('toggle_updates',))
+            if UPDATE_REPOSITORY is not None:          # only with a release source (app_info)
+                self.label('Update checks', (31, y + 5, 173, 30), size=16)
+                self.button('On' if app.settings.check_for_updates else 'Off', (213, y, 78, 29), ('toggle_updates',))
             if app.state is None:
-                self.label('Check for newer releases when EXP Runtime starts. This setting applies to both games.',
-                           (31, 175, 258, 100), color=GRAY)
+                if UPDATE_REPOSITORY is not None:
+                    self.label(f'Check for newer releases when {APP_NAME} starts. This setting applies to both games.',
+                               (31, 175, 258, 100), color=GRAY)
             elif app.paused_menu:
                 self.button('Cheats', (30, 257, 260, 34), ('cheats',))
                 self.label('Runtime save slot', (31, 298, 258, 25), color=GRAY)
@@ -330,7 +374,13 @@ class MenuRenderer:
             self.label('Green: gain or correct answer.\nRed: loss, wrong answer, or no gain where another answer gains.\nAmber: mixed effects.',
                        (30, 184, 260, 120), color=GRAY)
             self.label('Includes classroom and word quizzes, and short sequences with delayed rewards. Uncertain outcomes stay unmarked.',
-                       (30, 321, 260, 95), color=GRAY)
+                       (30, 284, 260, 80), color=GRAY)
+            self.label('Ask to skip mini-games', (31, 372, 170, 30), size=20)
+            self.button('On' if app.state.skip_minigames else 'Off', (213, 370, 78, 29),
+                        ('toggle', 'skip_minigames'))
+            self.label('Football and word games first ask: Win, Lose or Play.', (30, 404, 260, 24), color=GRAY)
+            self.label('Skip ad intros', (31, 430, 170, 30), size=20)
+            self.button('On' if app.state.skip_ad_intros else 'Off', (213, 428, 78, 29), ('toggle', 'skip_ad_intros'))
         elif screen == 'title_languages':
             self.panel('Episode Titles')
             self.label('Choose episode names where translations are available. Story text stays in the language of each supplied episode.',
@@ -365,12 +415,12 @@ class MenuRenderer:
             self.label('Add EXP files or ZIP/RAR archives in Options using Files. Play/Resume lists your installed episodes.' if app.file_picker else
                        'Add EXP files or ZIP/RAR archives in Options, or drop files and folders onto the menu. Play/Resume lists your episodes.',
                        (29, 235, 262, 100), color=GRAY)
-            self.label(f'EXP Runtime v{runtime_version()}', (29, 334, 262, 25), color=GRAY)
+            self.label(f'SHSHD Runtime v{runtime_version()}', (29, 334, 262, 25), color=GRAY)
             self.label('Independent game engine.', (29, 361, 262, 22), size=11, color=GRAY)
             self.button('GitHub Project', (30, 390, 260, 29), ('project',), pressed=app.pressed)
         elif screen == 'browser':
-            self.panel({'apk': 'Choose Game', 'music_apk': 'Add APK Music',
-                        'episodes': 'Add Episodes', 'library': 'Open Library'}[app.browser_kind])
+            self.panel({'apk': 'Choose Game', 'music_apk': 'Add APK Music', 'episodes': 'Add Episodes',
+                        'library': 'Open Library', 'bulk': 'Bulk Import'}[app.browser_kind])
             pygame.draw.rect(self.canvas, (230, 236, 244), (19, 110, 282, 37), border_radius=4)
             self.label(app.path_text, (24, 114, 272, 30), size=11)
             self.buttons.append((pygame.Rect(19, 110, 282, 37), ('path',)))
@@ -393,21 +443,25 @@ class MenuRenderer:
             if app.browser_kind in ('episodes', 'library'):
                 self.button('Use This Folder', (162, 436, 146, 29), ('folder',))
         if app.busy:
-            self.overlay('Importing content', 'Checking and copying your files...')
+            if app.job_kind == 'previews':
+                self.overlay('Preparing episodes', app.progress_text)
+            else:
+                self.overlay('Importing content', 'Checking and copying your files...')
             self.buttons = []
             # Small animated progress indicator; work runs outside the UI thread.
             x = 55 + round((math.sin(pygame.time.get_ticks() / 250) + 1) * 90)
             pygame.draw.circle(self.canvas, BLUE, (x, 290), 5)
         elif app.update_prompt is not None:
-            self.confirmation(UPDATE_MESSAGE)
+            self.confirmation(update_message(app.update_prompt.version, can_quit=app.can_quit), single=not app.can_quit)
         elif app.message:
             self.overlay(app.game_title, app.message)
             self.buttons = []
             self.button('OK', (121, 355, 78, 29), ('dismiss',))
         return self.canvas
 
-    def confirmation(self, message):
-        """Original two-button menu skin, with No on the left and Yes right.
+    def confirmation(self, message, *, single=False):
+        """Original two-button menu skin, with No on the left and Yes right (`single`: one OK, centred, which
+        dismisses; the iOS update notice).
 
         SHSWidgetMenu::generateNewMenu/finalizeMenu select header 33,
         footer 39 and orange normal/held buttons 72/73 for this menu style.
@@ -422,17 +476,26 @@ class MenuRenderer:
             self.layout(33, Rect(9, 155, 302, 56))
             footer = Rect(9, 281, 302, 43)
             self.layout(39, footer)
-            self.label('EXP Runtime', (24, 166, 272, 36), size=20, center=True)
-            self.label(message, (24, 219, 266, 54), size=16, color=GRAY, center=True)
+            self.label(APP_NAME, (24, 166, 272, 36), size=20, center=True)
+            # This fork's longer update text: a smaller size over the whole space between header and footer.
+            self.label(message, (24, 207, 272, 72), size=13, color=GRAY, center=True)
             # LayoutBank uses flattened one-based IDs: nodes 1/2 are the
             # footer art and separator, and nodes 3/4 are its button regions.
+            if single:
+                left, right = self.bank.rectangle(39, 3, footer), self.bank.rectangle(39, 4, footer)
+                x = round((left.x + right.x + right.width) / 2 - left.width / 2)
+                self.button('OK', (x, left.y, left.width, left.height), ('update_no',), selected=True)
+                return
             for index, role, command in ((3, 26, 'update_no'), (4, 25, 'update_yes')):
                 rect = self.bank.rectangle(39, index, footer)
                 self.button(self.strings[role], (rect.x, rect.y, rect.width, rect.height),
                             (command,), selected=True)
         else:
             # No game files exist yet; retain the launcher's authored fallback.
-            self.overlay('EXP Runtime', message)
+            self.overlay(APP_NAME, message)
+            if single:
+                self.button('OK', (121, 355, 78, 29), ('update_no',))
+                return
             self.button('No', (34, 355, 78, 29), ('update_no',))
             self.button('Yes', (208, 355, 78, 29), ('update_yes',))
 

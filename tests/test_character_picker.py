@@ -39,6 +39,18 @@ class CharacterPickerTests(unittest.TestCase):
         s.advance()
         self.assertEqual(s.answer().request.args, (0,))  # Initial portrait is selected.
 
+    def test_each_game_plays_its_own_swap_and_confirm_sounds(self):
+        for game, sounds in (('shs', (8013, 8010)), ('cod', (8005, 8005))):
+            with self.subTest(game=game):
+                r = picker_resources(); r.library.game_id = game
+                s = Session(r); s.advance()
+                s.answer(0)                                   # the front portrait: no swap, no sound
+                self.assertEqual(s.engine.sound_serial, 0)
+                s.answer(2)
+                swap = s.engine.sound_id
+                s.answer()
+                self.assertEqual((swap, s.engine.sound_id), sounds)
+
     def test_swaps_keep_identity_and_fixed_hits_with_elapsed_animation(self):
         picker = CharacterPicker.start([7, 29, 101, 300, 12])
         picker.select(3)
@@ -97,6 +109,43 @@ class CharacterPickerTests(unittest.TestCase):
             invalid['engine']['character_picker'][key] = value
             with self.assertRaises(SaveError):
                 Session.from_snapshot(r, invalid)
+
+
+class CodPickerRendererTests(unittest.TestCase):
+    def test_box_title_check_button_and_hint(self):
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import pygame
+        from types import SimpleNamespace
+        from exp_runtime.desktop_picker import CodCharacterPickerRenderer
+        pygame.init()
+        self.addCleanup(pygame.quit)
+        pygame.display.set_mode((8, 8))
+        r = picker_resources(); r.library.game_id = 'cod'
+        s = Session(r); s.advance()
+
+        def solid(colour, size):
+            image = pygame.Surface(size, pygame.SRCALPHA); image.fill(colour)
+            return image
+        boxes, titles = [], []
+        art = SimpleNamespace(
+            game_id=lambda: 'cod', cod_hd_common=lambda: object(), image=lambda asset: None,
+            background_origin=lambda *_: (160, 180),
+            box=lambda canvas, rect, theme, alpha=255, scale=1: boxes.append(((rect.x, rect.y, rect.width, rect.height), alpha, scale)),
+            frame_scaled=lambda pack, frame, k: solid((frame, 0, 0, 255), (20 * k, 20 * k)),
+            hd_portrait=lambda asset, flag, k: (solid((0, 0, 255, 255), (20 * k, 20 * k)), 0))
+        text = SimpleNamespace(layout=lambda *a: SimpleNamespace(ink_bounds=(0, 0, 10, 10)),
+                               draw_layout=lambda canvas, name, layout, x, y, scale=1: titles.append((name, x, y)))
+        renderer = CodCharacterPickerRenderer(r, text, art)
+        renderer.hint = 'Hint'
+        self.assertTrue(renderer.available())
+        buttons = renderer.draw(None, s)
+        U = renderer.U
+        self.assertEqual(boxes, [((0, 120, 320, 240), 243, U)])
+        # The title's ink is centred at (160, 112); the check button is frame 41 at (205, 347).
+        self.assertEqual(titles, [('PajamaHip26', (160 - 5) * U, (112 - 5) * U)])
+        self.assertEqual(renderer.canvas.get_at((210 * U, 352 * U))[:3], (41, 0, 0))
+        self.assertEqual(renderer.footer_text, 'Hint')
+        self.assertEqual(buttons, [(pygame.Rect(-32, 422, 92, 58), ('menu',))])
 
 
 @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user content unavailable')

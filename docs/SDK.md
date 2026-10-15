@@ -1,47 +1,47 @@
-# EXP Runtime Python components
+# SHSHD Runtime Python components
 
-Starting with **v0.5.0**, EXP Runtime's Python code is distributed in five
-component wheels plus a small `exp-runtime`
-umbrella wheel. All components use the same `exp_runtime` import namespace;
-they remain one project, repository, version and uv workspace. No game
-behavior or renderer is copied between packages.
+SHSHD Runtime keeps upstream exp-runtime's component layout (from its v0.5.0): five component wheels
+plus a small `shshd-runtime` umbrella wheel. All components use the same `exp_runtime` import namespace
+as upstream; they remain one project, repository, version and uv workspace. No game behavior or
+renderer is copied between packages. Do not install upstream's `exp-runtime` distributions into the
+same environment: both fill that one namespace.
 
 ## Choose an install
 
-Version-tag CI publishes all six distributions to PyPI after the required
-[Trusted Publishing setup](DISTRIBUTION.md#pypi-publishing). Once that release
-is available, select the parts you need:
+This fork does not publish to PyPI. Each version-tag release attaches all six wheels (with SHA-256
+checksums) to its GitHub release; download them into one folder (`./wheels` below) and select the parts
+you need:
 
 | pip requirement | Installed functionality |
 | --- | --- |
-| `exp-runtime` or `exp-runtime[tools]` | EXP reader, KiWi decoder, native resource parsers and file CLI; no engine, games, Pillow or Pygame |
-| `exp-runtime[engine]` | File tools plus VM, sessions, libraries and common layout; no game adapters or graphics dependencies |
-| `exp-runtime[engine,shs]` | Headless engine with SHS and font support; no CoD or shared player |
-| `exp-runtime[engine,cod]` | Headless engine with CoD and font support; no SHS or shared player |
-| `exp-runtime[engine,shs,cod]` | Headless engine with both games |
-| `exp-runtime[player]` | Desktop player with both games by default |
-| `exp-runtime[desktop]` | Compatibility alias for the full desktop player install |
+| `shshd-runtime` or `shshd-runtime[tools]` | EXP reader, KiWi decoder, native resource parsers and file CLI; no engine, games, Pillow or Pygame |
+| `shshd-runtime[engine]` | File tools plus VM, sessions, libraries and common layout; no game adapters or graphics dependencies |
+| `shshd-runtime[engine,shs]` | Headless engine with SHS and font support; no CoD or shared player |
+| `shshd-runtime[engine,cod]` | Headless engine with CoD and font support; no SHS or shared player |
+| `shshd-runtime[engine,shs,cod]` | Headless engine with both games |
+| `shshd-runtime[player]` | Desktop player with both games by default |
+| `shshd-runtime[desktop]` | Compatibility alias for the full desktop player install |
 
 For example:
 
 ```sh
-python -m pip install 'exp-runtime[engine,cod]'
+python -m pip install --find-links ./wheels 'shshd-runtime[engine,cod]==1.0.0'
 ```
 
 Pip uses standard wheel metadata; it does not need uv or workspace support.
 `shs` and `cod` extras each pull in the engine automatically. Game assets still
 come from the user, and import/save formats remain unchanged.
 
-The umbrella's bare install now supplies file tools. Existing app users should
-keep the `[desktop]` extra or choose `[player]`. `exp-tool` and `shs-tool` belong
-to the formats wheel; `exp-runtime` and `shs` belong to the player wheel.
+The umbrella's bare install supplies file tools; app users choose `[player]` or `[desktop]`.
+`shshd-tool` (with the aliases `exp-tool` and `shs-tool`) belongs to the formats wheel; `shshd-runtime`
+(with the aliases `exp-runtime` and `shs`) belongs to the player wheel.
 
-The independently installable distributions are `exp-runtime-formats`,
-`exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs` and
-`exp-runtime-cod`. For a desktop player containing just CoD:
+The independently installable distributions are `shshd-runtime-formats`,
+`shshd-runtime-engine`, `shshd-runtime-player`, `shshd-runtime-shs` and
+`shshd-runtime-cod`. For a desktop player containing just CoD:
 
 ```sh
-python -m pip install 'exp-runtime-player[desktop]' exp-runtime-cod
+python -m pip install --find-links ./wheels 'shshd-runtime-player[desktop]==1.0.0' 'shshd-runtime-cod==1.0.0'
 ```
 
 The launcher lists installed game adapters. Calling an uninstalled game's
@@ -76,7 +76,7 @@ Test your own project against the local wheels:
 
 ```sh
 python -m venv /tmp/my-exp-project
-/tmp/my-exp-project/bin/python -m pip install --no-index --find-links dist/packages 'exp-runtime[tools]'
+/tmp/my-exp-project/bin/python -m pip install --no-index --find-links dist/packages 'shshd-runtime[tools]'
 ```
 
 For a game/player install, omit `--no-index` to obtain third-party dependencies,
@@ -84,8 +84,8 @@ or also pass `--find-links build/package-test-dependencies` after running the
 test tool. On Windows use the virtual environment's `Scripts/python.exe`.
 Keep all six wheels together so pip can resolve the selected components.
 Components are pinned to the same release version; mixing versions is rejected
-by the dependency resolver. Until publication, plain index installs do not
-refer to the new local component builds.
+by the dependency resolver. Plain index installs never find these builds:
+the fork's distributions are not on PyPI.
 
 ## Read and extract an EXP
 
@@ -107,8 +107,8 @@ returns all KiWi programs indexed by resource ID. Malformed content raises
 `ContentError`; invalid bytecode raises `KiwiFormatError`.
 
 ```sh
-exp-tool inspect episode.exp
-exp-tool extract episode.exp --output extracted-resources
+shshd-tool inspect episode.exp
+shshd-tool extract episode.exp --output extracted-resources
 ```
 
 Extraction creates a new directory of `<resource-id>.bin` files. It refuses

@@ -62,7 +62,8 @@ class MenuFont:
     def parse(cls, data):
         r = _Reader(data)
         space, style, tracking, count, height = r.unpack('bBbhb')
-        if space < 0 or style != 0 or not 0 < count <= 256 or height <= 0:
+        # Style 0 is Android's font; the HD app's copies (resources 593 / 594, twice the size) are style 1.
+        if space < 0 or style not in (0, 1) or not 0 < count <= 256 or height <= 0:
             raise UIAssetError('Unsupported embedded menu font')
         codes = r.take(count).decode('latin-1')
         if len(set(codes)) != count or r.integer() != -1 or r.count() != count:

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from exp_runtime.content import EpisodeResources
 from exp_runtime.dialogue import DialogueLayout, dialogue_styles
+from exp_runtime.fonts import TextStyle, layout_text
 from exp_runtime.runtime import SaveError, Session
 from exp_runtime.speaker_names import NameFontState, SpeakerNames
 from exp_runtime.ui_assets import Rect
@@ -74,9 +75,21 @@ class SharedDialogueTests(unittest.TestCase):
                     d = details(mode)
                     layout.prepare_name(d, names)
                     page = layout.page(d, names=names)
+                    expected_step = 17 if mode == 4 else 21
+                    if game == 'cod':
+                        # CoD's own SHSUIDialog (docs/COD.md, "Dialogue geometry"): typed lines sit 4 up and left of
+                        # the text layer (plus the photo-measured baseline drop), and narration is measured and
+                        # drawn in its own font, wrapped at 220, from (30, 120).
+                        from exp_runtime.dialogue import COD_BASELINE_DROP, COD_TYPING_PAD
+                        if mode == 4:
+                            style = TextStyle(16, 9)
+                            measured = layout_text(reference.font('TrebuchetMS_Italic16'), d['text'], 220, style)
+                            width = max(120, (int(measured.width) + 2) // 2 * 2)
+                            height = (int(measured.height) + 5) // 2 * 2
+                            box, end, expected_step = Rect(25, 115, width + 10, height + 10), page.end, 25
+                        origin = (origin[0] - COD_TYPING_PAD, origin[1] - COD_TYPING_PAD + COD_BASELINE_DROP)
                     self.assertEqual((page.box, page.body_origin, page.end), (box, origin, end))
                     self.assertEqual(page.name_scale, .9)
-                    expected_step = 17 if mode == 4 else 21
                     self.assertEqual([line.y for line in page.body.lines],
                                      [n * expected_step for n in range(len(page.body.lines))])
                     if mode != 4:
@@ -108,6 +121,7 @@ class SharedDialogueTests(unittest.TestCase):
         session.answer()
         return session
 
+    @unittest.skip("exp-runtime's own IPA save versions 13-15: this fork numbers saves independently (docs/RUNTIME.md)")
     def test_v14_ipa_reflows_saved_read_offset_and_rebuilds_only_missing_name_state(self):
         for game in ('shs', 'cod'):
             with self.subTest(game=game):
@@ -136,6 +150,7 @@ class SharedDialogueTests(unittest.TestCase):
                 with self.assertRaisesRegex(SaveError, 'page does not match'):
                     Session.from_snapshot(session.resources, current)
 
+    @unittest.skip("exp-runtime's own IPA save versions 13-15: this fork numbers saves independently (docs/RUNTIME.md)")
     def test_v13_ipa_reflow_uses_saved_basis_without_applying_current_name_twice(self):
         session = self.session()
         old = session.snapshot()
@@ -147,6 +162,7 @@ class SharedDialogueTests(unittest.TestCase):
         self.assertEqual(restored.dialogue_page(), session.dialogue_page())
         self.assertEqual(restored.vm.snapshot(), session.vm.snapshot())
 
+    @unittest.skip("exp-runtime's own IPA save versions 13-15: this fork numbers saves independently (docs/RUNTIME.md)")
     def test_v15_ipa_reflows_with_native_font_metrics_but_preserves_and_validates_history(self):
         from exp_runtime.background import BackgroundPan
         for game in ('shs', 'cod'):

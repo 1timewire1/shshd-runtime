@@ -101,7 +101,7 @@ class GridTests(unittest.TestCase):
         self.assertEqual(restored.engine.random, s.engine.random)
         self.assertEqual(restored.engine.word_grid.selection, [0])
         current = restored.snapshot()
-        self.assertEqual(current['version'], 21)
+        self.assertEqual(current['version'], 25)
         for key, value in (('pop_ms', {}), ('explosions', []), ('glint_ms', 100_000_000)):
             self.assertEqual(current['engine']['word_grid'].pop(key), value)
         self.assertEqual(current['engine']['word_grid'], old['engine']['word_grid'])
@@ -190,6 +190,9 @@ class GridTests(unittest.TestCase):
         s.grid_pointer('move', 2)  # Diagonal A -> T; submit without mouse-up.
         self.assertEqual((g.score, g.starts), (100, [3]))
         self.assertEqual(g.selection, [])
+        # The word's cells are kept for the HD presentation; they are not part of a save.
+        self.assertEqual((g.found_cells, g.found_serial), ([0, 4, 2], 1))
+        self.assertNotIn('found_cells', s.snapshot()['engine']['word_grid'])
         self.assertEqual(s.engine.sound_ids, [8110, 8111])
         s.grid_pointer('up')
         # Previously used starting cell cannot score a second time.

@@ -25,6 +25,7 @@ class DialoguePortrait:
     asset_id: int
     mode: int
     theme: int
+    expression: int = 0         # the line's own expression (HD's emotion effects key on it)
 
     @classmethod
     def from_details(cls, details, variants):
@@ -32,8 +33,8 @@ class DialoguePortrait:
         if details['presentation_mode'] not in (1, 2) or character < 0:
             return None
         art = variants[character]
-        return cls(character, art[details['expression'] % len(art)],
-                   details['presentation_mode'], details['theme'])
+        expression = details['expression']
+        return cls(character, art[expression % len(art)], details['presentation_mode'], details['theme'], expression)
 
     def validate(self):
         if self.character_id < 0 or self.asset_id < 0 or self.mode not in (1, 2):
@@ -71,6 +72,9 @@ class DialogueAnimation:
     finish_step: int = 0
     wobble_direction: int = 0
     relationship: RelationshipAnimation | None = None
+    # Since the dialogue appeared, uncapped (presentation_ms stops at EXPRESSION_END_MS): HD's emotion effects and
+    # notice letters run past it. Page turns do not restart it.
+    age_ms: int = 0
     continue_ms: int = 0
     box_grow: bool = False
     native_lifecycle: bool = True
@@ -239,6 +243,7 @@ class DialogueAnimation:
         return max(0, elapsed_ms * LETTER_HZ // 1000 - first + 1)
 
     def tick(self, elapsed_ms):
+        self.age_ms += elapsed_ms
         self.presentation_ms = min(EXPRESSION_END_MS, self.presentation_ms + elapsed_ms)
         if (self.native_lifecycle and (self.box_grow or self.wobble_direction)
                 and not self.page_turn and not self.visuals_finished and
@@ -297,6 +302,7 @@ class DialogueAnimation:
     def settle(self):
         """Old saves showed all text; migrate without replaying the entrance."""
         self.elapsed_ms = self.duration_ms
+        self.age_ms = max(self.age_ms, 60000)
         self.revealed, self.complete = self.text_length, True
         self.continue_ms = CONTINUE_MS
         self.presentation_ms = EXPRESSION_END_MS

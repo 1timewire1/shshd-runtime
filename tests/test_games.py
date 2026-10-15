@@ -28,9 +28,10 @@ from test_vm import program
 LOCAL_COD_IPA = Path('decomp/cod/Cause+of+Death+(World)+1.3.4.ipa')
 
 
-def make_cod_ipa(path, episode, *, missing=None, info=None):
+def make_cod_ipa(path, episode, *, missing=None, info=None, free=False):
     # Reuse only authored image/layout fixtures and Pillow's own default font.
     # No original game bytes, executable, proprietary font or art is included.
+    # `free` lays the same assets out like the 1.4.7 free edition (cod/assets.py, `logical_members`).
     assets = {12: episode, 13: string_bank([f'CoD string {i}' for i in range(257)]),
               14: ASSET_DATA[13], 42: b'CoD base art', 291: ImageFont.load_default().font_bytes}
     for key in (6, 7, 8, 9):
@@ -41,9 +42,24 @@ def make_cod_ipa(path, episode, *, missing=None, info=None):
         assets[cod] = ASSET_DATA[shs]
     assets[272] = image_pack(count=16, pixels=b'\x01\x01\xff\x01\x02\x03' * 16)
     assets.update({key: f'CoD music {key}'.encode() for key in range(8201, 8210)})
+    identifier = 'com.ea.causeofdeath.bv'
+    if free:
+        # True: the .bv build in the reference set (language banks at 15-18, the rest +5). 'compact': the build
+        # upstream PR joshrmcdaniel/exp-runtime#1 describes (no language banks, the rest +1).
+        identifier = 'com.ea.causeofdeathfree.bv'
+        shift = 1 if free == 'compact' else 5
+        moved = {key: data for key, data in assets.items() if key <= 12 or key >= 1000}
+        moved[13] = b'retained older Volume One'
+        moved[14] = assets[13]
+        if shift == 5:
+            for key, language in zip(range(15, 19), ('French', 'Italian', 'German', 'Spanish')):
+                moved[key] = string_bank([f'{language} {i}' for i in range(257)])
+        moved.update({key + shift: data for key, data in assets.items() if 14 <= key < 1000})
+        stored = {13: 14, **{key: key + shift for key in range(14, 1000)}}
+        assets, missing = moved, stored.get(missing, missing)
     with ZipFile(path, 'w') as package:
         package.writestr(APP + 'Info.plist', plistlib.dumps(info if info is not None else dict(
-            CFBundleIdentifier='com.ea.causeofdeath.bv', CFBundleVersion='any-compatible-version')))
+            CFBundleIdentifier=identifier, CFBundleVersion='any-compatible-version')))
         for key, data in assets.items():
             if key != missing:
                 package.writestr(ASSETS + str(key), data)
@@ -87,6 +103,40 @@ class GameLibraryTests(unittest.TestCase):
             with self.assertRaises(ContentError):
                 b.read_asset(528)  # Host font roles do not become script aliases.
             self.assertEqual(MenuStrings.load(cod)[125], 'CoD string 117')
+
+    def test_free_edition_layout_reads_under_the_1_3_4_ids(self):
+        make_cod_ipa(self.cod, self.episode, free=True)
+        manifest = import_game(self.cod, [], self.root / 'free', game='cod')
+        self.assertEqual(manifest['ipa']['app']['CFBundleIdentifier'], 'com.ea.causeofdeathfree.bv')
+        with ContentLibrary(self.root / 'free') as cod:
+            volume_one = cod.open_episode('Volume_One.exp')   # resource 12, not the retained copy at 13
+            self.assertEqual(volume_one.archive.data, self.episode)
+            self.assertEqual(cod.read_asset(42), b'CoD base art')
+            self.assertEqual(cod.read_asset(8201), b'CoD music 8201')
+            self.assertEqual(cod.read_ui_resource(528), ASSET_DATA[526])      # 292, stored at 297
+            self.assertEqual(cod.read_asset(268), ASSET_DATA[267])            # portrait mask, stored at 273
+            self.assertEqual(MenuStrings.load(cod)[125], 'CoD string 117')   # English bank 14, not French 15
+            self.assertEqual(cod.read_asset(297), ASSET_DATA[531])            # stored at 302
+            for stored_only in (17, 18, 298, 302):
+                with self.subTest(resource=stored_only), self.assertRaises(ContentError):
+                    cod.read_asset(stored_only)
+        for missing in (13, 14, 268, 294):
+            make_cod_ipa(self.cod, self.episode, missing=missing, free=True)
+            with self.subTest(missing=missing), self.assertRaises(ContentError):
+                import_game(self.cod, [], self.root / 'missing')
+            self.assertFalse((self.root / 'missing').exists())
+
+    def test_the_free_build_without_language_banks_reads_under_the_1_3_4_ids_too(self):
+        make_cod_ipa(self.cod, self.episode, free='compact')
+        import_game(self.cod, [], self.root / 'compact', game='cod')
+        with ContentLibrary(self.root / 'compact') as cod:
+            self.assertEqual(cod.open_episode('Volume_One.exp').archive.data, self.episode)
+            self.assertEqual(MenuStrings.load(cod)[125], 'CoD string 117')   # strings stored at 14
+            self.assertEqual(cod.read_ui_resource(528), ASSET_DATA[526])      # 292, stored at 293
+            self.assertEqual(cod.read_asset(268), ASSET_DATA[267])            # portrait mask, stored at 269
+            self.assertEqual(cod.read_asset(297), ASSET_DATA[531])            # stored at 298
+            with self.assertRaises(ContentError):
+                cod.read_asset(298)
 
     def test_wrong_game_missing_assets_and_spoofed_manifest_are_rejected(self):
         target = self.root / 'target'
@@ -176,20 +226,28 @@ class GameServiceTests(unittest.TestCase):
 
 
 class LibraryLocationTests(unittest.TestCase):
-    def test_legacy_locations_migrate_without_losing_either_game(self):
+    def test_the_original_apps_folders_are_never_read_or_written(self):
+        # This fork is a distinct app (SHSHD Runtime): the original's launcher files and libraries, in "EXP Runtime"
+        # and its older "SHS Runtime", are left alone, and each game's library is remembered in this app's own folder.
+        from exp_runtime.launcher import APP_NAME
+        self.assertEqual(APP_NAME, 'SHSHD Runtime')
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            old = root / 'SHS Runtime'; old.mkdir()
-            legacy = json.dumps(dict(version=1, library=str(root / 'existing-shs')))
-            (old / 'launcher.json').write_text(legacy)
-            with patch('exp_runtime.launcher.user_data_directory', return_value=root / 'EXP Runtime'):
-                self.assertEqual(default_library('shs'), root / 'existing-shs')
+            originals = {}
+            for name, data in (('SHS Runtime', dict(version=1, library=str(root / 'original-shs'))),
+                               ('EXP Runtime', dict(version=2, libraries={'cod': str(root / 'original-cod')}))):
+                (root / name).mkdir()
+                originals[name] = json.dumps(data)
+                (root / name / 'launcher.json').write_text(originals[name])
+            with patch('exp_runtime.launcher.user_data_directory', return_value=root / APP_NAME):
+                self.assertEqual(default_library('shs'), root / APP_NAME / 'libraries' / 'shs')
+                self.assertEqual(default_library('cod'), root / APP_NAME / 'libraries' / 'cod')
                 remember_library(root / 'my-cod', 'cod')
                 self.assertEqual(default_library('cod'), root / 'my-cod')
-                self.assertEqual(default_library('shs'), root / 'existing-shs')
-                remember_library(root / 'new-shs', 'shs')
-                self.assertEqual(default_library('cod'), root / 'my-cod')
-            self.assertEqual((old / 'launcher.json').read_text(), legacy)
+                remember_library(root / 'my-shs', 'shs')
+                self.assertEqual((default_library('shs'), default_library('cod')), (root / 'my-shs', root / 'my-cod'))
+            for name, text in originals.items():
+                self.assertEqual((root / name / 'launcher.json').read_text(), text)
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is absent')
@@ -197,7 +255,7 @@ class GameChooserTests(unittest.TestCase):
     def setUp(self):
         GameLibraryTests.setUp(self)
         os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
-        self.preferences = patch('exp_runtime.launcher.user_data_directory', return_value=self.root / 'EXP Runtime')
+        self.preferences = patch('exp_runtime.launcher.user_data_directory', return_value=self.root / 'SHSHD Runtime')
         self.preferences.start(); self.addCleanup(self.preferences.stop)
         frozen = patch('sys.frozen', True, create=True)
         frozen.start(); self.addCleanup(frozen.stop)
@@ -208,7 +266,7 @@ class GameChooserTests(unittest.TestCase):
         self.assertEqual(app.screen, 'games')
         app.render()
         self.assertEqual({command for _, command in app.renderer.buttons},
-                         {('choose_game', 'shs'), ('choose_game', 'cod'), ('options',)})
+                         {('choose_game', 'shs'), ('choose_game', 'cod'), ('bulk',), ('options',)})
         app.choose_game('cod'); app.render()
         self.assertEqual((app.screen, app.selected_game, app.library), ('setup', 'cod', None))
         app.import_paths([self.shs])
@@ -244,6 +302,30 @@ class GameChooserTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'cannot save'): app.switch_games()
         self.assertEqual((app.screen, app.library.game_id), ('game', 'shs'))
 
+    def test_episodes_added_from_the_hd_menus_return_to_them(self):
+        from types import SimpleNamespace
+        from exp_runtime.application import Application
+        path = self.root / 'shs'
+        import_game(self.shs, [], path)
+        app = Application(path, audio=False, check_updates=False); self.addCleanup(app.close)
+        app.shell = SimpleNamespace(stage='main', enter_main=lambda **options: None,
+                                    set_switch_title=lambda title: None)
+        extra = self.root / 'Extra.exp'
+        extra.write_bytes(archive({1: metadata('Another story'), 25001: program(0x33).to_bytes()}))
+        app.screen = 'browser'
+        app.import_paths([extra]); app.job.result(timeout=10); app.tick(0)
+        self.assertEqual(app.screen, 'main')                 # the HD main menu, not the SD episode list
+        self.assertIn('Added 1 episodes', app.message)
+
+    def test_game_libraries_given_on_the_command_line_are_used_and_not_remembered(self):
+        from exp_runtime.application import Application, main
+        path = self.root / 'elsewhere'
+        app = Application(audio=False, check_updates=False, game_libraries={'cod': path}); self.addCleanup(app.close)
+        self.assertEqual(app.library_path('cod'), path)
+        self.assertNotEqual(app.library_path('shs'), path)
+        with self.assertRaises(SystemExit):
+            main(['--game-library', 'nope', str(path)])
+
     def test_switch_without_other_library_opens_chooser_and_setup_back_stays_there(self):
         from exp_runtime.application import Application
         path = self.root / 'shs'
@@ -273,7 +355,14 @@ class LocalCoDTests(unittest.TestCase):
             try:
                 for screen in ('main', 'options', 'title_languages', 'library'):
                     app.screen = screen; app.menu_age = 4000; app.render()
-                    if screen == 'main':
+                    if screen == 'main' and app.shell is not None:    # this fork: CoD's title in SHS HD's layout
+                        app.shell.enter_main(intro=True)
+                        for _ in range(120):
+                            app.shell.tick(0.016)
+                        app.shell.render()
+                        self.assertEqual([command for _, command in app.shell.hits()],
+                                         [('play',), ('airing',), ('demand',), ('more',), ('options',), ('help',)])
+                    elif screen == 'main':
                         self.assertEqual(app.buttons[3][1], ('switch_games',))
                         self.assertTrue(all(app.renderer.menu_fonts[1].glyph(c) for c in 'SwitchGame'))
                 app.selected = app.library.select('Volume_One.exp')['id']

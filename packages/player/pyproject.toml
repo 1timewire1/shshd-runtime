@@ -3,18 +3,19 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exp-runtime-player"
-version = "0.5.0"
+name = "shshd-runtime-player"
+version = "1.0.0"
 description = "Shared EXP Runtime player and native/desktop rendering"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["exp-runtime-engine[fonts]==0.5.0"]
+dependencies = ["shshd-runtime-engine[fonts]==1.0.0"]
 
 [project.optional-dependencies]
 desktop = ["pygame-ce>=2.5.7,<3"]
 
 [project.gui-scripts]
+shshd-runtime = "exp_runtime.application:main"
 exp-runtime = "exp_runtime.application:main"
 shs = "exp_runtime.application:main"
 

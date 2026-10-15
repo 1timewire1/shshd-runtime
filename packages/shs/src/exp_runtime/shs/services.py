@@ -35,24 +35,25 @@ def dispatch(self, vm, *, resource_exists=None):
         return EngineAction(action_name, request, True, dict(result=result, **details))
 
     if y == 9:
-        at_least(2)
-        if not is_survey(args):
-            return EngineAction('unhandled_yield', request, False,
-                                dict(reason=f'Unsupported survey upload type {args[1]}'))
-        response = script_response(vm, self.read_text)
-        if response is None:
-            return EngineAction('unhandled_yield', request, False,
-                                dict(reason='Unsupported survey response continuation'))
-        # Hold the submission through the local receipt. Acknowledgement
-        # follows the verified not-uploaded branch, without poll results.
-        self.message_panel = survey_confirmation()
-        return EngineAction('survey_confirmation', request, False, dict(response_pc=response.pc))
+        response = script_response(vm, self.read_text) if is_survey(args) else None
+        if response is not None:
+            # Hold the submission through the local receipt. Acknowledgement
+            # follows the verified not-uploaded branch, without poll results.
+            self.message_panel = survey_confirmation()
+            return EngineAction('survey_confirmation', request, False, dict(response_pc=response.pc))
+        # SHSScript::syscall case 9 (HD): builds the poll URL, hides the dialogue layers and starts
+        # GameModel::setDownloading (the "Loading / Please wait..." bar), and the script waits for the download.
+        # The poll server is gone, so the request fails and `finishPollDownload(false)` returns 0 to the script
+        # (nothing written to its stack); Session.tick completes it after POLL_WAIT_MS. 165 of the 195 HD
+        # episodes call it once.
+        return EngineAction('download_poll', request, False, dict(elapsed_ms=0))
     if y in (14, 21):
         # Android table entries 0009fedc/0009fef8 -> 000a00f8; SHS iOS
         # entries 0006de74/0006de90 -> 00071abc. Both complete with R=0
         # and pop the supplied frame without changing panel or game state.
         return complete('native_noop')
-    if y == 15:
+    if y == 15 and self.hd_version is None:
+        # (HD's own case 0xf, shared with 0x4c, stays in engine.py.)
         # Android 000a1bd4 and SHS iOS 0006f8d8 both select mode 3 and
         # skip a negative first word before reading speaker/body strings.
         # The prefix does not add parentheses or emphasis as service 13 does.
@@ -72,6 +73,14 @@ def dispatch(self, vm, *, resource_exists=None):
     if y == 70:
         at_least(1)
         selector = args[0]
+        if self.hd_version is not None:
+            # SHSScript::syscall case 0x46 (HD): 2 -> 2, 3 -> 6, 6 -> the app version (CFBundleVersion) in host
+            # string slot 0, 9 -> 1, 10 -> 2 when the in-app store is available, else 1 (answered as available:
+            # the photographed device's "The End" took that branch). Everything else, 11 included, is 0.
+            if selector == 6:
+                self.dynamic_strings[0] = self.hd_version
+            result = {2: 2, 3: 6, 6: 0x7ff5, 9: 1, 10: 2}.get(selector, 0)
+            return complete('query_build', result, selector=selector)
         if selector == 11:
             # 0009fe3c compares the current episode object with the native
             # weekly-episode slot. Local imports do not establish that identity.

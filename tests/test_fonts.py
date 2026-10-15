@@ -42,6 +42,22 @@ class FontTests(unittest.TestCase):
         with self.assertRaisesRegex(FontError, 'no defined glyph'):
             layout_text(self.font, 'Q', 100, self.style)
 
+    def test_low_control_bytes_degrade_to_an_invisible_space_width_gap(self):
+        # Real HD episode dialogue embeds bytes like U+0019 exactly where
+        # punctuation reads naturally ("Ben\x19s girlfriend") -- this font
+        # (sourced only from the Android APK) never defines a glyph for
+        # anything below the space at 32. Falling through to an invisible,
+        # space-width gap keeps the episode playable instead of raising;
+        # printable characters with no glyph (e.g. 'Q' above) still raise.
+        glyph = self.font.glyph('\x19')
+        self.assertEqual((glyph.width, glyph.height), (0, 0))
+        self.assertEqual(glyph.advance, self.font.glyph(' ').advance)
+        result = layout_text(self.font, 'A\x19V', 100, self.style)
+        # Zero-size glyphs are never placed (same rule real spaces use), but
+        # the gap still advances the pen -- 'A' and 'V' remain drawn.
+        self.assertEqual(len(result.glyphs), 2)
+        self.assertEqual(result.width, 6 + 3 + 6)  # A's advance + space-width gap + V
+
     def test_kerning_moves_only_drawn_glyph_and_never_changes_wrapping(self):
         result = layout_text(self.font, 'AVX', 18, self.style)
         self.assertEqual(result.width, 18)

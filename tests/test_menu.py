@@ -54,7 +54,7 @@ class MenuContractTests(unittest.TestCase):
     def test_frozen_default_never_uses_working_directory(self):
         with patch.object(sys, 'frozen', True, create=True), patch.object(sys, 'platform', 'linux'), \
                 patch.dict(os.environ, {'XDG_DATA_HOME': '/tmp/shs-test-data'}):
-            self.assertEqual(default_library(), Path('/tmp/shs-test-data/EXP Runtime/libraries/shs'))
+            self.assertEqual(default_library(), Path('/tmp/shs-test-data/SHSHD Runtime/libraries/shs'))
 
     def test_chosen_library_is_remembered_across_working_directories(self):
         with tempfile.TemporaryDirectory() as directory, \
@@ -151,6 +151,17 @@ class LibraryMenuTests(unittest.TestCase):
         restored = MenuState(self.library)
         self.assertFalse(restored.choice_hints)
         self.assertIn('Invalid player preferences', restored.warning)
+
+    def test_the_hd_backdrop_switch_defaults_on_and_survives_reopen(self):
+        state = MenuState(self.library)
+        self.assertTrue(state.hd_backdrop)
+        state.hd_backdrop = False
+        state.persist()
+        self.assertFalse(MenuState(self.library).hd_backdrop)
+        data = json.loads(state.path.read_text())
+        data['hd_backdrop'] = 'no'                      # not a bool: ignored, the default stays
+        state.path.write_text(json.dumps(data))
+        self.assertTrue(MenuState(self.library).hd_backdrop)
 
     def test_title_preferences_keep_existing_saves_and_scripts_compatible(self):
         state = MenuState(self.library)
@@ -302,7 +313,7 @@ class ApplicationTests(unittest.TestCase):
         with patch('exp_runtime.desktop_menu.runtime_version', return_value='9.8.7'), \
                 patch.object(app.renderer, 'label', wraps=app.renderer.label) as label:
             app.render()
-            self.assertIn('EXP Runtime v9.8.7', [call.args[0] for call in label.call_args_list])
+            self.assertIn('SHSHD Runtime v9.8.7', [call.args[0] for call in label.call_args_list])
         self.assertIn(('project',), [command for _, command in app.buttons])
         opener.assert_not_called()
         app.command(('project',))
@@ -413,6 +424,35 @@ class ApplicationTests(unittest.TestCase):
         app.command(('order',))
         self.assertEqual([e['titles'][0] for e in app.visible_episodes()], ['A', 'B', 'Z'])
         self.assertEqual(MenuState(app.library).order, 'title')
+
+    @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user content is unavailable')
+    def test_only_the_mega_packs_header_is_orange_the_rest_are_blue(self):
+        # Native header art (`MenuRenderer.art.frame`, sampled straight from the APK, not eyeballed) has both a
+        # blue strip (pack 16 frame 73) and an orange one (frame 76) -- but the draw code always blitted frame 76,
+        # so every category showed orange. The owner's own iPad SD screenshots confirm only "Mega Packs" is orange
+        # and every other category is blue; `episode_group` rows now pick the strip by comparing the section's
+        # title against the Mega Packs string (82) the same way `desktop_episode_list_hd.py`'s own list already
+        # does.
+        app = self.make_app(library=True)
+        source = app.library.episodes[0]
+        # `name` is overridden too: a source record the real catalog recognizes (e.g. the bundled novel bonus
+        # story) would otherwise categorize these by filename regardless of the pack/episode ids below.
+        mega = dict(source, id='f' * 64, pack_id=999901, episode_id=1, titles=['Bundled', '', '', '', ''],
+                    name='zzz_fake_bundled_test.exp', apk_member='fake_bundled.exp')
+        other = {k: v for k, v in source.items() if k != 'apk_member'}
+        other = dict(other, id='e' * 64, pack_id=999902, episode_id=1, titles=['Imported', '', '', '', ''],
+                     name='zzz_fake_imported_test.exp', builtin=None)
+        app.library.episodes = [mega, other]
+        app.show('episodes')
+        app.scope = 'all'
+        app.render()
+        sections_by_key = {section.key: section.title for section in app.episode_sections()}
+        self.assertIn(app.renderer.strings[82], sections_by_key.values())   # sanity: "mega" resolved to Mega Packs
+        colors = {sections_by_key[command[1]]: app.renderer.canvas.get_at(rect.center)[:3]
+                  for rect, command in app.renderer.buttons if command[0] == 'episode_group'}
+        self.assertEqual(tuple(colors[app.renderer.strings[82]]), (213, 138, 58))       # orange, Mega Packs only
+        other_title = next(title for title in colors if title != app.renderer.strings[82])
+        self.assertEqual(tuple(colors[other_title]), (41, 104, 221))                    # blue, every other group
 
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user content is unavailable')
     def test_language_choices_localize_titles_search_and_sort_preserving_live_game(self):

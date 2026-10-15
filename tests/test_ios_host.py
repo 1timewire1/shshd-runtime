@@ -33,7 +33,10 @@ class IOSPrototypeTests(unittest.TestCase):
             with patch.object(build_ios, 'project_version', return_value='9.8.7'):
                 build_ios.stage_metadata(path)
             found = list(Distribution.discover(path=[str(path)]))
-            self.assertEqual([(d.metadata['Name'], d.version) for d in found], [('exp-runtime', '9.8.7')])
+            # This fork's name, which app_info.runtime_version looks up (the update check needs a real version).
+            self.assertEqual([(d.metadata['Name'], d.version) for d in found], [('shshd-runtime', '9.8.7')])
+            self.assertEqual([d.version for d in Distribution.discover(name='shshd-runtime', path=[str(path)])],
+                             ['9.8.7'])
 
     def test_device_probe_uses_both_production_profiles_and_atomic_saves(self):
         spec = importlib.util.spec_from_file_location('exp_ios_probe', ROOT / 'ios/probe/exp_ios_probe.py')

@@ -68,7 +68,7 @@ def library():
         except (OSError, AttributeError):
             continue
     raise RarError('RAR support needs libarchive with RAR5 support. Install libarchive or use an '
-                   'EXP Runtime desktop download. You can also import the extracted EXP files.')
+                   'SHSHD Runtime desktop download. You can also import the extracted EXP files.')
 
 
 class RarReader:

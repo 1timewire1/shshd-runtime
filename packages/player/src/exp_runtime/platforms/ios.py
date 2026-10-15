@@ -10,6 +10,7 @@ import shutil
 import tempfile
 from types import SimpleNamespace
 
+from ..launcher import APP_NAME
 from .drawing import Backend, FrameEncoder
 
 _host = None
@@ -31,9 +32,11 @@ class Host:
         self.directory = Path(directory)
         self.update_future = None
         self.update_request = None
-        settings = (Path(library_root).parent if library_root is not None else self.directory / 'EXP Runtime') / 'settings.json'
+        settings = (Path(library_root).parent if library_root is not None else self.directory / APP_NAME) / 'settings.json'
+        # can_quit=False: an iOS app cannot quit or update itself, so the update offer only informs (an OK).
         self.app = Application(file_picker=self.pick, library_root=library_root, url_opener=self.open_url,
-                               settings_path=settings, update_fetcher=self.fetch_release, check_updates=check_updates)
+                               can_quit=False, settings_path=settings, update_fetcher=self.fetch_release,
+                               check_updates=check_updates)
         self.encoder = FrameEncoder()
         self.picker = None
         self.url = None
@@ -138,7 +141,7 @@ class Host:
             paths = [Path(path) for path in message['paths']]
             if kind == 'library':
                 if len(paths) != 1 or not paths[0].is_dir():
-                    raise ValueError('Choose one EXP Runtime library folder')
+                    raise ValueError(f'Choose one {APP_NAME} library folder')
                 self.app._attempt(lambda: self.app.open_library(paths[0], remember=True))
             else:
                 self.app._attempt(lambda: self.app.import_paths(paths))

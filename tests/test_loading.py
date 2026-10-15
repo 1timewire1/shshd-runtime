@@ -56,17 +56,18 @@ class LoadingTests(unittest.TestCase):
                     self.assertEqual(s.engine.result_cells[0], 42)
                     self.assertEqual(Session.from_snapshot(r, s.snapshot()).snapshot(), s.snapshot())
 
-    def test_zero_argument_call_does_not_invent_an_uninitialized_wait_flag(self):
+    def test_zero_argument_call_over_never_written_backing_does_not_wait(self):
+        # shshd-runtime: HD's stack is an unfilled `new short[]` made at launch (loading.loading_waits), so a
+        # slot this session never wrote reads as 0 -- the overlay shows without holding the script -- instead of
+        # stopping the episode (4_The_Great_Float_Caper).
         for dynamic in (False, True):
             with self.subTest(dynamic=dynamic):
                 s = Session(resources(dynamic_count=dynamic))
-                request = s.vm.run()
-                before = s.vm.snapshot()
-                with self.assertRaisesRegex(VMError, 'uninitialized stack word'):
-                    s.advance()
-                self.assertEqual(s.vm.pending, request)
-                self.assertEqual(s.vm.snapshot(), before)
-                self.assertIsNone(s.engine.loading)
+                s.vm.run()
+                action = s.advance()
+                self.assertEqual(action.name, 'loading')
+                self.assertFalse(s.engine.loading.blocking)
+                self.assertEqual(Session.from_snapshot(s.resources, s.snapshot()).snapshot(), s.snapshot())
 
     def test_old_unsupported_checkpoint_upgrades_without_replaying_script(self):
         for arguments, retained in (((0,), None), ((1,), None), ((), 0), ((), 407)):
@@ -106,7 +107,8 @@ class LoadingTests(unittest.TestCase):
             for dynamic in (False, True):
                 r = resources(dynamic_count=dynamic, retained=wait)
                 s = Session(r); s.advance()
-                changes = [(('vm', 'stack', s.vm.sp), None),
+                # (A never-written slot reads as no wait in this fork, so it is only inconsistent with a wait.)
+                changes = ([(('vm', 'stack', s.vm.sp), None)] if wait else []) + [
                            (('vm', 'stack', s.vm.sp), int(not wait)),
                            (('pending', 'details'), {'argument_count': 0, 'extra': 1})]
                 if not wait and dynamic:

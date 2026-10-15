@@ -7,6 +7,8 @@ from ..desktop_pause import draw_pause_gear
 
 from ..ui_assets import read_ui
 from ..atlas import AtlasFont, SpriteAtlas
+from ..content import ContentError
+from ..desktop_dialogue import _decoded_size
 from .grid_layout import clamp, ease, heading_lines, prompt_position, tutorial_box
 from .grid_motion import project, cube_faces
 from ..projection import draw_quad
@@ -16,8 +18,12 @@ from ..menu import MenuStrings
 class GridRenderer:
     def __init__(self, resources, text, art):
         self.resources, self.text, self.art = resources, text, art
-        self.canvas = pygame.Surface((320, 480)).convert(32)
+        # SRCALPHA: the background is composited separately by Desktop, at
+        # real window resolution -- see desktop_dialogue.py's DialogueRenderer.
+        self.canvas = pygame.Surface((320, 480), pygame.SRCALPHA).convert_alpha()
         self.cells = []
+        self.pending_background = None
+        self.pending_background_origin = (160, 240)
 
     @lru_cache(maxsize=12)
     def atlas(self, asset):
@@ -130,10 +136,8 @@ class GridRenderer:
         return tile
 
     def backdrop(self, game, background_id):
-        self.canvas.fill((0, 0, 0))
-        background = self.art.image(background_id)
-        if background is not None:
-            self.blit(background, 160, 240, center=True)
+        self.canvas.fill((0, 0, 0, 0))
+        self.pending_background = self.art.image(background_id)
         # 000c1ca8 and 000c6220: rotating haze and four scrolling cloud edges.
         self.blit(self.frame(446, 3), 160, 240, scale=1.8, center=True,
                   angle=game.visual_ms / 1000 * 20)
@@ -155,30 +159,51 @@ class GridRenderer:
                 self.blit(self.frame(446, frame), x, (480 - y if frame == 1 else y) - 289 / 2)
                 y += 289
 
+    def _hd_scale(self, asset_id):
+        """An HD portrait asset (content.py's ContentLibrary.hd_asset()
+        substitution) ships real extra pixels at the same numeric id, not a
+        bigger portrait -- see desktop_dialogue.py's DialogueRenderer.portrait()
+        for the established precedent this mirrors (real device confirmed:
+        word-grid portraits rendered comically oversized, overlapping most
+        of the screen, before this). Word-grid draws its own frame/ring
+        decoration around a raw, unmasked portrait rather than
+        DialogueRenderer's masked cutout, so this returns just the scale
+        factor to fold into GridRenderer's own existing `scale` parameter
+        instead of switching to `portrait()` outright.
+        """
+        try:
+            android_size = _decoded_size(self.resources.android_asset(asset_id))
+        except (ContentError, OSError, pygame.error):
+            return 1.0
+        hd_size = _decoded_size(self.resources.read_asset(asset_id))
+        return max(hd_size[0] / android_size[0], hd_size[1] / android_size[1], 1.0)
+
     def portraits(self, session):
         game, details = session.engine.word_grid, session.pending.details
         if game.phase in (-2, -1):
             return
         progress = 1 - game.phase_ms / 2800 if game.phase == 0 else 1.
-        scale = ease(progress, .2, .52, .9) if game.phase == 0 else 1.
+        base_scale = ease(progress, .2, .52, .9) if game.phase == 0 else 1.
         alpha = ease(progress, .2, .52) if game.phase == 0 else 1.
         for side in ('left', 'right'):
             char = details[side + '_character']
             variants = session.engine.character_art_variants.get(char, ())
             if not variants:
                 continue
-            portrait = self.art.image(variants[max(0, details[side + '_expression']) % len(variants)])
+            asset_id = variants[max(0, details[side + '_expression']) % len(variants)]
+            portrait = self.art.image(asset_id)
             if portrait is None:
                 continue
-            w, h = portrait.get_size()
+            scale = base_scale / self._hd_scale(asset_id)
+            w, h = round(portrait.get_width() * scale), round(portrait.get_height() * scale)
             cx, cy = (w // 2 + 10, h // 2 + 5) if side == 'left' else (310 - w // 2, 475 - h // 2)
             angle = game.visual_ms / 1000 * 40
-            self.blit(self.frame(502, 0), cx + .5, cy + 10, scale=scale,
+            self.blit(self.frame(502, 0), cx + .5, cy + 10, scale=base_scale,
                       alpha=alpha, center=True, angle=angle)
             if side == 'right' and session.engine.numbers.get(session.engine.number_key(char, 651), 0) != 3:
                 portrait = pygame.transform.flip(portrait, True, False)
             self.blit(portrait, cx, cy + 12, scale=scale, alpha=alpha, center=True)
-            self.blit(self.frame(499, 0), cx, cy, scale=scale, alpha=alpha, center=True, angle=angle)
+            self.blit(self.frame(499, 0), cx, cy, scale=base_scale, alpha=alpha, center=True, angle=angle)
 
     def hud(self, game):
         if game.phase in (-2, -1):
@@ -336,6 +361,7 @@ class GridRenderer:
         self.banner(game)
         self.tutorial(game)
         # Keep the desktop pause control clear of the original bottom word list.
-        draw_pause_gear(self.canvas, self.art)
+        # Desktop draws the bar and gear edge to edge (see DialogueRenderer.bottom_bar_layer).
+        self.edge_bar = 'gear'
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
-        return [(pygame.Rect(0, 422, 60, 58), ('menu',))]
+        return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

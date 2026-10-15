@@ -269,6 +269,23 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertEqual(app.message, '')
 
     @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_a_save_that_cannot_be_loaded_is_set_aside_with_the_apps_message_and_the_menu_stays(self):
+        app = self.make_app()
+        session = app.state.session(app.selected)
+        session.advance()
+        path = app.state.checkpoint(session)
+        saved = json.loads(path.read_text())
+        saved['scene'] = 65000                                           # a save whose script is not the episode's
+        path.write_text(json.dumps(saved))
+        app.start()
+        self.assertNotEqual(app.screen, 'game')                          # `onTick`: back at the menu, not in the game
+        self.assertIsNone(app.game)
+        self.assertIn('Save file was corrupt', app.message)
+        self.assertFalse(path.exists())                                  # deleted in the app; kept aside here
+        self.assertTrue(path.with_name(path.name + '.corrupt').exists())
+        self.assertFalse(app.can_resume())
+
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
     def test_exit_from_input_hands_off_before_drawing_and_stops_audio(self):
         app = self.make_app()
         app.start(resume=False)

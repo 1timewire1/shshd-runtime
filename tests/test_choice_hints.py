@@ -58,6 +58,23 @@ def deferred_session(*, custom=False, threshold=2, reward=True, mixed=False):
 
 
 class ChoiceHintTests(unittest.TestCase):
+    def test_further_sd_score_notices_count_as_gain_and_loss(self):
+        # shshd-runtime: "Score Way Up!" is a gain and "Detective Score Down!" a loss; track notices stay unknown.
+        for left, right, expected in (('Score Way Up!', 'Nerd Approval Up!', ['gain', 'no_gain']),
+                                      ('Detective Score Down!', 'Nerd Approval Up!', ['loss', 'no_gain'])):
+            with self.subTest(left=left):
+                words, refs = text_words('Choose', 'Left|Right', 'Question', left, right)
+                prefix = host_call(1, refs[0], refs[1], refs[2], 3000, 0, -1, -1, 0)
+                first, second = host_call(88, refs[3]), host_call(88, refs[4])
+                branch_at = len(prefix) + 1
+                second_at = branch_at + 1 + len(first) + 1
+                s = Session(Resources(program(*prefix, 0x21, (0x2a, second_at - branch_at), *first, 0x33,
+                                              *second, 0x33, words=words)))
+                s.advance()
+                hints = kinds(s)
+                self.assertEqual(hints[0], expected[0])
+                self.assertIn(hints[1], ('no_gain', 'unknown'))
+
     def test_quiz_feedback_sounds_mark_shuffled_answers_without_score_notices(self):
         for custom in (False, True):
             s = choice_session(lambda refs: host_call(79, 8007) + host_call(13, refs[3], 0),

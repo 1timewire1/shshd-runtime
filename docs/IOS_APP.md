@@ -28,8 +28,9 @@ uv run --locked --extra desktop python tools/build_ios.py --sdk iphoneos
 uv run --locked --extra desktop python tools/package_ios.py --label development
 ```
 
-The device build is `dist/ios/iphoneos/EXP Runtime.app`. Packaging produces
-`dist/downloads/exp-runtime-development-ios-arm64-unsigned.ipa` and its SHA-256
+The device build is `dist/ios/iphoneos/EXP Runtime.app` (the Xcode product's file name; the app shows
+as SHSHD Runtime, bundle id `org.shshd.runtime`). Packaging produces
+`dist/downloads/shshd-runtime-development-ios-arm64-unsigned.ipa` and its SHA-256
 checksum. The archive contains `Payload/EXP Runtime.app`. Users supply their
 own signing and installation method, which must sign the app and all embedded
 frameworks. Producing the unsigned artifact needs no signing credentials or
@@ -71,7 +72,7 @@ DerivedData and archives are also ignored.
 
 The build phase signs the embedded Python/Pillow frameworks with Xcode's
 selected identity during a signed build. The command-line artifact build
-explicitly disables signing, clears the team and uses `org.expruntime.player`,
+explicitly disables signing, clears the team and uses `org.shshd.runtime`,
 so local team and bundle settings do not enter unsigned artifacts.
 The build phase uses `.venv/bin/python` by default;
 `EXP_BUILD_PYTHON` can select another Python 3.14 host with the desktop extra.
@@ -89,9 +90,11 @@ separate content library and progress.
 
 **Options → Update checks** controls the automatic GitHub release check at
 launch. It defaults to On and is shared by both games, including the chooser's
-Options screen. A newer release shows “Update available. Download here.” with
-Yes/No controls. Yes opens its release page in the browser; signing and
-installation remain manual. The check runs asynchronously through iOS
+Options screen. A newer release shows that it is available and how to install it
+(download the new IPA on a computer, then sign and install it), with a single
+**OK** that carries on: an iOS app cannot update or quit itself, so the desktop
+offer's Yes (open the page and close the game) does not apply (`can_quit=False`;
+docs/MAIN_MENU.md). The check runs asynchronously through iOS
 `URLSession`; shared Python handles versions, settings and the prompt. Offline
 launches continue normally, and prompts wait until a menu if a story is active.
 
@@ -160,10 +163,10 @@ use its original sound, controlled by Sound separately from Music. The main
 menu's fourth button is **Switch Game**, in the original lettering and style;
 it checkpoints progress and opens the other imported game, or the chooser if
 that game is absent. Tap the info
-icon for Help/About, including the EXP Runtime version and a GitHub project
+icon for Help/About, including the SHSHD Runtime version and a GitHub project
 button that opens the system browser.
 
-Libraries and saves live under **On My iPhone → EXP Runtime → EXP Runtime**
+Libraries and saves live under **On My iPhone → SHSHD Runtime → SHSHD Runtime**
 in Files. Library locations are relative to this directory so an app-container
 UUID change does not invalidate them. Serialized iOS paths use forward slashes
 on every host, including Windows tests. IPA font lookup uses the original bundled

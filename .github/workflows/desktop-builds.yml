@@ -248,7 +248,8 @@ jobs:
 
   publish-pypi:
     name: Publish Python distributions to PyPI
-    if: github.event_name == 'push' || inputs.retry_pypi
+    # This fork publishes no wheels to PyPI (AGENTS.md); upstream's projects are exp-runtime*. Kept for merges, never run.
+    if: false
     needs: release-source
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -372,7 +373,7 @@ jobs:
         shell: bash
         run: |
           version="${EXP_TAG#v}"
-          for name in exp_runtime exp_runtime_formats exp_runtime_engine exp_runtime_player exp_runtime_shs exp_runtime_cod; do
+          for name in shshd_runtime shshd_runtime_formats shshd_runtime_engine shshd_runtime_player shshd_runtime_shs shshd_runtime_cod; do
             file="$name-$version-py3-none-any.whl"
             cp -- "$file" "$file.sha256" ../release/
           done
@@ -382,8 +383,8 @@ jobs:
         shell: bash
         run: |
           for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip ios-arm64-unsigned.ipa; do
-            test -s "exp-runtime-$EXP_TAG-$target"
-            test -s "exp-runtime-$EXP_TAG-$target.sha256"
+            test -s "shshd-runtime-$EXP_TAG-$target"
+            test -s "shshd-runtime-$EXP_TAG-$target.sha256"
           done
           sha256sum --check ./*.sha256
 
@@ -404,6 +405,6 @@ jobs:
               flags+=(--prerelease)
             fi
             gh release create "$EXP_TAG" dist/release/* \
-              --repo "$GH_REPO" --verify-tag --title "EXP Runtime $EXP_TAG" \
+              --repo "$GH_REPO" --verify-tag --title "SHSHD Runtime $EXP_TAG" \
               --notes-file RELEASE.md "${flags[@]}"
           fi

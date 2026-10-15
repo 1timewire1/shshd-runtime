@@ -241,6 +241,16 @@ texture and frame heights (see [UI_FIDELITY.md](UI_FIDELITY.md#box-portrait-and-
 they must not crop it a second time or trim additional transparent rows.
 Source resources remain unchanged.
 
+The HD build (iPad 1.4.38) uses neither the hard mask rule nor the crop. Its
+dialogue and choice portraits are drawn by `SHSPortraitLayer`, and
+`DialogueRenderer.hd_portrait()` reproduces that layer. The portrait sits in a
+256 × 320-point layer that shares the housing's bottom edge. It is drawn at its
+own size, centered, with its bottom at y 318. It is clipped by the 256 × 300
+mask (resource 311) placed at y 20, using CoreGraphics' soft image-mask clip,
+and is mirrored after the clip. A standard episode's 1x art is drawn at 2x
+there and in the HD Word Game. See legacy/findings.md, "HD portrait
+composition, decompiled".
+
 Imported `SHS_The_New_Girl.exp` includes 256 × 256 and 226 × 256 indexed PNG
 portraits, larger than the Android mask. The EXP metadata has no density field,
 and the available Android PNG loader does not rescale them. The desktop renderer

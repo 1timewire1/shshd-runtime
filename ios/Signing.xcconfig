@@ -1,6 +1,6 @@
 // Shared defaults. Keep personal signing settings in the ignored local file.
 CODE_SIGN_STYLE = Automatic
 DEVELOPMENT_TEAM =
-PRODUCT_BUNDLE_IDENTIFIER = org.expruntime.player
+PRODUCT_BUNDLE_IDENTIFIER = org.shshd.runtime
 
 #include? "Signing.local.xcconfig"

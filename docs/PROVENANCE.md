@@ -5,8 +5,17 @@ SHS Runtime was separated from the `exp-decoder-python` research project on
 tests, build tools and specifications developed there. The inherited MIT
 license and Josh Mcdaniel's copyright notice remain in [LICENSE](../LICENSE).
 
-The project is now EXP Runtime, with package `exp_runtime` and `exp-runtime` /
-`exp-tool` entry points. `shs` and `shs-tool` remain compatibility aliases.
+The project became EXP Runtime (upstream:
+[joshrmcdaniel/exp-runtime](https://github.com/joshrmcdaniel/exp-runtime)), with package `exp_runtime`
+and `exp-runtime` / `exp-tool` entry points.
+
+**SHSHD Runtime** ([1timewire1/shshd-runtime](https://github.com/1timewire1/shshd-runtime)) is a fork
+of it, last merged at upstream v0.5.0. It adds SHS HD's iPad presentation and plays Cause of Death in
+it, as a separate app (`SHSHD Runtime` data folder, `org.shshd.runtime`, `shshd-runtime` distributions
+and commands; upstream's commands and `shs` / `shs-tool` remain aliases). It keeps the inherited MIT
+license and copyright notice. Its HD work rests on a user-supplied SHS HD (iPad) 1.4.38 IPA and Cause
+of Death 1.3.4 / 1.4.7 IPAs, decompiled privately; as for the Android work, only recovered contracts,
+addresses and compatible implementations are included.
 The original checkout retains the older heuristic AST parser, Ren'Py
 exporter, conversion attempts, local assets and raw native research output.
 This project has no dependency on that directory or its Python environment.

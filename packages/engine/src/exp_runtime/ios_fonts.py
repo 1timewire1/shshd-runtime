@@ -154,6 +154,28 @@ def _system_default(face):
         yield from _candidates(generic)
 
 
+def _library_face(library, face_key):
+    """(path, 0) for the face supplied in the library's own `fonts/` folder (the vector_text convention: a file named
+    after the face, e.g. ArialRoundedMTBold.ttf, or one of its usual filenames), or None."""
+    directory = getattr(library, 'directory', None)
+    if directory is None:
+        return None
+    face = FACES[face_key]
+    wanted = {face_key.casefold(), face_key.replace('_', '').casefold(),
+              *(Path(name).stem.casefold() for name in face.filenames)}
+    try:
+        for path in sorted((Path(directory) / 'fonts').iterdir()):
+            if path.is_file() and path.suffix.casefold() in ('.ttf', '.otf') and path.stem.casefold() in wanted:
+                font = ImageFont.truetype(str(path), 16, layout_engine=ImageFont.Layout.BASIC)
+                # The family is enough for a file the player chose: Windows' Arial Rounded MT Bold calls its
+                # only style "Bold" where the iOS face is "Regular".
+                if font.getname()[0].casefold() == face.family.casefold():
+                    return path, 0
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 def render_font(library, name):
     """Return a text-layout font and RGBA atlas, cached only in this library."""
     cache = getattr(library, '_ios_fonts', None)
@@ -194,7 +216,7 @@ def render_font(library, name):
         if sources is None:
             library._ios_font_sources = sources = {}
         if face not in sources:
-            sources[face] = resolve_face(FACES[face])
+            sources[face] = _library_face(library, face) or resolve_face(FACES[face])
         path, index = sources[face]
         source = str(path)
     try:

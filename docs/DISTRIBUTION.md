@@ -1,6 +1,6 @@
 # Source distribution and local builds
 
-EXP Runtime provides the compatible engine, KiWi interpreter, local asset
+SHSHD Runtime (a fork of exp-runtime) provides the compatible engine, KiWi interpreter, local asset
 importer, authored specifications, tests and build tools. Each player supplies
 an SHS Android 1.0.9 APK, compatible SHS IPA, or CoD IPA, plus additional EXP files. The original
 ARM executable is inspected only to identify the supported APK profile; it is
@@ -58,11 +58,8 @@ The release body comes from [RELEASE.md](../RELEASE.md) at the repository root.
 Update it before tagging a version. [CHANGELOG.md](../CHANGELOG.md) records
 release history, with upcoming changes under **Unreleased**.
 
-The prepared release notes describe **v0.5.0**: separately installable Python
-components, public EXP file tools, isolated pip installation checks and PyPI
-Trusted Publishing. The bare install provides file tools; use `[player]` or
-`[desktop]` for the app with both games. Earlier releases remain documented
-in the changelog.
+The prepared release notes ([RELEASE.md](../RELEASE.md)) describe this fork's **v1.0.0**. Upstream's
+earlier releases remain documented in the changelog.
 
 Rerunning a version-tag workflow updates matching assets on an existing
 release using `gh release upload --clobber`, then publishes any draft left by
@@ -73,7 +70,11 @@ push code or create a tag; the release command requires the tag to exist.
 Workflow changes take effect for tags containing the updated files. Local
 validation does not replace a successful GitHub run on all five targets.
 
-### PyPI publishing
+### PyPI publishing (upstream only)
+
+This fork does not publish to PyPI: its `publish-pypi` job is disabled (`if: false`) and kept only so
+upstream merges line up. Its wheels are attached to each GitHub release instead. Upstream's setup, for
+reference:
 
 The `publish-pypi` job runs only for pushed `v*` tags, after both Python
 packaging jobs, all desktop builds and iOS verification succeed. It downloads
@@ -138,8 +139,8 @@ uv sync --locked --extra build
 uv run --locked --extra build python tools/build_desktop.py
 ```
 
-Open `dist/desktop/EXP Runtime.app` on macOS. Windows and Linux executables
-are inside `dist/desktop/EXP Runtime/`; keep that complete directory together.
+Open `dist/desktop/SHSHD Runtime.app` on macOS. Windows and Linux executables
+are inside `dist/desktop/SHSHD Runtime/`; keep that complete directory together.
 Build on the target operating system. CI adds startup checks for all four
 download targets; complete gameplay still needs validation on each platform.
 
@@ -167,7 +168,7 @@ Extraction happens locally; the application has no game download service.
 To run from source instead:
 
 ```sh
-uv run --locked --extra desktop exp-runtime
+uv run --locked --extra desktop shshd-runtime
 ```
 
 Libraries and saves stay in the user's application-data directory or another
@@ -193,7 +194,7 @@ and skip when those inputs are absent; ordinary tests use synthetic fixtures.
   kiwi SVG logo for source packages. Each component has its own restrictive
   manifest and package discovery under `packages/<component>/src/exp_runtime`.
   Only the player wheel includes `assets/kiwi.svg` as package data. The root
-  `exp-runtime` wheel contains dependency metadata; its source archive includes
+  `shshd-runtime` wheel contains dependency metadata; its source archive includes
   the authored workspace. See [SDK.md](SDK.md) for local wheel builds, pip
   installs and isolation checks. These tools do not publish to a package index.
 - `tools/build_desktop.py` bundles the runtime and its dependencies. Licenses,

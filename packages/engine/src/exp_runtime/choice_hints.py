@@ -15,6 +15,9 @@ from .vm import VMError
 # Observed in the supplied SHS and CoD scripts. Unrecognized/localized notices
 # stay unknown; ordinary dialogue containing these words is not evidence.
 SCORE_NOTICES = frozenset(('Score Up!', 'Detective Score Up!'))
+# shshd-runtime: further score notices in the supplied SD-only episodes (legacy/findings.md, "Choice hints in the HD
+# player"). Track notices (Approval/Athleticism/Order/Chaos...) still say nothing about better or worse.
+SCORE_NOTICE_VALUES = {**{text: 1 for text in SCORE_NOTICES}, 'Score Way Up!': 1, 'Detective Score Down!': -1}
 DECISIONS = frozenset(('choice', 'character_picker', 'text_input', 'word_game',
                        'word_grid', 'football', 'finished', 'episode_exit'))
 PANELS = frozenset(('dialogue', 'presentation', 'message_panel'))
@@ -56,11 +59,14 @@ def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
             return None
         preview = deepcopy(source, {id(source.resources): source.resources,
                                     id(source.vm.program): source.vm.program})
+        # shshd-runtime: HD's Decision Tree saves tree_<serial> games as the script adds nodes; a preview must never
+        # write those (or the shared tree file) from a branch the player did not take.
+        preview.ephemeral = True
         effects = dict(effects or {})
 
         def observe(action):
-            if action.name == 'set_next_dialogue_notice' and action.details['text'] in SCORE_NOTICES:
-                effects['score_notice'] = effects.get('score_notice', 0) + 1
+            if action.name == 'set_next_dialogue_notice' and action.details['text'] in SCORE_NOTICE_VALUES:
+                effects['score_notice'] = effects.get('score_notice', 0) + SCORE_NOTICE_VALUES[action.details['text']]
             elif action.name == 'request_audio' and action.request.yield_id == 79:
                 feedback = feedback_sounds.get(action.details['asset_id'], 0)
                 if feedback:

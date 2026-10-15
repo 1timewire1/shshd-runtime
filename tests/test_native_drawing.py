@@ -78,7 +78,7 @@ class NativeDrawingTests(unittest.TestCase):
             ord('i'): Glyph(ord('i'), 0, 0, 1, 7, 0, -1, 3)}, {})
         renderer = BitmapTextRenderer.__new__(BitmapTextRenderer)
         renderer.font = lambda _: font
-        renderer._glyph_image = lambda name, glyph, scale: chr(glyph.glyph.code)
+        renderer._glyph = lambda name, glyph, scale: (chr(glyph.glyph.code), 0, 0)
         placed = []
         surface = SimpleNamespace(blit=lambda image, point: placed.append((image, point)))
         text = layout_text(font, 'AiAi', 100, TextStyle(10))

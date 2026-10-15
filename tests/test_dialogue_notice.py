@@ -7,12 +7,53 @@ import os
 from types import SimpleNamespace
 import unittest
 
-from exp_runtime.dialogue_notice import NOTICE_FONT, NoticeMotion, notice_lifetime
+from exp_runtime.dialogue_notice import (
+    NOTICE_FONT, NoticeMotion, hd_letter_start_ms, hd_letter_state, hd_notice_lifetime, notice_lifetime,
+)
 from exp_runtime.runtime import SaveError, Session
 from exp_runtime.ui_assets import Rect
 from test_fonts import descriptor
 from test_runtime import Resources, host_call, text_words
 from test_vm import program
+
+
+class HdNoticeTimelineTests(unittest.TestCase):
+    # SHSUIDialog::startLetterEffectAnimation: letter i starts i * 50 ms in,
+    # rises from 3 cap heights below over 200 ms while fading in, holds, then
+    # leaves 3 caps upward over its last 150 ms; every letter ends at
+    # (n - 1) * 50 + 1550 ms.
+    text = 'Strength Up'
+
+    def test_letters_arrive_in_order_and_end_together(self):
+        end = hd_notice_lifetime(self.text)
+        self.assertEqual(end, 10 * 50 + 1550)
+        self.assertIsNone(hd_letter_state(self.text, 0, 1))          # not started
+        self.assertEqual(hd_letter_state(self.text, 0, 0), (0.0, 3.0))
+        alpha, offset = hd_letter_state(self.text, 100, 0)           # halfway up
+        self.assertAlmostEqual(alpha, .5)
+        self.assertAlmostEqual(offset, 1.5)
+        self.assertEqual(hd_letter_state(self.text, 300, 0), (1.0, 0.0))
+        for index in range(len(self.text)):
+            self.assertIsNotNone(hd_letter_state(self.text, end - 1, index))
+            self.assertIsNone(hd_letter_state(self.text, end, index))
+
+    def test_letters_leave_upward_while_fading(self):
+        end = hd_notice_lifetime(self.text)
+        alpha, offset = hd_letter_state(self.text, end - 75, 10)     # halfway through the exit
+        self.assertAlmostEqual(alpha, .5)
+        self.assertAlmostEqual(offset, -1.5)
+        self.assertEqual(hd_letter_state(self.text, end - 150, 10), (1.0, 0.0))
+
+    def test_a_photographed_moment_matches(self):
+        # At ~510 ms the HD photo shows "Strengt" settled, the 'h' (index 7)
+        # nearly landed and the 'U' (index 9) barely started and faint.
+        self.assertEqual(hd_letter_state(self.text, 510, 6), (1.0, 0.0))
+        alpha, offset = hd_letter_state(self.text, 510, 7)
+        self.assertGreater(alpha, .7)
+        self.assertLess(offset, 1)
+        alpha, offset = hd_letter_state(self.text, 510, 9)
+        self.assertLess(alpha, .4)
+        self.assertGreater(offset, 1.8)
 
 
 def notice_session(text='Skill improved', character=0):
@@ -22,6 +63,19 @@ def notice_session(text='Skill improved', character=0):
     s = Session(r)
     s.advance()
     return s
+
+
+class CodNoticeTests(unittest.TestCase):
+    def test_cause_of_death_times_its_score_notice_as_the_letter_effect(self):
+        # CoD's "Detective Score Up!" is SHS HD's letter effect (cod.profile.LETTER_NOTICE), not Android's typed
+        # notice: the clock covers the portrait's entrance plus the letters, whatever the build.
+        words, (notice, line) = text_words('Detective Score Up!', 'A long enough sentence to keep revealing.')
+        s = Session(Resources(program(*host_call(88, notice), *host_call(13, line, 0), 0x33, words=words)))
+        s.engine.game_key = 'cod'
+        s.advance()
+        self.assertEqual(s.engine.notice, 'Detective Score Up!')
+        self.assertEqual(s.engine.notice_ms, hd_letter_start_ms(s.engine.dialogue_animation)
+                         + hd_notice_lifetime('Detective Score Up!'))
 
 
 class NoticeTests(unittest.TestCase):
@@ -136,8 +190,12 @@ class NoticeTests(unittest.TestCase):
         s.tick(30)
         renderer.canvas.fill((0, 0, 0))
         renderer.draw_notice(s.engine)
-        self.assertEqual(renderer.canvas.get_at((1, 171))[:3], (240, 50, 20))
-        self.assertEqual(renderer.canvas.get_at((8, 191))[:3], (240, 50, 20))
+        # +HD offset rows: DialogueRenderer._portrait_rect's HD vertical correction
+        # (see desktop_dialogue.py) shifts the housing rect this test's fake
+        # bank returns, and the notice is positioned relative to it.
+        shift = DialogueRenderer._HD_PORTRAIT_VERTICAL_OFFSET
+        self.assertEqual(renderer.canvas.get_at((1, 171 + shift))[:3], (240, 50, 20))
+        self.assertEqual(renderer.canvas.get_at((8, 191 + shift))[:3], (240, 50, 20))
         # Painting is pure and never mutates the glyph cache during the fade.
         before = pygame.image.tobytes(renderer.canvas, 'RGB')
         s.engine.notice_ms = 150
@@ -153,6 +211,7 @@ class NoticeTests(unittest.TestCase):
         # The frontend must not spend notice time while its menu or focus is lost.
         ui = Desktop.__new__(Desktop)
         ui.session, ui.error, ui.menu_open, ui.active = s, None, True, True
+        ui.panels_open, ui.panels_progress, ui._panels_wide = False, 0.0, False
         ui.pause_elapsed_ms = 400
         remaining = s.engine.notice_ms
         ui.tick(1000)

@@ -8,10 +8,11 @@ from types import SimpleNamespace
 import unittest
 
 from exp_runtime.dialogue import DialogueLayout
-from exp_runtime.fonts import BitmapFont, Glyph, TextStyle, layout_label
+from exp_runtime.fonts import BitmapFont, Glyph, TextStyle, layout_label, layout_text
 from exp_runtime.runtime import SaveError, Session
 from exp_runtime.scene_badge import SceneBadge, outline_badge_text
-from exp_runtime.speaker_names import NameFontState, SpeakerNames, outline_speaker_label, speaker_label
+from exp_runtime.speaker_names import (NameFontState, SpeakerNames, hd_speaker_label, outline_speaker_label,
+                                      speaker_label)
 from exp_runtime.ui_assets import Rect
 from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
@@ -124,6 +125,20 @@ class SpeakerPlacementTests(unittest.TestCase):
                         self.assertEqual(layout.page(details, names=names), page)
                         self.assertEqual(names, before)
 
+    def test_a_long_name_not_individually_hardcoded_still_actually_wraps_to_two_lines(self):
+        """`speaker_label()`'s hand-measured names above (`"Howard's Mom"`, `'French Teacher'`, ...) use widths
+        tight enough to force their own wrap; a name that isn't one of them falls into the generic
+        `elif state.lines < 2:` padding branch (`w + 20`), sized for breathing room rather than for actually
+        constraining the wrap -- and for a sufficiently long two-word name, that padded width can still be wider
+        than the name's own natural (unwrapped) width, so it never wraps at all: left on one line, floating
+        above a box sized for two (reproduced live against "Mrs. Sworelin", not in the hardcoded list)."""
+        layout = authored_dialogue()
+        text = 'N' * 11 + ' ' + 'N' * 10                    # exceeds the mode-2 rect's own width unwrapped
+        unwrapped = layout_text(layout.font('PajamaHip26'), text, 2 ** 31, TextStyle(16, -16)).width
+        self.assertGreater(unwrapped, 190)                  # confirms this reproduces the "large" case at all
+        result = speaker_label(text, 2, 1, layout.bank, layout.font, {})
+        self.assertEqual(len(result.layout.lines), 2)
+        self.assertLess(result.content_size[0], unwrapped)
     def test_header_fits_tall_outline_glyphs_and_remains_attached_after_long_names(self):
         # Wider/taller substitute faces expose both defects: the previous fit
         # constrained only viewport width and allowed unlimited upward motion.
@@ -452,3 +467,50 @@ class BadgeDrawingTests(unittest.TestCase):
                 self.assertLessEqual(max(rect.bottom for rect in glyphs), 90)
                 self.assertTrue(all(115 <= x <= 135 for x in lefts))
                 self.assertEqual(badge, original)
+
+class HdTitleTests(unittest.TestCase):
+    """SHSUIDialog's HD title (updateTitleBounds / animateTitleLayer), with authored metrics: 9-unit advances."""
+    rects = {0x2e: Rect(122, 259.5, 194, 31), 0x25: Rect(122, 227.5, 194, 63),
+             0x4c: Rect(4, 259.5, 194, 31), 0x43: Rect(4, 227.5, 194, 63),
+             0x6a: Rect(17, 259.5, 286, 31), 0x61: Rect(14, 227.5, 292, 63)}
+
+    def label(self, text, mode, cap=20):
+        return hd_speaker_label(text, mode, 'PajamaHip26', self.rects.__getitem__, authored_font(38, 24, 0), cap)
+
+    def test_regions_flags_and_short_title_shifts(self):
+        # Seven characters = 63 units = 126 points: "short" (< 135 points), shifted 7.5 units (15 points).
+        short, long = 'A' * 7, 'A' * 8
+        for mode, flags, shift, nudge in ((1, 0x1b, -7.5, 1), (2, 0x19, 7.5, -2), (3, 0x1a, 0, 0)):
+            with self.subTest(mode=mode):
+                label = self.label(short, mode)
+                normal = self.rects[{1: 0x2e, 2: 0x4c, 3: 0x6a}[mode]]
+                self.assertEqual((label.flags, label.extra, label.header), (flags, 8, Rect(normal.x + nudge, normal.y,
+                                                                                           normal.width, normal.height)))
+                self.assertEqual(label.origin[0], normal.x + nudge + shift)
+                self.assertEqual(self.label(long, mode).origin[0], normal.x + nudge)
+                # One cap-high line, centred in the 31-unit region, baseline cap below its top (line_height - base).
+                self.assertEqual(label.origin[1], normal.y + (31 - 20) / 2 + 38 - 0)   # (authored base 0)
+
+    def test_cause_of_death_measures_short_titles_and_shifts_them_in_its_own_points(self):
+        # CoD's animateTitleLayer keeps 135 and 15 in its 320-point screen (one point per unit): 14 characters
+        # (126 units) are short there, shifted 15; 15 characters (135) are not. In HD units they would be long.
+        rect = self.rects[0x2e]
+        cod = dict(points_per_unit=1, shift=15)
+        short = hd_speaker_label('A' * 14, 1, 'PajamaHip26', self.rects.__getitem__, authored_font(38, 24, 0), 20,
+                                 **cod)
+        self.assertEqual(short.origin[0], rect.x + 1 - 15)
+        long = hd_speaker_label('A' * 15, 1, 'PajamaHip26', self.rects.__getitem__, authored_font(38, 24, 0), 20,
+                                **cod)
+        self.assertEqual(long.origin[0], rect.x + 1)
+
+    def test_a_name_too_tall_for_the_normal_region_takes_the_tall_one_unshifted(self):
+        name = ' '.join(['A' * 17] * 2)                     # 311 units: 2 lines in every region; 20 + 8 + 20 > 31
+        for mode, tall, flags in ((1, 0x25, 0x19), (2, 0x43, 0x19), (3, 0x61, 0x1a)):
+            with self.subTest(mode=mode):
+                label = self.label(name, mode)
+                self.assertEqual((label.extra, label.flags, label.header.height), (40, flags, 63))
+                self.assertEqual(len(label.layout.lines), 2)
+                self.assertEqual(label.origin[0], self.rects[tall].x + {1: 1, 2: -2, 3: 0}[mode])
+                if mode in (1, 2):
+                    # The second line takes the title's line offset (40 / 10 points).
+                    self.assertEqual(label.layout.lines[1].x, {1: 20, 2: 5}[mode])

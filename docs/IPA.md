@@ -64,7 +64,9 @@ missing cue when resumed; an already loaded stream keeps its paused position.
 
 The importer requires one `Payload/<name>.app/Info.plist` and recognizes SHS
 by `CFBundleIdentifier`: `com.ea.shs`, optionally followed by regional/product
-suffixes separated by dots. The inspected package uses `com.ea.shs.row`.
+suffixes separated by dots. The inspected package uses `com.ea.shs.row`. shshd-runtime
+also accepts the free edition, `com.ea.shslite.row` (1.4.2, build 1.4.3.53), whose
+assets pass the same checks.
 An unrelated bundle identifier is rejected even if its files have similar names.
 
 **Version numbers are informational.** Neither the displayed version, build
@@ -130,7 +132,7 @@ from save identity so existing IPA checkpoints remain compatible. Older runtime
 versions reject the version-3 library rather than silently ignoring its music.
 The source profile, primary `ipa` record and episode records stay unchanged.
 
-New EXP Runtime imports use `format: exp-content-library`, `version: 1`,
+New imports use `format: exp-content-library`, `version: 1`,
 `game: shs` and the same `shs-ios-assets-v1` profile and source records.
 Optional `music_apk` is supported in this schema without a version change.
 Legacy versions 1–3 still load; their content/save identities stay unchanged.

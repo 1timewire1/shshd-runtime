@@ -137,7 +137,8 @@ class BackgroundTests(unittest.TestCase):
                 self.assertEqual((pan.position, pan.target), (.5, 0))
                 self.assertEqual(engine.panel.background_id, 1001)
                 dispatch(engine, 11, -1, -1)
-                self.assertEqual(engine.panel.background_id, -1)
+                # This fork keeps the background for any negative base (an HD real-device correction, engine.py).
+                self.assertEqual(engine.panel.background_id, 1001)
 
     def test_pause_focus_loss_and_page_turn_do_not_restart_motion(self):
         from exp_runtime.desktop import Desktop
@@ -168,7 +169,7 @@ class BackgroundTests(unittest.TestCase):
             saved = json.loads(json.dumps(session.snapshot()))
             restored = Session.from_snapshot(session.resources, saved)
             self.assertEqual(restored.snapshot(), session.snapshot())
-            self.assertEqual(saved['version'], 21)
+            self.assertEqual(saved['version'], 25)
             for ms in (42, 125, 1000):
                 session.tick(ms)
                 restored.tick(ms)
@@ -229,7 +230,8 @@ class BackgroundTests(unittest.TestCase):
         engine.background_pan.tick(125)
         dispatch(engine, 39)
         self.assertFalse(engine.background_pan.automatic)
-        self.assertEqual(engine.background_pan.position, .5)
+        # This fork's panel close keeps the scene background (engine.py), and with it the node's pan.
+        self.assertEqual(engine.background_pan.position, .75)
         engine.close_episode()
         self.assertTrue(engine.background_pan.automatic)
         self.assertEqual(engine.background_pan.alignment, 3)

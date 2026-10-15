@@ -12,7 +12,7 @@ from test_vm import program
 
 
 def word_resources(duration=20000, good='yes|right', bad='no|wrong|bad'):
-    words, refs = text_words('Ignored title', 'Pick the right word', good, bad)
+    words, refs = text_words('Snacks!', 'Pick the right word', good, bad)
     return Resources(program(*host_call(71, *refs, duration, -1, 1, 3000),
                              0x21, (0x1f, 0xfe01), words=words))
 
@@ -27,7 +27,7 @@ class WordGameTests(unittest.TestCase):
         s = Session(word_resources())
         a = s.advance()
         self.assertEqual(a.name, 'word_game')
-        self.assertEqual(a.details['title'], '')
+        self.assertEqual(a.details['title'], 'Snacks!')
         self.assertEqual(s.engine.word_game.options, ['no', 'wrong', 'bad', 'yes'])
         self.assertEqual(s.engine.word_game.weights, [-1, -1, -1, 1])
         self.assertEqual(s.engine.random48.state, 0x5e37dc5a3f85)
@@ -58,6 +58,20 @@ class WordGameTests(unittest.TestCase):
         self.assertEqual(result.request.args, (2,))
         self.assertEqual(s.engine.result_cells[0], 2)
         self.assertIsNone(s.engine.word_game)
+
+    def test_cause_of_death_quiz_uses_the_ios_pacing_and_its_own_sounds(self):
+        r = word_resources(); r.library.game_id = 'cod'
+        s = Session(r); s.advance()
+        game = s.engine.word_game
+        self.assertTrue(game.hd)
+        s.answer(game.weights.index(1)); s.tick(150)   # the score lands after the 0.1 s selection
+        self.assertEqual(s.engine.sound_id, 8003)
+        for _ in range(100):                           # the fly-off and fly-on, in frames, then input reopens
+            s.tick(20)
+        s.answer(s.engine.word_game.weights.index(-1)); s.tick(150)
+        self.assertEqual(s.engine.sound_id, 8004)
+        plain = Session(word_resources()); plain.advance()
+        self.assertFalse(plain.engine.word_game.hd)    # SHS without the HD bundle keeps Android's pacing
 
     def test_save_preserves_deal_clock_score_random_and_future_deals(self):
         resources = word_resources()

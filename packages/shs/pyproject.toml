@@ -3,13 +3,13 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "exp-runtime-shs"
-version = "0.5.0"
+name = "shshd-runtime-shs"
+version = "1.0.0"
 description = "Surviving High School adapter for EXP Runtime"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["exp-runtime-engine[fonts]==0.5.0"]
+dependencies = ["shshd-runtime-engine[fonts]==1.0.0"]
 
 [tool.setuptools]
 include-package-data = false

@@ -396,6 +396,39 @@ The game scene uses **320 × 480 logical coordinates**. The desktop renders
 that scene and scales/letterboxes it to the window; UI placement no longer
 comes from the former dark, full-width desktop dialogue overlay.
 
+This 320×480/480×720 reference is the Android phone screen this whole
+pipeline was calibrated against. An iOS HD build ships some backgrounds at
+real higher pixel density (960×1440 confirmed on real content); compositing
+those into this fixed-size canvas at native density and only then scaling
+the whole canvas to the window discards that extra detail before it ever
+reaches the screen. `Desktop._present()` composites the background as a
+separate layer, directly at window resolution, underneath this canvas
+instead -- the UI layer's own 320×480 math here is unaffected and unchanged.
+
+Every screen with a real per-episode background (dialogue, choice, word
+grid, loading, message panel, character picker, and the title/week-card
+screen) tracks its own `pending_background`/`pending_background_origin` the
+same way and lets `Desktop` composite it; each renderer's own 320×480 canvas
+stays transparent where the background belongs (`pygame.SRCALPHA`) instead
+of drawing it in directly. The title screen additionally tracks
+`pending_background_alpha` for its background fade-in/out, applied to the
+window-resolution copy after scaling rather than to the canvas-resolution
+one. Football has no per-episode background (its field art is fixed game
+chrome, not `panel.background_id`), and the main menu only ever reads from
+the Android APK bank, so neither needed this treatment.
+
+The default window is 3:4 (`DEFAULT_WINDOW_SIZE`), not 2:3 like the UI
+canvas (`SIZE`). HD's own main game view is a fixed 768×1024 in every
+orientation -- landscape is a rotation of that same rectangle, not a
+resize, confirmed from `SHSViewController::setupLocalInterfaceOrientation:`
+(see `legacy/findings.md`'s DTView/Faceplace layout section) -- so a 3:4
+window gives the separately-composited background layer real room to show
+more of the actual scene, while the Android-authored 2:3 chrome keeps its
+own proven-correct proportions and position, centered and unchanged inside
+that wider window. `_draw_background_layer`'s crop widens from 320 to 360
+game units (480 × 3/4) around the same horizontal focal point for this
+reason; the UI canvas's own crop/scale math is untouched.
+
 `FUN_000ab048` and `FUN_000ab344` select these presentation modes:
 
 | Mode | Trigger | Visible character/name |
@@ -469,6 +502,71 @@ choices and the picker. Mode 2 flips the character except for theme 3.
 The original 128 × 150 portrait mask is applied
 before drawing; the portraits are no longer resized to an arbitrary 160 × 180
 desktop rectangle.
+
+That 128 × 150 mask is Android-reference-sized: it always comes from APK
+resource 268 (below the 26000 threshold that routes per-episode content to
+the `.exp` archive instead), so it never grows for an HD build. HD's own
+per-episode portrait art (also read as resource IDs ≥ 26000, same as HD
+backgrounds) runs well past it -- observed 220×240 up to 256×256 in real
+episodes -- which used to raise `UIAssetError` and stop playback outright.
+`DialogueRenderer.portrait()` now detects that case and calls
+`_scaled_mask()`, which smooth-scales the mask's geometry (not the portrait)
+up to cover it before clipping. The mask is a plain rounded cutout shape, not
+detailed art, so this loses nothing a native HD-resolution mask would have
+shown -- confirmed against real 220×240 through 256×256 portraits. This
+sidesteps needing the iOS HD build's own low-id chrome container format,
+which uses an undeciphered, Android-incompatible layout (see
+`legacy/findings.md`, "HD retargeting feasibility") for most chrome -- the
+portrait mask specifically turned out not to need that workaround at all
+(see below).
+
+The clipped result is always scaled back down to `ANDROID_MASK_SIZE`
+(128×150, a fixed constant in `desktop_dialogue.py`) divided by the same
+factor the mask needed scaling up by -- never to whatever size the mask
+object actually in hand happens to be. Every ring, border and panel around
+a portrait is still Android-sized, so leaving an HD portrait at its own
+native pixel count made it render comically oversized relative to
+everything else -- confirmed and fixed against a real HD choice screen,
+where the earlier, unscaled version was clearly wrong side by side with the
+correctly-sized chrome around it. Anchoring to a fixed constant rather than
+re-deriving it from `self.pack(268)` each time matters because that mask
+can itself now be the real HD-native one (below) -- if the reference size
+tracked whatever mask happened to be loaded, importing an HD ipa would
+silently change what "oversized" means and break this same scaling.
+
+**A real HD-native mask exists after all, and is preferred when
+available.** `content.py`'s `HD_ASSET_MAP` records that HD's own resource
+311 is the identical rounded-cutout shape as Android's 268, just at a clean
+native 256×300 (2x) -- confirmed by rendering both and comparing pixels,
+not assumed from the size match. This is a real ImagePack-format resource,
+decoded by the same unmodified parser Android resources use: the
+"undeciphered format" conclusion above only ever held for one tested
+resource type (`MenuStrings`, a font/text bank), not for image packs
+generally (see `legacy/findings.md`, "HD chrome assets may be directly
+usable after all"). The substitution happens transparently at the content
+layer -- `ContentLibrary.read_asset()` hands back the HD ipa's bytes for id
+268 whenever one was imported (see `RUNTIME.md`) -- so `portrait()`'s own
+`self.pack(268)` call doesn't need to know or care which source it got;
+it falls through to `_scaled_mask()`'s algorithmic upscale exactly as
+before whenever the mask in hand (HD-native or Android) still isn't big
+enough. Real source detail beats interpolation, though the difference is
+subtle at this size; the win is using verified native data instead of an
+approximation where one is actually available. The same transparent
+substitution now also covers every background/portrait asset from id 1000
+up to (not including) 25000 -- not just this one mask -- since those ship
+at the same numeric id on both platforms; see `RUNTIME.md`'s content
+library contract for the full id-range rationale.
+
+Upstream's Android-side handling of the same imported art (New Girl's 256 × 256
+and 226 × 256 variants) halves it before masking. This build reaches the same
+apparent size without pre-halving: art inside an episode file that exceeds the
+mask but fits within twice its size is treated as 2x Android art
+(`DialogueRenderer._episode_portrait_size`), and its clipping mask is exactly
+twice the 128 × 150 mask (`_scaled_mask`) -- what a real HD mask (resource 311)
+is -- so the cutout matches native halved-then-masked geometry while keeping
+the extra pixels for density. Previously such art fell back to the fixed mask
+size and any 1x consumer drew 226 × 256 portraits at 128 × 145 instead of
+113 × 128. The upstream paragraph follows.
 
 The imported New Girl's 256 × 256 and 226 × 256 portrait variants use a
 documented compatibility conversion to half size before masking and horizontal
@@ -1252,3 +1350,68 @@ for its NPCs; Homecoming Queen sets key 629 to 1 for many NPCs. The New Girl
 also leaves it clear for the sampled characters. This verifies the user's
 memory while keeping the distinction between engine capability and individual
 episode configuration explicit.
+
+
+## HD vector text
+
+The HD binary has no bitmap fonts. `SHSEngine::initFonts` (`0002af38`) builds a
+CGFont per face -- `ArialRoundedMTBold`, `ArialMT`, `TrebuchetMS-Bold`,
+`TrebuchetMS-Italic` from the system, and Pajama Hip and a digit font
+(`MonoNumerals`) from TrueType resources 568 and 567 in the app bundle -- and
+`CSFont::init` gives each instance a size and an ARGB color. Every size is
+exactly twice the number in the matching Android font name (Arial Rounded
+11/14/15/16/20/22/28/30 -> 22/28/30/32/40/44/56/60, Pajama Hip 26 -> 52,
+Trebuchet 14 -> 28), i.e. the layout unit count. Theme colors: blue
+`0x2968dd`, pink `0xb44e4e`, gray `0x898989`, gold `0xb46d1a`; the Android
+theme colors carried by the shared text styles are mapped onto them. Pajama Hip
+comes as a fill instance and a `CSFont::setStroke` instance (width 8 at size
+52, drawn under the fill, so 2 layout units of outline outside the glyph; the
+stroke color is not legible in the decompile and is read as white from HD
+screenshots). `CSFont::getCharAdvance` is the glyph advance times size over
+unitsPerEm, drawing is per-glyph `CGContextShowGlyphsAtPoint`, and there is no
+kerning.
+
+`vector_text.VectorFont` is a `BitmapFont` with those advances and ink boxes,
+so `layout_text` (wrapping, indents, ink bounds) runs unchanged and vertical
+placement keeps the Android font's own line height and baseline, which the
+panel calibrations were taken against. It is used only when an HD app bundle is
+imported; otherwise the Android bitmap fonts are kept. The Android `Arial
+Rounded` atlases carry `info face="Dialog.bold"`: they were generated from a
+generic Java font, so their advances differ from HD's. With real advances, the
+"parking ticket" choice wraps exactly as the HD screenshot does, which it did
+not with the atlases.
+
+Font files come from the player's machine, in this order: an override
+(`SHS_ARIAL_ROUNDED_FONT`, `SHS_ARIAL_FONT`, `SHS_TREBUCHET_BOLD_FONT`,
+`SHS_TREBUCHET_ITALIC_FONT`), then Arial Rounded MT Bold (macOS ships it,
+Office installs it on Windows), then the nearest Arial-metric face (Arial Bold
+on Windows/macOS, Liberation Sans / Arimo Bold on Linux). Those fallbacks are
+about 4-6% wider than Arial Rounded and have square terminals. Set
+`SHS_VECTOR_TEXT=0` to keep the bitmap fonts.
+
+Wrap widths, checked against HD screenshots with real advances: option text in
+the choice panel wraps at Android's 264 (the "parking ticket" choice breaks
+exactly as `IMG_0085` does), and the dialogue body wraps at the 246 it is
+*measured* at rather than the 260 box width (the "Um... You're... I / mean...
+Um... Let's do / that kissing thing?" line in `IMG_0069`). Android's bitmap
+fonts keep their own 260. Portrait art in HD is drawn at its own 2x size (226 x
+256 = 113 x 128 units), which with the 12-row crop spans exactly the outer
+ring's top to the inner ring's bottom in that screenshot.
+
+Text placement: the Android font descriptors' `common base` is not a baseline
+(it says 26 for nearly every font), so a vector font's baseline is the bitmap's
+own capital-H bottom less its padding row; Pajama Hip keeps its descriptor base
+(26), which matched HD. Against `IMG_0069` and `IMG_0070` the dialogue body
+origin moves (+6, +6) for vector text (lines then sit 24, 46 and 67 below the
+box's top line, the first starting 17 from its left edge), the portrait ring's
+center sits 5 units below the top line (`_HD_PORTRAIT_VERTICAL_OFFSET`), and the
+ring frames are drawn under the body text. The bottom bar's hint is bank-13
+string 36 (dialogue), 38 (choice) or 40 (timed choice), all seen in HD.
+
+Not converted, on purpose: Pajama Hip `S26` (the Strength Up notice, red
+`244,65,31` with a baked white outline) and `mainmenu` (Android: Comic Sans MS
+Bold Italic). HD's `initFonts` has no Comic Sans and no red Pajama Hip; its
+only red text face is Trebuchet Italic 40 (`0xf0513c`, strokes 3 and 9), which
+may be the notice's real face but has no HD screenshot to confirm. They stay
+bitmap until there is evidence. Not verified: HD's line pitch beyond these
+samples and any dialogue with fewer than three lines.

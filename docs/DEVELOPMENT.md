@@ -20,14 +20,14 @@ Use Python 3.10 or newer. From the project directory:
 ```sh
 uv sync --locked --extra desktop
 uv run --locked --extra desktop python -m unittest discover -s tests
-uv run --locked --extra desktop exp-runtime
+uv run --locked --extra desktop shshd-runtime
 uv run --locked --extra build python tools/build_desktop.py
 uv run --locked --extra build python tools/package_desktop.py --label local --smoke-test
 ```
 
-`exp-tool` provides `import`, `list`, `play` and `trace`. It can also be invoked
-with `python -m exp_runtime`. The desktop entry point is `exp-runtime`, or
-`python -m exp_runtime.application`.
+`shshd-tool` (aliases `exp-tool`, `shs-tool`) provides `import`, `list`, `play`, `trace` and, for
+Cause of Death, `add-hd-art`. It can also be invoked with `python -m exp_runtime`. The desktop entry
+point is `shshd-runtime` (aliases `exp-runtime`, `shs`), or `python -m exp_runtime.application`.
 
 ```sh
 uv run --locked exp-tool import --apk /path/to/game.apk --episodes /path/to/Episodes --library /path/to/library
@@ -45,7 +45,7 @@ bounded diagnostic, not an automated episode playthrough.
 
 | Layer | Modules |
 | --- | --- |
-| Content and local import | `content`, `shs.content`, `shs.builtin_episode`, `cod.content`, `episode_catalog` |
+| Content and local import | `content`, `shs.content`, `shs.builtin_episode`, `cod.content`, `cod.store`, `episode_catalog`, `staged_import` |
 | RAR episode decoding | `rar` (OS libarchive on Apple, bundled decoder in Windows/Linux builds) |
 | KiWi decoding and execution | `decode.bytecode`, `vm`, `trace` |
 | Host services and saved sessions | `engine`, `runtime`, `shs.services`, `cod.services` |
@@ -81,7 +81,29 @@ uv run --locked python tools/audit_format.py /path/to/Episodes
 uv run --locked python tools/audit_vm.py /path/to/Episodes
 uv run --locked python tools/audit_runtime.py --library /path/to/library
 uv run --locked python tools/audit_ui_assets.py /path/to/game.apk
+uv run --locked --extra desktop python tools/audit_hd_visual_fidelity.py --apk /path/to/game.apk --episodes /path/to/HD_Episodes
+uv run --locked --extra desktop python tools/audit_hd_football.py --apk /path/to/game.apk --hd-ipa /path/to/game_hd.ipa
 ```
+
+`audit_hd_visual_fidelity.py` needs the desktop extra (pygame, for image
+decoding) unlike the other audit tools. It drives each episode through as
+much automated content as a generic input strategy allows and records
+whether the backgrounds/portraits it actually used were genuine HD-density
+art or a shared standard-density fallback -- see `legacy/findings.md`,
+"Full HD episode audit" for what a real run against the 195-episode HD
+library found.
+
+`audit_hd_football.py` covers a genuinely different thing that sweep
+deliberately excludes: the iOS HD build's *own* bundled Football Star hub
+(`Payload/Surviving_HS.app/res_generated/25001`-`25021` inside the HD ipa
+itself, not a file on disk), the one piece of real content closest to the
+DTView/Faceplace services (see `docs/ENGINE_ABI.md` section 6, and section
+6.2 for the real per-argument mapping recovered from raw disassembly --
+this content is what verified that mapping against real game text). It
+needs one test-only seed for a real, pre-existing, deliberately-unfixed gap
+(character art queried for ids 0/13/14 before this engine ever sets it --
+see `legacy/findings.md`, "Art requested for uninitialized character 0");
+the tool documents and applies that seed itself.
 
 Treat generated JSON as local evidence; traces can include original dialogue
 and player data. The specifications distinguish native contracts, historical
@@ -94,7 +116,7 @@ does not establish complete episode playback or pixel/timing equivalence.
 | --- | --- |
 | `src/exp_file` Python package | `exp_runtime` namespace across `packages/*/src` |
 | `exp-file` command | `exp-tool` |
-| `shs` desktop launcher | `exp-runtime` (`shs` alias retained) |
+| `shs` desktop launcher | `shshd-runtime` (`exp-runtime` and `shs` aliases retained) |
 | Heuristic AST/Ren'Py conversion | Retained only in the old research project |
 | Legacy extraction used by `trace` | Strict `content.ExpArchive` reader |
 
@@ -105,8 +127,8 @@ remain readable. Save version 15 accepts both the `shs-runtime-save` and
 `exp-runtime-save` format markers. Existing SHS save filenames are retained.
 Older IPA dialogue checkpoints reflow at their saved read offset for the
 shared v0.1.3 dialogue layout, without executing the pending VM call.
-The `EXP Runtime` launcher reads old `SHS Runtime` library locations, then
-remembers each game's location separately. See [MAIN_MENU.md](MAIN_MENU.md).
+The launcher remembers each game's location separately, in its own `SHSHD Runtime` data folder; it never
+reads upstream's `EXP Runtime` or older `SHS Runtime` folders. See [MAIN_MENU.md](MAIN_MENU.md).
 
 Keep game-specific assets, imports and behavior in `exp_runtime/shs/` or
 `exp_runtime/cod/`. Shared code must resolve a resource only in the selected
