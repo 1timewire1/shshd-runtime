@@ -50,12 +50,12 @@ jobs:
           cache-suffix: python-${{ matrix.python }}
 
       - name: Install locked build dependencies
-        run: uv sync --locked --extra build --extra creator
+        run: uv sync --locked --extra build --extra creator --extra creator-mcp
 
       - name: Test the creator and native EXP exports
         env:
           QT_QPA_PLATFORM: offscreen
-        run: uv run --locked --extra build --extra creator python -m unittest discover -s tests -p 'test_creator*.py'
+        run: uv run --locked --extra build --extra creator --extra creator-mcp python -m unittest discover -s tests -p 'test_creator*.py'
 
       - name: Build and audit wheels and source archives
         shell: bash
@@ -67,7 +67,7 @@ jobs:
           uv run --locked --extra build python tools/build_packages.py "${flags[@]}"
 
       - name: Verify isolated pip installs and component removal
-        run: uv run --locked --extra build --extra creator python tools/test_packages.py
+        run: uv run --locked --extra build --extra creator --extra creator-mcp python tools/test_packages.py
 
       - name: Upload Python distributions and checksums
         if: matrix.python == '3.14'
@@ -106,6 +106,7 @@ jobs:
     env:
       SDL_VIDEODRIVER: dummy
       SDL_AUDIODRIVER: dummy
+      QT_QPA_PLATFORM: offscreen
       PYGAME_HIDE_SUPPORT_PROMPT: '1'
       EXP_TARGET: ${{ matrix.target }}
       EXP_BUILD_LABEL: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.sha }}
@@ -124,7 +125,7 @@ jobs:
           cache-suffix: ${{ matrix.target }}
 
       - name: Install locked dependencies
-        run: uv sync --locked --extra build
+        run: uv sync --locked --extra build --extra creator --extra creator-mcp
 
       - name: Identify native build image
         if: runner.os != 'macOS'
@@ -167,7 +168,15 @@ jobs:
           uv run --locked --extra build python tools/package_desktop.py
           --target "$EXP_TARGET" --label "$EXP_BUILD_LABEL" --smoke-test
 
-      - name: Upload downloadable archive and checksum
+      - name: Build standalone episode creator
+        run: uv run --locked --extra build --extra creator --extra creator-mcp python tools/build_desktop.py --creator
+
+      - name: Package and test standalone episode creator
+        run: >-
+          uv run --locked --extra build --extra creator --extra creator-mcp python tools/package_desktop.py
+          --creator --target "$EXP_TARGET" --label "$EXP_BUILD_LABEL" --smoke-test
+
+      - name: Upload player and creator archives and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-${{ matrix.target }}
@@ -296,7 +305,7 @@ jobs:
           projects = ['exp-runtime', 'exp-runtime-formats', 'exp-runtime-engine',
                       'exp-runtime-player', 'exp-runtime-shs', 'exp-runtime-cod']
           # Keep manual recovery compatible with the six-wheel v0.5.0 run.
-          if Path(f'exp_runtime_creator-{version}-py3-none-any.whl').is_file():
+          if version != '0.5.0':
               projects.append('exp-runtime-creator')
           for project in projects:
               try:
@@ -351,7 +360,7 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.release-source.outputs.sha }}
 
-      - name: Download desktop archives and checksums
+      - name: Download player and creator archives and checksums
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: desktop-*
@@ -385,8 +394,9 @@ jobs:
             file="$name-$version-py3-none-any.whl"
             cp -- "$file" "$file.sha256" ../release/
           done
-          file="exp_runtime_creator-$version-py3-none-any.whl"
-          if [[ -f "$file" ]]; then
+          # The first component release predates the creator.
+          if [[ "$EXP_TAG" != v0.5.0 ]]; then
+            file="exp_runtime_creator-$version-py3-none-any.whl"
             cp -- "$file" "$file.sha256" ../release/
           fi
 
@@ -398,6 +408,12 @@ jobs:
             test -s "exp-runtime-$EXP_TAG-$target"
             test -s "exp-runtime-$EXP_TAG-$target.sha256"
           done
+          if [[ "$EXP_TAG" != v0.5.0 ]]; then
+            for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip; do
+              test -s "exp-runtime-creator-$EXP_TAG-$target"
+              test -s "exp-runtime-creator-$EXP_TAG-$target.sha256"
+            done
+          fi
           sha256sum --check ./*.sha256
 
       - name: Create release or update its downloads

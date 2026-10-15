@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exp-runtime-formats"
-version = "0.5.0"
+version = "0.6.0"
 description = "EXP containers, KiWi decoding and native resource parsers"
 readme = "README.md"
 license = {file = "LICENSE"}

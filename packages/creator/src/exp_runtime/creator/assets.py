@@ -1,7 +1,21 @@
-"""Explicit, read-only access to a user's already imported game library."""
+"""Read-only access to a user's already imported game library."""
 from io import BytesIO
 
 from .model import Asset, ProjectError
+
+
+def player_library(game):
+    """Find a usable library through the player's remembered/default location."""
+    from exp_runtime.content import ContentError, ContentLibrary
+    from exp_runtime.launcher import default_library
+    try:
+        path = default_library(game)
+        with ContentLibrary(path) as library:
+            if library.game_id == game:
+                return str(path.resolve())
+    except (ContentError, OSError):
+        pass
+    return ''
 
 
 def image_png(data: bytes) -> bytes:

@@ -1,48 +1,99 @@
-# Episode creator (unreleased)
+# Episode creator
 
 The optional desktop creator authors **new SHS and CoD episodes** for EXP
 Runtime and the original games. It exports the native CSPUD `.exp` container
 with KiWi v2 bytecode. Authored scripts pass checks against the original
 SHS Android, SHS iOS and CoD iOS loaders and interpreters; full playback in
 the original apps remains unverified. See the compatibility details below.
-This feature is newer than the published v0.5.0 release; run it from this
-checkout for now:
+The creator is new in v0.6.0. Download the `exp-runtime-creator-v0.6.0-<target>`
+archive from Releases for Windows, Linux or macOS, extract it, and open
+**EXP Runtime Creator**. Keep the complete app or executable directory together.
+Python and Qt are bundled. Alternatively, install with pip:
+
+```sh
+python -m pip install 'exp-runtime[creator]>=0.6.0'
+exp-creator
+```
+
+To run from this checkout:
 
 ```sh
 uv run --locked --extra creator exp-creator
 ```
 
+The screenshots below use an authored example episode, **The Lantern Club**.
+Select an image to view it at full size.
+
+[![Creator showing a branching story graph and the selected timed choice's settings.](images/creator/story-graph.png)](images/creator/story-graph.png)
+
+The selected choice connects to two dialogue paths. Its inspector sets a
+15-second time limit and selects Answer 2 when time runs out.
+
 ## Make an episode
 
-1. Choose **Surviving High School** or **Cause of Death**, and enter the title,
-   pack ID and episode ID. The five native title fields receive the same title
-   in this first version. Pack and episode IDs are author-assigned metadata;
-   they do not claim a place in the original game catalog.
-2. Select a card to edit it. Add **Dialogue**, **Choice**, **Background**,
-   **Set variable**, **Condition** or **End episode** nodes from the left pane.
-   Drag cards to arrange them; use the zoom and fit controls for larger stories.
-3. Choose each node's **Next** destination in the right pane. A choice has two
-   to eight answers, each with its own destination. A condition has true and
-   false destinations. **Start episode here** sets the entry node independently
-   of card order. Lines show the current connections.
-4. Leave the speaker empty for narration, enter a name for dialogue without
-   a portrait, or select a portrait and its color for character dialogue.
-   Set a choice's time limit in milliseconds, and select which answer its
-   timer chooses on expiry. Zero disables the timer.
-5. Use **Set variable** to remember a number, then **Condition** to compare it
-   later. Names identify episode-local numeric variables; unread variables
-   start at zero. Values use the native signed 16-bit range. Loops through
-   dialogue and choices are supported; automatic loops that could freeze
-   playback are rejected.
-6. **Save** writes an editable `.expproj` document. **Validate** checks the
-   story, and **Export EXP** writes an episode that the ordinary player can
-   import through its existing EXP/ZIP/RAR workflow. Saving unfinished
-   projects is allowed; exporting missing connections is not.
+1. Choose **Surviving High School** or **Cause of Death**, then enter a title,
+   pack ID and episode ID. IDs are author-assigned; they do not create native
+   catalog entries. Use **Translations** to edit the five title fields and
+   story text, and choose the language used by export and preview.
+2. Select a node type and press **Add node**. Select its card to edit dialogue,
+   connections and character/expression selection. **Edit settings** opens typed
+   fields and nested row editors for that node's parameters. **Characters**
+   creates reusable speaker definitions using image IDs from the project list.
+3. Connect **Next**, condition branches and each choice answer. A choice has
+   two to eight answers, optional numeric enable conditions, a timer with an
+   explicit default, and optional native random ordering. Start-node selection
+   is independent of card order.
+4. Save an editable `.expproj` document. **Validate** compiles in memory.
+   **Export EXP** produces an episode for the player's usual EXP/ZIP/RAR import.
+   Unfinished graphs can be saved; invalid exports never replace an older file.
 
-Undo/redo covers text, connections, node positions, project settings and image
-changes. The editor asks about unsaved changes before opening another project
-or closing the window. Project and EXP writes replace the destination only
-after the complete output has been written.
+| Node/control | Authoring behavior |
+| --- | --- |
+| Dialogue, choice | Narration, named text, portraits, expressions 0–4, native themes, timed answers and conditional options |
+| Background, pan | Image selection, automatic speaker tracking or left/center/right alignment |
+| Music, sound, stop audio | Native resource IDs, looping flag, immediate runtime stop; listen using an imported library |
+| Relationship | Add/set character property 407, hide indicators, select romance, store the resulting number in a variable |
+| Score/property | Add/set an explicit native owner/key, optional dialogue notification, and a result variable |
+| Set variable, condition | Signed-word arithmetic, comparisons, boolean conditions and increments such as `points + 1` |
+| Random variable | Native service 27 with an exclusive positive upper bound; save result for branches |
+| Text input, text answer condition | Native name/input panel, stored `{variable}` substitution and native string comparison |
+| Title, message, notification, scene label | Existing title/message panels, queued dialogue notices and scene badges |
+| Emphasize, transition, close dialogue | Existing engine presentation commands; retain its documented native parity limits |
+| Timed word choices | Good/bad word lists, time limits, refresh interval, character and returned score; both games |
+| Football | Six interleaved offense/defense tables, instructions, teams, clocks, flags and returned margin; SHS only |
+| Word/picture grid | Problems, alphabets, picture symbols, fixed tutorial boards, timing, tutorial branches and returned result; SHS only |
+| Scene link/group | Connect any nodes across scene groups; compiler schedules separate native scripts |
+| End episode | Native service 7 returns to the existing game menu; use its episode picker to play another installed story |
+
+Minigame settings contain authored example data. Football play rows are
+`[code, yards, variation, weight]`; picture symbols are `[character, image ID]`.
+The row editors let you add, edit, duplicate and reorder tables. Choice and
+word-game portraits use native expression zero; expression selection applies
+to character dialogue. See
+[MINIGAMES.md](MINIGAMES.md) for the recovered record meanings. CoD's supplied
+native 94/96 handlers are no-ops, so football and grid exports are rejected for
+CoD. Result variables can be used by ordinary conditions after the game.
+
+Score/property does not claim that every story uses the same score key. Choose
+an owner/key deliberately; numeric graph variables are separate. Relationship
+icons and gain/loss animation follow the engine's native rules on subsequent
+character dialogue, including cached prior values. They are not arbitrary
+animation clips. Five custom expression images are copied to a consecutive
+native bank; arbitrary combinations of external base references cannot be
+remapped without embedding their images.
+
+Expressions support integers, variable names, `+`, `-`, `*`, `//`, `%`,
+comparisons and `and`/`or`/`not`. Booleans short-circuit. Arithmetic follows
+native signed 16-bit wrapping and **truncation toward zero**, including `//`;
+it is not Python floor division. Calls, attribute access and evaluation of
+Python code are prohibited. Unread numeric variables start at zero.
+
+Undo/redo covers graph, character and translation changes. Copy/paste preserves
+internal connections; duplicate, search and auto-arrange work on authored
+nodes. Autosave writes a separate recovery document every 15 seconds while
+work is dirty. On launch, the editor offers recovery; saving or intentionally
+closing/discarding removes that window's recovery document. Canceling an
+unsaved-work prompt preserves it. Project and EXP writes are atomic.
 
 ## Images and imported game assets
 
@@ -53,12 +104,18 @@ each image so unrelated images cannot become portrait expression variants.
 Use artwork sized for the original game's portrait/background presentation;
 the shared renderer retains its usual scaling and masking rules.
 
-**Use imported library** selects the game folder containing `library.json`,
-created by importing your APK/IPA through the player. **Browse library images**
-shows base resources and imported episode banks, with a preview of single
-images. Numeric IDs are retained because original archives do not always
-provide descriptive filenames. Fonts, scripts and UI atlases are not offered
-as usable single images.
+The desktop creator automatically uses the player's existing library for the
+selected game, including a custom location remembered by the player. A project
+with a saved library selection keeps it. Discovery only reads the library;
+assets and player saves remain in place. If no usable library is found, you
+can still create and export stories with your own images.
+
+**Use imported library** lets you select a different game folder containing
+`library.json`, created by importing your APK/IPA through the player.
+**Browse library images** shows base resources and imported episode banks,
+with a preview of single images. Numeric IDs are retained because original
+archives do not always provide descriptive filenames. Fonts, scripts and UI
+atlases are not offered as usable single images.
 
 - Base images remain references to the selected game's resources. They are
   not copied into the exported episode. Recipients must supply the corresponding
@@ -69,20 +126,103 @@ as usable single images.
   source episode is no longer required. Embedded images are included in the
   exported EXP; review which assets you intend to distribute.
 - SHS and CoD libraries stay separate. The project game must match the selected
-  library. The format itself does not identify a game: import the export under
-  the same game you selected in the creator.
+  library. Switching games in a project without base assets or native scripts
+  selects that game's player library. Once you use base images, music/sound
+  IDs or native scripts, start a new project to change games. The format itself
+  does not identify a game: import the export under the same game you selected
+  in the creator.
 
 No original content ships with the editor. A project can be edited and
 exported without a game library, using narration and your own images.
 
 ## Preview
 
-**Preview in player** opens the compiled episode in the existing desktop
-player, with the selected game's original skin, fonts, animations and choice
-handling. Supply an imported library to use this preview. It runs in a separate
-process and uses a temporary save directory; it does not import into, overwrite
-or save progress in your existing library. Close the preview before starting
-another. Edits take effect when a new preview is launched.
+**Preview in player** runs the compiled episode in the shared desktop player
+with an imported game library and temporary saves. **Preview from selected
+node** starts there with freshly initialized state. **Restart preview after
+edits** recompiles and restarts the preview after an edit; it does not patch a
+running VM or retain its old variables. The source library and its saves stay
+unchanged. Import exported stories into a player library to test the normal
+end-of-episode menu and select another story through its existing picker.
+
+## Live editing with a model
+
+Open a saved `.expproj` inside your [MCP client's workspace](MCP.md). When the
+status bar says **MCP: live editing ready**, the model reads your unsaved edits
+and its changes appear in the graph and inspector immediately. Each model
+transaction is one undoable edit; **Undo** and **Redo** work across human and
+model changes. **Save** writes the shared document to disk. Autosave recovery
+also retains accepted model edits.
+
+The model must reread if you change the project after its last read. It cannot
+edit while you have a modal dialog open or are dragging a card. Only one
+desktop window can own a project. If another program changes the saved file,
+use **Save as** to retain your draft or reopen the file to use that program's
+changes. Closing the project returns MCP to the saved file; a disconnected
+desktop is reported as an error rather than silently overwritten.
+
+The conversation remains in your MCP client.
+
+## Debugging
+
+**Debug** uses the production VM without requiring a window or base art. Step
+by source node, run to comma-separated breakpoint IDs, inspect/change numeric
+variables, submit actual inputs and advance the clock. It shows native PCs,
+pending frames and minigame state. A missing base resource cannot be diagnosed
+visually in this headless debugger; use player preview for layout and audio.
+Unknown services and opcodes still stop explicitly. The debugger never inserts
+a winning minigame result. MCP additionally exposes grid pointer phases.
+
+[![Story debugger stopped at the example's choice, showing its options, timer, program counter and input controls.](images/creator/debugger.png)](images/creator/debugger.png)
+
+The debugger is waiting for the same choice shown above. Enter `0` to choose
+the first answer, or use **Advance clock 1s** to exercise the timeout.
+
+## Scenes, translations and existing EXPs
+
+Assign different **Scene group** values to split a story into scripts. Native
+resource 25001 initializes characters/state; multiple groups are assigned
+resources 25002 onward and connected using service 10 followed by HALT.
+Multi-scene numeric variables use the reserved authoring owner `-30000`,
+with key `-1` for the next node and nonnegative keys for variables. Do not use
+that owner for explicit Score/property nodes. Single-scene projects retain
+initialized script-memory variables. Native scene loading clears its usual UI
+and expression history.
+
+Translations cover title, dialogue, choices, character names and minigame text.
+The EXP holds all five metadata titles and **one compiled story language**,
+selected in Translations or with `--language`. Export separate files for other
+story languages. Missing translations fall back to the authored text. Story
+text uses Latin-1; title metadata uses UTF-8. Translated grid alphabets and
+words must still agree.
+
+[![Translations dialog with French title, dialogue and choice text alongside the authored English originals.](images/creator/translations.png)](images/creator/translations.png)
+
+Select a language to edit its text alongside the originals. Empty translation
+cells keep the original text.
+
+**Import EXP** restores high-level graphs from this creator's exports. For an
+older/original EXP it produces a graph of native basic blocks, retaining every
+resource and instruction, including unknown calls. Select the project game
+before importing because the native container does not identify it. Native
+blocks expose instructions and data words; packed-text candidates can be edited
+within their original allocation after checking the word address. Instruction
+counts and data-bank lengths remain fixed to preserve branch/callback addresses.
+These are native block edits, not inferred dialogue/choice decompilation.
+
+```sh
+uv run --locked python -m exp_runtime.creator imported.expproj \
+  --import-exp original.exp --game cod
+uv run --locked python -m exp_runtime.creator story.expproj \
+  --language fr --export story-fr.exp
+```
+
+The project schema is version 2 and migrates version 1 documents on read.
+Exports include optional resource 2 with `EXP-RUNTIME-AUTHORED\0` followed by
+versioned JSON: graph, source locations and variable/character mappings.
+Embedded image bytes stay in their own resource records; private library paths
+are omitted. The native scripts do not depend on this extension. Imported
+original archives retain their resources rather than acquiring a guessed graph.
 
 ## Export for an original app
 
@@ -131,9 +271,9 @@ interpreter from each supplied reference binary:
 | CoD iOS (`CoD`, ARMv6 slice) | `0000d53c` | `0000cb8c` | `00007250` |
 
 `tools/test_creator_native.py` pins the SHA-256 identities of those binaries.
-It checks 24 programs per profile, covering every comparison operator and
-choice branch, signed variable writes, initialized memory, narration, named
-dialogue and episode exit. Native yield arguments and script memory must match
+It checks 41 SHS programs per platform and 39 CoD programs, covering comparison
+operators, choices, arithmetic/boolean control flow, initialized variables and
+the newly exposed presentation, audio, input and minigame argument frames. Native yield arguments and script memory must match
 the production Python VM. The harness supplies stream I/O, allocation and
 host callback results. It does **not** run the original UI, timers, image
 decoder, catalog installation or OS integration. CSPUD compatibility is based
@@ -161,9 +301,9 @@ depends only on `exp-runtime-formats`. Its `[desktop]` extra adds Qt for Python
 umbrella's `[creator]` extra selects that complete editor. Ordinary player
 installs and desktop/iOS player bundles exclude the creator and Qt.
 
-Once this feature is released, `python -m pip install 'exp-runtime[creator]'`
-will install the visual editor. Until then, use the source command above or
-locally built wheels. No new release version has been assigned yet.
+Starting with v0.6.0, `python -m pip install 'exp-runtime[creator]>=0.6.0'`
+installs the visual editor. Source checkouts and locally built wheels support
+the same authoring API.
 
 ```python
 from pathlib import Path
@@ -186,20 +326,42 @@ writer and `Metadata.to_bytes()` also work independently of the creator. The
 writer emits deterministic literal records; it does not preserve an existing
 archive's compression, aliases or physical layout.
 
-## Initial limits
+## Remaining compatibility limits
 
-This is an editor for new stories, not a decompiler that converts arbitrary
-original EXP scripts into a graph. Music cues, minigame authoring, expression
-animation editing, localization editing and live preview updates are not yet
-exposed. The compiler emits one script at resource 25001 and checks the native
-signed instruction-count limit (32,767), keeps data below `0x7000` words and
-allows at most 199 portrait speakers plus the narrator. Variables live in
-initialized script memory, separate from the games' global properties. Story
-text uses native Latin-1 encoding; unsupported
-characters are reported instead of silently replaced. Use straight quotes and
-dashes when pasting text from a word processor. Metadata titles use UTF-8.
+Full playback and installation in original apps still require a compatible
+installation. The native harness verifies loaders, instructions, memory and
+yield frames; it supplies host callbacks and cannot prove original UI behavior.
+The creator inherits documented runtime presentation/audio limitations; it does
+not add original fade/channel semantics or complete animation parity.
 
-An editable project is versioned JSON containing node positions, connections,
-settings and base64-encoded custom image bytes. The optional library location
-is stored relative to the project where possible. Projects and generated EXPs
-are ignored by Git and excluded from package archives.
+**End episode** compiles to the existing native service 7 and uses the normal
+episode-exit/menu flow in both games. Players choose another story through the
+existing episode picker. No custom next-episode instruction or playback metadata
+is required. See [the native exit contract](STORY_SERVICES.md#episode-exit-services-7-and-63).
+
+Earlier unreleased **Next episode** nodes load as ordinary endings. Their
+optional closing text/title and translations are preserved as a Message node
+followed by End episode. Their old pack/episode target no longer triggers an
+automatic handoff or a separate prompt; the player selects the next story.
+
+Each script is limited to 32,767 instructions and less than `0x7000` data words;
+projects support at most 998 scene groups and 199 characters plus the narrator.
+Editable native imports are bounded by project/resource limits and do not
+relocate unknown native pointers. No original game content is bundled.
+
+## Standalone builds and MCP
+
+CI builds and smoke-tests separate **EXP Runtime Creator** downloads for Windows
+x64, Linux x64, macOS arm64 and macOS x64. The creator uses its kiwi-and-hammer
+icon and includes the player needed for preview. Existing player/iOS artifacts
+continue to exclude the editor, Qt and MCP server dependencies.
+
+```sh
+uv run --locked --extra build --extra creator python tools/build_desktop.py --creator
+uv run --locked --extra build --extra creator python tools/package_desktop.py --creator --smoke-test
+```
+
+For automation, the optional **creator-mcp** extra runs a stdio MCP server using
+the same model/compiler and debugger. See [MCP.md](MCP.md) for installation,
+workspace setup, tools and a client configuration. It is independently usable
+without Qt; the shared player and pygame provide isolated screenshots/audio previews.

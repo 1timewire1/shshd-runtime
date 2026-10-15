@@ -4,15 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exp-runtime-creator"
-version = "0.5.0"
+version = "0.6.0"
 description = "Visual desktop episode creator and native EXP compiler for EXP Runtime"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["exp-runtime-formats==0.5.0"]
+dependencies = ["exp-runtime-formats==0.6.0"]
 
 [project.optional-dependencies]
-desktop = ["PySide6-Essentials>=6.10,<7", "exp-runtime-player[desktop]==0.5.0", "exp-runtime-shs==0.5.0", "exp-runtime-cod==0.5.0"]
+mcp = ["mcp>=1.28,<2", "exp-runtime-player[desktop]==0.6.0", "exp-runtime-shs==0.6.0", "exp-runtime-cod==0.6.0"]
+desktop = ["PySide6-Essentials>=6.10,<7", "exp-runtime-player[desktop]==0.6.0", "exp-runtime-shs==0.6.0", "exp-runtime-cod==0.6.0"]
+
+[project.scripts]
+exp-creator-mcp = "exp_runtime.creator.mcp_server:main"
 
 [project.gui-scripts]
 exp-creator = "exp_runtime.creator.__main__:main"

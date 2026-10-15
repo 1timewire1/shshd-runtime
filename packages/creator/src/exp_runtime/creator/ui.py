@@ -3,27 +3,33 @@ from copy import deepcopy
 from html import escape
 from pathlib import Path
 import sys
+import json
+from dataclasses import asdict
 import tempfile
 import uuid
 
-from PySide6.QtCore import QPointF, QProcess, Qt, Signal
+from PySide6.QtCore import QPointF, QProcess, Qt, Signal, QTimer, QStandardPaths
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QDialogButtonBox,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QGraphicsItem, QGraphicsPathItem, QGraphicsRectItem,
     QGraphicsScene, QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QScrollArea,
     QSpinBox, QSplitter, QTextEdit, QToolBar, QVBoxLayout, QWidget)
 
 from exp_runtime.exp import ContentError
-from .assets import image_png, import_library_image
+from .assets import image_png, import_library_image, player_library
 from .compiler import compile_project, export_project, export_native_slot
 from .model import (Choice, KINDS, OPERATORS, Node, Project, ProjectError,
-                    load_project, save_project)
+                    project_from_bytes, save_project, Character, validate_structure)
+from .features import NAMES, parameters
+from .editing import Recovery, auto_layout, copy_nodes, paste_nodes
+from .panels import DebugDialog, ListDialog, RecordDialog, TranslationsDialog
+from .live import LiveEditor
+from .sharing import SharingError, digest, guard, session_info
 
 COLORS = dict(dialogue='#6093cb', choice='#b381c7', background='#67a68b',
               set='#cc9d50', branch='#cc9d50', end='#aa7479')
-NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background',
-             set='Set variable', branch='Condition', end='End episode')
+COLORS = dict.fromkeys(KINDS, '#6093cb') | COLORS
 
 
 class NodeItem(QGraphicsRectItem):
@@ -182,15 +188,37 @@ class LibraryBrowser(QDialog):
 
 
 class Editor(QMainWindow):
-    def __init__(self, project=None, path=None):
+    def __init__(self, project=None, path=None, *, discover_library=True):
         super().__init__()
         self.setWindowIcon(QIcon(str(Path(__file__).with_name('kiwi-hammer.svg'))))
         self.project, self.path = project or Project(), Path(path) if path else None
+        self.live_editor = LiveEditor(self)
+        self.saved_path = self.disk_revision = None
+        if self.path is not None:
+            try:
+                self.live_editor.attach(self.path)
+                with guard(self.path):
+                    data = self.path.read_bytes()
+                    if project is None: self.project = project_from_bytes(data, self.path)
+                    self.disk_revision = digest(data)
+                self.saved_path = self.path.resolve()
+            except BaseException:
+                self.live_editor.close()
+                raise
+        self.discover_library = discover_library
+        self.use_player_library()
         self.dirty = False
         self.undo_history, self.redo_history = [], []
         self.selected = self.project.start
         self.preview_process = None
         self.preview_directory = None
+        self.recovery = Recovery(Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)) / 'recovery')
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.timeout.connect(self.autosave)
+        self.autosave_timer.start(15000)
+        self.live_timer = QTimer(self)
+        self.live_timer.setSingleShot(True)
+        self.live_timer.timeout.connect(self.restart_preview)
         self.resize(1320, 820)
         self.setMinimumSize(1000, 650)
         toolbar = QToolBar('Episode')
@@ -205,6 +233,7 @@ class Editor(QMainWindow):
             ('Validate', self.validate, None), ('Export EXP…', self.export, None),
             ('Original app export…', self.export_original, None),
             ('Preview in player', self.preview, None),
+            ('Import EXP…', self.import_exp, None), ('Debug…', self.debug, None),
         ):
             action = QAction(label, self)
             action.triggered.connect(callback)
@@ -216,7 +245,8 @@ class Editor(QMainWindow):
         project_row = QHBoxLayout()
         self.title = QLineEdit(self.project.title)
         self.title.setPlaceholderText('Episode title')
-        self.title.editingFinished.connect(lambda: self.set_project('title', self.title.text()))
+        self.title.setObjectName('project_title')
+        self.title.textEdited.connect(lambda value: self.set_project('title', value))
         project_row.addWidget(QLabel('Title'))
         project_row.addWidget(self.title, 1)
         self.game = QComboBox()
@@ -235,10 +265,21 @@ class Editor(QMainWindow):
         left = QWidget()
         toolbox = QVBoxLayout(left)
         toolbox.addWidget(QLabel('ADD A STORY NODE'))
+        self.node_kind = QComboBox()
         for kind in KINDS:
-            button = QPushButton('+ ' + NAMES[kind])
-            button.clicked.connect(lambda checked=False, kind=kind: self.add_node(kind))
-            toolbox.addWidget(button)
+            if kind != 'native': self.node_kind.addItem(NAMES[kind], kind)
+        toolbox.addWidget(self.node_kind)
+        button = QPushButton('Add node')
+        button.clicked.connect(lambda: self.add_node(self.node_kind.currentData()))
+        toolbox.addWidget(button)
+        for label, callback in (('Characters…', self.characters), ('Translations…', self.translations),
+                                ('Auto arrange', self.arrange), ('Copy nodes', self.copy),
+                                ('Paste nodes', self.paste), ('Duplicate nodes', self.duplicate)):
+            button = QPushButton(label); button.clicked.connect(callback); toolbox.addWidget(button)
+        search = QLineEdit(); search.setPlaceholderText('Find label, dialogue or speaker')
+        search.returnPressed.connect(lambda: self.search(search.text())); toolbox.addWidget(search)
+        self.live = QCheckBox('Restart preview after edits'); toolbox.addWidget(self.live)
+        self.preview_selected = QCheckBox('Preview from selected node'); toolbox.addWidget(self.preview_selected)
         toolbox.addWidget(QLabel('PROJECT IMAGES'))
         self.assets = QListWidget()
         toolbox.addWidget(self.assets, 1)
@@ -272,6 +313,8 @@ class Editor(QMainWindow):
         splitter.setSizes([220, 730, 330])
         column.addWidget(splitter, 1)
         self.setCentralWidget(root)
+        self.sharing_label = QLabel()
+        self.statusBar().addPermanentWidget(self.sharing_label)
         self.refresh()
         self.statusBar().showMessage('Connect nodes with the destination fields. Drag cards to arrange your story.')
 
@@ -286,11 +329,19 @@ class Editor(QMainWindow):
 
     def changed(self):
         self.setWindowTitle(f'{self.project.title}{" *" if self.dirty else ""} — EXP Runtime Creator')
+        self.sharing_label.setText('MCP: live editing ready' if self.live_editor.lease else 'MCP: save project to connect')
         for card in self.graph.cards.values():
             card.refresh()
         self.graph.draw_edges()
+        if self.dirty and self.preview_process is not None and self.live.isChecked():
+            self.live_timer.start(800)
 
-    def refresh(self):
+    def refresh(self, *, preserve_focus=False):
+        focus = QApplication.focusWidget() if preserve_focus else None
+        focused_name = focus.objectName() if focus is not None else ''
+        cursor = focus.textCursor() if isinstance(focus, QTextEdit) else None
+        position = focus.cursorPosition() if isinstance(focus, QLineEdit) else None
+        scroll = self.inspector.verticalScrollBar().value()
         for widget, value in ((self.title, self.project.title), (self.game, self.project.game),
                               (self.pack, self.project.pack_id), (self.episode_id, self.project.episode_id)):
             widget.blockSignals(True)
@@ -303,11 +354,26 @@ class Editor(QMainWindow):
             widget.blockSignals(False)
         self.assets.clear()
         self.assets.addItems([f'{a.id} · {a.name}{" (base)" if a.data is None else ""}' for a in self.project.assets])
-        self.library_label.setText('Preview library: ' + (Path(self.project.library).name if self.project.library else 'none'))
+        self.library_label.setText('Game library: ' + (Path(self.project.library).name if self.project.library else 'none'))
         self.library_label.setToolTip(self.project.library)
+        self.preview_selected.setEnabled(not self.project.native)
+        if self.project.native: self.preview_selected.setChecked(False)
         self.graph.project = self.project
         self.graph.rebuild(self.selected)
         self.show_properties()
+        if focused_name:
+            restored = self.title if focus is self.title else self.inspector.widget().findChild(type(focus), focused_name)
+            if restored is not None:
+                restored.setFocus()
+                if isinstance(restored, QTextEdit) and cursor is not None:
+                    current = restored.textCursor()
+                    end = restored.document().characterCount() - 1
+                    current.setPosition(min(cursor.anchor(), end))
+                    current.setPosition(min(cursor.position(), end), current.MoveMode.KeepAnchor)
+                    restored.setTextCursor(current)
+                elif isinstance(restored, QLineEdit) and position is not None:
+                    restored.setCursorPosition(min(position, len(restored.text())))
+        if preserve_focus: self.inspector.verticalScrollBar().setValue(scroll)
         self.changed()
 
     def set_project(self, key, value):
@@ -319,12 +385,20 @@ class Editor(QMainWindow):
     def change_game(self):
         game = self.game.currentData()
         if game != self.project.game:
-            if self.project.library or any(a.data is None for a in self.project.assets):
-                self.error('Start a new project to use a different game with original assets. '
+            if (self.project.native or any(a.data is None for a in self.project.assets)
+                    or any(n.kind in ('music', 'sound') for n in self.project.nodes)):
+                self.error('Start a new project to change games after using base assets or native scripts. '
                            'Game libraries and base resource IDs must stay together.')
                 self.refresh()
             else:
-                self.set_project('game', game)
+                self.remember()
+                self.project.game, self.project.library = game, ''
+                self.use_player_library()
+                self.refresh()
+
+    def use_player_library(self):
+        if self.discover_library and not self.project.library:
+            self.project.library = player_library(self.project.game)
 
     def set_node(self, key, value):
         node = self.project.node(self.selected)
@@ -332,7 +406,7 @@ class Editor(QMainWindow):
             self.remember()
             setattr(node, key, value)
             self.changed()
-            if key == 'portrait':
+            if key in ('portrait', 'character'):
                 self.show_properties()
 
     def select_node(self):
@@ -348,6 +422,8 @@ class Editor(QMainWindow):
         self.changed()
 
     def add_node(self, kind):
+        if self.project.native:
+            self.error('Native blocks keep their original instruction addresses. Create a new story for high-level nodes.'); return
         self.remember()
         position = self.view.mapToScene(self.view.viewport().rect().center())
         node = Node(uuid.uuid4().hex[:10], kind, NAMES[kind], position.x(), position.y())
@@ -358,6 +434,8 @@ class Editor(QMainWindow):
         self.refresh()
 
     def delete_node(self):
+        if self.project.native:
+            self.error('Native blocks cannot be removed without invalidating existing PCs.'); return
         if len(self.project.nodes) == 1:
             return
         self.remember()
@@ -395,12 +473,14 @@ class Editor(QMainWindow):
             label.setObjectName('node_label')
             label.textEdited.connect(lambda value: self.set_node('label', value))
             form.addRow('Label', label)
-            if node.kind in ('dialogue', 'choice'):
+            if node.kind in ('dialogue', 'choice', 'input'):
                 speaker = QLineEdit(node.speaker)
                 speaker.setPlaceholderText('Empty for narration')
                 speaker.setObjectName('speaker')
                 speaker.textEdited.connect(lambda value: self.set_node('speaker', value))
+                speaker.setEnabled(node.kind != 'dialogue' or not node.character)
                 form.addRow('Speaker / title', speaker)
+            if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game'):
                 text = QTextEdit()
                 text.setPlainText(node.text)
                 text.setAcceptRichText(False)
@@ -408,7 +488,7 @@ class Editor(QMainWindow):
                 text.setMinimumHeight(120)
                 text.textChanged.connect(lambda: self.set_node('text', text.toPlainText()))
                 form.addRow('Text', text)
-            if node.kind in ('dialogue', 'background'):
+            if node.kind == 'background' or node.kind == 'dialogue' and not node.character:
                 key = 'portrait' if node.kind == 'dialogue' else 'asset'
                 images = [('None', None)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets]
                 form.addRow('Portrait' if key == 'portrait' else 'Background', self.combo(
@@ -416,14 +496,20 @@ class Editor(QMainWindow):
             if node.kind in ('dialogue', 'choice'):
                 color = self.combo([('Gray', 0), ('Pink', 1), ('Blue', 2), ('Gold', 3)],
                                    node.theme, lambda value: self.set_node('theme', value))
-                color.setEnabled(node.kind == 'choice' or node.portrait is not None)
+                color.setEnabled(not node.character and (node.kind == 'choice' or node.portrait is not None))
                 color.setToolTip('Portrait and choice color. Narration and dialogue without a portrait use the game\'s fixed style.')
                 form.addRow('Color', color)
             if node.kind == 'choice':
                 for i, option in enumerate(node.options):
                     field = QLineEdit(option.text)
+                    field.setObjectName(f'answer_{i}')
                     field.textEdited.connect(lambda text, i=i: self.set_option(i, 'text', text))
                     form.addRow(f'Answer {i + 1}', field)
+                    condition = QLineEdit(option.condition)
+                    condition.setObjectName(f'condition_{i}')
+                    condition.setPlaceholderText('Optional: points >= 3')
+                    condition.textEdited.connect(lambda value, i=i: self.set_option(i, 'condition', value))
+                    form.addRow('Enabled when', condition)
                     form.addRow('Go to', self.destination(option.target, lambda target, i=i: self.set_option(i, 'target', target)))
                 buttons = QHBoxLayout()
                 for label, delta in (('Add answer', 1), ('Remove last', -1)):
@@ -442,6 +528,7 @@ class Editor(QMainWindow):
                             node.timeout_option, lambda value: self.set_node('timeout_option', value)))
             if node.kind in ('set', 'branch'):
                 variable = QLineEdit(node.variable)
+                variable.setObjectName('variable')
                 variable.setPlaceholderText('e.g. helped_friend')
                 variable.textEdited.connect(lambda value: self.set_node('variable', value))
                 form.addRow('Variable', variable)
@@ -453,12 +540,32 @@ class Editor(QMainWindow):
                     form.addRow('Comparison', self.combo([(op, op) for op in OPERATORS], node.operator,
                                 lambda value: self.set_node('operator', value)))
                 form.addRow('Value', value)
-            if node.kind not in ('choice', 'end'):
-                form.addRow('If true' if node.kind == 'branch' else 'Next',
+            if node.kind not in ('choice', 'end', 'native'):
+                form.addRow('If true' if node.kind in ('branch', 'text_branch') else 'Next',
                             self.destination(node.next, lambda target: self.set_node('next', target)))
-            if node.kind == 'branch':
+            if node.kind in ('branch', 'text_branch'):
                 form.addRow('If false', self.destination(node.otherwise, lambda target: self.set_node('otherwise', target)))
+            if not self.project.native:
+                scene = QSpinBox(); scene.setRange(25001, 25999); scene.setValue(node.scene)
+                scene.valueChanged.connect(lambda value: self.set_node('scene', value)); form.addRow('Scene group', scene)
+                if node.kind in ('dialogue', 'choice', 'relationship', 'word_game'):
+                    form.addRow('Character', self.combo([('Narrator / inline speaker', '')] +
+                        [(c.name, c.id) for c in self.project.characters], node.character,
+                        lambda value: self.set_node('character', value)))
+                if node.kind == 'dialogue':
+                    form.addRow('Expression', self.combo([(str(i), i) for i in range(5)], node.expression,
+                        lambda value: self.set_node('expression', value)))
+            if parameters(node):
+                settings = QPushButton('Edit ' + ('native instructions…' if node.kind == 'native' else 'settings…'))
+                settings.clicked.connect(self.node_settings); form.addRow(settings)
+            if node.kind == 'native':
+                data = QPushButton('Edit script data words…'); data.clicked.connect(self.native_data); form.addRow(data)
+                strings = QPushButton('Edit packed text…'); strings.clicked.connect(self.native_text); form.addRow(strings)
+            if node.kind in ('music', 'sound'):
+                audio = QPushButton('Listen to selected resource'); audio.clicked.connect(self.listen); form.addRow(audio)
+                stop = QPushButton('Stop listening'); stop.clicked.connect(self.stop_listening); form.addRow(stop)
             start = QPushButton('Start episode here')
+            start.setEnabled(not self.project.native)
             start.clicked.connect(lambda: self.set_project('start', self.selected))
             form.addRow(start)
             delete = QPushButton('Delete node')
@@ -561,7 +668,21 @@ class Editor(QMainWindow):
         return self.save() if result == QMessageBox.StandardButton.Save else result == QMessageBox.StandardButton.Discard
 
     def replace_project(self, project, path=None):
-        self.project, self.path = project, Path(path) if path else None
+        path = Path(path) if path else None
+        previous = self.live_editor.lease.path if self.live_editor.lease else None
+        self.live_editor.attach(path)
+        try:
+            if path:
+                with guard(path): revision = digest(path.read_bytes()) if path.exists() else None
+            else: revision = None
+        except (ContentError, OSError):
+            self.live_editor.attach(previous)
+            raise
+        self.recovery.remove()
+        self.project, self.path = project, path
+        self.saved_path = path.resolve() if path else None
+        self.disk_revision = revision
+        self.use_player_library()
         self.selected = project.start
         self.undo_history, self.redo_history = [], []
         self.dirty = False
@@ -577,20 +698,43 @@ class Editor(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, 'Open an episode project', '', 'Episode projects (*.expproj)')
         if path:
             try:
-                self.replace_project(load_project(Path(path)), path)
+                # Claim the live document before reading; MCP writes now go
+                # through this window rather than racing the file load.
+                previous = self.live_editor.lease.path if self.live_editor.lease else None
+                self.live_editor.attach(path)
+                try:
+                    with guard(path): data = Path(path).read_bytes()
+                    self.replace_project(project_from_bytes(data, path), path)
+                    self.disk_revision = digest(data)
+                except (ContentError, OSError):
+                    self.live_editor.attach(previous)
+                    raise
             except (ContentError, OSError) as error:
                 self.error(error)
 
     def save(self):
         if self.path is None:
             return self.save_as()
+        previous = self.live_editor.lease.path if self.live_editor.lease else None
         try:
-            save_project(self.project, self.path)
+            self.live_editor.attach(self.path)
+            with guard(self.path):
+                info = session_info(self.path)
+                if info is None or info['token'] != self.live_editor.lease.record['token']:
+                    raise SharingError('Desktop ownership changed; reopen the project before saving')
+                actual = digest(self.path.read_bytes()) if self.path.exists() else None
+                if self.saved_path == self.path.resolve() and actual != self.disk_revision:
+                    raise ProjectError('Project changed on disk; use Save as to keep your edits, or reopen the changed file.')
+                save_project(self.project, self.path)
+                self.disk_revision = digest(self.path.read_bytes())
+                self.saved_path = self.path.resolve()
             self.dirty = False
+            self.recovery.remove()
             self.changed()
             self.statusBar().showMessage(f'Saved {self.path.name}')
             return True
         except (ContentError, OSError) as error:
+            self.live_editor.attach(previous)
             self.error(error)
             return False
 
@@ -651,11 +795,12 @@ class Editor(QMainWindow):
         try:
             self.preview_directory = tempfile.TemporaryDirectory(prefix='exp-creator-')
             path = Path(self.preview_directory.name) / 'preview.exp'
-            export_project(self.project, path)
+            export_project(self.project, path) if not self.preview_selected.isChecked() else path.write_bytes(
+                compile_project(self.project, start=self.selected))
             process = QProcess(self)
             self.preview_process = process
             process.setProgram(sys.executable)
-            process.setArguments(['-m', 'exp_runtime.creator', '--preview', str(path),
+            process.setArguments(([] if getattr(sys, 'frozen', False) else ['-m', 'exp_runtime.creator']) + ['--preview', str(path),
                                   '--library', self.project.library, '--game', self.project.game])
             process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self.preview_output = ''
@@ -713,6 +858,153 @@ class Editor(QMainWindow):
             self.preview_directory.cleanup()
             self.preview_directory = None
 
+    def autosave(self):
+        if self.dirty:
+            try: self.recovery.write(self.project, self.path)
+            except (ContentError, OSError) as error: self.statusBar().showMessage(f'Autosave failed: {error}')
+
+    def focus_node(self, key):
+        if key in self.graph.cards:
+            self.graph.clearSelection(); self.graph.cards[key].setSelected(True)
+            self.view.centerOn(self.graph.cards[key])
+
+    def search(self, query):
+        matches = [n.id for n in self.project.nodes if query.casefold() in
+                   (n.id + ' ' + n.label + ' ' + n.speaker + ' ' + n.text).casefold()]
+        if matches:
+            index = (matches.index(self.selected) + 1) % len(matches) if self.selected in matches else 0
+            self.focus_node(matches[index])
+        else: self.statusBar().showMessage('No matching nodes')
+
+    def arrange(self):
+        try:
+            candidate = deepcopy(self.project); auto_layout(candidate)
+            self.remember(); self.project = candidate; self.refresh()
+        except ProjectError as error: self.error(error)
+
+    def copy(self):
+        try:
+            ids = {item.node.id for item in self.graph.selectedItems() if isinstance(item, NodeItem)} or {self.selected}
+            QApplication.clipboard().setText(copy_nodes(self.project, ids))
+        except ProjectError as error: self.error(error)
+
+    def paste(self):
+        try:
+            candidate = deepcopy(self.project)
+            ids = paste_nodes(candidate, QApplication.clipboard().text())
+            self.remember(); self.project = candidate; self.selected = ids[0]; self.refresh()
+        except ProjectError as error: self.error(error)
+
+    def duplicate(self):
+        if not self.project.native: self.copy(); self.paste()
+
+    def characters(self):
+        if self.project.native:
+            self.error('Original character definitions remain in their native instructions.'); return
+        dialog = ListDialog([asdict(c) for c in self.project.characters], self, 'Characters',
+                            template=asdict(Character(uuid.uuid4().hex[:10])))
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                candidate = deepcopy(self.project); candidate.characters = [Character(**r) for r in dialog.value]
+                validate_structure(candidate)
+                self.remember(); self.project = candidate; self.refresh()
+            except (ValueError, TypeError) as error: self.error(error)
+
+    def translations(self):
+        dialog = TranslationsDialog(self.project, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.remember(); self.project.locales = dialog.locales
+            self.project.language = dialog.current; self.refresh()
+
+    def node_settings(self):
+        node = self.project.node(self.selected)
+        dialog = RecordDialog(parameters(node), self, NAMES[node.kind] + ' settings')
+        if dialog.exec() == QDialog.DialogCode.Accepted: self.set_node('params', dialog.value)
+
+    def native_text(self):
+        from .native import packed_strings, edit_packed_text
+        from PySide6.QtWidgets import QInputDialog
+        script = self.project.node(self.selected).params['script']
+        candidates = packed_strings(self.project, script)
+        labels = [f'{item["address"]}: {item["text"][:100]}' for item in candidates]
+        if not labels:
+            self.error('No printable packed strings found in this main data bank.'); return
+        label, accepted = QInputDialog.getItem(self, 'Packed text candidates',
+            'Confirm the word address used by the instruction before editing.', labels, editable=False)
+        if not accepted: return
+        selected = candidates[labels.index(label)]
+        text, accepted = QInputDialog.getMultiLineText(self, 'Replace packed text',
+            'The replacement must fit the original allocation; native addresses stay fixed.', selected['text'])
+        if accepted:
+            try:
+                candidate = deepcopy(self.project)
+                edit_packed_text(candidate, script, selected['address'], text)
+                self.remember(); self.project = candidate; self.refresh()
+            except ValueError as error: self.error(error)
+
+    def native_data(self):
+        from .native import _resources, set_data_words
+        from exp_runtime.decode.bytecode import decode_program
+        script = self.project.node(self.selected).params['script']
+        program = decode_program(_resources(self.project)[script])
+        dialog = RecordDialog({'main': list(program.main_words), 'extra': list(program.extra_words)}, self, 'Native data words')
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                candidate = deepcopy(self.project)
+                set_data_words(candidate, script, dialog.value['main'])
+                set_data_words(candidate, script, dialog.value['extra'], extra=True)
+                self.remember(); self.project = candidate; self.refresh()
+            except ValueError as error: self.error(error)
+
+    def import_exp(self):
+        if not self.confirm_saved(): return
+        path, _ = QFileDialog.getOpenFileName(self, 'Import an EXP as an editable project', '', 'EXP episodes (*.exp)')
+        if path:
+            from .native import import_exp
+            try:
+                project = import_exp(Path(path).read_bytes(), game=self.project.game)
+                self.replace_project(project); self.dirty = True; self.changed()
+                self.statusBar().showMessage('Imported native blocks. Instruction addresses are fixed.' if project.native
+                                            else 'Restored the editable story graph from EXP.')
+            except (ContentError, OSError) as error: self.error(error)
+
+    def debug(self):
+        try:
+            dialog = DebugDialog(self.project, self, self.focus_node,
+                                 self.selected if self.preview_selected.isChecked() else None)
+            dialog.exec()
+        except (ValueError, OSError) as error: self.error(error)
+
+    def restart_preview(self):
+        if not self.live.isChecked() or self.preview_process is None: return
+        self.preview_process.blockSignals(True); self.preview_process.terminate()
+        if not self.preview_process.waitForFinished(1500):
+            self.preview_process.kill(); self.preview_process.waitForFinished(1500)
+        self.cleanup_preview(); self.preview()
+
+    def listen(self):
+        from io import BytesIO
+        from exp_runtime.content import ContentLibrary
+        from exp_runtime.audio import music_cue
+        import pygame
+        if not self.project.library: self.choose_library()
+        if not self.project.library: return
+        try:
+            node = self.project.node(self.selected); resource = parameters(node)['resource']
+            cue = music_cue(resource, game=self.project.game)
+            with ContentLibrary(Path(self.project.library)) as library:
+                data = library.read_asset(cue.asset_id if node.kind == 'music' else resource)
+            pygame.mixer.init()
+            if node.kind == 'music':
+                pygame.mixer.music.load(BytesIO(data)); pygame.mixer.music.play(start=cue.start_ms / 1000)
+            else: pygame.mixer.Sound(BytesIO(data)).play()
+        except (ContentError, OSError, pygame.error) as error: self.error(error)
+
+    def stop_listening(self):
+        if 'pygame' in sys.modules:
+            import pygame
+            if pygame.mixer.get_init(): pygame.mixer.stop(); pygame.mixer.music.stop()
+
     def closeEvent(self, event):
         if not self.confirm_saved():
             event.ignore()
@@ -724,6 +1016,9 @@ class Editor(QMainWindow):
                 self.preview_process.kill()
                 self.preview_process.waitForFinished(2000)
             self.cleanup_preview()
+        self.recovery.remove()
+        self.stop_listening()
+        self.live_editor.close()
         # QGraphicsScene emits selectionChanged while destroying selected
         # items. The scene's C++ object may already be gone at that point.
         self.graph.blockSignals(True)
@@ -733,7 +1028,14 @@ class Editor(QMainWindow):
 def launch(path=None):
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName('EXP Runtime Creator')
-    window = Editor(load_project(path) if path else None, path)
+    window = Editor(path=path)
     app.setWindowIcon(window.windowIcon())
     window.show()
+    for path in sorted(window.recovery.path.parent.glob('*.recovery.json')):
+        try:
+            project, source = Recovery.read(path)
+            if QMessageBox.question(window, 'Recover unsaved work', f'Recover "{project.title}"?') == QMessageBox.StandardButton.Yes:
+                window.replace_project(project, source); window.dirty = True
+                window.recovery.path = path; window.changed(); break
+        except (ContentError, OSError) as error: window.statusBar().showMessage(str(error))
     app.exec()

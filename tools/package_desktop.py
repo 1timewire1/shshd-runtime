@@ -19,7 +19,7 @@ import zipfile
 
 
 TARGETS = ('windows-x64', 'linux-x64', 'macos-arm64', 'macos-x64')
-FORBIDDEN_SUFFIXES = {'.apk', '.ipa', '.exp', '.rar', '.kiw', '.sav', '.c', '.asm'}
+FORBIDDEN_SUFFIXES = {'.apk', '.ipa', '.exp', '.rar', '.kiw', '.sav', '.c', '.asm', '.expproj'}
 FORBIDDEN_NAMES = {
     'libshs09.so', 'surviving_hs', 'surviving_hs.app', 'cod.app', 'res_generated',
     'library.json', 'player.json', 'launcher.json',
@@ -38,11 +38,15 @@ def host_target():
     return target
 
 
-def bundle_name(target):
+def bundle_name(target, creator=False):
+    if creator: return 'EXP Runtime Creator.app' if target.startswith('macos-') else 'EXP Runtime Creator'
     return 'EXP Runtime.app' if target.startswith('macos-') else 'EXP Runtime'
 
 
-def executable(bundle, target):
+def executable(bundle, target, creator=False):
+    if creator:
+        return (bundle / 'Contents' / 'MacOS' / 'EXP Runtime Creator' if target.startswith('macos-') else
+                bundle / ('EXP Runtime Creator.exe' if target.startswith('windows-') else 'EXP Runtime Creator'))
     if target.startswith('macos-'):
         return bundle / 'Contents' / 'MacOS' / 'EXP Runtime'
     return bundle / ('EXP Runtime.exe' if target.startswith('windows-') else 'EXP Runtime')
@@ -78,7 +82,7 @@ def _tar_metadata(info):
     return info
 
 
-def package(root, target, label):
+def package(root, target, label, *, creator=False):
     if target not in TARGETS:
         raise ValueError(f'Unknown download target: {target}')
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', label):
@@ -87,14 +91,14 @@ def package(root, target, label):
     if re.fullmatch(r'[0-9a-f]{40}', label):
         label = label[:12]
     root = root.resolve()
-    bundle = root / 'dist' / 'desktop' / bundle_name(target)
+    bundle = root / 'dist' / 'desktop' / bundle_name(target, creator)
     audit_bundle(bundle)
-    if not executable(bundle, target).is_file():
-        raise ValueError(f'Application executable is absent: {executable(bundle, target)}')
+    if not executable(bundle, target, creator).is_file():
+        raise ValueError(f'Application executable is absent: {executable(bundle, target, creator)}')
     output = root / 'dist' / 'downloads'
     output.mkdir(parents=True, exist_ok=True)
     suffix = '.tar.gz' if target.startswith('linux-') else '.zip'
-    destination = output / f'exp-runtime-{label}-{target}{suffix}'
+    destination = output / f'exp-runtime-{"creator-" if creator else ""}{label}-{target}{suffix}'
     with tempfile.TemporaryDirectory(prefix='exp-package-', dir=output) as temporary:
         archive = Path(temporary) / destination.name
         if target.startswith('macos-'):
@@ -118,7 +122,7 @@ def package(root, target, label):
     return destination
 
 
-def smoke_test(archive, target):
+def smoke_test(archive, target, *, creator=False):
     """Launch the extracted download from a separate working directory."""
     with tempfile.TemporaryDirectory(prefix='exp-download-test-') as temporary:
         stage = Path(temporary)
@@ -134,18 +138,19 @@ def smoke_test(archive, target):
         else:
             with zipfile.ZipFile(archive) as stream:
                 stream.extractall(stage)
-        bundle = stage / bundle_name(target)
+        bundle = stage / bundle_name(target, creator)
         audit_bundle(bundle)
         if target.startswith('macos-'):
             subprocess.run(['codesign', '--verify', '--deep', '--strict', str(bundle)], check=True)
         env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',
-                   PYGAME_HIDE_SUPPORT_PROMPT='1')
-        subprocess.run([str(executable(bundle, target)), '--smoke-test'],
+                   PYGAME_HIDE_SUPPORT_PROMPT='1', QT_QPA_PLATFORM='offscreen')
+        subprocess.run([str(executable(bundle, target, creator)), '--smoke-test'],
                        cwd=stage, env=env, check=True, timeout=30)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--creator', action='store_true', help='Package the standalone creator')
     parser.add_argument('--target', choices=TARGETS, help='Must match the current OS and Python architecture')
     parser.add_argument('--label', default='local', help='Version tag or commit SHA used in the filename')
     parser.add_argument('--smoke-test', action='store_true', help='Extract and test the packaged app before uploading')
@@ -154,9 +159,9 @@ def main(argv=None):
         actual = host_target()
         if args.target and args.target != actual:
             raise ValueError(f'Requested {args.target}, but this Python is running on {actual}')
-        result = package(Path(__file__).resolve().parents[1], actual, args.label)
+        result = package(Path(__file__).resolve().parents[1], actual, args.label, creator=args.creator)
         if args.smoke_test:
-            smoke_test(result, actual)
+            smoke_test(result, actual, creator=args.creator)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         parser.exit(1, f'Packaging failed: {error}\n')
     print(f'Download and SHA-256 checksum ready: {result}')

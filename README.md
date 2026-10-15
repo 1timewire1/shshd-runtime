@@ -20,6 +20,10 @@ system: `windows-x64`, `linux-x64`, `macos-arm64` (Apple Silicon), or
 `macos-x64` (Intel). Extract it and open the app inside. Keep the complete app
 or executable folder together. Python and the runtime dependencies are bundled.
 
+To make episodes, download `exp-runtime-creator-v0.6.0-<target>.zip` (or
+`.tar.gz` for Linux) and open **EXP Runtime Creator**. The Creator has separate
+downloads for the same four desktop targets. See [the creator guide](docs/CREATOR.md).
+
 For development builds, open **Actions → Builds**, choose a successful
 run, and download its platform artifact. Extract the artifact ZIP, then the
 app archive inside it.
@@ -176,20 +180,26 @@ session/save system, common panels and launcher remain shared.
 
 ```sh
 # EXP readers, bytecode decoders and the inspect/extract CLI
-python -m pip install "exp-runtime[tools]>=0.5.0"
+python -m pip install "exp-runtime[tools]>=0.6.0"
 
 # Headless VM and engine without game adapters or a player UI
-python -m pip install "exp-runtime[engine]>=0.5.0"
+python -m pip install "exp-runtime[engine]>=0.6.0"
 
 # Headless engine with one game, for a custom player UI
-python -m pip install "exp-runtime[engine,shs]>=0.5.0"
-python -m pip install "exp-runtime[engine,cod]>=0.5.0"
+python -m pip install "exp-runtime[engine,shs]>=0.6.0"
+python -m pip install "exp-runtime[engine,cod]>=0.6.0"
 
 # Headless engine with both games
-python -m pip install "exp-runtime[engine,shs,cod]>=0.5.0"
+python -m pip install "exp-runtime[engine,shs,cod]>=0.6.0"
 
 # Full desktop player with both games
-python -m pip install "exp-runtime[player]>=0.5.0"
+python -m pip install "exp-runtime[player]>=0.6.0"
+
+# Visual episode creator with both games and player previews
+python -m pip install "exp-runtime[creator]>=0.6.0"
+
+# Creator MCP server without Qt (combine with [creator] for live editing)
+python -m pip install "exp-runtime[creator-mcp]>=0.6.0"
 ```
 
 The bare `exp-runtime` install supplies file tools; `[desktop]` is an alias
@@ -200,18 +210,31 @@ player with `exp-runtime` after installation.
 
 ## Specifications and development
 
-The **unreleased desktop episode creator** supports visual dialogue, choices,
-branching, optional imported images and native `.exp` export for EXP Runtime
+The **desktop episode creator** supports visual dialogue, choices,
+branching, minigames, characters, audio, translations, debugging and native
+`.exp` export with optional imported assets for EXP Runtime
 and the original games. Native loader/VM checks pass; full original-app
-playback remains unverified. Run it from this checkout:
+playback remains unverified. New in v0.6.0, it is available as a standalone
+desktop download or through pip. Launch a pip install with `exp-creator`,
+or run it from this checkout:
 
 ```sh
 uv run --locked --extra creator exp-creator
 ```
 
-See [the creator guide](docs/CREATOR.md) for saving editable projects, using
-your imported game libraries and previewing through the shared player. The
-creator is optional and is not included in v0.5.0's published downloads.
+The creator automatically finds your player's imported library for the selected
+game. See [the creator guide](docs/CREATOR.md) for saving editable projects,
+using library assets and previewing through the shared player. The creator is
+optional; ordinary player and iOS downloads keep their existing dependencies.
+An optional [MCP server](docs/MCP.md) exposes the same authoring tools without Qt:
+
+```sh
+uv run --locked --extra creator-mcp exp-creator-mcp --workspace /path/to/stories
+```
+
+Open a saved project from that workspace in the creator to edit alongside a
+model. MCP sees unsaved desktop work, and model edits appear live with shared
+undo/redo. Save in the creator to write the shared project.
 
 To contribute code, tests, documentation or compatibility reports, start with
 [MAINTAINERS.md](MAINTAINERS.md).

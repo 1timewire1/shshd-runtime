@@ -44,8 +44,9 @@ contains the verification report. The standalone **iOS builds** workflow can
 also be run manually for development artifacts.
 
 For version tags, the release job waits for all desktop builds and iOS
-verification, checks all five downloads and their checksums, and attaches the
-IPA and checksum directly to the GitHub Release alongside desktop downloads.
+verification, checks all five player downloads, four creator downloads and
+seven wheels with their checksums, and attaches the IPA and checksum directly
+to the GitHub Release alongside the desktop downloads and wheels.
 Simulator reports remain Actions artifacts. Users handle signing and installation.
 For a release made before this workflow change, see
 [adding the missing IPA](DISTRIBUTION.md#adding-an-ipa-to-an-existing-release).

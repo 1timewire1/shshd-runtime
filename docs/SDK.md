@@ -6,9 +6,9 @@ umbrella wheel. All components use the same `exp_runtime` import namespace;
 they remain one project, repository, version and uv workspace. No game
 behavior or renderer is copied between packages.
 
-The unreleased [episode creator](CREATOR.md) adds a sixth optional component.
-It is available in this checkout; the published v0.5.0 packages do not include
-it. Headless authoring needs only the formats component, and its desktop extra
+In **v0.6.0**, the [episode creator](CREATOR.md) adds a sixth optional component,
+bringing the total to seven wheels including the umbrella.
+Headless authoring needs only the formats component, and its desktop extra
 adds Qt and the existing player. Player and iOS bundles exclude it.
 
 ## Choose an install
@@ -26,7 +26,8 @@ is available, select the parts you need:
 | `exp-runtime[engine,shs,cod]` | Headless engine with both games |
 | `exp-runtime[player]` | Desktop player with both games by default |
 | `exp-runtime[desktop]` | Compatibility alias for the full desktop player install |
-| `exp-runtime[creator]` (unreleased) | Visual desktop editor, native EXP export and player preview with both games |
+| `exp-runtime[creator-mcp]` | Creator MCP server, playtesting and player previews; no Qt (v0.6.0+) |
+| `exp-runtime[creator]` | Visual desktop editor, native EXP export and player preview with both games (v0.6.0+) |
 
 For example:
 
@@ -44,7 +45,7 @@ to the formats wheel; `exp-runtime` and `shs` belong to the player wheel.
 
 The independently installable distributions are `exp-runtime-formats`,
 `exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs` and
-`exp-runtime-cod`, plus the unreleased `exp-runtime-creator`. The creator's
+`exp-runtime-cod` and `exp-runtime-creator`. The creator's
 bare install provides its headless model/compiler without Qt or the player.
 For a desktop player containing just CoD:
 
@@ -69,14 +70,14 @@ No package publication is performed by these tools. From this checkout:
 
 ```sh
 uv run --locked --extra build python tools/build_packages.py
-uv run --locked --extra build --extra creator python tools/test_packages.py
+uv run --locked --extra build --extra creator --extra creator-mcp python tools/test_packages.py
 ```
 
 The current build writes seven wheels, seven source archives and SHA-256 checksums to
 `dist/packages/`. It rebuilds each wheel from its source archive and audits the
 file ownership, source bytes, versions and content exclusions. The test creates
 fresh virtual environments and uses real pip resolution outside the checkout,
-including single-game, tools-only and headless/GUI creator installs. It downloads
+including single-game, tools-only and headless/GUI/MCP creator installs. It downloads
 the locked Pillow, Pygame and Qt wheels once into `build/package-test-dependencies/`; `--offline`
 reuses that cache. It does not read original game content.
 
@@ -114,7 +115,7 @@ game from an EXP or substitute another resource ID. `archive.programs()`
 returns all KiWi programs indexed by resource ID. Malformed content raises
 `ContentError`; invalid bytecode raises `KiwiFormatError`.
 
-The unreleased writer `exp_runtime.formats.encode_exp(resources)` constructs
+The writer `exp_runtime.formats.encode_exp(resources)`, added in v0.6.0, constructs
 a native archive from an ID-to-bytes mapping, and `Metadata.to_bytes()` encodes
 resource 1. It emits deterministic literal records; use the creator compiler
 to generate story bytecode. See [CREATOR.md](CREATOR.md) for the authoring API.
@@ -131,8 +132,8 @@ a record is invalid. These commands work with only the formats wheel installed.
 `exp_runtime.formats` also exports `ImagePack`, `LayoutBank`, `SpriteAtlas`,
 `AtlasFont`, `BitmapFont`, `MenuFont` and `MenuStrings`. Use each parser's
 `parse(bytes)` method to inspect original resource structures in an editor.
-Bytecode has lossless serialization; the API does **not** yet provide a general
-EXP container writer or a complete visual editor. Editors must preserve the
+Bytecode has lossless serialization; `encode_exp` writes native containers and
+the optional creator provides visual story authoring. Editors must preserve the
 contracts in [SCHEMA.md](SCHEMA.md) and [VM_SPEC.md](VM_SPEC.md).
 
 ## Drive the engine from your own UI

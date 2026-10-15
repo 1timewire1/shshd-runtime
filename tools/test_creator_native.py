@@ -164,26 +164,36 @@ class Native:
 
 def verify(profile, binary):
     total = 0
-    for operator in ('==', '!=', '<', '<=', '>', '>='):
-        for answer in range(4):
-            project = story('cod' if profile == 'cod-ios' else 'shs', operator)
-            script = ExpArchive(compile_project(project)).programs()[25001]
-            native, vm = Native(profile, binary, script.to_bytes()), KiwiVM(script)
-            for _ in range(100):
-                request = vm.run()
-                status, service, args = native.run()
-                assert status == 1 and request.kind == StopKind.YIELD
-                assert (service, args) == (request.yield_id, request.args), (profile, service, args, request)
-                assert native.words() == vm.data
-                if service == 7:
-                    break
-                result = answer if service == 4 else 0
-                vm.resume(result)
-                native.resume(result)
-                total += 1
-            else:
-                raise AssertionError('Fixture did not terminate')
-    return dict(profile=profile, status='passed', programs=24, yield_frames=total,
+    game = 'cod' if profile == 'cod-ios' else 'shs'
+    cases = [(story(game, operator), answer) for operator in ('==', '!=', '<', '<=', '>', '>=')
+             for answer in range(4)]
+    for kind in ('music', 'sound', 'stop_audio', 'score', 'input', 'title', 'message',
+                 'notice', 'emphasis', 'scene_label', 'pan', 'transition', 'close_dialogue',
+                 'random', 'word_game', *(('football', 'grid') if game == 'shs' else ())):
+        cases.append((Project(game=game, start='feature', nodes=[
+            Node('feature', kind, text='Authored feature probe', next='math'),
+            Node('math', 'set', variable='value', params={'expression': '-12 + 5 * 3'}, next='logic'),
+            Node('logic', 'branch', params={'expression': 'value == 3 and (zero == 0 or value // zero > 0)'},
+                 next='end', otherwise='wrong'), Node('wrong', text='Unexpected branch', next='end'),
+            Node('end', 'end')]), 0))
+    for project, answer in cases:
+        script = ExpArchive(compile_project(project)).programs()[25001]
+        native, vm = Native(profile, binary, script.to_bytes()), KiwiVM(script)
+        for _ in range(100):
+            request = vm.run()
+            status, service, args = native.run()
+            assert status == 1 and request.kind == StopKind.YIELD
+            assert (service, args) == (request.yield_id, request.args), (profile, service, args, request)
+            assert native.words() == vm.data
+            if service == 7:
+                break
+            result = answer if service == 4 else 0
+            vm.resume(result)
+            native.resume(result)
+            total += 1
+        else:
+            raise AssertionError('Fixture did not terminate')
+    return dict(profile=profile, status='passed', programs=len(cases), yield_frames=total,
                 binary_sha256=SPECS[profile][0],
                 scope='Native KiWi loader and interpreter; UI/host callbacks supplied by test harness')
 

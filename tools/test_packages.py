@@ -50,7 +50,7 @@ for module in ('PIL', 'pygame'):
     wanted = bool(games or player) if module == 'PIL' else player
     assert (find_spec(module) is not None) == wanted, module
 creator = 'exp-runtime-creator' in actual
-assert (find_spec('PySide6') is not None) == (creator and player)
+assert (find_spec('PySide6') is not None) == (creator and player and find_spec('mcp') is None)
 
 def program(*instructions, words=()):
     from exp_runtime.decode.bytecode import OPERAND_OPCODES
@@ -141,7 +141,10 @@ if creator:
                              '--export', 'story.exp'], text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert Path('story.exp').read_bytes() == compile_project(project)
-    if player:
+    if find_spec('mcp'):
+        from exp_runtime.creator.mcp_server import create_server
+        assert create_server(Path.cwd()).name == 'EXP Runtime Creator'
+    if find_spec('PySide6'):
         from PySide6.QtWidgets import QApplication
         from exp_runtime.creator.ui import Editor
         qt = QApplication([])
@@ -184,6 +187,8 @@ def verify(directory, *, offline=False):
                  f'pygame-ce=={installed_version("pygame-ce")}',
                  f'PySide6-Essentials=={installed_version("PySide6-Essentials")}',
                  f'shiboken6=={installed_version("shiboken6")}'], cwd=root, env=env)
+            run([str(python_in(bootstrap)), '-m', 'pip', 'download', '--only-binary=:all:',
+                 '--dest', str(cache), 'mcp>=1.28,<2'], cwd=root, env=env)
         cases = (
             ('tools', ('exp-runtime[tools]',), (), False, True),
             ('engine', ('exp-runtime[engine]',), (), False, True),
@@ -192,6 +197,7 @@ def verify(directory, *, offline=False):
             ('both', ('exp-runtime[engine,shs,cod]',), ('shs', 'cod'), False, True),
             ('player', ('exp-runtime[player]',), ('shs', 'cod'), True, True),
             ('desktop', ('exp-runtime[desktop]',), ('shs', 'cod'), True, True),
+            ('creator-mcp', ('exp-runtime[creator-mcp]',), ('shs', 'cod'), True, True),
             ('creator-core', ('exp-runtime-creator',), (), False, False),
             ('creator', ('exp-runtime[creator]',), ('shs', 'cod'), True, True),
             ('cod-player', ('exp-runtime-player[desktop]', 'exp-runtime-cod'), ('cod',), True, False),
@@ -208,7 +214,7 @@ def verify(directory, *, offline=False):
             expected = ['exp-runtime-formats'] + (['exp-runtime'] if umbrella else [])
             if label not in ('tools', 'creator-core'):
                 expected.append('exp-runtime-engine')
-            if label in ('creator', 'creator-core'):
+            if label in ('creator', 'creator-core', 'creator-mcp'):
                 expected.append('exp-runtime-creator')
             if player:
                 expected.append('exp-runtime-player')

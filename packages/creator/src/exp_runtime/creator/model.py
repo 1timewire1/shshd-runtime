@@ -11,10 +11,13 @@ import tempfile
 from exp_runtime.exp import ContentError
 
 FORMAT = 'exp-runtime-project'
-VERSION = 1
+VERSION = 2
 MAX_PROJECT_BYTES = 96 * 1024 * 1024
 MAX_ASSET_BYTES = 64 * 1024 * 1024
-KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'end')
+KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 'stop_audio',
+         'relationship', 'score', 'input', 'text_branch', 'title', 'message', 'notice',
+         'emphasis', 'scene_label', 'pan', 'transition', 'close_dialogue', 'random',
+         'word_game', 'football', 'grid', 'scene', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
@@ -26,6 +29,7 @@ class ProjectError(ContentError):
 class Choice:
     text: str = 'Choice'
     target: str = ''
+    condition: str = ''
 
 
 @dataclass
@@ -48,13 +52,30 @@ class Node:
     value: int = 0
     operator: str = '=='
     otherwise: str = ''
+    scene: int = 25001
+    character: str = ''
+    expression: int = 0
+    params: dict = field(default_factory=dict)
 
     def links(self):
+        if self.kind == 'native':
+            from exp_runtime.decode.bytecode import BytecodeInstruction
+            rows = self.params.get('instructions', [])
+            if not rows: return []
+            try:
+                pc = self.params['pc'] + len(rows) - 1
+                ins = BytecodeInstruction(pc, 0, *rows[-1])
+                targets = []
+                if ins.branch_target() is not None: targets.append(ins.branch_target())
+                if ins.opcode not in (0x29, 0x33, 0x43): targets.append(pc + 1)
+                return [('Native', f'{self.params["script"]}:{target}') for target in dict.fromkeys(targets)]
+            except (KeyError, TypeError, ValueError):
+                return []
         if self.kind == 'end':
             return []
         if self.kind == 'choice':
             return [(option.text, option.target) for option in self.options]
-        if self.kind == 'branch':
+        if self.kind in ('branch', 'text_branch'):
             return [('Yes', self.next), ('No', self.otherwise)]
         return [('Next', self.next)]
 
@@ -66,6 +87,15 @@ class Asset:
     # None is an exact reference into the selected game's original base bank.
     # Embedded assets are owned by this document, never by an external path.
     data: bytes | None = None
+
+
+@dataclass
+class Character:
+    id: str
+    name: str = 'Character'
+    portrait: int | None = None
+    theme: int = 2
+    expressions: list[int | None] = field(default_factory=list)
 
 
 @dataclass
@@ -81,6 +111,10 @@ class Project:
     ])
     assets: list[Asset] = field(default_factory=list)
     library: str = ''
+    characters: list[Character] = field(default_factory=list)
+    locales: dict[str, dict[str, str]] = field(default_factory=dict)
+    language: str = 'en'
+    native: dict = field(default_factory=dict)
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -125,13 +159,13 @@ def validate_structure(project: Project):
         raise ProjectError('Choose the SHS or CoD game profile')
     _integer(project.pack_id, 0, 32767, 'Pack ID')
     _integer(project.episode_id, 1, 32767, 'Episode ID')
-    if not isinstance(project.nodes, list) or not 1 <= len(project.nodes) <= 2000:
-        raise ProjectError('A project needs between 1 and 2000 nodes')
+    if not isinstance(project.nodes, list) or not 1 <= len(project.nodes) <= 20000:
+        raise ProjectError('A project needs between 1 and 20000 nodes')
     ids = set()
     for node in project.nodes:
         if not isinstance(node, Node) or node.kind not in KINDS:
             raise ProjectError('Unknown node type')
-        for name in ('id', 'label', 'speaker', 'next', 'otherwise', 'variable'):
+        for name in ('id', 'label', 'speaker', 'next', 'otherwise', 'variable', 'character'):
             _string(getattr(node, name), name, 200)
         _string(node.text, 'node text')
         if not node.id or node.id in ids:
@@ -147,6 +181,15 @@ def validate_structure(project: Project):
         _integer(node.timeout_ms, 0, 32767, 'Choice timer (milliseconds)')
         _integer(node.timeout_option, 0, 7, 'Timeout option')
         _integer(node.value, -32768, 32767, 'Variable value')
+        _integer(node.scene, 25001, 25999, 'Scene script ID')
+        _integer(node.expression, 0, 4, 'Expression slot')
+        if not isinstance(node.params, dict):
+            raise ProjectError('Node parameters must be an object')
+        try:
+            if len(json.dumps(node.params, allow_nan=False)) > MAX_PROJECT_BYTES:
+                raise ValueError('Parameters exceed the project size limit')
+        except (TypeError, ValueError, RecursionError) as error:
+            raise ProjectError(f'Invalid node parameters: {error}') from error
         if node.operator not in OPERATORS:
             raise ProjectError('Unknown comparison operator')
         if not isinstance(node.options, list) or len(node.options) > 8:
@@ -156,6 +199,36 @@ def validate_structure(project: Project):
                 raise ProjectError('Invalid choice option')
             _string(option.text, 'option text', 2000)
             _string(option.target, 'option target', 200)
+            _string(option.condition, 'option condition', 2000)
+    if not isinstance(project.characters, list) or len(project.characters) > 199:
+        raise ProjectError('At most 199 reusable characters are supported')
+    character_ids = set()
+    for character in project.characters:
+        if not isinstance(character, Character):
+            raise ProjectError('Invalid character definition')
+        _string(character.id, 'character ID', 100)
+        _string(character.name, 'character name', 200)
+        if not character.id or character.id in character_ids:
+            raise ProjectError('Character IDs must be nonempty and unique')
+        character_ids.add(character.id)
+        _integer(character.theme, 0, 3, 'Character color')
+        if not isinstance(character.expressions, list) or len(character.expressions) not in (0, 5):
+            raise ProjectError('Character expressions need exactly five slots')
+        for resource in (character.portrait, *character.expressions):
+            if resource is not None:
+                _integer(resource, 0, 32767, 'Character image')
+    if project.language not in ('en', 'fr', 'it', 'de', 'es'):
+        raise ProjectError('Choose en, fr, it, de or es as the export language')
+    if not isinstance(project.locales, dict) or set(project.locales) - {'en', 'fr', 'it', 'de', 'es'}:
+        raise ProjectError('Invalid translation languages')
+    for language, translations in project.locales.items():
+        if not isinstance(translations, dict):
+            raise ProjectError('Translations must map field keys to text')
+        for key, value in translations.items():
+            _string(key, 'translation key', 300)
+            _string(value, 'translated text')
+    if not isinstance(project.native, dict):
+        raise ProjectError('Invalid native archive data')
     if not isinstance(project.assets, list) or len(project.assets) > 2000:
         raise ProjectError('Too many image assets')
     ids, size = set(), 0
@@ -171,7 +244,7 @@ def validate_structure(project: Project):
             if asset.id >= 25000:
                 raise ProjectError('Only base-bank images may be external references')
         else:
-            if asset.id < 26000 or not isinstance(asset.data, bytes):
+            if (asset.id < 26000 and not project.native) or not isinstance(asset.data, bytes):
                 raise ProjectError('Embedded images must use episode IDs starting at 26000')
             size += len(asset.data)
             if len(asset.data) > MAX_ASSET_BYTES or size > MAX_ASSET_BYTES:
@@ -195,21 +268,30 @@ def atomic_write(path: Path, data: bytes):
             temporary.unlink(missing_ok=True)
 
 
-def save_project(project: Project, path: Path):
+def project_record(project: Project):
     validate_structure(project)
     data = asdict(project)
     for asset, record in zip(project.assets, data['assets']):
         record['data'] = base64.b64encode(asset.data).decode('ascii') if asset.data is not None else None
+    return dict(format=FORMAT, version=VERSION, **data)
+
+
+def project_bytes(project: Project, path: Path) -> bytes:
+    data = project_record(project)
     if project.library:
         try:
             data['library'] = Path(os.path.relpath(Path(project.library).resolve(), Path(path).resolve().parent)).as_posix()
         except ValueError:  # Separate Windows volumes.
             data['library'] = str(Path(project.library).resolve())
-    encoded = (json.dumps(dict(format=FORMAT, version=VERSION, **data), indent=2,
+    encoded = (json.dumps(data, indent=2,
                           ensure_ascii=False) + '\n').encode('utf-8')
     if len(encoded) > MAX_PROJECT_BYTES:
         raise ProjectError('Project file exceeds 96 MiB')
-    atomic_write(path, encoded)
+    return encoded
+
+
+def save_project(project: Project, path: Path):
+    atomic_write(path, project_bytes(project, path))
 
 
 def _construct(kind, data):
@@ -218,21 +300,49 @@ def _construct(kind, data):
     return kind(**data)
 
 
-def load_project(path: Path) -> Project:
-    path = Path(path)
-    if path.stat().st_size > MAX_PROJECT_BYTES:
-        raise ProjectError('Project file exceeds 96 MiB')
+def _upgrade_episode_links(nodes):
+    """Retire the unreleased link extension, preserving its optional message."""
+    ids = {node.id for node in nodes}
+    endings = []
+    for node in nodes:
+        if node.kind != 'episode_link': continue
+        if not isinstance(node.params, dict): raise ProjectError('Node parameters must be an object')
+        title = node.params.get('title', 'Next episode')
+        node.kind, node.params = 'end', {}
+        if node.text:
+            base = node.id[:180] + '_end'
+            target, suffix = base, 1
+            while target in ids:
+                target, suffix = f'{base}_{suffix}', suffix + 1
+            ids.add(target)
+            endings.append(Node(target, 'end', label='End episode', scene=node.scene,
+                                x=min(100000, node.x + 320), y=node.y))
+            node.kind, node.params, node.next = 'message', {'title': title}, target
+    nodes.extend(endings)
+
+
+def project_from_record(data):
+    from copy import deepcopy
+    data = deepcopy(data)
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
         if (not isinstance(data, dict) or data.pop('format', None) != FORMAT
-                or type(data.get('version')) is not int or data.pop('version') != VERSION):
+                or type(data.get('version')) is not int or data['version'] not in (1, VERSION)):
             raise ProjectError('Unsupported episode project format or version')
+        version = data.pop('version')
+        if version == 1:
+            data.update(characters=[], locales={}, language='en', native={})
+            for node in data['nodes']:
+                node.update(scene=25001, character='', expression=0, params={})
+                for option in node['options']:
+                    option['condition'] = ''
         nodes = []
         for record in data['nodes']:
             node = _construct(Node, record)
             node.options = [_construct(Choice, option) for option in node.options]
             nodes.append(node)
+        _upgrade_episode_links(nodes)
         data['nodes'] = nodes
+        data['characters'] = [_construct(Character, c) for c in data['characters']]
         assets = []
         for record in data['assets']:
             asset = _construct(Asset, record)
@@ -242,8 +352,26 @@ def load_project(path: Path) -> Project:
         data['assets'] = assets
         project = _construct(Project, data)
         validate_structure(project)
+        return project
+    except (KeyError, TypeError, ValueError, UnicodeError, binascii.Error, RecursionError) as error:
+        raise ProjectError(f'Cannot read episode project: {error}') from error
+
+
+def project_from_bytes(data: bytes, path: Path) -> Project:
+    path = Path(path)
+    if len(data) > MAX_PROJECT_BYTES:
+        raise ProjectError('Project file exceeds 96 MiB')
+    try:
+        project = project_from_record(json.loads(data.decode('utf-8')))
         if project.library:
             project.library = str((path.resolve().parent / project.library).resolve())
         return project
     except (KeyError, TypeError, ValueError, UnicodeError, binascii.Error, RecursionError) as error:
         raise ProjectError(f'Cannot read episode project: {error}') from error
+
+
+def load_project(path: Path) -> Project:
+    path = Path(path)
+    if path.stat().st_size > MAX_PROJECT_BYTES:
+        raise ProjectError('Project file exceeds 96 MiB')
+    return project_from_bytes(path.read_bytes(), path)

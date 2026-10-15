@@ -24,6 +24,9 @@ dist/
 *.shs-save.json
 *.shs-auto.json
 *.expproj
+.creator-session/
+.creator-history/
+*.exptest
 .shs-library/
 .shs-import-*/
 .exp-import-*/

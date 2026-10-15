@@ -49,6 +49,17 @@ panels, active games, loading/choice gates, scene badge, notices, transition
 selector or last-input text. Other mapped state, including RNG streams and
 UI result cells, is not assigned a new value by this exit operation.
 
+The supplied iOS games confirm the same handoff: SHS `SHSScript::syscall`
+(`0006dd6c`) and CoD `SHSScript::syscall` (`0003354c`) dispatch 7/63 to
+`GameModel::endGame` (SHS `00021ad4`, CoD `00012454`). These reset the scene,
+set its exit flag and retire resume progress; they read no destination pack or
+episode ID. `runScript09` (SHS `00022a28`, CoD `00012494`) also ends exhausted
+script queues through `endGame09` (SHS `00022b44`, CoD `00012470`), which calls
+the application's `invokeEndOfGameMenu` (SHS `0003b928`, CoD `00018bc4`).
+Episode catalog selection belongs to that application/menu layer, outside the
+KiWi instruction stream. Creator End nodes reuse service 7 and the existing
+player menu rather than supplying a separate episode-link mechanism.
+
 The menu application checkpoints the termination and returns to its main
 menu, stopping episode audio and releasing the live session. This uses the
 desktop menu's existing entrance; exact native exit-frame scheduling and

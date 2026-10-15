@@ -247,21 +247,24 @@ versions and exact component dependency pins, `uv.lock`, both Xcode
 `MARKETING_VERSION` settings in `ios/EXPRuntime.xcodeproj/project.pbxproj`, and
 the intended release tag consistent. The macOS bundle and command-line iOS
 build read the package version; direct Xcode builds use the project settings.
-The workflow publishes app downloads to GitHub Releases and all seven Python
+The workflow publishes player and creator downloads, the unsigned IPA and all
+seven wheels with their checksums to GitHub Releases, and all seven Python
 distributions to PyPI after all four desktop builds, iOS verification and
 isolated Python package checks pass for a pushed version tag. The tag must
 equal `v` plus the common package version. Ordinary pushes, pull requests
-and manual runs produce development artifacts without publishing.
+and ordinary manual builds produce development artifacts without publishing.
+Manual release recovery uses artifacts from an already tested version-tag run.
 
 Build and audit the Python distributions with `tools/build_packages.py`, then
 run `tools/test_packages.py` through the locked build environment with
-`--extra creator`. These check real pip installs of tools, engine, single-game,
-full-player and headless/GUI creator combinations.
+`--extra creator --extra creator-mcp`. These check real pip installs of tools,
+engine, single-game, full-player and headless/GUI/MCP creator combinations.
 All seven distributions are one release; the scripts never publish them.
 See [SDK.md](docs/SDK.md) for local wheel installation and component boundaries.
-Before the next PyPI release, register the new `exp-runtime-creator` project
+Before the v0.6.0 PyPI release, register the new `exp-runtime-creator` project
 alongside the existing six projects with the
 [`desktop-builds.yml` Trusted Publisher and `pypi` environment](docs/DISTRIBUTION.md#pypi-publishing).
 The publish job uses short-lived OIDC credentials, not a stored API token.
-PyPI rejects existing filenames; rerun only failed jobs after a successful
-upload and use a new version for changed packages.
+PyPI rejects existing filenames; the workflow skips matching published files
+after checking their hashes. Retry partial uploads with the same tested
+artifacts and use a new version for changed packages.
