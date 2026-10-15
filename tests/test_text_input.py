@@ -61,6 +61,21 @@ class NameInputTests(unittest.TestCase):
         r.hd_asset = lambda resource_id: None
         self.assertFalse(Session(r).name_input_metrics()['hd'])
 
+    def test_cause_of_death_always_takes_the_ios_rules(self):
+        # CoD is iOS-only: the iPhone keyboard capitalizes the first letter its answers expect ("Ipconfig"), and its
+        # SHSUITextEntry::tick keeps later letters as typed; no HD bundle is involved.
+        from types import SimpleNamespace
+        cod = SimpleNamespace(library=SimpleNamespace(game_id='cod'), hd_asset=lambda resource_id: None)
+        metrics = Session.name_input_metrics(SimpleNamespace(resources=cod))
+        shs = SimpleNamespace(library=SimpleNamespace(game_id='shs'), hd_asset=lambda resource_id: None)
+        self.assertFalse(Session.name_input_metrics(SimpleNamespace(resources=shs))['hd'])   # SD SHS keeps Android's
+        self.assertTrue(metrics['hd'])
+        draft = ''
+        for char in 'ipconfig':
+            draft, error = accept_name_character(draft, char, hd=metrics['hd'])
+            self.assertIsNone(error)
+        self.assertEqual(draft, 'Ipconfig')
+
     def test_typing_ascii_case_conversion_and_rejection(self):
         for current, char, expected in (('', 'A', 'A'), ('A', 'B', 'Ab'), ('1', 'Z', '1z'),
                                          ('Alex', '8', 'Alex8'), ('', 'a', 'a')):

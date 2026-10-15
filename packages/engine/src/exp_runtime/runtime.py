@@ -288,11 +288,17 @@ class Session:
 
         `hd` follows the engine build being emulated: an imported HD app
         bundle (its HD-only resource 155 is present) brings the HD build's
-        name-entry rules, otherwise Android's."""
+        name-entry rules, otherwise Android's. Cause of Death is iOS-only, so
+        it always takes the iOS rules (this fork): its 1.4.7
+        `SHSUITextEntry::tick` (0003ee0e-0003ee96) keeps letters and digits
+        as typed with no length cap, and the first letter is capitalized by
+        the iPhone keyboard (a UITextView's default), not by the game. Its
+        typed answers expect that capital ("Ipconfig"); desktop keyboards do
+        not add it, and Android's rules also lowercased later capitals."""
         try:
-            hd = self.resources.hd_asset(155) is not None
+            hd = self.resources.hd_asset(155) is not None or game_id(self.resources) == 'cod'
         except AttributeError:
-            hd = False
+            hd = game_id(self.resources) == 'cod'
         if not hasattr(self.resources, 'dialogue_layout'):
             return dict(font=None, cursor_width=0, hd=hd)
         layout = self.resources.dialogue_layout()

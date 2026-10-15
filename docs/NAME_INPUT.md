@@ -174,3 +174,28 @@ A caveat that applies to both builds: the same services drive in-story password
 prompts (Owen's Eleven), and these rules recase or reject anything that is not
 alphanumeric. That is native behavior on both builds, so it is preserved rather
 than special-cased.
+
+## Cause of Death (this fork)
+
+Cause of Death is iOS-only, so it always takes the iOS rules above (`hd=True`, `Session.name_input_metrics`), with or
+without an SHS HD art source. Its 1.4.7 `SHSUITextEntry::tick` (`0003ee0e`-`0003ee96`) differs from SHS HD's in one
+way:
+- **The game never recases.** The loop keeps `a-z A-Z 0-9` as typed, a newline ends the entry, and anything else
+  marks the text invalid; nothing follows the loop that recases a letter.
+- **The keyboard capitalizes instead.** On the device the first letter comes out capital because the iPhone keyboard
+  capitalizes a text field's first letter by default.
+- **The scripts expect that capital.** Answers are compared case-sensitively (service 24), and the scripts expect
+  the capital ("Ipconfig" in Volume 8).
+
+So the desktop capitalizes the first letter, as the keyboard does, and keeps the rest as typed. Before this fork
+change CoD fell to Android's rules: no capital, and later capitals lowercased. That made "Ipconfig", "EA",
+"WHEELCHAIR" and "MerrittBurke" impossible to type.
+
+**Audit of every typed answer (2026-10-15).** The tree explorer played each of the 74 episodes up to six times and
+recorded what each text prompt's answer was compared with:
+- 29 distinct prompts, 26 of which compare answers. Volume 8's Ipconfig prompt lies past the explorer's budget.
+- Every accepted answer starts with a capital or a digit. The lowercase forms ("left", "tuesday", "hyde") are extra
+  spellings beside capitalized ones, so first-letter capitalization never blocks an answer.
+- Some answers also need later capitals, kept as typed under these rules: "EA", "WHEELCHAIR", "MerrittBurke".
+- Answers with spaces ("Wheel chair", "Christian Rose", "Dr. Rose") cannot be typed natively either: the tick rejects
+  spaces (see COD.md).

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (shshd-runtime)
+
+### Fixed
+
+- **Cause of Death's typed answers now capitalize their first letter.** On an
+  iPhone the keyboard capitalizes the first letter, and CoD's puzzles expect it
+  ("Ipconfig"). The desktop didn't, and CoD also used Android's rules, which
+  lowercase later capitals. CoD now uses the iOS rules: first letter
+  capitalized, the rest as typed. An audit of all 26 answer-checking prompts
+  found every accepted answer starting with a capital or digit. Answers needing
+  later capitals ("EA", "WHEELCHAIR", "MerrittBurke") can now be typed too.
+
 ## 1.0.1 (shshd-runtime)
 
 ### Fixed
