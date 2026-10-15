@@ -103,12 +103,18 @@ class BitmapFont:
             raise FontError(f'Invalid bitmap-font descriptor: {error}') from error
 
     def glyph(self, character: str) -> Glyph:
+        code = ord(character)
+        if character in ('\t', '\x18', '\x19') and code not in self.glyphs:
+            # SHS/CoD dialogue contains these control bytes in positions
+            # consistent with truncated Unicode spaces/quotes. Substitution is
+            # a readability adaptation, not verified native glyph behavior.
+            character = ' ' if character == '\t' else "'"
         try:
             return self.glyphs[ord(character)]
         except KeyError:
             # The native font table leaves absent advances uninitialized;
             # there is no verified replacement-glyph or system-font fallback.
-            raise FontError(f'{self.face}: no defined glyph for U+{ord(character):04X}') from None
+            raise FontError(f'{self.face}: no defined glyph for U+{code:04X}') from None
 
 
 Color = tuple[int, int, int]

@@ -40,12 +40,31 @@ Empty Return hides the virtual keyboard without resuming. Callback
 then resumes with handle `0x7ff5`. It does not write a numeric result cell.
 
 `text_input.py` supplies the pure character helper and confirmation validator.
-`Session.answer()` rejects empty, non-ASCII, non-alphanumeric, overlength, and
-overwidth values before changing any host or VM state. A programmatic answer
+`Session.answer()` rejects empty, non-ASCII, unsupported-character, overlength,
+and overwidth values before changing any host or VM state. A programmatic answer
 is a complete value, so it retains its supplied case; only interactive typing
 performs case conversion. Both paths use the same APK font advances. Authored
 headless fixtures without an asset loader exercise the byte/length contract
 without a width measurement.
+
+### CoD input policy
+
+The supplied CoD 1.3.4 `SHSUITextEntry::tick` (`0003b5f4`, character filter at
+`0003b682`–`0003b6b4`) accepts only ASCII letters/digits and handles Return
+separately. The capitalization path at `0003b872`–`0003b89e` uppercases an
+initial lowercase ASCII character and preserves subsequent case. Shared
+desktop/iOS typing follows that CoD rule; programmatic answers retain their
+exact supplied case, and SHS retains the Android rule above.
+
+CoD additionally accepts ASCII spaces as a deliberate owner-requested
+convenience. This is not required to solve the inspected puzzles: the cited
+Volume One names trigger a wrong-guess branch, while Volume Four accepts
+single-word alternatives. Spaces count toward existing length and width limits;
+space-only answers, tabs, Unicode whitespace and punctuation remain rejected.
+No trimming or rewriting changes the submitted string. `name_input_metrics()`
+shares the space policy with typing, player confirmation and `Session.answer()`,
+so the desktop and iOS paths agree with headless callers. Saved drafts preserve
+their contents and remain subject to validation on confirmation.
 
 ## Screen composition
 

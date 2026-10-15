@@ -42,6 +42,25 @@ class FontTests(unittest.TestCase):
         with self.assertRaisesRegex(FontError, 'no defined glyph'):
             layout_text(self.font, 'Q', 100, self.style)
 
+    def test_control_bytes_fall_back_only_when_the_font_has_no_glyph(self):
+        self.assertIs(self.font.glyph('\t'), self.font.glyph(' '))
+        with_apostrophe = BitmapFont.parse(descriptor().replace(
+            b'chars count=1', b'chars count=1\r\nchar id=39 x=0 y=0 width=1 height=3 xoffset=0 yoffset=2 xadvance=2 page=0 chnl=0'))
+        for char in ('\x18', '\x19'):
+            with self.subTest(character=ord(char)):
+                with self.assertRaisesRegex(FontError, f'U\\+{ord(char):04X}'):
+                    self.font.glyph(char)
+                self.assertEqual(with_apostrophe.glyph(char).code, ord("'"))
+                self.assertEqual(with_apostrophe.glyph(char).advance, 2)
+        for char in ('\t', '\x18', '\x19'):
+            own = BitmapFont.parse(descriptor() + (
+                f'char id={ord(char)} x=0 y=0 width=1 height=3 xoffset=0 yoffset=2 xadvance=9 page=0 chnl=0\n'
+            ).encode())
+            self.assertEqual(own.glyph(char).advance, 9)
+        for char in ('\x17', '\x1a'):
+            with self.assertRaisesRegex(FontError, f'U\\+{ord(char):04X}'):
+                with_apostrophe.glyph(char)
+
     def test_kerning_moves_only_drawn_glyph_and_never_changes_wrapping(self):
         result = layout_text(self.font, 'AVX', 18, self.style)
         self.assertEqual(result.width, 18)

@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Import compact and multilingual free Cause of Death IPA layouts. Validate
+  the actual asset banks instead of selecting a layout from the bundle ID;
+  preserve existing compact-free libraries and keep each game's assets isolated.
+
+### Changed
+
+- Allow ASCII spaces in CoD text entry as a convenience on desktop and iOS,
+  including typing, confirmation and saved drafts. This deliberately extends
+  the original keyboard filter; the inspected puzzles have space-free solutions.
+
+### Fixed
+
+- Use space/apostrophe glyphs for undefined dialogue bytes `0x09`, `0x18` and
+  `0x19` in both games. Preserve a font's own glyphs when present. This is a
+  readability adaptation, not a claim of identical original rendering.
+- Let CoD incremental choices expire with the observed `-1` and `1000`
+  defaults as an explicit compatibility workaround for undefined native reads.
+  Valid indices still map to option values; SHS and other invalid indices
+  retain explicit errors and their pending calls.
+- Match CoD's native text-entry capitalization: uppercase an initial lowercase
+  letter and preserve the remaining input's case.
+
 ## v0.5.0
 
 ### Added

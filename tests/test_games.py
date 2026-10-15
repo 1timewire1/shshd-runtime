@@ -14,7 +14,7 @@ from PIL import ImageFont
 
 from exp_runtime.audio import music_cue
 from exp_runtime.content import ContentError, ContentLibrary, import_game
-from exp_runtime.games import COD_IOS
+from exp_runtime.games import COD_IOS, COD_IOS_FREE, COD_IOS_FREE_LOCALIZED
 from exp_runtime.launcher import default_library, remember_library
 from exp_runtime.menu import MenuStrings
 from exp_runtime.runtime import SaveError, Session
@@ -28,7 +28,8 @@ from test_vm import program
 LOCAL_COD_IPA = Path('decomp/cod/Cause+of+Death+(World)+1.3.4.ipa')
 
 
-def make_cod_ipa(path, episode, *, missing=None, info=None):
+def make_cod_ipa(path, episode, *, missing=None, info=None, free=False, localized=False):
+    """Authored paid, compact free or multilingual free resource banks."""
     # Reuse only authored image/layout fixtures and Pillow's own default font.
     # No original game bytes, executable, proprietary font or art is included.
     assets = {12: episode, 13: string_bank([f'CoD string {i}' for i in range(257)]),
@@ -41,9 +42,25 @@ def make_cod_ipa(path, episode, *, missing=None, info=None):
         assets[cod] = ASSET_DATA[shs]
     assets[272] = image_pack(count=16, pixels=b'\x01\x01\xff\x01\x02\x03' * 16)
     assets.update({key: f'CoD music {key}'.encode() for key in range(8201, 8210)})
+    assets.update({key: f'Script asset {key}'.encode() for key in (1001, 2001, 3000, 8005)})
+    if free:
+        shift = 5 if localized else 1
+        shifted = {}
+        for key, data in assets.items():
+            if key == 13:
+                key = 14
+            elif 14 <= key <= 297:
+                key += shift
+            shifted[key] = data
+        assets = shifted
+        assets[13] = episode
+        if localized:
+            for key in range(15, 19):
+                assets[key] = string_bank([f'Language {key} string {i}' for i in range(257)])
     with ZipFile(path, 'w') as package:
         package.writestr(APP + 'Info.plist', plistlib.dumps(info if info is not None else dict(
-            CFBundleIdentifier='com.ea.causeofdeath.bv', CFBundleVersion='any-compatible-version')))
+            CFBundleIdentifier='com.ea.causeofdeathfree.inc' if free else 'com.ea.causeofdeath.bv',
+            CFBundleVersion='any-compatible-version')))
         for key, data in assets.items():
             if key != missing:
                 package.writestr(ASSETS + str(key), data)
@@ -87,6 +104,78 @@ class GameLibraryTests(unittest.TestCase):
             with self.assertRaises(ContentError):
                 b.read_asset(528)  # Host font roles do not become script aliases.
             self.assertEqual(MenuStrings.load(cod)[125], 'CoD string 117')
+
+    def test_free_edition_imports_under_its_own_profile_and_opens(self):
+        free, path = self.root / 'free.ipa', self.root / 'free'
+        make_cod_ipa(free, self.episode, free=True)
+        manifest = import_game(free, [], path, game='cod')
+        self.assertEqual((manifest['game'], manifest['profile']), ('cod', COD_IOS_FREE))
+        self.assertEqual(manifest['episodes'][0]['builtin'], 'volume-one')
+        free.unlink()
+        with ContentLibrary(path) as library:
+            self.assertEqual(library.game_id, 'cod')
+            episode = library.open_episode('Volume_One.exp')
+            # Members are addressed by reference (1.3.4) numbers after translation.
+            self.assertEqual(episode.read_asset(42), b'CoD base art')
+            self.assertEqual(episode.read_ui_resource(528), ASSET_DATA[526])
+            self.assertEqual(MenuStrings.load(library)[125], 'CoD string 117')
+            self.assertEqual(library.ensure_builtin_episodes(), 0)
+        # The paid IPA is refused against the free library, and vice versa.
+        for key, data in (('profile', COD_IOS), ('profile', 'shs-ios-assets-v1')):
+            (path / 'library.json').write_text(json.dumps(dict(manifest, **{key: data})))
+            with self.subTest(profile=data), self.assertRaises(ContentError):
+                ContentLibrary(path)
+
+    def test_asset_layout_selection_relocation_and_manifest_validation(self):
+        # All layouts deliberately use the same identifier and version. The
+        # multilingual free fixture previously read a string bank as a layout.
+        profiles = (COD_IOS, COD_IOS_FREE, COD_IOS_FREE_LOCALIZED)
+        for free, localized, expected in ((False, False, COD_IOS), (True, False, COD_IOS_FREE),
+                                           (True, True, COD_IOS_FREE_LOCALIZED)):
+            with self.subTest(profile=expected):
+                source, path = self.root / f'{expected}.ipa', self.root / expected
+                make_cod_ipa(source, self.episode, free=free, localized=localized,
+                             info=dict(CFBundleIdentifier='com.ea.causeofdeathfree.bv',
+                                       CFBundleVersion='arbitrary'))
+                manifest = import_game(source, [], path, game='cod')
+                self.assertEqual(manifest['profile'], expected)
+                self.assertEqual(len(manifest['episodes']), 1)
+                source.unlink()
+                moved = self.root / (expected + '-moved')
+                path.rename(moved)
+                before = (moved / 'library.json').read_bytes()
+                with ContentLibrary(moved) as library:
+                    episode = library.open_episode('Volume_One.exp')
+                    self.assertEqual(library.profile, expected)
+                    self.assertEqual(library.read_asset(14), ASSET_DATA[13])
+                    self.assertEqual(library.read_asset(268), ASSET_DATA[267])
+                    self.assertEqual(library.read_asset(291), ImageFont.load_default().font_bytes)
+                    self.assertEqual(library.read_ui_resource(528), ASSET_DATA[526])
+                    self.assertEqual(library.read_ui_resource(533), ASSET_DATA[531])
+                    self.assertEqual(MenuStrings.load(library)[125], 'CoD string 117')
+                    for key in (1001, 2001, 3000, 8005):
+                        self.assertEqual(episode.read_asset(key), f'Script asset {key}'.encode())
+                    self.assertEqual(episode.read_asset(26000), b'episode-specific art')
+                    self.assertEqual(library.ensure_builtin_episodes(), 0)
+                self.assertEqual((moved / 'library.json').read_bytes(), before)
+                for wrong in profiles:
+                    if wrong == expected:
+                        continue
+                    (moved / 'library.json').write_text(json.dumps(dict(manifest, profile=wrong)))
+                    with self.subTest(wrong=wrong), self.assertRaisesRegex(ContentError, 'asset layout'):
+                        ContentLibrary(moved)
+
+    def test_free_layout_detection_still_validates_assets_and_aborts_failed_imports(self):
+        for localized, mask in ((False, 269), (True, 273)):
+            for missing in (14, mask):
+                with self.subTest(localized=localized, missing=missing):
+                    source = self.root / 'incomplete.ipa'
+                    destination = self.root / 'incomplete'
+                    make_cod_ipa(source, self.episode, free=True, localized=localized, missing=missing)
+                    with self.assertRaisesRegex(ContentError, 'Unsupported CoD asset layout'):
+                        import_game(source, [], destination, game='cod')
+                    self.assertFalse(destination.exists())
+                    self.assertFalse(list(self.root.glob('.exp-import-*')))
 
     def test_wrong_game_missing_assets_and_spoofed_manifest_are_rejected(self):
         target = self.root / 'target'

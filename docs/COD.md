@@ -13,10 +13,36 @@ uv run --locked exp-tool trace /path/to/episode.exp --game cod
 
 ## Identification and isolation
 
-Import recognizes `com.ea.causeofdeath`, with optional dot-separated suffixes,
-and validates the required `res_generated` payloads. Version numbers and the
+Import recognizes `com.ea.causeofdeath` and `com.ea.causeofdeathfree`, with
+optional dot-separated suffixes, and validates the required `res_generated`
+payloads. Version numbers and the
 native executable are informational; native code is never executed. The
-inspected package is 1.3.4 (`com.ea.causeofdeath.bv`), with 348 numeric assets.
+locally inspected package is 1.3.4 (`com.ea.causeofdeath.bv`), with 348 numeric assets.
+
+The bundle ID identifies the game, not its resource layout. Import and reopen
+try the supported mappings and require exactly one complete, valid asset bank:
+
+| Layout | Profile | English strings | Layouts / common images | Mask | Fonts |
+| --- | --- | --- | --- | --- | --- |
+| Paid reference | `cod-ios-assets-v1` | 13 | 14 / 16 | 268 | 291–297 |
+| Compact free | `cod-ios-free-assets-v1` | 14 | 15 / 17 | 269 | 292–298 |
+| Multilingual free | `cod-ios-free-localized-assets-v1` | 14 | 19 / 21 | 273 | 296–302 |
+
+Free layouts repeat Volume One at 13; only 12 is canonical. Reference UI
+members 14–297 move by one in the compact free layout and five in the
+multilingual layout. The latter has extra language string banks at 15–18.
+The base member view normalizes UI IDs and omits the duplicate/language banks;
+characters, backgrounds, relationship art, sounds, music and episode assets
+keep their IDs. This does not add localized story or UI selection.
+
+The compact layout comes from the PR contributor's inspected free IPA. The
+multilingual layout comes from the
+[1.4.7 `.bv` review report](https://github.com/joshrmcdaniel/exp-runtime/pull/1#issuecomment-6193379821).
+Both have authored import/reopen fixtures, including identical bundle IDs and
+versions, relocation, missing assets and conflicting manifests. Full original
+1.4.7 playback has not been independently verified here. Required payloads must
+parse correctly; sentinel filenames, version strings or bundle suffixes alone
+cannot make an incompatible archive pass.
 
 Its base resource **12** is a complete EXP containing **Volume One** (metadata
 pack 101 / episode 1 and scripts 25001–25008). Import retains that EXP as a
@@ -31,10 +57,45 @@ An EXP's metadata has no reliable game discriminator: the player selects the
 destination game when importing additional episodes.
 
 New libraries use `format: exp-content-library`, `version: 1`, `game: cod` and
-`profile: cod-ios-assets-v1`. A contradictory game/profile/package is rejected.
+the matching profile above. A contradictory game/profile/package is rejected.
 The complete source and EXP hashes bind saves, so the same EXP used in both
 games cannot share progress accidentally. SHS APK music supplementation is
 restricted to SHS IPA libraries.
+
+## Explicit compatibility adaptations
+
+The following adaptations are intentionally distinguished from native parity:
+
+- Undefined bitmap glyphs `0x09`, `0x18` and `0x19` fall back to space,
+  apostrophe and apostrophe respectively in both games. These bytes occur in
+  supplied dialogue, including `0x18` in SHS's The Endorsement. Their positions
+  suggest truncated Unicode punctuation; the authoring conversion itself has
+  not been verified. A reviewer reports that original CoD 1.4.7 displays a
+  missing-glyph box for `0x19`. Existing font glyphs always win, and other
+  missing characters still fail explicitly.
+- CoD incremental timed choices (services 2–4) pass through only the observed
+  out-of-range defaults `-1` and `1000`. This prevents a stop on known content
+  without copying undefined memory. In-range defaults still use the return
+  mapping, and completion updates the VM and result cell once. Other invalid
+  indices, including those in SHS, remain explicit stops.
+- ASCII spaces in CoD text entry are an owner-requested convenience. The native
+  filter rejects spaces, and the cited puzzles have space-free solutions.
+  Typing, final validation and saved drafts share this allowance; other
+  rejected characters and the existing length/width limits remain unchanged.
+  [NAME_INPUT.md](NAME_INPUT.md) distinguishes the native capitalization rule.
+
+For the timeout adaptation, local CoD 1.3.4 `SHSUIMenu::tick` (`00039c8c`)
+copies the configured default. `setReturnValue` (`00039570`) then reads a
+signed short from `this + 0x9a + 2*selection` when mapping is enabled by
+`initTextMenuWait` (`0003a30c`). At `-1` it reads the field at `+0x98`; it
+does not return the default itself. Executing that callback with authored menu
+memory confirms that changing the neighboring field changes the callback.
+Fresh allocation does not guarantee zero, so neither zero nor passthrough is
+claimed as an exact native result. A local static scan found 124 literal `-1`
+timed defaults and one `1000` default across 23 of 81 distinct CoD EXPs; it
+does not establish every dynamically computed default or reachable branch.
+The reviewer's reported equivalent-play comparisons support this narrow
+compatibility policy, rather than a general rule for arbitrary invalid values.
 
 ## Episode catalog and duplicate imports
 

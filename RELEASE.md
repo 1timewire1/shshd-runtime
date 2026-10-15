@@ -1,3 +1,24 @@
+# Unreleased
+
+## Added
+
+- Support compact and multilingual free CoD IPA asset layouts, detected by
+  validating their resources. Existing compact-free libraries remain readable.
+
+## Changed
+
+- Allow spaces in CoD text entry on desktop and iOS as an intentional
+  convenience beyond the original keyboard's filter.
+
+## Fixed
+
+- Substitute undefined `0x09`, `0x18` and `0x19` dialogue glyphs with readable
+  spaces/apostrophes while preserving explicitly defined font glyphs.
+- Handle CoD's observed `-1` and `1000` timed-choice defaults with a documented
+  compatibility fallback. SHS and unrecognized invalid defaults still stop.
+- Preserve CoD text-entry case after capitalizing an initial lowercase letter,
+  matching the inspected native input path.
+
 # v0.5.0
 
 ## Added
