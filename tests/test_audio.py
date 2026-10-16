@@ -3,6 +3,7 @@ import importlib.util
 from io import BytesIO
 import os
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 import wave
@@ -247,6 +248,9 @@ class MusicPlaybackTests(unittest.TestCase):
         app.menu_music_loaded = app.menu_music_paused = False
         app.state = Mock(music=True, sound=True, music_volume=100, sound_volume=100)
         app.state.title.return_value = resources.record['titles'][0]
+        shots = tempfile.TemporaryDirectory()
+        self.addCleanup(shots.cleanup)
+        app.state.shot_path.return_value = Path(shots.name) / 'shot.jpg'
         app.show = Mock(side_effect=lambda screen, **_: setattr(app, 'screen', screen))
         app.refresh_saves = Mock()
         saved = ui.session.snapshot()
