@@ -18,6 +18,7 @@ import re
 import pygame
 from PIL import Image
 
+from .desktop_pause import ease_in_out
 from .help_text_overrides import HELP_TEXT_OVERRIDES
 from .menu import MenuStrings
 from .ui_assets import ImagePack
@@ -105,6 +106,7 @@ HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'about')
 # The main menu's Help & About (menu 15 of the menu engine) also lists Push Notifications and, last, the legal page
 # (Privacy Policy / EULA / Terms & Conditions), which the main menu draws itself.
 MAIN_HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'push', 'about', 'privacy')
+SLIDE_MS = 550
 
 
 @dataclass
@@ -177,8 +179,17 @@ class HdPauseMenu:
         return strings[title_id], body
 
     # -- state ----------------------------------------------------------
+    slide = None
+    shown = None
+
     def reset(self):
         self.state = PauseState()
+        self.slide = self.shown = None
+
+    def open(self, screen):
+        """A row's page, pushed in from the right."""
+        self.state.screen, self.state.scroll = screen, 0.
+        self.start_slide(1)
 
     def back(self):
         """One step out: returns True once the pause panel itself was showing."""
@@ -190,7 +201,16 @@ class HdPauseMenu:
         if self.main_menu and state.screen == 'pause':
             return True
         state.scroll, state.drag = 0., None
+        self.start_slide(-1)
         return False
+
+    def start_slide(self, direction):
+        self.slide = (direction, self.shown, 0.) if self.shown is not None else None
+
+    def advance(self, ms):
+        if self.slide is not None:
+            direction, previous, elapsed = self.slide
+            self.slide = (direction, previous, elapsed + ms) if elapsed + ms < SLIDE_MS else None
 
     # -- drawing helpers (points; S scales to the layer) -----------------
     @staticmethod
@@ -355,7 +375,21 @@ class HdPauseMenu:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
         ('pause_toggle', 'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'hd_backdrop'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
-        ('pause_open', 'options:<category>'), each a page of its switches and sliders."""
+        ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
+        (`open` / `back`) the layer holds both cards and there are no buttons."""
+        layer, buttons = self.screen_layout(settings, host_rows, message=message)
+        self.shown = layer
+        if self.slide is None:
+            return layer, buttons
+        direction, previous, elapsed = self.slide
+        shift = ease_in_out(elapsed / SLIDE_MS) * layer.get_width()
+        both = pygame.Surface(layer.get_size(), pygame.SRCALPHA).convert_alpha()
+        both.blit(previous, (round(-direction * shift), 0))
+        both.blit(layer, (round(direction * (layer.get_width() - shift)), 0))
+        return both, []
+
+    def screen_layout(self, settings, host_rows=(), *, message=''):
+        """The current screen alone, at rest: `layout`'s (layer, buttons)."""
         layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
         strings, state, buttons = self.strings(), self.state, []
         bottom_rule = None

@@ -1408,7 +1408,7 @@ class Desktop:
         if kind == 'pause_open':
             # A row of the menu (`SHSWidgetMenu::itemSelected`) and its back button (`buttonPressed`, tags 1-4) both
             # click; switches and sliders do not.
-            self.pause_hd.state.screen, self.pause_hd.state.scroll = command[1], 0.
+            self.pause_hd.open(command[1])
             self._menu_sound()
             return
         if kind == 'pause_back':
@@ -1948,6 +1948,7 @@ class Desktop:
             elapsed_ms -= discount
         if self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
+            self.pause_hd.advance(elapsed_ms)
         if self.fade:
             self._tick_fade(elapsed_ms)
         # A native notice (the "Locked" notice, the wall link's "Exit Game?") holds the game like the pause menu does:

@@ -154,6 +154,7 @@ class HdShell:
         self.age += seconds
         if self.pause_open:
             self.pause_ms = min(PAUSE_OPEN_MS, self.pause_ms + seconds * 1000)
+            self.pause.advance(seconds * 1000)
         if self.stack.stack:
             self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + seconds * 1000)
         covered = self.overlay_active or self.pause_open
@@ -402,7 +403,7 @@ class HdShell:
             if command[1] == 'privacy':
                 self.stack.queue(self.PRIVACY_MENU)
             else:
-                self.pause.state.screen, self.pause.state.scroll = command[1], 0.0
+                self.pause.open(command[1])
         elif kind == 'pause_back':
             if self.pause.back():
                 self.pause_open = False

@@ -144,7 +144,9 @@ class BackgroundTests(unittest.TestCase):
         from exp_runtime.desktop import Desktop
         session = story()
         host = Desktop.__new__(Desktop)
+        from exp_runtime.desktop_pause_hd import HdPauseMenu
         host.session, host.active, host.error, host.menu_open = session, True, None, False
+        host.pause_hd = HdPauseMenu.__new__(HdPauseMenu)
         host._attempt = lambda operation: operation()
         host.tick(100)
         pan = session.engine.background_pan
