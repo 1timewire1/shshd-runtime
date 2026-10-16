@@ -28,7 +28,7 @@ except ImportError:
 from .location_pan import LocationPan
 from .desktop_message_hd import HdMessageRenderer
 from . import scene_fade
-from .desktop_pause_hd import HdPauseMenu
+from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import play_option
@@ -47,7 +47,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .runtime import SaveError, Session
 from .scene_badge import outline_badge_text
-from .pointer import ButtonPress
+from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
 from .ui_sound import UiSounds
 from .ui_assets import ImagePack, Rect
@@ -87,6 +87,8 @@ class Desktop:
     choice_closing = None
     # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
     choice_focus = None
+    # The same for the Android pause menu's rows (HD's pause menu keeps its own, `pause_hd.state.focus`).
+    menu_focus = None
     # A narrator-style choice of this player's own over the pending screen (`_open_prompt`): "Ask to skip mini-games"
     # before a football game or word grid (Win, Lose or Play), and whether to skip the High School Story ad intros.
     # {'action', 'session', 'options', 'resolve'} while it is up (`session` stands in for the real one when drawing it).
@@ -1285,7 +1287,7 @@ class Desktop:
                                                  self.story_text, self.dialogue_renderer)
         buttons = self.pause_renderer.draw(self.canvas, application=self.on_menu_page is not None,
                                             main_menu=self.on_main_menu is not None,
-                                            pressed=self.press.pressed,
+                                            pressed=self.press.pressed or self.menu_focus,
                                             elapsed_ms=self.pause_elapsed_ms)
         self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                         for rect, command in buttons]
@@ -1362,6 +1364,8 @@ class Desktop:
             return True
         if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
             return False
+        if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
+            state.focus = None                      # the pointer takes over from the arrow keys
         x, y = self._pause_point(event.pos)
         if event.type == pygame.MOUSEBUTTONUP:
             state.drag = None
@@ -1438,6 +1442,7 @@ class Desktop:
             if self.menu_open:
                 return
             self.pause_hd.reset()
+            self.menu_focus = None
             self.picker_pointer_down = False
             if self.session.engine.word_grid:
                 self.session.grid_pointer('cancel')
@@ -1687,6 +1692,20 @@ class Desktop:
         if self.menu_open and event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_F5, pygame.K_F9):
                 self.command(('save' if event.key == pygame.K_F5 else 'load',))
+            elif self.pause_hd.available() and not self.error:
+                command = self.pause_hd.key(event.key)
+                if command is not None and command[0] == 'pause_volume':
+                    volume = self.music_volume if command[1] == 'music' else self.sound_volume
+                    self._set_volume(command[1], volume + command[2])
+                elif command is not None:
+                    self.command(command)
+            else:
+                targets = [command for _, command in self.buttons]
+                focus = self.menu_focus if self.menu_focus in targets else None
+                if focus_step(event.key):
+                    self.menu_focus = step_focus(targets, focus, focus_step(event.key))
+                elif event.key in KEYS_ACTIVATE and focus is not None:
+                    self.command(focus)
             return True
         if self.menu_open and event.type in (pygame.MOUSEWHEEL, pygame.TEXTINPUT):
             return True
@@ -1703,7 +1722,7 @@ class Desktop:
             phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEBUTTONUP: 'up',
                      pygame.MOUSEMOTION: 'move'}[event.type]
             if event.type == pygame.MOUSEMOTION:
-                self.choice_focus = None
+                self.choice_focus = self.menu_focus = None
             command = self.press.update(phase, hit, self._press_token())
             if command is not None:
                 self.command(command)

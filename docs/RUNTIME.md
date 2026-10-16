@@ -176,6 +176,7 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | Type, Backspace, Enter | Edit a name (up to 16 ASCII letters/digits, subject to native font width); Enter submits a nonempty name or dismisses its alert |
 | F5 (also Pause → Options → Save without the HD app, and the fallback screen's Save button) | Replace the current episode's manual save slot |
 | F9 (also Pause → Options → Load, and its Load button) | Restore that slot |
+| Arrow keys, Enter or Space | Select and pick a choice, or a pause or main menu item. Left/Right adjust a volume slider |
 | Wheel, arrow keys, Page Up/Down | Scroll long option lists and other non-dialogue screens |
 | Escape | Open/close the pause menu during play; go back within application menus |
 | Main Menu / Close window | Save a separate automatic checkpoint and return to the menu / exit |

@@ -20,6 +20,7 @@ from PIL import Image
 
 from .help_text_overrides import HELP_TEXT_OVERRIDES
 from .menu import MenuStrings
+from .pointer import step_focus
 from .ui_assets import ImagePack
 
 FRAME = (768, 1024)
@@ -105,6 +106,20 @@ HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'about')
 # The main menu's Help & About (menu 15 of the menu engine) also lists Push Notifications and, last, the legal page
 # (Privacy Policy / EULA / Terms & Conditions), which the main menu draws itself.
 MAIN_HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'push', 'about', 'privacy')
+# Keyboard navigation (not native): arrows highlight a row, Enter or Space taps it, Left / Right move a slider.
+FOCUS_SHADE, VOLUME_STEP = .85, .1
+KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
+PAGE_KEYS = {pygame.K_UP: -40, pygame.K_DOWN: 40, pygame.K_PAGEUP: -400, pygame.K_PAGEDOWN: 400}
+
+
+def focus_step(key):
+    """-1 or 1 for a key that moves a menu's highlight back or on (Up / Left / Shift-Tab, Down / Right / Tab), else
+    None."""
+    if key in (pygame.K_UP, pygame.K_LEFT) or key == pygame.K_TAB and pygame.key.get_mods() & pygame.KMOD_SHIFT:
+        return -1
+    if key in (pygame.K_DOWN, pygame.K_RIGHT, pygame.K_TAB):
+        return 1
+    return None
 
 
 @dataclass
@@ -113,6 +128,7 @@ class PauseState:
     scroll: float = 0.
     drag: str | None = None
     max_scroll: float = 0.
+    focus: tuple | None = None      # the command the arrow keys have highlighted
 
 
 class HdPauseMenu:
@@ -246,16 +262,23 @@ class HdPauseMenu:
         self.title(layer, title, top, header)
         return top + header
 
-    def back_button(self, layer, bottom):
+    def back_button(self, layer, bottom, *, lit=False):
         left, lift = PANEL_X + BACK[0], BACK[1]
         top = bottom - lift - 58
+
+        def art(index):
+            image = self.art(32, index)
+            if lit:
+                image = image.copy()
+                image.fill((round(255 * FOCUS_SHADE),) * 3, special_flags=pygame.BLEND_RGB_MULT)
+            return image
         # Frames 13/14/15 are the button's cap, middle and cap (10 + 136 + 10 = 156 wide).
         x = left
         for index in (13, 14, 15):
-            image = self.art(32, index)
+            image = art(index)
             layer.blit(image, (x * S, top * S))
             x += image.get_width() / S
-        arrow = self.art(32, 12)
+        arrow = art(12)
         layer.blit(arrow, (round((left + 78) * S - arrow.get_width() / 2), round((top + 29) * S - arrow.get_height() / 2)))
         return pygame.Rect(left, top, 156, 58)
 
@@ -325,16 +348,19 @@ class HdPauseMenu:
         """The volume a pointer at frame x sets: the slider's track runs from 143 to 603."""
         return (x - 143) / 460
 
-    def rows_body(self, layer, top, height, color=None):
-        self.rect(layer, self.see_through(color or self.ROW_COLORS[0]), (PANEL_X + BORDER, top, PANEL_W - 2 * BORDER, height))
+    def rows_body(self, layer, top, height, color=None, *, lit=False):
+        color = color or self.ROW_COLORS[0]
+        if lit:
+            color = tuple(round(c * FOCUS_SHADE) for c in color)
+        self.rect(layer, self.see_through(color), (PANEL_X + BORDER, top, PANEL_W - 2 * BORDER, height))
         self.rect(layer, self.SEPARATOR_COLOR, (PANEL_X + BORDER, top, PANEL_W - 2 * BORDER, 1))
 
     def row_color(self, index):
         return self.ROW_COLORS[index % 2]
 
-    def row(self, layer, top, label, *, height=ROW, color=None, background=None):
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False):
         color = color or self.LABEL_COLOR
-        self.rows_body(layer, top, height, background)
+        self.rows_body(layer, top, height, background, lit=lit)
         font, lines, current = self.font(ROW_PX), [], ''
         for word in label.split(' '):
             trial = f'{current} {word}' if current else word
@@ -359,6 +385,7 @@ class HdPauseMenu:
         layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
         strings, state, buttons = self.strings(), self.state, []
         bottom_rule = None
+        focus = state.focus
         if state.screen == 'pause':
             entries = [(strings[20], ('resume',)), (strings[10], ('pause_open', 'options')),
                        (strings[120], ('pause_open', 'help'))]
@@ -369,7 +396,7 @@ class HdPauseMenu:
             body = self.panel(layer, top, top + height, strings[8])
             for i, (label, command) in enumerate(entries):
                 y = body + i * ROW
-                self.row(layer, y, label, background=self.row_color(i))
+                self.row(layer, y, label, background=self.row_color(i), lit=focus == command)
                 buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
             bottom_rule = body + len(entries) * ROW
         elif state.screen == 'options':
@@ -381,10 +408,11 @@ class HdPauseMenu:
             body = self.panel(layer, top, top + height, strings[10])
             for i, (category, label) in enumerate(categories):
                 y = body + i * ROW
-                self.row(layer, y, label, background=self.row_color(i))
-                buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), ('pause_open', 'options:' + category)))
+                command = ('pause_open', 'options:' + category)
+                self.row(layer, y, label, background=self.row_color(i), lit=focus == command)
+                buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
             bottom_rule = top + height - FOOT
-            buttons.append((self.back_button(layer, top + height), ('pause_back',)))
+            buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
         elif state.screen.startswith('options:'):
             # Sound: the app's own Music / Sound switches and sliders. General: in a story, the side panels (a native
             # feature: the device shows them on rotation, so it has no switch or string of its own), then this
@@ -399,13 +427,15 @@ class HdPauseMenu:
             y = body
             for index, (kind, label, key) in enumerate(rows):
                 if kind == 'slider':
-                    self.rows_body(layer, y, SLIDER_ROW, self.row_color(index))
+                    self.rows_body(layer, y, SLIDER_ROW, self.row_color(index),
+                                   lit=focus is not None and focus[:2] == ('pause_slider', key))
                     self.text(layer, label, PANEL_X + 31, y + 39 - self.cap_offset(ROW_PX), ROW_PX, self.LABEL_COLOR)
                     track = self.slider(layer, y, settings[key + '_volume'])
                     buttons.append((track, ('pause_slider', key, track)))
                     y += SLIDER_ROW
                     continue
-                self.row(layer, y, label, background=self.row_color(index))
+                command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
+                self.row(layer, y, label, background=self.row_color(index), lit=focus == command)
                 if kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2, settings.get(key, False))
                     buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
@@ -418,7 +448,7 @@ class HdPauseMenu:
                     buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), ('pause_action', key)))
                 y += ROW
             bottom_rule = top + height - FOOT
-            buttons.append((self.back_button(layer, top + height), ('pause_back',)))
+            buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
         elif state.screen == 'help':
             order = MAIN_HELP_ORDER if self.main_menu else HELP_ORDER
             height = HEADER + ROW * len(order) + FOOT
@@ -426,19 +456,38 @@ class HdPauseMenu:
             body = self.panel(layer, top, top + height, strings[120])
             for i, page in enumerate(order):
                 y = body + i * ROW
-                self.row(layer, y, strings[170 if page == 'privacy' else self.PAGES[page][0]], background=self.row_color(i))
+                self.row(layer, y, strings[170 if page == 'privacy' else self.PAGES[page][0]], background=self.row_color(i),
+                         lit=focus == ('pause_open', page))
                 buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), ('pause_open', page)))
             bottom_rule = top + height - FOOT
-            buttons.append((self.back_button(layer, top + height), ('pause_back',)))
+            buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
         else:
             self.text_page(layer, buttons)
         if bottom_rule is not None:
             self.rect(layer, self.SEPARATOR_COLOR, (PANEL_X + BORDER, bottom_rule, PANEL_W - 2 * BORDER, 1))
         if message:
             self.text(layer, message, 384, FRAME[1] - 90, 22, (255, 255, 255), center=True)
+        self.buttons = buttons
         return layer, buttons
 
     pressed = None                  # the command under the pointer, for buttons drawn pressed (set by the host)
+    buttons = ()                    # the last layout's buttons, for `key`
+
+    def key(self, key):
+        state = self.state
+        commands = [command for _, command in self.buttons]
+        if ('pause_scroll',) in commands and key in PAGE_KEYS:
+            state.scroll = min(state.max_scroll, max(0., state.scroll + PAGE_KEYS[key]))
+            return None
+        targets = [command for command in commands if command[0] not in ('pause_scroll', 'pause_link')]
+        focus = state.focus if state.focus in targets else None
+        if focus is not None and focus[0] == 'pause_slider' and key in (pygame.K_LEFT, pygame.K_RIGHT):
+            return 'pause_volume', focus[1], VOLUME_STEP if key == pygame.K_RIGHT else -VOLUME_STEP
+        if focus_step(key):
+            state.focus = step_focus(targets, focus, focus_step(key))
+        elif key in KEYS_ACTIVATE and focus is not None and focus[0] != 'pause_slider':
+            return focus
+        return None
 
     def option_rows(self, category, settings, strings):
         """[(kind, label, key)] of an Options category: 'switch', 'slider', 'cycle' or 'action' rows, those whose
@@ -526,7 +575,7 @@ class HdPauseMenu:
             y += pitch
         layer.set_clip(None)
         self.rect(layer, self.SEPARATOR_COLOR, (area.x, area.bottom, area.width, 1))
-        buttons.append((self.back_button(layer, bottom), ('pause_back',)))
+        buttons.append((self.back_button(layer, bottom, lit=state.focus == ('pause_back',)), ('pause_back',)))
         buttons.append((area, ('pause_scroll',)))
         for rect, url in links:
             buttons.append((rect.clip(area), ('pause_link', url)))

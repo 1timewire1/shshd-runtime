@@ -620,7 +620,13 @@ class Application:
 
     def shell_event(self, event):
         shell = self.shell
-        if event.type == pygame.MOUSEWHEEL:
+        if event.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
+            shell.focus = shell.pause.state.focus = None         # the pointer takes over from the arrow keys
+        if event.type == pygame.KEYDOWN:
+            command = shell.key(event.key)
+            if command is not None and command[0] != 'pause_toggle':      # as a tap's (below)
+                self._click_sound()
+        elif event.type == pygame.MOUSEWHEEL:
             shell.wheel(event.y)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             shell.pointer_down(self.picker_point(event.pos))
@@ -1277,8 +1283,6 @@ class Application:
         picker = self.ensure_picker(self.picker_style)
         command = None
         if self.shell is not None and self.shell.overlay_active:
-            if event.type == pygame.KEYDOWN:
-                return True
             return self.shell_event(event)
         if event.type == pygame.KEYDOWN:
             command = picker.key(event.key)
