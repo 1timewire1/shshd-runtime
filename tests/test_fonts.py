@@ -139,6 +139,31 @@ class FontTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
 class AtlasDrawingTests(unittest.TestCase):
+    def test_mixed_faces_draw_the_selected_atlas_and_retain_byte_reveal_boundaries(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        import pygame
+        from exp_runtime.desktop_text import BitmapTextRenderer
+        from test_outline_dialogue import font
+
+        pygame.display.init()
+        pygame.display.set_mode((30, 30))
+        self.addCleanup(pygame.quit)
+        renderer = BitmapTextRenderer(None)
+        for role, advance, color in (('body', 8, (255, 255, 255)), ('italic', 6, (0, 255, 0))):
+            atlas = pygame.Surface((1, 1), pygame.SRCALPHA)
+            atlas.fill(color)
+            renderer.fonts[role] = font(advance), atlas
+        style = TextStyle(12, 10, markers=(('`', (255, 255, 255)),))
+        page = layout_text(renderer.font('body'), 'a`b`c', 50, style,
+                           switch_fonts={'`': ('italic', renderer.font('italic'))})
+        target = pygame.Surface((30, 30), pygame.SRCALPHA)
+        renderer.draw_layout(target, 'body', page, 0, 0, source_end=3)
+        self.assertEqual(tuple(target.get_at((0, 12))), (255, 255, 255, 255))
+        self.assertEqual(tuple(target.get_at((8, 12))), (0, 255, 0, 255))
+        self.assertEqual(target.get_at((14, 12)).a, 0)
+        renderer.draw_layout(target, 'body', page, 0, 0)
+        self.assertEqual(tuple(target.get_at((14, 12))), (255, 255, 255, 255))
+
     def test_actual_atlas_bounds_colors_alpha_and_clipping(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         import pygame

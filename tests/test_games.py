@@ -367,6 +367,8 @@ class LocalCoDTests(unittest.TestCase):
                         self.assertTrue(all(app.renderer.menu_fonts[1].glyph(c) for c in 'SwitchGame'))
                 app.selected = app.library.select('Volume_One.exp')['id']
                 app.start(resume=False)
+                app.tick(1000)  # Native menu/story audio handoff.
+                app.game._sync_audio()
                 ui, seen, speakers, wrapped = app.game, set(), set(), set()
                 for _ in range(150):
                     session, action = ui.session, ui.session.pending
@@ -387,8 +389,16 @@ class LocalCoDTests(unittest.TestCase):
                         if page.name.glyphs:
                             ink = ui.dialogue_renderer.name_layer.get_bounding_rect()
                             bounds = page.name_bounds
+                            if getattr(session.resources.dialogue_layout().font(page.name_font), 'native_face', False):
+                                from exp_runtime.ui_assets import Rect
+                                x, y = page.name_origin
+                                left, top, right, bottom = page.name.ink_bounds
+                                bounds = Rect(x + left, y + top, right - left, bottom - top)
+                                self.assertEqual(page.name_scale, 1)
                             # Include actual atlas outlines and pygame rounding,
-                            # not just the layout's floating-point rectangles.
+                            # not just floating-point rectangles. Original
+                            # outlines can overhang the skin; only substitute
+                            # faces use the compatibility ink-fit boundary.
                             self.assertGreaterEqual(ink.left, bounds.x - 1)
                             self.assertGreaterEqual(ink.top, bounds.y - 1)
                             self.assertLessEqual(ink.right, bounds.x + bounds.width + 1)

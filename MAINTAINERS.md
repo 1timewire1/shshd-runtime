@@ -261,8 +261,8 @@ run `tools/test_packages.py` through the locked build environment with
 engine, single-game, full-player and headless/GUI/MCP creator combinations.
 All seven distributions are one release; the scripts never publish them.
 See [SDK.md](docs/SDK.md) for local wheel installation and component boundaries.
-Before the v0.6.0 PyPI release, register the new `exp-runtime-creator` project
-alongside the existing six projects with the
+The `exp-runtime-creator` project, introduced in v0.6.0, needs its own publisher
+alongside the other six projects with the
 [`desktop-builds.yml` Trusted Publisher and `pypi` environment](docs/DISTRIBUTION.md#pypi-publishing).
 The publish job uses short-lived OIDC credentials, not a stored API token.
 PyPI rejects existing filenames; the workflow skips matching published files

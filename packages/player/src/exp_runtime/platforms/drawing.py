@@ -295,6 +295,11 @@ class Surface:
 
 class Draw:
     @staticmethod
+    def depth_quad(surface, image, bounds, coefficients, plane):
+        surface._append(dict(kind='depth_quad', source=image.snapshot(), alpha=image._alpha,
+                             bounds=bounds, coefficients=coefficients, depth_plane=plane))
+
+    @staticmethod
     def textured_quad(surface, image, bounds, coefficients):
         surface._append(dict(kind='textured_quad', source=image.snapshot(), alpha=image._alpha,
                              bounds=bounds, coefficients=coefficients))
@@ -323,6 +328,11 @@ class Draw:
 
 
 class Transform:
+    @staticmethod
+    def color_matrix(surface, matrix):
+        return Surface.from_node(Node(surface.get_size(),
+            (dict(kind='color_matrix', source=surface.snapshot(), matrix=matrix),)))
+
     @staticmethod
     def _scale(surface, size, smooth):
         size = tuple(map(int, size))
@@ -397,8 +407,15 @@ def raster(node):
     if node.pixels is not None:
         return node.pixels.copy()
     image = Image.new('RGBA', node.size)
+    depth = None
     for op in node.ops:
         kind = op['kind']
+        if kind == 'color_matrix':
+            from ..color_transform import transform_rgb
+            source = raster(op['source']).convert('RGB')
+            image = Image.frombytes('RGB', node.size,
+                                    transform_rgb(source.tobytes(), op['matrix'])).convert('RGBA')
+            continue
         if kind in ('scale', 'rotate', 'flip'):
             source = raster(op['source'])
             if kind == 'scale':
@@ -422,10 +439,14 @@ def raster(node):
             if op['alpha'] != 255:
                 source.putalpha(source.getchannel('A').point(lambda a: a * op['alpha'] // 255))
             layer.alpha_composite(source, op['at'])
-        elif kind == 'textured_quad':
-            from ..projection import warp
+        elif kind in ('textured_quad', 'depth_quad'):
+            from ..projection import warp, depth_mask
             x, y, w, h = op['bounds']
             source = warp(raster(op['source']), (w, h), op['coefficients'])
+            if kind == 'depth_quad':
+                if depth is None:
+                    depth = [0.] * (node.size[0] * node.size[1])
+                source = depth_mask(source, op['coefficients'], op['depth_plane'], op['bounds'], depth, node.size)
             if op['alpha'] != 255:
                 source.putalpha(source.getchannel('A').point(lambda a: a * op['alpha'] // 255))
             layer.alpha_composite(source, (x, y))
@@ -532,31 +553,61 @@ class PlatformFont:
 class Music:
     def __init__(self, owner, channel='music'):
         self.owner, self.channel = owner, channel
+        self.paused = False
 
     def command(self, action, **details):
-        self.owner.commands.append(dict(kind=f'{self.channel}_{action}', **details))
+        if self.channel.startswith('effect:'):
+            self.owner.commands.append(dict(kind=f'music_{action}', track=self.channel, **details))
+        else:
+            self.owner.commands.append(dict(kind=f'{self.channel}_{action}', **details))
 
     def load(self, stream):
         self.command('load', data=base64.b64encode(stream.read()).decode('ascii'))
 
     def play(self, loops=0, *, start=0):
         self.command('play', loops=loops, start=start)
+        self.paused = False
+        self.owner.playing[self.channel] = True
+        self.owner.positions[self.channel] = int(start * 1000)
+
+    def set_loops(self, loops):
+        self.command('loops', loops=loops)
+
+    def position_ms(self):
+        return self.owner.positions.get(self.channel, 0)
 
     def stop(self):
         self.command('stop')
+        self.paused = False
+        self.owner.playing.pop(self.channel, None)
+        self.owner.positions.pop(self.channel, None)
+
+    def set_volume(self, volume):
+        self.command('volume', volume=volume)
+
+    def get_busy(self):
+        return self.owner.playing.get(self.channel, False) or (self.paused and self.channel.startswith('effect:'))
 
     def pause(self):
-        self.command('pause')
+        if not self.paused and self.get_busy():
+            self.command('pause')
+            self.paused = True
 
     def unpause(self):
-        self.command('resume')
+        if self.paused:
+            self.command('resume')
+            self.paused = False
+            self.owner.playing[self.channel] = True
 
 
 class Mixer:
     def __init__(self):
         self.commands = []
+        self.playing = {}
+        self.positions = {}
         self.music = Music(self)
         self.menu_music = Music(self, 'menu')
+        self.sound_serial = 0
 
     def init(self):
         pass  # AVAudioSession is owned by the native host.
@@ -567,6 +618,13 @@ class Mixer:
     def Sound(self, *, file):
         data = base64.b64encode(file.read()).decode('ascii')
         return SimpleNamespace(play=lambda: self.commands.append(dict(kind='sound', data=data)))
+
+    def play_sound(self, stream, start_ms=0):
+        self.sound_serial += 1
+        sound = Music(self, f'effect:{self.sound_serial}')
+        sound.load(stream)
+        sound.play(start=start_ms / 1000)
+        return sound
 
 
 class Backend:
@@ -584,6 +642,8 @@ class Backend:
         self.bridge = bridge
         self.ticks = 0
         self.keyboard = False
+        self.vibration_available = False
+        self.vibrations = 0
         self.pointer = (-1, -1)
         self.window = None
         self.image = ImageAPI(icon_path)
@@ -601,11 +661,17 @@ class Backend:
     def _keyboard(self, enabled):
         self.keyboard = enabled
 
+    def vibrate(self):
+        self.vibrations += 1
+
     def _window(self, size, flags=0):
         self.window = Surface(size)
         return self.window
 
     def quit(self):
+        for channel in tuple(self.mixer.playing):
+            if channel.startswith('effect:'):
+                Music(self.mixer, channel).stop()
         self.mixer.music.stop()
         self.mixer.menu_music.stop()
         self.mixer.stop()

@@ -3,7 +3,7 @@ import unittest
 
 from exp_runtime.choice_hints import preview_choices
 from exp_runtime.runtime import Session
-from test_runtime import Resources, host_call, text_words
+from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
@@ -58,6 +58,26 @@ def deferred_session(*, custom=False, threshold=2, reward=True, mixed=False):
 
 
 class ChoiceHintTests(unittest.TestCase):
+    def test_cod_feedback_marks_survival_and_failure_branches_without_score_notices(self):
+        for custom in (False, True):
+            s = choice_session(lambda refs: host_call(79, 8002) + host_call(13, refs[3], 0),
+                               lambda refs: host_call(79, 8001) + host_call(13, refs[3], 0), custom=custom)
+            s.engine.game_key = 'cod'
+            before = s.snapshot()
+            correct = 73 if custom else 0
+            self.assertEqual(kinds(s), ['gain' if v == correct else 'loss'
+                                       for v in s.pending.details['values']])
+            self.assertEqual(s.snapshot(), before)
+        # Neither another game's cues, music requests, nor a stale cue proves
+        # the outcome of this choice. Unknown calls still stop the preview.
+        for first, second in ((host_call(79, 8003), host_call(79, 8004)),
+                              (host_call(80, 8002, 0), host_call(80, 8001, 0)),
+                              (host_call(79, 8002) + host_call(254), host_call(254))):
+            s = choice_session(lambda _: first, second)
+            s.engine.game_key = 'cod'
+            s.engine.sound_id = 8002
+            self.assertEqual(kinds(s), ['unknown', 'unknown'])
+
     def test_quiz_feedback_sounds_mark_shuffled_answers_without_score_notices(self):
         for custom in (False, True):
             s = choice_session(lambda refs: host_call(79, 8007) + host_call(13, refs[3], 0),
@@ -104,7 +124,7 @@ class ChoiceHintTests(unittest.TestCase):
                             for v in s.pending.details['values']]
                 self.assertEqual(kinds(s), expected)
                 self.assertEqual(s.snapshot(), before)
-                s.answer(s.pending.details['values'].index(values[answer]))
+                answer_screen(s, s.pending.details['values'].index(values[answer]))
             # Once the threshold is met, every final option earns the reward.
             self.assertEqual(kinds(s), ['gain'] * 3)
 
@@ -141,7 +161,7 @@ class ChoiceHintTests(unittest.TestCase):
             self.assertEqual(kinds(s), ['gain', 'no_gain'])
             self.assertEqual(s.snapshot(), before)
             self.assertEqual(s.remaining_ms, 3000)
-            self.assertEqual(s.answer(0).name, 'dialogue')
+            self.assertEqual(answer_screen(s, 0).name, 'dialogue')
             self.assertIn('Score Up!', s.engine.notice)
 
     def test_relationship_gain_loss_mixed_and_reset_on_exit(self):
@@ -193,6 +213,53 @@ class ChoiceHintTests(unittest.TestCase):
         with patch.object(Path, 'open', side_effect=AssertionError('Preview touched filesystem')):
             self.assertEqual(kinds(s), ['gain', 'no_gain'])
         self.assertEqual(s.snapshot(), before)
+
+    def test_preview_crosses_loading_and_vm_pauses_without_losing_feedback(self):
+        for prefix in ([0x32], host_call(91, 1), host_call(91, 0), [0x32, 0x32]):
+            s = choice_session(lambda refs: prefix + host_call(88, refs[4]),
+                               lambda _: [0x32] + host_call(79, 8003))
+            before = s.snapshot()
+            self.assertEqual(kinds(s), ['gain', 'loss'])
+            self.assertEqual(s.snapshot(), before)
+            self.assertEqual(kinds(s, max_panels=1),
+                             ['unknown', 'loss'] if prefix == [0x32, 0x32] else ['gain', 'loss'])
+
+    @unittest.skipUnless(Path('decomp/cod/Cause+of+Death+(World)+1.3.4.ipa').is_file()
+                         and Path('decomp/cod/CoD Episodes/Volume_2.exp').is_file(),
+                         'original user CoD IPA/Volume Two is unavailable')
+    def test_original_cod_volume_two_fight_marks_the_death_branch(self):
+        import tempfile
+        from exp_runtime.content import ContentLibrary, import_game
+        from test_runtime import answer_screen
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'library'
+            import_game(Path('decomp/cod/Cause+of+Death+(World)+1.3.4.ipa'),
+                        [Path('decomp/cod/CoD Episodes/Volume_2.exp')], path, game='cod')
+            with ContentLibrary(path) as library:
+                s = Session(library.open_episode('Volume_2.exp'))
+                s.advance()
+                # Use the episode's own chapter picker and live callbacks.
+                route = iter((1, 0, 2, 0, 0))
+                for _ in range(150):
+                    if s.pending.name == 'choice':
+                        if (s.scene, s.pending.request.pc) == (25006, 187):
+                            break
+                        answer_screen(s, next(route))
+                    else:
+                        answer_screen(s)
+                else:
+                    self.fail('The original opening fight was not reached')
+                before = s.snapshot()
+                self.assertEqual(kinds(s), ['gain', 'loss'])
+                self.assertEqual(s.snapshot(), before)
+                restored = Session.from_snapshot(s.resources, before)
+                self.assertEqual(kinds(restored), ['gain', 'loss'])
+                answer_screen(s, 1)
+                for _ in range(50):
+                    if s.pending.name == 'choice':
+                        break
+                    answer_screen(s)
+                self.assertEqual((s.scene, s.pending.request.pc), (25006, 2080))
 
 
 if __name__ == '__main__':

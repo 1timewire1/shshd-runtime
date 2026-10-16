@@ -6,7 +6,8 @@ from math import floor
 
 from . import graphics as pygame
 
-from .fonts import FontError, layout_text, load_font
+from .fonts import FontError, TextStyle, layout_label, layout_text, load_font
+from .menu_assets import MenuStrings
 
 
 class BitmapTextRenderer:
@@ -38,10 +39,35 @@ class BitmapTextRenderer:
         return self.fonts[name][0]
 
     @lru_cache(maxsize=128)
-    def layout(self, name, text, width, style):
-        return layout_text(self.font(name), text, width, style)
+    def layout(self, name, text, width, style, *, previous_glyph=-1):
+        return layout_text(self.font(name), text, width, style, previous_glyph=previous_glyph)
+
+    @lru_cache(maxsize=64)
+    def footer(self, index, previous_glyph=-1):
+        text = MenuStrings.load(self.library)[index]
+        if getattr(self.library, 'kind', 'apk') == 'ipa':
+            # GameModel::init: the outline tooltip uses layout 18's 252x18
+            # region at (63,459), centered Arial 11, white alpha 176.
+            name = 'ArialMT11'
+            label = self.layout(name, text, 252, TextStyle(11), previous_glyph=previous_glyph)
+            left, top, right, bottom = label.ink_bounds
+            origin = (63 + (252 - (right - left)) / 2 - left,
+                      459 + (18 - (bottom - top)) / 2 - top)
+            return name, label, origin, 176
+        # Android 0007cbbc / 0007d4c8 share this label across story panels:
+        # font registry 11, zero content size, center/center at GL (180,25).
+        name = 'ArialMT14'
+        label = layout_label(self.font(name), text, 0, 0, TextStyle(14, 8), 0x0a,
+                             previous_glyph=previous_glyph)
+        return name, label, (180, 455), 255
+
+    def draw_footer(self, surface, index, previous_glyph=-1):
+        name, label, origin, alpha = self.footer(index, previous_glyph)
+        self.draw_layout(surface, name, label, *origin, alpha=alpha)
 
     def _glyph_image(self, name, placed, scale):
+        name = placed.font or name
+        self.font(name)
         glyph = placed.glyph
         key = name, glyph.code, placed.color, scale
         if key not in self.glyph_images:
@@ -75,7 +101,7 @@ class BitmapTextRenderer:
                          (floor(x + placed.x * scale + .5), floor(y + (placed.y - top) * scale + .5)))
         return y + (max(layout.height, bottom) - top) * scale
 
-    def draw_layout(self, surface, name, layout, x, y, *, scale=1, source_end=None):
+    def draw_layout(self, surface, name, layout, x, y, *, scale=1, source_end=None, alpha=255):
         """Draw a native layout origin without moving its ink overhang."""
         self.font(name)
         for placed in layout.glyphs:
@@ -84,5 +110,9 @@ class BitmapTextRenderer:
             # Half-to-even rounding snaps adjacent glyph bearings in opposite
             # directions at a half-pixel line origin (notably Continue's i).
             # Use one translation-invariant pixel rule for the whole line.
-            surface.blit(self._glyph_image(name, placed, scale),
+            image = self._glyph_image(name, placed, scale)
+            if alpha != 255:
+                image = image.copy()
+                image.set_alpha(alpha)
+            surface.blit(image,
                          (floor(x + placed.x * scale + .5), floor(y + placed.y * scale + .5)))

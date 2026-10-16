@@ -11,6 +11,7 @@ from io import BytesIO
 import json
 import os
 import logging
+from math import ceil
 from pathlib import Path
 import re
 import struct
@@ -26,6 +27,7 @@ from .fonts import BitmapFont, FontError, Glyph
 class IOSFont(BitmapFont):
     cap_height: float
     descent: float
+    native_face: bool = False
 
 
 def _design_metrics(font, source, index):
@@ -162,16 +164,24 @@ def render_font(library, name):
     if name in cache:
         return cache[name]
     color, stroke, source, index = (255, 255, 255, 255), 0, None, 0
-    if name in ('PajamaHip24', 'PajamaHip26', 'PajamaHip266', 'PajamaHipG26', 'PajamaHipY26', 'PajamaHipS26'):
+    if name.startswith('PajamaHip'):
         from .games import GAMES, game_id
+        profile = GAMES[game_id(library)]
+        if name not in profile.NAME_COLORS:
+            raise FontError(f'Unsupported IPA font role: {name}')
         size = 24 if name == 'PajamaHip24' else 26
-        face, bundled = GAMES[game_id(library)].NAME_FONT
+        face, bundled = profile.NAME_FONT
         if bundled in library.base_members:
             source = BytesIO(library.read_asset(bundled))
-        color = (*GAMES[game_id(library)].NAME_COLORS[name], 255)
+        color = (*profile.NAME_COLORS[name], 255)
         stroke = 0 if size == 24 else 2
     else:
-        match = re.fullmatch(r'(ArialRoundedMTBold|ArialMT|TrebuchetMS_Bold|TrebuchetMS_Italic)(11|14|15|16|20|22|28|30)', name)
+        role = name
+        if name == 'TrebuchetMS_Italic16Emphasis':
+            # initFonts gives the emphasized face a 0.5-point stroke;
+            # atlas padding stores the radius, not CGContext's full width.
+            role, stroke = 'TrebuchetMS_Italic16', .25
+        match = re.fullmatch(r'(ArialRoundedMTBold|ArialMT|TrebuchetMS_Bold|TrebuchetMS_Italic)(11|14|15|16|20|22|28|30)', role)
         if match is None:
             raise FontError(f'Unsupported IPA font role: {name}')
         face, size = match[1], int(match[2])
@@ -186,7 +196,8 @@ def render_font(library, name):
         glyphs = {values[0]: Glyph(*values) for values in native['glyphs']}
         glyphs[202] = Glyph(202, 0, 0, 0, 0, 0, 0, glyphs[32].advance)
         atlas = Image.open(BytesIO(base64.b64decode(native['png']))).convert('RGBA')
-        result = IOSFont(name, size, size, name + '.png', glyphs, {}, native['cap'], native['descent']), atlas
+        result = IOSFont(name, size, size, name + '.png', glyphs, {}, native['cap'], native['descent'],
+                         native['native_face']), atlas
         cache[name] = result
         return result
     if source is None:
@@ -204,25 +215,32 @@ def render_font(library, name):
     except (OSError, ValueError) as error:
         raise FontError(f'Cannot open IPA font {name}: {error}') from error
     design, units, cap, descent = _design_metrics(font, source, index)
+    native_face = isinstance(source, BytesIO) or tuple(part.casefold() for part in font.getname()) == (
+        FACES[face].family.casefold(), FACES[face].style.casefold())
     glyphs = {}
-    cell = (size + stroke * 2) * 3
-    atlas = Image.new('RGBA', (cell * 16, cell * 16))
+    padding = ceil(stroke)
+    sampling = 4 if stroke != int(stroke) else 1
+    ink_font = font.font_variant(size=size * sampling) if sampling != 1 else font
+    cell = (size + padding * 2) * 3
+    atlas = Image.new('RGBA', (cell * 16 * sampling, cell * 16 * sampling))
     draw = ImageDraw.Draw(atlas)
     for code in range(32, 256):
         if 127 <= code < 160:
             continue
         char = chr(code)
-        left, top, right, bottom = font.getbbox(char, anchor='ls', stroke_width=stroke)
+        left, top, right, bottom = font.getbbox(char, anchor='ls', stroke_width=padding)
         x, y = code % 16 * cell, code // 16 * cell
         if right - left > cell or bottom - top > cell:
             raise FontError(f'IPA glyph exceeds its atlas cell: {name} U+{code:04X}')
-        draw.text((x - left, y - top), char, font=font, anchor='ls', fill=color,
-                  stroke_width=stroke, stroke_fill=(255, 255, 255, 255))
+        draw.text(((x - left) * sampling, (y - top) * sampling), char, font=ink_font, anchor='ls', fill=color,
+                  stroke_width=int(stroke * sampling), stroke_fill=(255, 255, 255, 255))
         glyphs[code] = Glyph(code, x, y, right - left, bottom - top,
                              left, size + top, design.getlength(char) * size / units)
     # SHS text is byte-oriented. 0xCA is a nonbreaking space in CSFontInfo.
     glyphs[202] = Glyph(202, 0, 0, 0, 0, 0, 0, glyphs[32].advance)
+    if sampling != 1:
+        atlas = atlas.resize((cell * 16, cell * 16), Image.Resampling.LANCZOS)
     result = IOSFont(name, size, size, name + '.png', glyphs, {},
-                     cap * size / units, descent * size / units), atlas
+                     cap * size / units, descent * size / units, native_face), atlas
     cache[name] = result
     return result

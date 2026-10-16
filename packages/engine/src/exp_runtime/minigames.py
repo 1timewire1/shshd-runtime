@@ -2,6 +2,9 @@
 from dataclasses import dataclass, field
 
 
+MINIGAMES = frozenset(('word_game', 'word_grid', 'football'))
+
+
 @dataclass
 class WordGame:
     good: list[str]

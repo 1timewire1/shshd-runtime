@@ -5,8 +5,12 @@ from .services import dispatch as DISPATCH
 from .audio import IOS_DOWNLOADED_MUSIC as DOWNLOADED_MUSIC
 from .football import Football
 from .word_grid import WordGrid
+from .scene_transition import SceneTransition
 
-STATE_TYPES = {'word_grid': WordGrid | None, 'football': Football | None}
+STATE_TYPES = {'word_grid': WordGrid | None, 'football': Football | None,
+               'scene_transition': SceneTransition | None}
+SCENE_TRANSITION = SceneTransition
+MENU_TRANSITION = 0
 
 KEY = 'shs'
 TITLE = 'Surviving High School'
@@ -17,10 +21,16 @@ CATALOG_LAYOUTS = {version: ((32, version - 16), (36, version - 16)) for version
 PROFILES = {'shs-android-1.0.9': 'apk', 'shs-ios-assets-v1': 'ipa'}
 BUNDLE_PATTERN = r'com\.ea\.shs(?:\.[A-Za-z0-9-]+)*'
 NAME_FONT = ('PajamaHip', 505)
+# Android 000a92f4 scales this location's X axis only. Alignment still uses
+# unscaled content width (0007b790 -> CCNode::getContentSize 0013b5b8).
+BACKGROUND_SCALE_X = {1013: 1.01}
 DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (108, 108, 108), -1: (223, 163, 52)}
+IOS_DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (137, 137, 137), -1: (180, 109, 26)}
+NARRATION_COLORS = (223, 163, 52), (125, 67, 0)
 NAME_COLORS = {'PajamaHip24': (41, 104, 221), 'PajamaHip26': (41, 104, 221),
                'PajamaHip266': (180, 78, 78), 'PajamaHipG26': (137, 137, 137),
-               'PajamaHipY26': (223, 163, 52), 'PajamaHipS26': (254, 53, 0)}
+               'PajamaHipY26': (180, 109, 26), 'PajamaHipS26': (254, 53, 0)}
+NOTICE_FONTS = {}
 MUSIC_RANGE = range(8201, 8233)
 # SHS iOS doSoundManagerTransition (0003b44c), splashScreenFlewIn (0002adb0).
 MENU_MUSIC = 8215
@@ -29,6 +39,8 @@ RELATIONSHIP_ASSETS = (3010, 3011, 3012)
 RELATIONSHIP_FLASH = {3010: 3013, 3011: 3015, 3012: 3017}
 RELATIONSHIP_LOSS = {3010: 3014, 3011: 3016, 3012: 3018}
 CLICK_SOUND = 8010
+# SHSUIMenu::handleMenuSelection: Android 000afee8, iOS 00084600.
+WORD_CHOICE_SOUNDS = {1: 8001, -1: 8002}
 # SHSEngine::buttonPressed pause branch (iOS 00051214).
 PAUSE_SOUND = 8011
 # Original quiz scripts dispatch these through service 79 for correct/wrong

@@ -4,11 +4,16 @@ from functools import lru_cache
 
 from . import graphics as pygame
 from .desktop_pause import draw_pause_gear
+from .animation_curves import ease_in_out
 
-from .choice import BODY_FONT, FOOTER_FONT, ChoiceLayout
+from .choice import BODY_FONT, ChoiceLayout
 from .choice_hints import preview_choices
 from .fonts import TextStyle
 from .ui_assets import Rect
+
+
+HINT_COLORS = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
+               'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}
 
 
 class ChoiceRenderer:
@@ -34,7 +39,8 @@ class ChoiceRenderer:
             theme = session.engine.numbers.get(session.engine.number_key(character, 651), 0)
             variants = session.engine.character_art_variants.get(character, ())
             self.cached_page = self.layout.page(details, theme=theme,
-                                               has_portrait=character >= 0 and bool(variants) and variants[0] > 0)
+                                               has_portrait=character >= 0 and bool(variants) and variants[0] > 0,
+                                               text_history=session.bitmap_history)
             self.cached_key = key
         return self.cached_page
 
@@ -91,12 +97,12 @@ class ChoiceRenderer:
             timer.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         self.canvas.blit(timer, position)
 
-    def draw(self, target, session, *, scroll=0, pointer=None, pressed=None, choice_hints=False):
+    def draw(self, target, session, *, pointer=None, pressed=None, choice_hints=False):
         page = self.page(session)
+        game = session.engine.word_game
         if choice_hints and self.hint_key != self.cached_key:
             self.hints = preview_choices(session)
             self.hint_key = self.cached_key
-        scroll = min(page.max_scroll, max(0, scroll))
         self.viewport.height = page.timer_panel.y if page.timer_panel else 421
         self.canvas.set_clip(None)
         self.canvas.fill((0, 0, 0))
@@ -107,22 +113,24 @@ class ChoiceRenderer:
                 self.canvas.blit(background, background.get_rect(center=(160, 240)))
         else:
             self.art.draw_background(self.canvas, session.engine)
+        entering = (session.pending.name == 'choice' and session.engine.choice_ms < 250
+                    and getattr(getattr(self.resources, 'library', None), 'kind', 'apk') == 'ipa')
+        background = self.canvas.copy() if entering else None
         self.canvas.set_clip(self.viewport)
         box = page.box
         body_height = box.height - page.timer_panel.height + 10 if page.timer_panel else box.height
-        self.art.box(self.canvas, Rect(box.x + 10, box.y + 10 - scroll,
+        self.art.box(self.canvas, Rect(box.x + 10, box.y + 10,
                                        box.width - 20, body_height - 20), page.theme, alpha=243)
         buttons = []
         for row in page.rows:
-            rect = pygame.Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
+            rect = pygame.Rect(row.rect.x, row.rect.y, row.rect.width, row.rect.height)
             hit = rect.clip(self.viewport)
             hint = (self.hints[row.index].kind if choice_hints and row.enabled
                     and self.hint_key == self.cached_key and row.index < len(self.hints) else 'unknown')
-            color = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
-                     'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}.get(hint)
+            color = HINT_COLORS.get(hint)
             if color is not None:
                 pygame.draw.rect(self.canvas, color, rect)
-            if row.enabled and (pressed == ('choose', row.index)
+            if row.enabled and (game or session.choice_ready) and (pressed == ('choose', row.index)
                                 or pointer is not None and hit.collidepoint(pointer)):
                 color = (tuple(round(channel * .9) for channel in color) + (255,) if color else
                          (250, 214, 211, 180) if page.theme == 2 else (170, 225, 249, 180))
@@ -135,18 +143,18 @@ class ChoiceRenderer:
             if game and game.animation_ms:
                 offset = (game.animation_ms / 200) * (-210 if row.index % 2 == 0 else 410)
             self.canvas.set_clip(hit)
-            self.text.draw_layout(self.canvas, BODY_FONT, row.text, row.origin[0] + offset, row.origin[1] - scroll)
+            self.text.draw_layout(self.canvas, BODY_FONT, row.text, row.origin[0] + offset, row.origin[1],
+                                  scale=page.text_scale)
             self.canvas.set_clip(self.viewport)
             if row.enabled and hit.height:
                 buttons.append((hit, ('choose', row.index)))
         if page.rows:
             rect = page.rows[-1].rect
-            y = rect.y + rect.height - scroll
+            y = rect.y + rect.height
             pygame.draw.line(self.canvas, (178, 179, 179), (rect.x, y), (rect.x + rect.width - 1, y))
 
         if page.portrait is not None:
             cx, cy = page.portrait.center
-            cy -= scroll
             for index in (37, {1: 38, 2: 39}.get(page.theme, 40)):
                 image = self.art.frame(126, index)
                 self.canvas.blit(image, image.get_rect(center=(cx, cy)))
@@ -157,13 +165,22 @@ class ChoiceRenderer:
             if image is not None:
                 self.canvas.blit(image, self.art.portrait_rect(image, (cx, cy)))
         self.text.draw_layout(self.canvas, page.title_font, page.title,
-                              page.title_origin[0], page.title_origin[1] - scroll)
+                              *page.title_origin, scale=page.text_scale)
         self.text.draw_layout(self.canvas, BODY_FONT, page.description,
-                              page.description_origin[0], page.description_origin[1] - scroll)
+                              *page.description_origin, scale=page.text_scale)
         self.canvas.set_clip(None)
         if page.timer_panel is not None:
             panel = page.timer_panel
             self.canvas.blit(self.timer_panel(page.theme, panel.width, panel.height), (panel.x, panel.y))
+        if background is not None:
+            # SHSUIMenu::internalTransitionOn fades its UIView with UIKit
+            # curve 0 for .25s. The background, timer layer and footer remain.
+            layer = self.canvas.copy()
+            layer.set_alpha(round(255 * ease_in_out(session.engine.choice_ms / 250)))
+            self.canvas.blit(background, (0, 0))
+            self.canvas.blit(layer, (0, 0))
+        if page.timer_panel is not None:
+            panel = page.timer_panel
             clock = self.layout.bank.rectangle(22, 10, panel)
             self.draw_timer((clock.x, clock.y),
                             1 - session.remaining_ms / session.pending.details['timeout_ms'])
@@ -176,27 +193,18 @@ class ChoiceRenderer:
             self.canvas.blit(self.art.frame(pack, 12), (233, 375))
             self.draw_timer((130, 353), 1 - game.remaining_ms / game.duration_ms)
             # Native score text is at (230,88) in GL coordinates (top y=392).
-            score = self.text.layout(BODY_FONT, str(game.score), 60, TextStyle(14, 0, (255, 255, 255)))
+            score = self.text.layout(BODY_FONT, str(game.score), 60, TextStyle(14, 0, (255, 255, 255)),
+                                     previous_glyph=session.engine.text_history.initial('word_score'))
             self.text.draw_layout(self.canvas, BODY_FONT, score, 230 - score.width / 2, 392)
             if game.animation_ms and game.last_delta:
                 color = (37, 147, 56) if game.last_delta > 0 else (255, 0, 0)
-                delta = self.text.layout(BODY_FONT, f'{game.last_delta:+d}', 40, TextStyle(14, 0, color))
+                delta = self.text.layout(BODY_FONT, f'{game.last_delta:+d}', 40, TextStyle(14, 0, color),
+                                         previous_glyph=session.engine.text_history.initial('word_delta'))
                 self.text.draw_layout(self.canvas, BODY_FONT, delta, 275, 365 + game.animation_ms / 10)
         self.canvas.blit(self.art.frame(126, 47), (0, 431))
         draw_pause_gear(self.canvas, self.art)
-        hint = 'Touch the best choice'
-        style = TextStyle(11, 0, (185, 185, 185))
-        footer = self.text.layout(FOOTER_FONT, hint, 246, style)
-        self.text.draw_layout(self.canvas, FOOTER_FONT, footer, 63 + (252 - footer.width) / 2, 460)
-        if page.max_scroll:
-            # A desktop affordance for unusually long options; no choices are
-            # discarded or mapped to a different script-visible index.
-            track = pygame.Rect(310, 40, 3, self.viewport.height - 43)
-            pygame.draw.rect(self.canvas, (100, 100, 100), track)
-            visible_height = self.viewport.height - 31
-            thumb = max(20, int(track.height * visible_height / (visible_height + page.max_scroll)))
-            y = track.y + int((track.height - thumb) * scroll / page.max_scroll)
-            pygame.draw.rect(self.canvas, (225, 225, 225), (track.x, y, track.width, thumb))
+        self.text.draw_footer(self.canvas, 40 if game or page.timer_panel else 38,
+                              session.engine.text_history.initial('footer'))
         buttons.append((pygame.Rect(0, 422, 60, 58), ('menu',)))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return page, buttons

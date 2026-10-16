@@ -9,12 +9,93 @@ import wave
 
 from exp_runtime.audio import MusicCue, music_cue
 from exp_runtime.content import ContentError
-from exp_runtime.runtime import Session
+from exp_runtime.runtime import SaveError, Session
 from test_runtime import Resources, host_call
 from test_vm import program
 
 
 class MusicCueTests(unittest.TestCase):
+    def test_stat_notices_use_explicit_script_sounds_and_do_not_invent_a_cue(self):
+        from test_runtime import text_words
+        for game, cue in (('shs', 8007), ('cod', 8002)):
+            for explicit in (False, True):
+                with self.subTest(game=game, explicit=explicit):
+                    words, refs = text_words('Stat Up', 'Well done.')
+                    calls = host_call(79, cue) if explicit else []
+                    resources = Resources(program(*calls, *host_call(44, 3017, 1),
+                                                  *host_call(88, refs[0]), *host_call(13, refs[1], 0),
+                                                  0x33, words=words))
+                    resources.library.game_id = game
+                    session = Session(resources)
+                    self.assertEqual(session.advance().name, 'dialogue')
+                    self.assertEqual(session.engine.notice, 'Stat Up')
+                    self.assertEqual(session.engine.numbers[3017], 1)
+                    self.assertEqual(session.engine.sound_ids, [cue] if explicit else [])
+                    self.assertEqual(session.engine.sound_serial, int(explicit))
+                    restored = Session.from_snapshot(resources, session.snapshot())
+                    restored.tick(500)
+                    self.assertEqual(restored.engine.sound_serial, int(explicit))
+
+    def test_choice_click_precedes_all_script_cues_and_timeout_is_silent(self):
+        from test_runtime import text_words
+        for game, click in (('shs', 8010), ('cod', 8005)):
+            with self.subTest(game=game):
+                words, refs = text_words('Choose', 'One|Two', 'Prompt', 'Continue')
+                resources = Resources(program(*host_call(1, *refs[:3], 1000, 0, -1, -1, 1),
+                                              *host_call(79, 28001), *host_call(79, 28002),
+                                              *host_call(13, refs[3], 0), 0x33, words=words))
+                resources.library.game_id = game
+                session = Session(resources); session.advance()
+                saved = session.snapshot()
+                with self.assertRaises(ValueError):
+                    session.answer(2)
+                self.assertEqual(session.snapshot(), saved)
+                session.tick(250)
+                self.assertEqual(session.answer(0).name, 'dialogue')
+                self.assertEqual(session.engine.sound_ids, [click, 28001, 28002])
+                self.assertEqual(session.engine.sound_serial, 3)
+                session.tick(10)
+                self.assertEqual(session.engine.sound_ids, [click, 28001, 28002])
+                restored = Session.from_snapshot(resources, saved)
+                restored.tick(1001)
+                self.assertEqual(restored.engine.sound_ids, [28001, 28002])
+                self.assertEqual(restored.engine.sound_serial, 2)
+
+    def test_word_choices_use_each_games_native_cues_and_ignore_early_taps(self):
+        from test_minigames import word_resources
+        for game, positive, negative in (('shs', 8001, 8002), ('cod', 8003, 8004)):
+            with self.subTest(game=game):
+                resources = word_resources(); resources.library.game_id = game
+                session = Session(resources); session.advance()
+                session.answer(0)
+                self.assertEqual(session.engine.sound_serial, 0)
+                session.tick(400)
+                for weight, cue in ((1, positive), (-1, negative)):
+                    session.answer(session.engine.word_game.weights.index(weight))
+                    self.assertEqual(session.engine.sound_ids, [cue])
+                saved = session.snapshot()
+                restored = Session.from_snapshot(resources, saved)
+                restored.tick(1)
+                self.assertEqual(restored.engine.sound_serial, 2)
+
+    def test_native_stop_duration_request_serial_and_save_validation(self):
+        for game in ('shs', 'cod'):
+            for duration in (-5, -1, 0, 600, 32767):
+                with self.subTest(game=game, duration=duration):
+                    r = Resources(program(*host_call(80, 8201, 1), *host_call(80, 8201, 1),
+                                          *host_call(81, duration), 0x33))
+                    r.library.game_id = game
+                    session = Session(r); session.advance()
+                    engine = session.engine
+                    expected = max(0, 1000 if duration == -1 else duration) if game == 'cod' else 0
+                    self.assertEqual((engine.music_id, engine.music_serial, engine.music_stop_ms), (-1, 3, expected))
+                    self.assertEqual(Session.from_snapshot(r, session.snapshot()).snapshot(), session.snapshot())
+                    for field, value in (('music_serial', -1), ('music_stop_ms', -1), ('music_stop_ms', 32768)):
+                        state = session.snapshot()
+                        state['engine'][field] = value
+                        with self.assertRaises(SaveError):
+                            Session.from_snapshot(r, state)
+
     def test_shared_track_cues_and_unmapped_resources(self):
         self.assertEqual(music_cue(8213), MusicCue(8212, 4000))
         self.assertEqual(music_cue(8214), MusicCue(8212, 39200))
@@ -25,6 +106,222 @@ class MusicCueTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
 class MusicPlaybackTests(unittest.TestCase):
+    def test_loading_saved_effects_waits_for_menu_without_overwriting_the_save(self):
+        from exp_runtime.platforms.drawing import Mixer
+        from exp_runtime.music_state import MusicPlayback, SoundPlayback
+        ui, resources = self.make_ui(music=8201, repeat=1, game='cod')
+        resources.library.kind = 'ipa'
+        ui.session.engine.music_playback = MusicPlayback(8201, True, 14987)
+        ui.session.engine.sound_playback = [SoundPlayback(28001, 1723)]
+        ui.session = Session.from_snapshot(resources, ui.session.snapshot())
+        before = ui.session.snapshot()
+        mixer = Mixer()
+        with patch('pygame.mixer.music', mixer.music), patch('exp_runtime.graphics.play_sound', mixer.play_sound):
+            ui.audio_wait = True
+            ui._sync_audio(); ui.capture_audio(); ui.tick(999)
+            self.assertEqual(ui.session.snapshot(), before)
+            self.assertFalse(any(c['kind'] == 'music_play' for c in mixer.commands))
+            ui.audio_wait = False
+            ui._sync_audio()
+            self.assertIn(dict(kind='music_play', start=14.987, loops=-1), mixer.commands)
+            self.assertIn(dict(kind='music_play', track='effect:1', start=1.723, loops=0), mixer.commands)
+
+    def test_ipa_pause_fades_and_restores_music_and_effects_from_saved_playheads(self):
+        from exp_runtime.platforms.drawing import Mixer
+        from exp_runtime.music_state import SoundPlayback
+        for game in ('shs', 'cod'):
+            with self.subTest(game=game):
+                ui, resources = self.make_ui(music=8201, repeat=1, game=game)
+                resources.library.kind = 'ipa'
+                mixer = Mixer()
+                with patch('pygame.mixer.music', mixer.music), patch('exp_runtime.graphics.play_sound', mixer.play_sound):
+                    ui._sync_audio()
+                    ui.session.engine.sound_ids = [8001, 28001]
+                    ui.session.engine.sound_serial += 1
+                    ui._sync_audio()
+                    mixer.positions.update(music=4321, **{'effect:1': 71, 'effect:2': 132})
+                    ui.menu_open = True
+                    ui._sync_audio()
+                    saved = ui.session.snapshot()
+                    self.assertEqual(saved['engine']['music_playback']['position_ms'], 4000)
+                    self.assertEqual(ui.session.engine.sound_playback, [SoundPlayback(8001, 0), SoundPlayback(28001, 0)])
+                    self.assertEqual(Session.from_snapshot(resources, saved).snapshot(), saved)
+                    ui.tick(50)
+                    self.assertIn(dict(kind='music_volume', volume=.95), mixer.commands)
+                    self.assertIn(dict(kind='music_volume', track='effect:1', volume=.5), mixer.commands)
+                    ui.tick(50)
+                    self.assertFalse(mixer.playing.get('effect:1'))
+                    self.assertTrue(mixer.playing['music'])
+                    ui.active = False
+                    ui._sync_audio(); ui.tick(5000)
+                    self.assertEqual(ui.music_fade_ms, 900)
+                    ui.active = True
+                    ui._sync_audio(); ui.tick(900)
+                    self.assertFalse(mixer.playing.get('music'))
+                    ui.capture_audio()
+                    self.assertEqual(ui.session.snapshot(), saved)  # Do not save the outgoing fade instead.
+                    ui.menu_open = False
+                    mixer.commands.clear()
+                    ui._sync_audio()
+                    self.assertIn(dict(kind='music_play', start=4., loops=-1), mixer.commands)
+                    self.assertIn(dict(kind='music_play', track='effect:3', start=0., loops=0), mixer.commands)
+                    self.assertIn(dict(kind='music_play', track='effect:4', start=0., loops=0), mixer.commands)
+                    self.assertFalse(ui.audio_stored)
+                    self.assertEqual(ui.session.snapshot(), saved)
+                    invalid = ui.session.snapshot()
+                    invalid['engine']['sound_playback'][0]['position_ms'] = -1
+                    with self.assertRaises(SaveError):
+                        Session.from_snapshot(resources, invalid)
+
+    def test_ipa_main_menu_waits_for_story_and_menu_fades_before_restoring(self):
+        from exp_runtime.application import Application
+        from exp_runtime.platforms.drawing import Mixer
+        for game in ('shs', 'cod'):
+            with self.subTest(game=game):
+                ui, resources = self.make_ui(music=8201, repeat=1, game=game)
+                resources.library.kind = 'ipa'
+                resources.record['id'] = 'authored-episode'
+                app = Application(audio=False, game_key=game, directory=Path('/no-authored-library'), check_updates=False)
+                self.addCleanup(app.close)
+                app.library, app.selected, app.game = resources.library, resources.record['id'], ui
+                resources.library.read_asset = resources.read_asset
+                resources.library.close = Mock()
+                app.state = Mock(music=True, sound=True)
+                app.state.title.return_value = 'Authored'
+                app.screen = 'game'
+                app.audio = True
+                app.refresh_saves = Mock()
+                app.show = Mock(side_effect=lambda screen, **_: setattr(app, 'screen', screen))
+                mixer = Mixer()
+                app.menu_music = mixer.menu_music
+                with patch('pygame.mixer.music', mixer.music), patch('pygame.mixer.stop'), \
+                        patch('exp_runtime.graphics.play_sound', mixer.play_sound):
+                    ui._sync_audio()
+                    mixer.positions['music'] = 4321
+                    app.return_to_menu()
+                    app._sync_menu_music()
+                    self.assertFalse(app.menu_music_loaded)
+                    app._tick_menu_audio(999)
+                    self.assertFalse(app.menu_music_loaded)
+                    app._tick_menu_audio(1)
+                    self.assertTrue(app.menu_music_loaded)
+                    app.start()
+                    self.assertEqual(app.menu_music_fade_ms, 1000)
+                    self.assertTrue(ui.audio_stored)
+                    mixer.commands.clear()
+                    app._tick_menu_audio(999); ui._sync_audio()
+                    self.assertFalse(any(c['kind'] == 'music_play' for c in mixer.commands))
+                    app._tick_menu_audio(1); ui._sync_audio()
+                    self.assertIn(dict(kind='music_play', start=4., loops=-1), mixer.commands)
+                    self.assertFalse(app.menu_music_loaded)
+                    self.assertFalse(ui.audio_stored)
+                app.audio = False
+                app.game = app.state = app.library = None
+
+    def test_decoded_effect_seek_preserves_sample_boundaries_and_paused_clock(self):
+        import pygame
+        from exp_runtime.platforms.sdl_audio import Sound
+        self.make_ui()
+        pygame.mixer.init(frequency=8000, size=-16, channels=1, buffer=128)
+        sample = BytesIO()
+        pcm = b'\x10\x00' * 800 + b'\x20\x00' * 8000
+        with wave.open(sample, 'wb') as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(8000)
+            stream.writeframes(pcm)
+        player = Sound(BytesIO(sample.getvalue()), 100)
+        self.assertTrue(player.get_busy())
+        self.assertEqual(player.sound.get_raw(), pcm[1600:])
+        player.pause()
+        position = player.position_ms()
+        pygame.time.wait(30)
+        self.assertEqual(player.position_ms(), position)
+        player.unpause()
+        player.stop()
+        self.assertFalse(player.get_busy())
+        self.assertFalse(Sound(BytesIO(sample.getvalue()), 2000).get_busy())
+
+    def test_ios_background_checkpoint_captures_playhead_without_advancing_story(self):
+        from types import SimpleNamespace
+        import pygame
+        from exp_runtime.platforms.ios import Host
+        ui, _ = self.make_ui(music=8201, repeat=1, game='cod')
+        host = Host.__new__(Host)
+        host.last_active = True
+        host.backend = SimpleNamespace(WINDOWFOCUSGAINED=pygame.WINDOWFOCUSGAINED,
+                                       WINDOWFOCUSLOST=pygame.WINDOWFOCUSLOST, mixer=Mock())
+        checkpoints = []
+        host.app = SimpleNamespace(game=ui, handle_event=ui.handle_event,
+                                   _attempt=lambda operation: operation(),
+                                   state=SimpleNamespace(checkpoint=lambda session: checkpoints.append(session.snapshot())))
+        with patch('pygame.mixer.music') as music, patch('exp_runtime.graphics.music_position', return_value=4321):
+            music.get_busy.return_value = True
+            ui._sync_audio()
+            before = ui.session.snapshot()
+            host.active(False)
+            host.active(False)  # Duplicate lifecycle notifications must not overwrite it.
+            self.assertEqual(len(checkpoints), 1)
+            playback = checkpoints[0]['engine']['music_playback']
+            self.assertEqual(playback['position_ms'], 4321)
+            self.assertTrue(playback['repeat'])
+            self.assertFalse(playback['finished'])
+            before['engine']['music_playback'] = playback
+            self.assertEqual(checkpoints[0], before)
+            music.pause.assert_called_once()
+            host.active(True)
+            music.unpause.assert_called_once()
+            self.assertEqual(len(checkpoints), 1)
+
+    def test_save_restores_actual_outgoing_playhead_fade_and_queued_cue(self):
+        from exp_runtime.music_state import MusicPlayback
+        ui, resources = self.make_ui(music=8201, repeat=1, game='cod')
+        with patch('pygame.mixer.music') as music, patch('exp_runtime.graphics.music_position', return_value=4237):
+            music.get_busy.return_value = True
+            ui._sync_audio()
+            ui.session.engine.music_id = 8202
+            ui._sync_audio(); ui._tick_music(350)
+            ui.capture_audio()
+            self.assertEqual(ui.session.engine.music_playback, MusicPlayback(8201, 1, 4237, 650, 1000, False))
+            saved = ui.session.snapshot()
+            ui.session = Session.from_snapshot(resources, saved)
+            ui.music_restore_pending = True
+            ui._sync_audio()
+            music.play.assert_called_with(loops=-1, start=4.237)
+            music.set_volume.assert_called_with(.65)
+            ui._tick_music(649)
+            self.assertEqual(ui.music_playing, (8201, 1))
+            ui._tick_music(1)
+            self.assertEqual(ui.music_playing, (8202, 1))
+            music.play.assert_called_with(loops=-1, start=0)
+            self.assertEqual(resources.read_asset.call_args.args, (8202,))
+            for field, value in (('position_ms', -1), ('fade_ms', 1001), ('finished', 1)):
+                state = ui.session.snapshot()
+                state['engine']['music_playback'][field] = value
+                with self.subTest(field=field), self.assertRaises(SaveError):
+                    Session.from_snapshot(resources, state)
+
+    def test_finished_save_does_not_restart_and_native_repeat_changes_in_place(self):
+        from exp_runtime.platforms.drawing import Mixer
+        ui, resources = self.make_ui(music=8201, game='cod')
+        mixer = Mixer()
+        with patch('pygame.mixer.music', mixer.music):
+            ui._sync_audio()
+            mixer.commands.clear()
+            ui.session.engine.music_flag = True
+            ui._sync_audio()
+            self.assertEqual(mixer.commands, [dict(kind='music_loops', loops=-1)])
+            mixer.playing['music'] = False
+            with patch('exp_runtime.graphics.music_position', return_value=10500):
+                ui.capture_audio()
+            saved = ui.session.snapshot()
+            self.assertTrue(saved['engine']['music_playback']['finished'])
+            ui.session = Session.from_snapshot(resources, saved)
+            ui.music_restore_pending = True
+            mixer.commands.clear()
+            ui._sync_audio(); ui._sync_audio()
+            self.assertEqual(mixer.commands, [dict(kind='music_stop')])
+
     def test_menu_click_uses_selected_library_and_sound_preference(self):
         from exp_runtime.application import Application
         for game, resource in (('shs', 8010), ('cod', 8005)):
@@ -102,8 +399,78 @@ class MusicPlaybackTests(unittest.TestCase):
                 ui.menu_open = False
                 ui._sync_audio()
             self.assertEqual([c['kind'] for c in mixer.commands],
-                             ['music_stop', 'music_load', 'music_play', 'music_pause', 'music_resume'])
-            self.assertEqual(mixer.commands[2], dict(kind='music_play', start=0., loops=-1 if flag else 0))
+                             ['music_stop', 'music_load', 'music_volume', 'music_play', 'music_pause', 'music_resume'])
+            self.assertEqual(mixer.commands[3], dict(kind='music_play', start=0., loops=-1 if flag else 0))
+
+    def test_cod_music_fades_before_starting_the_latest_queued_track(self):
+        ui, resources = self.make_ui(music=8201, game='cod')
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            ui._sync_audio()
+            ui.session.engine.music_id = 8202
+            ui._sync_audio()
+            ui._tick_music(250)
+            music.set_volume.assert_called_with(.75)
+            music.play.assert_called_once()
+            # A new cue replaces the queue without extending the old fade.
+            ui.session.engine.music_id = 8203
+            ui._sync_audio()
+            ui._tick_music(749)
+            music.play.assert_called_once()
+            ui._tick_music(1)
+            self.assertEqual([c.args for c in resources.read_asset.call_args_list], [(8201,), (8203,)])
+            self.assertEqual(music.play.call_count, 2)
+            music.set_volume.assert_called_with(1)
+
+    def test_cod_stop_duration_pause_cancel_and_finished_track(self):
+        ui, resources = self.make_ui(music=8201, game='cod')
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            ui._sync_audio()
+            ui.session.engine.music_id, ui.session.engine.music_stop_ms = -1, 600
+            ui._sync_audio()
+            ui._tick_music(200)
+            music.set_volume.assert_called_with(2/3)
+            ui.menu_open = True
+            ui._sync_audio()
+            ui.tick(1000)
+            self.assertEqual(ui.music_fade_ms, 400)
+            ui.menu_open = False
+            ui._sync_audio()
+            ui._tick_music(399)
+            self.assertEqual(music.stop.call_count, 1)
+            ui._tick_music(1)
+            self.assertEqual(music.stop.call_count, 2)
+            self.assertFalse(ui.music_loaded)
+            ui.session.engine.music_id = 8201
+            ui._sync_audio()
+            ui.session.engine.music_id = 8202
+            ui._sync_audio()
+            ui._tick_music(250)
+            ui.session.engine.music_id = 8201
+            ui._sync_audio()
+            self.assertEqual(ui.music_fade_ms, 0)
+            self.assertEqual(music.play.call_count, 2)  # Existing cue survives.
+            music.set_volume.assert_called_with(1)
+            # A naturally finished one-shot has nothing left to fade.
+            music.get_busy.return_value = False
+            ui.session.engine.music_id = 8203
+            ui._sync_audio()
+            self.assertEqual(music.play.call_count, 3)
+            self.assertEqual(ui.music_fade_ms, 0)
+
+    def test_repeated_native_music_requests_do_not_restart_a_live_cue(self):
+        ui, _ = self.make_ui(music=8201, game='cod')
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            ui._sync_audio()
+            ui.session.engine.music_serial += 1
+            ui._sync_audio()
+            music.play.assert_called_once()
+            music.get_busy.return_value = False
+            ui.session.engine.music_serial += 1
+            ui._sync_audio()
+            self.assertEqual(music.play.call_count, 2)
 
     def test_both_music_services_load_and_seek_without_changing_vm_or_save_ids(self):
         # Expected destinations and offsets recovered from the Java player,
@@ -235,12 +602,15 @@ class MusicPlaybackTests(unittest.TestCase):
         app.menu_music = Mock()
         app.menu_music_token = None
         app.menu_music_loaded = app.menu_music_paused = False
+        app.menu_music_fade_ms = 0
+        app.game_entry = None
         app.state = Mock(music=True, sound=True)
         app.state.title.return_value = resources.record['titles'][0]
         app.show = Mock(side_effect=lambda screen, **_: setattr(app, 'screen', screen))
         app.refresh_saves = Mock()
         saved = ui.session.snapshot()
-        with patch('pygame.mixer.music') as music, patch('pygame.mixer.stop'):
+        with patch('pygame.mixer.music') as music, patch('pygame.mixer.stop'), \
+                patch('exp_runtime.graphics.music_position', return_value=2871):
             ui._sync_audio()
             app.return_to_menu()
             app._sync_menu_music()
@@ -252,6 +622,9 @@ class MusicPlaybackTests(unittest.TestCase):
             music.unpause.assert_called_once_with()
             music.load.assert_called_once()
             music.play.assert_called_once_with(loops=0, start=2.8)
+            playback = ui.session.snapshot()['engine']['music_playback']
+            self.assertEqual((playback['asset'], playback['repeat']), (8202, False))
+            saved['engine']['music_playback'] = playback
             self.assertEqual(ui.session.snapshot(), saved)
             app.return_to_menu()
             app.state.session.return_value = Session(resources)
@@ -380,10 +753,11 @@ class MusicPlaybackTests(unittest.TestCase):
         ui.session.engine.sound_id = 28202
         ui.session.engine.sound_ids = [28202]
         ui.session.engine.sound_serial += 1
-        with patch('pygame.mixer.Sound') as sound:
+        with patch('exp_runtime.graphics.play_sound') as sound:
             ui._sync_audio()
             r.read_asset.assert_called_once_with(28202)
-            sound.return_value.play.assert_called_once_with()
+            sound.assert_called_once()
+            self.assertEqual(sound.call_args.args[1], 0)
 
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_original_apk_contains_and_plays_every_redirected_track(self):

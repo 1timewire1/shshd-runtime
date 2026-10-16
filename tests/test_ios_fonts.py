@@ -1,24 +1,34 @@
 """Authored SFNT fixtures for the IPA font adapter."""
 from io import BytesIO
+from pathlib import Path
 import struct
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from PIL import ImageFont
 
+from exp_runtime.dialogue_notice import notice_font
 from exp_runtime.fonts import layout_text, TextStyle
 from exp_runtime.ios_fonts import _design_metrics, render_font
 
 
 class IOSFontMetricsTests(unittest.TestCase):
-    def test_each_game_supplies_its_own_name_colors_with_the_same_font_metrics(self):
+    def test_each_game_supplies_its_own_name_and_notice_colors_with_the_same_metrics(self):
         data = ImageFont.load_default().font_bytes
         fonts = {}
         for game, asset, expected in (('shs', 505, (41, 104, 221, 255)),
                                        ('cod', 291, (139, 0, 0, 255))):
             library = SimpleNamespace(game_id=game, base_members={asset}, read_asset=lambda _: data)
-            for name in ('PajamaHip26', 'PajamaHipG26', 'PajamaHipY26') if game == 'cod' else ('PajamaHip26',):
+            names = ('PajamaHip26', 'PajamaHipG26', 'PajamaHipY26') if game == 'cod' else ('PajamaHip26',)
+            palette = [(name, expected) for name in names]
+            for theme in (1, 2, 3, -1):
+                color = {1: (240, 81, 60), 2: (180, 78, 78)}.get(theme, (0, 0, 0))
+                palette.append((notice_font(game, theme), (*color, 255) if game == 'cod' else (254, 53, 0, 255)))
+            for name, expected in palette:
                 font, atlas = render_font(library, name)
+                self.assertTrue(font.native_face)
                 colors = {color for _, color in atlas.getcolors(atlas.width * atlas.height)}
                 self.assertIn(expected, colors)
                 self.assertIn((255, 255, 255, 255), colors)  # Supplied-face outline stays white.
@@ -74,3 +84,26 @@ class IOSFontMetricsTests(unittest.TestCase):
         self.assertLess(width, rounded.getlength(chr(glyph.code)) * 10)
         self.assertEqual(len(layout_text(font, text, width, TextStyle(font.cap_height)).lines), 1)
         self.assertTrue(atlas.getbbox())
+
+    def test_emphasis_atlas_has_a_fine_outline_without_changing_pen_advances(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory, 'authored.ttf')
+            path.write_bytes(ImageFont.load_default().font_bytes)
+            library = SimpleNamespace(game_id='shs', base_members=set())
+            with patch('exp_runtime.ios_fonts.resolve_face', return_value=(path, 0)):
+                normal, normal_atlas = render_font(library, 'TrebuchetMS_Italic16')
+                emphasized, atlas = render_font(library, 'TrebuchetMS_Italic16Emphasis')
+                substitute, _ = render_font(library, 'PajamaHip26')
+            self.assertFalse(normal.native_face)
+            self.assertFalse(substitute.native_face)
+            self.assertEqual((normal.cap_height, normal.descent), (emphasized.cap_height, emphasized.descent))
+            self.assertEqual([g.advance for g in normal.glyphs.values()],
+                             [g.advance for g in emphasized.glyphs.values()])
+            self.assertGreater(atlas.getchannel('A').getbbox()[2], 0)
+            glyph, outlined = normal.glyph('A'), emphasized.glyph('A')
+            self.assertEqual((outlined.width, outlined.height), (glyph.width + 2, glyph.height + 2))
+            ink = atlas.crop((outlined.x, outlined.y, outlined.x + outlined.width, outlined.y + outlined.height))
+            original = normal_atlas.crop((glyph.x, glyph.y, glyph.x + glyph.width, glyph.y + glyph.height))
+            # Fractional strokes are supersampled, rather than rounded away
+            # or expanded to the same two-point radius as character names.
+            self.assertGreater(sum(ink.getchannel('A').tobytes()), sum(original.getchannel('A').tobytes()))

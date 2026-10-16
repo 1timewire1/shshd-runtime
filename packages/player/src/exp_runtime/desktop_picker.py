@@ -5,7 +5,6 @@ from . import graphics as pygame
 from .desktop_pause import draw_pause_gear
 
 from .fonts import TextStyle
-from .menu import MenuStrings
 from .ui_assets import Rect, read_ui
 
 
@@ -13,7 +12,6 @@ class CharacterPickerRenderer:
     def __init__(self, resources, text_renderer, artwork):
         self.resources, self.text, self.art = resources, text_renderer, artwork
         self.canvas = pygame.Surface((320, 480)).convert(32)
-        self.hint = None
 
     @lru_cache(maxsize=32)
     def portrait(self, asset, theme):
@@ -30,7 +28,7 @@ class CharacterPickerRenderer:
             layer.blit(piece, rect.move(-bounds.x, -bounds.y))
         return layer, bounds.topleft
 
-    def draw(self, target, session):
+    def draw(self, target, session, *, pressed=False):
         picker, engine = session.engine.character_picker, session.engine
         self.canvas.fill((0, 0, 0))
         self.art.draw_background(self.canvas, engine)
@@ -48,16 +46,16 @@ class CharacterPickerRenderer:
             layer.set_alpha(motion.opacity)
             self.canvas.blit(layer, (round(x + ox * scale), round(y + oy * scale)))
         title = self.text.layout('PajamaHip26', session.pending.details['text'], 300,
-                                 TextStyle(16, -16, (255, 255, 255)))
+                                 TextStyle(16, -16, (255, 255, 255)),
+                                 previous_glyph=engine.text_history.initial('picker_title'))
         self.text.draw_layout(self.canvas, 'PajamaHip26', title, 30, 67.5)
-        self.canvas.blit(self.art.frame(126, 41), (205, 347))
+        # Both iOS updateButtonLayer implementations select 41 while held,
+        # 42 otherwise. Android has a fixed frame 41 and no visual swap.
+        frame = 41 if pressed or getattr(self.resources.library, 'kind', 'apk') != 'ipa' else 42
+        self.canvas.blit(self.art.frame(126, frame), (205, 347))
         self.canvas.blit(self.art.frame(126, 47), (0, 431))
         draw_pause_gear(self.canvas, self.art)
-        if self.hint is None:
-            self.hint = MenuStrings.load(self.resources.library)[37]
-        hint = self.text.layout('ArialRoundedMTBold11', self.hint,
-                                247, TextStyle(11, 0, (185, 185, 185)))
-        self.text.draw_layout(self.canvas, 'ArialRoundedMTBold11', hint, 63 + (252 - hint.width) / 2, 460)
+        self.text.draw_footer(self.canvas, 37, engine.text_history.initial('footer'))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return [(pygame.Rect(0, 422, 60, 58), ('menu',))]
 

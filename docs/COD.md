@@ -157,6 +157,23 @@ and `0x12ab4`; `updateFonts` (`000355e4`) binds those objects and the body at
 `0x142d4` to dialogue. Theme 2 keeps its rose color; gray/default themes use
 the same dark-red names and black body as the normal theme. These bindings
 live in `cod/profile.py`; font size and glyph advances are unchanged.
+
+Narration has its own font object: `initFonts` at `00023476` initializes
+engine `+0xe254` with black (`0xff000000`); its backtick switch font at
+`+0xfa74` uses gold (`0xffb46d1a`, `000234a0`). The shared narrator now uses
+this CoD palette rather than SHS's amber/brown pair.
+
+Score notices are theme-dependent in the supplied 1.3.4 native code.
+`updateFonts` (`000355e4`) selects the main letter font at dialog `+0xd4`:
+theme 1 uses engine `+0x17314`, red `(240,81,60)`; theme 2 uses `+0x21bf4`,
+rose `(180,78,78)`; theme 3/default use `+0x2acb4`/`+0x33d74`, black.
+`SHSTextLayer::drawLayerText:` (`00046dec`) draws the outline font first,
+then this main font. The color selection applies to every service-88 notice,
+without matching the text "Detective Score Up!". This verifies black notices
+for neutral/gray themes, not a universal black color for every theme.
+The shared notice face, outline and motion still follow the compatibility
+renderer; see [service 88's remaining iOS differences](STORY_SERVICES.md#dialogue-notifications-service-88).
+
 The owner supplied `decomp/cod/cod-native-1.jpg` and `cod-native-2.jpeg` on
 2026-10-05. Their Man/Sophie scenes corroborate the normal palette and titles
 attached to the top border. They remain private references, not test fixtures
@@ -225,8 +242,87 @@ Service 79 classifies 8201–8209 as music; service 80 explicitly queues music.
 `SHSSoundManager::playMusic` (`0004313c`) accepts that range and episode audio
 at or above 26000. CoD cues use their exact source with zero seek offset;
 SHS's 8202→8201 and other segment aliases do not apply. Service 81's argument
-is a fade duration (`stopMusic`, `00042d70`), not a track selector. The current
-desktop stops immediately, as in the existing SHS audio approximation.
+is a fade duration (`stopMusic`, `00042d70`), not a track selector. Both player
+backends now fade linearly: -1 selects 1000 ms, zero stops immediately, and
+positive values specify milliseconds. Replacing a playing cue fades it for
+1000 ms before starting the latest queued cue. A later replacement retains
+the existing fade deadline; requesting the current cue cancels its fade.
+An already finished cue starts again when explicitly requested.
+`tick` **00042ffc**, `fadeSound` **00042c7c**, `setFadeTime:` **000423f8** and
+`getFadeLevel` **00042054** establish the queue and linear volume rules.
+SHS retains Android **000a3260**'s immediate stop as its selected reference.
+
+Save version 22 also captures the actual outgoing cue, playhead, repeat flag,
+completion state and remaining fade at a host save/checkpoint boundary. Loading
+continues that stream before applying any queued cue. The iOS backend changes
+AVAudioPlayer's repeat count in place. SDL2_mixer has no active-stream loop
+setter: desktop reuses the loaded decoder at its measured position, which can
+still introduce a short discontinuity. Headless saves have no audio playhead.
+
+Native `storeGameAudio` **00019ca0** snapshots playing music/effects before
+`stop(false)` fades them. Music fades over 1000 ms; `stopSounds` **00042e98**
+uses 100 ms. `restoreGameAudio` **00019c28** waits for menu audio to stop before
+loading the snapshot, and `restartFromLoad` **00042f18** resumes enabled tracks.
+The shared IPA player now implements this handoff, including the pause button's
+store call at **00024d82**. The main tick's branch at **00025044** holds story
+updates during the handoff. Focus loss freezes the host's fades and playheads.
+Saved effects restore separately from the queued script cue without replaying
+the sound service. Native AVAudioPlayer reports effect positions; SDL restores
+decoded effects at sample boundaries and estimates their playhead from its
+playback clock because SDL2_mixer exposes no channel-position query. Native
+saves truncate playheads to seconds (**00042912–0004291e**); live IPA handoffs
+follow that rule, while ordinary runtime checkpoints keep milliseconds. Menu UI
+clicks are transient, outside the retained story tracks. Output latency still
+requires a running-original comparison.
+
+### Scene transitions
+
+Service 16 queues the selector used when the current UI completes. CoD's
+`setupQueuedFade` **0000f998**, `restartFade` **0000ed34** and `tickFade`
+**0000ee5c** now have a separate adapter state. Selectors 1/2 draw sixteen
+horizontal/vertical black blinds; 6 draws a black opacity layer. Each track
+lasts 1500 ms: 1200 ms of linear motion followed by a 300 ms hold. Blinds
+wait a further 300 ms before revealing the next UI. Evidence: **00058d0c**,
+**00058dcc**, **00058558**, **000588cc** and **00058188**. Unsupported
+selectors retain the native no-animation watchdog, which finishes strictly
+after seven seconds; they do not substitute another visual effect.
+
+Input and the VM remain held through fade-out. Completion wakes the old UI
+once, commits its retained result and lets the script create the next UI.
+`GameModel::tick` **00012588** skips fade-in for a title (UI type 16);
+otherwise it stops the new layers' animations before revealing them. The
+shared session preserves this ordering, pauses fade clocks with the game,
+and saves either half without replaying the callback. Custom hosts must keep
+ticking while `Session.transitioning` is true. Shared desktop/iOS rendering
+also blocks pause, keyboard and pointer commands during those phases.
+Intermediate bytecode pauses retain the covered wakeup phase until the next
+UI exists. A debugger stop can save and resume that phase without returning
+the old result twice.
+
+Selector 20 consumes CoD's separate libc `rand()` stream to choose 1 or 2,
+not SHS's `lrand48()` or the minigame generator. The recovered call is combined
+with Apple's historical [Darwin rand implementation](https://github.com/apple-oss-distributions/Libc/blob/Libc-594.1.4/stdlib/FreeBSD/rand.c)
+to reproduce its arithmetic. Save version 22 retains that stream. The shared
+application retains it across episode sessions through `RuntimeProcess`,
+together with the KiWi/minigame generators and speaker-font banks. An explicit
+save restore replaces them with saved state. Games and source profiles remain
+isolated; a standalone headless session starts its own process by default.
+
+Isolated ARM execution checks cover queue selection, fade phase/input flags,
+one delayed wakeup and the title-versus-dialogue continuation order. UIKit
+completion and script continuation are stubbed in those checks. They do not
+verify rendered device frames. During an outgoing fade, background, scene-label
+and already installed dialogue/portrait actions continue while the UI tick and
+VM remain held. A delayed expression request does not start early.
+
+Menu Start/Resume now follows `fadeToGame` **0000f9d8**, reached from app-mode
+103 at **000201d4**. The tick path **000250f4** switches to the loaded story
+at the fully black midpoint, then reveals it. Each half is 1500 ms, with no
+story callback and no random draw. Failed loads release the input gate and
+show the normal error. Direct API/creator preview starts remain immediate.
+Original-device frame comparison is still required for full transition parity.
+
+### Music repeat
 
 Service 80's second argument is the **repeat flag**, not a fade control.
 The dispatcher (`0003354c`) passes `bool(a2)` to `queueMusic` (`0000ebe2`),
@@ -303,8 +399,19 @@ play all nine base music sources through SDL dummy audio. Authored tests cover
 colliding IDs, game/profile mismatch rejection, unavailable assets, legacy SHS
 saves, launcher migration and switching/checkpoint failures.
 
-Complete episode routes, all CoD service variants, exact iOS animation/font
-parity and CoD story-choice/relationship feedback sounds still require verification.
+`SHSUIMenu::handleMenuSelection` **000395ac** plays **8005** for an accepted
+ordinary or incremental story choice. Timed word selections play **8003** for
+a positive score delta and **8004** for a negative one; zero is silent.
+SHS's corresponding **000afee8** (Android) / **00084600** (iOS) uses
+**8010**, **8001** and **8002**. The shared session now preserves each input's
+ordered sound requests, including script cues immediately after a choice.
+Timeout callbacks and rejected input do not synthesize a click.
+
+CoD `setCurrentSpeaker` **00038008** and the full
+`setStatusIconAnimated` **00043fc0–00044d84** path do not request relationship
+sounds. SHS's relationship sound table is therefore not applied to CoD.
+Complete episode routes, all CoD service variants and exact iOS animation/font
+parity still require verification.
 Unknown services stop explicitly; no score, choice, random result or next scene
 is invented to continue an unsupported episode.
 

@@ -203,16 +203,42 @@ For outline fonts, `outline_speaker_label` applies these rules in both games:
   Right portraits subtract 2 from X, use `(0,5)`, align left, and add 15 X
   below that width threshold. Names without a portrait align centrally.
   All three modes center line boxes vertically in the selected title region.
-- Names start at the original font size (26-point SHS Pajama Hip / CoD
-  Verdana Bold Italic). The shared ink guard separates overlapping raster
-  rows and fits only when complete glyphs/outlines exceed the selected
-  region, actual skin, portrait or body boundary. That guard is a desktop
-  compatibility measure; it does not imply exact CoreGraphics pixels.
+- Names keep the original font size (26-point SHS Pajama Hip / CoD
+  Verdana Bold Italic), region origin and line spacing. Original-font outlines
+  may overhang the skin. The ink guard applies only when an original face is
+  unavailable and a substitute is used: it separates overlapping raster rows
+  and fits against the selected header, skin, portrait and body. Applying that
+  guard to the original fonts shifted or shrank native names; it is not a
+  native layout operation.
 - Ordinary body text uses node 8 at **(37,304)**, width **246**, cap-height
   line boxes, gap **10**, and portrait insets `(80,70,0,0)` (mirrored on the
   right). The frame grows upward for a tall title; the text origin does not
   move. Its draw height is the shared computed body height plus integer font
   descent plus 3. The title's extension does not add body page capacity.
+- The base face is **Arial Rounded MT Bold 16**. Backticks switch to
+  **Trebuchet MS Italic 16**, with a **0.5-point** stroke of the same color.
+  Wrapping uses each active face's own advances, with no kerning. All faces
+  share the baseline at the base cap height; the line step is the maximum
+  registered cap height plus 10, even when the text contains no backticks.
+  Root body fonts register only backtick: semicolons are visible punctuation,
+  including inside the emphasized span. The italic object's separate
+  semicolon registration is not used by the root's draw loop.
+
+Ordinary outline dialogue colors come from each game's font objects, without
+Android's inherited emphasis-color state:
+
+| Theme | SHS body RGB | CoD body RGB | Emphasis RGB, both games |
+| --- | --- | --- | --- |
+| 1 | (41,104,221) | (0,0,0) | (254,53,53) |
+| 2 | (180,78,78) | (180,78,78) | (41,104,221) |
+| 3 | (137,137,137) | (0,0,0) | (254,53,53) |
+| Other | (180,109,26) | (0,0,0) | (254,53,53) |
+
+SHS's named-dialogue gold title also uses (180,109,26). Name outlines retain
+their original white 4-point stroke. The iPhone font host reports whether it
+found the original face, supplies CoreText metrics and rasterizes fractional
+strokes. Desktop FreeType supersamples the fine emphasis stroke; neither
+backend changes glyph advances to account for outline thickness.
 
 The native evidence was rechecked through read-only Ghidra MCP on 2026-10-05:
 CoD / SHS `updateTitleBounds` at **00036adc / 0007ce08**; `animateTitleLayer`
@@ -227,15 +253,30 @@ to the draw height. Some Objective-C calls truncate Ghidra's decompilation;
 their continuation was read in LLVM assembly and checked against the same
 bytes returned by Ghidra. No analysis repairs or remote HTTP calls were used.
 
+The **2026-10-16 typography follow-up** rechecked `initFonts` (**0003c440**
+SHS / **000230b8** CoD), including CoD's switch registrations at
+**00023c7e–00023cdc**. SHS `CSFont::drawText` **00008aac**, `addSwitchFont`
+**00008198**, `handleSwitchChar` **00009234** and `getCharAdvance`
+**000093cc** establish the mixed-face wrap/baseline rules. CoD's draw loop
+is at **000030fc**. A private ARM execution check compared SHS's actual
+draw loop with the shared layout over **627** authored ASCII paragraphs,
+widths and left/right insets, including emphasis across wraps and literal
+semicolons. It stubs glyph drawing and string conversion, not wrapping or
+font selection. Empty native height is normalized to zero and the final NUL
+is excluded from Python offsets. This is layout evidence, not an original-app
+pixel comparison; no native code or original assets are included in tests.
+
 Android bitmap fonts retain the verified v0.1.3 nominal heights, persistent
-name-label branches, body width 260 and original pagination. Both font types
-use the same normal/tall header ink guard. Narration and animation retain the
-shared v0.1.3 behavior; narrator and complete animation parity remain separate
+name-label branches, body width 260 and original pagination. Bitmap labels and
+substitute outline faces keep the existing header ink guard. Narration geometry
+and animation retain the shared v0.1.3 behavior, with narration colors supplied
+by each game; narrator and complete animation parity remain separate
 fidelity limits. Original installed/bundled fonts still take precedence over
 system fallback. Native font rules do not establish pixel-identical rendering.
 
-Save version **16** reflows older IPA pages from their saved `page_start`.
-Version-15 checkpoints preserve and validate both name-history banks; earlier
+Save version **26** reflows older IPA pages from their saved `page_start`,
+including the new emphasis-face advances. Version-15+ checkpoints preserve
+and validate both name-history banks; earlier
 IPA saves use the existing history migration. The outline title renderer
 does not use Android's retained label dimensions, but those saved banks are
 kept for compatibility and validation. VM memory, arguments, randomness and
@@ -243,7 +284,8 @@ reveal clocks are unchanged. Current page ends and APK version-10+ saves
 remain strictly validated. No reimport is needed.
 
 Authored tests cover normal/tall selection, full-size multiline names, all
-alignments, long-to-short transitions, substitute glyph bounds, page stability,
+alignments, long-to-short transitions, original-face overhangs, substitute glyph
+bounds, mixed-face baselines and drawing, literal semicolons, page stability,
 body capacity independent of the header, and save migration. Optional original
 checks exercise both games; CoD's 150-screen opening covers the poker/captain
 sequence and tests actual raster bounds. Private comparison includes the exact

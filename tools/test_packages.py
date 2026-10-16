@@ -107,6 +107,10 @@ else:
         restored = Session.from_snapshot(resources, saved)
         assert json.loads(json.dumps(restored.snapshot())) == saved
         assert restored.vm.pending.args == (7,)
+        change = session.engine.prepare_relationship(45)
+        assert change is not None and change.asset_id == GAMES[game].RELATIONSHIP_ASSETS[2]
+        assert change.extra_delay_ms == (300 if game == 'cod' else 0)
+        assert change.sound is None
         if game == 'cod':
             bad = deepcopy(saved)
             bad['engine']['football'] = {}

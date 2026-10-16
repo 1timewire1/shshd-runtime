@@ -58,7 +58,7 @@ class CreatorTests(unittest.TestCase):
                     first = session.advance()
                     self.assertEqual(first.name, 'choice')
                     self.assertEqual(first.details['options'][0], 'Explore | together')
-                    result = session.answer(answer)
+                    result = answer_screen(session, answer)
                     if expected is None:
                         self.assertEqual(result.name, 'episode_exit')
                     else:
@@ -85,7 +85,7 @@ class CreatorTests(unittest.TestCase):
         session = session_for(project)
         session.advance()
         for _ in range(5):
-            self.assertEqual(session.answer(0).details['text'], 'We explored.')
+            self.assertEqual(answer_screen(session, 0).details['text'], 'We explored.')
             self.assertEqual(answer_screen(session).name, 'choice')
 
     def test_custom_portrait_background_and_metadata_keep_exact_resources(self):
@@ -132,7 +132,7 @@ class CreatorTests(unittest.TestCase):
         session = session_for(story())
         session.engine.numbers[session.engine.number_key(0, -10000)] = 77
         session.advance()
-        self.assertEqual(session.answer(0).details['text'], 'We explored.')
+        self.assertEqual(answer_screen(session, 0).details['text'], 'We explored.')
         self.assertEqual(session.engine.numbers[session.engine.number_key(0, -10000)], 77)
         saved = Session.from_snapshot(session.resources, session.snapshot())
         self.assertEqual(saved.vm.data, session.vm.data)

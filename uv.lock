@@ -274,7 +274,7 @@ wheels = [
 
 [[package]]
 name = "exp-runtime"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "exp-runtime-formats" },
@@ -356,7 +356,7 @@ dev = [
 
 [[package]]
 name = "exp-runtime-cod"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/cod" }
 dependencies = [
     { name = "exp-runtime-engine", extra = ["fonts"] },
@@ -367,7 +367,7 @@ requires-dist = [{ name = "exp-runtime-engine", extras = ["fonts"], editable = "
 
 [[package]]
 name = "exp-runtime-creator"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/creator" }
 dependencies = [
     { name = "exp-runtime-formats" },
@@ -403,7 +403,7 @@ provides-extras = ["mcp", "desktop"]
 
 [[package]]
 name = "exp-runtime-engine"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/engine" }
 dependencies = [
     { name = "exp-runtime-formats" },
@@ -423,7 +423,7 @@ provides-extras = ["fonts"]
 
 [[package]]
 name = "exp-runtime-formats"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/formats" }
 
 [package.optional-dependencies]
@@ -437,7 +437,7 @@ provides-extras = ["images"]
 
 [[package]]
 name = "exp-runtime-player"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/player" }
 dependencies = [
     { name = "exp-runtime-engine", extra = ["fonts"] },
@@ -457,7 +457,7 @@ provides-extras = ["desktop"]
 
 [[package]]
 name = "exp-runtime-shs"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/shs" }
 dependencies = [
     { name = "exp-runtime-engine", extra = ["fonts"] },

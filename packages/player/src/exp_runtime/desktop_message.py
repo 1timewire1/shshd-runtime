@@ -38,7 +38,7 @@ class MessageRenderer:
         return layer
 
     @lru_cache(maxsize=16)
-    def panel(self, title, text):
+    def panel(self, title, text, title_previous=-1, body_previous=-1):
         bank = self.resources.dialogue_layout().bank
         root = bank.layouts[24]
         builtin = self.resources.record['episode_id'] == 0
@@ -51,8 +51,8 @@ class MessageRenderer:
             measure = self.text.layout('ArialRoundedMTBold14', text, body_rect.width,
                                        TextStyle(14, 5, BLUE))
             # 00058a54 expands the root to fit node 24, with its original
-            # minimum. The unused legacy-font padding read is unresolved;
-            # zero padding is used here (see STORY_SERVICES.md).
+            # minimum. The native padding field belongs to an uninitialized
+            # font: retain deterministic zero (see STORY_SERVICES.md).
             requested = int(measure.height + 1)
             requested += requested % 2
             height = max(root.height, requested + root.height - body_rect.height)
@@ -69,7 +69,8 @@ class MessageRenderer:
         layer.blit(pygame.transform.flip(self.layout_image(25, footer.width, footer.height), False, True),
                    (160 - footer.width // 2, round(footer_top)))
 
-        heading = self.text.layout('ArialRoundedMTBold20', title, 2**31, TextStyle(10, 7, BLUE))
+        heading = self.text.layout('ArialRoundedMTBold20', title, 2**31, TextStyle(10, 7, BLUE),
+                                   previous_glyph=title_previous)
         scale = 1 if len(title) < 31 else .88
         # Alignment 10: each line centered; preserve the BM node's downward
         # line origin and atlas overhang rather than centering the ink bounds.
@@ -79,7 +80,8 @@ class MessageRenderer:
         self.text.draw_layout(layer, 'ArialRoundedMTBold20', heading,
                               160 - heading.width * scale / 2,
                               header_top + header.height / 2 + heading.height * scale / 2, scale=scale)
-        body = self.text.layout('ArialRoundedMTBold16', text, root.width - 25, TextStyle(10, 3, BLUE))
+        body = self.text.layout('ArialRoundedMTBold16', text, root.width - 25, TextStyle(10, 3, BLUE),
+                                previous_glyph=body_previous)
         # Alignment 21, child anchor (1/2,1/2). Both native episode-ID paths
         # use a label height equal to layout 24's original height, even when
         # the surrounding sprite has expanded.
@@ -95,12 +97,15 @@ class MessageRenderer:
         if background is not None:
             # 000ac4dc places this panel's background at GL (160,240).
             self.canvas.blit(background, background.get_rect(center=(160, 240)))
-        layer, button_y = self.panel(panel.title, panel.text)
+        history = session.engine.text_history
+        layer, button_y = self.panel(panel.title, panel.text, history.initial('message_title'),
+                                    history.initial('message_body'))
         self.canvas.blit(layer, (0, 0))
         strings = self.strings()
         caption = strings[29] if panel.ready else f'{strings[30]} ({panel.countdown})'
         label = self.text.layout('TrebuchetMS_Bold14', caption, 2**31,
-                                 TextStyle(16, 5, (255, 255, 255)))
+                                 TextStyle(16, 5, (255, 255, 255)),
+                                 previous_glyph=history.initial('message_continue'))
         # 000acc28 grows the shared continuation node over 250 ms. Its
         # anchor is zero; 00098940 attaches the artwork centered at (0,0).
         # The text child has position (-6,8), size (40,0), anchor (1/2,1/2).
@@ -114,10 +119,7 @@ class MessageRenderer:
                          (round(245 - 60 * scale), round(button_y - 30 * scale)))
         self.canvas.blit(self.art.frame(126, 47), (0, 431))
         draw_pause_gear(self.canvas, self.art)
-        hint = self.text.layout('ArialRoundedMTBold11', strings[36 if panel.ready else 39],
-                                247, TextStyle(11, 0, (185, 185, 185)))
-        self.text.draw_layout(self.canvas, 'ArialRoundedMTBold11', hint,
-                              63 + (252 - hint.width) / 2, 460)
+        self.text.draw_footer(self.canvas, 36 if panel.ready else 39, history.initial('footer'))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return [(pygame.Rect(0, 422, 60, 58), ('menu',)),
                 (pygame.Rect(0, 0, 320, 480), ('continue',))]

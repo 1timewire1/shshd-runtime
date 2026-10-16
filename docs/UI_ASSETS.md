@@ -278,6 +278,19 @@ binary font metrics. The complete supported schemas and evidence are in
 Do not parse these as the literal ARGB image packs above, even when their APK
 filenames use a misleading `.mp3` extension.
 
+Android draw routine **00050ecc** and SHS iOS **0000a95c/0000d96c** draw the
+stored frame width/height, retaining the separate logical dimensions for
+metrics. They do not rescale stored pixels to the logical size. Sprite-atlas
+transform bytes have their own vertex convention: 0/1/4/7 are unchanged,
+2 mirrors horizontally with an X offset of logical width minus stored width,
+3 rotates 180 degrees, and 5/6 transpose across the main/opposite diagonal.
+Repeated transform records overwrite the frame byte rather than composing.
+The parser validates sequence references, and composite flattening preserves
+child offsets and order. A sequence table alone supplies no automatic playback
+clock. The inspected SHS 290/446/496/499/502/522 APK/IPA atlases have neither
+sequence/transform records nor differing logical/stored sizes; authored
+non-square fixtures exercise these recovered variants without shipping art.
+
 ## 4. Verification boundary
 
 All 82 supplied layouts parse to the exact end of resource 14 and expand without

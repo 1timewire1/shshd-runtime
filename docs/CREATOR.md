@@ -5,13 +5,13 @@ Runtime and the original games. It exports the native CSPUD `.exp` container
 with KiWi v2 bytecode. Authored scripts pass checks against the original
 SHS Android, SHS iOS and CoD iOS loaders and interpreters; full playback in
 the original apps remains unverified. See the compatibility details below.
-The creator is new in v0.6.0. Download the `exp-runtime-creator-v0.6.0-<target>`
+The creator was introduced in v0.6.0. Download the `exp-runtime-creator-v0.6.1-<target>`
 archive from Releases for Windows, Linux or macOS, extract it, and open
 **EXP Runtime Creator**. Keep the complete app or executable directory together.
 Python and Qt are bundled. Alternatively, install with pip:
 
 ```sh
-python -m pip install 'exp-runtime[creator]>=0.6.0'
+python -m pip install 'exp-runtime[creator]>=0.6.1'
 exp-creator
 ```
 
@@ -301,7 +301,7 @@ depends only on `exp-runtime-formats`. Its `[desktop]` extra adds Qt for Python
 umbrella's `[creator]` extra selects that complete editor. Ordinary player
 installs and desktop/iOS player bundles exclude the creator and Qt.
 
-Starting with v0.6.0, `python -m pip install 'exp-runtime[creator]>=0.6.0'`
+`python -m pip install 'exp-runtime[creator]>=0.6.1'`
 installs the visual editor. Source checkouts and locally built wheels support
 the same authoring API.
 

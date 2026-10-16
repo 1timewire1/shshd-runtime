@@ -6,6 +6,7 @@ from . import graphics as pygame
 
 from .content import ContentError
 from .fonts import TextStyle, layout_label
+from .input_hints import preview_answer
 from .menu import MenuStrings
 from .text_input import CURSOR_FONT, NAME_FONT
 from .ui_assets import Rect, read_ui
@@ -20,6 +21,32 @@ class InputRenderer:
     def __init__(self, resources, text_renderer, artwork):
         self.resources, self.text, self.art = resources, text_renderer, artwork
         self.canvas = pygame.Surface((320, 480)).convert(32)
+        self.hint_key = self.hint = None
+
+    def answer_hint(self, session, enabled):
+        details = session.pending.details
+        if not enabled or details.get('draft', details['default']):
+            return None
+        key = session, id(session.pending), session.vm.steps_executed
+        if key != self.hint_key:
+            self.hint = preview_answer(session)
+            self.hint_key = key
+        return self.hint
+
+    def draw_hint(self, name, text, rect, style):
+        if not text:
+            return
+        label = self.text.layout(name, text, 2**31, style)
+        left, top, right, bottom = label.ink_bounds
+        left, top = min(0, left), min(0, top)
+        scale = min(1., rect.width / max(1, right - left), rect.height / max(1, bottom - top))
+        clip = self.canvas.get_clip()
+        self.canvas.set_clip((rect.x, rect.y, rect.width, rect.height))
+        try:
+            self.text.draw_layout(self.canvas, name, label, rect.x - left * scale, rect.y - top * scale,
+                                  scale=scale, alpha=96)
+        finally:
+            self.canvas.set_clip(clip)
 
     @lru_cache(maxsize=1)
     def strings(self):
@@ -96,7 +123,7 @@ class InputRenderer:
         self.text.draw_layout(self.canvas, 'ArialRoundedMTBold16', label, 20, 185)
         return [(pygame.Rect(ALERT_RECT), ('input_dismiss',))]
 
-    def draw_ipa_entry(self, details, cursor_visible):
+    def draw_ipa_entry(self, details, cursor_visible, cursor_opacity, hint=None):
         """000a0238/000a0880: layout 46 supplies the entire entry panel."""
         bank = self.resources.dialogue_layout().bank
         prompt_rect = bank.rectangle(46, 23)
@@ -128,20 +155,29 @@ class InputRenderer:
         self.text.draw_layout(self.canvas, 'ArialRoundedMTBold16', prompt, prompt_rect.x, prompt_rect.y)
         entry = bank.rectangle(46, 44, bounds)
         draft = details.get('draft', details['default'])
+        if not draft:
+            self.draw_hint('PajamaHip24', hint, entry, TextStyle(24))
         entered = self.text.layout('PajamaHip24', draft, 2**31, TextStyle(24))
         self.text.draw_layout(self.canvas, 'PajamaHip24', entered, entry.x, entry.y)
         if cursor_visible:
             cursor = self.text.layout('PajamaHip24', '|', 2**31, TextStyle(24))
-            self.text.draw_layout(self.canvas, 'PajamaHip24', cursor, entry.x + entered.width, entry.y)
+            # iOS tick: SHS 000a1308/14 and CoD 0003b5f4 position the
+            # zero-anchored cursor three pixels left and four pixels up.
+            self.text.draw_layout(self.canvas, 'PajamaHip24', cursor, entry.x + entered.width - 3, entry.y - 4,
+                                  alpha=cursor_opacity)
         return [(pygame.Rect(entry.x, entry.y, entry.width, entry.height), ('input_focus',))]
 
-    def draw(self, target, session, *, error=None, cursor_visible=True):
+    def draw(self, target, session, *, error=None, cursor_visible=True, choice_hints=False):
+        from .text_input import cursor_alpha
+        opacity = cursor_alpha(session.pending.details.get('cursor_ms', 0),
+                               ios=getattr(self.resources.library, 'kind', 'apk') == 'ipa')
         self.canvas.fill((0, 0, 0))
         self.art.draw_background(self.canvas, session.engine)
         if error:
             buttons = self.alert()
         elif getattr(self.resources.library, 'kind', 'apk') == 'ipa':
-            buttons = self.draw_ipa_entry(session.pending.details, cursor_visible)
+            buttons = self.draw_ipa_entry(session.pending.details, cursor_visible, opacity,
+                                          self.answer_hint(session, choice_hints))
         else:
             bank = self.resources.dialogue_layout().bank
             width = bank.layouts[46].width + 22
@@ -156,19 +192,25 @@ class InputRenderer:
             self.text.draw_layout(self.canvas, 'ArialRoundedMTBold30', title,
                                   160 - title_width * scale / 2, 65, scale=scale)
             prompt = self.text.layout('ArialRoundedMTBold16', details['prompt'], 2**31,
-                                      TextStyle(16, -16, BLUE))
+                                      TextStyle(16, -16, BLUE),
+                                      previous_glyph=session.engine.text_history.initial('input_prompt'))
             self.text.draw_layout(self.canvas, 'ArialRoundedMTBold16', prompt, 30, 120)
             shadow = self._image(706)
             self.canvas.blit(shadow, shadow.get_rect(center=(160, 197)))
             draft = details.get('draft', details['default'])
-            entered = self.text.layout(NAME_FONT, draft, 2**31, TextStyle(26, -26, BLUE))
+            if not draft:
+                self.draw_hint(NAME_FONT, self.answer_hint(session, choice_hints), Rect(35, 190, 240, 27),
+                               TextStyle(26, -26, BLUE))
+            entered = self.text.layout(NAME_FONT, draft, 2**31, TextStyle(26, -26, BLUE),
+                                       previous_glyph=session.engine.text_history.initial('input_name'))
             self.text.draw_layout(self.canvas, NAME_FONT, entered, 35, 190)
             if cursor_visible:
                 cursor = self.text.layout(CURSOR_FONT, '|', 2**31, TextStyle(26, -26, BLUE))
                 # 000858cc creates '|' before setting nominal height 26.
                 # Unlike the name, the cursor is never assigned text again;
                 # its glyph keeps the initial zero-height line origin.
-                self.text.draw_layout(self.canvas, CURSOR_FONT, cursor, entered.width + 33, 214 - 26)
+                self.text.draw_layout(self.canvas, CURSOR_FONT, cursor, entered.width + 33, 214 - 26,
+                                      alpha=opacity)
             # Native confirmation is keyboard Return. No portrait-picker
             # checkmark or common gear is attached by this panel's setup.
             buttons = [(pygame.Rect(INPUT_RECT), ('input_focus',))]

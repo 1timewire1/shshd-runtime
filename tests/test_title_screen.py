@@ -101,6 +101,8 @@ class TitleScreenTests(unittest.TestCase):
                     random.next()
                     self.assertEqual(restored.engine.random48, random)
                     self.assertEqual(restored.engine.scene_value, 0)
+                    self.assertEqual(restored.pending.name, 'presentation')
+                    restored.tick(0)
                     self.assertEqual(restored.pending.request.args, (77, 0))
 
     def test_old_saves_settle_the_intro_and_invalid_current_saves_are_rejected(self):

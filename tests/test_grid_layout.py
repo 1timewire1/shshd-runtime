@@ -6,12 +6,131 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from exp_runtime.shs.grid_layout import heading_lines, prompt_position, tutorial_box
+from exp_runtime.shs.grid_layout import heading_lines, portrait_ring_scale, prompt_position, tile_opacity, tutorial_box
+from exp_runtime.randomness import NativeRandom
 from exp_runtime.runtime import SaveError, Session
 from test_word_grid import play_phase, resources, tutorial_resources
 
 
 class GridLayoutTests(unittest.TestCase):
+    def test_dimmed_cube_keeps_opaque_letters_shine_and_black_underlay(self):
+        from exp_runtime import graphics
+        from exp_runtime.platforms.drawing import Backend, Surface, raster
+        from exp_runtime.shs.desktop_grid import GridRenderer
+        backend = Backend(None, None)
+        previous = graphics.install(backend)
+        self.addCleanup(graphics.install, previous)
+        tile = Surface((20, 20)); tile.fill((200, 100, 50, 255))
+        glyph = Surface((2, 2)); glyph.fill((0, 255, 0, 255))
+        shine = Surface((20, 20)); shine.fill((0, 0, 255, 255))
+        renderer = GridRenderer.__new__(GridRenderer)
+        renderer.frame = lambda asset, frame: shine if frame == 35 else tile
+        renderer.glyph = lambda asset, char: glyph if char else None
+        dimmed = raster(renderer.cell_image(41, 'A', None, alpha=128).snapshot())
+        self.assertEqual(dimmed.getpixel((0, 0)), (100, 50, 25, 255))
+        self.assertEqual(dimmed.getpixel((10, 10)), (0, 255, 0, 255))
+        glowing = raster(renderer.cell_image(41, '', None, glint=0, alpha=26).snapshot())
+        self.assertEqual(glowing.getpixel((0, 0)), (0, 0, 255, 255))
+        self.assertEqual(raster(tile.snapshot()).getpixel((0, 0)), (200, 100, 50, 255))
+
+    def test_tile_brightness_uses_countdown_offsets_and_first_selected_cell(self):
+        offsets = {0: 1500, 3: 0}
+        for remaining, expected in ((10000, 1.), (5000, 1.), (3250, .5), (1500, .1), (-1, .1)):
+            with self.subTest(remaining=remaining):
+                self.assertAlmostEqual(tile_opacity(remaining, offsets, 0, highlighted=True), expected)
+        self.assertEqual(tile_opacity(10000, offsets, 4, selection=[0, 4]), 1.)
+        self.assertAlmostEqual(tile_opacity(7100, offsets, 4, selection=[0, 4]), .8)
+        self.assertEqual(tile_opacity(1500, offsets, 4, selection=[0, 4]), .7)
+        self.assertEqual(tile_opacity(1500, offsets, 4, selection=[0, 4], bad=True), 1.)
+        self.assertEqual(tile_opacity(0, offsets, 2), 1.)
+        self.assertEqual(tile_opacity(0, None, 0, highlighted=True), 1.)
+
+    def test_highlight_shuffle_commits_with_visuals_and_survives_save(self):
+        session = Session(resources(tutorial=True)); session.engine.random = NativeRandom(1)
+        session.advance()
+        game = session.engine.word_grid
+        # Native full-range swaps, in column-major start order. Both draws
+        # select slot zero, so the second swap exchanges the two offsets.
+        self.assertEqual(game.highlight_offsets, {0: 1500, 3: 0})
+        self.assertEqual(session.engine.random.state, 2524885223)
+        saved = session.snapshot()
+        restored = Session.from_snapshot(session.resources, json.loads(json.dumps(saved)))
+        self.assertEqual(restored.snapshot(), saved)
+        play_phase(session)
+        game.round_success = False
+        game.tutorials[0].failure_next = 0
+        game.next_problem(session.engine.random)
+        self.assertEqual(game.highlight_offsets, {})
+        self.assertEqual(game.transition.highlight_offsets, {0: 1500, 3: 0})
+        self.assertEqual(session.engine.random.state, 2524885223)
+        saved = session.snapshot()
+        restored = Session.from_snapshot(session.resources, saved)
+        for _ in range(4):
+            session.tick(200); restored.tick(200)
+            self.assertEqual(session.snapshot(), restored.snapshot())
+        expected = NativeRandom(2524885223); expected.next(); expected.next()
+        self.assertEqual(session.engine.random, expected)
+        self.assertEqual(sorted(game.highlight_offsets.values()), [0, 1500])
+        for offsets in ({6: 0}, {0: -1}, {0: 3000}):
+            bad = copy.deepcopy(saved)
+            bad['engine']['word_grid']['highlight_offsets'] = offsets
+            with self.subTest(offsets=offsets), self.assertRaises(SaveError):
+                Session.from_snapshot(session.resources, bad)
+        old = copy.deepcopy(saved); old['version'] = 21
+        del old['engine']['word_grid']['highlight_offsets']
+        del old['engine']['word_grid']['transition']['highlight_offsets']
+        del old['engine']['word_grid']['transition']['round_ms']
+        migrated = Session.from_snapshot(session.resources, old)
+        self.assertIsNone(migrated.engine.word_grid.highlight_offsets)
+        self.assertEqual(migrated.engine.random.state, saved['engine']['random']['state'])
+
+    def test_portrait_ring_uses_staggered_native_entrance_then_periodic_pulse(self):
+        game = SimpleNamespace(phase=0, phase_ms=2800, visual_ms=0)
+        self.assertEqual(portrait_ring_scale(game), 0)
+        # Android reuses the ring node: the last started stagger supplies its
+        # scale. It reaches 1.3 at the end of the 2800ms entrance.
+        game.phase_ms = 0
+        self.assertAlmostEqual(portrait_ring_scale(game), 1.3)
+        game.phase = 1
+        self.assertAlmostEqual(portrait_ring_scale(game), .85)
+        game.visual_ms = 625
+        self.assertEqual(portrait_ring_scale(game), 1)
+        game.visual_ms = 1250
+        self.assertAlmostEqual(portrait_ring_scale(game), .85, places=6)
+
+    def test_score_flies_from_first_tile_then_transfers_without_changing_game_result(self):
+        from exp_runtime.shs.grid_motion import project
+        session = Session(resources(tutorial=True)); session.advance(); play_phase(session)
+        for phase, cell in (('down', 0), ('move', 1), ('move', 2)):
+            session.grid_pointer(phase, cell)
+        game = session.engine.word_grid
+        self.assertEqual((game.score, game.display_score, game.score_pending), (100, 0, 0))
+        effect, = game.score_effects
+        self.assertEqual((effect.x, effect.y), project(3, 2, 225, 225)[:2])
+        self.assertEqual((effect.value, effect.remaining_ms), (100, 400))
+        held, random = session.vm.snapshot(), session.engine.random.state
+        session.tick(200)
+        saved = session.snapshot()
+        restored = Session.from_snapshot(session.resources, saved)
+        for dt in (200, 100, 25, 200, 100, 100):
+            session.tick(dt); restored.tick(dt)
+            self.assertEqual(session.snapshot(), restored.snapshot())
+        self.assertEqual((game.score, game.display_score, game.score_pending, game.score_phase), (100, 100, 0, 0))
+        self.assertFalse(game.score_effects)
+        self.assertEqual(session.vm.snapshot(), held)
+        self.assertEqual(session.engine.random.state, random)
+        for key, value in (('display_score', 101), ('score_phase', 3), ('score_pending', 100)):
+            bad = copy.deepcopy(saved)
+            bad['engine']['word_grid'][key] = value
+            with self.subTest(key=key), self.assertRaises(SaveError):
+                Session.from_snapshot(session.resources, bad)
+        old = copy.deepcopy(saved); old['version'] = 21
+        for key in ('score_effects', 'score_pending', 'score_phase', 'score_target', 'display_score'):
+            del old['engine']['word_grid'][key]
+        migrated = Session.from_snapshot(session.resources, old).engine.word_grid
+        self.assertEqual(migrated.display_score, migrated.score)
+        self.assertFalse(migrated.score_effects)
+
     def test_solid_tile_faces_follow_flip_and_keep_the_native_front_plane(self):
         import math
         from exp_runtime.shs.grid_motion import cube_faces, project

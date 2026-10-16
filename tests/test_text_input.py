@@ -262,17 +262,25 @@ class DesktopInputTests(unittest.TestCase):
         self.assertEqual(ui.session.vm.snapshot(), held)
         self.assertTrue(ui.text_input_started)
 
-    def test_cursor_redraw_is_transient_and_title_uses_cumulative_kerning(self):
+    def test_cursor_uses_active_time_and_title_uses_cumulative_kerning(self):
         import pygame
         ui = self.desktop('Alex')
-        with patch('pygame.time.get_ticks', return_value=0):
-            ui.render()
+        ui.tick(250)
+        ui.render()
         before = ui.session.snapshot()
         visible = pygame.image.tobytes(ui.canvas, 'RGB')
         with patch('pygame.time.get_ticks', return_value=600):
             ui.render()
-        self.assertNotEqual(pygame.image.tobytes(ui.canvas, 'RGB'), visible)
+        self.assertTrue(pygame.image.tobytes(ui.canvas, 'RGB') == visible)
         self.assertEqual(ui.session.snapshot(), before)
+        ui.active = False
+        ui.tick(250)
+        self.assertEqual(ui.session.snapshot(), before)
+        ui.active = True
+        ui.tick(250)
+        ui.render()
+        self.assertFalse(pygame.image.tobytes(ui.canvas, 'RGB') == visible)
+        self.assertEqual(ui.session.vm.snapshot(), before['vm'])
         layout, width, scale = ui.input_renderer.title('AAA')
         self.assertEqual(([g.x for g in layout.glyphs], width, scale), ([0, 6, 12], 20, 1))
         self.assertEqual([command for _, command in ui.buttons], [('input_focus',)])

@@ -9,12 +9,12 @@ ordinary `.expproj` files; no game assets are supplied.
 uv run --locked --extra creator-mcp exp-creator-mcp --workspace /path/to/stories
 ```
 
-Install the server with pip starting with v0.6.0:
+Install the server with pip:
 
 ```sh
-python -m pip install 'exp-runtime[creator-mcp]>=0.6.0'
+python -m pip install 'exp-runtime[creator-mcp]>=0.6.1'
 # Equivalent component-only install:
-python -m pip install 'exp-runtime-creator[mcp]>=0.6.0'
+python -m pip install 'exp-runtime-creator[mcp]>=0.6.1'
 ```
 
 This extra installs the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x),

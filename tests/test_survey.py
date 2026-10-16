@@ -110,6 +110,7 @@ class SurveyTests(unittest.TestCase):
             random.next()  # Exactly the original response-dialogue callback.
             self.assertEqual(s.engine.random48, random)
             self.assertEqual(s.engine.scene_value, 0)
+            s.tick(0)
             self.assertEqual(s.pending.details['text'], 'The story continues.')
             self.assertEqual(Session.from_snapshot(r, s.snapshot()).snapshot(), s.snapshot())
 
@@ -192,12 +193,12 @@ class SurveyTests(unittest.TestCase):
                     r = lib.open_episode(name)
                     skipped = original_survey(r)
                     self.assertEqual(skipped.pending.name, 'choice')
-                    self.assertEqual(skipped.answer(1).name, 'message_panel')
+                    self.assertEqual(answer_screen(skipped, 1).name, 'message_panel')
                     s = original_survey(r)
                     for _ in range(10):
                         if s.pending.name != 'choice':
                             break
-                        s.answer(0)
+                        answer_screen(s, 0)
                     self.assertEqual((s.pending.name, s.pending.request.pc), ('survey_confirmation', pc))
                     vm = s.vm.snapshot()
                     submitted_data = s.vm.data.copy()
@@ -233,7 +234,7 @@ class SurveyTests(unittest.TestCase):
             for _ in range(10):
                 if s.pending.name != 'choice':
                     break
-                s.answer(0)
+                answer_screen(s, 0)
             ui = Desktop(s, audio=False)
             before = s.snapshot()
             ui.render(); self.assertIsNone(ui.error)

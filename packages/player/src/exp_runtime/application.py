@@ -19,6 +19,7 @@ from .app_info import PROJECT_URL
 from .content import ContentError, ContentLibrary, import_game, is_bundled
 from .desktop import Desktop, SIZE
 from .desktop_menu import MenuRenderer
+from .desktop_transition import draw_transition
 from .languages import TITLE_LANGUAGES
 from .games import GAMES
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
@@ -27,6 +28,7 @@ from .runtime import SaveError, Session
 from .settings import AppSettings
 from .updates import UpdateCheck
 from .pointer import ButtonPress
+from .animation_curves import ease_in_out
 from .vm import VMError
 
 
@@ -60,6 +62,7 @@ class Application:
         self.selected_game = game_key
         self.directory = Path(directory) if directory is not None else self.library_path(game_key or default_game)
         self.library = self.state = self.game = None
+        self.processes = {}
         self.renderer = MenuRenderer()
         self.screen = 'games' if directory is None and game_key is None else 'setup'
         self.history = []
@@ -79,6 +82,13 @@ class Application:
         self.menu_age = 0
         self.transition_age = 200
         self.transition_from = None
+        self.transition_layer = None
+        self.transition_direction = 1
+        self.transition_zoom = False
+        self.transition_source = None
+        self.main_exit_ms = None
+        self.game_entry = None
+        self.game_entry_resume = True
         self.buttons = []
         self.viewport = pygame.Rect(0, 0, *SIZE)
         self.browser_kind = None
@@ -91,6 +101,7 @@ class Application:
         self.menu_music = pygame.create_menu_music()
         self.menu_music_token = None
         self.menu_music_loaded = self.menu_music_paused = False
+        self.menu_music_fade_ms = 0
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='exp-content')
         self.job = None
         self.job_kind = None
@@ -144,16 +155,21 @@ class Application:
     def release_library(self, *, checkpoint=True):
         # Do not discard a live session if its checkpoint cannot be written.
         if checkpoint and self.game:
+            self.game.capture_audio()
             self.state.checkpoint(self.game.session)
         if self.audio:
             self.menu_music.stop()
             self.menu_music_token = None
             self.menu_music_loaded = self.menu_music_paused = False
+            self.menu_music_fade_ms = 0
             pygame.mixer.music.stop()
             pygame.mixer.stop()
+            if self.game:
+                self.game._stop_sounds()
         if self.library:
             self.library.close()
         self.library = self.state = self.game = None
+        self.game_entry = None
         self.saved = set()
         self.selected = None
         if hasattr(self, 'click_sound'):
@@ -176,6 +192,7 @@ class Application:
         self.cancel_pointer()
         self.transition_from = None
         self.transition_age = 200
+        self.main_exit_ms = None
         pygame.key.stop_text_input()
         pygame.display.set_caption('EXP Runtime')
 
@@ -185,8 +202,19 @@ class Application:
 
     @property
     def ready(self):
-        return (not self.busy and self.transition_age >= 200
+        return (not self.busy and self.game_entry is None
+                and (self.transition_from is None or self.transition_age >= self.transition_duration)
                 and (self.screen != 'main' or self.menu_age >= (3000 if self.intro else 500)))
+
+    @property
+    def transition_duration(self):
+        if getattr(self.library, 'kind', 'apk') == 'ipa':
+            return 400
+        if self.library and self.transition_source == 'main':
+            return 300 if self.screen == 'options' else 400
+        if self.library and self.screen == 'main':
+            return 400
+        return 200
 
     def open_library(self, directory, *, remember=False):
         library = ContentLibrary(directory)
@@ -195,9 +223,11 @@ class Application:
                 raise ContentError(f'This library belongs to {library.game_title}. '
                                    f'Select {library.game_title} in the game chooser to open it.')
             library.ensure_builtin_episodes()
-            state = MenuState(library)
+            process_key = (library.game_id, library.kind)
+            state = MenuState(library, process=self.processes.get(process_key))
             renderer = MenuRenderer(library)
             if self.game:
+                self.game.capture_audio()
                 self.state.checkpoint(self.game.session)
             if remember and self.remember_location:
                 remember_library(directory, library.game_id)
@@ -208,12 +238,14 @@ class Application:
         self.directory, self.library = Path(directory), library
         self.selected_game = library.game_id
         self.state, self.renderer, self.game = state, renderer, None
+        self.processes[process_key] = state.process
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
         if hasattr(self, 'click_sound'):
             del self.click_sound
         self.screen, self.history, self.selected = 'main', [], state.selected
         self.menu_age, self.intro = 0, True
+        self.main_exit_ms = None
         self.message = state.warning
         pygame.display.set_caption(self.game_title)
         self.refresh_saves()
@@ -271,6 +303,16 @@ class Application:
         if self.screen == 'episodes':
             self.episode_scroll = self.scroll
         self.transition_from = self.renderer.canvas.copy()
+        self.transition_layer = self.renderer.layer.copy() if self.renderer.layer is not None else None
+        if self.screen == 'game' and self.game and self.game.pause_renderer is not None:
+            self.transition_layer = self.game.pause_renderer.canvas.copy()
+        self.transition_direction = 1 if remember else -1
+        self.transition_zoom = self.screen in ('main', 'game') or screen == 'main'
+        self.transition_source = self.screen
+        if self.screen == 'main' and screen != 'main' and getattr(self.library, 'kind', 'apk') == 'apk':
+            self.main_exit_ms = 0
+        elif screen == 'main':
+            self.main_exit_ms = None
         if remember and screen != self.screen:
             self.history.append(self.screen)
         self.screen = screen
@@ -315,20 +357,36 @@ class Application:
     def _sync_menu_music(self):
         if not self.audio:
             return
-        enabled = bool(self.library and self.state.music and self.screen != 'game' and not self.paused_menu)
+        native = getattr(self.library, 'kind', 'apk') == 'ipa'
+        enabled = bool(self.library and self.state.music and self.screen != 'game' and not self.paused_menu
+                       and self.game_entry is None)
+        outgoing = bool(native and self.game and self.game.audio_stored and
+                        (self.game.music_loaded or self.game.sound_players))
+        enabled = enabled and not outgoing
+        if enabled and self.menu_music_fade_ms:
+            self.menu_music_fade_ms = 0
+            self.menu_music.set_volume(1)
         token = (id(self.library), enabled)
         if token != self.menu_music_token:
-            self.menu_music_token = token
-            self.menu_music_loaded = self.menu_music_paused = False
-            self.menu_music.stop()
-            if enabled:
-                try:
-                    resource = GAMES[self.selected_game].MENU_MUSIC
-                    self.menu_music.load(BytesIO(self.library.read_asset(resource)))
-                    self.menu_music.play()
-                    self.menu_music_loaded = True
-                except (ContentError, pygame.error, ValueError) as error:
-                    logging.warning('Menu music cannot be played: %s', error)
+            if (native and not enabled and self.menu_music_loaded and self.state.music
+                    and self.menu_music.get_busy() and not outgoing):
+                if not self.menu_music_fade_ms:
+                    self.menu_music_fade_ms = 1000
+                if self.game:
+                    self.game.audio_wait = True
+            else:
+                self.menu_music_token = token
+                self.menu_music_loaded = self.menu_music_paused = False
+                self.menu_music_fade_ms = 0
+                self.menu_music.stop()
+                if enabled:
+                    try:
+                        resource = GAMES[self.selected_game].MENU_MUSIC
+                        self.menu_music.load(BytesIO(self.library.read_asset(resource)))
+                        self.menu_music.play()
+                        self.menu_music_loaded = True
+                    except (ContentError, pygame.error, ValueError) as error:
+                        logging.warning('Menu music cannot be played: %s', error)
         paused = not self.active
         if self.menu_music_loaded and paused != self.menu_music_paused:
             self.menu_music_paused = paused
@@ -336,14 +394,51 @@ class Application:
                 self.menu_music.pause()
             else:
                 self.menu_music.unpause()
+        if self.game:
+            self.game.audio_wait = bool(self.menu_music_fade_ms)
+
+    def _tick_menu_audio(self, elapsed):
+        if not self.audio:
+            return
+        if self.menu_music_fade_ms:
+            self.menu_music_fade_ms = max(0, self.menu_music_fade_ms - elapsed)
+            if self.menu_music_fade_ms and self.menu_music.get_busy():
+                self.menu_music.set_volume(self.menu_music_fade_ms / 1000)
+            else:
+                self.menu_music.stop()
+                self.menu_music_loaded = False
+                self.menu_music_fade_ms = 0
+                self.menu_music_token = (id(self.library), False)
+                if self.game:
+                    self.game.audio_wait = False
+        if self.game and self.screen != 'game':
+            self.game._tick_music(elapsed)
+        self._sync_menu_music()
+
+    def start_from_menu(self, *, resume=True):
+        selector = GAMES[self.selected_game].MENU_TRANSITION
+        if not selector:
+            self.start(resume=resume)
+            return
+        self.game_entry = GAMES[self.selected_game].SCENE_TRANSITION()
+        self.game_entry.start(selector, 0)
+        self.game_entry_resume = resume
+        self._sync_menu_music()
+        self.cancel_pointer()
+        self.buttons = []
 
     def start(self, *, resume=True, load_path=None):
+        self.main_exit_ms = None
+        self.game_entry = None
         episode = self.selected
         if self.game and resume and not load_path and self.game.session.resources.record['id'] == episode:
             self.game.menu_open = False
         else:
+            if self.game:
+                self.game._stop_sounds()
             if load_path:
                 session = Session.load(self.library.open_episode(episode), load_path)
+                self.state.process.attach(session, restored=True)
                 self.state.selected = episode
                 self.state.persist()
             else:
@@ -351,11 +446,16 @@ class Application:
             # A fresh renderer per episode prevents local image IDs from
             # accidentally reusing the previous episode's cached artwork.
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
-                                episode_title=self.state.title(session.resources.record), on_menu_page=self.show)
+                                episode_title=self.state.title(session.resources.record), on_menu_page=self.show,
+                                vibration_enabled=self.state.vibration, minigame_skips=self.state.minigame_skips)
         self.game.episode_title = self.state.title(self.game.session.resources.record)
+        self.game.entry_transition = None
+        self.game.audio_menu = False
         pygame.display.set_caption(self.game_title + ' — ' + self.game.episode_title)
         self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
+        self.game.vibration_enabled = self.state.vibration
         self.game.choice_hints = self.state.choice_hints
+        self.game.minigame_skips = self.state.minigame_skips
         self.game.active = self.active
         self.screen, self.history, self.focus = 'game', [], None
         self.game.screen_token = None
@@ -371,10 +471,15 @@ class Application:
         # Keep the live session even if a filesystem error prevents a checkpoint.
         if self.game.session.engine.word_grid:
             self.game.session.grid_pointer('cancel')
-        checkpoint = self._attempt(lambda: self.state.checkpoint(self.game.session))
+        def save():
+            self.game.capture_audio()
+            return self.state.checkpoint(self.game.session)
+        checkpoint = self._attempt(save)
         # A live session retains its mixer stream and playhead through menu
         # navigation. A fresh Desktop or explicit save load selects a new cue.
-        self.game.active = False
+        native = getattr(self.library, 'kind', 'apk') == 'ipa'
+        self.game.audio_menu = True
+        self.game.active = self.active if native else False
         if not self.game.session.episode_exited:
             self.game._sync_music()
         if self.audio:
@@ -385,6 +490,7 @@ class Application:
             # masks older progress without deleting the player's manual slot.
             if self.audio:
                 pygame.mixer.music.stop()
+                self.game._stop_sounds()
             if checkpoint is not None:
                 self.game = None
         self.history = []
@@ -455,7 +561,9 @@ class Application:
     def command(self, command):
         kind = command[0]
         self.cancel_pointer()
-        if self.busy:
+        if (self.busy or self.game_entry is not None
+                or self.main_exit_ms is not None and self.transition_source == 'main'
+                and self.transition_age < self.transition_duration):
             return
         if self.update_prompt is not None and kind not in ('update_yes', 'update_no', 'back'):
             return
@@ -501,7 +609,7 @@ class Application:
                     raise
                 self.episode_scroll = self.scroll = 0
             elif kind == 'start':
-                self.start(resume=command[1])
+                self.start_from_menu(resume=command[1])
             elif kind == 'project':
                 self.open_url(PROJECT_URL)
             elif kind == 'toggle_updates':
@@ -513,7 +621,7 @@ class Application:
                     self.updates.start()
             elif kind == 'toggle':
                 key = command[1]
-                if key not in ('music', 'sound', 'choice_hints'):
+                if key not in ('music', 'sound', 'choice_hints', 'vibration', 'minigame_skips'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -524,8 +632,12 @@ class Application:
                     raise
                 if self.game:
                     self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
+                    self.game.vibration_enabled = self.state.vibration
                     self.game.choice_hints = self.state.choice_hints
+                    self.game.minigame_skips = self.state.minigame_skips
                     self.game._sync_music()
+                if key == 'vibration' and self.state.vibration and self.active:
+                    pygame.vibrate()
             elif kind in ('save', 'load') and self.paused_menu:
                 self.game.command((kind,))
                 if kind == 'load' and not self.game.menu_open:
@@ -625,13 +737,42 @@ class Application:
                 pygame.key.stop_text_input()
         if not self.active or self.busy or self.message or self.update_prompt is not None:
             return
+        self._tick_menu_audio(elapsed)
+        if self.main_exit_ms is not None:
+            self.main_exit_ms += elapsed
+            if self.main_exit_ms >= 2050:
+                self.main_exit_ms = None
+        if self.game_entry is not None:
+            fade = self.game_entry
+            if not fade.tick(elapsed):
+                if fade.phase == 3:
+                    self.game._tick_music(elapsed)
+                return
+            if fade.phase == 4:
+                # Native mode 103 switches under the opaque layer, without
+                # posting a story callback or using either random stream.
+                self.game_entry = None
+                self._attempt(lambda: self.start(resume=self.game_entry_resume))
+                if self.screen == 'game' and not self.message:
+                    fade.reveal()
+                    self.game_entry = self.game.entry_transition = fade
+                    motion = self.game.session.engine.dialogue_animation
+                    if motion is not None:
+                        motion.stop_layers()
+                return
+            self.game_entry = self.game.entry_transition = None
         if self.screen == 'game':
             self.game.tick(elapsed)
             if self.game.session.episode_exited:
                 self.return_to_menu()
         else:
-            self.menu_age += elapsed
-            self.transition_age = min(200, self.transition_age + elapsed)
+            # Android recreates the main rows in the submenu's 400 ms exit
+            # callback. Its entry clock starts only after that callback.
+            delay = (max(0, self.transition_duration - self.transition_age)
+                     if self.screen == 'main' and self.transition_from is not None
+                     and getattr(self.library, 'kind', 'apk') == 'apk' else 0)
+            self.menu_age += max(0, elapsed - delay)
+            self.transition_age = min(self.transition_duration, self.transition_age + elapsed)
 
     def render(self):
         self._sync_menu_music()
@@ -642,13 +783,18 @@ class Application:
                 self.game.render()
                 return
         canvas = self.renderer.draw(self)
-        if (self.transition_from is not None and self.transition_age < 200
+        if (self.transition_from is not None and self.transition_age < self.transition_duration
                 and not self.message and not self.busy and self.update_prompt is None):
-            layer = canvas.copy()
-            layer.set_alpha(round(255 * self.transition_age / 200))
-            canvas = self.transition_from.copy()
-            canvas.blit(layer, (0, 0))
+            if self.library and self.transition_layer is not None and self.renderer.layer is not None:
+                canvas = self._menu_transition()
+            else:
+                layer = canvas.copy()
+                layer.set_alpha(round(255 * self.transition_age / self.transition_duration))
+                canvas = self.transition_from.copy()
+                canvas.blit(layer, (0, 0))
         self.buttons = self.renderer.buttons if self.ready or self.message or self.update_prompt else []
+        if self.game_entry is not None:
+            draw_transition(canvas, self.game_entry)
         if self.buttons and self.focus == 'buttons':
             rect, _ = self.buttons[self.focus_index % len(self.buttons)]
             pygame.draw.rect(canvas, (255, 255, 255), rect.inflate(4, 4), 1, border_radius=4)
@@ -659,6 +805,43 @@ class Application:
         self.window.fill((8, 12, 20))
         self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
         pygame.display.flip()
+
+    def _menu_transition(self):
+        canvas = self.renderer.background.copy()
+        incoming, outgoing = self.renderer.layer, self.transition_layer
+        if getattr(self.library, 'kind', 'apk') == 'ipa':
+            progress = ease_in_out(self.transition_age / 400)
+            if self.transition_zoom:
+                for layer, scale in ((outgoing, 1 - .99999 * progress), (incoming, .001 + .999 * progress)):
+                    size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
+                    image = pygame.transform.smoothscale(layer, size)
+                    canvas.blit(image, image.get_rect(center=(160, 240)))
+            else:
+                offset = round(320 * progress) * self.transition_direction
+                canvas.blit(outgoing, (-offset, 0))
+                canvas.blit(incoming, (320 * self.transition_direction - offset, 0))
+        else:
+            progress = self.transition_age / self.transition_duration
+            if self.transition_source == 'main' or self.screen == 'main':
+                # Android 00090818, 00077e00, 0006eb7c and 0007aaa8:
+                # zero-size CCNode parents at GL (160,464), linear scale.
+                if self.transition_source == 'main':
+                    start = .1 if self.screen == 'help' else .2
+                    scale, layer = start + (1 - start) * progress, incoming
+                elif self.transition_source == 'episodes':
+                    scale, layer = 1 - .9 * progress, outgoing
+                else:
+                    # Help/Options remove themselves in a delayed callback;
+                    # unlike Play/Resume they do not scale on this path.
+                    scale, layer = 1, outgoing
+                size = max(1, round(320 * scale)), max(1, round(480 * scale))
+                image = pygame.transform.smoothscale(layer, size)
+                canvas.blit(image, (round(160 * (1 - scale)), round(16 * (1 - scale))))
+            else:
+                offset = round(320 * progress) * self.transition_direction
+                canvas.blit(outgoing, (-offset, 0))
+                canvas.blit(incoming, (320 * self.transition_direction - offset, 0))
+        return canvas
 
     def _scroll(self, delta):
         self.press.cancel()
@@ -672,6 +855,14 @@ class Application:
             self.active = event.type == pygame.WINDOWFOCUSGAINED
             self.cancel_pointer()
             self._sync_menu_music()
+            if self.screen == 'game':
+                return self.game.handle_event(event)
+            if self.game and getattr(self.library, 'kind', 'apk') == 'ipa':
+                self.game.handle_event(event)
+        if (self.game_entry is not None
+                or self.main_exit_ms is not None and self.transition_source == 'main'
+                and self.transition_age < self.transition_duration):
+            return True
         if self.screen == 'game':
             return self.game.handle_event(event)
         if self.update_prompt is not None:
@@ -760,6 +951,7 @@ class Application:
         self.executor.shutdown(wait=True)
         if self.game and self.screen == 'game':
             try:
+                self.game.capture_audio()
                 self.state.checkpoint(self.game.session)
             except ERRORS as error:
                 logging.error('Automatic checkpoint failed: %s', error)

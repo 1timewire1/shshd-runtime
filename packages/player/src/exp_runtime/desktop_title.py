@@ -6,8 +6,6 @@ from .desktop_pause import draw_pause_gear
 
 from .atlas import AtlasFont
 from .content import ContentError
-from .fonts import TextStyle, layout_label
-from .menu import MenuStrings
 from .title_screen import title_labels
 from .ui_assets import Rect, read_ui
 
@@ -53,14 +51,6 @@ class TitleRenderer:
         self.canvas.blit(pygame.transform.smoothscale(image, size),
                          (round(label.origin[0] + left * sx), round(label.origin[1] + top * sy)))
 
-    @lru_cache(maxsize=1)
-    def hint(self):
-        strings = MenuStrings.load(self.resources.library)
-        # 0007cbbc / 0007d4c8: font registry 11, zero content size,
-        # center/center alignment, GL position (180,25), white text.
-        font = self.text.font('ArialMT14')
-        return layout_label(font, strings[36], 0, 0, TextStyle(14, 8), 0x0a)
-
     def draw(self, target, session):
         details, motion = session.pending.details, session.engine.title_screen
         self.canvas.fill((0, 0, 0))
@@ -76,7 +66,7 @@ class TitleRenderer:
         self.draw_label(subtitle, motion.subtitle_scale_y)
         self.canvas.blit(self.art.frame(126, 47), (0, 431))
         draw_pause_gear(self.canvas, self.art)
-        self.text.draw_layout(self.canvas, 'ArialMT14', self.hint(), 180, 455)
+        self.text.draw_footer(self.canvas, 36, session.engine.text_history.initial('footer'))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return [(pygame.Rect(0, 422, 60, 58), ('menu',)),
                 (pygame.Rect(0, 0, 320, 480), ('continue',))]

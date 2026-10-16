@@ -68,7 +68,7 @@ class SpeakerLabel:
 
 
 def speaker_label(text: str, mode: int, theme: int, bank: LayoutBank, font_loader,
-                  states: dict[str, NameFontState]) -> SpeakerLabel:
+                  states: dict[str, NameFontState], *, previous_glyph=-1) -> SpeakerLabel:
     """Execute one native name layout, updating only the supplied font bank."""
     font_name = NAME_FONTS.get(theme, DEFAULT_FONT)
     font: BitmapFont = font_loader(font_name)
@@ -154,7 +154,8 @@ def speaker_label(text: str, mode: int, theme: int, bank: LayoutBank, font_loade
         else:
             state.width, state.height, scale = 580, h + 30, .6
 
-    laid_out = layout_label(font, text, state.width, state.height, state.style, flags)
+    laid_out = layout_label(font, text, state.width, state.height, state.style, flags,
+                           previous_glyph=previous_glyph)
     state.lines = len(laid_out.lines)
     # 000a8544 sets the node position before setString. Glyph coordinates from
     # layout_label are local to its bottom-left corner, with downward Y.
@@ -165,7 +166,7 @@ def speaker_label(text: str, mode: int, theme: int, bank: LayoutBank, font_loade
                         (state.width, state.height), flags)
 
 
-def preview_speaker(details, bank, font_loader, names: SpeakerNames | None = None):
+def preview_speaker(details, bank, font_loader, names: SpeakerNames | None = None, *, previous_glyph=-1):
     font_name = NAME_FONTS.get(details['theme'], DEFAULT_FONT)
     font = font_loader(font_name)
     if getattr(font, 'cap_height', None) is not None:
@@ -173,7 +174,7 @@ def preview_speaker(details, bank, font_loader, names: SpeakerNames | None = Non
                                      font_name, bank, font)
     basis = deepcopy(names.basis) if names is not None and names.basis is not None else {}
     return speaker_label(details['speaker'], details['presentation_mode'], details['theme'],
-                         bank, font_loader, basis)
+                         bank, font_loader, basis, previous_glyph=previous_glyph)
 
 
 def outline_speaker_label(text, mode, font_name, bank, font):
@@ -224,9 +225,10 @@ def fit_speaker_ink(label: SpeakerLabel, bounds: Rect):
     The native routine sizes line boxes using height 16, although the imported
     name glyphs can be taller than 30. Its retained gap can also put a later
     single-line name far above or below the header. Separate overlapping rows,
-    then fit both dimensions to the selected normal/tall header. Outline
-    fonts retain their native position unless ink exceeds that region or the
-    body/portrait boundary. This drawing correction never changes font history.
+    then fit both dimensions to the selected normal/tall header. Substitute
+    outline fonts retain their region origin unless ink exceeds these bounds;
+    original outline faces bypass this guard. This drawing correction never
+    changes font history.
     """
     layout = label.layout
     if not layout.glyphs:

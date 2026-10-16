@@ -20,7 +20,7 @@ system: `windows-x64`, `linux-x64`, `macos-arm64` (Apple Silicon), or
 `macos-x64` (Intel). Extract it and open the app inside. Keep the complete app
 or executable folder together. Python and the runtime dependencies are bundled.
 
-To make episodes, download `exp-runtime-creator-v0.6.0-<target>.zip` (or
+To make episodes, download `exp-runtime-creator-v0.6.1-<target>.zip` (or
 `.tar.gz` for Linux) and open **EXP Runtime Creator**. The Creator has separate
 downloads for the same four desktop targets. See [the creator guide](docs/CREATOR.md).
 
@@ -180,26 +180,26 @@ session/save system, common panels and launcher remain shared.
 
 ```sh
 # EXP readers, bytecode decoders and the inspect/extract CLI
-python -m pip install "exp-runtime[tools]>=0.6.0"
+python -m pip install "exp-runtime[tools]>=0.6.1"
 
 # Headless VM and engine without game adapters or a player UI
-python -m pip install "exp-runtime[engine]>=0.6.0"
+python -m pip install "exp-runtime[engine]>=0.6.1"
 
 # Headless engine with one game, for a custom player UI
-python -m pip install "exp-runtime[engine,shs]>=0.6.0"
-python -m pip install "exp-runtime[engine,cod]>=0.6.0"
+python -m pip install "exp-runtime[engine,shs]>=0.6.1"
+python -m pip install "exp-runtime[engine,cod]>=0.6.1"
 
 # Headless engine with both games
-python -m pip install "exp-runtime[engine,shs,cod]>=0.6.0"
+python -m pip install "exp-runtime[engine,shs,cod]>=0.6.1"
 
 # Full desktop player with both games
-python -m pip install "exp-runtime[player]>=0.6.0"
+python -m pip install "exp-runtime[player]>=0.6.1"
 
 # Visual episode creator with both games and player previews
-python -m pip install "exp-runtime[creator]>=0.6.0"
+python -m pip install "exp-runtime[creator]>=0.6.1"
 
 # Creator MCP server without Qt (combine with [creator] for live editing)
-python -m pip install "exp-runtime[creator-mcp]>=0.6.0"
+python -m pip install "exp-runtime[creator-mcp]>=0.6.1"
 ```
 
 The bare `exp-runtime` install supplies file tools; `[desktop]` is an alias

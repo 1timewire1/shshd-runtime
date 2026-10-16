@@ -5,8 +5,9 @@ from io import BytesIO
 from . import graphics as pygame
 
 from .content import ContentError
-from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE, NoticeMotion
+from .dialogue_notice import NOTICE_STYLE, NoticeMotion, notice_font
 from .fonts import TextStyle
+from .games import GAMES, game_id
 from .menu import MenuStrings
 from .ui_assets import ImagePack, Raster, UIAssetError, read_ui
 
@@ -24,7 +25,18 @@ class DialogueRenderer:
     def draw_background(self, target, engine):
         background = self.image(engine.panel.background_id)
         if background is not None:
-            target.blit(background, engine.background_pan.origin(*background.get_size()))
+            x, y = engine.background_pan.origin(*background.get_size())
+            scale = getattr(GAMES[engine.game_key], 'BACKGROUND_SCALE_X', {}).get(engine.panel.background_id, 1)
+            if scale != 1:
+                width = background.get_width()
+                background = self.scaled_background(engine.panel.background_id, scale)
+                x = round(x + (width - background.get_width()) / 2)
+            target.blit(background, (x, y))
+
+    @lru_cache(maxsize=8)
+    def scaled_background(self, asset_id, scale):
+        image = self.image(asset_id)
+        return pygame.transform.smoothscale(image, (round(image.get_width() * scale), image.get_height()))
 
     @lru_cache(maxsize=8)
     def pack(self, asset_id):
@@ -94,7 +106,7 @@ class DialogueRenderer:
             target.blit(pygame.transform.scale(image, size), position)
 
     @lru_cache(maxsize=32)
-    def portrait_group(self, portrait, clip=None, old=None, old_alpha=0, alpha=255):
+    def portrait_group(self, portrait, clip=None, old=None, old_alpha=0, alpha=255, effects=()):
         """The art and both rings are children of the native scaled node."""
         rings = [self.frame(126, index)
                  for index in (37, {1: 38, 2: 39}.get(portrait.theme, 40))]
@@ -110,6 +122,14 @@ class DialogueRenderer:
                                  (x + w - 10, y), (x + w, y + 10), (x + w, y + h)))
             rings[0] = housing
         pieces = [(ring, ring.get_rect(center=(0, 0))) for ring in rings]
+        for effect in effects:
+            image = self.frame(126, effect.frame)
+            if effect.rotation or effect.scale != 1:
+                image = pygame.transform.rotozoom(image, -effect.rotation, effect.scale)
+            else:
+                image = image.copy()
+            image.set_alpha(effect.alpha)
+            pieces.append((image, image.get_rect(center=(0, 0))))
         for art, opacity in ((old, old_alpha), (portrait, alpha)):
             if art is None or opacity <= 0:
                 continue
@@ -125,7 +145,7 @@ class DialogueRenderer:
             layer.blit(piece, rect.move(-bounds.x, -bounds.y))
         return layer, bounds.topleft
 
-    def draw_portrait(self, portrait, scale, *, box=None, old=None, alphas=(0, 255)):
+    def draw_portrait(self, portrait, scale, *, box=None, old=None, alphas=(0, 255), effects=()):
         if portrait is None or scale <= 0:
             return
         rect = self.resources.dialogue_layout().bank.rectangle(17, 0x30 if portrait.mode == 1 else 0x4e)
@@ -133,7 +153,7 @@ class DialogueRenderer:
         cy -= 5  # FUN_000aaa40 uses 485-y when converting to GL.
         clip = None if box is None else (box.x - 7 - cx, box.y - 7 - cy,
                                          box.width + 14, box.height + 34)
-        layer, (x, y) = self.portrait_group(portrait, clip, old, *alphas)
+        layer, (x, y) = self.portrait_group(portrait, clip, old, *alphas, effects)
         if scale != 1:
             size = max(1, round(layer.get_width() * scale)), max(1, round(layer.get_height() * scale))
             layer = pygame.transform.smoothscale(layer, size)
@@ -171,10 +191,12 @@ class DialogueRenderer:
         rect = self.resources.dialogue_layout().bank.rectangle(17, 0x30 if portrait.mode == 1 else 0x4e)
         x, y = motion.origin(rect, portrait.mode)
         # Native alignment 5 is top-left, with no automatic wrapping. Preserve
-        # the font's baked-in red lettering and white outline by using white RGB.
-        layout = self.text.layout(NOTICE_FONT, engine.notice, 2**31, NOTICE_STYLE)
+        # the game's lettering color and white outline by using white RGB.
+        font = notice_font(engine.game_key, engine.panel.theme)
+        layout = self.text.layout(font, engine.notice, 2**31, NOTICE_STYLE,
+                                  previous_glyph=engine.text_history.initial('dialogue_notice'))
         for index, glyph in enumerate(layout.glyphs):
-            image = self.text._glyph_image(NOTICE_FONT, glyph, motion.scale)
+            image = self.text._glyph_image(font, glyph, motion.scale)
             if motion.alpha < 255:
                 image = image.copy()
                 image.set_alpha(motion.alpha)
@@ -182,44 +204,30 @@ class DialogueRenderer:
                                      round(y + glyph.y * motion.scale - motion.glyph_rise(index))))
 
     @lru_cache(maxsize=4)
-    def continue_tab(self, theme):
+    def continue_tab(self, theme, previous_glyph=-1):
         # GameModel::setBubbleSex chooses the supplied skin's frames 3–6.
         tab = self.frame(126, {1: 5, 2: 3, 3: 6}.get(theme, 4)).copy()
         font = 'TrebuchetMS_Bold14'
         metrics = self.text.font(font)
         height = getattr(metrics, 'cap_height', 14)
-        label = self.text.layout(font, MenuStrings.load(self.resources)[29], tab.get_width(), TextStyle(height))
+        label = self.text.layout(font, MenuStrings.load(self.resources)[29], tab.get_width(), TextStyle(height),
+                                 previous_glyph=previous_glyph)
         left, top, right, bottom = label.ink_bounds
         self.text.draw_layout(tab, font, label, (tab.get_width() - right - left) / 2,
                               (tab.get_height() - bottom - top) / 2)
         return tab
 
-    def draw_continue(self, box, theme, motion):
+    def draw_continue(self, box, theme, motion, *, previous_glyph=-1):
         scale = motion.continue_scale
         if scale <= 0:
             return
-        tab = self.continue_tab(theme)
+        tab = self.continue_tab(theme, previous_glyph)
         width, height = tab.get_size()
         if scale < 1:
             tab = pygame.transform.smoothscale(tab, (width, max(1, round(height * scale))))
         # expandContinue: center = (bubble.width - 49.5, bubble.height + 8.5).
         self.canvas.blit(tab, (box.x + box.width - width,
                                box.y + box.height + round((height - tab.get_height()) / 2)))
-
-    @lru_cache(maxsize=1)
-    def footer_hint(self):
-        # GameModel::init / layout 18 node 2: ArialMT 11, white alpha 0xb0,
-        # centered in the 252x18 tooltip region below the story panel.
-        strings = MenuStrings.load(getattr(self.resources, 'library', self.resources))
-        name = 'ArialMT11'
-        label = self.text.layout(name, strings[36], 252, TextStyle(11, 0))
-        layer = pygame.Surface((252, 18), pygame.SRCALPHA).convert_alpha()
-        left, top, right, bottom = label.ink_bounds
-        self.text.draw_layout(layer, name, label,
-                              (252 - (right - left)) / 2 - left,
-                              (18 - (bottom - top)) / 2 - top)
-        layer.set_alpha(176)
-        return layer
 
     def draw(self, target, session):
         details = session.pending.details
@@ -253,19 +261,24 @@ class DialogueRenderer:
                 origin = self.resources.dialogue_layout().bank.rectangle(17, 0x30 if motion.anchor_mode == 1 else 0x4e)
             self.box(self.canvas, motion.box_rect(page.box, origin), details['theme'], alpha=motion.box_alpha)
         self.draw_portrait(motion.previous, motion.previous_scale)
-        self.draw_portrait(motion.portrait, motion.portrait_scale,
+        library = getattr(self.resources, 'library', self.resources)
+        effects = motion.expression_decorations.poses(
+            game=game_id(self.resources), ios=getattr(library, 'kind', 'apk') == 'ipa')
+        old, portrait = motion.expression_portraits
+        self.draw_portrait(portrait, motion.portrait_scale,
                            box=page.box if motion.housing_clipped else None,
-                           old=motion.initial_portrait, alphas=motion.expression_alphas)
+                           old=old, alphas=motion.expression_alphas, effects=effects)
         self.draw_relationship(motion)
         self.draw_notice(session.engine)
         self.text.draw_layout(self.canvas, page.body_font, page.body, *page.body_origin,
                               source_end=motion.revealed)
         self.name_layer.set_alpha(motion.name_alpha)
         self.canvas.blit(self.name_layer, (0, 0))
-        self.draw_continue(page.box, details['theme'], motion)
+        self.draw_continue(page.box, details['theme'], motion,
+                           previous_glyph=session.engine.text_history.initial('dialogue_continue'))
         # Layout 18's footer and its original instruction, separate from the
         # animated Continue tab attached to the dialogue box.
         self.canvas.blit(self.frame(126, 47), (0, 431))
-        self.canvas.blit(self.footer_hint(), (63, 459))
+        self.text.draw_footer(self.canvas, 36, session.engine.text_history.initial('footer'))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return page

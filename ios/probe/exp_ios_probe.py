@@ -161,7 +161,7 @@ def drawing_fixture():
     """Asymmetric authored pixels catch flipped images, crop and alpha errors."""
     from PIL import Image
     from exp_runtime.platforms.drawing import Draw, FrameEncoder, Surface, Transform, raster, SRCALPHA
-    target = Surface((320, 276))
+    target = Surface((320, 400))
     target.fill((10, 20, 30))
     tile = Surface.from_pixels(Image.new('RGBA', (4, 6), (240, 10, 20, 255)))
     tile.fill((10, 230, 20), (0, 0, 4, 2))
@@ -235,14 +235,273 @@ def drawing_fixture():
     art.frame = lambda _, index: housing if index == 37 else ring
     art.portrait = lambda asset, _: old if asset == 100 else new
     portrait, initial = DialoguePortrait(0, 101, 1, 1), DialoguePortrait(0, 100, 1, 1)
-    motion = DialogueAnimation(20, portrait=portrait, initial_portrait=initial)
+    motion = DialogueAnimation(20, portrait=portrait, initial_portrait=initial, expression=1)
     for column, elapsed in enumerate((1000, 1500, 1600, 2000, 2400)):
         motion.tick(elapsed - motion.presentation_ms)
         layer, _ = art.portrait_group(portrait, (-30, 0, 60, 35), initial, *motion.expression_alphas)
         target.blit(layer, (column * 64, 214))
         points.extend((column * 64 + x, 214 + y) for x, y in ((1, 31), (1, 42), (20, 42), (27, 42), (30, 42)))
+    # Intersecting grid faces require per-pixel depth, including clipped and
+    # transparent texels. Exercise the same command on CoreGraphics.
+    from exp_runtime.projection import draw_depth_quads
+    from exp_runtime.desktop_pause import SEPIA
+    red, blue = Surface((4, 4)), Surface((4, 4))
+    red.fill((255, 0, 0)); blue.fill((0, 0, 255))
+    near = ((2, 280, -2), (30, 280, -4), (30, 310, -4), (2, 310, -2))
+    far = ((2, 280, -4), (30, 280, -2), (30, 310, -2), (2, 310, -4))
+    target.set_clip((4, 282, 24, 26))
+    draw_depth_quads(target, [(red, near), (blue, far)])
+    target.set_clip(None)
+    points.extend(((6, 295), (25, 295), (3, 295), (28, 295)))
+    colors = Surface.from_pixels(Image.frombytes('RGB', (5, 1),
+        bytes((255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 17, 38, 79))).convert('RGBA'))
+    target.blit(graphics.color_matrix(colors, SEPIA), (40, 285))
+    points.extend((x, 285) for x in range(40, 45))
+    # Consecutive same-speaker lines retain the two art layers while the
+    # next one-second expression request is pending. Pause settles them.
+    third = new.copy(); third.fill((200, 0, 200))
+    art.portrait = lambda asset, _: {100: old, 101: new, 102: third}[asset]
+    details = dict(text='Hello.', page_start=0, visible_character_id=0,
+                   presentation_mode=1, theme=1, expression=1, initial_expression=0)
+    variants = {0: [100, 101, 102]}
+    motion = DialogueAnimation.start(details, variants)
+    motion.tick(1500)
+    expected_colors = ((100, 100, 100), (200, 200, 0), (200, 200, 0), (200, 100, 100), (200, 0, 200))
+    for column in range(5):
+        if column == 1:
+            motion = DialogueAnimation.start(dict(details, expression=2, initial_expression=1), variants, motion)
+            motion.tick(200)
+        elif column in (2, 3):
+            motion.tick(900 if column == 2 else 400)
+        elif column == 4:
+            motion.stop_layers()
+        initial, portrait = motion.expression_portraits
+        layer, _ = art.portrait_group(portrait, (-30, 0, 60, 35), initial, *motion.expression_alphas)
+        actual = raster(layer.snapshot()).getpixel((30, 42))[:3]
+        assert all(abs(a - b) <= 1 for a, b in zip(actual, expected_colors[column])), actual
+        target.blit(layer, (column * 64, 330))
+        points.extend((column * 64 + x, 330 + y) for x, y in ((27, 42), (30, 42)))
     expected = raster(target.snapshot())
     return dict(frame=FrameEncoder().encode(target), samples=[dict(at=p, rgba=expected.getpixel(p)) for p in points])
+
+
+def _authored_vibration():
+    """Two nonblocking service-82 requests followed by ordinary script exit."""
+    return decode_program(b'kiwi\x02\0\0' + struct.pack('>4H', 0, 0, 0, 3)
+                          + b'\x1f\x52\x00\x1f\x52\x00\x33')
+
+
+def _authored_stat_sound(cue):
+    """A choice, script sound, numeric change and notice in the same VM turn."""
+    text, refs = bytearray(), []
+    for value in ('Choose', 'Continue', 'Sound check', 'Stat Up', 'Well done.'):
+        refs.append(len(text) // 2)
+        text.extend(value.encode('ascii') + b'\0')
+        if len(text) % 2:
+            text.append(0)
+    calls = ((1, (*refs[:3], 0, 0, -1, -1, 1)), (79, (cue,)),
+             (44, (3017, 1)), (88, (refs[3],)), (13, (refs[4], 0)))
+    code, count = bytearray(), 1
+    for service, args in calls:
+        for arg in args:
+            code.extend(b'\x1a' + struct.pack('>H', arg & 0xffff))
+        code.extend(b'\x1f' + struct.pack('>H', service << 8 | len(args)))
+        count += len(args) + 1
+    code.append(0x33)
+    return decode_program(b'kiwi\x02\0\0' + struct.pack('>4H', len(text) // 2, 0, 0, count)
+                          + text + code)
+
+
+def stat_sound_steps(host):
+    """Exercise the script-to-native effect path with the supplied sound bank."""
+    from exp_runtime.desktop import Desktop
+    from exp_runtime.games import GAMES
+    app, original = host.app, host.app.game
+    cue = 8007 if app.library.game_id == 'shs' else 8002
+    resources = app.library.open_episode(app.selected)
+    resources.programs[25001] = _authored_stat_sound(cue)
+    ui = Desktop(Session(resources), audio=True, window=app.window)
+    try:
+        app.game = ui
+        ui.tick(250)
+        ui.command(('choose', 0))
+        ui.render()
+        assert ui.error is None, ui.error
+        assert ui.session.engine.notice == 'Stat Up'
+        assert ui.session.engine.sound_ids == [GAMES[app.library.game_id].CLICK_SOUND, cue]
+        assert [asset for asset, _ in ui.sound_players] == ui.session.engine.sound_ids
+        # The host checks that the last effect really started in AVAudioPlayer,
+        # after decoding these original bytes, rather than only inspecting JSON.
+        yield f'{app.library.game_id}: choice click and scripted stat-increase sound'
+    finally:
+        ui._stop_sounds()
+        app.game = original
+        original.music_token = None
+
+
+def loading_steps(host):
+    """Render the supplied runner art at its source's native frame cadence."""
+    from exp_runtime.desktop import Desktop
+    from exp_runtime.platforms.drawing import raster
+    app, original = host.app, host.app.game
+    # CoD's native runner has the same iOS timing, but its service-91
+    # script contract remains an explicit unsupported stop.
+    if app.library.game_id != 'shs':
+        return
+    resources = app.library.open_episode(app.selected)
+    resources.programs[25001] = decode_program(
+        b'kiwi\x02\0\0' + struct.pack('>4H', 0, 0, 0, 3)
+        + b'\x1a\0\x01\x1f\x5b\x01\x33')
+    try:
+        app.game = ui = Desktop(Session(resources), audio=False, window=app.window)
+        frame_ms = 70 if app.library.kind == 'ipa' else 500
+        frozen, frames = ui.session.vm.snapshot(), []
+        for index in range(6):
+            ui.tick(frame_ms if index else 0)
+            saved = ui.session.snapshot()
+            ui.session = Session.from_snapshot(resources, saved)
+            ui.render()
+            assert ui.error is None, ui.error
+            assert ui.session.snapshot() == saved
+            assert ui.session.vm.snapshot() == frozen
+            frames.append(raster(ui.loading_renderer.canvas.snapshot()).tobytes())
+        assert len(set(frames[:5])) == 5 and frames[5] == frames[0]
+        ui.tick(3000 - ui.session.engine.loading.elapsed_ms)
+        assert ui.session.pending.name == 'loading' and ui.session.vm.snapshot() == frozen
+        ui.tick(1)
+        assert ui.session.pending.name == 'finished' and ui.session.engine.loading is None
+        ui.session = Session.from_snapshot(resources, saved)
+        yield f'shs: {app.library.kind} loading runner at {frame_ms} ms per frame, save/restore and separate wait'
+    finally:
+        app.game = original
+
+
+def _authored_answer_input():
+    """A text puzzle using exact service-24 equality and CoD feedback cues."""
+    text, refs = bytearray(), []
+    for value in ('Answer', 'Enter the code', 'Guess', 'Cedar'):
+        refs.append(len(text) // 2)
+        text.extend(value.encode('ascii') + b'\0')
+        if len(text) % 2:
+            text.append(0)
+    instructions = [(0x1a, ref) for ref in refs[:3]] + [(0x1f, 0x2803)]
+    instructions += [(0x1a, 0x7ff5), (0x1a, refs[3]), (0x1f, 0x1802),
+                     (0x21, None), (0x2b, 4), (0x1a, 8002), (0x1f, 0x4f01), (0x33, None),
+                     (0x1a, 8001), (0x1f, 0x4f01), (0x33, None)]
+    code = bytearray()
+    for opcode, operand in instructions:
+        code.append(opcode)
+        if operand is not None:
+            code.extend(struct.pack('>H', operand))
+    return decode_program(b'kiwi\x02\0\0' + struct.pack('>4H', len(text) // 2, 0, 0, len(instructions))
+                          + text + code)
+
+
+def portrait_expression_steps(host):
+    """Use authored dialogue with a supplied character through the real host."""
+    from copy import deepcopy
+    from exp_runtime.desktop import Desktop
+    app, original = host.app, host.app.game
+    source = original.session.engine
+    character = next(key for key, art in source.character_art_variants.items()
+                     if key > 0 and len(art) >= 5 and all(asset >= 0 for asset in art)
+                     and source.dialogue_presentation(key, 2)[0] in (1, 2))
+    text = b'Hello.\0\0'
+    code = b''.join(b'\x1a\0\0\x1a' + struct.pack('>H', character)
+                    + b'\x1a' + struct.pack('>H', expression) + b'\x1f\x0d\x03'
+                    for expression in (2, 6)) + b'\x33'
+    resources = app.library.open_episode(app.selected)
+    resources.programs[25001] = decode_program(
+        b'kiwi\x02\0\0' + struct.pack('>4H', 4, 0, 0, 9) + text + code)
+    session = Session(resources)
+    for field in ('character_art_variants', 'character_names', 'numbers', 'ui_defaults'):
+        setattr(session.engine, field, deepcopy(getattr(source, field)))
+    try:
+        app.game = ui = Desktop(session, audio=False, window=app.window)
+        ui.tick(1500); ui.render()
+        assert ui.error is None, ui.error
+        previous = session.engine.dialogue_animation
+        session.answer()
+        motion = session.engine.dialogue_animation
+        assert not motion.changed and motion.expression_alphas == (255, 128)
+        assert motion.expression_portraits == previous.expression_portraits
+        ui.render()
+        assert ui.error is None, ui.error
+        yield f'{app.library.game_id}: expression fade retained across consecutive dialogue lines'
+        ui.session = session = Session.from_snapshot(resources, session.snapshot())
+        # The host presents each yielded frame with a 50 ms active tick.
+        ui.tick(1750 - session.engine.dialogue_animation.presentation_ms); ui.render()
+        assert ui.error is None, ui.error
+        motion = session.engine.dialogue_animation
+        ios = app.library.kind == 'ipa'
+        poses = motion.expression_decorations.poses(game=app.library.game_id, ios=ios)
+        assert [pose.frame for pose in poses] == [32, 33]
+        assert poses[-1].alpha == (255 if ios else 21)
+        yield f'{app.library.game_id}: saved expression transition and native overlay/flash timing'
+        ui.command(('menu',)); ui.render()
+        assert ui.error is None, ui.error
+        if ios:
+            assert motion.expression_alphas == (0, 255)
+            assert not motion.expression_decorations.poses(game=app.library.game_id, ios=True)
+        before = session.snapshot()
+        ui.tick(400)
+        assert session.snapshot() == before
+        yield f'{app.library.game_id}: pause capture settles IPA expression layers and freezes story clocks'
+    finally:
+        app.game = original
+
+
+def dialogue_typography_steps(host):
+    """Exercise mixed fonts and original-size names through the iOS renderer."""
+    from copy import deepcopy
+    from exp_runtime.desktop import Desktop
+    from exp_runtime.dialogue import EMPHASIS_FONT
+    from exp_runtime.speaker_names import outline_speaker_label
+    app, original = host.app, host.app.game
+    if app.library.kind != 'ipa':
+        return
+    source = original.session.engine
+    character = next(key for key, art in source.character_art_variants.items()
+                     if key > 0 and len(art) >= 5 and all(asset >= 0 for asset in art)
+                     and source.dialogue_presentation(key, 0)[0] in (1, 2))
+    value = 'Read the `important words; then continue` with this paragraph. ' * 12
+    text = value.encode('ascii') + b'\0'
+    text += b'\0' * (len(text) % 2)
+    code = b'\x1a\0\0\x1a' + struct.pack('>H', character) + b'\x1f\x0d\x02\x33'
+    resources = app.library.open_episode(app.selected)
+    resources.programs[25001] = decode_program(
+        b'kiwi\x02\0\0' + struct.pack('>4H', len(text) // 2, 0, 0, 4) + text + code)
+    try:
+        for name in ('Jo', 'Inspector Avery Stone'):
+            session = Session(resources)
+            for field in ('character_art_variants', 'character_names', 'numbers', 'ui_defaults'):
+                setattr(session.engine, field, deepcopy(getattr(source, field)))
+            session.engine.character_names[character] = name
+            app.game = ui = Desktop(session, audio=False, window=app.window)
+            ui.tick(10000); ui.render()
+            assert ui.error is None, ui.error
+            layout, page = resources.dialogue_layout(), session.dialogue_page()
+            mode = session.pending.details['presentation_mode']
+            face = layout.font(page.name_font)
+            assert face.native_face and page.name_scale == 1
+            expected = outline_speaker_label(name, mode, page.name_font, layout.bank, face)
+            assert (page.name, page.name_origin) == (expected.layout, expected.origin)
+            assert any(g.font == EMPHASIS_FONT for g in page.body.glyphs)
+            assert any(g.glyph.code == ord(';') for g in page.body.glyphs)
+            assert EMPHASIS_FONT in ui.story_text.fonts  # The alternate atlas was actually drawn.
+            base = layout.font(page.body_font)
+            for glyph in page.body.glyphs:
+                row = next(line for line in page.body.lines if line.start <= glyph.index < line.end)
+                actual = glyph.y - glyph.glyph.yoffset + layout.font(glyph.font or page.body_font).line_height
+                assert abs(actual - row.y - base.cap_height) < .0001
+            saved = session.snapshot()
+            ui.session = Session.from_snapshot(resources, saved)
+            ui.render()
+            assert ui.error is None and ui.session.snapshot() == saved, ui.error
+            assert ui.session.dialogue_page() == page
+            yield f'{app.library.game_id}: native {"short" if name == "Jo" else "wrapped"} name, italic dialogue and saved page'
+    finally:
+        app.game = original
 
 
 def _authored_football():
@@ -277,6 +536,63 @@ def _authored_word_game(grid=False):
     code += b'\x1f' + struct.pack('>H', (96 if grid else 71) << 8 | len(args)) + b'\x33'
     return decode_program(b'kiwi\x02\0\0' + struct.pack('>4H', len(words), 0, 0, len(args) + 2)
                           + struct.pack(f'>{len(words)}H', *(w & 0xffff for w in words)) + code)
+
+
+def minigame_skip_steps(host):
+    """Authored calls through the shared prompt, UIKit input and native skin."""
+    from exp_runtime.desktop import Desktop, MINIGAME_OPTIONS
+    from exp_runtime.menu import MenuState
+    app, original = host.app, host.app.game
+    assert app.state.minigame_skips and MenuState(app.library).minigame_skips
+    games = [('word_game', _authored_word_game)]
+    if app.library.game_id == 'shs':
+        games += [('word_grid', lambda: _authored_word_game(True)), ('football', _authored_football)]
+    try:
+        for kind, factory in games:
+            resources = app.library.open_episode(app.selected)
+            resources.programs[25001] = factory()
+            for success in (False, True, None):
+                app.game = Desktop(Session(resources), audio=False, window=app.window, minigame_skips=True)
+                ui, session = app.game, app.game.session
+                assert ui.minigame_prompt and session.pending.name == kind
+                frozen = session.snapshot()
+                ui.tick(30000)
+                assert session.snapshot() == frozen
+                ui.render()
+                assert ui.error is None, ui.error
+                assert [command for _, command in ui.buttons] == [command for _, command in MINIGAME_OPTIONS] + [('menu',)]
+                regions = [rect for rect, _ in ui.buttons]
+                assert all(not a.colliderect(b) for i, a in enumerate(regions) for b in regions[i + 1:])
+                command = ('minigame_play',) if success is None else ('minigame_skip', success)
+                rect = next(rect for rect, item in ui.buttons if item == command)
+                stamp = host._input_stamp()
+                host._event(dict(kind='down', point=rect.center))
+                ui.render()
+                assert ui.press.pressed == command and session.snapshot() == frozen
+                if success is None:
+                    yield f'{app.library.game_id}: {kind} three-option entry prompt, held row and frozen timer'
+                host._event(dict(kind='up', point=rect.center))
+                assert not ui.minigame_prompt and host._input_stamp() != stamp
+                if success is None:
+                    ui.session = session = Session.from_snapshot(resources, session.snapshot())
+                    assert not ui.minigame_prompt
+                    ui.tick(10)
+                    assert getattr(session.engine, kind) is not None
+                    ui.command(('menu',)); ui.tick(400); ui.render()
+                    assert ui.error is None, ui.error
+                    assert all(option in [cmd for _, cmd in ui.buttons] for _, option in MINIGAME_OPTIONS[:2])
+                    rect = next(rect for rect, item in ui.buttons if item == ('minigame_skip', False))
+                    host._event(dict(kind='down', point=rect.center))
+                    host._event(dict(kind='up', point=rect.center))
+                    assert not ui.menu_open
+                assert session.pending.name == 'finished'
+                assert (session.vm.result > 0) == bool(success)
+                if kind == 'football':
+                    assert session.vm.result == session.engine.football_scores[0] - session.engine.football_scores[1]
+            app.game = original
+            yield f'{app.library.game_id}: {kind} success/failure callbacks, saved Play choice and later pause-menu skip'
+    finally:
+        app.game = original
 
 
 def audio_fixture():
@@ -355,6 +671,15 @@ def presentation_steps(host):
     cod_font, cod_atlas = render_font(cod, 'PajamaHip26')
     assert cod_font.cap_height > 0 and cod_atlas.getbbox()
     yield 'Native original-font lookup, fallback, glyph atlas and metrics'
+    from exp_runtime.dialogue_notice import notice_font
+    for library in (fake, cod):
+        for theme in (1, 2, 3, -1):
+            color = (254, 53, 0) if library.game_id == 'shs' else {
+                1: (240, 81, 60), 2: (180, 78, 78)}.get(theme, (0, 0, 0))
+            _, atlas = render_font(library, notice_font(library.game_id, theme))
+            colors = {rgba for _, rgba in atlas.getcolors(atlas.width * atlas.height)}
+            assert (*color, 255) in colors and (255, 255, 255, 255) in colors
+    yield 'Native SHS/CoD notice palettes and white outlines for every dialogue theme'
     config = host.directory / 'ios-playback-input.json'
     if config.is_file():
         for index, item in enumerate(json.loads(config.read_text())):
@@ -391,7 +716,7 @@ def presentation_steps(host):
             assert app.update_prompt is None and app.screen == 'main'
             yield f"{item['game']}: update acceptance opens only the release page"
             app.command(('help',))
-            app.tick(200)  # Finish the native input-gated menu transition.
+            app.tick(1550 if app.library.kind == 'apk' else 400)
             app.render()
             assert ('project',) in [command for _, command in app.buttons], 'Help/About has no project link'
             app.command(('project',))
@@ -435,6 +760,7 @@ def presentation_steps(host):
                 yield None
             assert app.game.error is None, app.game.error
             # Background checkpoints and manual slots use exactly MenuState/Session.
+            app.game.capture_audio()
             before = app.game.session.snapshot()
             host.active(False)
             assert app.state.resume_path(app.selected).is_file()
@@ -482,9 +808,36 @@ def presentation_steps(host):
             click = base64.b64encode(app.library.read_asset(profile.CLICK_SOUND)).decode('ascii')
             assert dict(kind='sound', data=click) in host.backend.mixer.commands
             yield f"{item['game']}: pause Options action and native menu click"
+            if host.backend.vibration_available:
+                from exp_runtime.desktop import Desktop
+                from exp_runtime.menu import MenuState
+                app.tick(400)
+                app.render()
+                assert ('toggle', 'vibration') in [command for _, command in app.buttons]
+                regions = [rect for rect, _ in app.buttons]
+                assert all(not a.colliderect(b) for i, a in enumerate(regions) for b in regions[i + 1:])
+                app.command(('toggle', 'vibration'))
+                assert not app.state.vibration and not MenuState(app.library).vibration
+                resources = app.library.open_episode(app.selected)
+                resources.programs[25001] = _authored_vibration()
+                Desktop(Session(resources), audio=False, window=app.window, vibration_enabled=False)
+                assert host.backend.vibrations == 0, 'Disabled vibration reached the native host'
+                app.command(('toggle', 'vibration'))
+                assert app.state.vibration and MenuState(app.library).vibration
+                assert host.backend.vibrations == 1, 'Enabling vibration did not preview the native alert'
+                diagnostic = Desktop(Session(resources), audio=False, window=app.window)
+                assert host.backend.vibrations == 3, 'Muted audio swallowed script vibration requests'
+                Desktop(Session.from_snapshot(resources, diagnostic.session.snapshot()),
+                        audio=False, window=app.window)
+                assert host.backend.vibrations == 3, 'Loading a save replayed old vibration requests'
+                yield f"{item['game']}: vibration preference, native requests independent of audio, and no save replay"
             app.command(('cheats',)); app.command(('toggle', 'choice_hints'))
             assert app.game.choice_hints
+            app.command(('toggle', 'minigame_skips'))
+            assert app.game.minigame_skips
             app.tick(2000)
+            app.render()
+            assert ('toggle', 'minigame_skips') in [command for _, command in app.buttons]
             assert app.game.session.snapshot() == frozen
             app.back()
             app.command(('save',))
@@ -494,6 +847,49 @@ def presentation_steps(host):
             assert app.screen == 'game'
             assert app.game.session.snapshot() == saved
             yield f"{item['game']}: native pause menu, choice hint setting, frozen clocks and manual save/load"
+            yield from stat_sound_steps(host)
+            yield from loading_steps(host)
+            yield from portrait_expression_steps(host)
+            yield from dialogue_typography_steps(host)
+            yield from minigame_skip_steps(host)
+            app.command(('toggle', 'minigame_skips'))
+            assert not app.game.minigame_skips
+            if item['game'] == 'cod':
+                from exp_runtime.desktop import Desktop
+                original = app.game
+                resources = app.library.open_episode(app.selected)
+                resources.programs[25001] = _authored_answer_input()
+                app.game = Desktop(Session(resources), audio=False, window=app.window)
+                app.game.choice_hints = True
+                app.game.render()
+                session = app.game.session
+                assert session.pending.details['draft'] == 'Guess'
+                assert app.game.input_renderer.hint is None
+                for _ in 'Guess':
+                    host._event(dict(kind='key', key='backspace'))
+                frozen = session.snapshot()
+                app.game.render()
+                assert app.game.error is None, app.game.error
+                assert app.game.input_renderer.hint == 'Cedar'
+                assert session.snapshot() == frozen
+                faint = raster(app.game.input_renderer.canvas.snapshot()).tobytes()
+                app.game.choice_hints = False
+                app.game.render()
+                assert raster(app.game.input_renderer.canvas.snapshot()).tobytes() != faint
+                app.game.choice_hints = True
+                host._event(dict(kind='key', key='return'))
+                assert session.pending.name == 'text_input' and session.engine.last_input == ''
+                app.game.command(('input_focus',))
+                host._event(dict(kind='text', text='Cedar'))
+                app.game.render()
+                typed = raster(app.game.input_renderer.canvas.snapshot()).tobytes()
+                app.game.choice_hints = False
+                app.game.render()
+                assert raster(app.game.input_renderer.canvas.snapshot()).tobytes() == typed
+                host._event(dict(kind='key', key='return'))
+                assert session.pending.name == 'finished' and session.engine.last_input == 'Cedar'
+                yield 'cod: faint answer hints only in empty fields, native typing and explicit submission'
+                app.game = original
             if item['game'] == 'shs':
                 from exp_runtime.desktop import Desktop
                 original = app.game
@@ -519,6 +915,11 @@ def presentation_steps(host):
                 session = app.game.session
                 for _ in range(400):
                     action = session.pending
+                    if action.name == 'choice' and not session.choice_ready:
+                        # Follow the real attachment gate, then re-read the
+                        # pending action in case a short timer expired.
+                        session.tick(250)
+                        continue
                     if session.scene == 25004 and action.name == 'choice' and action.request.pc == 300:
                         break
                     if action.name == 'choice':
@@ -548,6 +949,13 @@ def presentation_steps(host):
                 assert [hint.kind for hint in app.game.choice_renderer.hints] == expected
                 assert expected.count('gain') == 1 and session.snapshot() == before
                 yield 'shs: original classroom quiz hints with shuffled answers and untouched state'
+                page = app.game.choice_renderer.page(session)
+                assert app.game.scroll == app.game.max_scroll == page.max_scroll == 0
+                assert page.text_scale == 1 and page.box.y + page.box.height <= 421
+                assert [command[1] for _, command in app.game.buttons if command[0] == 'choose'] == [
+                    i for i, on in enumerate(session.pending.details['enabled']) if on]
+                assert all(row.rect.y + row.rect.height <= page.timer_panel.y for row in page.rows)
+                yield 'shs: classroom quiz keeps every answer and timer visible without scrolling or shrinking'
                 resources = app.library.open_episode(app.selected)
                 resources.programs[25001] = _authored_football()
                 app.game = Desktop(Session(resources), audio=False, window=app.window)
@@ -588,7 +996,9 @@ def presentation_steps(host):
                         path = game.find_path(game.starts[0], game.problem.words[0])
                         for index, cell in enumerate(path):
                             session.grid_pointer('move' if index else 'down', cell)
-                        assert game.explosions and game.pop_ms
+                        assert game.explosions, 'Selected grid tiles did not create fragments'
+                        assert game.tiles and any(tile.growing and not tile.shrinking for tile in game.tiles), \
+                            'Selected grid tiles did not start their native growth animation'
                         session.tick(100)
                         saved = session.snapshot()
                         assert Session.from_snapshot(resources, saved).snapshot() == saved

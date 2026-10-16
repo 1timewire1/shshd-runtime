@@ -8,6 +8,11 @@ NOTICE_FONT = 'PajamaHipS26'
 NOTICE_STYLE = TextStyle(16, 5)
 
 
+def notice_font(game: str, theme: int) -> str:
+    from .games import GAMES
+    return GAMES[game].NOTICE_FONTS.get(theme, NOTICE_FONT)
+
+
 def notice_lifetime(text: str) -> int:
     # 0009c814 starts at .03 seconds and increments after every source byte,
     # including spaces. The exit callback then runs a 300 ms fade and move.

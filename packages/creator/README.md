@@ -9,11 +9,11 @@ Android, SHS iOS and CoD iOS; full original-app playback remains unverified.
 Install the desktop editor with pip, then launch it:
 
 ```sh
-python -m pip install 'exp-runtime-creator[desktop]>=0.6.0'
+python -m pip install 'exp-runtime-creator[desktop]>=0.6.1'
 exp-creator
 ```
 
-Standalone Creator downloads are also included in the v0.6.0 GitHub release
+Standalone Creator downloads are also included in the v0.6.1 GitHub release
 for Windows, Linux and macOS (Apple Silicon and Intel).
 
 The Python authoring API needs only `exp-runtime-formats`. The `desktop` extra
@@ -23,7 +23,7 @@ Preview uses an imported game library and temporary saves. The independent
 rendering/audio previews. It includes pygame but does not install Qt.
 Run `exp-creator-mcp --workspace /path/to/stories`.
 
-Install both extras with `python -m pip install 'exp-runtime-creator[desktop,mcp]>=0.6.0'`
+Install both extras with `python -m pip install 'exp-runtime-creator[desktop,mcp]>=0.6.1'`
 to use the editor and MCP server together.
 
 Open a saved workspace project in the desktop creator to share live edits with

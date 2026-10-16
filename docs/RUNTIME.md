@@ -347,15 +347,19 @@ while data and PC/SP/FP reset according to the core VM contract.
 <a id="runtime-save-schema-version-15"></a>
 <a id="runtime-save-schema-version-17"></a>
 <a id="runtime-save-schema-version-18"></a>
+<a id="runtime-save-schema-version-23"></a>
 
-## Runtime save schema, version 21
+<a id="runtime-save-schema-version-24"></a>
+<a id="runtime-save-schema-version-25"></a>
+
+## Runtime save schema, version 26
 
 This is a new format for the reimplementation. No pickle, object deserialization,
 or original executable code is used. JSON fields are:
 
 | Field | Contract |
 | --- | --- |
-| `format`, `version` | `"exp-runtime-save"`, `21` |
+| `format`, `version` | `"exp-runtime-save"`, `26` |
 | `content` | `profile`, `apk_sha256`, `episode_sha256`; must exactly match loaded content |
 | `scene` | Unsigned current script resource ID |
 | `script_sha256` | Hash of the losslessly encoded current program |
@@ -431,6 +435,119 @@ Versions 1–20 remain readable: their current expression stays visible, their
 old shake/box timing continues, and no new fade or clipping is replayed. The
 next dialogue uses the new lifecycle. Older runtimes cannot read version 21.
 
+Version 22 adds:
+
+- `engine.music_serial:int >= 0` and `music_stop_ms:int[0..32767]` for repeated
+  music requests and CoD's requested stop duration. Optional `music_playback`
+  records the host's actual `asset`, boolean `repeat`, `position_ms >= 0`,
+  `fade_ms`, `fade_total` and boolean `finished`. The fade has
+  `0 <= fade_ms <= fade_total <= 32767`; a zero remaining fade has zero total.
+  Host save/checkpoint operations capture it; a new script cue invalidates
+  stale captured playback. Headless and older saves leave it null.
+- `engine.sound_playback` lists active effects as `{asset, position_ms}` with
+  `asset:int[0..32767]` and nonnegative integer position. Host checkpoints
+  capture their playheads; headless and older saves use an empty list. IPA
+  pause/menu handoffs retain the snapshot taken before the outgoing fade,
+  including effects, with the native whole-second truncation, until audio is
+  restored. Backend handles and menu clicks
+  never enter the save. Restoring effects does not repeat VM calls.
+- `dialogue_animation.expression_effects:bool` and an extended
+  `presentation_ms:int[0..3150]` clock for expression 6–9 decorations. Poses
+  are derived from the existing portrait identity and expression request.
+- Grid `score_effects` (value, first-tile X/Y, 1–400 ms remaining),
+  `score_pending`, `score_phase` (0/1/2), `score_target` and `display_score`.
+  Score flights, pending points and target sum to the committed game score;
+  the script callback does not wait for the displayed counter to catch up.
+- Grid `highlight_offsets` maps cell indices to shuffled 0–2999 ms countdown
+  offsets. A departing board retains its offsets and round clock. Null means
+  an old save has no offset history; it stays fully bright until the next
+  board is committed, without inventing historical random draws.
+- Grid `tiles` retains each cube's flip, growth/shrink and shine countdowns,
+  delays and active flags. Null retains legacy elapsed-time rendering until
+  the next board setup. `transition.deferred` distinguishes a pending native
+  board generation from an older save that already generated its next board.
+- Both adapters' `scene_transition` retain `selector`, `phase` (0 idle, 4 out,
+  1 waiting for the next UI, 3 in) and the deferred signed-word `result`.
+  CoD also stores `elapsed_ms` and its separate libc `random_state`; SHS's
+  nonvisual boundary uses successive ticks. Restoring checks the phase and retained
+  result against the pending VM/UI; [CoD](COD.md#scene-transitions) describes
+  durations, callback order and remaining limits.
+- Football `touchdown_stars`, up to 50 finite position/velocity, angle/spin,
+  delay and opacity/fade records. Creation consumes 450 engine RNG draws;
+  ticking and drawing consume none.
+- Football `shadow_ms` holds nine retained 440 ms animation clocks, using -1
+  before a slot's shadow is first created. Null preserves the older saved
+  presentation until its next setup; later deals retain already created clocks.
+
+Versions 1–21 keep their existing VM, random state and committed scores.
+Missing effects start empty, an older grid counter starts at its recorded
+score, and the current dialogue suppresses decorations whose history was not
+saved. No historical random draws or sound cues are replayed. New dialogues
+and subsequent minigame actions use the recovered effects. Older runtime
+versions cannot read version-22 saves.
+
+Version 23 adds:
+
+- `engine.text_history`: signed-byte `previous_glyph:int[-128..127]`, a
+  `labels` map of label names to their incoming signed bytes, and the last
+  assigned `footer:string`. Android bitmap text assignments advance the
+  global byte; measurement, redraw, glyph reveal and save restoration do not.
+  The saved label inputs reproduce first-glyph kerning independently of draw
+  order. The footer skips identical assignments, matching native code.
+  `RuntimeProcess` carries this history across episodes of the same game;
+  explicit restores use the saved history. IPA outline fonts do not use it.
+- `engine.dialogue_history.indicators`: up to four retained icon poses with
+  `asset_id`, finite `x/y/rotation`, `flash_asset`, finite `flash_scale` and
+  `flash_alpha`. These represent the active Android portrait's children,
+  including their frozen state after dialogue removal or narration.
+- `dialogue_animation.relationship.retained`: null for an ordinary derived
+  effect, or the frozen pose list for a suppressed Android SHS indicator.
+  Native reattachment cancels child actions before the negative asset request
+  leaves those children unchanged. Character 45 and the player clear them;
+  SHS/CoD IPA requests clear their own children instead. Restoring validates
+  asset IDs, finite bounded poses, count, platform and suppression state.
+
+Versions 1–22 start bitmap history at -1 and hidden indicator history empty:
+those saves contain no evidence for the missing earlier updates. Their active
+relationship effect continues using its existing descriptor. Migration does
+not replay a panel assignment, random draw, sound or VM callback. Older
+runtimes cannot read version-23 saves. See the [font/widget follow-up](
+UI_FIDELITY.md#bitmap-history-and-reused-portrait-follow-up) for coverage and
+the remaining original-app comparison limits.
+
+Version 24 adds `engine.choice_ms`, an integer in `[0,250]`. Ordinary
+choice attachment resets it to zero; active ticks advance it independently
+of the script's timeout. The menu rejects early answers without a callback
+or click sound. IPA drawing fades the panel over this clock; Android draws
+it immediately. Pausing freezes both clocks. Versions 1–23 migrate to 250
+(an already attached choice), preserving the saved remaining timeout rather
+than replaying an entrance. Rendering and restoration never advance time.
+Creator playtest `choose` waits out this real gate and checks whether a short
+timer has already moved the story on before applying the requested answer.
+
+Version 25 separates expression layers from the dialogue's one-second request
+clock. `dialogue_animation.expression_transition` is null before a request,
+or contains `previous` and `portrait` descriptors, the requested `expression`,
+and `elapsed_ms:int[0..2150]`. Consecutive same-speaker lines retain this state
+until their next request; a speaker/side change clears it. Removing the layer
+animations settles the track without advancing `presentation_ms` or the VM.
+`expression_decorations` stores the overlay `expression` (0 or 6–9), its
+`elapsed_ms:int[0..2150]`, and independent `flash_ms:int[0..1300]`. New ordinary
+expressions leave these tracks running, and pausing IPA playback settles them.
+Versions 1–24 derive only the fade/effect progress already present in their
+saved line, preserving VM, random state and last-expression bytes. They do
+not reconstruct unknown earlier transitions. Older runtimes cannot read
+version-25 saves. See [expression lifecycle](UI_FIDELITY.md#delayed-expressions-and-panel-reuse).
+
+Version 26 reflows older IPA dialogue pages with the original italic emphasis
+font's advances and semicolon punctuation. It retains `page_start`, validates
+the saved speaker-font banks, and recomputes only `page_end`; VM state, random
+state and reveal/expression clocks do not advance. Versions before 15 retain
+their existing missing-name-history migration. Current IPA pages and APK
+version-10+ pages still require an exact saved end. The schema adds no fields;
+the version distinguishes pagination computed with the corrected metrics.
+Older runtimes cannot read version-26 saves. See [IPA dialogue](IPA.md#dialogue-text-placement).
+
 The `vm` object contains `pc`, `sp`, `fp`, `a`, `b`, `result`, `data`, `stack`,
 `pending`, `steps_executed`, `opcode_counts`, and `recent_pcs`.
 
@@ -489,6 +606,15 @@ See [MINIGAMES.md](MINIGAMES.md#7-saves-verification-and-remaining-fidelity-work
 Version 1/2 saves receive defaults for these fields. If their retained stop is
 service 71, 94 or 96, the game is initialized from that original frame; missing
 historical random state cannot be reconstructed.
+
+The optional `pending.details.minigame_started` boolean records choosing Play
+at an enabled minigame-skip prompt; older saves infer entry from their existing
+game clocks/phases. It applies to that pending call only. `Session.start_minigame()`
+records this choice, `tick(..., pause_minigame=True)` holds a minigame while its
+entry prompt is visible, and `skip_minigame(success: bool)` uses the implemented
+game's completion callback. Ordinary choices and unsupported services are never
+skippable. See [the explicit cheat policy](MINIGAMES.md#optional-minigame-skips)
+for script-visible outcomes. The frontend preference is separate from the save.
 
 Service-88 notices derive their letter motion from the existing remaining
 `notice_ms` countdown, independently of the dialogue reveal clock. Its native
@@ -666,10 +792,10 @@ Timers count active foreground time. Saving preserves the remaining interval;
 time spent with the application closed or unfocused does not consume it. Music
 pauses while the pause menu is open, the window is unfocused, or the live
 episode is in the main menu. Resuming that live episode keeps the stream's
-position; both focus and menu holds must clear before it resumes. Audio
-position is not serialized; loading a save restarts the requested music cue
-at its native start offset.
-Implemented dialogue/title/mini-game animation clocks and both modeled random streams
+position; both focus and menu holds must clear before it resumes. Version-22
+host checkpoints capture playback position and fades; older/headless saves
+without that state start the requested cue at its native offset.
+Implemented dialogue/title/mini-game animation clocks and modeled random streams
 are serialized. Other native animation and panel-lifecycle state remains partial;
 newly modeled fields will require explicit save migrations.
 
@@ -757,12 +883,13 @@ alignment over 250 ms, with script-controlled fixed alignment and saved motion.
 Basic music/SFX playback is supported. NPC relationship icons use original assets, cache writes, sounds,
 gains/losses and dialogue delays. Name layout includes the native exceptions
 and persistent font inputs, with a documented glyph-bounds correction for
-remaining overlaps. Cross-object kerning, other widgets' shared font effects,
-scene transitions and native global input locks remain incomplete; see
+remaining overlaps. Cross-object kerning, other widgets' shared font effects
+and uncommon widget-reuse paths remain incomplete; see
 [UI_FIDELITY.md](UI_FIDELITY.md). Dialogue now retains hidden portrait position,
 speaker reuse, box-completion clipping and delayed expression fades across
-temporary panels. Other panel-lifecycle exceptions, Android promotional
-branches, audio fades and all channel behavior are not fully reproduced.
+temporary panels. Scene fades, SHS's nonvisual callback boundary and CoD music
+fades are modeled. Other panel-lifecycle exceptions, Android promotional
+branches and the full menu/story audio handoff are not fully reproduced.
 Name entry accepts up to 16 ASCII alphanumeric characters, with the recovered
 pre-append bitmap-width gate and interactive case conversion. See
 [NAME_INPUT.md](NAME_INPUT.md) for keyboard controls and remaining fidelity

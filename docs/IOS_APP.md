@@ -131,9 +131,11 @@ progress. Returning resumes the existing session; Play/Resume also restores
 saved progress after a later launch.
 
 Both games play their supplied main-menu theme. Menu and story music have
-independent native players, so returning to the menu preserves the paused
-story stream. Music settings and background pauses apply to both. Native
-prepare/start/resume failures are reported instead of silently ignored.
+independent native players. Pause/menu transitions save story music and active
+effects before fading them over 1000/100 ms; returning waits for menu audio to
+stop, then restores the saved playheads. Background checkpoints retain music
+and effect positions. Music/Sound settings and background pauses apply to the
+corresponding players. Native prepare/start/resume failures are reported.
 Story music honors service 80's repeat flag; one-shot cues remain one-shot,
 including CoD's native main-menu theme. Both audio backends use this policy.
 Portrait-speaker dialogue boxes use the original iOS 120+200 ms entrance

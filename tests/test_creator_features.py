@@ -38,7 +38,7 @@ class CreatorFeatureTests(unittest.TestCase):
             session = session_for(p)
             action = session.advance()
             self.assertEqual(action.details['enabled'], [True, False])
-            self.assertEqual(session.answer(0).details['text'], 'Ready')
+            self.assertEqual(answer_screen(session, 0).details['text'], 'Ready')
             self.assertEqual(answer_screen(session).name, 'episode_exit')
 
     def test_text_input_answer_comparison_substitutions_and_translations(self):
@@ -243,8 +243,11 @@ class CreatorEndingTests(unittest.TestCase):
                             self.assertFalse(app.can_resume())
                             app.command(('episodes', 'all'))
                             self.assertEqual(app.screen, 'episodes')
+                            app.tick(1550)
                             app.command(('episode', target['id']))
                             app.command(('start', False))
+                            if app.game_entry is not None:
+                                app.tick(1500)
                             self.assertEqual(app.game.session.resources.record['id'], target['id'])
                             self.assertEqual(app.game.session.pending.name, 'vm_pause')
                         finally: app.close()

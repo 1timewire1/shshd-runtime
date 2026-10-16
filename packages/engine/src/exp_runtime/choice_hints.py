@@ -17,12 +17,30 @@ from .vm import VMError
 SCORE_NOTICES = frozenset(('Score Up!', 'Detective Score Up!'))
 DECISIONS = frozenset(('choice', 'character_picker', 'text_input', 'word_game',
                        'word_grid', 'football', 'finished', 'episode_exit'))
-PANELS = frozenset(('dialogue', 'presentation', 'message_panel'))
+PANELS = frozenset(('dialogue', 'presentation', 'message_panel', 'survey_confirmation',
+                    'loading', 'vm_pause'))
 
 
 @dataclass(frozen=True)
 class ChoiceHint:
     kind: str  # gain, loss, no_gain, mixed, unknown
+
+
+def observe_effects(session, preview, action, effects):
+    """Record explicit feedback on a preview without interpreting dialogue."""
+    if action.name == 'set_next_dialogue_notice' and action.details['text'] in SCORE_NOTICES:
+        effects['score_notice'] = effects.get('score_notice', 0) + 1
+    elif action.name == 'request_audio' and action.request.yield_id == 79:
+        feedback = GAMES[session.engine.game_key].CHOICE_FEEDBACK_SOUNDS.get(action.details['asset_id'], 0)
+        if feedback:
+            # Opposite cues must not cancel each other.
+            key = 'correct_feedback' if feedback > 0 else 'incorrect_feedback'
+            effects[key] = effects.get(key, 0) + feedback
+    elif action.name in ('set_number', 'set_number_bit'):
+        owner, key = action.details['owner'], action.details['key']
+        if owner > 0 and key == 407:
+            address = preview.engine.number_key(owner, key)
+            effects[address] = preview.engine.numbers[address] - session.engine.numbers.get(address, 0)
 
 
 def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
@@ -45,7 +63,6 @@ def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
     if min(max_steps, max_panels, max_options, max_decisions, max_branches) < 1:
         raise ValueError('Preview budgets must be positive')
     details = session.pending.details
-    feedback_sounds = GAMES[session.engine.game_key].CHOICE_FEEDBACK_SOUNDS
     deadline = session.vm.steps_executed + max_steps
     branches = 0
 
@@ -59,34 +76,38 @@ def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
         effects = dict(effects or {})
 
         def observe(action):
-            if action.name == 'set_next_dialogue_notice' and action.details['text'] in SCORE_NOTICES:
-                effects['score_notice'] = effects.get('score_notice', 0) + 1
-            elif action.name == 'request_audio' and action.request.yield_id == 79:
-                feedback = feedback_sounds.get(action.details['asset_id'], 0)
-                if feedback:
-                    # Explicit correct/wrong feedback can accompany script-local
-                    # quiz scoring without a relationship or Score Up! notice.
-                    # Keep opposite cues separate so mixed feedback cannot cancel.
-                    key = 'correct_feedback' if feedback > 0 else 'incorrect_feedback'
-                    effects[key] = effects.get(key, 0) + feedback
-            elif action.name in ('set_number', 'set_number_bit'):
-                owner, key = action.details['owner'], action.details['key']
-                if owner > 0 and key == 407:
-                    address = preview.engine.number_key(owner, key)
-                    effects[address] = preview.engine.numbers[address] - session.engine.numbers.get(address, 0)
+            observe_effects(session, preview, action, effects)
 
         try:
             preview._complete_choice(value)
             while preview.vm.steps_executed < deadline:
+                if preview.transitioning and preview.engine.scene_transition.phase == 4:
+                    # Finish the queued native callback, retaining the bounded
+                    # observer below. Preview has no presentation clock to wait for.
+                    preview._finish_transition(advance=False)
                 action = preview.advance(max_steps=deadline - preview.vm.steps_executed,
                                          max_events=2000, observe=observe)
+                if preview.transitioning and preview.engine.scene_transition.phase == 3:
+                    preview.engine.scene_transition.clear()
                 if action.name in DECISIONS:
                     return preview, effects, panels
                 if action.name not in PANELS or panels == max_panels:
                     break
                 panels += 1
-                preview._complete_panel()
-                preview.engine.title_screen = preview.engine.message_panel = None
+                if action.name == 'vm_pause':
+                    # Resume the real bytecode pause without running an
+                    # unobserved advance through Session.answer/tick.
+                    preview.vm.continue_after_pause()
+                    preview.pending = None
+                elif action.name == 'loading':
+                    if preview.engine.loading.blocking:
+                        preview.vm.resume(0)
+                    preview.engine.loading = preview.pending = None
+                elif action.name == 'survey_confirmation':
+                    preview._complete_survey(action)
+                else:
+                    preview._complete_panel()
+                    preview.engine.title_screen = preview.engine.message_panel = None
         except (ContentError, VMError, OSError, ValueError):
             pass
         return None

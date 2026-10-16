@@ -3,10 +3,11 @@
 Native evidence and the 30 Hz letter-scheduler policy are documented in
 docs/UI_FIDELITY.md. Portrait/name tweens use elapsed time; drawing is pure.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import degrees
 
-from .relationships import RelationshipAnimation, RelationshipChange
+from .portrait_effects import ExpressionDecorations
+from .relationships import IndicatorPose, RelationshipAnimation, RelationshipChange
 
 
 LETTER_HZ = 30
@@ -16,7 +17,7 @@ CONTINUE_MS = 250
 BOX_TRAVEL_MS = 120
 BOX_OPEN_MS = 200
 EXPRESSION_MS = 1000
-EXPRESSION_END_MS = 2400
+EXPRESSION_END_MS = 3150
 
 
 @dataclass(frozen=True)
@@ -45,16 +46,59 @@ def progress(elapsed, duration):
 
 
 @dataclass
+class ExpressionTransition:
+    """The two reusable portrait layers, independent of the current line."""
+    previous: DialoguePortrait
+    portrait: DialoguePortrait
+    expression: int
+    elapsed_ms: int = 0
+
+    @property
+    def alphas(self):
+        # Both iOS changeExpression methods install independent fill-both
+        # tracks: new art at +400..600 ms, old art at +600..1400 ms.
+        return (round(255 * (1 - progress(self.elapsed_ms - 600, 800))),
+                round(255 * progress(self.elapsed_ms - 400, 200)))
+
+    def tick(self, elapsed_ms):
+        self.elapsed_ms = min(EXPRESSION_END_MS - EXPRESSION_MS, self.elapsed_ms + elapsed_ms)
+
+    def settle(self):
+        # removeAllAnimations exposes model opacity: new=1, old=0.
+        self.elapsed_ms = EXPRESSION_END_MS - EXPRESSION_MS
+
+    def validate(self):
+        self.previous.validate()
+        self.portrait.validate()
+        if (not 0 <= self.expression <= 32767
+                or not 0 <= self.elapsed_ms <= EXPRESSION_END_MS - EXPRESSION_MS
+                or (self.previous.character_id, self.previous.mode, self.previous.theme) !=
+                   (self.portrait.character_id, self.portrait.mode, self.portrait.theme)):
+            raise ValueError('Invalid expression transition')
+
+
+@dataclass
 class DialogueHistory:
     """Hidden native portrait position and the separate last-expression bytes."""
     anchor_mode: int = 0
     expressions: dict[int, int] = field(default_factory=dict)
+    indicators: list[IndicatorPose] = field(default_factory=list)
+
+    def remember(self, motion):
+        # FUN_000a7e64 removes/re-adds the one active portrait with cleanup=1.
+        # It does not exchange its status children with either outgoing copy.
+        if motion is not None and motion.relationship is not None:
+            self.indicators = list(motion.relationship.poses())
 
     def validate(self):
         if self.anchor_mode not in (0, 1, 2) or any(
                 not 0 <= character <= 32767 or not -128 <= expression <= 127
                 for character, expression in self.expressions.items()):
             raise ValueError('Invalid dialogue portrait history')
+        if len(self.indicators) > 4:
+            raise ValueError('Invalid retained relationship icons')
+        for pose in self.indicators:
+            pose.validate()
 
 
 @dataclass
@@ -81,9 +125,14 @@ class DialogueAnimation:
     presentation_ms: int = 0
     visuals_finished: bool = False
     housing_clipped: bool = False
+    expression_effects: bool = True
+    expression_transition: ExpressionTransition | None = None
+    expression_decorations: ExpressionDecorations = field(default_factory=ExpressionDecorations)
 
     @classmethod
-    def start(cls, details, variants, previous=None, history=None):
+    def start(cls, details, variants, previous=None, history=None, *, retain_suppressed=False):
+        if history is not None:
+            history.remember(previous)
         portrait = DialoguePortrait.from_details(details, variants)
         old = previous.displayed_portrait if previous else None
         changed = previous is None or ((old.character_id if old else -1) !=
@@ -99,6 +148,15 @@ class DialogueAnimation:
         motion.initial_expression = details.get('initial_expression', details['expression'])
         motion.initial_portrait = DialoguePortrait.from_details(
             dict(details, expression=motion.initial_expression), variants)
+        if (portrait is not None and previous is not None and not changed and portrait.mode == previous.portrait.mode):
+            # setSpeaker redraws the current layer but only cancels its
+            # tracks when the character or side changes. A short next line
+            # must not snap to the cached expression or restart the old fade.
+            track = previous.expression_transition
+            if track is not None:
+                motion.expression_transition = replace(track, portrait=motion.initial_portrait,
+                    previous=replace(track.previous, theme=portrait.theme))
+            motion.expression_decorations = replace(previous.expression_decorations)
         motion.housing_clipped = not motion.box_grow and not motion.wobble_direction
         if history is not None and portrait is not None:
             history.anchor_mode = portrait.mode
@@ -107,6 +165,11 @@ class DialogueAnimation:
             change = RelationshipChange(**details['relationship'])
             change.validate()
             motion.relationship = RelationshipAnimation(change, motion.portrait_delay_ms + PORTRAIT_MS if changed else 0)
+            if retain_suppressed and change.asset_id == -1 and change.character_id != 45:
+                motion.relationship.retained = list(history.indicators) if history else []
+        if history is not None and portrait is not None:
+            # Player portraits request (0,0), explicitly clearing the slots.
+            history.indicators = list(motion.relationship.poses()) if motion.relationship else []
         return motion
 
     @property
@@ -219,13 +282,16 @@ class DialogueAnimation:
 
     @property
     def expression_alphas(self):
+        if self.expression_transition is not None:
+            return self.expression_transition.alphas
         if self.initial_portrait == self.portrait or not self.native_lifecycle:
             return 0, 255
-        # changeExpression creates two independent, fill-both opacity tracks:
-        # new art 0->1 at +400..600ms, old art 1->0 at +600..1400ms.
-        elapsed = self.presentation_ms - EXPRESSION_MS
-        return (round(255 * (1 - progress(elapsed - 600, 800))),
-                round(255 * progress(elapsed - 400, 200)))
+        return 255, 0
+
+    @property
+    def expression_portraits(self):
+        track = self.expression_transition
+        return (track.previous, track.portrait) if track else (self.initial_portrait, self.portrait)
 
     @property
     def continue_scale(self):
@@ -238,8 +304,23 @@ class DialogueAnimation:
         first = max(1, (self.text_delay_ms * LETTER_HZ + 999) // 1000)
         return max(0, elapsed_ms * LETTER_HZ // 1000 - first + 1)
 
-    def tick(self, elapsed_ms):
-        self.presentation_ms = min(EXPRESSION_END_MS, self.presentation_ms + elapsed_ms)
+    def tick(self, elapsed_ms, *, ui=True):
+        before = self.presentation_ms
+        self.expression_decorations.tick(elapsed_ms)
+        if ui or self.presentation_ms >= EXPRESSION_MS:
+            # The UI tick triggers changeExpression once. Its installed CA
+            # tracks then run independently, including under an outgoing fade.
+            self.presentation_ms = min(EXPRESSION_END_MS, self.presentation_ms + elapsed_ms)
+        if (self.native_lifecycle and self.portrait is not None
+                and self.initial_expression != self.expression
+                and before < EXPRESSION_MS <= self.presentation_ms):
+            self.expression_transition = ExpressionTransition(
+                self.initial_portrait, self.portrait, self.expression,
+                self.presentation_ms - EXPRESSION_MS)
+            if self.expression_effects:
+                self.expression_decorations.change(self.expression, self.presentation_ms - EXPRESSION_MS)
+        elif self.expression_transition is not None:
+            self.expression_transition.tick(elapsed_ms)
         if (self.native_lifecycle and (self.box_grow or self.wobble_direction)
                 and not self.page_turn and not self.visuals_finished and
                 self.elapsed_ms + elapsed_ms >= self.housing_clip_ms):
@@ -294,26 +375,52 @@ class DialogueAnimation:
         self.complete = self.finish_requested = False
         self.visuals_finished = False
 
-    def settle(self):
-        """Old saves showed all text; migrate without replaying the entrance."""
+    def stop_layers(self):
+        """CoD 0000f2ec: remove layer tracks before revealing the new UI.
+
+        The UI's delayed changeExpression tick remains separate; cancelling
+        Core Animation does not execute that future script-visible update.
+        """
         self.elapsed_ms = self.duration_ms
         self.revealed, self.complete = self.text_length, True
         self.continue_ms = CONTINUE_MS
-        self.presentation_ms = EXPRESSION_END_MS
         self.housing_clipped = self.native_lifecycle
         if self.relationship:
             self.relationship.settle()
+        if self.expression_transition:
+            self.expression_transition.settle()
+        self.expression_decorations.settle()
+
+    def settle(self):
+        """Old saves showed all text; migrate without replaying the entrance."""
+        self.stop_layers()
+        self.presentation_ms = EXPRESSION_END_MS
+        if self.native_lifecycle and self.portrait and self.initial_expression != self.expression:
+            self.expression_transition = ExpressionTransition(
+                self.initial_portrait, self.portrait, self.expression,
+                EXPRESSION_END_MS - EXPRESSION_MS)
 
     def validate(self):
         for portrait in (self.portrait, self.previous, self.initial_portrait):
             if portrait:
                 portrait.validate()
+        track = self.expression_transition
+        self.expression_decorations.validate()
+        requested = self.presentation_ms >= EXPRESSION_MS and self.initial_expression != self.expression
+        if track is not None:
+            track.validate()
+            if (not self.native_lifecycle or self.portrait is None
+                    or track.portrait != (self.portrait if requested else self.initial_portrait)
+                    or requested and track.expression != self.expression):
+                raise ValueError('Expression transition does not match its portrait')
+        elif self.native_lifecycle and self.portrait is not None and requested:
+            raise ValueError('Missing expression transition')
         if self.relationship:
             self.relationship.validate()
             if self.portrait is None or self.relationship.change.character_id != self.portrait.character_id:
                 raise ValueError('Relationship indicators do not match the portrait')
         callbacks = self._callbacks(self.elapsed_ms)
-        if (type(self.box_grow) is not bool
+        if (type(self.box_grow) is not bool or type(self.expression_effects) is not bool
                 or (self.box_grow and (not self.changed or self.wobble_direction))
                 or self.anchor_mode not in (0, 1, 2)
                 or not 0 <= self.presentation_ms <= EXPRESSION_END_MS

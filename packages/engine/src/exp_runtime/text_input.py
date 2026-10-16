@@ -15,6 +15,12 @@ NAME_ENTRY_ERROR = (
 )
 
 
+def cursor_alpha(elapsed_ms, *, ios=False):
+    # Android d4658 repeats CCFadeIn(.5); iOS a0238 gives SHSAnimSprite
+    # one 200ms frame followed by 200ms dead time.
+    return (255 if elapsed_ms % 400 < 200 else 0) if ios else int(255 * (elapsed_ms % 500) / 500)
+
+
 def input_fonts(resources):
     if getattr(getattr(resources, 'library', None), 'kind', 'apk') == 'ipa':
         return 'PajamaHip24', 'PajamaHip24'

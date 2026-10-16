@@ -150,8 +150,10 @@ the shared transition wrapper used by title and message panels. A queued
 service-16 selector is consumed only after the final page. Selector 20 consumes
 one `lrand48` draw; other selectors consume none. The runtime clears the selector
 and resumes with zero, leaving UI result cells unchanged. This correction applies
-to ordinary services 13/65 as well as 76. Outgoing transition animation and
-native callback frame scheduling remain incomplete.
+to ordinary services 13/65 as well as 76. SHS now retains the nonvisual
+outgoing/wakeup/incoming tick boundaries; CoD uses its own visible fades.
+The result is retained once until the covered callback, including saves and
+debugger pauses. See [the transition audit](UI_FIDELITY.md#2026-10-15-presentation-audit).
 
 ### SHS service 15
 
@@ -290,10 +292,19 @@ For nonzero episode IDs, `000ac73c` measures the body with font
 `ArialRoundedMTBold14`, height 14/gap 5, at layout node 24's width. It adds
 one plus a legacy font-origin field at application `+0x3a474`, rounds to an
 even height, then expands the root through `00058a54` without shrinking below
-the layout minimum. That legacy field's initialized value is still unverified;
-the renderer currently uses zero for it. Built-in Football Star's fixed
-height does not depend on it. Pixel-level confirmation against an original
-recording, cross-label kerning history and outgoing transitions remain open.
+the layout minimum. Ghidra and an isolated ARM constructor check establish
+that this field is **uninitialized**: `00092b3c` embeds the font at `+0x3a338`,
+`0004d098/0004d020/0013ae04` leave its `+0x13c` untouched, and `000858cc`
+never applies the height setter to that font. Other fonts' `0004c7b8` calls
+do not establish a value for this one. The renderer deliberately uses zero
+instead of reproducing an arbitrary heap value. Built-in Football Star's
+fixed height does not depend on it.
+
+Bitmap history follows `000abd0c`'s title/body constructor assignments,
+`000acc28`'s initial Continue caption and `000acb18`'s changed-caption/footer
+updates. Measurement and drawing do not advance it. Pixel-level confirmation
+against an original recording and unmodeled global font updates retain the
+limits in [UI_FIDELITY.md](UI_FIDELITY.md#bitmap-history-and-reused-portrait-follow-up).
 
 ### Saves and verification (version 9)
 
@@ -514,6 +525,24 @@ Exactly 1 sets a bit; every other value clears it. Evidence: `FUN_000965bc`,
 
 ## Dialogue notifications (service 88)
 
+**Presentation scope:** the implemented rising-letter animation below follows
+Android 1.0.9. It is currently used for IPA imports too and is **not 1:1 with
+the original iOS notices**. SHS `SHSPortraitLayer::startLetterEffectAnimation`
+**0006cc48** delegates to `SHSUIDialog::startLetterEffectAnimation`
+**0007eb64**; CoD has corresponding paths **00043bc4 / 00035954**. The iOS
+routine builds separate letter layers and position, bounds and opacity
+keyframes, including a size overshoot. Those tracks still need implementation
+and original-device comparison. The Android evidence below must not be read
+as verification of the iOS effect.
+
+CoD's notice **colors** do follow its native theme selection: theme 1 red
+`(240,81,60)`, theme 2 rose `(180,78,78)`, theme 3/default black. See the
+[CoD font evidence](COD.md#native-ui-and-audio-bindings). These are supplied through the
+game adapter, preserving SHS's red atlas. CoD still uses the compatibility
+26-point name face and outline here; its native notice uses 20-point
+Trebuchet Italic/Bold and separate stroke layers. Color correction does not
+establish native notice typography or animation parity.
+
 ```text
 arguments : text_ref:i16
 result    : 0, immediately; no notification callback
@@ -528,6 +557,16 @@ renderer. Scripts change numeric properties and request sounds separately;
 service 88 itself changes neither stats, result cells, audio nor randomness.
 Repeated calls replace the queued string. Substitution happens when queued,
 not when displayed. An empty string clears the queue.
+
+The supplied Football Star's early running-choice Strength Up notice
+(scene 25006, PC 206) has no accompanying service-79 request. Its word-grid
+Strength Up reward (25011, PC 167) explicitly requests 8007 at PC 165.
+CoD's supplied Volume One uses 8002 for positive score feedback, including
+the Detective Score Up notice in scene 25008. These are ordinary PCM WAV
+resources in the supplied IPAs. The iOS simulator probe verifies both cues
+through the shared choice/script/notice path and checks actual AVAudioPlayer
+playback, including a choice click in the same input batch. This does not
+establish which specific silent moment a physical-device report refers to.
 
 The next dialogue consumes the queue, creates the notice immediately and
 starts its own active-time countdown. The additional animation-delay arguments
@@ -750,6 +789,26 @@ settings availability. The desktop has no vibrator backend and completes
 without altering music or sound state. Android's vibrator implementation is
 constructed by `FUN_00102f1c` / `FUN_00108188`, using VibratorAndroidDelegate.
 
+The iPhone host implements the separate native iOS contract: SHS
+`SHSSoundManager::vibrate` **000762e8** and CoD **0004334c** check the engine's
+vibration preference and device eligibility, then call
+`AudioServicesPlayAlertSound(0xfff)`. This is Apple's
+[`kSystemSoundID_Vibrate`](https://developer.apple.com/documentation/audiotoolbox/ksystemsoundid_vibrate),
+not a custom one-second pattern. The actual sensation is controlled by iOS
+and the device. SHS **00050e40** and CoD **00018c38** also invoke the alert
+when their Vibration setting is enabled.
+
+Options exposes Vibration when the Swift host reports an iPhone. It defaults
+on for existing libraries and persists independently of Music and Sound in
+`player.json`. The shared player consumes each live service-82 request once;
+the transient request count is excluded from saves. Isolated choice previews
+cannot emit hardware feedback. Disabled, paused or inactive requests are
+discarded, and Swift rechecks application activity before calling AudioToolbox
+on the main thread. A response from before a background/resume cycle is also
+discarded. iPad and desktop receive no alert or substitute sound.
+Simulator checks exercise the bridge and native alert ID/device/activity gates;
+they cannot measure physical vibration.
+
 `FUN_00082adc`, called by service 99, contains only two ARM instructions:
 `mov r0,#0` and `bx lr`. This release therefore always takes the dispatcher's
 normal completion path; no wait or host +0x118 state is introduced. This is
@@ -914,10 +973,20 @@ Presentation uses user-supplied artwork and fonts:
 | Message | Registry font 5, ArialRoundedMTBold16, nominal height 15, width 300, same color |
 | Animated icon | Common pack 126 frames 23–27, centered at (155,317) |
 
-`FUN_0008952c`, `FUN_00177458`, and `FUN_00136a30` establish **500 ms per frame**,
-five frames and a 2500 ms repeating animation. This animation does not determine
-when the VM resumes. Download/cancellation overlays reached from other native
-application states are separate contracts. The desktop currently draws these
+Android `FUN_0008952c`, `FUN_00177458`, and `FUN_00136a30` establish **500 ms per
+frame**, five frames and a 2500 ms repeating animation. The original iOS games
+use **70 ms per frame**, repeating after 350 ms: SHS `initLoadingBar` **0003da88**
+and CoD **0001d4cc** assign float `0x3d8f5c29` (0.07 seconds) to each of the same
+five frames. SHS `SHSAnimationLayer::finalizeAnimation` **0002b234** sums those
+times for the animation duration. The shared renderer selects this cadence for
+IPA imports and retains the Android cadence for APK imports, on both hosts.
+Authored tests and the iOS probe cover frame progression, repetition and saved
+clock restoration. CoD's runner evidence does not implement its still-unsupported
+service-91 script contract.
+
+This animation does not determine when the VM resumes. Download/cancellation
+overlays reached from other native application states are separate contracts.
+The desktop currently draws these
 panels over the existing scene background; retention of underlying native
 dialogue/widget objects across application overlays remains a fidelity detail.
 

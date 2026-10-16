@@ -13,8 +13,8 @@ class LoadingRenderer:
         self.resources, self.text, self.art = resources, text_renderer, artwork
         self.canvas = pygame.Surface((320, 480)).convert(32)
 
-    @lru_cache(maxsize=1)
-    def panel(self):
+    @lru_cache(maxsize=8)
+    def panel(self, title_previous=-1, body_previous=-1):
         layer = pygame.Surface((320, 480), pygame.SRCALPHA).convert_alpha()
         bank = self.resources.dialogue_layout().bank
         # FUN_0008d43c: top panel at GL (0,160), bottom at (-20,133).
@@ -29,8 +29,10 @@ class LoadingRenderer:
                     image = self.art.frame({0: 126, 2: 204}[slot], frame)
                     layer.blit(pygame.transform.scale(image, (rect.width, rect.height)), (rect.x, rect.y))
         strings = MenuStrings.load(self.resources.library)
-        title = self.text.layout('ArialRoundedMTBold20', strings[31], 320, TextStyle(20, 0, (41, 104, 221)))
-        message = self.text.layout('ArialRoundedMTBold16', strings[35], 300, TextStyle(15, 0, (41, 104, 221)))
+        title = self.text.layout('ArialRoundedMTBold20', strings[31], 320, TextStyle(20, 0, (41, 104, 221)),
+                                 previous_glyph=title_previous)
+        message = self.text.layout('ArialRoundedMTBold16', strings[35], 300, TextStyle(15, 0, (41, 104, 221)),
+                                   previous_glyph=body_previous)
         self.text.draw_layout(layer, 'ArialRoundedMTBold20', title, 160 - title.width / 2, 170 + title.height)
         self.text.draw_layout(layer, 'ArialRoundedMTBold16', message, 160 - message.width / 2, 245)
         return layer
@@ -38,8 +40,11 @@ class LoadingRenderer:
     def draw(self, target, session):
         self.canvas.fill((0, 0, 0))
         self.art.draw_background(self.canvas, session.engine)
-        self.canvas.blit(self.panel(), (0, 0))
-        icon = self.art.frame(126, session.engine.loading.frame)
+        history = session.engine.text_history
+        self.canvas.blit(self.panel(history.initial('loading_title'), history.initial('loading_body')), (0, 0))
+        frame = session.engine.loading.animation_frame(
+            ios=getattr(self.resources.library, 'kind', 'apk') == 'ipa')
+        icon = self.art.frame(126, frame)
         self.canvas.blit(icon, icon.get_rect(center=(155, 317)))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return []  # Completion comes from the active timer, never a click.

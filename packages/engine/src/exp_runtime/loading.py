@@ -29,8 +29,13 @@ class LoadingScreen:
 
     @property
     def frame(self):
-        # FUN_0008952c: five common-pack frames, 500 ms each, repeated.
-        return 23 + (self.elapsed_ms // 500) % 5
+        return self.animation_frame()
+
+    def animation_frame(self, *, ios=False):
+        # Android 0008952c/00136a30: 500 ms per frame. Both iOS games'
+        # initLoadingBar (SHS 0003da88, CoD 0001d4cc) use 70 ms instead.
+        # This presentation clock does not change the service-91 wait.
+        return 23 + (self.elapsed_ms // (70 if ios else 500)) % 5
 
     def validate(self):
         if type(self.blocking) is not bool or type(self.elapsed_ms) is not int or not 0 <= self.elapsed_ms <= 3000:

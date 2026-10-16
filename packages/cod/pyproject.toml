@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exp-runtime-cod"
-version = "0.6.0"
+version = "0.6.1"
 description = "Cause of Death adapter for EXP Runtime"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["exp-runtime-engine[fonts]==0.6.0"]
+dependencies = ["exp-runtime-engine[fonts]==0.6.1"]
 
 [tool.setuptools]
 include-package-data = false

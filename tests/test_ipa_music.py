@@ -257,7 +257,7 @@ class LocalIPAMusicTests(unittest.TestCase):
                     saved = app.game.session.snapshot()
                     checkpoint = app.state.resume_path(app.selected)
                     before = checkpoint.read_bytes()
-                    app.show('library'); app.tick(200); app.render()
+                    app.show('library'); app.tick(400); app.render()
                     self.assertIn(('browse', 'music_apk'), [command for _, command in app.buttons])
                     app.browse('music_apk'); app.read_folder(source.parent)
                     self.assertTrue(all(p.is_dir() or p.suffix.lower() == '.apk' for p in app.files))
@@ -268,6 +268,8 @@ class LocalIPAMusicTests(unittest.TestCase):
                     self.assertEqual(checkpoint.read_bytes(), before)
                     self.assertEqual(app.library.missing_music_ids, ())
                     app.command(('dismiss',)); app.start()
+                    app.tick(1000)  # The native menu track fades before restoring story audio.
+                    app.game._sync_audio()
                     self.assertTrue(app.game.music_loaded)
                     self.assertTrue(pygame.mixer.music.get_busy())
                     requests = [n for n in range(8201, 8233) if music_cue(n).asset_id in IOS_DOWNLOADED_MUSIC]

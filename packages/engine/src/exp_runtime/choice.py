@@ -8,13 +8,15 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import math
 
-from .fonts import load_font, TextLayout, TextStyle, layout_text
+from .fonts import FontError, load_font, TextLayout, TextStyle, layout_text
+from .speaker_names import DEFAULT_FONT, NameFontState
 from .ui_assets import LayoutBank, Rect, read_ui
 
 
 BODY_FONT = 'ArialRoundedMTBold16'
-FOOTER_FONT = 'ArialMT11'
 TITLE_FONTS = {1: 'PajamaHip26', 2: 'PajamaHip266', 3: 'PajamaHipG26'}
+PANEL_TOP = 32
+PANEL_BOTTOM = 421
 
 
 @dataclass(frozen=True)
@@ -37,8 +39,13 @@ class ChoicePage:
     portrait: Rect | None
     rows: tuple[ChoiceRow, ...]
     theme: int
-    max_scroll: int
     timer_panel: Rect | None = None
+    text_scale: float = 1.0
+
+    @property
+    def max_scroll(self):
+        # Retained for callers of the layout API. Choices never scroll.
+        return 0
 
 
 class ChoiceLayout:
@@ -50,18 +57,69 @@ class ChoiceLayout:
     def font(self, name):
         return load_font(self.resources.library, name)
 
-    def page(self, details, *, theme=1, has_portrait=False):
+    def display_title(self, text, theme):
+        # 000d6afc repairs the bitmap title's spacing after solveMetrics has
+        # measured the original string. This changes only the display label.
+        if getattr(getattr(getattr(self, 'resources', None), 'library', None), 'kind', 'apk') == 'apk':
+            if text == 'Fight!' and theme == 1:
+                return 'Fi ght!'
+            return {'Think fast!': 'Th ink fast', 'The answer is...?': 'Th e answer is...?'}.get(text, text)
+        return text
+
+    def prepare(self, details, names, history, *, theme=1, has_portrait=False):
+        """Commit 000d9038's measurement and 000d6afc's label update order."""
+        header = (7 if details.get('portrait_mode', 1) == 1 else 16) if has_portrait else 8
+        state = names.fonts.setdefault(DEFAULT_FONT, NameFontState())
+        measured = layout_text(self.font(DEFAULT_FONT), details['title'],
+                               self.bank.rectangle(header, 18).width, state.style)
+        state.lines = len(measured.lines)
+        page = self.page(details, theme=theme, has_portrait=has_portrait)
+        font = self.font(BODY_FONT)
+        for row, text in zip(page.rows, details['options']):
+            # Button construction assigns its text before setting dimensions,
+            # then assigns it again after configuring the label (0006bd5c).
+            history.update(f'choice_{row.index}', font, text,
+                           layout_text(font, text, 2**31, TextStyle(12, 1)))
+            history.update(f'choice_{row.index}', font, text, row.text)
+        history.update('choice_body', font, details['text'], page.description)
+        history.update('choice_title', self.font(page.title_font), self.display_title(details['title'], theme), page.title)
+
+    def page(self, details, *, theme=1, has_portrait=False, text_history=None):
+        options = dict(theme=theme, has_portrait=has_portrait, text_history=text_history)
+        page = self._page(details, **options)
+        if page.box.height <= PANEL_BOTTOM - PANEL_TOP:
+            return page
+        # Preserve native-size labels whenever repositioning alone fits. For
+        # unusually long authored options or substitute fonts, reflow smaller
+        # text within the same skin width so every answer remains reachable.
+        # This overflow fit is an adaptation, not a native animation/layout.
+        low, high, fitted = 0., 1., None
+        for _ in range(12):
+            scale = (low + high) / 2
+            candidate = self._page(details, scale=scale, **options)
+            if candidate.box.height <= PANEL_BOTTOM - PANEL_TOP:
+                low, fitted = scale, candidate
+            else:
+                high = scale
+        if fitted is None:
+            raise FontError('Choice text cannot fit in the available panel')
+        return fitted
+
+    def _page(self, details, *, theme, has_portrait, text_history, scale=1.):
         minigame = details.get('minigame', False)
         timed = not minigame and details.get('timeout_ms', 0) > 0
         width = self.bank.layouts[65].width
-        header = self.bank.rectangle(7 if has_portrait else 8, 9)
+        left_portrait = details.get('portrait_mode', 1) == 1
+        header = self.bank.rectangle((7 if left_portrait else 16) if has_portrait else 8, 9)
         title_font = TITLE_FONTS.get(theme, 'PajamaHipY26')
-        title_indent = 20 if details.get('portrait_mode', 1) == 1 else 5
-        title_style = TextStyle(26, 8, indents=(0, title_indent) if has_portrait else ())
-        title = layout_text(self.font(title_font), details['title'], header.width, title_style)
+        title_indent = 20 if left_portrait else 5
+        title_style = TextStyle(26, 8, indents=(0, title_indent / scale) if has_portrait else ())
+        previous = text_history.initial if text_history is not None else lambda key: -1
+        title = layout_text(self.font(title_font), self.display_title(details['title'], theme), header.width / scale, title_style,
+                            previous_glyph=previous('choice_title'))
         if not has_portrait:
             # A character-free heading occupies the full top of the panel.
-            glyphs = tuple(replace(g, x=g.x + (header.width - line.width) / 2)
+            glyphs = tuple(replace(g, x=g.x + (header.width / scale - line.width) / 2)
                            for line in title.lines for g in title.glyphs
                            if line.start <= g.index < line.end)
             title = replace(title, glyphs=glyphs)
@@ -73,44 +131,52 @@ class ChoiceLayout:
         # text uses the smaller nominal height configured by FUN_000d6afc.
         indents = ()
         if has_portrait:
+            # Native solveMetrics chooses the opposite header and signed
+            # offsets for a right-side portrait. Android's third left offset
+            # really is 103; iOS uses the smaller 95/85/65 table.
+            ios = getattr(getattr(getattr(self, 'resources', None), 'library', None), 'kind', 'apk') == 'ipa'
+            offsets = (95, 85, 65) if ios else (105, 95, 103 if left_portrait else 85)
+            if not left_portrait:
+                offsets = tuple(-value for value in offsets)
             for count in (1, 2, 3):
-                indents = (105, 95, 85)[:count]
-                measured = layout_text(body_font, details['text'], body_rect.width,
+                indents = tuple(value / scale for value in offsets[:count])
+                measured = layout_text(body_font, details['text'], body_rect.width / scale,
                                        TextStyle(16, 10, color, indents=indents))
                 if len(measured.lines) <= count:
                     break
-        description = layout_text(body_font, details['text'], body_rect.width,
-                                  TextStyle(10, 10, color, indents=indents))
-        description_y = max(26, title.height + 2)
-        header_height = math.ceil(max(112 if has_portrait else 38,
-                                      description_y + description.height + 6))
+        description = layout_text(body_font, details['text'], body_rect.width / scale,
+                                  TextStyle(10, 10, color, indents=indents),
+                                  previous_glyph=previous('choice_body'))
+        description_y = max(26, title.height + 2) * scale
+        header_height = math.ceil(max(112 if has_portrait else 38 * scale,
+                                      description_y + description.height * scale + 6))
         laid_out = []
-        for label, enabled in zip(details['options'], details['enabled']):
-            text = layout_text(body_font, label, width - 16,
-                               TextStyle(12, 1, color if enabled else (150, 150, 150)))
+        for index, (label, enabled) in enumerate(zip(details['options'], details['enabled'])):
+            text = layout_text(body_font, label, (width - 28) / scale,
+                               TextStyle(12, 1, color if enabled else (150, 150, 150)),
+                               previous_glyph=previous(f'choice_{index}'))
             _, top, _, bottom = text.ink_bounds
-            laid_out.append((text, max(37 if minigame else 44, math.ceil(bottom - top + 16)), enabled))
+            laid_out.append((text, math.ceil(max(37 if minigame else 44, bottom - top + 16) * scale), enabled))
 
         footer_height = self.bank.layouts[22].height if timed else (80 if minigame else 20)
         height = header_height + sum(h for _, h, _ in laid_out) + footer_height
-        # The reference's panel is centered below its overlapping heading.
-        # Taller lists can scroll without changing the script's option order.
-        box = Rect((320 - width) // 2, max(32, (480 - height) // 2 + (0 if minigame else 11)), width, height)
+        # Keep the whole panel above the footer, including the timer. A tall
+        # quiz needs to move up before considering any smaller text.
+        top = max(PANEL_TOP, min((480 - height) // 2 + (0 if minigame else 11), PANEL_BOTTOM - height))
+        box = Rect((320 - width) // 2, top, width, height)
         rows, y = [], box.y + header_height
         for index, (text, height, enabled) in enumerate(laid_out):
             _, top, _, bottom = text.ink_bounds
             rect = Rect(box.x + 3, y, width - 6, height)
-            origin = (box.x + 14, y + (height - (bottom - top)) / 2 - top + 2)
+            origin = (box.x + 14, y + (height - (bottom - top) * scale) / 2 - top * scale + 2 * scale)
             rows.append(ChoiceRow(index, rect, text, origin, enabled))
             y += height
         portrait = Rect(box.x - 27, box.y - 24, 128, 128) if has_portrait else None
+        if portrait is not None and not left_portrait:
+            portrait = replace(portrait, x=320 - portrait.x - portrait.width)
         timer_panel = None
-        max_scroll = max(0, box.y + box.height - 421)
         if timed:
-            # Layout 22 supplies the timer's lower panel. Keep it visible when
-            # the desktop's expanded rows need scrolling above the footer.
-            timer_panel = Rect(box.x, min(y, 421 - footer_height), width, footer_height)
-            max_scroll = max(0, y - timer_panel.y)
+            timer_panel = Rect(box.x, y, width, footer_height)
         return ChoicePage(box, title_font, title, (box.x + header.x, box.y - 9),
                           description, (box.x + 7, box.y + description_y), portrait,
-                          tuple(rows), theme, max_scroll, timer_panel)
+                          tuple(rows), theme, timer_panel, scale)

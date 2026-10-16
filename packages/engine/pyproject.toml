@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "exp-runtime-engine"
-version = "0.6.0"
+version = "0.6.1"
 description = "Headless KiWi VM, sessions, content libraries and saves"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["exp-runtime-formats==0.6.0"]
+dependencies = ["exp-runtime-formats==0.6.1"]
 
 [project.optional-dependencies]
 fonts = ["Pillow>=10"]

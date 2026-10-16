@@ -286,7 +286,7 @@ class DesktopTests(unittest.TestCase):
                 if action.name == 'word_game':
                     break
                 if action.name == 'choice':
-                    ui.session.answer(next(i for i, enabled in enumerate(action.details['enabled']) if enabled))
+                    answer_screen(ui.session, next(i for i, enabled in enumerate(action.details['enabled']) if enabled))
                 elif action.name == 'text_input':
                     ui.session.answer('Alex')
                 elif action.name == 'character_picker':
@@ -316,6 +316,7 @@ class DesktopTests(unittest.TestCase):
             resources = Resources(branching_program())
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
+            ui.session.tick(250)
             ui.render()
             saved = ui.session.snapshot()
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
@@ -337,6 +338,27 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(ui.session.pending.details['text'], 'Went left.')
             self.assertIsNone(ui.error)
             self.assertFalse(ui.handle_event(pygame.event.Event(pygame.QUIT)))
+
+    def test_choice_finger_down_during_attachment_cannot_select_after_it(self):
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import pygame
+        from exp_runtime.desktop import Desktop
+        from test_choice import timed_resources
+        self.addCleanup(pygame.quit)
+        ui = Desktop(Session(timed_resources()), audio=False)
+        ui.viewport = pygame.Rect(0, 0, 480, 720)
+        ui.buttons = [(pygame.Rect(20, 20, 100, 50), ('choose', 0))]
+        original = ui.session.pending
+        ui.tick(249)
+        ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(40, 40)))
+        self.assertIsNone(ui.press.origin)
+        ui.tick(1)
+        ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(40, 40)))
+        self.assertIs(ui.session.pending, original)
+        self.assertEqual(ui.session.engine.sound_serial, 0)
+        for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+            ui.handle_event(pygame.event.Event(kind, button=1, pos=(40, 40)))
+        self.assertEqual(ui.session.pending.request.args, (0,))
 
     def test_held_choice_cancels_on_drag_and_deal_change(self):
         os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
@@ -399,7 +421,7 @@ class DesktopTests(unittest.TestCase):
             saved = ui.session.snapshot()
             for choice in (0, 1):
                 ui.session = Session.from_snapshot(resources, saved)
-                ui.session.answer(choice)
+                answer_screen(ui.session, choice)
                 ui.render()
                 self.assertIsNone(ui.error)
                 self.assertEqual(ui.session.pending.name, 'dialogue')

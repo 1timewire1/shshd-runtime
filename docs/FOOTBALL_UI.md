@@ -196,6 +196,33 @@ adjustment for a single line. No generic final-result panel is added.
 
 ## Saved presentation and verification
 
+Home touchdowns now create the star celebration recovered from Android
+**000b618c** / **000b4858** and iOS `TouchdownEffect::init` **0008d150**.
+There are **50** stars; each consumes nine engine random draws, **450** total.
+Opponent touchdowns do not create stars. Initial values are:
+
+```text
+delay = random(1000) + 300 ms
+x = 145 + random(30); y = 235
+vx = signed_random(120) / 1000; vy = (-50-random(190)) / 1000
+angle = random(360); spin = signed_random(720) / 1000
+alpha = 1; fade = (-100-random(1500)) / 1000000
+```
+
+Each signed draw consumes a magnitude and sign draw. iOS `TouchdownStar::tick`
+**0008f460** decrements the delay, then uses the whole first active tick for
+Euler movement, rotation and opacity. Gravity adds `dt*.0001` to vertical
+velocity, with a double intermediate and float32 store. Stars die at opacity
+zero or Y 480. `draw` **0008f51c** uses frame **90**, pivot `(15,15)`. Stars
+are above field/play effects and below the HUD and feedback.
+
+Save version **22** adds up to 50 `touchdown_stars` records, each containing
+`x`, `y`, `vx`, `vy`, `angle`, `spin`, `delay_ms`, `alpha` and `fade`.
+Positions/velocities/opacity must be finite and clocks/ranges are validated.
+Older saves start with no stars and retain their recorded RNG state; historical
+missing draws are not invented. Future play selection after a touchdown can
+differ from older runtime versions because the missing draws now occur.
+
 Save version **8** extends each active football game with:
 
 | Field | Type / contract |
@@ -227,11 +254,24 @@ target input and resumed dialogue with scores 14–7; 128 distinct presentation
 states rendered, including both possession modes and both touchdown branches.
 None of that content is a distributed fixture.
 
+An isolated ARM comparison checks Android's actual star initializer with four
+deterministic random streams and the iOS star tick through expiration; all
+fields match. Random helper returns are supplied by that harness, and no native
+graphics or operating-system code runs. This complements save/RNG tests.
+
 These are native-code and implementation checks, not a pixel/frame comparison
-with a running original. Touchdown particle physics/random consumption, flying
-internal performance-score deltas, parts of audio staging and the final exit
-overlay remain incomplete. Cross-panel native global clock lifetime, shadow
-animation continuity across phases, float32 boundary rounding, unusual native
+with a running original. Internal performance-score flight reachability still
+needs verification: iOS `addToScore` **0008ded4** is a no-op despite the presence
+of `drawScoreEffect` **00089770** and `tickScore` **0008dba0**. The phase-6 final
+message now plays 8101 for a win or 8105 otherwise, without replaying the cue
+on an intermediate message. Android target shadows retain their four 110 ms
+frames across deals, with their own unclamped animation clocks. Save version
+22 retains those clocks; the existing iOS shadow rotation remains unchanged.
+The iOS final overlay eases to black over 800 ms, then releases the callback
+at 960 ms. Gameplay and particles freeze during that exit phase.
+
+Cross-panel native widget lifetimes, the complete audio timeline, float32
+boundary rounding outside the verified star/fragment routines, unusual native
 node placements and exact GPU sampling still need recording-level verification.
 The renderer must not invent random particle calls or script-visible results to
 hide those gaps. Other unsupported host services remain explicit stops.

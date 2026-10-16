@@ -13,8 +13,9 @@ from .audio import music_cue
 from .games import GAMES, game_id
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
-from .desktop_choice import ChoiceRenderer
+from .desktop_choice import ChoiceRenderer, HINT_COLORS
 from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer, draw_pause_gear
+from .desktop_transition import draw_transition
 from .desktop_picker import CharacterPickerRenderer
 from .desktop_loading import LoadingRenderer
 from .desktop_message import MessageRenderer
@@ -22,6 +23,8 @@ from .desktop_title import TitleRenderer
 from .desktop_input import InputRenderer, INPUT_RECT
 from .fonts import TextStyle
 from .runtime import SaveError, Session
+from .music_state import MusicPlayback, SoundPlayback
+from .minigames import MINIGAMES
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress
 from .text_input import accept_name_character, validate_name
@@ -34,11 +37,16 @@ INK = (245, 241, 233)
 MUTED = (183, 187, 198)
 ACCENT = (247, 190, 94)
 PANEL = (23, 29, 45)
+MINIGAME_OPTIONS = (('Skip with success', ('minigame_skip', True)),
+                    ('Skip with failure', ('minigame_skip', False)),
+                    ('Play minigame', ('minigame_play',)))
+MINIGAME_COLORS = {('minigame_skip', True): HINT_COLORS['gain'],
+                   ('minigame_skip', False): HINT_COLORS['loss']}
 
 
 class Desktop:
     def __init__(self, session: Session, *, audio: bool = True, window=None, on_main_menu=None,
-                 episode_title=None, on_menu_page=None):
+                 episode_title=None, on_menu_page=None, vibration_enabled=True, minigame_skips=False):
         pygame.display.init()
         pygame.font.init()
         if window is None:
@@ -47,7 +55,12 @@ class Desktop:
         self.on_main_menu = on_main_menu
         self.on_menu_page = on_menu_page
         self.pause_renderer = None
+        self.minigame_renderer = None
+        self.minigame_prompt_token = None
         self.pause_elapsed_ms = PAUSE_OPEN_MS
+        self.pause_closing_ms = 0
+        self.picker_pressed = False
+        self.entry_transition = None
         self.gear_pointer_down = False
         self.ui_sounds = {}
         self.episode_title = episode_title if episode_title is not None else session.resources.record['titles'][0]
@@ -89,10 +102,20 @@ class Desktop:
         self.music_token = None
         self.music_loaded = False
         self.music_paused = False
+        self.music_playing = None
+        self.music_start_ms = 0
+        self.music_restore_pending = True
+        self.music_fade_ms = self.music_fade_total = 0
         self.sound_serial = session.engine.sound_serial
+        self.sound_players = []
+        self.sound_restore_pending = True
+        self.sound_fade_ms = 0
+        self.audio_stored = self.audio_menu = self.audio_wait = False
         self.audio = False
         self.music_enabled = self.sound_enabled = True
+        self.vibration_enabled = vibration_enabled
         self.choice_hints = False
+        self.minigame_skips = minigame_skips
         self.active = True
         self.menu_open = False
         if audio:
@@ -103,12 +126,30 @@ class Desktop:
                 logging.warning('Audio unavailable: %s', error)
         self._attempt(session.advance)
 
+    @property
+    def minigame_prompt(self):
+        return getattr(self, 'minigame_skips', False) and self.session.minigame_unstarted
+
+    @property
+    def minigame_skippable(self):
+        return (getattr(self, 'minigame_skips', False) and self.session.pending is not None
+                and self.session.pending.name in MINIGAMES)
+
     def _attempt(self, operation):
         try:
             operation()
         except (ContentError, VMError, SaveError, OSError, ValueError) as error:
             self.error = str(error)
             logging.error('Playback stopped: %s', error)
+        finally:
+            self._sync_vibration()
+
+    def _sync_vibration(self):
+        count = self.session.take_vibrations()
+        if not count or not self.vibration_enabled or not self.active or self.menu_open or self.pause_closing_ms:
+            return
+        for _ in range(count):
+            pygame.vibrate()
 
     def _notice(self, message):
         self.message, self.message_until = message, pygame.time.get_ticks() + 3500
@@ -189,23 +230,73 @@ class Desktop:
         if not self.audio:
             return
         engine = self.session.engine
-        token = (engine.music_id, engine.music_flag, self.music_enabled)
+        native = getattr(self.session.resources.library, 'kind', 'apk') == 'ipa'
+        held = self.menu_open or self.pause_closing_ms > 0 or self.audio_menu or self.audio_wait
+        if native and held and not self.audio_stored:
+            # storeGameAudio snapshots once, then fades music for 1000 ms
+            # and effects for 100 ms. The saved playheads precede that fade.
+            self.capture_audio()
+            # SHSSound::save writes currentTime as an integer number of
+            # seconds. Match this live native handoff; ordinary JSON
+            # checkpoints still retain the backend's millisecond position.
+            if engine.music_playback is not None and not self.music_restore_pending:
+                engine.music_playback.position_ms = engine.music_playback.position_ms // 1000 * 1000
+            if not self.sound_restore_pending:
+                for sound in engine.sound_playback:
+                    sound.position_ms = sound.position_ms // 1000 * 1000
+            self.audio_stored = True
+            if self.music_loaded and not self.music_fade_ms:
+                self.music_fade_ms = self.music_fade_total = 1000
+            self.sound_fade_ms = 100 if self.sound_players else 0
+        if self.audio_stored:
+            if self.music_loaded and not self.music_enabled:
+                pygame.mixer.music.stop()
+                self.music_loaded = self.music_paused = False
+                self.music_fade_ms = self.music_fade_total = 0
+            if held or self.music_loaded or any(player.get_busy() for _, player in self.sound_players):
+                self._pause_music(not self.active)
+                return
+            self.audio_stored = False
+            self.music_restore_pending = self.sound_restore_pending = True
+        self._pause_sounds(not self.active)
+        if self.music_restore_pending:
+            self.music_restore_pending = False
+            if engine.music_playback is not None and self.music_enabled:
+                try:
+                    self._restore_music(engine.music_playback)
+                    self.music_token = (engine.music_id, engine.music_flag, self.music_enabled, engine.music_serial)
+                except (ContentError, pygame.error) as error:
+                    logging.warning('Saved music cannot be restored: %s', error)
+        token = (engine.music_id, engine.music_flag, self.music_enabled, engine.music_serial)
         if token != self.music_token:
             self.music_token = token
-            self.music_loaded = self.music_paused = False
             try:
-                pygame.mixer.music.stop()
-                if engine.music_id >= 0 and self.music_enabled:
-                    cue = music_cue(engine.music_id, game=game_id(self.session.resources))
-                    pygame.mixer.music.load(BytesIO(self.session.resources.read_asset(cue.asset_id)))
-                    # Both native iOS games pass service 80's flag to
-                    # SHSSound.setLoop: (-1 repeats, 0 plays once).
-                    pygame.mixer.music.play(loops=-1 if engine.music_flag else 0,
-                                            start=cue.start_ms / 1000)
-                    self.music_loaded = True
+                playing = self.music_loaded and (self.music_paused or pygame.mixer.music.get_busy())
+                same = self.music_playing is not None and self.music_playing[0] == engine.music_id
+                if playing and same and self.music_enabled:
+                    if self.music_playing[1] != engine.music_flag:
+                        pygame.set_music_repeat(engine.music_flag, start_ms=self.music_start_ms,
+                                                paused=self.music_paused)
+                        self.music_playing = (engine.music_id, engine.music_flag)
+                    # A repeated cue cancels an outgoing fade without seeking.
+                    if self.music_fade_ms:
+                        pygame.mixer.music.set_volume(1)
+                    self.music_fade_ms = self.music_fade_total = 0
+                else:
+                    fade_ms = (engine.music_stop_ms if engine.music_id < 0 else 1000)
+                    if (playing and self.music_enabled and game_id(self.session.resources) == 'cod'
+                            and engine.music_id != self.music_playing[0] and fade_ms):
+                        # Native stopMusic leaves an existing fade alone; the
+                        # latest requested cue replaces only the queued track.
+                        if not self.music_fade_ms:
+                            self.music_fade_ms = self.music_fade_total = fade_ms
+                    else:
+                        self._replace_music()
             except (ContentError, pygame.error) as error:
                 logging.warning('Music %s cannot be played: %s', engine.music_id, error)
-        paused = self.menu_open or not self.active
+        self._pause_music(held or not self.active)
+
+    def _pause_music(self, paused):
         if self.music_loaded and paused != self.music_paused:
             self.music_paused = paused
             try:
@@ -214,22 +305,120 @@ class Desktop:
                 else:
                     pygame.mixer.music.unpause()
             except pygame.error as error:
-                logging.warning('Music %s cannot change pause state: %s', engine.music_id, error)
+                logging.warning('Music cannot change pause state: %s', error)
+        self._pause_sounds(not self.active)
+
+    def _replace_music(self):
+        engine = self.session.engine
+        self.music_loaded = self.music_paused = False
+        self.music_playing = None
+        self.music_fade_ms = self.music_fade_total = 0
+        pygame.mixer.music.stop()
+        if engine.music_id >= 0 and self.music_enabled:
+            cue = music_cue(engine.music_id, game=game_id(self.session.resources))
+            pygame.mixer.music.load(BytesIO(self.session.resources.read_asset(cue.asset_id)))
+            # SDL retains the previous stream's volume across load().
+            pygame.mixer.music.set_volume(1)
+            pygame.mixer.music.play(loops=-1 if engine.music_flag else 0, start=cue.start_ms / 1000)
+            self.music_start_ms = cue.start_ms
+            self.music_loaded = True
+            self.music_playing = (engine.music_id, engine.music_flag)
+
+    def capture_audio(self):
+        """Capture real playback at save/checkpoint boundaries, never from draw."""
+        if not self.audio or self.audio_stored:
+            return
+        if self.music_loaded and self.music_playing is not None:
+            asset, repeat = self.music_playing
+            self.session.engine.music_playback = MusicPlayback(
+                asset, repeat, pygame.music_position(self.music_start_ms), self.music_fade_ms,
+                self.music_fade_total, not (self.music_paused or pygame.mixer.music.get_busy()))
+        if not self.sound_restore_pending:
+            self.session.engine.sound_playback = [SoundPlayback(asset, player.position_ms())
+                                                 for asset, player in self.sound_players if player.get_busy()]
+
+    def _restore_music(self, state):
+        self.music_loaded = self.music_paused = False
+        self.music_playing = (state.asset, state.repeat)
+        self.music_start_ms = state.position_ms
+        self.music_fade_ms, self.music_fade_total = state.fade_ms, state.fade_total
+        pygame.mixer.music.stop()
+        if state.finished:
+            return
+        cue = music_cue(state.asset, game=game_id(self.session.resources))
+        pygame.mixer.music.load(BytesIO(self.session.resources.read_asset(cue.asset_id)))
+        pygame.mixer.music.set_volume(state.fade_ms / state.fade_total if state.fade_total else 1)
+        pygame.mixer.music.play(loops=-1 if state.repeat else 0, start=state.position_ms / 1000)
+        self.music_loaded = True
+
+    def _tick_music(self, elapsed_ms):
+        if self.audio:
+            self._tick_sounds(elapsed_ms)
+            if self.audio_stored and not self.music_enabled:
+                self._sync_music()
+        if not self.audio or not self.music_fade_ms or self.music_paused:
+            return
+        try:
+            self.music_fade_ms = max(0, self.music_fade_ms - elapsed_ms)
+            if self.music_fade_ms and pygame.mixer.music.get_busy():
+                pygame.mixer.music.set_volume(self.music_fade_ms / self.music_fade_total)
+            elif self.audio_stored:
+                pygame.mixer.music.stop()
+                self.music_loaded = self.music_paused = False
+                self.music_fade_ms = self.music_fade_total = 0
+            else:
+                self._replace_music()
+        except (ContentError, pygame.error) as error:
+            logging.warning('Music transition cannot be played: %s', error)
 
     def _sync_audio(self):
         if not self.audio:
             return
         self._sync_music()
+        if self.audio_stored:
+            return
         engine = self.session.engine
+        if self.sound_restore_pending:
+            self.sound_restore_pending = False
+            self._stop_sounds()
+            if self.sound_enabled:
+                for sound in engine.sound_playback:
+                    self._play_sound(sound.asset, sound.position_ms)
         if engine.sound_serial != self.sound_serial:
             self.sound_serial = engine.sound_serial
             if not self.sound_enabled:
                 return
-            try:
-                for asset in engine.sound_ids or [engine.sound_id]:
-                    pygame.mixer.Sound(file=BytesIO(self.session.resources.read_asset(asset))).play()
-            except (ContentError, pygame.error) as error:
-                logging.warning('Sound %s cannot be played: %s', engine.sound_id, error)
+            for asset in engine.sound_ids or [engine.sound_id]:
+                self._play_sound(asset)
+
+    def _play_sound(self, asset, position_ms=0):
+        try:
+            stream = BytesIO(self.session.resources.read_asset(asset))
+            self.sound_players.append((asset, pygame.play_sound(stream, position_ms)))
+        except (ContentError, pygame.error) as error:
+            logging.warning('Sound %s cannot be played: %s', asset, error)
+
+    def _pause_sounds(self, paused):
+        for _, player in self.sound_players:
+            (player.pause if paused else player.unpause)()
+
+    def _stop_sounds(self):
+        for _, player in self.sound_players:
+            player.stop()
+        self.sound_players.clear()
+        self.sound_fade_ms = 0
+
+    def _tick_sounds(self, elapsed_ms):
+        self.sound_players = [(asset, player) for asset, player in self.sound_players if player.get_busy()]
+        if not self.sound_enabled:
+            self._stop_sounds()
+        elif self.sound_fade_ms:
+            self.sound_fade_ms = max(0, self.sound_fade_ms - elapsed_ms)
+            if not self.sound_fade_ms:
+                self._stop_sounds()
+            else:
+                for _, player in self.sound_players:
+                    player.set_volume(self.sound_fade_ms / 100)
 
     def _sync_text_input(self):
         action = self.session.pending
@@ -241,7 +430,8 @@ class Desktop:
             if action is not None:
                 action.details.setdefault('draft', action.details['default'])
         enabled = bool(action and self.input_keyboard and self.active and not self.menu_open
-                       and not self.input_error and not self.error)
+                       and not self.pause_closing_ms and not self.input_error and not self.error
+                       and not self.session.transitioning and self.entry_transition is None and not self.audio_stored)
         if enabled != self.text_input_started:
             (pygame.key.start_text_input if enabled else pygame.key.stop_text_input)()
             self.text_input_started = enabled
@@ -291,6 +481,15 @@ class Desktop:
             self.screen_token, self.scroll = token, 0
         self.canvas.fill((14, 20, 32))
         details = action.details if action else {}
+        if self.minigame_prompt and not self.error:
+            try:
+                self._draw_minigame_prompt()
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Minigame prompt rendering stopped: %s', error)
         if action and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
             try:
                 renderer = {'word_grid': self.grid_renderer, 'football': self.football_renderer,
@@ -299,8 +498,11 @@ class Desktop:
                             'survey_confirmation': self.message_renderer,
                             'text_input': self.input_renderer}[action.name]
                 options = (dict(error=self.input_error,
-                                cursor_visible=self.text_input_started and pygame.time.get_ticks() % 1000 < 500)
+                                cursor_visible=self.text_input_started,
+                                choice_hints=self.choice_hints)
                            if action.name == 'text_input' else {})
+                if action.name == 'character_picker':
+                    options['pressed'] = self.picker_pressed
                 buttons = renderer.draw(self.canvas, self.session, **options)
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
@@ -313,17 +515,16 @@ class Desktop:
         if (action and action.name in ('choice', 'word_game') and not self.error
                 and hasattr(self.session.resources, 'read_asset')):
             try:
-                page = self.choice_renderer.page(self.session)
-                self.max_scroll = page.max_scroll * 1.5
-                self.scroll = min(self.scroll, self.max_scroll)
+                self.scroll = self.max_scroll = 0
                 pointer = None
-                if hasattr(self, 'viewport') and self.press.origin is None and not self.menu_open:
+                if (hasattr(self, 'viewport') and self.press.origin is None and not self.menu_open
+                        and not self.session.transitioning):
                     x, y = pygame.mouse.get_pos()
                     if self.viewport.collidepoint(x, y):
                         pointer = ((x - self.viewport.x) * 320 / self.viewport.width,
                                    (y - self.viewport.y) * 480 / self.viewport.height)
                 _, buttons = self.choice_renderer.draw(self.canvas, self.session,
-                                                        scroll=self.scroll / 1.5, pointer=pointer,
+                                                        pointer=pointer,
                                                         pressed=self.press.pressed if not self.menu_open else None,
                                                         choice_hints=self.choice_hints)
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
@@ -428,19 +629,31 @@ class Desktop:
                 (dialogue.finish_requested, dialogue.complete) if dialogue else None,
                 tuple(picker.order) if picker else None,
                 (title.reveal_width == 320, title.ready) if title else None,
-                details.get('draft'), self.input_error, self.menu_open)
+                details.get('draft'), self.input_error, self.menu_open, self.minigame_prompt)
 
     def _present(self):
         engine = self.session.engine
         if engine.scene_badge and not self.error:
             try:
-                self._draw_scene_badge(engine.scene_badge)
+                self._draw_scene_badge(engine.scene_badge,
+                                      previous_glyph=engine.text_history.initial('scene_badge'))
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Scene label rendering stopped: %s', error)
-        if self.menu_open:
+        if self.menu_open or self.pause_closing_ms:
             self._draw_menu()
+        if self.session.transitioning and not self.error:
+            draw_transition(self.canvas, engine.scene_transition)
+            self.buttons = []
+            self.press.cancel()
+        if self.entry_transition is not None:
+            draw_transition(self.canvas, self.entry_transition)
+            self.buttons = []
+            self.press.cancel()
         self._sync_audio()
+        if self.audio_stored and not self.menu_open:
+            self.buttons = []
+            self.press.cancel()
         width, height = self.window.get_size()
         scale = min(width / SIZE[0], height / SIZE[1])
         scaled = pygame.transform.smoothscale(self.canvas, (max(1, int(480 * scale)), max(1, int(720 * scale))))
@@ -449,7 +662,7 @@ class Desktop:
         self.window.blit(scaled, self.viewport)
         pygame.display.flip()
 
-    def _draw_scene_badge(self, badge):
+    def _draw_scene_badge(self, badge, *, previous_glyph=-1):
         layer = self.dialogue_renderer.frame(204 if badge.blue else 236, 13).copy()
         icon = self._image(badge.asset_id)
         if icon is not None:
@@ -461,7 +674,8 @@ class Desktop:
             region = self.session.resources.dialogue_layout().bank.rectangle(67, 3)
             text, (x, y), scale = outline_badge_text(badge.text, self.story_text.font(name), region, color)
         else:
-            text = self.story_text.layout(name, badge.text, 110, TextStyle(14, 1, color))
+            text = self.story_text.layout(name, badge.text, 110, TextStyle(14, 1, color),
+                                          previous_glyph=previous_glyph)
             x, y, scale = badge.text_origin
         self.story_text.draw_layout(layer, name, text, x, y, scale=scale)
         # 200ms MoveTo from x=-width/2 to center x=100. Ad-free top inset=10.
@@ -475,17 +689,58 @@ class Desktop:
         buttons = self.pause_renderer.draw(self.canvas, application=self.on_menu_page is not None,
                                             main_menu=self.on_main_menu is not None,
                                             pressed=self.press.pressed,
-                                            elapsed_ms=self.pause_elapsed_ms)
+                                            elapsed_ms=self.pause_closing_ms or self.pause_elapsed_ms,
+                                            closing=self.pause_closing_ms > 0,
+                                            extra_entries=MINIGAME_OPTIONS[:2] if self.minigame_skippable else ())
         self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                         for rect, command in buttons]
         if pygame.time.get_ticks() < self.message_until:
             self._text(self.message, 30, 640, 420, font=self.small)
 
+    def _draw_minigame_prompt(self):
+        token = (id(self.session), id(self.session.pending), self.session.vm.steps_executed)
+        if token != self.minigame_prompt_token:
+            background = pygame.Surface((320, 480)).convert(32)
+            self.dialogue_renderer.draw_background(background, self.session.engine)
+            self.minigame_background = pygame.transform.smoothscale(background, SIZE)
+            self.minigame_renderer = PauseRenderer(self.session.resources.library,
+                                                    self.story_text, self.dialogue_renderer)
+            self.minigame_prompt_token = token
+        self.canvas.blit(self.minigame_background, (0, 0))
+        buttons = self.minigame_renderer.draw(self.canvas, entries=MINIGAME_OPTIONS, title='Minigame',
+                                              row_colors=MINIGAME_COLORS,
+                                              pressed=self.press.pressed if not self.menu_open else None)
+        self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
+                        for rect, command in buttons]
+        draw_pause_gear(self.canvas, self.dialogue_renderer, scale=1.5)
+        self.buttons.append((pygame.Rect(0, 633, 90, 87), ('menu',)))
+
     def command(self, command):
+        if self.pause_closing_ms:
+            return
+        if self.audio_stored and not self.menu_open and command[0] != 'menu':
+            return
+        if self.session.transitioning and not self.error:
+            return
         self.press.cancel()
         self.gear_pointer_down = False
+        self.picker_pressed = False
         self._sync_text_input()
         kind = command[0]
+        if kind in ('minigame_skip', 'minigame_play'):
+            allowed = (self.minigame_prompt and not self.menu_open if kind == 'minigame_play'
+                       else self.minigame_skippable and (self.minigame_prompt or self.menu_open))
+            if allowed and self.active and not self.error:
+                self._menu_sound()
+                if kind == 'minigame_play':
+                    self.session.start_minigame()
+                else:
+                    self._attempt(lambda: self.session.skip_minigame(command[1]))
+                    self.menu_open = False
+                    self._sync_music()
+            return
+        if self.minigame_prompt and not self.menu_open and kind not in ('menu', 'save', 'load'):
+            return
         if self.menu_open and kind in ('save', 'load'):
             self._menu_sound()
         if kind == 'menu':
@@ -494,12 +749,23 @@ class Desktop:
             self.picker_pointer_down = False
             if self.session.engine.word_grid:
                 self.session.grid_pointer('cancel')
+            if getattr(self.session.resources.library, 'kind', 'apk') == 'ipa':
+                # updatePauseLayer calls GameModel::stopAnimation before
+                # capturing the sepia image. This settles layer tracks, not
+                # the UI timer or a pending VM callback.
+                motion = self.session.engine.dialogue_animation
+                if self.session.pending and self.session.pending.name == 'dialogue' and motion:
+                    motion.stop_layers()
             self.menu_open = True
             self.pause_elapsed_ms = 0
+            if self.pause_renderer is not None:
+                self.pause_renderer.background = None
             self._sync_music()
             self._menu_sound(opening=True)
         elif kind == 'resume':
             self.menu_open = False
+            if getattr(self.session.resources.library, 'kind', 'apk') == 'ipa':
+                self.pause_closing_ms = PAUSE_OPEN_MS
             self._sync_music()
             self._menu_sound()
         elif kind == 'pause_page' and self.on_menu_page:
@@ -510,6 +776,7 @@ class Desktop:
             self._menu_sound()
         elif kind == 'save':
             try:
+                self.capture_audio()
                 self.session.save()
                 self._notice('Progress saved')
             except (OSError, ValueError) as error:
@@ -517,8 +784,14 @@ class Desktop:
         elif kind == 'load':
             try:
                 restored = Session.load(self.session.resources, self.session.save_path)
+                if hasattr(self.session, 'process'):
+                    self.session.process.attach(restored, restored=True)
                 self.session = restored
                 self.error, self.music_token = None, None
+                self.music_restore_pending = True
+                self.sound_restore_pending = True
+                self._stop_sounds()
+                self.audio_stored = self.audio_menu = self.audio_wait = False
                 self.sound_serial = restored.engine.sound_serial
                 self.menu_open = False
                 self._notice('Progress loaded')
@@ -545,12 +818,13 @@ class Desktop:
         action = self.session.pending
         game = self.session.engine.word_game
         return (id(self.session), id(action), self.menu_open,
-                self.session.vm.steps_executed, game.round if game else None, self.scroll)
+                self.session.vm.steps_executed, game.round if game else None, self.scroll, self.minigame_prompt)
 
     def cancel_pointer(self):
         self.press.cancel()
         self.gear_pointer_down = False
         self.picker_pointer_down = False
+        self.picker_pressed = False
         if self.session.engine.word_grid:
             self.session.grid_pointer('cancel')
 
@@ -570,13 +844,37 @@ class Desktop:
             self.cancel_pointer()
             self._sync_text_input()
             return True
+        if self.pause_closing_ms or (self.audio_stored and not self.menu_open) or self.session.transitioning and not self.error:
+            self.cancel_pointer()
+            return True
         action = self.session.pending
         if action and action.name == 'text_input' and (not self.active or self.error):
             return True
         pointer = (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                    and (event.type == pygame.MOUSEMOTION or event.button == 1))
+        prompt = self.minigame_prompt and not self.menu_open and not self.error
+        if prompt:
+            if not self.active:
+                self.press.cancel()
+                return True
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_F5, pygame.K_F9):
+                    self.command(('save' if event.key == pygame.K_F5 else 'load',))
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    self.command(('minigame_play',))
+                elif pygame.K_1 <= event.key <= pygame.K_3:
+                    self.command(MINIGAME_OPTIONS[event.key - pygame.K_1][1])
+                return True
+            if not pointer:
+                return True
         if self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer:
             self.press.cancel()
+            return True
+        if action and action.name == 'choice' and not self.menu_open and not self.session.choice_ready and pointer:
+            # Native input dispatch ignores the initial down as well as the
+            # selection callback. A finger held through attachment must not
+            # become a valid choice when the 250 ms gate subsequently opens.
+            self.cancel_pointer()
             return True
         if pointer and not self.menu_open and hasattr(self, 'viewport'):
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
@@ -596,13 +894,15 @@ class Desktop:
                     self.command(command)
                 return True
         if (action and action.name == 'character_picker' and not self.menu_open and not self.error
-                and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1):
+                and pointer):
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.picker_pointer_down = 0 <= x <= 320 and 0 <= y <= 480
-            elif self.picker_pointer_down:
-                self.picker_pointer_down = False
+            if self.picker_pointer_down:
+                self.picker_pressed = self.picker_renderer.confirm_hit((x, y))
+            if event.type == pygame.MOUSEBUTTONUP and self.picker_pointer_down:
+                self.picker_pointer_down = self.picker_pressed = False
                 if self.picker_renderer.confirm_hit((x, y)):
                     self.command(('continue',))
                 else:
@@ -610,14 +910,14 @@ class Desktop:
                     if index is not None:
                         self.command(('choose', index))
             return True
-        if (action and action.name == 'football' and not self.menu_open and not self.error
+        if (action and action.name == 'football' and not self.menu_open and not self.error and not prompt
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
             if 0 <= x <= 320 and 0 <= y <= 480:
                 self._attempt(lambda: self.session.answer(self.football_renderer.hit((x, y))))
             return True
-        if (action and action.name == 'word_grid' and not self.menu_open and not self.error
+        if (action and action.name == 'word_grid' and not self.menu_open and not self.error and not prompt
                 and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
@@ -636,7 +936,7 @@ class Desktop:
         # Native table rows remain selected under the finger and dispatch on
         # release. Keep the originating panel/deal so expiry cannot answer a
         # successor, and dragging off a row cannot activate a different one.
-        if ((self.menu_open or action and action.name in ('choice', 'word_game'))
+        if ((self.menu_open or prompt or action and action.name in ('choice', 'word_game'))
                 and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
@@ -696,10 +996,25 @@ class Desktop:
         return True
 
     def tick(self, elapsed_ms):
+        self._sync_vibration()
+        self._sync_audio()  # Flush input cues before the tick can emit another batch.
+        if self.active:
+            self._tick_music(elapsed_ms)
+            if self.audio_stored:
+                self._sync_audio()
+        if self.pause_closing_ms:
+            if self.active:
+                self.pause_closing_ms = max(0, self.pause_closing_ms - elapsed_ms)
+                if not self.pause_closing_ms:
+                    self._sync_music()
+            return
         if self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
         if self.active and not self.error and not self.menu_open:
-            self._attempt(lambda: self.session.tick(elapsed_ms))
+            if self.audio_stored:
+                return
+            self._attempt(lambda: self.session.tick(elapsed_ms, pause_minigame=True) if self.minigame_prompt
+                          else self.session.tick(elapsed_ms))
 
     def run(self):
         clock = pygame.time.Clock()

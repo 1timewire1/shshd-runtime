@@ -43,7 +43,7 @@ then the app archive (or sign the IPA). The simulator report is a separate
 These artifacts expire after 30 days. GitHub requires
 sign-in and repository read access for [Actions artifact downloads](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
 
-The owner can publish a version by pushing a tag such as `v0.6.0`. The tag
+The owner can publish a version by pushing a tag such as `v0.6.1`. The tag
 must be exactly `v` followed by the version shared by all component `pyproject.toml`
 files; a mismatch fails before building Python distributions. Once all
 four desktop builds, the iOS build/verification and the Python packaging checks
@@ -60,10 +60,10 @@ The release body comes from [RELEASE.md](../RELEASE.md) at the repository root.
 Update it before tagging a version. [CHANGELOG.md](../CHANGELOG.md) records
 release history, with upcoming changes under **Unreleased**.
 
-The **v0.6.0** release adds the episode creator. Its seventh distribution,
+The **v0.6.0** release introduced the episode creator. Its seventh distribution,
 `exp-runtime-creator`, is optional: player downloads and the unsigned IPA do
-not include Qt or the editor. Register its PyPI publisher before tagging
-v0.6.0; the six publishers used for v0.5.0 do not cover this new distribution.
+not include Qt or the editor. It requires its own PyPI publisher; the six
+publishers used for v0.5.0 do not cover this distribution.
 
 Rerunning a version-tag workflow updates matching assets on an existing
 release using `gh release upload --clobber`, then publishes any draft left by
@@ -231,15 +231,15 @@ Desktop jobs also build `EXP Runtime Creator` with `tools/build_desktop.py
 --creator`, then package/audit/smoke-test it using `tools/package_desktop.py
 --creator --smoke-test`. Files use `exp-runtime-creator-<label>-<target>` and are
 included in the same desktop Actions artifact/release upload as the player.
-For v0.6.0 the required release archives are:
+For v0.6.1 the required release archives are:
 
-- `exp-runtime-creator-v0.6.0-windows-x64.zip`
-- `exp-runtime-creator-v0.6.0-linux-x64.tar.gz`
-- `exp-runtime-creator-v0.6.0-macos-arm64.zip`
-- `exp-runtime-creator-v0.6.0-macos-x64.zip`
+- `exp-runtime-creator-v0.6.1-windows-x64.zip`
+- `exp-runtime-creator-v0.6.1-linux-x64.tar.gz`
+- `exp-runtime-creator-v0.6.1-macos-arm64.zip`
+- `exp-runtime-creator-v0.6.1-macos-x64.zip`
 
 Each has a `.sha256` checksum. A missing archive or checksum stops the release
-upload. The `exp_runtime_creator-0.6.0-py3-none-any.whl` wheel and its checksum
+upload. The `exp_runtime_creator-0.6.1-py3-none-any.whl` wheel and its checksum
 are also required release files.
 
 The creator contains Qt and the shared preview player; player and iOS downloads

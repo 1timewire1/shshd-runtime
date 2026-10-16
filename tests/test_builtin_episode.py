@@ -122,7 +122,7 @@ class FootballStarContentTests(unittest.TestCase):
                 elif action.name == 'text_input':
                     s.answer('Alex'); names += 1
                 elif action.name == 'choice':
-                    s.answer(next(i for i,e in enumerate(action.details['enabled']) if e)); choices += 1
+                    answer_screen(s, next(i for i,e in enumerate(action.details['enabled']) if e)); choices += 1
                 elif action.name in ('dialogue', 'presentation', 'vm_pause'):
                     answer_screen(s)
                 else:

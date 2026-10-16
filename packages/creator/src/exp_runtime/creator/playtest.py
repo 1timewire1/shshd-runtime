@@ -123,7 +123,17 @@ class Playtest:
         raw = self.debugger.state()
         option = next((o for o in self.choices(raw) if o['id'] == option_id), None)
         if option is None or not option['enabled']: raise ProjectError('Choose an enabled option ID from the current state')
-        return self.perform(lambda: self.debugger.resume(answer=option['visible_index'], provide_answer=True) and 'input')
+        def execute():
+            session = self.debugger.session
+            pending = session.pending
+            if not session.choice_ready:
+                self.debugger.resume(milliseconds=250 - session.engine.choice_ms)
+            # A very short timed choice can expire during its entrance. Never
+            # send the old option to the next panel or bypass the real clock.
+            if session.pending is pending:
+                self.debugger.resume(answer=option['visible_index'], provide_answer=True)
+            return 'input'
+        return self.perform(execute)
 
     def input(self, action, *, value=None, milliseconds=0, phase=None, cell=None):
         if action not in ('continue', 'answer_text', 'answer', 'tick', 'step', 'grid_pointer'):

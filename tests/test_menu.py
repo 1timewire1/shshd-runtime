@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -17,7 +18,125 @@ from test_content import FAKE_NATIVE, archive, make_apk, metadata
 from test_vm import program
 
 
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra required')
+class MenuAnimationTests(unittest.TestCase):
+    def test_submenu_tracks_preserve_the_background_and_native_pivots(self):
+        import pygame
+        from exp_runtime.application import Application
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        pygame.display.init(); pygame.display.set_mode((320, 480))
+        self.addCleanup(pygame.quit)
+        app = Application.__new__(Application)
+        background = pygame.Surface((320, 480)); background.fill((20, 30, 40))
+        incoming = pygame.Surface((320, 480), pygame.SRCALPHA)
+        outgoing = pygame.Surface((320, 480), pygame.SRCALPHA)
+        pygame.draw.rect(incoming, (0, 255, 0), (140, 116, 40, 80))
+        pygame.draw.rect(outgoing, (255, 0, 0), (200, 116, 40, 80))
+        app.library = SimpleNamespace(kind='apk')
+        app.renderer = SimpleNamespace(background=background, layer=incoming)
+        app.transition_layer = outgoing
+        app.transition_source, app.screen = 'main', 'options'
+        app.transition_age, app.transition_direction, app.transition_zoom = 150, 1, True
+        def color(canvas, point, expected):
+            self.assertTrue(all(abs(a - b) <= 5 for a, b in zip(canvas.get_at(point)[:3], expected)),
+                            (point, canvas.get_at(point), expected))
+        self.assertEqual(app.transition_duration, 300)
+        canvas = app._menu_transition()
+        color(canvas, (150, 80), (0, 255, 0))  # .6 scale around (160,16).
+        self.assertEqual(canvas.get_at((160, 160))[:3], (20, 30, 40))
+        self.assertEqual(canvas.get_at((210, 130))[:3], (20, 30, 40))  # No frozen main layer.
+        app.screen = 'help'
+        self.assertEqual(app.transition_duration, 400)
+        app.transition_age = 200
+        color(app._menu_transition(), (160, 80), (0, 255, 0))
+        app.transition_source, app.screen, app.transition_age = 'options', 'help', 100
+        self.assertEqual(app.transition_duration, 200)
+        canvas = app._menu_transition()
+        self.assertEqual(canvas.get_at((50, 130))[:3], (255, 0, 0))
+        self.assertEqual(canvas.get_at((310, 130))[:3], (0, 255, 0))
+        self.assertEqual(canvas.get_at((160, 240))[:3], (20, 30, 40))
+        app.transition_source, app.screen, app.transition_age = 'episodes', 'main', 200
+        color(app._menu_transition(), (185, 80), (255, 0, 0))
+        app.transition_source = 'options'
+        self.assertEqual(app._menu_transition().get_at((210, 130))[:3], (255, 0, 0))
+        app.library.kind, app.transition_zoom = 'ipa', False
+        app.transition_source, app.screen = 'options', 'help'
+        self.assertEqual(app.transition_duration, 400)
+        self.assertEqual(app._menu_transition().get_at((50, 130))[:3], (255, 0, 0))
+        self.assertEqual(background.get_at((160, 80))[:3], (20, 30, 40))
+
+    def test_info_fades_before_the_gear_grows_and_final_layout_is_retained(self):
+        import pygame
+        from exp_runtime.desktop_menu import MenuRenderer
+        from exp_runtime.ui_assets import Rect
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        pygame.display.init(); pygame.display.set_mode((320, 480))
+        self.addCleanup(pygame.quit)
+        renderer = MenuRenderer.__new__(MenuRenderer)
+        renderer.canvas = pygame.Surface((320, 480))
+        renderer.bank = SimpleNamespace(rectangle=lambda layout, node: Rect(0, 0, 275, 135)
+                                        if layout == 74 else Rect(0, 0, 184, 28))
+        renderer.strings = ['Authored'] * 128
+        renderer.backdrop = lambda **_: renderer.canvas.fill((0, 0, 0))
+        renderer.layout = lambda _, rect: pygame.draw.rect(renderer.canvas, (100, 100, 100),
+                                                           (rect.x, rect.y, rect.width, rect.height))
+        label = pygame.Surface((4, 4)); label.fill((255, 255, 255))
+        renderer.menu_label = lambda *_: label
+        def frame(_, index):
+            image = pygame.Surface((20, 18) if index == 13 else (42, 41), pygame.SRCALPHA)
+            image.fill((255, 128, 0) if index == 13 else (0, 200, 200))
+            return image
+        renderer.art = SimpleNamespace(frame=frame)
+        app = SimpleNamespace(intro=True, menu_age=3000, pressed=None, ready=True, can_resume=lambda: False)
+        rectangles = [Rect(20, 355 + i * 21, 160, 20) for i in range(4)]
+        def render(age, *, exit_ms=None):
+            app.menu_age, renderer.buttons = age, []
+            renderer.main(app, exit_ms=exit_ms)
+            layer = renderer.canvas
+            renderer.canvas = renderer.background.copy()
+            renderer.canvas.blit(layer, (0, 0))
+            self.assertEqual(app.menu_age, age)
+            return pygame.image.tobytes(renderer.canvas, 'RGB')
+        with patch('exp_runtime.desktop_menu.main_button_rects', return_value=rectangles):
+            render(3000)
+            self.assertNotIn(('options',), [command for _, command in renderer.buttons])
+            self.assertEqual(tuple(renderer.canvas.get_at((300, 450)))[:3], (0, 0, 0))
+            render(3150)
+            self.assertLessEqual(abs(renderer.canvas.get_at((300, 450)).g - 100), 1)
+            def orange_pixels():
+                return sum(renderer.canvas.get_at((x, y)).r > 150 and renderer.canvas.get_at((x, y)).b < 20
+                           for x in range(180, 220) for y in range(443, 471))
+            render(3300)
+            small = orange_pixels()
+            self.assertIn(('options',), [command for _, command in renderer.buttons])
+            render(3425)
+            medium = orange_pixels()
+            final = render(3550)
+            self.assertLess(small, medium)
+            self.assertLess(medium, orange_pixels())
+            app.intro = False
+            self.assertEqual(render(500), final)
+            render(500, exit_ms=0)
+            self.assertEqual(orange_pixels(), 0)
+            self.assertEqual(renderer.buttons, [])
+            render(500, exit_ms=249)
+            self.assertEqual(renderer.canvas.get_at((300, 450)).g, 200)
+            render(500, exit_ms=250)
+            self.assertEqual(tuple(renderer.canvas.get_at((300, 450)))[:3], (0, 0, 0))
+
+
 class MenuContractTests(unittest.TestCase):
+    def test_menu_tracks_retain_the_native_parent_space_and_stagger(self):
+        from exp_runtime.menu import main_button_x, main_button_rects
+        from exp_runtime.ui_assets import Rect
+        bank = SimpleNamespace(rectangle=lambda layout, node: Rect(0, 0, 275, 135)
+                               if layout == 74 else Rect(0, 0, 184, 28))
+        self.assertEqual([main_button_x(bank, i, 0) for i in range(4)], [-464, -418, -412, -405])
+        self.assertEqual([rect.x for rect in main_button_rects(bank)], [14, 40, 26, 13])
+        self.assertEqual([main_button_x(bank, i, 1, exiting=True) for i in range(4)], [-366, -366, -366, -352])
+        self.assertEqual(main_button_x(bank, 0, .5), -224)
+        self.assertEqual(main_button_x(bank, 0, .5, exiting=True), -176)
+
     def test_title_slots_and_missing_translations(self):
         record = dict(name='Authored.exp', titles=['School', 'École', 'Scuola', 'Schule', 'Escuela'])
         self.assertEqual([episode_title(record, code) for code in TITLE_LANGUAGES], record['titles'])
@@ -151,6 +270,45 @@ class LibraryMenuTests(unittest.TestCase):
         restored = MenuState(self.library)
         self.assertFalse(restored.choice_hints)
         self.assertIn('Invalid player preferences', restored.warning)
+
+    def test_vibration_preference_survives_reopen_and_older_preferences_default_on(self):
+        state = MenuState(self.library)
+        self.assertTrue(state.vibration)
+        state.vibration, state.music = False, False
+        state.persist()
+        restored = MenuState(self.library)
+        self.assertFalse(restored.vibration)
+        self.assertFalse(restored.music)
+        self.assertTrue(restored.sound)
+        data = json.loads(state.path.read_text())
+        del data['vibration']
+        state.path.write_text(json.dumps(data))
+        self.assertTrue(MenuState(self.library).vibration)
+        for invalid in ('yes', 1, None):
+            data['vibration'] = invalid
+            state.path.write_text(json.dumps(data))
+            restored = MenuState(self.library)
+            self.assertTrue(restored.vibration)
+            self.assertIn('Invalid player preferences', restored.warning)
+
+    def test_minigame_skips_are_independent_saved_and_default_off(self):
+        state = MenuState(self.library)
+        self.assertFalse(state.minigame_skips)
+        state.minigame_skips = True
+        state.persist()
+        restored = MenuState(self.library)
+        self.assertTrue(restored.minigame_skips)
+        self.assertFalse(restored.choice_hints)
+        data = json.loads(state.path.read_text())
+        del data['minigame_skips']
+        state.path.write_text(json.dumps(data))
+        self.assertFalse(MenuState(self.library).minigame_skips)
+        for invalid in ('yes', 1, None):
+            data['minigame_skips'] = invalid
+            state.path.write_text(json.dumps(data))
+            restored = MenuState(self.library)
+            self.assertFalse(restored.minigame_skips)
+            self.assertIn('Invalid player preferences', restored.warning)
 
     def test_title_preferences_keep_existing_saves_and_scripts_compatible(self):
         state = MenuState(self.library)
@@ -320,7 +478,7 @@ class ApplicationTests(unittest.TestCase):
         app.tick(2400)
         app.render()
         self.assertFalse(app.buttons)  # Entrance input gate.
-        app.tick(600)
+        app.tick(1150)
         app.window = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
         app.render()
         self.assertEqual(len(app.buttons), 6)
@@ -335,6 +493,11 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(app.screen, 'episodes')
         app.tick(200)
         app.render()
+        self.assertFalse(app.buttons)  # Submenu entry has not settled yet.
+        app.tick(200)
+        app.render()
+        self.assertTrue(app.buttons)
+        self.assertEqual(app.main_exit_ms, 400)  # Main rows continue behind the incoming panel.
         app.command(('episode', app.library.select('The_New_Girl.exp')['id']))
         app.command(('start', True))
         app.render()
@@ -355,7 +518,7 @@ class ApplicationTests(unittest.TestCase):
         app.return_to_menu()
         for screen in ('options', 'help', 'library'):
             app.show(screen)
-            app.tick(200)
+            app.tick(1550)
             app.render()
         app.command(('toggle', 'sound'))
         self.assertFalse(MenuState(app.library).sound)
@@ -372,6 +535,7 @@ class ApplicationTests(unittest.TestCase):
         app.library.episodes = [dict(source, id=f'{i:064x}', titles=[f'Episode {i:02}', '', '', '', '']) for i in range(30)]
         app.show('episodes')
         app.scope = 'all'
+        app.tick(1550)
         app.command(('episode_groups',))
         app.tick(200)
         app.render()
@@ -427,7 +591,7 @@ class ApplicationTests(unittest.TestCase):
         checkpoint = app.state.resume_path(record['id'])
         saved = checkpoint.read_bytes()
         app.show('options')
-        app.tick(200)
+        app.tick(1550)
         app.render()
         self.assertIn(('title_languages',), [command for _, command in app.buttons])
         app.command(('title_languages',))

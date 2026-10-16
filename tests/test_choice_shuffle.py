@@ -62,6 +62,7 @@ class ChoiceShuffleTests(unittest.TestCase):
                     self.assertEqual(s.engine.random48.state, libc)
                     self.assertEqual(s.vm.snapshot(), held)
                     self.assertEqual(s.engine.result_cells[0], 42)
+                    s.tick(250)
                     before = s.snapshot()
                     saved = json.loads(json.dumps(before))
                     for row, original_index in enumerate(order):
@@ -80,7 +81,7 @@ class ChoiceShuffleTests(unittest.TestCase):
         s.pending = None
         self.assertEqual(s.advance().details, builder)
         self.assertEqual(s.engine.random.state, 1)
-        self.assertEqual(s.answer(1).request.args, (77, 1, 38))
+        self.assertEqual(answer_screen(s, 1).request.args, (77, 1, 38))
 
     def test_empty_list_draws_nothing_but_singleton_still_draws_once(self):
         for count, state in ((0, 1), (1, 0x41c67ea6)):
@@ -92,7 +93,7 @@ class ChoiceShuffleTests(unittest.TestCase):
                 self.assertEqual(s.engine.random.state, state)
                 self.assertEqual(Session.from_snapshot(r, s.snapshot()).snapshot(), s.snapshot())
                 if count:
-                    self.assertEqual(s.answer(0).request.args, (77, 101, 82))
+                    self.assertEqual(answer_screen(s, 0).request.args, (77, 101, 82))
 
     def test_native_shuffle_leaves_enabled_flags_at_their_row_positions(self):
         s = stopped_session(resources(enabled=(0, 1, 1, 0)))
@@ -104,7 +105,7 @@ class ChoiceShuffleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 s.answer(row)
             self.assertEqual(s.snapshot(), before)
-        self.assertEqual(s.answer(2).request.args, (77, 32767, 43))
+        self.assertEqual(answer_screen(s, 2).request.args, (77, 32767, 43))
 
     def test_timeout_uses_shuffled_mapping_even_for_a_disabled_row(self):
         r = resources(timeout=1000, enabled=(1, 1, 1, 0))
@@ -139,7 +140,7 @@ class ChoiceShuffleTests(unittest.TestCase):
             self.assertIsNone(restored.engine.choice_builder)
             again = Session.from_snapshot(r, restored.snapshot())
             self.assertEqual(again.snapshot(), restored.snapshot())
-            self.assertEqual(again.answer(0).request.args, (77, -303, 43))
+            self.assertEqual(answer_screen(again, 0).request.args, (77, -303, 43))
 
     def test_invalid_stopped_builder_is_rejected_without_changing_the_save(self):
         r = resources()
@@ -239,7 +240,7 @@ class ChoiceShuffleTests(unittest.TestCase):
                     for row, value in enumerate(restored.pending.details['values']):
                         branch = Session.from_snapshot(r, restored.snapshot())
                         self.assertEqual(branch.snapshot(), restored.snapshot())
-                        self.assertEqual(branch.answer(row).name, 'dialogue')
+                        self.assertEqual(answer_screen(branch, row).name, 'dialogue')
                         self.assertEqual(branch.engine.result_cells[0], value)
                         self.assertGreater(branch.vm.steps_executed, restored.vm.steps_executed)
 

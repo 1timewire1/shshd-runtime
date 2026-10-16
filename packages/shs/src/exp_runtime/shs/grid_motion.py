@@ -13,7 +13,7 @@ def project(width, height, x, y, z=0.):
             camera_z)
 
 
-def cube_faces(width, height, column, row, angle=0., scale=1.):
+def cube_faces(width, height, column, row, angle=0., scale=1., *, depths=False):
     """Visible faces of the native 450 x 450 x 100 cube, back to front.
 
     Each result is (depth, face, quad), with texture corners TL/TR/BR/BL.
@@ -37,5 +37,6 @@ def cube_faces(width, height, column, row, angle=0., scale=1.):
                                -50 + scale * (-x * sine + z * cosine)) for x, y, z in vertices)
         a, b, c, _ = points
         if (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > .001:
-            visible.append((sum(p[2] for p in points) / 4, face, tuple(p[:2] for p in points)))
+            visible.append((sum(p[2] for p in points) / 4, face,
+                            points if depths else tuple(p[:2] for p in points)))
     return sorted(visible)

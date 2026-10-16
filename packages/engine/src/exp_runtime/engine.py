@@ -18,10 +18,12 @@ from .scene_badge import SceneBadge
 from .loading import LoadingScreen
 from .message_panel import MessagePanel
 from .speaker_names import SpeakerNames
+from .fonts import TextHistory
 from .title_screen import TitleScreen
 from .relationships import RelationshipChange
 from .dialogue_animation import DialogueAnimation, DialogueHistory
 from .background import BackgroundPan
+from .music_state import MusicPlayback, SoundPlayback
 from .dialogue_notice import notice_lifetime
 from .vm import KiwiVM, StopKind, VMError, VMStop, signed16
 
@@ -52,6 +54,7 @@ class EngineState:
     # Derived from the validated library, never accepted from saved engine data.
     game_key: ClassVar[str] = 'shs'
     app_version: ClassVar[str | None] = None
+    _sound_batch: ClassVar[list[int] | None] = None
     numbers: dict[int, int] = field(default_factory=dict)
     strings: dict[str, str] = field(default_factory=dict)
     character_names: dict[int, str] = field(default_factory=dict)
@@ -66,13 +69,19 @@ class EngineState:
     background_pan: BackgroundPan = field(default_factory=BackgroundPan)
     music_id: int = -1
     music_flag: bool = False
+    music_serial: int = 0
+    music_stop_ms: int = 0
+    music_playback: MusicPlayback | None = None
     sound_id: int = -1
     sound_serial: int = 0
     sound_ids: list[int] = field(default_factory=list)
+    sound_playback: list[SoundPlayback] = field(default_factory=list)
     scene_value: int = 0
+    scene_transition: GameState | None = None
     last_input: str = ''
     result_cells: list[int | None] = field(default_factory=lambda: [None] * 10)
     choice_builder: dict | None = None
+    choice_ms: int = 250
     random48: Random48 = field(default_factory=Random48)
     word_game: WordGame | None = None
     random: NativeRandom = field(default_factory=NativeRandom)
@@ -91,7 +100,22 @@ class EngineState:
     loading: LoadingScreen | None = None
     message_panel: MessagePanel | None = None
     speaker_names: SpeakerNames = field(default_factory=SpeakerNames)
+    text_history: TextHistory = field(default_factory=TextHistory)
     title_screen: TitleScreen | None = None
+
+    def clear_dialogue(self):
+        self.dialogue_history.remember(self.dialogue_animation)
+        self.dialogue_animation = None
+
+    def request_sound(self, *assets):
+        """Keep every cue emitted by one session input/tick in native order."""
+        self.sound_id = assets[0]
+        if self._sound_batch is None:
+            self.sound_ids = list(assets)
+        else:
+            self._sound_batch.extend(assets)
+            self.sound_ids = self._sound_batch[:]
+        self.sound_serial += 1
 
     def clear_scene_expressions(self):
         """loadScript09NoGUI clears both 200-byte expression tables."""
@@ -115,8 +139,11 @@ class EngineState:
         self.word_game = self.word_grid = self.football = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
+        self.choice_ms = 250
         self.next_dialogue_notice = self.notice = self.last_input = ''
         self.notice_ms = self.scene_value = 0
+        if self.scene_transition is not None:
+            self.scene_transition.clear()
 
     @staticmethod
     def number_key(owner: int, key: int) -> int:
@@ -193,8 +220,7 @@ class EngineState:
         self.numbers[self.number_key(character, 3000)] = asset
         self.numbers[self.number_key(character, 3001)] = count
         if not settled and change.sound is not None:
-            self.sound_id, self.sound_ids = change.sound, [change.sound]
-            self.sound_serial += 1
+            self.request_sound(change.sound)
         return change
 
     def read_text(self, vm: KiwiVM, reference: int) -> str:
@@ -395,7 +421,7 @@ class EngineState:
             # and no UI callback is requested. Retire its presentation state.
             self.panel = PanelState()
             self.background_pan.center()
-            self.dialogue_animation = None
+            self.clear_dialogue()
             self.next_dialogue_notice, self.notice, self.notice_ms = '', '', 0
             return complete('close_dialogue_panel')
         if y in (11, 34, 35, 86):
@@ -434,22 +460,29 @@ class EngineState:
             need(1)
             self.audio_stopped = True
             self.music_id = -1
-            return complete('stop_audio')
+            # CoD stopMusic(short,bool), 00042d70: -1 selects 1000ms;
+            # zero stops immediately. SHS Android's 000a3260 ignores it.
+            self.music_stop_ms = max(0, 1000 if args[0] == -1 else args[0]) if self.game_key == 'cod' else 0
+            self.music_serial += 1
+            self.music_playback = None
+            return complete('stop_audio', fade_ms=self.music_stop_ms)
         if y == 82:
             need(0)
             # FUN_000a3040 requests 1000ms from the optional vibrator, only
-            # when present and enabled. Desktop has no vibrator backend.
+            # when present and enabled. The iPhone host uses its native
+            # system vibration alert; desktop has no vibrator backend.
             return complete('vibrate', duration_ms=1000)
         if y in (79, 80):
             need(1 if y == 79 else 2)
             if y == 80 or args[0] in GAMES[self.game_key].MUSIC_RANGE:
                 self.music_id = args[0]
                 self.music_flag = bool(args[1]) if y == 80 else False
+                self.music_stop_ms = 0
+                self.music_serial += 1
+                self.music_playback = None
                 self.audio_stopped = False
             else:
-                self.sound_id = args[0]
-                self.sound_ids = [args[0]]
-                self.sound_serial += 1
+                self.request_sound(args[0])
             return complete('request_audio', asset_id=args[0])
         if y == 18:  # Explicit default/no-op in this Android dispatcher.
             need(0)

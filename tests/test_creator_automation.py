@@ -109,6 +109,11 @@ class CreatorAutomationTests(unittest.TestCase):
         timed_project = deepcopy(p); timed_project.node('ask').params['shuffle'] = False
         timed = Playtest(DebugSession(timed_project, seed=19)); timed.run(until='choice')
         self.assertEqual(timed.input('tick', milliseconds=901)['text'], 'We stayed.')
+        timed_project.node('ask').timeout_ms = 100
+        timed = Playtest(DebugSession(timed_project, seed=19)); timed.run(until='choice')
+        expired = timed.choose('ask:0')
+        self.assertEqual(expired['text'], 'We stayed.')  # Entrance can expire; don't answer the following panel.
+        self.assertEqual(expired['action'], 'dialogue')
         breakpoint = Playtest(DebugSession(p, seed=19))
         state = breakpoint.run(until='node', node_id='ask')
         self.assertEqual(state['stop_reason'], 'breakpoint')

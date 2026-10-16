@@ -9,8 +9,12 @@ from ..exp import ContentError
 from .audio import music_cue as MUSIC_CUE
 from .content import BUILTIN, extract_builtin
 from .services import dispatch as DISPATCH
+from .scene_transition import SceneTransition
 
-STATE_TYPES = {}
+STATE_TYPES = {'scene_transition': SceneTransition | None}
+SCENE_TRANSITION = SceneTransition
+# GameModel::fadeToGame 0000f9d8, app mode 103 at 000201d4/000250f4.
+MENU_TRANSITION = 6
 
 KEY = 'cod'
 TITLE = 'Cause of Death'
@@ -36,9 +40,16 @@ NAME_FONT = ('VerdanaBoldItalic', 291)
 # SHSEngine::initFonts 000234da..000237ee; normal/gray/default dialogue
 # uses black body text and dark-red names. Theme 2 retains its rose color.
 DIALOGUE_COLORS = {1: (0, 0, 0), 2: (180, 78, 78), 3: (0, 0, 0), -1: (0, 0, 0)}
+IOS_DIALOGUE_COLORS = DIALOGUE_COLORS
+# initFonts 00023476 / 000234a0: narrator and backtick switch font.
+NARRATION_COLORS = (0, 0, 0), (180, 109, 26)
 NAME_COLORS = {'PajamaHip24': (41, 104, 221), 'PajamaHip26': (139, 0, 0),
                'PajamaHip266': (180, 78, 78), 'PajamaHipG26': (139, 0, 0),
-               'PajamaHipY26': (139, 0, 0), 'PajamaHipS26': (254, 53, 0)}
+               'PajamaHipY26': (139, 0, 0), 'PajamaHipS26': (0, 0, 0),
+               'PajamaHipS26Normal': (240, 81, 60), 'PajamaHipS26Rose': (180, 78, 78)}
+# updateFonts 000355e4 selects the letter-effect fonts by dialogue theme.
+# Keep these colors separate from the shared notice geometry/animation.
+NOTICE_FONTS = {1: 'PajamaHipS26Normal', 2: 'PajamaHipS26Rose'}
 MUSIC_RANGE = range(8201, 8210)
 # CoD doSoundManagerTransition (00022b04), splashScreenFlewIn (00014c0c).
 MENU_MUSIC = 8209
@@ -48,10 +59,14 @@ RELATIONSHIP_FLASH = {3000: 3003, 3001: 3005, 3002: 3007}
 RELATIONSHIP_LOSS = {3000: 3004, 3001: 3006, 3002: 3008}
 # SHSEngine::buttonPressed 000249d0 and SHSWidgetMenu::buttonPressed 0003fd60.
 CLICK_SOUND = 8005
+# SHSUIMenu::handleMenuSelection 000395ac; zero score delta is silent.
+WORD_CHOICE_SOUNDS = {1: 8003, -1: 8004}
 # SHSEngine::buttonPressed pause branch (00024d86).
 PAUSE_SOUND = 8006
-# SHS answer-feedback resource IDs do not establish semantics for CoD assets.
-CHOICE_FEEDBACK_SOUNDS = {}
+# CoD scripts use these cues for positive/negative choice feedback, including
+# lethal branches without a score notice (Volume 2's opening fight). These
+# are distinct from both SHS's quiz cues and CoD's timed-word sounds above.
+CHOICE_FEEDBACK_SOUNDS = {8002: 1, 8001: -1}
 
 
 def profile_for(read):
