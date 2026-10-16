@@ -11,8 +11,8 @@ import pygame
 from exp_runtime.application_hd import HdShell, MISS_MENU, END_MENU
 from exp_runtime.desktop_boot_hd import FLASH_TOTAL, HdBootScreen
 from exp_runtime.desktop_hd_menu import BUTTON_STRIP, CARD_W, FOOTER_HEIGHT, HdMenuWindows, ROW_HEIGHT
-from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, HdMainMenu, READY_AFTER, SLIDE_FROM, SLIDE_OVERSHOOT,
-                                         keyframes)
+from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, HdMainMenu, INFO_DELAY, READY_AFTER, SLIDE_FROM,
+                                         SLIDE_OVERSHOOT, SLIDE_TIME, STAGGER, keyframes)
 from exp_runtime.menu import MenuFont, MenuState
 from exp_runtime.menu_engine import (BACK, CLEAR, ENGINE, QUEUE, MenuEngineData, MenuEngineError, MenuStack)
 
@@ -210,17 +210,21 @@ class MainMenuTimingTests(unittest.TestCase):
         offsets = [self.menu.slide(i) for i in range(5)]
         self.assertGreater(offsets[0], offsets[1])                # earlier buttons are further along
         self.assertGreater(offsets[1], offsets[4])
-        self.menu.tick(.336 - .2 + .32)
+        self.menu.tick(.96 * SLIDE_TIME - .2 + 4 * STAGGER)
         self.assertAlmostEqual(self.menu.slide(0), 0.0, delta=SLIDE_OVERSHOOT)
         self.menu.tick(1)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [0.0] * 5)
-        self.assertEqual(self.menu.pop(0.36), 1.0)
+        self.assertEqual(self.menu.pop(INFO_DELAY), 1.0)
 
     def test_the_gear_and_info_pop_in_past_full_size(self):
         self.menu.start(intro=False)
-        self.assertEqual(self.menu.pop(.36), 0.01)
-        self.menu.tick(.36 + .336)
-        self.assertAlmostEqual(self.menu.pop(.36), 1.2, places=2)
+        self.assertEqual(self.menu.pop(INFO_DELAY), 0.01)
+        self.menu.tick(INFO_DELAY + .96 * SLIDE_TIME)
+        self.assertAlmostEqual(self.menu.pop(INFO_DELAY), 1.2, places=2)
+
+    def test_the_buttons_take_longer_than_the_native_entrance(self):
+        self.assertGreater(SLIDE_TIME, .35)
+        self.assertGreater(READY_AFTER, .35 + .36)
 
 
 class BootTests(unittest.TestCase):
