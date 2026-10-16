@@ -97,6 +97,7 @@ class EngineState:
     background_pan: BackgroundPan = field(default_factory=BackgroundPan)
     music_id: int = -1
     music_flag: bool = False
+    music_stop_fade_ms = 0      # the last service 81's fade-out; playback state, so not a saved field
     sound_id: int = -1
     sound_serial: int = 0
     sound_ids: list[int] = field(default_factory=list)
@@ -550,6 +551,11 @@ class EngineState:
             need(1)
             self.audio_stopped = True
             self.music_id = -1
+            if getattr(GAMES[self.game_key], 'MUSIC_STOP_FADES', False):
+                # CoD SHSSoundManager::stopMusic(short, true) (00042d70): 0 stops at once, 0xffff means 1000 ms and
+                # any other value is the fade in ms (-[SHSSound setFadeTime:] divides it by 1000.0).
+                fade = args[0] & 0xffff
+                self.music_stop_fade_ms = 1000 if fade == 0xffff else fade if fade < 0x8000 else 0
             return complete('stop_audio')
         if y == 82:
             need(0)

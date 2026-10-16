@@ -177,8 +177,18 @@ Service 79 classifies 8201–8209 as music; service 80 explicitly queues music.
 `SHSSoundManager::playMusic` (`0004313c`) accepts that range and episode audio
 at or above 26000. CoD cues use their exact source with zero seek offset;
 SHS's 8202→8201 and other segment aliases do not apply. Service 81's argument
-is a fade duration (`stopMusic`, `00042d70`), not a track selector. The current
-desktop stops immediately, as in the existing SHS audio approximation.
+is a fade duration, not a track selector. The syscall calls
+`stopMusic((short)a1, true)` (`00042d70`): 0 stops at once, `0xffff` means
+1000 ms, and any other value is milliseconds (`-[SHSSound setFadeTime:]`
+divides it by 1000.0; `getFadeLevel` falls linearly to 0). `true` drops any
+queued cue. A sound that is already fading keeps its fade. `tick` (`00042ffc`)
+starts a cue queued by `playMusic` only once the faded sound has stopped, and
+`playMusic` of the fading cue itself removes the fade. The desktop follows
+these rules (`MUSIC_STOP_FADES`; the fade time is playback state and is not
+saved). Negative shorts other than -1 would make the native fade never finish.
+The runtime stops at once for these instead (unverified in scripts). The iOS
+host's mixer has no volume control, so there the cue plays at full volume for
+the fade time and then stops.
 
 Service 80's second argument is the **repeat flag**, not a fade control.
 The dispatcher (`0003354c`) passes `bool(a2)` to `queueMusic` (`0000ebe2`),

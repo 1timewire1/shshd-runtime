@@ -98,7 +98,7 @@ class Desktop:
     panel_alpha = None          # the HD menu view's alpha for this frame (None: drawn whole)
     panel_overlay = None        # the HD timer layers for this frame (outside the view's fades)
     edge_layer = None
-    music_fade_since = None
+    music_fade = None           # (start ticks, ms) of the playing cue's fade-out
     fade = None
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
@@ -251,7 +251,7 @@ class Desktop:
         self.music_token = None
         self.music_loaded = False
         self.music_paused = False
-        self.music_fade_since = None
+        self.music_fade = None
         self.sound_serial = session.engine.sound_serial
         self.audio = False
         self.music_enabled = self.sound_enabled = True
@@ -383,21 +383,14 @@ class Desktop:
         engine = self.session.engine
         token = (engine.music_id, engine.music_flag, self.music_enabled)
         paused = self.menu_open or not self.active or engine.music_paused
-        if (token != self.music_token and self.music_loaded and not paused and self.music_enabled
-                and self.music_token and self.music_token[2] and engine.music_id >= 0
-                and self.music_token[0] != engine.music_id):
-            # SHSSoundManager::playMusic: a different cue first fades the playing one out over 1000 ms.
-            now = pygame.time.get_ticks()
-            if self.music_fade_since is None:
-                self.music_fade_since = now
-            if now - self.music_fade_since < 1000:
-                try:
-                    pygame.mixer.music.set_volume(self.music_volume * (1 - (now - self.music_fade_since) / 1000))
-                except pygame.error as error:
-                    logging.warning('Music fade failed: %s', error)
-                return
+        if token != self.music_token and self._music_fading(token, paused):
+            return
+        if token == self.music_token and self.music_fade is not None:
+            # playMusic of the cue that is fading out: removeFade, and it plays on at full volume.
+            self.music_fade = None
+            self._set_music_volume(self.music_volume)
         if token != self.music_token:
-            self.music_fade_since = None
+            self.music_fade = None
             self.music_token = token
             self.music_loaded = self.music_paused = False
             try:
@@ -405,12 +398,8 @@ class Desktop:
                 if engine.music_id >= 0 and self.music_enabled:
                     cue = music_cue(engine.music_id, game=game_id(self.session.resources))
                     pygame.mixer.music.load(BytesIO(self.session.resources.read_asset(cue.asset_id)))
-                    # Both native iOS games pass service 80's flag to SHSSound.setLoop: (-1 repeats, 0 plays
-                    # once). (Natively the old cue fades out over 1 s before the new one starts; here it stops.)
-                    # The iOS host's mixer (platforms/drawing.Mixer) has no volume: the slider is desktop-only.
-                    set_volume = getattr(pygame.mixer.music, 'set_volume', None)
-                    if set_volume is not None:
-                        set_volume(self.music_volume)
+                    # Both native iOS games pass service 80's flag to SHSSound.setLoop: (-1 repeats, 0 plays once).
+                    self._set_music_volume(self.music_volume)
                     pygame.mixer.music.play(loops=-1 if engine.music_flag else 0, start=cue.start_ms / 1000)
                     self.music_loaded = True
             except (ContentError, pygame.error) as error:
@@ -425,6 +414,34 @@ class Desktop:
                     pygame.mixer.music.unpause()
             except pygame.error as error:
                 logging.warning('Music %s cannot change pause state: %s', engine.music_id, error)
+
+    def _music_fading(self, token, paused):
+        old = self.music_token
+        if paused or not (self.music_loaded and self.music_enabled and old and old[2]):
+            return False
+        now = pygame.time.get_ticks()
+        if self.music_fade is None:
+            get_busy = getattr(pygame.mixer.music, 'get_busy', None)
+            if get_busy is not None and not get_busy():
+                return False
+            duration = (self.session.engine.music_stop_fade_ms if token[0] < 0
+                        else 1000 if token[0] != old[0] else 0)
+            if duration <= 0:
+                return False
+            self.music_fade = (now, duration)
+        since, duration = self.music_fade
+        if now - since >= duration:
+            return False
+        self._set_music_volume(self.music_volume * (1 - (now - since) / duration))
+        return True
+
+    def _set_music_volume(self, volume):
+        set_volume = getattr(pygame.mixer.music, 'set_volume', None)
+        if set_volume is not None:
+            try:
+                set_volume(volume)
+            except pygame.error as error:
+                logging.warning('Music volume cannot change: %s', error)
 
     def _sync_audio(self):
         if not self.audio:
