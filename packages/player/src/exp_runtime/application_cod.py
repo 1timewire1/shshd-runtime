@@ -20,7 +20,7 @@ Games / Main Menu / Replay (21 / 22 / 23 / 24 / 25); 36 is Delete Saved Game's Y
 outside the end menu, so does 31.
 
 Differences from SHS HD's flow: the launch screen is CoD's own (`desktop_cod_main.CodBootScreen`) and the answer goes
-straight to the main menu (no EA flash); Play/Resume, Now Airing and Episodes On Demand (the main menu's and the end
+through black to the main menu, which slowly fades in (no EA flash; timings below); Play/Resume, Now Airing and Episodes On Demand (the main menu's and the end
 menus') open SHS HD's pickers in CoD's dress (`desktop_cod_episodes.py`), or the plain episode browser when the
 library has no SHS HD art source. "More EA Games" (main menu, and end-menu action 30) is Switch Game, as in SHS HD.
 """
@@ -39,6 +39,12 @@ MAIN_MENU = 31
 SCOPES = {'play': 'play', 'airing': 'weekly', 'demand': 'all'}
 END_BROWSER = {28: 'weekly', 29: 'all'}             # end menu: Now Airing / Episodes On Demand
 ENGINE_RESOURCES, UI_RESOURCES = (13, 15, 16), (6, 14, 272, 532, 533)
+# CoD 1.4.7's way from the EA screen to the main menu (SHS HD's flash code with no flare): `setAppMode(102)` (00022cd4)
+# adds a black layer that fades in (opacity 0 -> 1) over 1.0 s, beginning 1.0 s later. When it stops
+# (`SHSAnimationDelegate animationDidStop:finished:` 00017388, "flash-all-white") the main menu is set up
+# (`setAppMode(101)`) and the black fades out over 1.0 s from 0.2 s on; the buttons slide in from 1.5 s
+# (`animateMainMenuButtonsIn(1.5)`, desktop_cod_main.BUTTONS_START_INTRO).
+BLACK_HOLD, BLACK_FADE, REVEAL_DELAY = 1.0, 1.0, 0.2
 
 
 class CodShell(HdShell):
@@ -88,11 +94,14 @@ class CodShell(HdShell):
         return True
 
     def arrive(self):
-        """From black (after the EA screen, or another game): the main menu, fading in. CoD has no EA flash."""
+        """From black (after the EA screen, or another game): the main menu, slowly fading in. CoD has no EA flash."""
         self.stack.clear()
         self.pause_open = False
         self.enter_main(intro=True)
-        self.fade = ('in', 0.0, None)
+        self.fade = ('in', -REVEAL_DELAY, None, BLACK_FADE)
+
+    def replay_launch(self):
+        """CoD has no EA flash to replay: only the buttons slide in again (`enter_main`)."""
 
     def backdrop_available(self):
         """The "SHS HD Backdrop" switch shows when the SHS HD art source can supply the collage."""
@@ -113,7 +122,7 @@ class CodShell(HdShell):
         """CoD's `doMenuEngineAction` numbers, run through HdShell's (see the table above)."""
         if number == 1:                   # the sound answer is in: no EA flash; the EA screen fades to black, then the menu
             self.stack.clear()
-            self.leave(self.arrive)
+            self.leave(self.arrive, hold=BLACK_HOLD, time=BLACK_FADE)
             return
         if number == MAIN_MENU and self.stage != 'end':
             self.stack.clear()

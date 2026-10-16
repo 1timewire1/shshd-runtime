@@ -213,6 +213,8 @@ class NoticeTests(unittest.TestCase):
         ui.session, ui.error, ui.menu_open, ui.active = s, None, True, True
         ui.panels_open, ui.panels_progress, ui._panels_wide = False, 0.0, False
         ui.pause_elapsed_ms = 400
+        from exp_runtime.desktop_pause_hd import HdPauseMenu
+        ui.pause_hd = HdPauseMenu.__new__(HdPauseMenu)
         remaining = s.engine.notice_ms
         ui.tick(1000)
         ui.menu_open, ui.active = False, False

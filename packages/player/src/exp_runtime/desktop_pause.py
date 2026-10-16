@@ -13,6 +13,13 @@ def pause_scale(elapsed_ms):
     progress = max(0, min(1, elapsed_ms / PAUSE_OPEN_MS))
     if progress in (0, 1):
         return .001 if progress == 0 else 1.
+    return .001 + .999 * ease_in_out(progress)
+
+
+def ease_in_out(progress):
+    progress = max(0, min(1, progress))
+    if progress in (0, 1):
+        return float(progress)
     # Invert the time axis of cubic-bezier(.42, 0, .58, 1).
     low, high = 0., 1.
     for _ in range(20):
@@ -22,8 +29,7 @@ def pause_scale(elapsed_ms):
             low = t
         else:
             high = t
-    eased = 3 * (1 - t) * t*t + t**3
-    return .001 + .999 * eased
+    return 3 * (1 - t) * t*t + t**3
 
 
 def draw_pause_gear(target, art, *, scale=1):

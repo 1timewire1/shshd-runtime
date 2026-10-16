@@ -820,7 +820,7 @@ class Application:
             self.state.warp_unlocked = True
             self._attempt(self.state.persist)
 
-    def return_to_menu(self):
+    def return_to_menu(self, pause_box=None):
         self.unlock_warp_if_football_finished()
         # Keep the live session even if a filesystem error prevents a checkpoint.
         if self.game.session.engine.word_grid:
@@ -847,7 +847,9 @@ class Application:
         self.show('main', remember=False)
         if end is not None:
             self.shell.show_end_menu(*end)
-        if self.shell is not None:
+        elif pause_box is not None and self.shell is not None:
+            self.shell.zoom_out(pause_box)
+        if self.shell is not None and self.shell.stage != 'flash':
             self.play_menu_music()
         self.refresh_saves()
         pygame.display.set_caption(self.game_title)

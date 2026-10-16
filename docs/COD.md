@@ -177,8 +177,18 @@ Service 79 classifies 8201–8209 as music; service 80 explicitly queues music.
 `SHSSoundManager::playMusic` (`0004313c`) accepts that range and episode audio
 at or above 26000. CoD cues use their exact source with zero seek offset;
 SHS's 8202→8201 and other segment aliases do not apply. Service 81's argument
-is a fade duration (`stopMusic`, `00042d70`), not a track selector. The current
-desktop stops immediately, as in the existing SHS audio approximation.
+is a fade duration, not a track selector. The syscall calls
+`stopMusic((short)a1, true)` (`00042d70`): 0 stops at once, `0xffff` means
+1000 ms, and any other value is milliseconds (`-[SHSSound setFadeTime:]`
+divides it by 1000.0; `getFadeLevel` falls linearly to 0). `true` drops any
+queued cue. A sound that is already fading keeps its fade. `tick` (`00042ffc`)
+starts a cue queued by `playMusic` only once the faded sound has stopped, and
+`playMusic` of the fading cue itself removes the fade. The desktop follows
+these rules (`MUSIC_STOP_FADES`; the fade time is playback state and is not
+saved). Negative shorts other than -1 would make the native fade never finish.
+The runtime stops at once for these instead (unverified in scripts). The iOS
+host's mixer has no volume control, so there the cue plays at full volume for
+the fade time and then stops.
 
 Service 80's second argument is the **repeat flag**, not a fade control.
 The dispatcher (`0003354c`) passes `bool(a2)` to `queueMusic` (`0000ebe2`),
@@ -734,11 +744,17 @@ layout with CoD's art (owner's choice, 2026-10-14).
   are empty. It fills the 3:4 frame's width (2.4x, against the buttons' 2x). It is placed so that the device's
   Play/Resume top (CoD point 346 on IMG_0464) falls on ours (frame point 753). The logo then sits just above the wedge,
   as on the device, and the taller picture loses 77 points of sky and 51 of the brick floor.
-- **The entrance.** Only the buttons slide in, since there is one layer (owner's choice).
+- **The entrance.** Only the buttons slide in, since there is one layer (owner's choice). On the first arrival they
+  start 1.5 s in (`animateMainMenuButtonsIn(1.5)`; SHS HD's is 3.2 s), otherwise at once.
 - **The launch screen.** CoD's own `Default@2x.png` (the EA logo on a flat grey of 105, 640 x 960) is fitted to the
-  frame's height on the same grey, under "Play with sound?" (menu 7; IMG_0473). After the answer the screen fades to
-  black and the main menu fades in from it, as the owner describes the device: CoD has no EA flash. The fade (0.5 s
-  each way) is not decompiled: it is in CoD's engine view's `setRenderArg`.
+  frame's height on the same grey, under "Play with sound?" (menu 7; IMG_0473). After the answer the screen goes to
+  black and the main menu slowly fades in from it: CoD has no EA flash, but runs SHS HD's flash code without the flare
+  (1.4.7, read-only):
+  - `setAppMode(102)` (`00022cd4`) adds a full-frame black layer that fades in (opacity 0 -> 1) over 1.0 s, beginning
+    1.0 s later. The EA screen stays meanwhile.
+  - When that animation ("flash-all-white") stops, `SHSAnimationDelegate animationDidStop:finished:` (`00017388`)
+    sets up the main menu (`setAppMode(101)`) and fades the black out (1 -> 0) over 1.0 s, beginning 0.2 s later.
+  - `application_cod.py` (`BLACK_HOLD`, `BLACK_FADE`, `REVEAL_DELAY`) keeps these times.
 - **Menu music.** `doSoundManagerTransition` (00025c60) plays 0x2011 (8209) once, unlooped, where SHS HD plays 0x2017
   (8215). The menu was silent because the app always asked for SHS's asset; it now takes the game profile's
   `MENU_MUSIC`.
@@ -795,7 +811,7 @@ browser.
   sound?" again.
 - **Fades (owner's choice).** The frame fades to black (0.5 s); the backdrop beside it stays. Then the other game
   arrives:
-  - Cause of Death: its menu fades in from black, as after its EA screen.
+  - Cause of Death: its menu fades in from black as after its EA screen (0.2 s of black, then 1.0 s).
   - SHS: SHS HD's flash (the flare and the white, with the EA jingle) over black, then the main menu's entrance.
 
   Opening a library makes one frame last about half a second. The shell's animations advance at most 1/20 s a frame

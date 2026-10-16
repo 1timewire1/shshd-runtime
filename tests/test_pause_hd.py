@@ -105,6 +105,40 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(state.screen, 'pause')
         self.assertTrue(self.menu.back())
 
+    def test_a_page_pushes_in_from_the_right_and_back_slides_it_out_again(self):
+        import pygame
+        from exp_runtime.desktop_pause import ease_in_out
+        menu, module = self.menu, self.module
+        width = module.FRAME[0] * module.S
+        layers = {}
+
+        def screen_layout(settings, host_rows=(), *, message=''):
+            layer = pygame.Surface((width, 8), pygame.SRCALPHA)
+            layer.fill({'pause': (255, 0, 0, 255), 'options': (0, 0, 255, 255)}[menu.state.screen], (0, 0, 4, 8))
+            layers[menu.state.screen] = layer
+            return layer, [('rect', ('row',))]
+        menu.screen_layout = screen_layout
+        self.assertEqual(self.commands(), [('rect', ('row',))])       # at rest: no slide
+        menu.open('options')
+        menu.advance(module.SLIDE_MS / 2)
+        layer, buttons = menu.layout(self.settings)
+        self.assertEqual(buttons, [])                                 # no input until it settles
+        shift = round(ease_in_out(.5) * width)
+        self.assertEqual(layer.get_at((width - shift, 0))[:3], (0, 0, 255))   # the new card enters from the right
+        self.assertEqual(layer.get_at((0, 0)).a, 0)                   # the old one has left by the left edge
+        menu.advance(module.SLIDE_MS / 2)
+        layer, buttons = menu.layout(self.settings)
+        self.assertIs(layer, layers['options'])
+        self.assertEqual(buttons, [('rect', ('row',))])
+        self.assertFalse(menu.back())                                 # back: the reverse
+        menu.advance(module.SLIDE_MS / 4)
+        layer, _ = menu.layout(self.settings)
+        shift = round(ease_in_out(.25) * width)
+        self.assertEqual(layer.get_at((shift, 0))[:3], (0, 0, 255))   # the page leaves to the right
+        self.assertEqual(layer.get_at((shift - width, 0) if shift > width else (0, 0)).a, 0)
+        menu.reset()
+        self.assertIsNone(menu.slide)
+
     def test_text_pages_scroll_within_their_limits_and_show_the_version(self):
         state = self.menu.state
         state.screen, state.scroll = 'controls', 10_000.

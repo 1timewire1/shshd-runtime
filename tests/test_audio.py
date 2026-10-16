@@ -159,6 +159,50 @@ class MusicPlaybackTests(unittest.TestCase):
             self.assertEqual(music.play.call_args.kwargs, {'loops': 0, 'start': 39.2})
             self.assertEqual(ui.session.snapshot(), saved)
 
+    def test_cod_stop_fades_out_over_its_argument_and_holds_the_next_cue(self):
+        from test_background import dispatch
+        for game, fade, expected in (('cod', 2000, 2000), ('cod', 0xffff, 1000), ('cod', -1, 1000),
+                                     ('cod', 0, 0), ('shs', 2000, 0)):
+            with self.subTest(game=game, fade=fade):
+                ui, r = self.make_ui(music=8201, repeat=1, game=game)
+                with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+                    clock.return_value = 10000
+                    ui._sync_audio()
+                    dispatch(ui.session.engine, 81, fade)
+                    saved = ui.session.snapshot()
+                    ui._sync_audio()
+                    if not expected:
+                        self.assertEqual(music.stop.call_count, 2)
+                        continue
+                    music.stop.assert_called_once_with()
+                    ui.session.engine.music_id = 8203
+                    clock.return_value = 10000 + expected // 2
+                    ui._sync_audio()
+                    self.assertAlmostEqual(music.set_volume.call_args.args[0], .5 * ui.music_volume)
+                    music.play.assert_called_once()
+                    clock.return_value = 10000 + expected
+                    ui._sync_audio()
+                    self.assertEqual(music.stop.call_count, 2)
+                    self.assertEqual([call.args for call in r.read_asset.call_args_list], [(8201,), (8203,)])
+                    self.assertEqual(saved['engine'].keys(), ui.session.snapshot()['engine'].keys())
+
+    def test_cod_replaying_the_fading_cue_keeps_it_at_full_volume(self):
+        from test_background import dispatch
+        ui, _ = self.make_ui(music=8201, repeat=1, game='cod')
+        with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
+            ui._sync_audio()
+            dispatch(ui.session.engine, 81, 1000)
+            clock.return_value = 10500
+            ui._sync_audio()
+            dispatch(ui.session.engine, 80, 8201, 1)
+            ui._sync_audio()
+            self.assertEqual(music.set_volume.call_args.args[0], ui.music_volume)
+            clock.return_value = 12000
+            ui._sync_audio()
+            music.stop.assert_called_once_with()
+            music.play.assert_called_once()
+
     def test_pause_menu_resumes_the_same_stream_without_reloading_or_replaying_vm(self):
         import pygame
         for controls in ('buttons', 'escape'):
