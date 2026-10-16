@@ -13,7 +13,7 @@ from exp_runtime.dialogue_notice import (
 from exp_runtime.runtime import SaveError, Session
 from exp_runtime.ui_assets import Rect
 from test_fonts import descriptor
-from test_runtime import Resources, host_call, text_words
+from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
@@ -76,6 +76,50 @@ class CodNoticeTests(unittest.TestCase):
         self.assertEqual(s.engine.notice, 'Detective Score Up!')
         self.assertEqual(s.engine.notice_ms, hd_letter_start_ms(s.engine.dialogue_animation)
                          + hd_notice_lifetime('Detective Score Up!'))
+
+    def test_a_reveal_tap_keeps_the_letters_until_the_line_ends(self):
+        words, (notice, line) = text_words('Detective Score Up!', 'A long enough sentence to keep revealing.')
+        s = Session(Resources(program(*host_call(88, notice), *host_call(13, line, 0),
+                                      *host_call(13, line, 0), 0x33, words=words)))
+        s.engine.game_key = 'cod'
+        s.advance()
+        remaining = s.engine.notice_ms
+        s.answer()
+        self.assertTrue(s.engine.dialogue_animation.finish_requested)
+        self.assertEqual((s.engine.notice, s.engine.notice_ms), ('Detective Score Up!', remaining))
+        s.tick(100)
+        s.answer()
+        self.assertEqual(s.pending.name, 'dialogue')
+        self.assertEqual((s.engine.notice, s.engine.notice_ms), ('Detective Score Up!', remaining - 100))
+        s.tick(remaining - 100)
+        self.assertEqual((s.engine.notice, s.engine.notice_ms), ('', 0))
+
+    def test_the_letters_stay_on_their_speakers_side(self):
+        words, (notice, mine, theirs) = text_words('Detective Score Up!', 'My line.', 'Their line.')
+        r = Resources(program(*host_call(88, notice), *host_call(13, mine, 0), *host_call(13, theirs, 1),
+                              0x33, words=words))
+        s = Session(r)
+        s.engine.game_key = 'cod'
+        s.engine.ui_defaults[74] = 0
+        s.engine.character_art_variants.update({0: [2000], 1: [2001]})
+        s.advance()
+        self.assertEqual((s.engine.dialogue_animation.portrait.mode, s.engine.notice_mode), (1, 1))
+        answer_screen(s)
+        self.assertEqual(s.engine.dialogue_animation.portrait.mode, 2)
+        self.assertEqual((s.engine.notice, s.engine.notice_mode), ('Detective Score Up!', 1))
+
+    def test_a_save_keeps_the_letters_side(self):
+        s = notice_session('Detective Score Up!')
+        s.engine.notice_mode = 1
+        r = s.resources
+        saved = json.loads(json.dumps(s.snapshot()))
+        self.assertEqual(Session.from_snapshot(r, saved).engine.notice_mode, 1)
+        saved['engine']['notice_mode'] = 3
+        with self.assertRaises(SaveError):
+            Session.from_snapshot(r, saved)
+        saved['version'] = 25
+        del saved['engine']['notice_mode']
+        self.assertEqual(Session.from_snapshot(r, saved).engine.notice_mode, 0)
 
 
 class NoticeTests(unittest.TestCase):

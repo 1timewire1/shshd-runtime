@@ -101,7 +101,7 @@ class GridTests(unittest.TestCase):
         self.assertEqual(restored.engine.random, s.engine.random)
         self.assertEqual(restored.engine.word_grid.selection, [0])
         current = restored.snapshot()
-        self.assertEqual(current['version'], 25)
+        self.assertEqual(current['version'], 26)
         for key, value in (('pop_ms', {}), ('explosions', []), ('glint_ms', 100_000_000)):
             self.assertEqual(current['engine']['word_grid'].pop(key), value)
         self.assertEqual(current['engine']['word_grid'], old['engine']['word_grid'])

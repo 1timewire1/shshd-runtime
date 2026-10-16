@@ -169,7 +169,7 @@ class BackgroundTests(unittest.TestCase):
             saved = json.loads(json.dumps(session.snapshot()))
             restored = Session.from_snapshot(session.resources, saved)
             self.assertEqual(restored.snapshot(), session.snapshot())
-            self.assertEqual(saved['version'], 25)
+            self.assertEqual(saved['version'], 26)
             for ms in (42, 125, 1000):
                 session.tick(ms)
                 restored.tick(ms)
