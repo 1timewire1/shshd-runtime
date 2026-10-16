@@ -171,7 +171,7 @@ class HdShell:
 
     def settings(self):
         state = self.app.state
-        settings = dict(music=state.music, sound=state.sound, music_volume=state.music_volume / 100,
+        settings = dict(vibration=state.vibration, music=state.music, sound=state.sound, music_volume=state.music_volume / 100,
                         sound_volume=state.sound_volume / 100, choice_hints=state.choice_hints,
                         skip_minigames=state.skip_minigames, skip_ad_intros=state.skip_ad_intros)
         if self.backdrop_available():

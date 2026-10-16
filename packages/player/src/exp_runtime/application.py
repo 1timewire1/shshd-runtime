@@ -742,6 +742,7 @@ class Application:
         self.game.episode_title = self.state.title(self.game.session.resources.record)
         pygame.display.set_caption(self.game_title + ' — ' + self.game.episode_title)
         self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
+        self.game.vibration_enabled = self.state.vibration
         self.game.music_volume, self.game.sound_volume = self.state.music_volume / 100, self.state.sound_volume / 100
         self.game.choice_hints = self.state.choice_hints
         self.game.skip_minigames = self.state.skip_minigames
@@ -804,6 +805,7 @@ class Application:
     def save_game_settings(self):
         """The in-game pause menu's music / sound switches are the same host options as the main menu's."""
         self.state.music, self.state.sound = self.game.music_enabled, self.game.sound_enabled
+        self.state.vibration = self.game.vibration_enabled
         self.state.choice_hints = self.game.choice_hints
         self.state.skip_minigames = self.game.skip_minigames
         self.state.skip_ad_intros = self.game.skip_ad_intros
@@ -986,7 +988,7 @@ class Application:
                 self.set_update_check(not self.settings.check_for_updates)
             elif kind == 'toggle':
                 key = command[1]
-                if key not in ('music', 'sound', 'choice_hints', 'skip_minigames', 'skip_ad_intros'):
+                if key not in ('music', 'sound', 'vibration', 'choice_hints', 'skip_minigames', 'skip_ad_intros'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -997,6 +999,7 @@ class Application:
                     raise
                 if self.game:
                     self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
+                    self.game.vibration_enabled = self.state.vibration
                     self.game.choice_hints = self.state.choice_hints
                     self.game.skip_minigames = self.state.skip_minigames
                     self.game.skip_ad_intros = self.state.skip_ad_intros

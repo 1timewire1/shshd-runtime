@@ -117,7 +117,7 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 | 79 (`4f`) | a1 resource | Selects music request for 8201–8232, otherwise SFX path; native playback through `FUN_000a3bc8`. | 0 | C (basic audio) |
 | 80 (`50`) | a1 resource, bool(a2) | Stores music resource and flag through `FUN_0007b550`; repeat/fade flag meaning unresolved. | 0 | C (basic audio; flag retained) |
 | 81 (`51`) | a1 | Calls audio stop helper `FUN_000a3260(audio,a1,1)`; Python stops requested music, with simplified channel handling. | 0 | C |
-| 82 (`52`) | none | Optional 1000 ms vibration via `FUN_000a3040`; no desktop vibration device, music/SFX unchanged. | 0 | C (no hardware effect) |
+| 82 (`52`) | none | Optional 1000 ms vibration via `FUN_000a3040`; no desktop vibration device, so the player sounds a synthesized buzz instead (unsaved `vibration_serial`); music/SFX state unchanged. | 0 | C (no hardware effect) |
 | 83 (`53`) | none read here | Audio helper `FUN_000a3208`; detailed effect unresolved. | 0 | X |
 | 84 (`54`) | none read here | Audio helper `FUN_000a31bc`; detailed effect unresolved. | 0 | X |
 | 85 (`55`) | none read here | Scene helper `FUN_0007b494`; effect unresolved. | 0 | X |

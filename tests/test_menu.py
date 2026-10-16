@@ -163,6 +163,17 @@ class LibraryMenuTests(unittest.TestCase):
         state.path.write_text(json.dumps(data))
         self.assertTrue(MenuState(self.library).hd_backdrop)
 
+    def test_the_vibration_switch_defaults_on_and_survives_reopen(self):
+        state = MenuState(self.library)
+        self.assertTrue(state.vibration)
+        state.vibration = False
+        state.persist()
+        self.assertFalse(MenuState(self.library).vibration)
+        data = json.loads(state.path.read_text())
+        data['vibration'] = 1
+        state.path.write_text(json.dumps(data))
+        self.assertTrue(MenuState(self.library).vibration)
+
     def test_title_preferences_keep_existing_saves_and_scripts_compatible(self):
         state = MenuState(self.library)
         session = state.session(state.selected)
