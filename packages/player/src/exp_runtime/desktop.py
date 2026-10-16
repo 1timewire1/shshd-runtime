@@ -17,7 +17,7 @@ from .games import GAMES, game_id
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
-from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer
+from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer, pause_scale
 try:
     # SHS HD's football and word grid draw with SHS's own layout helpers (exp_runtime.shs), which a CoD-only install
     # lacks; CoD never plays either (tools/test_packages.py's cod-player case).
@@ -1304,7 +1304,10 @@ class Desktop:
                  skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                  **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {})),
             message=self.message if pygame.time.get_ticks() < self.message_until else '')
-        self.window.blit(pygame.transform.smoothscale(layer, frame.size), frame)
+        scale = pause_scale(self.pause_elapsed_ms)
+        size = tuple(max(1, round(length * scale)) for length in frame.size)
+        self.window.blit(pygame.transform.smoothscale(layer, size), pygame.Rect((0, 0), size).move(
+            frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
 
     def _draw_notice(self, frame, dim=True):
         """Whichever native menu-engine window is on top of `self.notice_stack` -- the "Exit Game?" confirmation
@@ -1561,8 +1564,7 @@ class Desktop:
             return True
         pointer = (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                    and (event.type == pygame.MOUSEMOTION or event.button == 1))
-        if (self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer
-                and not (self.pause_hd.available() and not self.error)):
+        if self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer:
             self.press.cancel()
             return True
         if pointer and not self.menu_open and hasattr(self, 'viewport'):

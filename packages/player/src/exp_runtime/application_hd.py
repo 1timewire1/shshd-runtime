@@ -20,6 +20,7 @@ import pygame
 from .desktop_boot_hd import FLASH_TOTAL, HdBootScreen, JINGLE, LOADING_TIME
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
+from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu, MAIN_HELP_ORDER, PAGES
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
@@ -151,6 +152,8 @@ class HdShell:
             else:
                 self.fade = (kind, age, then, time)
         self.age += seconds
+        if self.pause_open:
+            self.pause_ms = min(PAUSE_OPEN_MS, self.pause_ms + seconds * 1000)
         covered = self.overlay_active or self.pause_open
         if self.stage == 'main' and self.was_covered and not covered:
             self.main.start(intro=False)          # the buttons slide in again when a window closes
@@ -273,7 +276,11 @@ class HdShell:
         elif self.pause_open and self.stage == 'main':
             self.pause.pressed = self.pressed
             layer, self.pause_buttons = self.pause.layout(self.settings())
-            canvas.blit(layer, (0, 0))
+            scale = pause_scale(self.pause_ms)
+            size = tuple(max(1, round(length * scale)) for length in layer.get_size())
+            if size != layer.get_size():
+                layer = pygame.transform.smoothscale(layer, size)
+            canvas.blit(layer, layer.get_rect(center=canvas.get_rect().center))
 
     def variables(self):
         strings = self.windows.strings()
@@ -286,6 +293,7 @@ class HdShell:
     fade = None
     flash_over_black = False
     pause_buttons = ()
+    pause_ms = PAUSE_OPEN_MS
 
     # ------------------------------------------------------------ input (frame points)
 
@@ -295,6 +303,8 @@ class HdShell:
         if self.stack.stack:
             return self.windows.hits
         if self.pause_open and self.stage == 'main':
+            if self.pause_ms < PAUSE_OPEN_MS:
+                return []
             return [(rect, command) for rect, command in self.pause_buttons]
         return self.main.hits if self.stage == 'main' and self.main.ready else []
 
@@ -368,10 +378,10 @@ class HdShell:
             self.app.command(('switch_games',))         # upstream's Switch Game, in place of EA's store page
         elif kind == 'options':
             self.pause.reset()
-            self.pause.state.screen, self.pause_open = 'options', True
+            self.pause.state.screen, self.pause_open, self.pause_ms = 'options', True, 0
         elif kind == 'help':
             self.pause.reset()
-            self.pause.state.screen, self.pause_open = 'help', True
+            self.pause.state.screen, self.pause_open, self.pause_ms = 'help', True, 0
         elif kind == 'item':
             self.body_scroll = 0.0
             self.stack.press(self.data.action(command[1]))
