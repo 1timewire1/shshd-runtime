@@ -82,6 +82,7 @@ class StoryServiceTests(unittest.TestCase):
             self.assertTrue(action.completed)
             self.assertEqual(vm.run().args, (0,))
             self.assertEqual(e, before)  # No vibration hardware; service 99 is a native stub.
+        self.assertEqual(e.vibration_serial, 1)
 
     def test_scene_badge_and_one_shot_dialogue_wobble_survive_save(self):
         words, refs = text_words('Before School', 'Hello', 'Again')

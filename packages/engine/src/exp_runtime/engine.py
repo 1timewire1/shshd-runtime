@@ -75,6 +75,7 @@ class EngineState:
     hd_version = None
     # Not saved: the last link a script asked service 100 to open (a no-op in HD; see dispatch), for the host.
     store_link = ''
+    vibration_serial = 0
     # Derived from the validated library, never accepted from saved engine data.
     game_key: ClassVar[str] = 'shs'
     app_version: ClassVar[str | None] = None
@@ -554,7 +555,8 @@ class EngineState:
         if y == 82:
             need(0)
             # FUN_000a3040 requests 1000ms from the optional vibrator, only
-            # when present and enabled. Desktop has no vibrator backend.
+            # when present and enabled. Desktop has no vibrator; it plays a buzz of that length instead.
+            self.vibration_serial += 1
             return complete('vibrate', duration_ms=1000)
         if y in (79, 80):
             need(1 if y == 79 else 2)

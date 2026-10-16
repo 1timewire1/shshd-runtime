@@ -2,6 +2,15 @@
 
 ## Unreleased (shshd-runtime)
 
+### Added
+
+- **Vibration buzzes.** When a story asks the phone to vibrate, the desktop
+  now plays a short buzz in its place. It follows the Sound switch and Sound FX
+  volume.
+  - Options → Sound now has the game's own Vibration switch at the top, as
+    the phone versions did (the iPad hid it). Switching it off silences the
+    buzz; it is on by default and remembered with the other options.
+
 ### Fixed
 
 - **Interface sounds now match the originals**

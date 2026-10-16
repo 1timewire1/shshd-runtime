@@ -736,7 +736,11 @@ player's route to that point; original game assets are not test fixtures.
 
 `FUN_000a3040` requests 1000 ms from the optional vibrator, gated by device and
 settings availability. The desktop has no vibrator backend and completes
-without altering music or sound state. Android's vibrator implementation is
+without altering music, sound or saved state. In its place the desktop player
+sounds a shorter synthesized buzz (400 ms, `vibration.BUZZ_MS`; not an original
+asset) at the Sound FX volume while Sound and the Options Vibration switch (string 11,
+`MenuState.vibration`, shown in this player though the iPad hid it) are on; the engine counts requests in the
+unsaved `EngineState.vibration_serial`. Android's vibrator implementation is
 constructed by `FUN_00102f1c` / `FUN_00108188`, using VibratorAndroidDelegate.
 
 `FUN_00082adc`, called by service 99, contains only two ARM instructions:
