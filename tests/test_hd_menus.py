@@ -195,6 +195,14 @@ class MainMenuTimingTests(unittest.TestCase):
         self.menu.tick(READY_AFTER + .01)
         self.assertTrue(self.menu.ready)
 
+    def test_cods_buttons_start_under_its_fade_from_black_on_the_first_arrival(self):
+        from exp_runtime.desktop_cod_main import CodMainMenu
+        menu = object.__new__(CodMainMenu)
+        menu.start(intro=True)
+        self.assertEqual(menu.buttons_start, 1.5)
+        menu.start(intro=False)
+        self.assertEqual(menu.buttons_start, 0.0)
+
     def test_buttons_slide_in_from_the_left_one_after_another_with_a_small_overshoot(self):
         self.menu.start(intro=False)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [SLIDE_FROM] * 5)
@@ -330,6 +338,13 @@ class ShellActionTests(unittest.TestCase):
             shell.tick(MAX_STEP)
         self.assertEqual(calls, ['black'])
 
+    def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
+        canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))
+        canvas.fill((200, 100, 50, 0))
+        self.shell.fade = ('in', .5, None, 1.0)
+        self.shell.draw_fade(canvas)
+        self.assertEqual(tuple(canvas.get_at((0, 0)))[:3], (100, 50, 25))
+
     def test_arriving_from_another_game_flashes_from_black_with_the_jingle(self):
         from exp_runtime.desktop_boot_hd import JINGLE
         shell = self.shell
@@ -404,6 +419,22 @@ class CodShellActionTests(unittest.TestCase):
         self.assertEqual((self.entered, shell.stack.stack, shell.app.played, shell.fade[0]), ([], [], [], 'out'))
         shell.fade[2]()                                     # once black: the menu, fading in (no EA flash, no jingle)
         self.assertEqual((self.entered, shell.fade[0]), ([dict(intro=True)], 'in'))
+
+    def test_the_ea_screen_holds_then_goes_black_and_the_menu_slowly_fades_in(self):
+        shell, step, clock, seen = self.shell, .01, 0.0, {}
+        shell.age, shell.stage = 0.0, 'menu'               # no launch stage to advance in this test
+        shell.main = SimpleNamespace(tick=lambda seconds: None)
+        shell.perform(1)
+        while clock < 3.3:
+            seen[round(clock, 2)] = (shell.fade_level(), len(self.entered))
+            shell.tick(step)
+            clock += step
+        self.assertEqual(seen[.9], (0.0, 0))               # the EA screen stays
+        self.assertAlmostEqual(seen[1.5][0], .5, places=1)
+        self.assertEqual(seen[2.05], (1.0, 1))              # black, with the menu set up under it
+        self.assertAlmostEqual(seen[2.7][0], .5, places=1)
+        self.assertEqual(seen[3.25][0], 0.0)
+        self.assertIsNone(shell.fade)
 
     def test_legal_links_use_cods_strings_and_exit_game_window(self):
         shell = self.shell

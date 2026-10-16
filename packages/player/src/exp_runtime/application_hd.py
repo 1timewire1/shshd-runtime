@@ -24,8 +24,8 @@ from .desktop_pause_hd import HdPauseMenu, MAIN_HELP_ORDER, PAGES
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
 
-# The fade to black before a game switch, and CoD's from its EA screen to its menu (and in from black after): not
-# decompiled (CoD's is in its engine view's `setRenderArg`); the owner describes the native fade, timed here.
+# The fade to black before a game switch: this player's own (owner's choice). CoD's from its EA screen to its menu, and
+# in from black after, are decompiled and timed in application_cod.py.
 FADE_TIME = 0.5
 # A frame that opens a library (a game switch) lasts about half a second, which would otherwise skip a whole fade or
 # flash in one step: a step longer than HITCH counts as MAX_STEP. Ordinary frames, however slow (a full-screen window
@@ -71,7 +71,7 @@ class HdShell:
         self.body_scroll = 0.0
         self.drag = None
         self.silent = False
-        self.fade = None                # ('out', seconds, then) to black, or ('in', seconds, None) from it
+        self.fade = None                # ('out', seconds, then, time) to black, or ('in', seconds, None, time) from it
         self.flash_over_black = False   # the flash after a game switch starts from black, not the loading screen
 
     # ------------------------------------------------------------ availability
@@ -124,10 +124,11 @@ class HdShell:
         offer comes first: Application.update_holds_launch)."""
         return self.stage == 'loading' and self.age >= LOADING_TIME + SOUND_DELAY
 
-    def leave(self, then):
-        """Fade the screen to black, then call `then` (a game switch, or CoD's way from its EA screen to its menu)."""
+    def leave(self, then, *, hold=0.0, time=FADE_TIME):
+        """Fade the screen to black over `time` after `hold` seconds, then call `then` (a game switch, or CoD's way
+        from its EA screen to its menu). A fade's age starts at minus its hold, so the frame stays as it is until 0."""
         self.pressed = self.drag = None
-        self.fade = ('out', 0.0, then)
+        self.fade = ('out', -hold, then, time)
 
     def arrive(self):
         """Arriving from another game (the frame is black): SHS HD's flash, with its jingle, into the main menu."""
@@ -140,15 +141,15 @@ class HdShell:
         if seconds > HITCH:
             seconds = MAX_STEP
         if self.fade is not None:
-            kind, age, then = self.fade
+            kind, age, then, time = self.fade
             age += seconds
-            if age >= FADE_TIME:
+            if age >= time:
                 self.fade = None
                 if kind == 'out':
                     then()                  # may replace this shell (a game switch): nothing more to do here
                     return
             else:
-                self.fade = (kind, age, then)
+                self.fade = (kind, age, then, time)
         self.age += seconds
         covered = self.overlay_active or self.pause_open
         if self.stage == 'main' and self.was_covered and not covered:
@@ -252,16 +253,15 @@ class HdShell:
         """How far the frame is faded to black, 0..1. Only the frame fades: the backdrop beside it stays (owner)."""
         if self.fade is None:
             return 0.0
-        kind, age, _ = self.fade
-        t = min(1.0, age / FADE_TIME)
+        kind, age, _, time = self.fade
+        t = min(1.0, max(0.0, age) / time)
         return t if kind == 'out' else 1 - t
 
     def draw_fade(self, canvas):
         level = self.fade_level()
         if level > 0:
-            black = pygame.Surface(canvas.get_size())
-            black.set_alpha(round(255 * level))
-            canvas.blit(black, (0, 0))
+            keep = round(255 * (1 - level))
+            canvas.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)
 
     def draw_overlay(self, canvas):
         """The open menu-engine window, or the pause menu's Options / Help page, over `canvas`."""
