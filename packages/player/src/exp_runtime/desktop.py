@@ -85,6 +85,8 @@ class Desktop:
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
+    # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
+    choice_focus = None
     # A narrator-style choice of this player's own over the pending screen (`_open_prompt`): "Ask to skip mini-games"
     # before a football game or word grid (Win, Lose or Play), and whether to skip the High School Story ad intros.
     # {'action', 'session', 'options', 'resolve'} while it is up (`session` stands in for the real one when drawing it).
@@ -357,7 +359,10 @@ class Desktop:
 
     def _button(self, label, rect, command, *, enabled=True, small=False):
         pygame.draw.rect(self.canvas, (49, 62, 84) if enabled else (33, 37, 46), rect, border_radius=8)
-        pygame.draw.rect(self.canvas, (102, 115, 135), rect, 1, border_radius=8)
+        if enabled and command == ('choose', self.choice_focus):
+            pygame.draw.rect(self.canvas, ACCENT, rect, 2, border_radius=8)
+        else:
+            pygame.draw.rect(self.canvas, (102, 115, 135), rect, 1, border_radius=8)
         self._text(label, rect.x + 12, rect.y + 10, rect.width - 24,
                    font=self.small if small else self.font, color=INK if enabled else MUTED)
         if enabled:
@@ -684,7 +689,7 @@ class Desktop:
         self.press.validate(self._press_token())
         self.dialogue_renderer.gear_pressed = self.press.pressed == ('menu',) and not self.menu_open
         if token != self.screen_token:
-            self.screen_token, self.scroll = token, 0
+            self.screen_token, self.scroll, self.choice_focus = token, 0, None
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
         self.edge_layer = None
@@ -760,11 +765,15 @@ class Desktop:
                                    (y - self.viewport.y) * 480 / self.viewport.height)
                 closing = self.choice_closing if self.choice_closing and self.choice_closing['action'] is action else None
                 pressed = self.press.pressed if not self.menu_open else None
+                focus = self.choice_focus if not self.menu_open else None
+                if focus is not None:
+                    pointer = None
                 if closing is not None:
-                    pointer, pressed = None, ('choose', closing['index'])
+                    pointer, pressed, focus = None, ('choose', closing['index']), None
                 _, buttons = self.choice_renderer.draw(None, source,
                                                         scroll=self.scroll / 1.5, pointer=pointer,
-                                                        pressed=pressed, choice_hints=self.choice_hints and not ask)
+                                                        pressed=pressed, focus=focus,
+                                                        choice_hints=self.choice_hints and not ask)
                 if hasattr(page, 'rows_top'):
                     # HD: the menu view fades in and, after a pick, out (hd_choice.panel_alpha); the timer layers do not
                     # fade and are hidden when the fade-out starts.
@@ -1505,6 +1514,43 @@ class Desktop:
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
         self._sync_text_input()
 
+    def _choice_focus_rows(self, action, asking):
+        """The rows the arrow keys step through, top to bottom: a choice's enabled options, the quiz's answers or a
+        host prompt's options; none while the pause menu, an error or a closing choice holds the screen."""
+        if (self.menu_open or self.error or self.fade or action is None
+                or not (asking or action.name in ('choice', 'word_game'))
+                or self.choice_closing is not None and self.choice_closing['action'] is action):
+            return []
+        if not hasattr(self.session.resources, 'read_asset'):
+            if asking or action.name != 'choice':
+                return []
+            return [SimpleNamespace(index=index, rect=None)
+                    for index, enabled in enumerate(action.details['enabled']) if enabled]
+        try:
+            page = self.choice_renderer.page(self.host_prompt['session'] if asking else self.session)
+        except (ContentError, pygame.error, OSError, ValueError):
+            return []
+        return sorted((row for row in page.rows if row.enabled), key=lambda row: row.rect.y)
+
+    def _move_choice_focus(self, rows, step):
+        indices = [row.index for row in rows]
+        if self.choice_focus in indices:
+            position = max(0, min(len(rows) - 1, indices.index(self.choice_focus) + step))
+        else:
+            position = 0 if step > 0 else len(rows) - 1
+        row = rows[position]
+        self.choice_focus = row.index
+        if row.rect is None:
+            return
+        page = self.choice_renderer.cached_page
+        area = page.table if hasattr(page, 'rows_top') else self.choice_renderer.viewport
+        scroll = self.scroll / 1.5
+        if row.rect.y - scroll < area.y:
+            scroll = row.rect.y - area.y
+        elif row.rect.y + row.rect.height - scroll > area.y + area.height:
+            scroll = row.rect.y + row.rect.height - area.y - area.height
+        self.scroll = min(self.max_scroll, max(0, scroll * 1.5))
+
     def _press_token(self):
         action = self.session.pending
         game = self.session.engine.word_game
@@ -1656,14 +1702,24 @@ class Desktop:
                    if self.viewport.collidepoint(event.pos) else None)
             phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEBUTTONUP: 'up',
                      pygame.MOUSEMOTION: 'move'}[event.type]
+            if event.type == pygame.MOUSEMOTION:
+                self.choice_focus = None
             command = self.press.update(phase, hit, self._press_token())
             if command is not None:
                 self.command(command)
             return True
         if event.type == pygame.KEYDOWN:
             self.press.cancel()
+            rows = (self._choice_focus_rows(action, asking)
+                    if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
+                    else [])
             if event.key in (pygame.K_F5, pygame.K_F9):
                 self.command(('save' if event.key == pygame.K_F5 else 'load',))
+            elif event.key in (pygame.K_UP, pygame.K_DOWN) and rows:
+                self._move_choice_focus(rows, -1 if event.key == pygame.K_UP else 1)
+            elif (event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
+                    and any(row.index == self.choice_focus for row in rows)):
+                self.command(('choose', self.choice_focus))
             elif event.key == pygame.K_RETURN or (event.key == pygame.K_SPACE and action and action.name != 'text_input'):
                 self.command(('continue',))
             elif action and action.name == 'character_picker' and pygame.K_1 <= event.key <= pygame.K_5:

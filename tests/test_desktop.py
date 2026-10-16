@@ -1107,6 +1107,36 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNone(ui.error)
             self.assertFalse(ui.handle_event(pygame.event.Event(pygame.QUIT)))
 
+    def test_arrow_keys_focus_a_choice_and_enter_picks_it(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            ui.render()
+            key = lambda code: ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=code))
+            key(pygame.K_DOWN)
+            self.assertEqual(ui.choice_focus, 0)                # the first press selects the top row
+            key(pygame.K_DOWN)
+            key(pygame.K_DOWN)
+            self.assertEqual(ui.choice_focus, 1)                # and stops at the last one
+            ui.render()
+            key(pygame.K_UP)
+            self.assertEqual(ui.choice_focus, 0)
+            ui.handle_event(pygame.event.Event(pygame.MOUSEMOTION, pos=(0, 0), rel=(1, 1), buttons=(0, 0, 0)))
+            self.assertIsNone(ui.choice_focus)                  # the mouse takes over
+            key(pygame.K_UP)
+            self.assertEqual(ui.choice_focus, 1)                # Up first selects the bottom row
+            key(pygame.K_RETURN)
+            self.assertEqual(ui.session.pending.details['text'], 'Went right.')
+            ui.render()
+            self.assertIsNone(ui.choice_focus)
+
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_original_dialogue_fonts_on_opening_and_saved_choice_branches(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'

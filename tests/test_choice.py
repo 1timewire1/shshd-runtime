@@ -303,6 +303,36 @@ class ChoiceTests(unittest.TestCase):
         self.assertIsNone(ui.error)
 
     @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_arrow_keys_skip_disabled_options_and_draw_the_focused_row(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        resources = self.resources()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        resources.library.directory = Path(temporary.name)
+        words, (title, prompt, no, yes) = text_words('Make your choice!', 'A question.', 'No', 'Yes')
+        resources.programs[65000] = program(
+            *host_call(2, title, prompt, 0, 1, -1, 0),
+            *host_call(3, no, 77, 0), *host_call(3, yes, 88, 1),
+            *host_call(4, 0), 0x21, (0x1f, 0xfe01), words=words)
+        ui = Desktop(Session(resources, start_script=65000), audio=False)
+        ui.render()
+        plain = pygame.image.tobytes(ui.choice_renderer.canvas, 'RGBA')
+        ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_UP))
+        self.assertEqual(ui.choice_focus, 1)                    # 'No' is disabled, only 'Yes' takes the focus
+        ui.render()
+        self.assertNotEqual(pygame.image.tobytes(ui.choice_renderer.canvas, 'RGBA'), plain)
+        ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+        for _ in range(10):                                     # an HD menu fades out before it answers
+            ui.tick(100)
+        self.assertEqual(ui.session.pending.request.args, (88,))
+        self.assertIsNone(ui.error)
+
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
     def test_real_choice_survives_rendering_and_scroll_keeps_last_index_reachable(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
