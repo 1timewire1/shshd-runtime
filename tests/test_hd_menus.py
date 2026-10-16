@@ -285,6 +285,28 @@ class ShellActionTests(unittest.TestCase):
         self.assertEqual((state.music, state.sound), (False, True))
         self.assertGreaterEqual(state.persisted, 3)
 
+    def test_the_in_game_pause_box_zooms_out_over_the_launch_flash_then_the_first_entrance(self):
+        import pygame
+        from exp_runtime.desktop_pause import pause_scale
+        shell, entered = self.shell, []
+        shell.stage, shell.pause_open, shell.age = 'main', False, 0.0
+        shell.boot = HdBootScreen.__new__(HdBootScreen)
+        shell.pause = SimpleNamespace(advance=lambda ms: None, reset=lambda: None)
+        shell.main = SimpleNamespace(tick=lambda seconds: None, start=lambda intro: entered.append(intro),
+                                     hits=[('rect', ('play',))], ready=True)
+        shell.app.play_menu_music = lambda: entered.append('music')
+        box = pygame.Surface((320, 480), pygame.SRCALPHA)
+        shell.zoom_out(box)
+        self.assertEqual(shell.leaving[0].get_size(), (1536, 2048))
+        self.assertEqual((shell.stage, shell.flash_over_black, shell.app.played), ('flash', False, [8005]))
+        self.assertEqual(shell.hits(), [])                           # nothing takes input until it has gone
+        shell.tick(.25)
+        self.assertLess(pause_scale(400 - shell.leaving[1]), 1)
+        shell.tick(.2)
+        self.assertIsNone(shell.leaving)
+        shell.tick(.2)                                               # the flash is over: the first-launch entrance
+        self.assertEqual((shell.stage, entered), ('main', ['music', True]))
+
     def test_links_are_remembered_then_opened_on_confirmation(self):
         shell = self.shell
         for number, link in ((14, 'eula'), (15, 'privacy'), (16, 'terms')):
@@ -441,6 +463,14 @@ class CodShellActionTests(unittest.TestCase):
         self.entered = []
         self.shell.enter_main = lambda **options: self.entered.append(options)
         self.shell.fade, self.shell.pause_open, self.shell.pressed, self.shell.drag = None, False, None, None
+
+    def test_the_pause_box_zooms_out_over_cods_menu_without_a_flash(self):
+        import pygame
+        shell = self.shell
+        shell.stage = 'main'
+        shell.zoom_out(pygame.Surface((320, 480), pygame.SRCALPHA))
+        self.assertEqual((shell.stage, shell.app.played), ('main', []))
+        self.assertIsNotNone(shell.leaving)
 
     def test_the_sound_answer_goes_straight_to_the_main_menu(self):
         shell, state = self.shell, self.shell.app.state

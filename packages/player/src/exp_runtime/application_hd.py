@@ -103,6 +103,14 @@ class HdShell:
         self.pause.reset()
         self.main.start(intro=intro)
 
+    def zoom_out(self, box):
+        self.leaving = (pygame.transform.smoothscale(box, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+        self.replay_launch()
+
+    def replay_launch(self):
+        self.stage, self.flash_age, self.flash_over_black = 'flash', 0.0, False
+        self.app.play_asset(JINGLE)
+
     def show_end_menu(self, backdrop, football):
         """The menu shown when an episode ends, over `backdrop` (the last frame, already sepia, as a 768 x 1024 surface)."""
         self.stage = 'end'
@@ -154,6 +162,10 @@ class HdShell:
         self.age += seconds
         if self.pause_open:
             self.pause_ms = min(PAUSE_OPEN_MS, self.pause_ms + seconds * 1000)
+        if self.leaving is not None:
+            box, ms = self.leaving
+            ms += seconds * 1000
+            self.leaving = (box, ms) if ms < PAUSE_OPEN_MS else None
             self.pause.advance(seconds * 1000)
         if self.stack.stack:
             self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + seconds * 1000)
@@ -244,6 +256,7 @@ class HdShell:
             canvas = self.boot.draw_loading(min(1.0, self.age / LOADING_TIME))
         elif self.stage == 'flash':
             canvas = self.boot.draw_flash(self.flash_age, over_black=self.flash_over_black)
+            self.draw_leaving(canvas)
             self.draw_fade(canvas)
             return canvas
         elif self.stage == 'end':
@@ -253,8 +266,18 @@ class HdShell:
             self.main.pressed = self.pressed if self.pressed and self.pressed[0] in ('play', 'airing', 'demand', 'more', 'options', 'help') else None
             canvas = self.main.draw(buttons=not (self.overlay_active or self.pause_open))
         self.draw_overlay(canvas)
+        if self.stage == 'main':
+            self.draw_leaving(canvas)
         self.draw_fade(canvas)
         return canvas
+
+    def draw_leaving(self, canvas):
+        """The in-game pause menu's box zooming out (`zoom_out`)."""
+        if self.leaving is not None:
+            box, ms = self.leaving
+            scale = pause_scale(PAUSE_OPEN_MS - ms)
+            box = pygame.transform.smoothscale(box, tuple(max(1, round(length * scale)) for length in box.get_size()))
+            canvas.blit(box, box.get_rect(center=canvas.get_rect().center))
 
     def fade_level(self):
         """How far the frame is faded to black, 0..1. Only the frame fades: the backdrop beside it stays (owner)."""
@@ -307,13 +330,14 @@ class HdShell:
     flash_over_black = False
     pause_buttons = ()
     pause_ms = PAUSE_OPEN_MS
+    leaving = None
     window_ms = PAUSE_OPEN_MS
 
     # ------------------------------------------------------------ input (frame points)
 
     def hits(self):
-        if self.fade is not None:
-            return []                   # nothing takes input while the screen fades
+        if self.fade is not None or self.leaving is not None:
+            return []                   # nothing takes input while the screen fades or the pause box zooms out
         if self.stack.stack:
             return self.windows.hits if self.window_ms >= PAUSE_OPEN_MS else []
         if self.pause_open and self.stage == 'main':

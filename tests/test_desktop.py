@@ -1212,6 +1212,19 @@ class DesktopTests(unittest.TestCase):
         pointer(pygame.MOUSEBUTTONUP)
         self.assertEqual(ui.session.snapshot(), changed)
 
+    def test_main_menu_row_hands_the_pause_box_to_the_main_menu(self):
+        from unittest.mock import Mock
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.session, ui.error, ui.menu_open, ui.active, ui.fade = Mock(), None, True, True, None
+        ui.press, ui.gear_pointer_down, ui.on_main_menu = Mock(), False, Mock()
+        ui._sync_text_input = ui._menu_sound = ui.render = lambda *args, **kwargs: None
+        ui.pause_box = lambda: 'box'
+        ui.command(('main_menu',))
+        ui.on_main_menu.assert_called_once_with(pause_box='box')
+        self.assertFalse(ui.menu_open)
+
     def test_choice_hints_switch_and_preview_time_stays_off_the_story_clock(self):
         from unittest.mock import Mock
         os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'

@@ -100,6 +100,9 @@ class CodShell(HdShell):
         self.enter_main(intro=True)
         self.fade = ('in', -REVEAL_DELAY, None, BLACK_FADE)
 
+    def replay_launch(self):
+        """CoD has no EA flash to replay: only the buttons slide in again (`enter_main`)."""
+
     def backdrop_available(self):
         """The "SHS HD Backdrop" switch shows when the SHS HD art source can supply the collage."""
         from .desktop_cod_main import hd_collage

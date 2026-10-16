@@ -1316,15 +1316,22 @@ class Desktop:
             return
         self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
         layer, self.pause_buttons = self.pause_hd.layout(
-            dict(music=self.music_enabled, sound=self.sound_enabled, music_volume=self.music_volume,
-                 sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
-                 skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
-                 **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {})),
-            message=self.message if pygame.time.get_ticks() < self.message_until else '')
+            self._pause_settings(), message=self.message if pygame.time.get_ticks() < self.message_until else '')
         scale = pause_scale(self.pause_elapsed_ms)
         size = tuple(max(1, round(length * scale)) for length in frame.size)
         self.window.blit(pygame.transform.smoothscale(layer, size), pygame.Rect((0, 0), size).move(
             frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
+
+    def _pause_settings(self):
+        return dict(music=self.music_enabled, sound=self.sound_enabled, music_volume=self.music_volume,
+                    sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
+                    skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                    **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}))
+
+    def pause_box(self):
+        if self.pause_hd.available() and not self.error:
+            return self.pause_hd.layout(self._pause_settings())[0]
+        return None if self.pause_renderer is None else self.pause_renderer.canvas.copy()
 
     def _draw_notice(self, frame, dim=True):
         """Whichever native menu-engine window is on top of `self.notice_stack` -- the "Exit Game?" confirmation
@@ -1468,10 +1475,12 @@ class Desktop:
             self._menu_sound()
         elif kind == 'main_menu':
             # HD's Main Menu row saves the game, then returns to the main menu (the application's automatic
-            # checkpoint does the saving as it leaves the episode).
+            # checkpoint does the saving as it leaves the episode). The menu's box goes along: it zooms out over
+            # the main menu while that screen's buttons slide in.
+            box = self.pause_box() if self.on_main_menu else None
             self.menu_open = False
             if self.on_main_menu:
-                self.on_main_menu()
+                self.on_main_menu(pause_box=box)
                 self._menu_sound()
         elif kind == 'save':
             try:
