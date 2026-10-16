@@ -868,12 +868,14 @@ class DialogueRenderer:
         portrait = engine.dialogue_animation.portrait
         # This label belongs to the current portrait parent, which the native
         # panel hides for narration and dialogue without character artwork.
-        if not engine.notice_ms or portrait is None:
+        # An iOS letter notice keeps the side it started on (engine.notice_mode).
+        mode = engine.notice_mode or (portrait.mode if portrait is not None else 0)
+        if not engine.notice_ms or not mode:
             return
         motion = NoticeMotion(engine.notice, engine.notice_ms)
-        rect = self._portrait_rect(portrait.mode)
+        rect = self._portrait_rect(mode)
         k = self.scale
-        x, y = (v * k for v in motion.origin(rect, portrait.mode))
+        x, y = (v * k for v in motion.origin(rect, mode))
         # Native alignment 5 is top-left, with no automatic wrapping. Preserve
         # the font's baked-in red lettering and white outline by using white RGB.
         name = self.cod_notice_font() if self.game_id() == 'cod' else None
@@ -881,7 +883,7 @@ class DialogueRenderer:
         layout = self.text.layout(name, engine.notice, 2**31, NOTICE_STYLE)
         font = self.text.font(name)
         if getattr(font, 'source', None) is not None:
-            self._draw_hd_notice(engine, layout, font, motion, x, y, name)
+            self._draw_hd_notice(engine, layout, font, mode, name)
             return
         for index, glyph in enumerate(layout.glyphs):
             image = self.text._glyph_image(NOTICE_FONT, glyph, motion.scale * k)
@@ -916,19 +918,19 @@ class DialogueRenderer:
                 self._cod_notice = False
         return self.COD_NOTICE_FONT if self._cod_notice else None
 
-    def _draw_hd_notice(self, engine, layout, font, motion, x, y, name=NOTICE_FONT):
+    def _draw_hd_notice(self, engine, layout, font, mode, name=NOTICE_FONT):
         """HD's letter effect: `startLetterEffectAnimation` places each letter of the Trebuchet MS Italic fill font
         (dialogue_notice.hd_letter_origins) over the portrait layer's frame, and animates it from the time the
         portrait animation ends plus 0.25 s (dialogue_notice.hd_letter_state, hd_letter_start_ms)."""
-        from .dialogue_notice import COD_NOTICE, HD_EMPTY_LETTER, HD_NOTICE, hd_letter_origins, hd_letter_start_ms
+        from .dialogue_notice import COD_NOTICE, HD_EMPTY_LETTER, HD_NOTICE, hd_letter_origins, hd_notice_lifetime
         from .vector_text import cap_height
         animation = engine.dialogue_animation
         if animation is None:
             return
         k = self.scale
-        elapsed = animation.age_ms - hd_letter_start_ms(animation)
+        elapsed = hd_notice_lifetime(engine.notice) - engine.notice_ms
         cap = cap_height(font) or font.glyph('H').height
-        cx, cy = self._portrait_rect(animation.portrait.mode).center
+        cx, cy = self._portrait_rect(mode).center
         cod = name != NOTICE_FONT
         # The housing in the build's points: HD's 768x1024 frame (2 per unit), or CoD's own 320x480 screen.
         d, ox0, oy0 = (1, 0, 0) if cod else (2, 32, 26.5)

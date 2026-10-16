@@ -20,9 +20,10 @@ import pygame
 from .desktop_boot_hd import FLASH_TOTAL, HdBootScreen, JINGLE, LOADING_TIME
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
-from .desktop_pause_hd import HdPauseMenu, MAIN_HELP_ORDER, PAGES
+from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, focus_step
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
+from .pointer import step_focus
 
 # The fade to black before a game switch, and CoD's from its EA screen to its menu (and in from black after): not
 # decompiled (CoD's is in its engine view's `setRenderArg`); the owner describes the native fade, timed here.
@@ -242,7 +243,8 @@ class HdShell:
             canvas = self.boot.canvas
             canvas.blit(self.end_backdrop, (0, 0))
         else:
-            self.main.pressed = self.pressed if self.pressed and self.pressed[0] in ('play', 'airing', 'demand', 'more', 'options', 'help') else None
+            shown = self.pressed or self.focus
+            self.main.pressed = shown if shown and shown[0] in ('play', 'airing', 'demand', 'more', 'options', 'help') else None
             canvas = self.main.draw(buttons=not (self.overlay_active or self.pause_open))
         self.draw_overlay(canvas)
         self.draw_fade(canvas)
@@ -268,7 +270,7 @@ class HdShell:
         self.windows.hits = []
         if self.stack.stack:
             current = self.stack.current
-            self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed,
+            self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed or self.focus,
                               body_scroll=self.body_scroll)
         elif self.pause_open and self.stage == 'main':
             self.pause.pressed = self.pressed
@@ -282,6 +284,7 @@ class HdShell:
 
     pending_title = ''
     was_covered = False
+    focus = None
     # Defaults for shells built by their own constructor (CodShell's): no fade, a launch flash over the loading screen.
     fade = None
     flash_over_black = False
@@ -327,6 +330,26 @@ class HdShell:
             if rect.collidepoint(point) and command == pressed:
                 self.activate(command)
                 return
+
+    def key(self, key):
+        if self.fade is not None:
+            return None
+        if self.pause_open and self.stage == 'main' and not self.stack.stack:
+            command = self.pause.key(key)
+            if command is not None and command[0] == 'pause_volume':
+                self.set_volume(command[1], self.settings()[command[1] + '_volume'] + command[2])
+                return None
+            if command is not None:
+                self.activate(command)
+            return command
+        targets = [command for _, command in self.hits()]
+        focus = self.focus if self.focus in targets else None
+        if focus_step(key):
+            self.focus = step_focus(targets, focus, focus_step(key))
+        elif key in KEYS_ACTIVATE and focus is not None:
+            self.activate(focus)
+            return focus
+        return None
 
     def wheel(self, dy):
         if self.pause_open and self.stage == 'main':

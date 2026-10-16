@@ -397,7 +397,7 @@ class ChoiceRenderer:
         self.canvas.fill(color, (round(ux * k), round(uy * k), round(width / g.density * k),
                                  max(1, round(k / g.density))))
 
-    def draw_hd(self, target, session, page, scroll, pointer, pressed, choice_hints):
+    def draw_hd(self, target, session, page, scroll, pointer, pressed, choice_hints, focus=None):
         from .hd_choice import (DESCRIPTION_WIDGET, SCORE_CAPSULE, SEPARATOR, ROW_SEPARATOR, HEADER_NORMAL_ROOT,
                                 HEADER_TALL_ROOT)
         k = self.scale
@@ -454,9 +454,10 @@ class ChoiceRenderer:
                     and row.index < len(self.hints) else 'unknown')
             hint_color = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
                           'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}.get(hint)
-            down = pressed == ('choose', row.index) or pointer is not None and hit.collidepoint(pointer)
+            down = (pressed == ('choose', row.index) or focus == row.index
+                    or pointer is not None and hit.collidepoint(pointer))
             if game is not None:
-                down = game.selected == row.index
+                down = game.selected == row.index or game.selected < 0 and focus == row.index
             if down:
                 color = (tuple(round(c * .9) for c in hint_color) + (255,)) if hint_color else selected
             else:
@@ -626,7 +627,7 @@ class ChoiceRenderer:
             image.set_alpha(round(255 * opacity))
             self.overlay.blit(image, (round((left + x / d) * k), round((top + y / d) * k)))
 
-    def draw(self, target, session, *, scroll=0, pointer=None, pressed=None, choice_hints=False):
+    def draw(self, target, session, *, scroll=0, pointer=None, pressed=None, focus=None, choice_hints=False):
         page = self.page(session)
         if choice_hints and self.hint_key != self.cached_key:
             started = pygame.time.get_ticks()
@@ -636,7 +637,7 @@ class ChoiceRenderer:
         scroll = min(page.max_scroll, max(0, scroll))
         from .hd_choice import HdChoicePage
         if isinstance(page, HdChoicePage):
-            return self.draw_hd(target, session, page, scroll, pointer, pressed, choice_hints)
+            return self.draw_hd(target, session, page, scroll, pointer, pressed, choice_hints, focus)
         k = self.scale
 
         def px(rect):
@@ -666,7 +667,7 @@ class ChoiceRenderer:
                           'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}.get(hint)
             if hint_color is not None:
                 pygame.draw.rect(self.canvas, hint_color, px(rect))
-            if row.enabled and (pressed == ('choose', row.index)
+            if row.enabled and (pressed == ('choose', row.index) or focus == row.index
                                 or pointer is not None and hit.collidepoint(pointer)):
                 if hint_color is not None:
                     color = tuple(round(channel * .9) for channel in hint_color) + (255,)

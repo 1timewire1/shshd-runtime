@@ -11,6 +11,7 @@ import pygame
 from exp_runtime.application_hd import HdShell, MISS_MENU, END_MENU
 from exp_runtime.desktop_boot_hd import FLASH_TOTAL, HdBootScreen
 from exp_runtime.desktop_hd_menu import BUTTON_STRIP, CARD_W, FOOTER_HEIGHT, HdMenuWindows, ROW_HEIGHT
+from exp_runtime.desktop_pause_hd import HdPauseMenu
 from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, HdMainMenu, READY_AFTER, SLIDE_FROM, SLIDE_OVERSHOOT,
                                          keyframes)
 from exp_runtime.menu import MenuFont, MenuState
@@ -362,6 +363,53 @@ class ShellActionTests(unittest.TestCase):
         shell.activate(('demand',))
         self.assertEqual(shell.app.opened, [dict(restore=True, style='tile'), dict(restore=False, style='airing'),
                                             dict(restore=False, style='list')])
+
+    def test_arrow_keys_step_through_the_main_menu_and_the_windows_and_enter_activates(self):
+        shell = self.shell
+        shell.fade, shell.pause_open, shell.focus, shell.stage = None, False, None, 'main'
+        shell.main = SimpleNamespace(ready=True, hits=[(pygame.Rect(0, 0, 1, 1), command)
+                                                       for command in (('play',), ('airing',), ('demand',))])
+        self.assertIsNone(shell.key(pygame.K_DOWN))
+        self.assertEqual(shell.focus, ('play',))                            # the first Down takes the first button
+        shell.key(pygame.K_DOWN)
+        shell.key(pygame.K_TAB)
+        shell.key(pygame.K_DOWN)
+        self.assertEqual(shell.focus, ('demand',))                          # held at the last one
+        shell.key(pygame.K_UP)
+        self.assertEqual(shell.key(pygame.K_RETURN), ('airing',))
+        self.assertEqual(shell.app.opened, [dict(restore=False, style='airing')])
+        # An open window takes the keys: Left / Right step along an alert's buttons too.
+        shell.stack.queue(0)
+        shell.windows.hits = [(pygame.Rect(0, 0, 1, 1), ('item', 0)), (pygame.Rect(0, 0, 1, 1), ('item', 1))]
+        self.assertIsNone(shell.key(pygame.K_SPACE))                        # nothing highlighted in it yet
+        shell.key(pygame.K_LEFT)
+        self.assertEqual(shell.focus, ('item', 1))
+        shell.key(pygame.K_LEFT)
+        self.assertEqual(shell.focus, ('item', 0))
+        shell.fade = ('out', 0.0, None)
+        self.assertIsNone(shell.key(pygame.K_RIGHT))                        # nothing moves while the screen fades
+        self.assertEqual(shell.focus, ('item', 0))
+
+    def test_arrow_keys_work_the_options_pages_over_the_main_menu(self):
+        from exp_runtime.desktop_pause_hd import PauseState, VOLUME_STEP
+        shell, state = self.shell, self.shell.app.state
+        state.music_volume, state.sound_volume = 50, 25
+        shell.settings = lambda: dict(music_volume=state.music_volume / 100, sound_volume=state.sound_volume / 100)
+        shell.app.ui_sound = lambda *args, **kwargs: None
+        shell.fade, shell.pause_open, shell.stage = None, True, 'main'
+        shell.pause = SimpleNamespace(state=PauseState(), buttons=[
+            (pygame.Rect(0, 0, 1, 1), ('pause_toggle', 'sound')),
+            (pygame.Rect(0, 0, 1, 1), ('pause_slider', 'music', pygame.Rect(0, 0, 1, 1))),
+            (pygame.Rect(0, 0, 1, 1), ('pause_back',))])
+        shell.pause.key = lambda key: HdPauseMenu.key(shell.pause, key)
+        shell.pause.back = lambda: True
+        shell.key(pygame.K_DOWN)
+        shell.key(pygame.K_DOWN)
+        shell.key(pygame.K_RIGHT)
+        self.assertEqual(state.music_volume, round((.5 + VOLUME_STEP) * 100))
+        shell.key(pygame.K_DOWN)
+        self.assertEqual(shell.key(pygame.K_RETURN), ('pause_back',))
+        self.assertFalse(shell.pause_open)
 
     def test_new_game_over_a_save_waits_for_yes(self):
         shell, calls = self.shell, []

@@ -330,6 +330,7 @@ class Session:
                 raise VMError('Session instruction budget exceeded before the next input')
             request = self.vm.run(remaining)
             if request.kind == StopKind.YIELD:
+                queued_notice = self.engine.next_dialogue_notice
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name in ('dt_add_node', 'dt_add_result', 'dt_save'):
                     # Real native behavior: every addNode/addResult call
@@ -365,8 +366,15 @@ class Session:
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
                         # HD's letters wait for the portrait (dialogue_notice.hd_letter_start_ms).
-                        self.engine.notice_ms = (hd_letter_start_ms(self.engine.dialogue_animation)
-                                                 + hd_notice_lifetime(self.engine.notice))
+                        limit = (hd_letter_start_ms(self.engine.dialogue_animation)
+                                 + hd_notice_lifetime(self.engine.notice))
+                        if queued_notice and not self.engine.next_dialogue_notice:
+                            # the letters belong to this speaker's portrait layer and stay on its side
+                            portrait = self.engine.dialogue_animation.portrait
+                            self.engine.notice_ms = limit
+                            self.engine.notice_mode = portrait.mode if portrait is not None else 0
+                        else:
+                            self.engine.notice_ms = min(self.engine.notice_ms, limit)
                 # Native addUIElement covers the dialogue panel; removing the
                 # temporary panel returns to the same speaker/expression.
                 # Hidden dialogue does not tick. Only explicit teardown or a
@@ -467,10 +475,13 @@ class Session:
         elif action.name in ('dialogue', 'vm_pause'):
             if value is not None:
                 raise ValueError('This screen expects an acknowledgement')
-            if action.name == 'dialogue':
+            letters = action.name == 'dialogue' and (self.engine.hd_version is not None
+                                                     or GAMES[self.engine.game_key].LETTER_NOTICE)
+            if action.name == 'dialogue' and not letters:
                 # 000a9868 hides the notice even when this tap only requests
                 # the unfinished text reveal, or turns a page in the same call.
                 self.engine.notice, self.engine.notice_ms = '', 0
+            if action.name == 'dialogue':
                 # Real device confirmed: a Faceplace toast has no timer of its
                 # own and instead persists until the player advances dialogue
                 # (or opens the menu/side panels -- see Desktop), so any
@@ -675,7 +686,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=25,
+        return dict(format='shs-runtime-save', version=26,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -716,8 +727,11 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 26):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 27):
                 raise SaveError('Unsupported save format or version')
+            if state['version'] < 26:
+                state = deepcopy(state)
+                state['engine']['notice_mode'] = 0
             # Version 24 adds the HD word game's own pacing (minigames.WordGame.hd and its phase clocks).
             if state['version'] < 24 and (state.get('engine') or {}).get('word_game') is not None:
                 state = deepcopy(state)
@@ -942,6 +956,8 @@ class Session:
                          or GAMES[engine.game_key].LETTER_NOTICE else None)
             if not 0 <= engine.notice_ms <= notice_limit(engine.notice, hd_motion):
                 raise SaveError('Invalid dialogue notice timer')
+            if engine.notice_mode not in (0, 1, 2):
+                raise SaveError('Invalid dialogue notice side')
             if len(engine.dynamic_strings) != 11 or len(engine.result_cells) != 10:
                 raise SaveError('Invalid engine slot count')
             if any(v is not None and not -32768 <= v <= 32767 for v in engine.result_cells):

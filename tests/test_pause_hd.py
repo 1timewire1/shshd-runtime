@@ -142,6 +142,43 @@ class HdPauseTests(unittest.TestCase):
         buttons = self.commands()
         self.assertFalse([c for _, c in buttons if c[0] == 'pause_link'])
 
+    def test_arrow_keys_highlight_rows_and_the_back_button_and_enter_taps_them(self):
+        import pygame
+        menu, state = self.menu, self.menu.state
+        plain, _ = menu.layout(self.settings)
+        self.assertIsNone(menu.key(pygame.K_UP))
+        self.assertEqual(state.focus, ('main_menu',))                       # the first Up takes the last row
+        lit, _ = menu.layout(self.settings)
+        self.assertNotEqual(pygame.image.tobytes(lit, 'RGBA'), pygame.image.tobytes(plain, 'RGBA'))
+        menu.key(pygame.K_UP)
+        menu.key(pygame.K_UP)
+        self.assertEqual(menu.key(pygame.K_RETURN), ('pause_open', 'options'))
+        state.screen = 'options:sound'
+        self.commands()
+        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing here is highlighted yet
+        menu.key(pygame.K_DOWN)
+        self.assertEqual(menu.key(pygame.K_SPACE), ('pause_toggle', 'music'))
+        menu.key(pygame.K_DOWN)
+        self.assertEqual(state.focus[:2], ('pause_slider', 'music'))
+        self.assertEqual(menu.key(pygame.K_RIGHT), ('pause_volume', 'music', self.module.VOLUME_STEP))
+        self.assertEqual(menu.key(pygame.K_LEFT), ('pause_volume', 'music', -self.module.VOLUME_STEP))
+        self.assertIsNone(menu.key(pygame.K_RETURN))                        # a slider is not tapped
+        for _ in range(5):
+            menu.key(pygame.K_DOWN)
+        self.assertEqual(state.focus, ('pause_back',))                      # the back button, and no further
+        self.assertEqual(menu.key(pygame.K_KP_ENTER), ('pause_back',))
+
+    def test_arrow_keys_scroll_a_text_page(self):
+        import pygame
+        state = self.menu.state
+        state.screen = 'controls'
+        self.commands()
+        self.menu.key(pygame.K_DOWN)
+        self.menu.key(pygame.K_PAGEDOWN)
+        self.assertEqual((state.scroll, state.focus), (440., None))
+        self.menu.key(pygame.K_UP)
+        self.assertEqual(state.scroll, 400.)
+
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
 class CodPauseTests(unittest.TestCase):
