@@ -338,6 +338,38 @@ class ShellActionTests(unittest.TestCase):
             shell.tick(MAX_STEP)
         self.assertEqual(calls, ['black'])
 
+    def test_the_sound_question_zooms_in_like_the_pause_menu_and_takes_input_once_open(self):
+        from exp_runtime.application_hd import LOADING_TIME, SOUND_DELAY
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        shell, drawn = self.shell, []
+        shell.app.update_holds_launch = lambda seconds: False
+        shell.app.external_music = lambda: False
+
+        def draw(layer, menu_id, **_):
+            drawn.append(layer)
+            pygame.draw.rect(layer, (255, 0, 0), (40, 40, 20, 20))
+            shell.windows.hits = [('rect', ('item', 0))]
+        shell.windows.draw, shell.windows.hits = draw, []
+        shell.fade, shell.pause_open, shell.pressed, shell.body_scroll = None, False, None, 0
+        shell.variables, shell.stage, shell.age = (lambda: {}), 'loading', LOADING_TIME + SOUND_DELAY
+        canvas = pygame.Surface((100, 100))
+        shell.tick(0)                                       # the launch asks "Play with sound?"
+        self.assertEqual(shell.stack.stack, [7])
+        shell.draw_overlay(canvas)
+        self.assertIsNot(drawn[-1], canvas)                 # drawn apart, then scaled from nothing
+        self.assertEqual(canvas.get_at((50, 50))[:3], (0, 0, 0))
+        self.assertEqual(shell.hits(), [])
+        shell.tick(PAUSE_OPEN_MS / 2000)
+        shell.draw_overlay(canvas)
+        self.assertEqual(shell.hits(), [])
+        shell.tick(PAUSE_OPEN_MS / 2000)
+        shell.draw_overlay(canvas)
+        self.assertIs(drawn[-1], canvas)                    # full size: drawn straight onto the frame
+        self.assertEqual(shell.hits(), [('rect', ('item', 0))])
+        shell.stack.queue(17)                               # any other window appears at once
+        shell.draw_overlay(canvas)
+        self.assertIs(drawn[-1], canvas)
+
     def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
         canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))
         canvas.fill((200, 100, 50, 0))

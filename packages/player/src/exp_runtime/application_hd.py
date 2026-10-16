@@ -154,6 +154,8 @@ class HdShell:
         self.age += seconds
         if self.pause_open:
             self.pause_ms = min(PAUSE_OPEN_MS, self.pause_ms + seconds * 1000)
+        if self.stack.stack:
+            self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + seconds * 1000)
         covered = self.overlay_active or self.pause_open
         if self.stage == 'main' and self.was_covered and not covered:
             self.main.start(intro=False)          # the buttons slide in again when a window closes
@@ -162,6 +164,7 @@ class HdShell:
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
             self.stage = 'sound'
             self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
+            self.window_ms = 0
         elif self.stage == 'flash':
             self.flash_age += seconds
             if self.boot.flash_done(self.flash_age):
@@ -271,8 +274,17 @@ class HdShell:
         self.windows.hits = []
         if self.stack.stack:
             current = self.stack.current
-            self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed,
+            scale = pause_scale(self.window_ms)
+            if scale >= 1:
+                self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed,
+                                  body_scroll=self.body_scroll)
+                return
+            layer = pygame.Surface(canvas.get_size(), pygame.SRCALPHA).convert_alpha()
+            self.windows.draw(layer, current, variables=self.variables(), pressed=self.pressed,
                               body_scroll=self.body_scroll)
+            size = tuple(max(1, round(length * scale)) for length in layer.get_size())
+            layer = pygame.transform.smoothscale(layer, size)
+            canvas.blit(layer, layer.get_rect(center=canvas.get_rect().center))
         elif self.pause_open and self.stage == 'main':
             self.pause.pressed = self.pressed
             layer, self.pause_buttons = self.pause.layout(self.settings())
@@ -294,6 +306,7 @@ class HdShell:
     flash_over_black = False
     pause_buttons = ()
     pause_ms = PAUSE_OPEN_MS
+    window_ms = PAUSE_OPEN_MS
 
     # ------------------------------------------------------------ input (frame points)
 
@@ -301,7 +314,7 @@ class HdShell:
         if self.fade is not None:
             return []                   # nothing takes input while the screen fades
         if self.stack.stack:
-            return self.windows.hits
+            return self.windows.hits if self.window_ms >= PAUSE_OPEN_MS else []
         if self.pause_open and self.stage == 'main':
             if self.pause_ms < PAUSE_OPEN_MS:
                 return []
