@@ -30,7 +30,7 @@ class PygameCERecipe(Pygame2Recipe):
         text, replaced = re.subn(r'(?ms)^\[build-system\]\n.*?(?=^\[|\Z)',
                                 '[build-system]\n'
                                 'requires = ["setuptools<81", "wheel", "Cython>=3.1,<4"]\n'
-                                'build-backend = "setuptools.build_meta"\n\n', text)
+                                'build-backend = "setuptools.build_meta:__legacy__"\n\n', text)
         if replaced != 1:
             raise ValueError('pygame-ce build-system declaration has changed')
         project.write_text(text)

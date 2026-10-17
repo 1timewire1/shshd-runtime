@@ -31,6 +31,7 @@ class Host:
         self.copier = ThreadPoolExecutor(max_workers=1)
         self.pending = False
         self.closed = False
+        self.backgrounded = False
         self.imported = []
         self.app = Application(file_picker=self.pick, library_root=self.root / 'libraries',
                                settings_path=self.root / 'settings.json', url_opener=self.open_url,
@@ -117,10 +118,11 @@ class Host:
 
     def active(self, active):
         import pygame
-        if self.app.active == active:
-            return
-        self.app.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED if active else pygame.WINDOWFOCUSLOST))
-        if not active:
+        was_backgrounded = getattr(self, 'backgrounded', False)
+        self.backgrounded = not active
+        if self.app.active != active:
+            self.app.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED if active else pygame.WINDOWFOCUSLOST))
+        if not active and not was_backgrounded:
             # Persist even an existing save, then stop one-shot sound effects.
             if self.app.game:
                 self.app._attempt(lambda: self.app.state.checkpoint(self.app.game.session))

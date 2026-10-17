@@ -90,6 +90,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(translated.key, self.pg.K_ESCAPE)
         self.assertEqual(translated.mod, 0)
 
+    def test_focus_loss_before_background_does_not_skip_checkpoint(self):
+        self.host.app.active = False
+        self.host.event(self.pg.event.Event(self.pg.APP_WILLENTERBACKGROUND))
+        self.host.event(self.pg.event.Event(self.pg.APP_DIDENTERBACKGROUND))
+        self.host.app.state.checkpoint.assert_called_once_with(self.host.app.game.session)
+
 
 class StagingTests(unittest.TestCase):
     def test_build_contains_only_owned_sources_and_licenses(self):
