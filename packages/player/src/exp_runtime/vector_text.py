@@ -125,6 +125,12 @@ def system_font_path(role: str, library=None):
     supplied = _library_font_path(library, families)
     if supplied:
         return supplied
+    if 'ANDROID_ARGUMENT' in os.environ:
+        style = 'BoldItalic' if bold and italic else 'Bold' if bold else 'Italic' if italic else 'Regular'
+        for name in (f'Roboto-{style}.ttf', 'Roboto-Regular.ttf', 'NotoSans-Regular.ttf', 'Roboto[wdth,wght].ttf'):
+            path = Path('/system/fonts') / name
+            if path.is_file():
+                return str(path)
     if not pygame.font.get_init():
         pygame.font.init()
     for family in families:
