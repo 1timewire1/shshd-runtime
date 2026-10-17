@@ -13,6 +13,41 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = ('formats', 'engine', 'player', 'shs', 'cod')
 
 
+def prepare_recipe_cache(storage):
+    """Keep compiled dependencies, rebuilding only changed custom recipes."""
+    storage = Path(storage)
+    marker = storage / '.shshd-recipes.json'
+    try:
+        previous = json.loads(marker.read_text())
+    except (FileNotFoundError, ValueError):
+        previous = {}
+    current = {}
+    changed = False
+    for name, module in (('android', 'android'), ('pygame_ce', 'pygame')):
+        recipe = ROOT / 'android/recipes' / name
+        digest = hashlib.sha256()
+        for path in sorted(recipe.rglob('*.py')):
+            digest.update(path.relative_to(recipe).as_posix().encode())
+            digest.update(path.read_bytes())
+        current[name] = digest.hexdigest()
+        if previous.get(name) == current[name]:
+            continue
+        changed = True
+        builds = storage / 'build/other_builds'
+        for directory in builds.glob(name + '*'):
+            if directory.name == name or directory.name.startswith(name + '-'):
+                shutil.rmtree(directory)
+        installs = storage / 'build/python-installs/shshd'
+        for arch in installs.glob('*'):
+            if arch.is_dir():
+                shutil.rmtree(arch / module, ignore_errors=True)
+        print(f'Custom Android recipe will rebuild: {name}', flush=True)
+    if changed:
+        shutil.rmtree(storage / 'dists/shshd', ignore_errors=True)
+    storage.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps(current, sort_keys=True) + '\n')
+
+
 def stage(destination):
     destination = Path(destination).resolve()
     # Never let --source-dir wipe arbitrary data. Staging is an owned build path.
@@ -71,6 +106,7 @@ def main(argv=None):
     ndk = os.environ.get('ANDROID_NDK_HOME')
     if not sdk or not ndk:
         parser.error('Set ANDROID_HOME and ANDROID_NDK_HOME; see docs/ANDROID_APP.md')
+    prepare_recipe_cache(ROOT / 'build/android/p4a')
     output = ROOT / 'dist/android'
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run(build_command(source, sdk, ndk), cwd=output, check=True)

@@ -5,7 +5,7 @@ from queue import Queue
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from exp_runtime.platforms.android import Host
 
@@ -118,3 +118,37 @@ class StagingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.stage(Path(root))
             self.assertEqual(source.read_text(), 'keep')
+
+
+class RecipeCacheTests(unittest.TestCase):
+    def test_recipe_edits_preserve_other_compiled_dependencies(self):
+        spec = importlib.util.spec_from_file_location('build_android', Path(__file__).resolve().parents[1]
+                                                       / 'tools/build_android.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            for name in ('android', 'pygame_ce'):
+                path = root / 'android/recipes' / name / '__init__.py'
+                path.parent.mkdir(parents=True)
+                path.write_text('initial recipe')
+            storage = root / 'cache'
+            with patch.object(module, 'ROOT', root):
+                module.prepare_recipe_cache(storage)
+                files = {}
+                for name in ('android-sdl2', 'pygame_ce', 'png', 'android_support'):
+                    path = storage / 'build/other_builds' / name / 'compiled'
+                    path.parent.mkdir(parents=True)
+                    path.write_text('compiled')
+                    files[name] = path
+                installed = storage / 'build/python-installs/shshd/arm64-v8a/pygame'
+                installed.mkdir(parents=True)
+                (installed / 'surface.so').write_bytes(b'compiled fixture')
+                module.prepare_recipe_cache(storage)
+                self.assertTrue(all(p.exists() for p in files.values()))
+                (root / 'android/recipes/pygame_ce/__init__.py').write_text('edited recipe')
+                module.prepare_recipe_cache(storage)
+                self.assertFalse(files['pygame_ce'].exists())
+                self.assertFalse(installed.exists())
+                for name in ('android-sdl2', 'png', 'android_support'):
+                    self.assertTrue(files[name].exists())
