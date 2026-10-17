@@ -37,7 +37,7 @@ jobs:
       - name: Install native tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config cmake ninja-build ccache libffi-dev libssl-dev zlib1g-dev liblzma-dev libbz2-dev
+          sudo apt-get install -y autoconf automake libtool libltdl-dev pkg-config cmake ninja-build ccache libffi-dev libssl-dev zlib1g-dev liblzma-dev libbz2-dev
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
           python -m pip install -r android/build-requirements.txt uv
       - name: Check shared runtime
@@ -47,10 +47,21 @@ jobs:
         run: |
           uv sync --locked --extra desktop
           uv run --locked --extra desktop python -m unittest discover -s tests
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: build/android/p4a
+          key: android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt', 'android/recipes/**') }}-${{ github.run_id }}
+          restore-keys: android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt', 'android/recipes/**') }}-
       - name: Build ARM64 debug APK
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
         run: python tools/build_android.py --build
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled()
+        with:
+          path: build/android/p4a
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: shshd-runtime-android-arm64-debug
