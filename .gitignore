@@ -1,5 +1,7 @@
 # Python environments, caches and generated packages.
 .venv/
+.venv-android/
+.android-env/
 venv/
 __pycache__/
 *.py[cod]

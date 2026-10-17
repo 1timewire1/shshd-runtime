@@ -1,0 +1,4 @@
+# Toolchain source is pinned; target Python/SDL/Pillow versions are its recipes.
+python-for-android @ git+https://github.com/kivy/python-for-android.git@8ef9d1dbbf769d2c14681dbc3c116c85e2e93bae
+Cython>=3.1,<4
+setuptools<81

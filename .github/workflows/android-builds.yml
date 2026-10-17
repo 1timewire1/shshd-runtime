@@ -1,0 +1,59 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/android-port']
+    paths:
+      - 'android/**'
+      - 'packages/**'
+      - 'tools/build_android.py'
+      - '.github/workflows/android-builds.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install native tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config cmake ninja-build ccache libffi-dev libssl-dev zlib1g-dev liblzma-dev libbz2-dev
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          python -m pip install -r android/build-requirements.txt uv
+      - name: Check shared runtime
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          uv sync --locked --extra desktop
+          uv run --locked --extra desktop python -m unittest discover -s tests
+      - name: Build ARM64 debug APK
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: python tools/build_android.py --build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shshd-runtime-android-arm64-debug
+          path: |
+            dist/android/*.apk
+            dist/android/*.sha256
+            build/android/source/source-manifest.json
+          if-no-files-found: error
+          retention-days: 7
