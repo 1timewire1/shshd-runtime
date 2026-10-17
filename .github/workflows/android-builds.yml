@@ -54,7 +54,6 @@ jobs:
           key: android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt') }}-${{ github.run_id }}
           restore-keys: |
             android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt') }}-
-            android-native-Linux-8aecb50c1775ad616f2902c4828cdb9e9aae458fe8510458ae30e8c804cada8e-
       - name: Build ARM64 debug APK
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358

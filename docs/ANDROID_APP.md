@@ -2,9 +2,11 @@
 
 This port packages the existing Python engine and pygame-ce renderer in an
 SDL2 Android activity. It targets ARM64 devices running Android 7.0/API 24
-or newer. It is a development build, pending a successful APK build and
-physical-device verification. Desktop gameplay tests do not establish Android
-compatibility.
+or newer. The first development APK built successfully in
+[GitHub Actions run 39041119010](https://github.com/andymenard/shshd-runtime/actions/runs/39041119010)
+from commit `741e156`. Its APK v2 signature and 114 ARM64 native libraries and
+extensions were verified. Physical-device gameplay verification is still pending;
+desktop gameplay tests do not establish Android compatibility.
 
 ## Build with GitHub Actions
 
