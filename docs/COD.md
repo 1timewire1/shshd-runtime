@@ -745,7 +745,8 @@ layout with CoD's art (owner's choice, 2026-10-14).
   Play/Resume top (CoD point 346 on IMG_0464) falls on ours (frame point 753). The logo then sits just above the wedge,
   as on the device, and the taller picture loses 77 points of sky and 51 of the brick floor.
 - **The entrance.** Only the buttons slide in, since there is one layer (owner's choice). On the first arrival they
-  start 1.5 s in (`animateMainMenuButtonsIn(1.5)`; SHS HD's is 3.2 s), otherwise at once.
+  come with `animateMainMenuButtonsIn(1.5)`, as in SHS HD, so the wedge moves from 3.0 s (each layer holds its
+  delay twice: `desktop_main_hd.py`); otherwise at once.
 - **The launch screen.** CoD's own `Default@2x.png` (the EA logo on a flat grey of 105, 640 x 960) is fitted to the
   frame's height on the same grey, under "Play with sound?" (menu 7; IMG_0473). After the answer the screen goes to
   black and the main menu slowly fades in from it: CoD has no EA flash, but runs SHS HD's flash code without the flare

@@ -163,11 +163,11 @@ class HdShell:
         self.age += seconds
         if self.pause_open:
             self.pause_ms = min(PAUSE_OPEN_MS, self.pause_ms + seconds * 1000)
+            self.pause.advance(seconds * 1000)          # a page sliding in or out (its buttons wait for it)
         if self.leaving is not None:
             box, ms = self.leaving
             ms += seconds * 1000
             self.leaving = (box, ms) if ms < PAUSE_OPEN_MS else None
-            self.pause.advance(seconds * 1000)
         if self.stack.stack:
             self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + seconds * 1000)
         covered = self.overlay_active or self.pause_open
@@ -265,7 +265,9 @@ class HdShell:
             canvas.blit(self.end_backdrop, (0, 0))
         else:
             self.main.pressed = self.pressed if self.pressed and self.pressed[0] in ('play', 'airing', 'demand', 'more', 'options', 'help') else None
-            canvas = self.main.draw(buttons=not (self.overlay_active or self.pause_open))
+            # The buttons also show while they slide out under a window that has just opened.
+            leaving = self.main.leaving is not None and not self.main.left
+            canvas = self.main.draw(buttons=leaving or not (self.overlay_active or self.pause_open))
         self.draw_overlay(canvas)
         if self.stage == 'main':
             self.draw_leaving(canvas)
@@ -408,8 +410,12 @@ class HdShell:
 
     # ------------------------------------------------------------ commands
 
+    MAIN_OPTIONS = ('play', 'airing', 'demand', 'more', 'options', 'help')
+
     def activate(self, command):
         kind = command[0]
+        if kind in self.MAIN_OPTIONS and self.stage == 'main' and not (self.overlay_active or self.pause_open):
+            self.main.leave()           # `animateMainMenuButtonsOut(0)`, under whatever opens
         if kind in ('play', 'airing', 'demand'):
             style = {'demand': 'list', 'airing': 'airing'}.get(kind, 'tile')
             self.app.open_picker(restore=kind == 'play', style=style)

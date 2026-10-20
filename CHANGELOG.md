@@ -8,14 +8,17 @@
   by zazatree).
   - "Play with sound?", Options, Help & About and the pause menu zoom in.
   - Pages opened from them slide in and out (0.4 s, as SHS HD's menu engine
-    does).
+    does). Options opened from the main menu no longer stops responding after
+    choosing a category.
   - The pause card zooms out over the main menu, which then replays its photo
     animation (no EA flash or jingle).
   - Cause of Death's main menu fades in from black at launch with its
     original timing
     ([#3](https://github.com/1timewire1/shshd-runtime/issues/3)).
-  - The main menu's buttons enter more slowly than the decompiled timing.
-    This is a follow-up item pending a device recording.
+  - The main menu's buttons now come and go with the original's own timing:
+    each holds its delay twice, so they start 0.16 s apart.
+  - Taking an option slides them out, as on the device.
+  - The episode pickers zoom in over the main menu.
 
 ### Fixed
 

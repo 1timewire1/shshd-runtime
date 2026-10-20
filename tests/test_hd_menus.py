@@ -11,8 +11,9 @@ import pygame
 from exp_runtime.application_hd import HdShell, MISS_MENU, END_MENU
 from exp_runtime.desktop_boot_hd import FLASH_TOTAL, HdBootScreen
 from exp_runtime.desktop_hd_menu import BUTTON_STRIP, CARD_W, FOOTER_HEIGHT, HdMenuWindows, ROW_HEIGHT
-from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, HdMainMenu, INFO_DELAY, READY_AFTER, SLIDE_FROM,
-                                         SLIDE_OVERSHOOT, SLIDE_TIME, STAGGER, keyframes)
+from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, GEAR_FADE, HdMainMenu, INFO_DELAY, LEAVE_TIME,
+                                         OUT_DELAYS, READY_AFTER, SLIDE_FROM, SLIDE_OVERSHOOT, SLIDE_TIME, STAGGER,
+                                         keyframes, layer_progress)
 from exp_runtime.menu import MenuFont, MenuState
 from exp_runtime.menu_engine import (BACK, CLEAR, ENGINE, QUEUE, MenuEngineData, MenuEngineError, MenuStack)
 
@@ -183,6 +184,7 @@ class MainMenuTimingTests(unittest.TestCase):
         self.assertEqual(keyframes((0, .5, 1), (0., 10., 0.), 2), 0.)
 
     def test_the_intro_delays_the_buttons_and_input_opens_after_the_last_slide(self):
+        self.assertEqual(BUTTONS_START_INTRO, 1.5)                # animateMainMenuButtonsIn(1.5), both games
         self.menu.start(intro=True)
         self.assertEqual(self.menu.buttons_start, BUTTONS_START_INTRO)
         self.assertFalse(self.menu.ready)
@@ -203,28 +205,53 @@ class MainMenuTimingTests(unittest.TestCase):
         menu.start(intro=False)
         self.assertEqual(menu.buttons_start, 0.0)
 
-    def test_buttons_slide_in_from_the_left_one_after_another_with_a_small_overshoot(self):
+    def test_each_layer_holds_its_delay_twice_then_moves_for_0_35_s(self):
+        # createMainMenuAnimationInForLayer: begins at the delay, lasts delay + 0.35 s, holds until key time d / D.
+        for delay in (0.0, .08, 1.5):
+            progress, hold = layer_progress(delay, delay)
+            self.assertEqual((progress, hold), (0.0, delay / (delay + SLIDE_TIME)))
+            self.assertAlmostEqual(layer_progress(2 * delay, delay)[0], hold)
+            self.assertEqual(layer_progress(2 * delay + SLIDE_TIME, delay)[0], 1.0)
+
+    def test_buttons_slide_in_from_the_left_016_s_apart_with_a_small_overshoot(self):
         self.menu.start(intro=False)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [SLIDE_FROM] * 5)
-        self.menu.tick(.2)
+        self.menu.tick(2 * STAGGER + .01)                         # the wedge and Play/Resume are moving, not Now Airing
         offsets = [self.menu.slide(i) for i in range(5)]
-        self.assertGreater(offsets[0], offsets[1])                # earlier buttons are further along
-        self.assertGreater(offsets[1], offsets[4])
-        self.menu.tick(.96 * SLIDE_TIME - .2 + 4 * STAGGER)
-        self.assertAlmostEqual(self.menu.slide(0), 0.0, delta=SLIDE_OVERSHOOT)
+        self.assertGreater(offsets[0], offsets[1])
+        self.assertGreater(offsets[1], SLIDE_FROM)
+        self.assertEqual(offsets[2:], [SLIDE_FROM] * 3)
+        self.menu.tick(.96 * SLIDE_TIME - 2 * STAGGER - .01)
+        self.assertAlmostEqual(self.menu.slide(0), SLIDE_OVERSHOOT, places=3)
         self.menu.tick(1)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [0.0] * 5)
-        self.assertEqual(self.menu.pop(INFO_DELAY), 1.0)
+        self.assertEqual((self.menu.pop(), self.menu.gear_alpha()), (1.0, 1.0))
 
-    def test_the_gear_and_info_pop_in_past_full_size(self):
+    def test_the_info_button_pops_in_past_full_size_and_the_gear_fades_in(self):
         self.menu.start(intro=False)
-        self.assertEqual(self.menu.pop(INFO_DELAY), 0.01)
-        self.menu.tick(INFO_DELAY + .96 * SLIDE_TIME)
-        self.assertAlmostEqual(self.menu.pop(INFO_DELAY), 1.2, places=2)
+        self.assertEqual((self.menu.pop(), self.menu.gear_alpha()), (0.01, 0.0))
+        self.menu.tick(.32 + GEAR_FADE / 2)
+        self.assertAlmostEqual(self.menu.gear_alpha(), .5)
+        self.menu.tick(INFO_DELAY + .96 * (INFO_DELAY + SLIDE_TIME) - .32 - GEAR_FADE / 2)   # key time .96 of d + .35
+        self.assertAlmostEqual(self.menu.pop(), 1.2, places=2)
 
-    def test_the_buttons_take_longer_than_the_native_entrance(self):
-        self.assertGreater(SLIDE_TIME, .35)
-        self.assertGreater(READY_AFTER, .35 + .36)
+    def test_taking_an_option_slides_the_buttons_out_in_reverse_and_closes_input(self):
+        self.menu.start(intro=False)
+        self.menu.tick(READY_AFTER + .01)
+        self.assertTrue(self.menu.ready)
+        self.menu.leave()
+        self.assertFalse(self.menu.ready)
+        self.assertEqual([self.menu.slide(i) for i in range(5)], [0.0] * 5)
+        self.menu.tick(2 * OUT_DELAYS[4] + .02)                   # More EA Games (last in) goes first: a nudge right
+        self.assertGreater(self.menu.slide(4), 0.0)
+        self.assertEqual(self.menu.slide(0), 0.0)
+        self.assertLess(self.menu.pop(), 1.0)
+        self.menu.tick(LEAVE_TIME)
+        self.assertTrue(self.menu.left)
+        self.assertEqual(([self.menu.slide(i) for i in range(5)], self.menu.pop(), self.menu.gear_alpha()),
+                         ([SLIDE_FROM] * 5, 0.0, 0.0))
+        self.menu.start(intro=False)                              # back on the main menu: in again
+        self.assertIsNone(self.menu.leaving)
 
 
 class BootTests(unittest.TestCase):

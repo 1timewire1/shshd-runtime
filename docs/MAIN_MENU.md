@@ -439,10 +439,15 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   its exit byte 21; unverified). The main menu replays its first-launch entrance from the photo
   animation on, without the EA flash or its jingle (the owner, on the device).
   CoD shows only its buttons' entrance (unverified).
-- **Follow-up.** PR #9 also made the main menu's button entrance 1.6x slower
-  than the decompiled timing (0.35 s per slide, 0.08 s apart, the info button
-  0.36 s after the wedge). It was merged pending a device recording; see
-  `desktop_main_hd.SLIDE_TIME`.
+- **Main menu buttons** (`desktop_main_hd.py`, decompiled in full: `animateMainMenuButtons{In,Out}`).
+  - Each layer's keyframe animation begins after its delay, lasts delay + 0.35 s, and holds until key time
+    delay / (delay + 0.35). So each layer moves from twice its delay, and the buttons start 0.16 s apart, not 0.08 s.
+  - PR #9's 1.6x slowdown made up for that misreading. It has been replaced by the native timing.
+  - The first entrance passes 1.5 s in both games (the 3.2 s used before belonged to `showUnlockedInter`).
+  - Taking any main-menu option slides them out in reverse (`animateMainMenuButtonsOut(0)`): the info button shrinks,
+    the gear fades, More EA Games leaves first and the wedge last.
+  - An episode picker (`SHSMTXMenu`) zooms in over the menu meanwhile (`setAppMode` -> `animateView(20)`), as do
+    Options and Help & About.
 
 SHS `buttonPressed` **00050fe8** (pause branch **00051188**) plays resource
 **8011**; CoD **000249d0** (branch **00024d86**) plays **8006**. Pause row

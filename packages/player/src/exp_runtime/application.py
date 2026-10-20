@@ -22,6 +22,7 @@ from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
 from .application_hd import HdShell
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import FRAME as PICKER_FRAME, HdEpisodePicker
+from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu
 from .desktop_menu import MenuRenderer
 from .episode_picker import PickerModel
@@ -283,10 +284,16 @@ class Application:
     def busy(self):
         return self.job is not None
 
+    # An episode picker opened from the HD main menu zooms in over it (`setAppMode` -> `animateView(20)`, 0.4 s, as
+    # the menus do: docs/MAIN_MENU.md, "Menu entrances") while the menu's buttons slide out; ms into that, or done.
+    picker_zoom = PAUSE_OPEN_MS
+
     @property
     def ready(self):
         if self.shell is not None and self.screen == 'main':
             return not self.busy
+        if self.screen == 'picker' and self.picker_zoom < PAUSE_OPEN_MS:
+            return False
         return (not self.busy and self.transition_age >= 200
                 and (self.screen != 'main' or self.menu_age >= (3000 if self.intro else 500)))
 
@@ -563,7 +570,9 @@ class Application:
         self.refresh_saves()
         self.ensure_picker(style).enter(self.state.selected)
         self.picker.show_restore = restore
+        zoom = self.shell is not None and self.screen == 'main' and self.shell.stage == 'main'
         self.show('picker')
+        self.picker_zoom = 0 if zoom else PAUSE_OPEN_MS
 
     def end_menu_backdrop(self):
         # When an episode has ended: (the last frame dimmed sepia, whether it was Football Season), else None.
@@ -1123,6 +1132,10 @@ class Application:
             self.transition_age = min(200, self.transition_age + elapsed)
             if self.shell is not None and self.screen == 'main':
                 self.shell.tick(elapsed / 1000)
+            elif self.screen == 'picker' and self.picker_zoom < PAUSE_OPEN_MS:
+                self.picker_zoom = min(PAUSE_OPEN_MS, self.picker_zoom + elapsed)
+                if self.shell is not None:
+                    self.shell.tick(elapsed / 1000)            # the buttons sliding out behind it
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)
@@ -1134,6 +1147,15 @@ class Application:
         picker.alert = pending
         if self.shell is not None and self.shell.overlay_active:
             self.shell.draw_overlay(canvas)
+        if self.shell is not None and self.picker_zoom < PAUSE_OPEN_MS:
+            scale = pause_scale(self.picker_zoom)
+            backdrop = self.shell.render().copy()
+            size = tuple(max(1, round(length * scale)) for length in canvas.get_size())
+            if backdrop.get_size() != canvas.get_size():
+                backdrop = pygame.transform.smoothscale(backdrop, canvas.get_size())
+            zoomed = pygame.transform.smoothscale(canvas, size)
+            backdrop.blit(zoomed, zoomed.get_rect(center=backdrop.get_rect().center))
+            canvas = backdrop
         self.present_frame(canvas)
         pygame.display.flip()
 

@@ -31,7 +31,6 @@ TITLE_ART = 6
 BUTTON_PACK, HD_BUTTON_PACK = 272, 315
 INFO_SWAP = {14: 15, 15: 14}            # CoD's info button states sit in SHS HD's pack the other way round
 LABELS = (118, 119, 83, 227)
-BUTTONS_START_INTRO = 1.5               # CoD's `animateMainMenuButtonsIn(1.5)`. SHS HD's is 3.2
 FONTS, HD_FONTS = (532, 533), (593, 594)
 PLAY_TOP = (346, 753)                   # Play/Resume's top edge: CoD points on the device, frame points here
 
@@ -131,12 +130,6 @@ class CodMainMenu(HdMainMenu):
     @staticmethod
     def available(library):
         return getattr(library, 'game_id', None) == 'cod'
-
-    @property
-    def buttons_start(self):
-        # One flat picture: only the buttons enter, from 1.5 s on the first arrival (`animateMainMenuButtonsIn(1.5)`,
-        # under the fade from black: application_cod.py).
-        return BUTTONS_START_INTRO if self.intro else 0.0
 
     @lru_cache(maxsize=1)
     def strings(self):

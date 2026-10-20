@@ -42,8 +42,8 @@ ENGINE_RESOURCES, UI_RESOURCES = (13, 15, 16), (6, 14, 272, 532, 533)
 # CoD 1.4.7's way from the EA screen to the main menu (SHS HD's flash code with no flare): `setAppMode(102)` (00022cd4)
 # adds a black layer that fades in (opacity 0 -> 1) over 1.0 s, beginning 1.0 s later. When it stops
 # (`SHSAnimationDelegate animationDidStop:finished:` 00017388, "flash-all-white") the main menu is set up
-# (`setAppMode(101)`) and the black fades out over 1.0 s from 0.2 s on; the buttons slide in from 1.5 s
-# (`animateMainMenuButtonsIn(1.5)`, desktop_cod_main.BUTTONS_START_INTRO).
+# (`setAppMode(101)`) and the black fades out over 1.0 s from 0.2 s on; the buttons slide in with
+# `animateMainMenuButtonsIn(1.5)`, the wedge from 3.0 s (shared with SHS HD: desktop_main_hd.py).
 BLACK_HOLD, BLACK_FADE, REVEAL_DELAY = 1.0, 1.0, 0.2
 
 
