@@ -97,7 +97,10 @@ class EngineState:
     background_pan: BackgroundPan = field(default_factory=BackgroundPan)
     music_id: int = -1
     music_flag: bool = False
-    music_stop_fade_ms = 0      # the last service 81's fade-out; playback state, so not a saved field
+    # Playback state, not saved fields: the last service 81's fade-out, and a count of music requests and stops so the
+    # player sees the same cue asked for again (music_stream.py).
+    music_stop_fade_ms = 0
+    music_requests = 0
     sound_id: int = -1
     sound_serial: int = 0
     sound_ids: list[int] = field(default_factory=list)
@@ -551,11 +554,12 @@ class EngineState:
             need(1)
             self.audio_stopped = True
             self.music_id = -1
-            if getattr(GAMES[self.game_key], 'MUSIC_STOP_FADES', False):
-                # CoD SHSSoundManager::stopMusic(short, true) (00042d70): 0 stops at once, 0xffff means 1000 ms and
-                # any other value is the fade in ms (-[SHSSound setFadeTime:] divides it by 1000.0).
-                fade = args[0] & 0xffff
-                self.music_stop_fade_ms = 1000 if fade == 0xffff else fade if fade < 0x8000 else 0
+            self.music_requests += 1
+            # SHSSoundManager::stopMusic(short, true) (SHS HD case 0x51 -> 00053424, CoD 1.4.7 00046a10): 0 stops at once,
+            # 0xffff means 1000 ms and any other value is the fade in ms (-[SHSSound setFadeTime:] divides it by 1000.0).
+            # Other negative shorts would never finish natively; they stop at once here. (Android's stop is unverified.)
+            fade = args[0] & 0xffff
+            self.music_stop_fade_ms = 1000 if fade == 0xffff else fade if fade < 0x8000 else 0
             return complete('stop_audio')
         if y == 82:
             need(0)
@@ -567,6 +571,7 @@ class EngineState:
             if y == 80 or args[0] in GAMES[self.game_key].MUSIC_RANGE:
                 self.music_id = args[0]
                 self.music_flag = bool(args[1]) if y == 80 else False
+                self.music_requests += 1
                 self.audio_stopped = False
             else:
                 self.sound_id = args[0]

@@ -31,6 +31,7 @@ from .languages import TITLE_LANGUAGES
 from .launcher import APP_NAME
 from .games import GAMES
 from .ui_sound import UiSounds
+from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    default_library, group_episodes, remember_library)
 from .runtime import SaveError, Session
@@ -52,6 +53,7 @@ UPDATE_WAIT = 2.5
 class Application:
     shell = None            # the HD launch flow / main menu, when an HD bundle is imported
     menu_sound = None       # the main menu's music (a Sound, so a paused episode keeps its own stream)
+    menu_fade = None        # ticks when the Music switch started fading it out (music_stream.FADE_MS)
     ui_sounds = None        # the selected game's interface sounds (ui_sound.py), loaded on first use
     end_record = None
 
@@ -549,16 +551,37 @@ class Application:
             self.menu_sound = None
 
     def stop_menu_music(self):
+        self.menu_fade = None
         if self.menu_sound is not None:
             self.menu_sound.stop()
             self.menu_sound = None
 
-    def menu_music_changed(self):
-        """The music switch or volume changed while the main menu shows."""
+    def menu_music_changed(self, *, switched=False):
+        """The Music switch (`switched`) or volume changed while the main menu shows. As `setMusicEnabled` /
+        `doSoundManagerTransition` do: off fades the menu's music out over 1000 ms; on plays it again from the start,
+        unless it is still fading, when the fade is cancelled and it plays on (playMusic of the same cue)."""
         if not self.state.music:
-            self.stop_menu_music()
-        elif self.menu_sound is not None:
+            if self.menu_sound is not None and self.menu_fade is None:
+                self.menu_fade = pygame.time.get_ticks()
+            return
+        if self.menu_fade is not None:
+            self.menu_fade = None
+        elif switched:
+            if self.shell is not None and self.screen == 'main':
+                self.play_menu_music()
+            return
+        if self.menu_sound is not None:
             self.menu_sound.set_volume(self.state.music_volume / 100)
+
+    def _fade_menu_music(self):
+        """One frame of the Music switch's fade-out (linear, as `-[SHSSound getFadeLevel]`)."""
+        if self.menu_fade is None or self.menu_sound is None:
+            return
+        level = 1 - (pygame.time.get_ticks() - self.menu_fade) / FADE_MS
+        if level <= 0:
+            self.stop_menu_music()
+        else:
+            self.menu_sound.set_volume(self.state.music_volume / 100 * level)
 
     def open_url(self, url):
         try:
@@ -1161,6 +1184,7 @@ class Application:
 
     def render(self):
         self._sync_menu_music()
+        self._fade_menu_music()
         if self.screen == 'game':
             if self.game.session.episode_exited:
                 self.return_to_menu()

@@ -54,8 +54,6 @@ NAME_COLORS = {'PajamaHip24': (0, 0, 0), 'PajamaHip26': (139, 0, 0),
 MUSIC_RANGE = range(8201, 8210)
 # CoD doSoundManagerTransition (00022b04), splashScreenFlewIn (00014c0c).
 MENU_MUSIC = 8209
-# Service 81 fades the playing music out over its argument (SHSSoundManager::stopMusic, 00042d70).
-MUSIC_STOP_FADES = True
 DEFAULT_EPISODE = (101, 1)
 RELATIONSHIP_ASSETS = (3000, 3001, 3002)
 RELATIONSHIP_FLASH = {3000: 3003, 3001: 3005, 3002: 3007}

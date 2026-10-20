@@ -22,6 +22,17 @@
 
 ### Fixed
 
+- **Music fades as in the original games**
+  ([#4](https://github.com/1timewire1/shshd-runtime/issues/4)). Both games now
+  share SHS HD's / CoD 1.4.7's music rules:
+  - A script's stop fades out over the time it asks for (10 ms to 8 s in the
+    shipped episodes), in SHS too.
+  - A new song waits for the fade.
+  - The pause menu fades the episode's music over a second, and Resume brings
+    it back from where it was paused.
+  - The Music switch fades out over a second. In the main menu, turning it
+    back on restarts the menu's song (or cancels the fade if it is still
+    running). In an episode, songs asked for while Music is off are skipped.
 - **Interface sounds now match the originals**
   ([1timewire1/shshd-runtime#1](https://github.com/1timewire1/shshd-runtime/issues/1)).
   Picking a story choice clicks again, as do the pause menu's rows and back

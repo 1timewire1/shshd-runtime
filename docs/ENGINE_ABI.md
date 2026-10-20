@@ -229,10 +229,11 @@ Service 80 stores a music ID and `bool(a2)` repeat flag. Both native iOS games'
 `SHSSound::setLoop:` translate this flag to AVAudioPlayer loop counts -1 / 0
 (CoD `00041e88`, SHS `00073fa8`). Desktop and native iOS playback now use the
 same convention, with the existing flag retained in saves. Service 81 accepts
-one word and calls the native stop/fade path. For CoD the runtime fades over
-that word (see [COD.md](COD.md)); for SHS it stops immediately.
-Native fades, changing a live track's repeat flag without restarting it,
-all channel semantics and intermediate same-frame requests remain partial.
+one word and calls the native stop/fade path, `stopMusic(word, true)`, in both
+iOS games (SHS HD case 0x51, CoD `00042d70`). The runtime fades over that word
+(see [COD.md](COD.md) and "Music" below). Changing a live track's repeat flag
+without restarting it, all channel semantics and intermediate same-frame
+requests remain partial.
 
 #### Android music cues
 
@@ -275,16 +276,39 @@ complete source APK was retained. Saving the in-progress playback position
 and matching Android's codec seek precision remain outside the current
 audio save contract.
 
-Desktop pause/focus handling retains the loaded mixer stream separately from
-the VM's requested cue. The pause menu and window inactivity each hold music;
-both must clear before playback resumes. Returning through the main menu to
-the same live session also preserves the playhead. Muting, service 81's stop,
-and a changed cue replace that playback state; resuming cannot revive a muted
-or replaced track. New sessions and explicit save loads still start their
-requested cue. These are runtime lifecycle rules. A changed cue fades the old
-one out over 1000 ms, and CoD's service 81 fades over its argument. A pause,
-mute or finished track replaces it at once. No audio transport fields are
-added to the save schema.
+#### Music
+
+The story's music follows `SHSSoundManager` as both iOS games build it
+(`music_stream.py`; SHS HD addresses, CoD 1.4.7's the same code):
+
+- **Requests.** `playMusic` (`00053830`) ignores a request while Music is
+  off; it is not queued. Asking again for the playing cue cancels its fade.
+  Another cue fades the playing one over 1000 ms (`stopMusic(-1)`), then
+  starts once the fade has ended (`tick`, `000536d8`).
+- **Stops.** `stopMusic(fade, true)` (`00053424`): 0 stops at once, `0xffff`
+  is 1000 ms, any other value is that many ms, and the queued cue is dropped.
+  A cue already fading keeps its fade. Fades are linear (`getFadeLevel`).
+- **Music switch.** Off is `stopMusic(-1, true)`, a 1000 ms fade. On plays
+  nothing in an episode until the script asks for music again.
+- **Pause menu.** Opening it saves the playing cue and its position
+  (`storeGameAudio` `0001e6e0`, `-[SHSSound save:]` keeps `currentTime`), then
+  fades it over 1000 ms. A cue already fading finishes first and is not saved.
+  - Resume waits for that fade, then plays the saved cue again from the saved
+    position at full volume (`restoreGameAudio` `0001e688`, `restartFromLoad`).
+    If Music is off by then, the cue is dropped.
+  - A looping cue's position wraps at its file's length (`audio.mp3_length_ms`).
+- **Desktop holds.** Window inactivity and service 83 (`pauseMusic`) pause the
+  stream at once; both holds must clear before playback resumes.
+- **Main menu.** Returning to it from the pause menu leaves the episode's cue
+  held, and resuming the same live session restores it. New sessions and
+  explicit save loads start their requested cue.
+- **Not applied:**
+  - The pause menu's effects fade (0.1 s) and their restore on Resume.
+  - The menu's own song, which natively starts inside the pause menu when
+    Music is switched off and on there (read from the code only, unconfirmed).
+
+The fade time and a count of music requests are playback state on the engine,
+not saved fields. No audio transport fields are added to the save schema.
 
 Evidence: `SHS09SoundEngine.java` debug lines 145–253, inspected as Dalvik
 instructions in the player-supplied APK. The DEX hash is recorded in

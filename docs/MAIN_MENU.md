@@ -435,6 +435,10 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   this player adds (General / Sound / Data Management) slide like native pages.
   Native exits (`notifyMenuRemoved` -> `animateView` with the exit byte) are not
   decompiled, so the reverse slide is ours.
+- **Music switch.** In the main menu, off fades the menu's song over 1000 ms
+  (`setMusicEnabled(false)` -> `stopMusic(-1, true)`). On plays it again from
+  the start (`doSoundManagerTransition`), or cancels the fade if it is still
+  fading. The volume slider only sets the volume.
 - **Main Menu row.** The pause card zooms back out over the main menu (ours, for
   its exit byte 21; unverified). The main menu replays its first-launch entrance from the photo
   animation on, without the EA flash or its jingle (the owner, on the device).

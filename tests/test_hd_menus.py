@@ -273,8 +273,9 @@ class StubApp:
     def play_asset(self, asset_id):
         self.played.append(asset_id)
 
-    def menu_music_changed(self):
+    def menu_music_changed(self, *, switched=False):
         self.music_changes = getattr(self, 'music_changes', 0) + 1
+        self.music_switched = switched
 
     def open_url(self, url):
         self.urls.append(url)

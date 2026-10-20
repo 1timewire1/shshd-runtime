@@ -184,8 +184,8 @@ divides it by 1000.0; `getFadeLevel` falls linearly to 0). `true` drops any
 queued cue. A sound that is already fading keeps its fade. `tick` (`00042ffc`)
 starts a cue queued by `playMusic` only once the faded sound has stopped, and
 `playMusic` of the fading cue itself removes the fade. The desktop follows
-these rules (`MUSIC_STOP_FADES`; the fade time is playback state and is not
-saved). Negative shorts other than -1 would make the native fade never finish.
+these rules for both games (SHS HD's case 0x51 makes the same call; see
+ENGINE_ABI.md, "Music"; the fade time is playback state and is not saved). Negative shorts other than -1 would make the native fade never finish.
 The runtime stops at once for these instead (unverified in scripts). The iOS
 host's mixer has no volume control, so there the cue plays at full volume for
 the fade time and then stops.

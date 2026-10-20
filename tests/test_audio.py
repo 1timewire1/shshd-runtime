@@ -3,6 +3,7 @@ import importlib.util
 from io import BytesIO
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 import wave
@@ -68,7 +69,9 @@ class MusicPlaybackTests(unittest.TestCase):
             stream.writeframes(b'\0\0' * 960)  # 120ms, wholly authored.
         for game in ('shs', 'cod'):
             for service, flag in ((79, 0), (80, 0), (80, 1), (80, -3)):
-                with self.subTest(game=game, service=service, flag=flag):
+                with self.subTest(game=game, service=service, flag=flag), \
+                        patch('pygame.time.get_ticks') as clock:
+                    clock.return_value = 10000
                     ui, resources = self.make_ui(service, 8201, flag, game)
                     resources.read_asset.return_value = sample.getvalue()
                     saved = ui.session.snapshot()
@@ -76,8 +79,13 @@ class MusicPlaybackTests(unittest.TestCase):
                     pygame.mixer.init(frequency=8000, size=-16, channels=1, buffer=128)
                     ui._sync_audio()
                     pygame.time.wait(400)
+                    clock.return_value = 10400
+                    ui._sync_audio()
                     self.assertEqual(pygame.mixer.music.get_busy(), bool(flag))
-                    ui.menu_open = True
+                    ui.menu_open = True                     # storeGameAudio: a 1000 ms fade, then held
+                    ui._sync_audio()
+                    self.assertEqual(pygame.mixer.music.get_busy(), bool(flag))
+                    clock.return_value = 11500
                     ui._sync_audio()
                     self.assertFalse(pygame.mixer.music.get_busy())
                     ui.menu_open = False
@@ -94,16 +102,21 @@ class MusicPlaybackTests(unittest.TestCase):
         for flag in (0, 1):
             ui, _ = self.make_ui(music=26001, repeat=flag, game='cod')
             mixer = Mixer()
-            with patch('pygame.mixer.music', mixer.music):
+            with patch('pygame.mixer.music', mixer.music), patch('pygame.time.get_ticks') as clock:
+                clock.return_value = 10000
                 ui._sync_audio()
                 ui._sync_audio()
+                clock.return_value = 10250
                 ui.menu_open = True
                 ui._sync_audio()
-                ui.menu_open = False
+                clock.return_value = 11300                  # the pause menu's fade is over: held
                 ui._sync_audio()
+                ui.menu_open = False
+                ui._sync_audio()                            # restartFromLoad: the held cue from where it was
             self.assertEqual([c['kind'] for c in mixer.commands],
-                             ['music_stop', 'music_load', 'music_play', 'music_pause', 'music_resume'])
+                             ['music_stop', 'music_load', 'music_play', 'music_pause', 'music_play'])
             self.assertEqual(mixer.commands[2], dict(kind='music_play', start=0., loops=-1 if flag else 0))
+            self.assertEqual(mixer.commands[4], dict(kind='music_play', start=.25, loops=-1 if flag else 0))
 
     def test_both_music_services_load_and_seek_without_changing_vm_or_save_ids(self):
         # Expected destinations and offsets recovered from the Java player,
@@ -132,7 +145,7 @@ class MusicPlaybackTests(unittest.TestCase):
                         ui._sync_audio()  # Rendering another frame must not restart it.
                         music.play.assert_called_once()
 
-    def test_two_cues_in_one_track_restart_and_muting_preserves_the_request(self):
+    def test_two_cues_in_one_track_and_the_music_switch(self):
         ui, r = self.make_ui(music=8213)
         with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
             clock.return_value = 10000
@@ -150,19 +163,33 @@ class MusicPlaybackTests(unittest.TestCase):
             self.assertEqual([call.kwargs['start'] for call in music.play.call_args_list], [4., 39.2])
             self.assertEqual([call.args for call in r.read_asset.call_args_list], [(8212,), (8212,)])
             saved = ui.session.snapshot()
+            # Music off: setMusicEnabled(false) -> stopMusic(-1, true), a 1000 ms fade.
             ui.music_enabled = False
             ui._sync_audio()
-            self.assertEqual(music.play.call_count, 2)
+            self.assertEqual(music.stop.call_count, 2)
+            clock.return_value = 11500
+            ui._sync_audio()
+            self.assertAlmostEqual(music.set_volume.call_args.args[0], .5 * ui.music_volume)
+            clock.return_value = 12000
+            ui._sync_audio()
             self.assertEqual(music.stop.call_count, 3)
+            # Requests while off are ignored, and turning Music on plays nothing until the script asks again.
+            ui.session.engine.music_id = 8213
+            ui._sync_audio()
             ui.music_enabled = True
             ui._sync_audio()
-            self.assertEqual(music.play.call_args.kwargs, {'loops': 0, 'start': 39.2})
-            self.assertEqual(ui.session.snapshot(), saved)
+            self.assertEqual(music.play.call_count, 2)
+            from test_background import dispatch
+            dispatch(ui.session.engine, 80, 8213, 0)
+            ui._sync_audio()
+            self.assertEqual(music.play.call_args.kwargs, {'loops': 0, 'start': 4.})
+            self.assertEqual(ui.session.snapshot()['engine'].keys(), saved['engine'].keys())
 
-    def test_cod_stop_fades_out_over_its_argument_and_holds_the_next_cue(self):
+    def test_stop_fades_out_over_its_argument_and_holds_the_next_cue(self):
+        # Service 81 is stopMusic(arg, true) in both iOS games (SHS HD case 0x51, CoD 1.4.7 00042d70).
         from test_background import dispatch
         for game, fade, expected in (('cod', 2000, 2000), ('cod', 0xffff, 1000), ('cod', -1, 1000),
-                                     ('cod', 0, 0), ('shs', 2000, 0)):
+                                     ('cod', 0, 0), ('shs', 2000, 2000), ('shs', 0, 0)):
             with self.subTest(game=game, fade=fade):
                 ui, r = self.make_ui(music=8201, repeat=1, game=game)
                 with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
@@ -203,77 +230,97 @@ class MusicPlaybackTests(unittest.TestCase):
             music.stop.assert_called_once_with()
             music.play.assert_called_once()
 
-    def test_pause_menu_resumes_the_same_stream_without_reloading_or_replaying_vm(self):
+    def test_pause_menu_fades_out_then_resumes_from_where_it_paused_without_replaying_vm(self):
+        # storeGameAudio saves the cue (its currentTime) and fades it over 1000 ms; restoreGameAudio plays it again from
+        # there at full volume.
         import pygame
         for controls in ('buttons', 'escape'):
             with self.subTest(controls=controls):
                 ui, resources = self.make_ui()
                 saved = ui.session.snapshot()
-                with patch('pygame.mixer.music') as music:
+                with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+                    clock.return_value = 10000
                     ui._sync_audio()
+                    clock.return_value = 10500
                     if controls == 'buttons':
                         ui.command(('menu',))
                     else:
                         ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
+                    clock.return_value = 11000
+                    ui._sync_audio()
+                    self.assertAlmostEqual(music.set_volume.call_args.args[0], .5 * ui.music_volume)
+                    music.pause.assert_not_called()
+                    clock.return_value = 11600
                     ui._sync_audio()
                     ui.tick(5000)
                     music.pause.assert_called_once_with()
-                    music.unpause.assert_not_called()
+                    clock.return_value = 15000
                     if controls == 'buttons':
                         ui.command(('resume',))
                     else:
                         ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
                     ui._sync_audio()
                     ui._sync_audio()
-                    music.unpause.assert_called_once_with()
+                    music.unpause.assert_not_called()
                     music.load.assert_called_once()
-                    music.play.assert_called_once_with(loops=0, start=2.8)
+                    self.assertEqual([call.kwargs for call in music.play.call_args_list],
+                                     [dict(loops=0, start=2.8), dict(loops=0, start=3.3)])
+                    self.assertEqual(music.set_volume.call_args.args[0], ui.music_volume)
                     resources.read_asset.assert_called_once_with(8201)
                     self.assertEqual(ui.session.snapshot(), saved)
 
     def test_focus_and_menu_holds_must_both_clear_before_music_resumes(self):
         import pygame
         ui, _ = self.make_ui()
-        with patch('pygame.mixer.music') as music:
+        with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
             ui._sync_audio()
             ui.command(('menu',))
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST))
-            ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             ui._sync_audio()
             music.pause.assert_called_once_with()
-            music.unpause.assert_not_called()
+            clock.return_value = 11100                      # the pause menu's fade ends while the window is away
+            ui._sync_audio()
+            ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
+            ui._sync_audio()
+            music.unpause.assert_not_called()               # held by the pause menu
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST))
             ui.command(('resume',))
             ui._sync_audio()
-            music.unpause.assert_not_called()
+            calls = [c[0] for c in music.method_calls if c[0] in ('play', 'pause', 'unpause')]
+            self.assertEqual(calls[-1], 'pause')            # restored, but held until the window is back
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             ui._sync_audio()
-            music.unpause.assert_called_once_with()
-            music.play.assert_called_once()
+            calls = [c[0] for c in music.method_calls if c[0] in ('play', 'pause', 'unpause')]
+            self.assertEqual(calls[-1], 'unpause')
+            self.assertEqual(music.play.call_count, 2)
 
     def test_muting_stopping_and_switching_cues_while_paused_do_not_resume_stale_music(self):
         for change in ('mute', 'stop', 'cue'):
             with self.subTest(change=change):
                 ui, _ = self.make_ui(music=8213)
-                with patch('pygame.mixer.music') as music:
+                with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+                    clock.return_value = 10000
                     ui._sync_audio()
                     ui.command(('menu',))
+                    clock.return_value = 11100                  # held
                     ui._sync_audio()
                     if change == 'mute':
-                        ui.music_enabled = False
+                        ui.music_enabled = False                # restartFromLoad drops it: Music is off
                     else:
                         ui.session.engine.music_id = -1 if change == 'stop' else 8214
                     ui._sync_audio()
+                    clock.return_value = 12300
+                    ui._sync_audio()
                     ui.command(('resume',))
                     ui._sync_audio()
-                    if change == 'cue':
-                        self.assertEqual([call.kwargs['start'] for call in music.play.call_args_list],
-                                         [4., 39.2])
-                        self.assertEqual(music.pause.call_count, 2)
-                        music.unpause.assert_called_once_with()
+                    starts = [call.kwargs['start'] for call in music.play.call_args_list]
+                    if change == 'cue':                         # the new cue, held and resumed in its place
+                        self.assertEqual(starts[:2], [4., 39.2])
+                        self.assertEqual(starts[-1], 39.2)
                     else:
-                        music.play.assert_called_once_with(loops=0, start=4.)
-                        music.unpause.assert_not_called()
+                        self.assertEqual(starts, [4.])
+                    music.unpause.assert_not_called()
 
     def test_live_main_menu_resume_keeps_the_stream_and_restart_loads_a_new_one(self):
         from exp_runtime.application import Application
@@ -314,6 +361,42 @@ class MusicPlaybackTests(unittest.TestCase):
             self.assertIsNot(app.game, ui)
             self.assertEqual(music.load.call_count, 2)
             self.assertEqual(music.play.call_count, 2)
+
+    def test_main_menu_music_switch_fades_out_and_restarts_or_cancels_the_fade(self):
+        # setMusicEnabled(false): a 1000 ms fade. Back on: doSoundManagerTransition plays the menu's cue from the start,
+        # or, still fading, playMusic of the same cue cancels the fade. The volume slider never restarts it.
+        from exp_runtime.application import Application
+        app = Application.__new__(Application)
+        app.audio, app.screen, app.shell = True, 'main', object()
+        app.library = Mock(game_id='shs', read_asset=Mock(return_value=b'authored theme'))
+        app.state = SimpleNamespace(music=True, music_volume=80)
+        with patch('pygame.mixer.Sound') as sound, patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
+            app.play_menu_music()
+            song = app.menu_sound
+            app.state.music = False
+            app.menu_music_changed(switched=True)
+            clock.return_value = 10500
+            app._fade_menu_music()
+            self.assertAlmostEqual(song.set_volume.call_args.args[0], .4)
+            app.state.music = True                          # back on mid-fade: it plays on at full volume
+            app.menu_music_changed(switched=True)
+            self.assertEqual((app.menu_sound, song.set_volume.call_args.args[0]), (song, .8))
+            self.assertEqual(sound.call_count, 1)
+            app.state.music = False
+            app.menu_music_changed(switched=True)
+            clock.return_value = 11600
+            app._fade_menu_music()
+            self.assertIsNone(app.menu_sound)
+            song.stop.assert_called_once_with()
+            app.state.music = True                          # after the fade: from the start again
+            app.menu_music_changed(switched=True)
+            self.assertEqual(sound.call_count, 2)
+            app.menu_sound.play.assert_called_with()
+            app.state.music_volume = 50
+            app.menu_music_changed()                        # the slider only sets the volume
+            self.assertEqual(sound.call_count, 2)
+            self.assertEqual(app.menu_sound.set_volume.call_args.args[0], .5)
 
     def test_menu_uses_each_games_theme_and_obeys_mute_focus_and_game_changes(self):
         from exp_runtime.application import Application
@@ -367,24 +450,28 @@ class MusicPlaybackTests(unittest.TestCase):
             stream.writeframes(b'\0\0' * 16000)
         resources.read_asset.return_value = sample.getvalue()
         pygame.mixer.init(frequency=8000, size=-16, channels=1, buffer=128)
-        ui._sync_audio()
-        ui.command(('menu',))
-        position = pygame.mixer.music.get_pos()
-        menu = create_menu_music()
-        menu.load(BytesIO(sample.getvalue()))
-        menu.play()
-        self.assertTrue(menu.channel.get_busy())
-        self.assertFalse(pygame.mixer.music.get_busy())
-        pygame.time.wait(50)
-        self.assertEqual(pygame.mixer.music.get_pos(), position)
-        menu.pause()
-        menu.unpause()
-        menu.stop()
-        ui.command(('resume',))
-        self.assertTrue(pygame.mixer.music.get_busy())
+        with patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
+            ui._sync_audio()
+            ui.command(('menu',))
+            clock.return_value = 11100                      # the pause menu's fade is over: held
+            ui._sync_audio()
+            position = pygame.mixer.music.get_pos()
+            menu = create_menu_music()
+            menu.load(BytesIO(sample.getvalue()))
+            menu.play()
+            self.assertTrue(menu.channel.get_busy())
+            self.assertFalse(pygame.mixer.music.get_busy())
+            pygame.time.wait(50)
+            self.assertEqual(pygame.mixer.music.get_pos(), position)
+            menu.pause()
+            menu.unpause()
+            menu.stop()
+            ui.command(('resume',))
+            self.assertTrue(pygame.mixer.music.get_busy())
         resources.read_asset.assert_called_once_with(8201)
 
-    def test_real_mixer_freezes_and_resumes_authored_music_position(self):
+    def test_real_mixer_holds_and_resumes_authored_music_position(self):
         import pygame
         ui, resources = self.make_ui(music=8201)
         sample = BytesIO()
@@ -395,26 +482,32 @@ class MusicPlaybackTests(unittest.TestCase):
             stream.writeframes(b'\0\0' * 16000)
         resources.read_asset.return_value = sample.getvalue()
         pygame.mixer.init(frequency=8000, size=-16, channels=1, buffer=128)
-        ui._sync_audio()
-        self.assertTrue(pygame.mixer.music.get_busy())
-        pygame.time.wait(50)
-        ui.command(('menu',))
-        ui._sync_audio()
-        self.assertFalse(pygame.mixer.music.get_busy())
-        position = pygame.mixer.music.get_pos()
-        pygame.time.wait(80)
-        self.assertEqual(pygame.mixer.music.get_pos(), position)
-        ui.command(('resume',))
-        ui._sync_audio()
-        self.assertTrue(pygame.mixer.music.get_busy())
-        pygame.time.wait(50)
-        self.assertGreater(pygame.mixer.music.get_pos(), position)
-        resources.read_asset.assert_called_once_with(8201)
-        pygame.mixer.music.stop()  # A finished/stopped stream must not be restarted by Resume.
-        ui.command(('menu',))
-        ui.command(('resume',))
-        ui._sync_audio()
-        self.assertFalse(pygame.mixer.music.get_busy())
+        with patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
+            ui._sync_audio()
+            self.assertTrue(pygame.mixer.music.get_busy())
+            clock.return_value = 10050
+            ui.command(('menu',))
+            ui._sync_audio()
+            self.assertTrue(pygame.mixer.music.get_busy())  # fading
+            clock.return_value = 11100
+            ui._sync_audio()
+            self.assertFalse(pygame.mixer.music.get_busy())
+            held = ui.music_stream.stored
+            self.assertAlmostEqual(held, .05)
+            ui.command(('resume',))
+            ui._sync_audio()
+            self.assertTrue(pygame.mixer.music.get_busy())
+            clock.return_value = 11200
+            ui._sync_audio()
+            self.assertGreater(ui.music_stream.position(), held)
+            resources.read_asset.assert_called_once_with(8201)
+            pygame.mixer.music.stop()  # A finished/stopped stream must not be restarted by Resume.
+            ui._sync_audio()
+            ui.command(('menu',))
+            ui.command(('resume',))
+            ui._sync_audio()
+            self.assertFalse(pygame.mixer.music.get_busy())
 
     def test_unknown_missing_music_warns_and_sound_effect_ids_stay_exact(self):
         ui, r = self.make_ui(music=8222)
