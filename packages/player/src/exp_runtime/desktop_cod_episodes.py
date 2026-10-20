@@ -14,6 +14,8 @@ CoD's styling:
   CoD's colours (`desktop_cod_menu.CodButtons`).
 * **Popup card.** SHS HD's `popupBackground.png` with its periwinkle border (117, 137, 255) recoloured to CoD's window
   border (85, 95, 176), pack 16's. Labels and alert text are black, as CoD's window titles are.
+* **List card.** Episodes On Demand and Now Airing sit in CoD's own menu card (`desktop_cod_pause.CodPauseMenu`, as
+  the pause menu's pages are), undimmed, with the back button in its footer (see desktop_episode_list_hd.py).
 * **List.** Sampled from CoD's pack 16, the same pieces the SHS list took from the APK's: category bands (85, 95, 176)
   (frames 73 / 76), rows alternating (239, 243, 247) and white starting with the tinted one (frames 82 / 83, the order
   IMG_0467 shows), the selected row (181, 195, 236) (frame 84), the play / pause icons' ring (102, 120, 213) and

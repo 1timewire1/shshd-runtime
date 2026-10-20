@@ -286,6 +286,32 @@ class PickerOverMenuTests(unittest.TestCase):
         self.assertIsNot(layer, picker.canvas)
 
 
+class EpisodeListCardTests(unittest.TestCase):
+    def test_with_a_menu_card_the_list_scrolls_inside_a_tall_card_like_a_text_page(self):
+        from exp_runtime.desktop_episode_list_hd import HdEpisodeList
+        from exp_runtime.desktop_pause_hd import BORDER, FOOT, HEADER, PANEL_W, PANEL_X, TALL
+        picker = HdEpisodeList.__new__(HdEpisodeList)
+        picker.model = SimpleNamespace(chronological=True)
+        picker.strings = lambda: {83: 'Episodes On Demand', 119: 'Now Airing'}
+        picker.card = SimpleNamespace(title_lines=lambda text: text.split(' ', 2)[:2] if len(text) > 12 else [text])
+        area = picker.list_area()
+        self.assertEqual((area.x, area.width), (PANEL_X + BORDER, PANEL_W - 2 * BORDER))
+        self.assertEqual((area.top, area.bottom), (TALL[0] + HEADER + 1, TALL[1] - FOOT))
+        picker.model.chronological = False                      # "Episodes On Demand" wraps: a taller header
+        self.assertEqual(picker.list_area().top, TALL[0] + HEADER + 40 + 1)
+        self.assertEqual(picker.list_height(), picker.list_area().height)
+
+    def test_the_lists_layer_is_undimmed_and_see_through_when_zooming(self):
+        import pygame
+        from exp_runtime.desktop_episode_picker import HdEpisodePicker
+        if pygame.display.get_surface() is None:
+            pygame.display.init()
+            pygame.display.set_mode((1, 1))
+        picker = HdEpisodePicker.__new__(HdEpisodePicker)
+        picker.canvas = pygame.Surface((40, 30)).convert()
+        self.assertEqual(picker.begin_layer(False, dim=False).get_at((5, 5)), (0, 0, 0, 0))
+
+
 class BootTests(unittest.TestCase):
     def test_the_flash_lasts_its_delay_plus_its_fade(self):
         self.assertAlmostEqual(FLASH_TOTAL, 0.6)

@@ -381,16 +381,21 @@ class HdEpisodePicker(HdUi):
         layer.blit(plate, ((x - pad) * S, (y - 2) * S))
         self.text(layer, row.title, ROW_LABEL_POINTS, x, y, outline=False)
 
-    def begin_layer(self, backdrop=True):
-        """The layer a draw starts from: the canvas over the dimmed main-menu backdrop, or, with `backdrop` off, a
-        transparent layer holding only the dim, for zooming in over the live main menu while its buttons slide out
-        (Application.render_picker)."""
+    @lru_cache(maxsize=1)
+    def plain_backdrop(self):
+        """The main menu's backdrop, undimmed (the list screens' card sits over it as the menus' cards do)."""
+        return self.main_backdrop()
+
+    def begin_layer(self, backdrop=True, *, dim=True):
+        """The layer a draw starts from: the canvas over the main-menu backdrop (dimmed for the tile grid), or, with
+        `backdrop` off, a transparent layer holding only that dim, for zooming in over the live main menu while its
+        buttons slide out (Application.render_picker)."""
         if backdrop:
-            self.canvas.blit(self.backdrop(), (0, 0))
+            self.canvas.blit(self.backdrop() if dim else self.plain_backdrop(), (0, 0))
             return self.canvas
         if getattr(self, 'see_through', None) is None:
             self.see_through = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA).convert_alpha()
-        self.see_through.fill((0, 0, 0, BACKDROP_DIM_ALPHA))
+        self.see_through.fill((0, 0, 0, BACKDROP_DIM_ALPHA if dim else 0))
         return self.see_through
 
     def draw(self, *, backdrop=True):

@@ -27,6 +27,12 @@ and footer buttons; only the list's own interior is drawn differently. Every cat
 standard app itself starts them collapsed, but this being a new addition without an established default worth
 preserving, expanded reads better on a first visit); tapping a header's own strip folds or unfolds just that one.
 
+**The card (owner's design, 2026-10-20).** With a menu card renderer (`card`: the shell's `HdPauseMenu`, or CoD's
+`CodPauseMenu`), the list is drawn as the game's other menus are: no dim over the main menu, a tall card like a
+Help & About text page (`desktop_pause_hd.TALL`, the title header, two lines for a long title), the solid rows
+scrolling in its body, and the back button inside its footer. Without one (a test, or no shell), the free-standing
+card and back button below it are drawn instead.
+
 Every row also carries a second, smaller line under its title (`PickerModel.subtitle()`) -- native to neither
 screen, so no reference to sample: the episode's own category and its researched airdate on Now Airing (whose rows
 aren't grouped by category, so each one names its own), or just the airdate on Episodes On Demand (its header
@@ -82,9 +88,31 @@ class HdEpisodeList(HdEpisodePicker):
     ICON_RING_COLOR, PLAY_COLOR, PAUSE_COLOR = ICON_RING, ICON_GLYPH, ICON_GLYPH
     RING_ALPHA, PLAY_ALPHA, PAUSE_ALPHA = 140, 220, 220
 
+    card = None                     # the game's menu card renderer (HdPauseMenu / CodPauseMenu), set by the app
+
     def __init__(self, library, model, shots):
         super().__init__(library, model, shots)
         self.expanded = {row.key for row in model.rows}
+
+    def title_text(self):
+        return self.strings()[self.TITLES[1 if self.model.chronological else 0]]
+
+    def card_layout(self):
+        """(top, header, bottom) of the menu card, in frame points."""
+        from .desktop_pause_hd import HEADER, TALL
+        top, bottom = TALL
+        header = HEADER + 40 if len(self.card.title_lines(self.title_text())) > 1 else HEADER
+        return top, header, bottom
+
+    def list_area(self):
+        """The rectangle (points) the rows scroll in."""
+        if self.card is not None:
+            from .desktop_pause_hd import BORDER, FOOT, PANEL_W, PANEL_X
+            top, header, bottom = self.card_layout()
+            return pygame.Rect(PANEL_X + BORDER, top + header + 1, PANEL_W - 2 * BORDER, bottom - FOOT - top - header - 1)
+        divider_y = PANEL_TOP + TITLE_HEIGHT
+        return pygame.Rect(PANEL_MARGIN_X + PANEL_BORDER, divider_y + 2,
+                           FRAME[0] - 2 * PANEL_MARGIN_X - 2 * PANEL_BORDER, PANEL_BOTTOM - divider_y - 2 - PANEL_RADIUS)
 
     # ------------------------------------------------------------ layout
 
@@ -104,12 +132,9 @@ class HdEpisodeList(HdEpisodePicker):
         return self.entries()[1]
 
     def list_height(self):
-        # Must match `draw()`'s own `list_rect.height` exactly: the same 2px gap under the title divider and
-        # `PANEL_RADIUS` inset from the panel's rounded bottom corners that `list_rect` is built with there.
-        # Omitting them here previously overstated the visible area by 24px, so scrolling to `max_scroll_y()`
-        # left the last row's bottom ~24px below the real clip rect -- drawn nowhere, i.e. cut off.
-        divider_y = PANEL_TOP + TITLE_HEIGHT
-        return PANEL_BOTTOM - divider_y - 2 - PANEL_RADIUS
+        # The same rectangle `draw()` clips the rows to (`list_area`), so scrolling to `max_scroll_y()` always shows
+        # the last row whole.
+        return self.list_area().height
 
     def max_scroll_y(self):
         return max(0, self.content_height() - self.list_height())
@@ -271,22 +296,27 @@ class HdEpisodeList(HdEpisodePicker):
         """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points). With
         `backdrop` off it renders onto a transparent layer instead (`begin_layer`)."""
         self.clamp()
-        layer = self.begin_layer(backdrop)
+        layer = self.begin_layer(backdrop, dim=self.card is None)
         self.hits = []
         strings = self.strings()
-        panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM - PANEL_TOP)
-        self.draw_panel(layer, panel)
-        title = strings[self.TITLES[1 if self.model.chronological else 0]]
-        self.text(layer, title, TITLE_POINTS, panel.x, panel.y + (TITLE_HEIGHT - TITLE_POINTS - 6) / 2,
-                 color=self.TITLE_COLOR, width=panel.width, outline=False)
-        divider_y = panel.y + TITLE_HEIGHT
-        pygame.draw.line(layer, self.BORDER_COLOR, ((panel.x + 10) * S, divider_y * S),
-                         ((panel.right - 10) * S, divider_y * S), max(1, S))
-        # Inset well clear of the panel's own rounded corners at the bottom (a square row edge drawn right up to
-        # them would visibly poke past the curve); the straight side edges only need the border's own width.
-        # Height comes from `list_height()` itself so this can never drift from the scroll-clamping math again.
-        list_rect = pygame.Rect(panel.x + PANEL_BORDER, divider_y + 2,
-                                panel.width - 2 * PANEL_BORDER, self.list_height())
+        title = self.title_text()
+        if self.card is not None:
+            # The game's own menu card (see the module docstring): its header, its footer rule and its back button.
+            from .desktop_pause_hd import BORDER, FOOT, PANEL_W, PANEL_X
+            top, header, bottom = self.card_layout()
+            self.card.panel(layer, top, bottom, title, header=header)
+            for rule in (top + header, bottom - FOOT):
+                self.card.rect(layer, self.card.SEPARATOR_COLOR, (PANEL_X + BORDER, rule, PANEL_W - 2 * BORDER, 1))
+        else:
+            panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM - PANEL_TOP)
+            self.draw_panel(layer, panel)
+            self.text(layer, title, TITLE_POINTS, panel.x, panel.y + (TITLE_HEIGHT - TITLE_POINTS - 6) / 2,
+                     color=self.TITLE_COLOR, width=panel.width, outline=False)
+            divider_y = panel.y + TITLE_HEIGHT
+            pygame.draw.line(layer, self.BORDER_COLOR, ((panel.x + 10) * S, divider_y * S),
+                             ((panel.right - 10) * S, divider_y * S), max(1, S))
+        # Inset clear of the card's rounded corners; the height is `list_height()`'s, so the scroll clamp matches.
+        list_rect = self.list_area()
         clip = pygame.Rect(list_rect.x * S, list_rect.y * S, list_rect.width * S, list_rect.height * S)
         layer.set_clip(clip)
         pygame.draw.rect(layer, self.LIST_FILL, clip)
@@ -304,10 +334,15 @@ class HdEpisodeList(HdEpisodePicker):
                 self.draw_row(layer, record, rect, alternate)
                 alternate = not alternate
         layer.set_clip(None)
-        back = pygame.Rect(BACK_X, BUTTON_Y, *BUTTON_SIZE)
-        restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], BUTTON_Y, *BUTTON_SIZE)
         dim = bool(self.popup or self.alert)
-        self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('back',))
+        if self.card is not None:
+            back = self.card.back_button(layer, bottom)
+            restore = pygame.Rect(0, 0, *BUTTON_SIZE)
+            restore.bottomright = (PANEL_X + PANEL_W - 14, bottom - 13)
+        else:
+            back = pygame.Rect(BACK_X, BUTTON_Y, *BUTTON_SIZE)
+            restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], BUTTON_Y, *BUTTON_SIZE)
+            self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('back',))
         if self.show_restore:
             self.draw_button(layer, restore.x, restore.y, orange=True, label=strings[self.RESTORE],
                              pressed=self.pressed == ('restore',))

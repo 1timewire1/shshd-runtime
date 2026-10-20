@@ -456,6 +456,8 @@ class Application:
                                     chronological=style == 'airing', title_language=self.state.title_language)
             cls = self.picker_classes()[0 if style == 'tile' else 1]
             self.picker = cls(self.library, model, self.saved_shot)
+            if style != 'tile' and self.shell is not None:
+                self.picker.card = self.shell.pause       # the lists wear the game's menu card (HD / CoD)
             self.picker_style = style
         return self.picker
 
@@ -873,6 +875,10 @@ class Application:
             self._attempt(self.state.persist)
 
     def return_to_menu(self, pause_box=None):
+        # The menu's song the pause menu was playing carries on in the main menu (Desktop.take_pause_song). It is taken
+        # first: anything that renders the game now (the screenshot, the music sync) would start fading it, since the
+        # pause menu has closed.
+        kept = self.game.take_pause_song() if self.audio and not self.game.session.episode_exited else None
         self.unlock_warp_if_football_finished()
         # Keep the live session even if a filesystem error prevents a checkpoint.
         if self.game.session.engine.word_grid:
@@ -882,9 +888,6 @@ class Application:
         self.save_screenshot()
         # A live session retains its mixer stream and playhead through menu
         # navigation. A fresh Desktop or explicit save load selects a new cue.
-        # The menu's song the pause menu was playing carries on in the main menu (Desktop.take_pause_song); taken
-        # before the music is synced, which would otherwise start fading it for the closed pause menu.
-        kept = self.game.take_pause_song() if self.audio and not self.game.session.episode_exited else None
         self.game.active = False
         if not self.game.session.episode_exited:
             self.game._sync_music()

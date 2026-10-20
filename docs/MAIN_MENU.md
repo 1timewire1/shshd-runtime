@@ -453,6 +453,8 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
     fades in (checked on the iPad).
   - An episode picker (`SHSMTXMenu`) zooms in over the menu meanwhile (`setAppMode` -> `animateView(20)`), as do
     Options and Help & About.
+    - Now Airing and Episodes On Demand use the game's menu card (`HdPauseMenu` / `CodPauseMenu`): a tall card like
+      a text page, undimmed, with the back button in its footer. The tile grid keeps its dim.
     - Only the picker's own layer zooms: its dim, tiles and buttons. The live main menu shows through it until its
       buttons have slid out (`Application.picker_over_menu`); the picker's usual dimmed backdrop takes over after.
 

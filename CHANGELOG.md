@@ -20,6 +20,9 @@
   - Taking an option slides them out, as on the device.
   - The episode pickers' own layer zooms in over the main menu while its
     buttons slide out.
+  - Now Airing and Episodes On Demand now use the game's own menu card, like
+    Options and Help & About: no dim behind them, and the back button in the
+    card's footer (SHS HD and CoD).
 
 ### Fixed
 
