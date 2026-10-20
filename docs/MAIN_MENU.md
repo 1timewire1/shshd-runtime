@@ -444,8 +444,9 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
     delay / (delay + 0.35). So each layer moves from twice its delay, and the buttons start 0.16 s apart, not 0.08 s.
   - PR #9's 1.6x slowdown made up for that misreading. It has been replaced by the native timing.
   - The first entrance passes 1.5 s in both games (the 3.2 s used before belonged to `showUnlockedInter`).
-  - Taking any main-menu option slides them out in reverse (`animateMainMenuButtonsOut(0)`): the info button shrinks,
-    the gear fades, More EA Games leaves first and the wedge last.
+  - Taking any main-menu option slides them out in reverse (`animateMainMenuButtonsOut(0)`): the gear shrinks, the
+    info button fades, More EA Games leaves first and the wedge last. Coming in, the gear grows and the info button
+    fades in (checked on the iPad).
   - An episode picker (`SHSMTXMenu`) zooms in over the menu meanwhile (`setAppMode` -> `animateView(20)`), as do
     Options and Help & About.
 

@@ -13,10 +13,11 @@ Decompiled and fitted to `reference/screenshots/main menu/IMG_0124`:
     animation that begins at base + d, lasts d + 0.35 s and holds its first value until key time d / (d + 0.35).
     Each layer therefore moves from 2d to 2d + 0.35 s (`layer_progress`).
   - In (base = now, d = p + 0.08 k): the wedge, then Play/Resume, Now Airing, Episodes On Demand and More EA Games
-    translate -550 -> +5 (key time 0.96) -> 0. The info button scales 0.01 -> 1.2 -> 1 with d = p + 0.36. The gear fades
-    0 -> 1 over 0.6 s from 2p + 0.32 (`createFadeAnimationForLayer`).
-  - Out (base = now + p, d = 0.36 / 0.32 / 0.24 / 0.16 / 0.08 for the wedge .. More EA Games, 0 for the info button):
-    0 -> +5 (key time d / (d + 0.35) + 0.04) -> -550, the info button 1 -> 1.2 -> 0. The gear fades 1 -> 0 over 0.6 s
+    translate -550 -> +5 (key time 0.96) -> 0. The gear (+0x1e0) scales 0.01 -> 1.2 -> 1 with d = p + 0.36. The info button
+    (+0x1dc) fades 0 -> 1 over 0.6 s from 2p + 0.32 (`createFadeAnimationForLayer`). Which layer is which was settled
+    against the iPad (owner, 2026-10-20), as Android's menu also does (docs/MAIN_MENU.md).
+  - Out (base = now + p, d = 0.36 / 0.32 / 0.24 / 0.16 / 0.08 for the wedge .. More EA Games, 0 for the gear):
+    0 -> +5 (key time d / (d + 0.35) + 0.04) -> -550, the gear 1 -> 1.2 -> 0. The info button fades 1 -> 0 over 0.6 s
     from 3p + 0.08.
   - The doubled delay was missed at first (the buttons were 0.08 s apart), and PR #9 slowed them 1.6x to make up for it.
   - Out runs whenever a main-menu option is taken (`SHSEngine::buttonPressed`; Play/Resume's episode menu through
@@ -36,11 +37,11 @@ INTRO_PHOTO_START, INTRO_PHOTO_ZOOM, INTRO_PHOTO_TURN = 0.4, 1.7, 1.9375
 INTRO_STRIP_START, INTRO_STRIP_TIME = 2.6, 0.6
 BUTTONS_START_INTRO = 1.5             # `animateMainMenuButtonsIn(1.5)` (SHS HD 00027916; CoD the same)
 # Each layer's animation (see the docstring): 0.35 s of movement after its delay, held twice.
-SLIDE_TIME, STAGGER, INFO_DELAY = 0.35, 0.08, 0.36
-OUT_DELAYS, INFO_OUT_DELAY = (0.36, 0.32, 0.24, 0.16, 0.08), 0.0     # the wedge .. More EA Games, then the info button
-GEAR_FADE, GEAR_IN_AT, GEAR_OUT_AT = 0.6, 0.32, 0.08
+SLIDE_TIME, STAGGER, GEAR_DELAY = 0.35, 0.08, 0.36
+OUT_DELAYS, GEAR_OUT_DELAY = (0.36, 0.32, 0.24, 0.16, 0.08), 0.0     # the wedge .. More EA Games, then the gear
+INFO_FADE, INFO_IN_AT, INFO_OUT_AT = 0.6, 0.32, 0.08
 SLIDE_FROM, SLIDE_OVERSHOOT = -550.0, 5.0
-READY_AFTER = 2 * INFO_DELAY + SLIDE_TIME           # after the last layer (the info button) has settled
+READY_AFTER = 2 * GEAR_DELAY + SLIDE_TIME           # after the last layer (the gear) has settled
 LEAVE_TIME = 2 * OUT_DELAYS[0] + SLIDE_TIME         # the slide out, until the wedge has gone
 # Layout 74 (the widget the buttons come from) is 275 x 135 units; its origin on the frame, fitted to the photo.
 GROUP_ORIGIN = (0.0, 744.0)
@@ -174,18 +175,19 @@ class HdMainMenu(HdUi):
         return keyframes((0, hold, .96, 1), (SLIDE_FROM, SLIDE_FROM, SLIDE_OVERSHOOT, 0.0), progress)
 
     def pop(self):
-        """The info button's scale: in 0.01 -> 1.2 -> 1, out 1 -> 1.2 -> 0."""
+        """The gear's scale: in 0.01 -> 1.2 -> 1, out 1 -> 1.2 -> 0."""
         if self.leaving is not None:
-            progress, hold = layer_progress(self.age - self.leaving, INFO_OUT_DELAY)
+            progress, hold = layer_progress(self.age - self.leaving, GEAR_OUT_DELAY)
             return keyframes((0, hold, hold + .04, 1), (1.0, 1.0, 1.2, 0.0), progress)
-        progress, hold = layer_progress(self.age, self.buttons_start + INFO_DELAY)
+        progress, hold = layer_progress(self.age, self.buttons_start + GEAR_DELAY)
         return keyframes((0, hold, .96, 1), (0.01, 0.01, 1.2, 1.0), progress)
 
-    def gear_alpha(self):
-        """The gear's opacity (`createFadeAnimationForLayer`, 0.6 s): in from 2p + 0.32, out from 3p + 0.08 (p = 0)."""
+    def info_alpha(self):
+        """The info button's opacity (`createFadeAnimationForLayer`, 0.6 s): in from 2p + 0.32, out from 3p + 0.08
+        (p = 0)."""
         if self.leaving is not None:
-            return 1.0 - max(0.0, min(1.0, (self.age - self.leaving - GEAR_OUT_AT) / GEAR_FADE))
-        return max(0.0, min(1.0, (self.age - 2 * self.buttons_start - GEAR_IN_AT) / GEAR_FADE))
+            return 1.0 - max(0.0, min(1.0, (self.age - self.leaving - INFO_OUT_AT) / INFO_FADE))
+        return max(0.0, min(1.0, (self.age - 2 * self.buttons_start - INFO_IN_AT) / INFO_FADE))
 
     def draw_photo(self, layer):
         photo = self.main_layers()[1][0]
@@ -256,7 +258,7 @@ class HdMainMenu(HdUi):
 
     def draw_gear_info(self, layer, ox, oy):
         nx, ny, nw, nh = GEAR_NODE
-        scale, alpha = self.pop(), self.gear_alpha()
+        scale, alpha = self.pop(), self.info_alpha()
         x, y = ox + nx * 2, oy + ny * 2
         gear_pieces = self.piece((nw, nh), self.pressed == ('options',))
         gear = self.layouts.frame(315, 13)
@@ -265,14 +267,17 @@ class HdMainMenu(HdUi):
             surface.blit(pygame.transform.smoothscale(image, (max(1, round(pw * S)), max(1, round(ph * S)))), (round(px * S), round(py * S)))
         surface.blit(pygame.transform.smoothscale(gear, (gear.get_width() * S, gear.get_height() * S)),
                      (surface.get_width() // 2 - gear.get_width() * S // 2, surface.get_height() // 2 - gear.get_height() * S // 2))
-        if alpha < 1:
-            surface.set_alpha(round(255 * alpha))
         center = (round((x + nw) * S), round((y + nh) * S))
-        if alpha > 0:
+        if scale > 0.005:
+            if scale != 1.0:
+                surface = pygame.transform.smoothscale(surface, (max(1, round(surface.get_width() * scale)),
+                                                                 max(1, round(surface.get_height() * scale))))
             layer.blit(surface, surface.get_rect(center=center))
         info = self.layouts.frame(315, 15 if self.pressed == ('help',) else 14)
-        if scale > 0.005:
-            info = pygame.transform.smoothscale(info, (max(1, round(info.get_width() * S * scale)), max(1, round(info.get_height() * S * scale))))
+        if alpha > 0:
+            info = pygame.transform.smoothscale(info, (max(1, round(info.get_width() * S)), max(1, round(info.get_height() * S))))
+            if alpha < 1:
+                info.set_alpha(round(255 * alpha))
             layer.blit(info, info.get_rect(center=(INFO_CENTER[0] * S, INFO_CENTER[1] * S)))
         if self.ready:
             self.hits.append((pygame.Rect(round(x), round(y), nw * 2, nh * 2), ('options',)))

@@ -11,7 +11,7 @@ import pygame
 from exp_runtime.application_hd import HdShell, MISS_MENU, END_MENU
 from exp_runtime.desktop_boot_hd import FLASH_TOTAL, HdBootScreen
 from exp_runtime.desktop_hd_menu import BUTTON_STRIP, CARD_W, FOOTER_HEIGHT, HdMenuWindows, ROW_HEIGHT
-from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, GEAR_FADE, HdMainMenu, INFO_DELAY, LEAVE_TIME,
+from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, GEAR_DELAY, HdMainMenu, INFO_FADE, LEAVE_TIME,
                                          OUT_DELAYS, READY_AFTER, SLIDE_FROM, SLIDE_OVERSHOOT, SLIDE_TIME, STAGGER,
                                          keyframes, layer_progress)
 from exp_runtime.menu import MenuFont, MenuState
@@ -225,14 +225,15 @@ class MainMenuTimingTests(unittest.TestCase):
         self.assertAlmostEqual(self.menu.slide(0), SLIDE_OVERSHOOT, places=3)
         self.menu.tick(1)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [0.0] * 5)
-        self.assertEqual((self.menu.pop(), self.menu.gear_alpha()), (1.0, 1.0))
+        self.assertEqual((self.menu.pop(), self.menu.info_alpha()), (1.0, 1.0))
 
-    def test_the_info_button_pops_in_past_full_size_and_the_gear_fades_in(self):
+    def test_the_gear_pops_in_past_full_size_and_the_info_button_fades_in(self):
+        # The gear grows and the info button fades, as on the iPad (owner, 2026-10-20).
         self.menu.start(intro=False)
-        self.assertEqual((self.menu.pop(), self.menu.gear_alpha()), (0.01, 0.0))
-        self.menu.tick(.32 + GEAR_FADE / 2)
-        self.assertAlmostEqual(self.menu.gear_alpha(), .5)
-        self.menu.tick(INFO_DELAY + .96 * (INFO_DELAY + SLIDE_TIME) - .32 - GEAR_FADE / 2)   # key time .96 of d + .35
+        self.assertEqual((self.menu.pop(), self.menu.info_alpha()), (0.01, 0.0))
+        self.menu.tick(.32 + INFO_FADE / 2)
+        self.assertAlmostEqual(self.menu.info_alpha(), .5)
+        self.menu.tick(GEAR_DELAY + .96 * (GEAR_DELAY + SLIDE_TIME) - .32 - INFO_FADE / 2)   # key time .96 of d + .35
         self.assertAlmostEqual(self.menu.pop(), 1.2, places=2)
 
     def test_taking_an_option_slides_the_buttons_out_in_reverse_and_closes_input(self):
@@ -248,7 +249,7 @@ class MainMenuTimingTests(unittest.TestCase):
         self.assertLess(self.menu.pop(), 1.0)
         self.menu.tick(LEAVE_TIME)
         self.assertTrue(self.menu.left)
-        self.assertEqual(([self.menu.slide(i) for i in range(5)], self.menu.pop(), self.menu.gear_alpha()),
+        self.assertEqual(([self.menu.slide(i) for i in range(5)], self.menu.pop(), self.menu.info_alpha()),
                          ([SLIDE_FROM] * 5, 0.0, 0.0))
         self.menu.start(intro=False)                              # back on the main menu: in again
         self.assertIsNone(self.menu.leaving)
