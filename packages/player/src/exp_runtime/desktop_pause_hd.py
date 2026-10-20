@@ -106,7 +106,10 @@ HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'about')
 # The main menu's Help & About (menu 15 of the menu engine) also lists Push Notifications and, last, the legal page
 # (Privacy Policy / EULA / Terms & Conditions), which the main menu draws itself.
 MAIN_HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'push', 'about', 'privacy')
-SLIDE_MS = 550
+# A page that is not the pause card itself (menu-engine entrance other than 20) slides: `SHSEngine::notifyNewMenu`
+# (SHS HD 00027f1a) starts the new menu one width to the right and moves it, and the old one a width to the left, in a
+# 0.4 s UIKit ease-in-out (curve 0) with no delay (0.4 s only under a loading screen).
+SLIDE_MS = 400
 
 
 @dataclass

@@ -108,8 +108,9 @@ class HdShell:
         self.replay_launch()
 
     def replay_launch(self):
-        self.stage, self.flash_age, self.flash_over_black = 'flash', 0.0, False
-        self.app.play_asset(JINGLE)
+        """Back from an episode's Main Menu row: the main menu's first-launch entrance from the photo animation on
+        (`HdMainMenu.start(intro=True)`), without the EA flash or its jingle (owner, on the device, 2026-10-20)."""
+        self.main.start(intro=True)
 
     def show_end_menu(self, backdrop, football):
         """The menu shown when an episode ends, over `backdrop` (the last frame, already sepia, as a 768 x 1024 surface)."""

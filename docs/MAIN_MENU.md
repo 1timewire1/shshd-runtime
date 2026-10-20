@@ -417,6 +417,33 @@ uses that curve and duration, with story clocks frozen and pointer input gated
 until entry finishes. Dimming opacity and exit/subpage transitions retain their
 previous behavior; those details are not claimed as native-equivalent.
 
+### Menu entrances (PR #9, checked against SHS HD)
+
+The menu data's header bytes 13 and 14 (`menu_engine.Menu.layouts`) are each
+menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
+(`00027bd0`) reads the entrance:
+- **Entrance 20: zoom.** The window scales from 0.001 to 1 about its centre
+  in a 0.4 s UIKit ease-in/out. These are "Play with sound?" (menu 7), the main
+  menu's Help & About (15) and Options (22), and the pause menu (25). CoD's are
+  the same windows (7, 14, 21 and 24).
+- **Any other entrance: slide** (`00027f1a`). Examples are 16, the Options and
+  Help & About pages opened from the pause menu. The new window starts one
+  width to the right and moves in while the old one moves a width to the left,
+  0.4 s ease-in/out, with no delay. Both kinds wait 0.4 s while a loading
+  screen shows.
+- **Back.** Going back runs the same slide the other way. The page categories
+  this player adds (General / Sound / Data Management) slide like native pages.
+  Native exits (`notifyMenuRemoved` -> `animateView` with the exit byte) are not
+  decompiled, so the reverse slide is ours.
+- **Main Menu row.** The pause card zooms back out over the main menu (ours, for
+  its exit byte 21; unverified). The main menu replays its first-launch entrance from the photo
+  animation on, without the EA flash or its jingle (the owner, on the device).
+  CoD shows only its buttons' entrance (unverified).
+- **Follow-up.** PR #9 also made the main menu's button entrance 1.6x slower
+  than the decompiled timing (0.35 s per slide, 0.08 s apart, the info button
+  0.36 s after the wedge). It was merged pending a device recording; see
+  `desktop_main_hd.SLIDE_TIME`.
+
 SHS `buttonPressed` **00050fe8** (pause branch **00051188**) plays resource
 **8011**; CoD **000249d0** (branch **00024d86**) plays **8006**. Pause row
 dispatch in `SHSWidgetMenu::buttonPressed` **000a5c64 / 0003fd60** plays

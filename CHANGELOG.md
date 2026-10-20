@@ -2,6 +2,21 @@
 
 ## Unreleased (shshd-runtime)
 
+### Added
+
+- **Menu animations** ([1timewire1/shshd-runtime#9](https://github.com/1timewire1/shshd-runtime/pull/9),
+  by zazatree).
+  - "Play with sound?", Options, Help & About and the pause menu zoom in.
+  - Pages opened from them slide in and out (0.4 s, as SHS HD's menu engine
+    does).
+  - The pause card zooms out over the main menu, which then replays its photo
+    animation (no EA flash or jingle).
+  - Cause of Death's main menu fades in from black at launch with its
+    original timing
+    ([#3](https://github.com/1timewire1/shshd-runtime/issues/3)).
+  - The main menu's buttons enter more slowly than the decompiled timing.
+    This is a follow-up item pending a device recording.
+
 ### Fixed
 
 - **Interface sounds now match the originals**
