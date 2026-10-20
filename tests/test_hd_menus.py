@@ -255,6 +255,37 @@ class MainMenuTimingTests(unittest.TestCase):
         self.assertIsNone(self.menu.leaving)
 
 
+class PickerOverMenuTests(unittest.TestCase):
+    def test_a_picker_draws_over_the_live_menu_until_the_buttons_have_gone(self):
+        from exp_runtime.application import Application
+        from exp_runtime.desktop_main_hd import LEAVE_TIME
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        app = Application.__new__(Application)
+        main = HdMainMenu.__new__(HdMainMenu)
+        main.start(intro=False)
+        main.leave()
+        app.shell, app.screen, app.picker_zoom = SimpleNamespace(main=main), 'picker', 0
+        self.assertTrue(app.picker_over_menu())
+        app.picker_zoom = PAUSE_OPEN_MS
+        self.assertTrue(app.picker_over_menu())                 # zoomed in, the buttons still sliding out
+        main.tick(LEAVE_TIME)
+        self.assertFalse(app.picker_over_menu())
+        app.shell = None
+        self.assertFalse(app.picker_over_menu())
+
+    def test_without_its_backdrop_a_picker_starts_from_a_see_through_dim(self):
+        import pygame
+        from exp_runtime.desktop_episode_picker import BACKDROP_DIM_ALPHA, HdEpisodePicker
+        if pygame.display.get_surface() is None:
+            pygame.display.init()
+            pygame.display.set_mode((1, 1))
+        picker = HdEpisodePicker.__new__(HdEpisodePicker)
+        picker.canvas = pygame.Surface((40, 30)).convert()
+        layer = picker.begin_layer(False)
+        self.assertEqual(layer.get_at((5, 5)), (0, 0, 0, BACKDROP_DIM_ALPHA))
+        self.assertIsNot(layer, picker.canvas)
+
+
 class BootTests(unittest.TestCase):
     def test_the_flash_lasts_its_delay_plus_its_fade(self):
         self.assertAlmostEqual(FLASH_TOTAL, 0.6)

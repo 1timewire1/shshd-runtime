@@ -50,7 +50,7 @@ from .scene_badge import outline_badge_text
 from .pointer import ButtonPress
 from .text_input import accept_name_character, validate_name
 from .ui_sound import UiSounds
-from .music_stream import MusicStream
+from .music_stream import FADE_MS, MusicStream
 from .ui_assets import ImagePack, Rect
 from .vm import VMError
 
@@ -251,6 +251,10 @@ class Desktop:
         self.music_token = None
         self.music_stream = MusicStream()
         self.music_was_enabled = True
+        # The menu's song in the pause menu (see `_sync_pause_song`): its Sound, the ticks its fade-out began, and
+        # whether the Music switch has asked for it (SHSEngine +0xb22c).
+        self.pause_song = self.pause_song_fade = None
+        self.pause_song_wanted = False
         self.sound_serial = session.engine.sound_serial
         self.audio = False
         self.music_enabled = self.sound_enabled = True
@@ -404,7 +408,54 @@ class Desktop:
             else:
                 stream.stop(engine.music_stop_fade_ms, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
-                      paused=not self.active or engine.music_paused)
+                      paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
+        self._sync_pause_song(now)
+
+    def _sync_pause_song(self, now):
+        """The menu's song in the pause menu. Switching Music on sets `SHSEngine` +0xb22c, which
+        `doSoundManagerTransition` (SHS HD 0002a830, CoD 00025c60) turns into the menu's song (MENU_MUSIC, once) as
+        soon as the paused episode's music has gone quiet. Switching Music off again fades it over 1000 ms; Resume
+        fades it too, and the episode's song comes back only after it has stopped (`restoreGameAudio`). The Main Menu
+        row hands a song still playing to the main menu (`take_pause_song`)."""
+        song = self.pause_song
+        if song is not None and song.get_num_channels() == 0:
+            song = self.pause_song = self.pause_song_fade = None             # it played out
+        if (self.pause_song_wanted and song is None and self.menu_open and self.music_enabled and self.active
+                and self.music_stream.silent):
+            self.pause_song_wanted = False
+            library = self.session.resources.library
+            try:
+                song = pygame.mixer.Sound(file=BytesIO(library.read_asset(GAMES[game_id(self.session.resources)].MENU_MUSIC)))
+                song.set_volume(self.music_volume)
+                song.play()
+                self.pause_song = song
+            except (AttributeError, ContentError, pygame.error) as error:
+                logging.warning('Menu music cannot be played: %s', error)
+            return
+        if not self.menu_open:
+            self.pause_song_wanted = False
+        if song is None:
+            return
+        if self.pause_song_fade is None and (not self.menu_open or not self.music_enabled):
+            self.pause_song_fade = now                                      # Resume, or Music off: stop(false)
+        if self.pause_song_fade is None:
+            song.set_volume(self.music_volume)
+            return
+        level = 1 - (now - self.pause_song_fade) / FADE_MS
+        if level <= 0:
+            song.stop()
+            self.pause_song = self.pause_song_fade = None
+        else:
+            song.set_volume(self.music_volume * level)
+
+    def take_pause_song(self):
+        """The menu's song if the pause menu is playing it (not fading): the main menu keeps it going, where the
+        original fades it out and leaves the main menu silent (owner's choice, 2026-10-20)."""
+        song = self.pause_song
+        if song is None or self.pause_song_fade is not None or song.get_num_channels() == 0:
+            return None
+        self.pause_song = None
+        return song
 
     def _open_cue(self, music_id):
         """A music request's MP3 and where it starts (s): SHS's segment cues name a place in another track."""
@@ -1398,6 +1449,7 @@ class Desktop:
         if kind == 'pause_toggle':
             if command[1] == 'music':
                 self.music_enabled = not self.music_enabled
+                self.pause_song_wanted = self.music_enabled                 # SHSEngine::setMusicEnabled(on, true)
                 self._sync_music()
             elif command[1] == 'side_panels':
                 self.toggle_panels()

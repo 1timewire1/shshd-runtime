@@ -302,10 +302,17 @@ The story's music follows `SHSSoundManager` as both iOS games build it
 - **Main menu.** Returning to it from the pause menu leaves the episode's cue
   held, and resuming the same live session restores it. New sessions and
   explicit save loads start their requested cue.
-- **Not applied:**
-  - The pause menu's effects fade (0.1 s) and their restore on Resume.
-  - The menu's own song, which natively starts inside the pause menu when
-    Music is switched off and on there (read from the code only, unconfirmed).
+- **Music switched on in the pause menu** sets `SHSEngine` +0xb22c, which
+  `doSoundManagerTransition` turns into the menu's song (`MENU_MUSIC`, once)
+  as soon as the episode's music is held (confirmed on the iPad).
+  - Switching Music off again fades it over 1000 ms.
+  - Resume fades it over 1000 ms, and the episode's song is restored only
+    after it has stopped (`restoreGameAudio` waits for silence).
+  - **Adaptation (owner's choice):** natively, the Main Menu row then fades it
+    out and leaves the main menu silent. Here the main menu keeps it playing
+    (`Desktop.take_pause_song`).
+- **Not applied:** the pause menu's effects fade (0.1 s) and their restore on
+  Resume.
 
 The fade time and a count of music requests are playback state on the engine,
 not saved fields. No audio transport fields are added to the save schema.

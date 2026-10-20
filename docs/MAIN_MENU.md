@@ -453,6 +453,8 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
     fades in (checked on the iPad).
   - An episode picker (`SHSMTXMenu`) zooms in over the menu meanwhile (`setAppMode` -> `animateView(20)`), as do
     Options and Help & About.
+    - Only the picker's own layer zooms: its dim, tiles and buttons. The live main menu shows through it until its
+      buttons have slid out (`Application.picker_over_menu`); the picker's usual dimmed backdrop takes over after.
 
 SHS `buttonPressed` **00050fe8** (pause branch **00051188**) plays resource
 **8011**; CoD **000249d0** (branch **00024d86**) plays **8006**. Pause row

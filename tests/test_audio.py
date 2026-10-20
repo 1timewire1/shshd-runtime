@@ -398,6 +398,54 @@ class MusicPlaybackTests(unittest.TestCase):
             self.assertEqual(sound.call_count, 2)
             self.assertEqual(app.menu_sound.set_volume.call_args.args[0], .5)
 
+    def test_music_switched_on_in_the_pause_menu_plays_the_menus_song_until_resume(self):
+        # SHSEngine +0xb22c: the menu's song plays once the episode's music is held; Resume fades it over 1000 ms and
+        # only then restores the episode's song from where it was paused (restoreGameAudio waits for silence).
+        for game, menu_song in (('shs', 8215), ('cod', 8209)):
+            with self.subTest(game=game):
+                ui, resources = self.make_ui(music=8201, repeat=1, game=game)
+                resources.library.read_asset = Mock(side_effect=lambda asset: f'base {asset}'.encode())
+                with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock,                         patch('pygame.mixer.Sound') as sound:
+                    song = sound.return_value
+                    song.get_num_channels.return_value = 1
+                    clock.return_value = 10000
+                    ui._sync_audio()
+                    clock.return_value = 10200
+                    ui.command(('menu',))
+                    ui.command(('pause_toggle', 'music'))       # off
+                    ui.command(('pause_toggle', 'music'))       # on, while the episode's song still fades
+                    played = lambda: [c.kwargs['file'].getvalue() for c in sound.call_args_list]
+                    self.assertNotIn(f'base {menu_song}'.encode(), played())
+                    clock.return_value = 11300                  # held: now the menu's song
+                    ui._sync_audio()
+                    self.assertIn(f'base {menu_song}'.encode(), played())
+                    ui.command(('resume',))
+                    clock.return_value = 11800
+                    ui._sync_audio()
+                    self.assertAlmostEqual(song.set_volume.call_args.args[0], .5 * ui.music_volume)
+                    self.assertEqual(music.play.call_count, 1)  # the episode waits
+                    clock.return_value = 12400
+                    ui._sync_audio()
+                    song.stop.assert_called_once_with()
+                    ui._sync_audio()
+                    self.assertEqual(music.play.call_args.kwargs, dict(loops=-1, start=.2))
+
+    def test_the_pause_menus_song_carries_on_into_the_main_menu(self):
+        ui, resources = self.make_ui(music=8201, repeat=1)
+        resources.library.read_asset = Mock(return_value=b'menu song')
+        with patch('pygame.mixer.music'), patch('pygame.time.get_ticks') as clock,                 patch('pygame.mixer.Sound') as sound:
+            sound.return_value.get_num_channels.return_value = 1
+            clock.return_value = 10000
+            ui._sync_audio()
+            ui.command(('menu',))
+            clock.return_value = 11100
+            ui.music_enabled = False
+            ui.command(('pause_toggle', 'music'))
+            ui._sync_audio()
+            self.assertIs(ui.take_pause_song(), sound.return_value)
+            self.assertIsNone(ui.take_pause_song())             # handed over once
+            ui.command(('pause_toggle', 'music'))               # off again: nothing playing to fade
+
     def test_menu_uses_each_games_theme_and_obeys_mute_focus_and_game_changes(self):
         from exp_runtime.application import Application
         for game, resource in (('shs', 8215), ('cod', 8209)):

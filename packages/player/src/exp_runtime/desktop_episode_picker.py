@@ -381,11 +381,23 @@ class HdEpisodePicker(HdUi):
         layer.blit(plate, ((x - pad) * S, (y - 2) * S))
         self.text(layer, row.title, ROW_LABEL_POINTS, x, y, outline=False)
 
-    def draw(self):
-        """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points)."""
+    def begin_layer(self, backdrop=True):
+        """The layer a draw starts from: the canvas over the dimmed main-menu backdrop, or, with `backdrop` off, a
+        transparent layer holding only the dim, for zooming in over the live main menu while its buttons slide out
+        (Application.render_picker)."""
+        if backdrop:
+            self.canvas.blit(self.backdrop(), (0, 0))
+            return self.canvas
+        if getattr(self, 'see_through', None) is None:
+            self.see_through = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA).convert_alpha()
+        self.see_through.fill((0, 0, 0, BACKDROP_DIM_ALPHA))
+        return self.see_through
+
+    def draw(self, *, backdrop=True):
+        """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points). With
+        `backdrop` off it renders onto a transparent layer instead (`begin_layer`)."""
         self.clamp()
-        layer = self.canvas
-        layer.blit(self.backdrop(), (0, 0))
+        layer = self.begin_layer(backdrop)
         self.hits = []
         strings = self.strings()
         for index, row in enumerate(self.model.rows):

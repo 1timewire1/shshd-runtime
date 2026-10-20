@@ -6,7 +6,8 @@
   1000), unless it is already fading. Service 81 passes the script's fade; the Music switch passes 1000.
 - **`tick`** (`000536d8`): a finished fade unloads the cue. With nothing loaded, the pending cue starts while Music is
   on and is otherwise dropped.
-- **The pause menu** (`SHSEngine::storeGameAudio` `0001e6e0` / `restoreGameAudio` `0001e688`).
+- **The pause menu** (`SHSEngine::storeGameAudio` `0001e6e0` / `restoreGameAudio` `0001e688`). Switching Music on there
+  plays the menu's song (desktop.Desktop's pause song); Resume fades it out before the restore.
   - On opening, playing music that is not fading has its state saved (`-[SHSSound save:]` keeps `currentTime`). It
     then fades out over 1000 ms and the pending cue is dropped. Music that is already fading finishes first.
   - Resume waits for that fade, then plays the saved cue from the saved position at full volume while Music is on,
@@ -45,6 +46,11 @@ class MusicStream:
     def loaded(self):
         return self.current is not None
 
+    @property
+    def silent(self):
+        """Nothing of the story's music sounds: none loaded, or held/paused."""
+        return self.current is None or self.paused
+
     # ------------------------------------------------------------------ native operations
 
     def play(self, music_id, flag, opener, now):
@@ -78,9 +84,10 @@ class MusicStream:
         elif self.fade is None:
             self.fade = dict(since=now, ms=fade_ms, store=False)
 
-    def update(self, now, *, enabled, menu_open, paused):
+    def update(self, now, *, enabled, menu_open, paused, held_back=False):
         """One frame: the fade, a cue that played out, the pending cue, the pause menu's store/restore and the
-        immediate pause (`paused`: focus or service 83)."""
+        immediate pause (`paused`: focus or service 83). `held_back`: something else is still sounding (the menu's
+        song the pause menu played), so the restore waits for silence, as `restoreGameAudio` does."""
         self._count(now)
         if self.fade is not None:
             level = 1 - (now - self.fade['since']) / self.fade['ms'] if self.fade['ms'] > 0 else 0
@@ -103,7 +110,7 @@ class MusicStream:
                 self.stored = self.position()
                 self.pending = None
                 self.fade = dict(since=now, ms=FADE_MS, store=True)
-        elif self.stored is not None and (self.fade is None or not self.fade['store']):
+        elif self.stored is not None and (self.fade is None or not self.fade['store']) and not held_back:
             position, self.stored = self.stored, None
             if enabled:
                 self._replay(position, now)

@@ -18,7 +18,8 @@
   - The main menu's buttons now come and go with the original's own timing:
     each holds its delay twice, so they start 0.16 s apart.
   - Taking an option slides them out, as on the device.
-  - The episode pickers zoom in over the main menu.
+  - The episode pickers' own layer zooms in over the main menu while its
+    buttons slide out.
 
 ### Fixed
 
@@ -30,6 +31,9 @@
   - A new song waits for the fade.
   - The pause menu fades the episode's music over a second, and Resume brings
     it back from where it was paused.
+  - Switching Music on in the pause menu plays the menu's song there, as the
+    original does. Resume fades it out before the episode's song returns.
+    Going to the main menu keeps it playing, where the original fell silent.
   - The Music switch fades out over a second. In the main menu, turning it
     back on restarts the menu's song (or cancels the fade if it is still
     running). In an episode, songs asked for while Music is off are skipped.

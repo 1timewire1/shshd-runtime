@@ -267,11 +267,11 @@ class HdEpisodeList(HdEpisodePicker):
         pygame.draw.rect(surface, (*self.BORDER_COLOR, PANEL_ALPHA), box, PANEL_BORDER * S, border_radius=PANEL_RADIUS * S)
         layer.blit(surface, (panel.x * S, panel.y * S))
 
-    def draw(self):
-        """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points)."""
+    def draw(self, *, backdrop=True):
+        """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points). With
+        `backdrop` off it renders onto a transparent layer instead (`begin_layer`)."""
         self.clamp()
-        layer = self.canvas
-        layer.blit(self.backdrop(), (0, 0))
+        layer = self.begin_layer(backdrop)
         self.hits = []
         strings = self.strings()
         panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM - PANEL_TOP)

@@ -290,6 +290,15 @@ class Application:
     # the menus do: docs/MAIN_MENU.md, "Menu entrances") while the menu's buttons slide out; ms into that, or done.
     picker_zoom = PAUSE_OPEN_MS
 
+    def picker_over_menu(self):
+        """Whether the picker is drawn over the live HD main menu: while it zooms in and until the menu's buttons have
+        slid out. Only the picker's own layer (its dim, tiles and buttons) zooms; the menu shows through it."""
+        if self.shell is None or self.screen != 'picker':
+            return False
+        main = getattr(self.shell, 'main', None)
+        leaving = main is not None and main.leaving is not None and not main.left
+        return self.picker_zoom < PAUSE_OPEN_MS or leaving
+
     @property
     def ready(self):
         if self.shell is not None and self.screen == 'main':
@@ -549,6 +558,17 @@ class Application:
         except (ContentError, pygame.error) as error:
             logging.debug('Menu music unavailable: %s', error)
             self.menu_sound = None
+
+    @staticmethod
+    def _stop_sounds_but(kept):
+        """Stop every effect channel except the one playing `kept`."""
+        try:
+            for index in range(pygame.mixer.get_num_channels()):
+                channel = pygame.mixer.Channel(index)
+                if channel.get_sound() is not kept:
+                    channel.stop()
+        except (AttributeError, pygame.error):
+            pass
 
     def stop_menu_music(self):
         self.menu_fade = None
@@ -862,11 +882,17 @@ class Application:
         self.save_screenshot()
         # A live session retains its mixer stream and playhead through menu
         # navigation. A fresh Desktop or explicit save load selects a new cue.
+        # The menu's song the pause menu was playing carries on in the main menu (Desktop.take_pause_song); taken
+        # before the music is synced, which would otherwise start fading it for the closed pause menu.
+        kept = self.game.take_pause_song() if self.audio and not self.game.session.episode_exited else None
         self.game.active = False
         if not self.game.session.episode_exited:
             self.game._sync_music()
         if self.audio:
-            pygame.mixer.stop()
+            if kept is None:
+                pygame.mixer.stop()
+            else:
+                self._stop_sounds_but(kept)
         self.game.menu_open = False
         if self.game.session.episode_exited:
             # Completed sessions cannot resume. The terminal automatic save
@@ -881,7 +907,10 @@ class Application:
             self.shell.show_end_menu(*end)
         elif pause_box is not None and self.shell is not None:
             self.shell.zoom_out(pause_box)
-        if self.shell is not None and self.shell.stage != 'flash':
+        if kept is not None and self.shell is not None:
+            self.stop_menu_music()
+            self.menu_sound = kept
+        elif self.shell is not None and self.shell.stage != 'flash':
             self.play_menu_music()
         self.refresh_saves()
         pygame.display.set_caption(self.game_title)
@@ -1155,10 +1184,9 @@ class Application:
             self.transition_age = min(200, self.transition_age + elapsed)
             if self.shell is not None and self.screen == 'main':
                 self.shell.tick(elapsed / 1000)
-            elif self.screen == 'picker' and self.picker_zoom < PAUSE_OPEN_MS:
+            elif self.picker_over_menu():
                 self.picker_zoom = min(PAUSE_OPEN_MS, self.picker_zoom + elapsed)
-                if self.shell is not None:
-                    self.shell.tick(elapsed / 1000)            # the buttons sliding out behind it
+                self.shell.tick(elapsed / 1000)                # the buttons sliding out behind it
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)
@@ -1166,19 +1194,21 @@ class Application:
         pending = picker.alert
         if self.message:
             picker.alert = (self.game_title, self.message)
-        canvas = picker.draw()
+        live = self.picker_over_menu()
+        canvas = picker.draw(backdrop=not live)
         picker.alert = pending
         if self.shell is not None and self.shell.overlay_active:
             self.shell.draw_overlay(canvas)
-        if self.shell is not None and self.picker_zoom < PAUSE_OPEN_MS:
+        if live:
+            menu = self.shell.render().copy()
+            if menu.get_size() != canvas.get_size():
+                menu = pygame.transform.smoothscale(menu, canvas.get_size())
             scale = pause_scale(self.picker_zoom)
-            backdrop = self.shell.render().copy()
-            size = tuple(max(1, round(length * scale)) for length in canvas.get_size())
-            if backdrop.get_size() != canvas.get_size():
-                backdrop = pygame.transform.smoothscale(backdrop, canvas.get_size())
-            zoomed = pygame.transform.smoothscale(canvas, size)
-            backdrop.blit(zoomed, zoomed.get_rect(center=backdrop.get_rect().center))
-            canvas = backdrop
+            if scale < 1:
+                size = tuple(max(1, round(length * scale)) for length in canvas.get_size())
+                canvas = pygame.transform.smoothscale(canvas, size)
+            menu.blit(canvas, canvas.get_rect(center=menu.get_rect().center))
+            canvas = menu
         self.present_frame(canvas)
         pygame.display.flip()
 
