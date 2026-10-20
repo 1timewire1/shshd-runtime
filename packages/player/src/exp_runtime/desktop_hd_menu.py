@@ -17,11 +17,13 @@ frame points (768 x 1024), drawn at 2x.
 Options and the info pages are not drawn here: the main menu reuses the pause menu's (desktop_pause_hd.py), which was
 measured on the same photos with the light-mode switches.
 
-Not photographed: the notices' single button (an orange OK, string 154), the pressed row shade and the info-page form
-(unused by the main menu, which shows the pause menu's pages).
+Not photographed: the notices' single button (an orange OK, string 154), the pressed row shade (drawn as the pause
+menu's highlighted row, a shade darker; the arrow keys' highlight looks the same) and the info-page form (unused by the
+main menu, which shows the pause menu's pages).
 """
 import pygame
 
+from .desktop_pause_hd import FOCUS_SHADE
 from .hd_ui import HdUi, S, FRAME, BLUE
 from .menu_engine import ENGINE, NO_STRING, QUEUE
 from .ui_assets import Rect
@@ -162,9 +164,10 @@ class HdMenuWindows(HdUi):
         layer.set_clip(clip)
         for index, row in enumerate(g['rows']):
             fill = pygame.Surface((clip.width, round(row.height * S)), pygame.SRCALPHA)
-            fill.fill((*self.ROW_FILLS[index % 2], FILL_ALPHA))
+            color = self.ROW_FILLS[index % 2]
             if pressed == ('item', row.action.id):
-                fill.fill((0, 0, 0, 40), special_flags=pygame.BLEND_RGBA_ADD)
+                color = tuple(round(c * FOCUS_SHADE) for c in color)
+            fill.fill((*color, FILL_ALPHA))
             layer.blit(fill, (clip.x, round((top + row.top) * S)))
         layer.set_clip(None)
         rules = [g['header']] + [row.top + row.height for row in g['rows']]

@@ -814,6 +814,44 @@ class DesktopTests(unittest.TestCase):
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
             self.assertFalse(ui.panels_open)
 
+    def test_arrow_keys_highlight_the_pause_menus_rows_and_enter_taps_them(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            key = lambda code: ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=code))
+            rect = pygame.Rect(0, 0, 1, 1)
+            with patch.object(ui.pause_hd, 'available', return_value=False):
+                ui.command(('menu',))
+                ui.buttons = [(rect, ('resume',)), (rect, ('main_menu',))]
+                key(pygame.K_DOWN)
+                key(pygame.K_DOWN)
+                key(pygame.K_DOWN)
+                self.assertEqual(ui.menu_focus, ('main_menu',))
+                self.assertIsNone(ui.choice_focus)                  # the choice under the menu keeps its own
+                key(pygame.K_UP)
+                key(pygame.K_RETURN)
+                self.assertFalse(ui.menu_open)
+                ui.command(('menu',))
+                self.assertIsNone(ui.menu_focus)                    # each opening starts without a highlight
+            with patch.object(ui.pause_hd, 'available', return_value=True):
+                # HD's: Left / Right move a highlighted slider.
+                ui.pause_hd.buttons = [(rect, ('pause_slider', 'music', rect)), (rect, ('pause_back',))]
+                ui.music_volume = .5
+                key(pygame.K_DOWN)
+                key(pygame.K_RIGHT)
+                self.assertAlmostEqual(ui.music_volume, .6)
+                key(pygame.K_DOWN)
+                ui.pause_hd.state.screen = 'options'
+                key(pygame.K_SPACE)
+                self.assertEqual((ui.pause_hd.state.screen, ui.menu_open), ('pause', True))
+
     def test_opening_the_menu_dismisses_a_showing_faceplace_toast(self):
         # Real device confirmed (see dtview_faceplace.FaceplaceToast): a
         # Faceplace toast has no timer of its own -- pausing with the
@@ -1106,6 +1144,36 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(ui.session.pending.details['text'], 'Went left.')
             self.assertIsNone(ui.error)
             self.assertFalse(ui.handle_event(pygame.event.Event(pygame.QUIT)))
+
+    def test_arrow_keys_focus_a_choice_and_enter_picks_it(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            ui.render()
+            key = lambda code: ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=code))
+            key(pygame.K_DOWN)
+            self.assertEqual(ui.choice_focus, 0)                # the first press selects the top row
+            key(pygame.K_DOWN)
+            key(pygame.K_DOWN)
+            self.assertEqual(ui.choice_focus, 1)                # and stops at the last one
+            ui.render()
+            key(pygame.K_UP)
+            self.assertEqual(ui.choice_focus, 0)
+            ui.handle_event(pygame.event.Event(pygame.MOUSEMOTION, pos=(0, 0), rel=(1, 1), buttons=(0, 0, 0)))
+            self.assertIsNone(ui.choice_focus)                  # the mouse takes over
+            key(pygame.K_UP)
+            self.assertEqual(ui.choice_focus, 1)                # Up first selects the bottom row
+            key(pygame.K_RETURN)
+            self.assertEqual(ui.session.pending.details['text'], 'Went right.')
+            ui.render()
+            self.assertIsNone(ui.choice_focus)
 
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_original_dialogue_fonts_on_opening_and_saved_choice_branches(self):

@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Keyboard navigation**
+  ([1timewire1/shshd-runtime#6](https://github.com/1timewire1/shshd-runtime/pull/6), by zazatree). In choices, the
+  pause menu, the main menu and its windows: arrows / Tab move a highlight, Enter or Space activates, Left / Right
+  move a volume slider (docs/RUNTIME.md). A desktop addition; the originals are touch-only.
 - **Menu animations** ([1timewire1/shshd-runtime#9](https://github.com/1timewire1/shshd-runtime/pull/9),
   by zazatree).
   - "Play with sound?", Options, Help & About and the pause menu zoom in.
@@ -26,6 +30,11 @@
 
 ### Fixed
 
+- **The "Score Up!" letters no longer vanish when you tap through the line**
+  ([#5](https://github.com/1timewire1/shshd-runtime/issues/5), in #6). The iOS letter notice now survives the tap
+  that finishes the text reveal, and keeps to the portrait side it started on. (Android's typed notice still clears
+  on a tap, as its 000a9868 does.) Saves are version 26; older ones load. The letters are their own animation layer
+  in the iOS games; that a tap leaves them running is this reading of it, not yet checked in a decompile.
 - **Music fades as in the original games**
   ([#4](https://github.com/1timewire1/shshd-runtime/issues/4)). Both games now
   share SHS HD's / CoD 1.4.7's music rules:

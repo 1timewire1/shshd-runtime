@@ -1,6 +1,14 @@
 """Button tracking shared by the desktop and native touch hosts."""
 
 
+def step_focus(targets, focus, step):
+    if not targets:
+        return None
+    if focus in targets:
+        return targets[max(0, min(len(targets) - 1, targets.index(focus) + step))]
+    return targets[0 if step > 0 else -1]
+
+
 class ButtonPress:
     def __init__(self):
         self.cancel()

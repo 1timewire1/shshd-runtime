@@ -118,6 +118,7 @@ class EngineState:
     next_dialogue_notice: str = ''
     notice: str = ''
     notice_ms: int = 0
+    notice_mode: int = 0
     dialogue_animation: DialogueAnimation | None = None
     dialogue_history: DialogueHistory = field(default_factory=DialogueHistory)
     character_picker: CharacterPicker | None = None
@@ -156,7 +157,7 @@ class EngineState:
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.next_dialogue_notice = self.notice = self.last_input = ''
-        self.notice_ms = self.scene_value = 0
+        self.notice_ms = self.notice_mode = self.scene_value = 0
 
     @staticmethod
     def number_key(owner: int, key: int) -> int:
@@ -207,7 +208,7 @@ class EngineState:
         self.background_pan.dialogue(presentation)
         if self.next_dialogue_notice:
             self.notice, self.next_dialogue_notice = self.next_dialogue_notice, ''
-            self.notice_ms = notice_lifetime(self.notice)
+            self.notice_ms, self.notice_mode = notice_lifetime(self.notice), 0
         wobble, self.next_dialogue_wobble = self.next_dialogue_wobble, False
         if status_icons is not None and visible > 0 and presentation in (1, 2):
             # Service 37 does not call setCurrentSpeaker: the icons stay as they were (or as service 38 set
@@ -499,7 +500,7 @@ class EngineState:
             # several steps until an explicit yield 35 set a new background.
             self.panel = PanelState(background_id=self.panel.background_id)
             self.dialogue_animation = None
-            self.next_dialogue_notice, self.notice, self.notice_ms = '', '', 0
+            self.next_dialogue_notice, self.notice, self.notice_ms, self.notice_mode = '', '', 0, 0
             return complete('close_dialogue_panel')
         if y in (11, 34, 35, 86):
             at_least(4 if y == 35 else 3 if y == 86 else 2)

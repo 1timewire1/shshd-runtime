@@ -176,6 +176,7 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | Type, Backspace, Enter | Edit a name (up to 16 ASCII letters/digits, subject to native font width); Enter submits a nonempty name or dismisses its alert |
 | F5 (also Pause → Options → Save without the HD app, and the fallback screen's Save button) | Replace the current episode's manual save slot |
 | F9 (also Pause → Options → Load, and its Load button) | Restore that slot |
+| Arrow keys, Enter or Space | Select and pick a choice, or a pause or main menu item. Left/Right adjust a volume slider |
 | Wheel, arrow keys, Page Up/Down | Scroll long option lists and other non-dialogue screens |
 | Escape | Open/close the pause menu during play; go back within application menus |
 | Main Menu / Close window | Save a separate automatic checkpoint and return to the menu / exit |
@@ -443,7 +444,9 @@ while data and PC/SP/FP reset according to the core VM contract.
 <a id="runtime-save-schema-version-17"></a>
 <a id="runtime-save-schema-version-18"></a>
 
-## Runtime save schema, version 25
+<a id="runtime-save-schema-version-25"></a>
+
+## Runtime save schema, version 26
 
 This is a new format for the reimplementation. No pickle, object deserialization,
 or original executable code is used.
@@ -460,7 +463,9 @@ own versions 20 and 21, described below in their terms) and drops this fork's
 own expression memory it replaces (`engine.last_speaker`/`last_expressions`,
 the animation's `expression_committed`, the portraits' `from_asset_id`); the
 animation keeps this fork's uncapped `age_ms` for HD's emotion effects. An HD build's saved notice clock may also run past Android's
-lifetime, to the HD letters' start plus their own lifetime. The fork keeps the `shs-runtime-save` marker; upstream's
+lifetime, to the HD letters' start plus their own lifetime. Version 26 adds
+`engine.notice_mode`, the portrait side (1 or 2) those letters started on, which they keep on later lines; older
+saves load with 0, following the current portrait. The fork keeps the `shs-runtime-save` marker; upstream's
 `exp-runtime-save` saves are not accepted, because the same version numbers
 describe different fields there. Version-number references below that concern
 IPA libraries and survey receipts are upstream's numbering. JSON fields are:
@@ -541,7 +546,7 @@ identity, expression cache, text and progress without executing VM callbacks.
 This fork's versions 1–24 remain readable: their current expression stays
 visible, their old shake/box timing continues, and no new fade or clipping is
 replayed. The next dialogue uses the new lifecycle. Older runtimes cannot read
-version 25.
+version 25 or 26.
 
 The `vm` object contains `pc`, `sp`, `fp`, `a`, `b`, `result`, `data`, `stack`,
 `pending`, `steps_executed`, `opcode_counts`, and `recent_pcs`.
