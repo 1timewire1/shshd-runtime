@@ -17,7 +17,7 @@ from .games import GAMES, game_id
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
-from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer
+from .desktop_pause import PAUSE_OPEN_MS, PauseRenderer, pause_scale
 try:
     # SHS HD's football and word grid draw with SHS's own layout helpers (exp_runtime.shs), which a CoD-only install
     # lacks; CoD never plays either (tools/test_packages.py's cod-player case).
@@ -98,7 +98,7 @@ class Desktop:
     panel_alpha = None          # the HD menu view's alpha for this frame (None: drawn whole)
     panel_overlay = None        # the HD timer layers for this frame (outside the view's fades)
     edge_layer = None
-    music_fade_since = None
+    music_fade = None           # (start ticks, ms) of the playing cue's fade-out
     fade = None
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
@@ -251,7 +251,7 @@ class Desktop:
         self.music_token = None
         self.music_loaded = False
         self.music_paused = False
-        self.music_fade_since = None
+        self.music_fade = None
         self.sound_serial = session.engine.sound_serial
         self.audio = False
         self.music_enabled = self.sound_enabled = True
@@ -383,21 +383,14 @@ class Desktop:
         engine = self.session.engine
         token = (engine.music_id, engine.music_flag, self.music_enabled)
         paused = self.menu_open or not self.active or engine.music_paused
-        if (token != self.music_token and self.music_loaded and not paused and self.music_enabled
-                and self.music_token and self.music_token[2] and engine.music_id >= 0
-                and self.music_token[0] != engine.music_id):
-            # SHSSoundManager::playMusic: a different cue first fades the playing one out over 1000 ms.
-            now = pygame.time.get_ticks()
-            if self.music_fade_since is None:
-                self.music_fade_since = now
-            if now - self.music_fade_since < 1000:
-                try:
-                    pygame.mixer.music.set_volume(self.music_volume * (1 - (now - self.music_fade_since) / 1000))
-                except pygame.error as error:
-                    logging.warning('Music fade failed: %s', error)
-                return
+        if token != self.music_token and self._music_fading(token, paused):
+            return
+        if token == self.music_token and self.music_fade is not None:
+            # playMusic of the cue that is fading out: removeFade, and it plays on at full volume.
+            self.music_fade = None
+            self._set_music_volume(self.music_volume)
         if token != self.music_token:
-            self.music_fade_since = None
+            self.music_fade = None
             self.music_token = token
             self.music_loaded = self.music_paused = False
             try:
@@ -405,12 +398,8 @@ class Desktop:
                 if engine.music_id >= 0 and self.music_enabled:
                     cue = music_cue(engine.music_id, game=game_id(self.session.resources))
                     pygame.mixer.music.load(BytesIO(self.session.resources.read_asset(cue.asset_id)))
-                    # Both native iOS games pass service 80's flag to SHSSound.setLoop: (-1 repeats, 0 plays
-                    # once). (Natively the old cue fades out over 1 s before the new one starts; here it stops.)
-                    # The iOS host's mixer (platforms/drawing.Mixer) has no volume: the slider is desktop-only.
-                    set_volume = getattr(pygame.mixer.music, 'set_volume', None)
-                    if set_volume is not None:
-                        set_volume(self.music_volume)
+                    # Both native iOS games pass service 80's flag to SHSSound.setLoop: (-1 repeats, 0 plays once).
+                    self._set_music_volume(self.music_volume)
                     pygame.mixer.music.play(loops=-1 if engine.music_flag else 0, start=cue.start_ms / 1000)
                     self.music_loaded = True
             except (ContentError, pygame.error) as error:
@@ -425,6 +414,34 @@ class Desktop:
                     pygame.mixer.music.unpause()
             except pygame.error as error:
                 logging.warning('Music %s cannot change pause state: %s', engine.music_id, error)
+
+    def _music_fading(self, token, paused):
+        old = self.music_token
+        if paused or not (self.music_loaded and self.music_enabled and old and old[2]):
+            return False
+        now = pygame.time.get_ticks()
+        if self.music_fade is None:
+            get_busy = getattr(pygame.mixer.music, 'get_busy', None)
+            if get_busy is not None and not get_busy():
+                return False
+            duration = (self.session.engine.music_stop_fade_ms if token[0] < 0
+                        else 1000 if token[0] != old[0] else 0)
+            if duration <= 0:
+                return False
+            self.music_fade = (now, duration)
+        since, duration = self.music_fade
+        if now - since >= duration:
+            return False
+        self._set_music_volume(self.music_volume * (1 - (now - since) / duration))
+        return True
+
+    def _set_music_volume(self, volume):
+        set_volume = getattr(pygame.mixer.music, 'set_volume', None)
+        if set_volume is not None:
+            try:
+                set_volume(volume)
+            except pygame.error as error:
+                logging.warning('Music volume cannot change: %s', error)
 
     def _sync_audio(self):
         if not self.audio:
@@ -1299,12 +1316,22 @@ class Desktop:
             return
         self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
         layer, self.pause_buttons = self.pause_hd.layout(
-            dict(music=self.music_enabled, sound=self.sound_enabled, music_volume=self.music_volume,
-                 sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
-                 skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
-                 **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {})),
-            message=self.message if pygame.time.get_ticks() < self.message_until else '')
-        self.window.blit(pygame.transform.smoothscale(layer, frame.size), frame)
+            self._pause_settings(), message=self.message if pygame.time.get_ticks() < self.message_until else '')
+        scale = pause_scale(self.pause_elapsed_ms)
+        size = tuple(max(1, round(length * scale)) for length in frame.size)
+        self.window.blit(pygame.transform.smoothscale(layer, size), pygame.Rect((0, 0), size).move(
+            frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
+
+    def _pause_settings(self):
+        return dict(music=self.music_enabled, sound=self.sound_enabled, music_volume=self.music_volume,
+                    sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
+                    skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                    **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}))
+
+    def pause_box(self):
+        if self.pause_hd.available() and not self.error:
+            return self.pause_hd.layout(self._pause_settings())[0]
+        return None if self.pause_renderer is None else self.pause_renderer.canvas.copy()
 
     def _draw_notice(self, frame, dim=True):
         """Whichever native menu-engine window is on top of `self.notice_stack` -- the "Exit Game?" confirmation
@@ -1388,7 +1415,7 @@ class Desktop:
         if kind == 'pause_open':
             # A row of the menu (`SHSWidgetMenu::itemSelected`) and its back button (`buttonPressed`, tags 1-4) both
             # click; switches and sliders do not.
-            self.pause_hd.state.screen, self.pause_hd.state.scroll = command[1], 0.
+            self.pause_hd.open(command[1])
             self._menu_sound()
             return
         if kind == 'pause_back':
@@ -1448,10 +1475,12 @@ class Desktop:
             self._menu_sound()
         elif kind == 'main_menu':
             # HD's Main Menu row saves the game, then returns to the main menu (the application's automatic
-            # checkpoint does the saving as it leaves the episode).
+            # checkpoint does the saving as it leaves the episode). The menu's box goes along: it zooms out over
+            # the main menu while that screen's buttons slide in.
+            box = self.pause_box() if self.on_main_menu else None
             self.menu_open = False
             if self.on_main_menu:
-                self.on_main_menu()
+                self.on_main_menu(pause_box=box)
                 self._menu_sound()
         elif kind == 'save':
             try:
@@ -1561,8 +1590,7 @@ class Desktop:
             return True
         pointer = (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
                    and (event.type == pygame.MOUSEMOTION or event.button == 1))
-        if (self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer
-                and not (self.pause_hd.available() and not self.error)):
+        if self.menu_open and self.pause_elapsed_ms < PAUSE_OPEN_MS and pointer:
             self.press.cancel()
             return True
         if pointer and not self.menu_open and hasattr(self, 'viewport'):
@@ -1929,6 +1957,7 @@ class Desktop:
             elapsed_ms -= discount
         if self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
+            self.pause_hd.advance(elapsed_ms)
         if self.fade:
             self._tick_fade(elapsed_ms)
         # A native notice (the "Locked" notice, the wall link's "Exit Game?") holds the game like the pause menu does:

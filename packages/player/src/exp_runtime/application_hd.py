@@ -20,12 +20,13 @@ import pygame
 from .desktop_boot_hd import FLASH_TOTAL, HdBootScreen, JINGLE, LOADING_TIME
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
+from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu, MAIN_HELP_ORDER, PAGES
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
 
-# The fade to black before a game switch, and CoD's from its EA screen to its menu (and in from black after): not
-# decompiled (CoD's is in its engine view's `setRenderArg`); the owner describes the native fade, timed here.
+# The fade to black before a game switch: this player's own (owner's choice). CoD's from its EA screen to its menu, and
+# in from black after, are decompiled and timed in application_cod.py.
 FADE_TIME = 0.5
 # A frame that opens a library (a game switch) lasts about half a second, which would otherwise skip a whole fade or
 # flash in one step: a step longer than HITCH counts as MAX_STEP. Ordinary frames, however slow (a full-screen window
@@ -71,7 +72,7 @@ class HdShell:
         self.body_scroll = 0.0
         self.drag = None
         self.silent = False
-        self.fade = None                # ('out', seconds, then) to black, or ('in', seconds, None) from it
+        self.fade = None                # ('out', seconds, then, time) to black, or ('in', seconds, None, time) from it
         self.flash_over_black = False   # the flash after a game switch starts from black, not the loading screen
 
     # ------------------------------------------------------------ availability
@@ -102,6 +103,14 @@ class HdShell:
         self.pause.reset()
         self.main.start(intro=intro)
 
+    def zoom_out(self, box):
+        self.leaving = (pygame.transform.smoothscale(box, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+        self.replay_launch()
+
+    def replay_launch(self):
+        self.stage, self.flash_age, self.flash_over_black = 'flash', 0.0, False
+        self.app.play_asset(JINGLE)
+
     def show_end_menu(self, backdrop, football):
         """The menu shown when an episode ends, over `backdrop` (the last frame, already sepia, as a 768 x 1024 surface)."""
         self.stage = 'end'
@@ -124,10 +133,11 @@ class HdShell:
         offer comes first: Application.update_holds_launch)."""
         return self.stage == 'loading' and self.age >= LOADING_TIME + SOUND_DELAY
 
-    def leave(self, then):
-        """Fade the screen to black, then call `then` (a game switch, or CoD's way from its EA screen to its menu)."""
+    def leave(self, then, *, hold=0.0, time=FADE_TIME):
+        """Fade the screen to black over `time` after `hold` seconds, then call `then` (a game switch, or CoD's way
+        from its EA screen to its menu). A fade's age starts at minus its hold, so the frame stays as it is until 0."""
         self.pressed = self.drag = None
-        self.fade = ('out', 0.0, then)
+        self.fade = ('out', -hold, then, time)
 
     def arrive(self):
         """Arriving from another game (the frame is black): SHS HD's flash, with its jingle, into the main menu."""
@@ -140,16 +150,25 @@ class HdShell:
         if seconds > HITCH:
             seconds = MAX_STEP
         if self.fade is not None:
-            kind, age, then = self.fade
+            kind, age, then, time = self.fade
             age += seconds
-            if age >= FADE_TIME:
+            if age >= time:
                 self.fade = None
                 if kind == 'out':
                     then()                  # may replace this shell (a game switch): nothing more to do here
                     return
             else:
-                self.fade = (kind, age, then)
+                self.fade = (kind, age, then, time)
         self.age += seconds
+        if self.pause_open:
+            self.pause_ms = min(PAUSE_OPEN_MS, self.pause_ms + seconds * 1000)
+        if self.leaving is not None:
+            box, ms = self.leaving
+            ms += seconds * 1000
+            self.leaving = (box, ms) if ms < PAUSE_OPEN_MS else None
+            self.pause.advance(seconds * 1000)
+        if self.stack.stack:
+            self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + seconds * 1000)
         covered = self.overlay_active or self.pause_open
         if self.stage == 'main' and self.was_covered and not covered:
             self.main.start(intro=False)          # the buttons slide in again when a window closes
@@ -158,6 +177,7 @@ class HdShell:
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
             self.stage = 'sound'
             self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
+            self.window_ms = 0
         elif self.stage == 'flash':
             self.flash_age += seconds
             if self.boot.flash_done(self.flash_age):
@@ -236,6 +256,7 @@ class HdShell:
             canvas = self.boot.draw_loading(min(1.0, self.age / LOADING_TIME))
         elif self.stage == 'flash':
             canvas = self.boot.draw_flash(self.flash_age, over_black=self.flash_over_black)
+            self.draw_leaving(canvas)
             self.draw_fade(canvas)
             return canvas
         elif self.stage == 'end':
@@ -245,35 +266,57 @@ class HdShell:
             self.main.pressed = self.pressed if self.pressed and self.pressed[0] in ('play', 'airing', 'demand', 'more', 'options', 'help') else None
             canvas = self.main.draw(buttons=not (self.overlay_active or self.pause_open))
         self.draw_overlay(canvas)
+        if self.stage == 'main':
+            self.draw_leaving(canvas)
         self.draw_fade(canvas)
         return canvas
+
+    def draw_leaving(self, canvas):
+        """The in-game pause menu's box zooming out (`zoom_out`)."""
+        if self.leaving is not None:
+            box, ms = self.leaving
+            scale = pause_scale(PAUSE_OPEN_MS - ms)
+            box = pygame.transform.smoothscale(box, tuple(max(1, round(length * scale)) for length in box.get_size()))
+            canvas.blit(box, box.get_rect(center=canvas.get_rect().center))
 
     def fade_level(self):
         """How far the frame is faded to black, 0..1. Only the frame fades: the backdrop beside it stays (owner)."""
         if self.fade is None:
             return 0.0
-        kind, age, _ = self.fade
-        t = min(1.0, age / FADE_TIME)
+        kind, age, _, time = self.fade
+        t = min(1.0, max(0.0, age) / time)
         return t if kind == 'out' else 1 - t
 
     def draw_fade(self, canvas):
         level = self.fade_level()
         if level > 0:
-            black = pygame.Surface(canvas.get_size())
-            black.set_alpha(round(255 * level))
-            canvas.blit(black, (0, 0))
+            keep = round(255 * (1 - level))
+            canvas.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)
 
     def draw_overlay(self, canvas):
         """The open menu-engine window, or the pause menu's Options / Help page, over `canvas`."""
         self.windows.hits = []
         if self.stack.stack:
             current = self.stack.current
-            self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed,
+            scale = pause_scale(self.window_ms)
+            if scale >= 1:
+                self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed,
+                                  body_scroll=self.body_scroll)
+                return
+            layer = pygame.Surface(canvas.get_size(), pygame.SRCALPHA).convert_alpha()
+            self.windows.draw(layer, current, variables=self.variables(), pressed=self.pressed,
                               body_scroll=self.body_scroll)
+            size = tuple(max(1, round(length * scale)) for length in layer.get_size())
+            layer = pygame.transform.smoothscale(layer, size)
+            canvas.blit(layer, layer.get_rect(center=canvas.get_rect().center))
         elif self.pause_open and self.stage == 'main':
             self.pause.pressed = self.pressed
             layer, self.pause_buttons = self.pause.layout(self.settings())
-            canvas.blit(layer, (0, 0))
+            scale = pause_scale(self.pause_ms)
+            size = tuple(max(1, round(length * scale)) for length in layer.get_size())
+            if size != layer.get_size():
+                layer = pygame.transform.smoothscale(layer, size)
+            canvas.blit(layer, layer.get_rect(center=canvas.get_rect().center))
 
     def variables(self):
         strings = self.windows.strings()
@@ -286,15 +329,20 @@ class HdShell:
     fade = None
     flash_over_black = False
     pause_buttons = ()
+    pause_ms = PAUSE_OPEN_MS
+    leaving = None
+    window_ms = PAUSE_OPEN_MS
 
     # ------------------------------------------------------------ input (frame points)
 
     def hits(self):
-        if self.fade is not None:
-            return []                   # nothing takes input while the screen fades
+        if self.fade is not None or self.leaving is not None:
+            return []                   # nothing takes input while the screen fades or the pause box zooms out
         if self.stack.stack:
-            return self.windows.hits
+            return self.windows.hits if self.window_ms >= PAUSE_OPEN_MS else []
         if self.pause_open and self.stage == 'main':
+            if self.pause_ms < PAUSE_OPEN_MS:
+                return []
             return [(rect, command) for rect, command in self.pause_buttons]
         return self.main.hits if self.stage == 'main' and self.main.ready else []
 
@@ -368,10 +416,10 @@ class HdShell:
             self.app.command(('switch_games',))         # upstream's Switch Game, in place of EA's store page
         elif kind == 'options':
             self.pause.reset()
-            self.pause.state.screen, self.pause_open = 'options', True
+            self.pause.state.screen, self.pause_open, self.pause_ms = 'options', True, 0
         elif kind == 'help':
             self.pause.reset()
-            self.pause.state.screen, self.pause_open = 'help', True
+            self.pause.state.screen, self.pause_open, self.pause_ms = 'help', True, 0
         elif kind == 'item':
             self.body_scroll = 0.0
             self.stack.press(self.data.action(command[1]))
@@ -379,7 +427,7 @@ class HdShell:
             if command[1] == 'privacy':
                 self.stack.queue(self.PRIVACY_MENU)
             else:
-                self.pause.state.screen, self.pause.state.scroll = command[1], 0.0
+                self.pause.open(command[1])
         elif kind == 'pause_back':
             if self.pause.back():
                 self.pause_open = False

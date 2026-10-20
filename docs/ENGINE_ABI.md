@@ -229,7 +229,8 @@ Service 80 stores a music ID and `bool(a2)` repeat flag. Both native iOS games'
 `SHSSound::setLoop:` translate this flag to AVAudioPlayer loop counts -1 / 0
 (CoD `00041e88`, SHS `00073fa8`). Desktop and native iOS playback now use the
 same convention, with the existing flag retained in saves. Service 81 accepts
-one word and calls the native stop/fade path; the runtime stops immediately.
+one word and calls the native stop/fade path. For CoD the runtime fades over
+that word (see [COD.md](COD.md)); for SHS it stops immediately.
 Native fades, changing a live track's repeat flag without restarting it,
 all channel semantics and intermediate same-frame requests remain partial.
 
@@ -280,8 +281,10 @@ both must clear before playback resumes. Returning through the main menu to
 the same live session also preserves the playhead. Muting, service 81's stop,
 and a changed cue replace that playback state; resuming cannot revive a muted
 or replaced track. New sessions and explicit save loads still start their
-requested cue. These are runtime lifecycle rules; native fades remain
-unimplemented. No audio transport fields are added to the save schema.
+requested cue. These are runtime lifecycle rules. A changed cue fades the old
+one out over 1000 ms, and CoD's service 81 fades over its argument. A pause,
+mute or finished track replaces it at once. No audio transport fields are
+added to the save schema.
 
 Evidence: `SHS09SoundEngine.java` debug lines 145–253, inspected as Dalvik
 instructions in the player-supplied APK. The DEX hash is recorded in

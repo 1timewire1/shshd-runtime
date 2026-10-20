@@ -11,6 +11,7 @@ Decompiled and fitted to `reference/screenshots/main menu/IMG_0124`:
 * The buttons (layout 74's nodes, pack 315) slide in from 550 points to the left over 0.35 s (with a 5 point overshoot at
   96%): the wedge first, then Play/Resume, Now Airing, Episodes On Demand and More EA Games 0.08 s apart, the gear then
   the info button popping in (scale 0.01 -> 1.2 -> 1) 0.36 s after the wedge. Input opens 0.35 + 0.36 s after the start.
+  The runtime plays this 1.6x slower at the owner's request (SLIDE_TIME below).
 * Labels are the embedded glyph fonts 593 (brown) and 594 (green, "More EA Games"), 48 pixels tall at 1 px per point.
 
 Not decompiled: the exact origin of the button group (fitted to the photo) and the gear's fade-in timing.
@@ -25,7 +26,7 @@ from .menu import MenuFont
 INTRO_PHOTO_START, INTRO_PHOTO_ZOOM, INTRO_PHOTO_TURN = 0.4, 1.7, 1.9375
 INTRO_STRIP_START, INTRO_STRIP_TIME = 2.6, 0.6
 BUTTONS_START_INTRO = 3.2
-SLIDE_TIME, STAGGER, INFO_DELAY = 0.35, 0.08, 0.36
+SLIDE_TIME, STAGGER, INFO_DELAY = 0.56, 0.128, 0.576
 SLIDE_FROM, SLIDE_OVERSHOOT = -550.0, 5.0
 READY_AFTER = INFO_DELAY + SLIDE_TIME
 # Layout 74 (the widget the buttons come from) is 275 x 135 units; its origin on the frame, fitted to the photo.

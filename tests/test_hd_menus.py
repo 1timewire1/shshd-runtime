@@ -11,8 +11,8 @@ import pygame
 from exp_runtime.application_hd import HdShell, MISS_MENU, END_MENU
 from exp_runtime.desktop_boot_hd import FLASH_TOTAL, HdBootScreen
 from exp_runtime.desktop_hd_menu import BUTTON_STRIP, CARD_W, FOOTER_HEIGHT, HdMenuWindows, ROW_HEIGHT
-from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, HdMainMenu, READY_AFTER, SLIDE_FROM, SLIDE_OVERSHOOT,
-                                         keyframes)
+from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, HdMainMenu, INFO_DELAY, READY_AFTER, SLIDE_FROM,
+                                         SLIDE_OVERSHOOT, SLIDE_TIME, STAGGER, keyframes)
 from exp_runtime.menu import MenuFont, MenuState
 from exp_runtime.menu_engine import (BACK, CLEAR, ENGINE, QUEUE, MenuEngineData, MenuEngineError, MenuStack)
 
@@ -195,6 +195,14 @@ class MainMenuTimingTests(unittest.TestCase):
         self.menu.tick(READY_AFTER + .01)
         self.assertTrue(self.menu.ready)
 
+    def test_cods_buttons_start_under_its_fade_from_black_on_the_first_arrival(self):
+        from exp_runtime.desktop_cod_main import CodMainMenu
+        menu = object.__new__(CodMainMenu)
+        menu.start(intro=True)
+        self.assertEqual(menu.buttons_start, 1.5)
+        menu.start(intro=False)
+        self.assertEqual(menu.buttons_start, 0.0)
+
     def test_buttons_slide_in_from_the_left_one_after_another_with_a_small_overshoot(self):
         self.menu.start(intro=False)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [SLIDE_FROM] * 5)
@@ -202,17 +210,21 @@ class MainMenuTimingTests(unittest.TestCase):
         offsets = [self.menu.slide(i) for i in range(5)]
         self.assertGreater(offsets[0], offsets[1])                # earlier buttons are further along
         self.assertGreater(offsets[1], offsets[4])
-        self.menu.tick(.336 - .2 + .32)
+        self.menu.tick(.96 * SLIDE_TIME - .2 + 4 * STAGGER)
         self.assertAlmostEqual(self.menu.slide(0), 0.0, delta=SLIDE_OVERSHOOT)
         self.menu.tick(1)
         self.assertEqual([self.menu.slide(i) for i in range(5)], [0.0] * 5)
-        self.assertEqual(self.menu.pop(0.36), 1.0)
+        self.assertEqual(self.menu.pop(INFO_DELAY), 1.0)
 
     def test_the_gear_and_info_pop_in_past_full_size(self):
         self.menu.start(intro=False)
-        self.assertEqual(self.menu.pop(.36), 0.01)
-        self.menu.tick(.36 + .336)
-        self.assertAlmostEqual(self.menu.pop(.36), 1.2, places=2)
+        self.assertEqual(self.menu.pop(INFO_DELAY), 0.01)
+        self.menu.tick(INFO_DELAY + .96 * SLIDE_TIME)
+        self.assertAlmostEqual(self.menu.pop(INFO_DELAY), 1.2, places=2)
+
+    def test_the_buttons_take_longer_than_the_native_entrance(self):
+        self.assertGreater(SLIDE_TIME, .35)
+        self.assertGreater(READY_AFTER, .35 + .36)
 
 
 class BootTests(unittest.TestCase):
@@ -277,6 +289,28 @@ class ShellActionTests(unittest.TestCase):
         self.assertEqual((state.music, state.sound), (False, True))
         self.assertGreaterEqual(state.persisted, 3)
 
+    def test_the_in_game_pause_box_zooms_out_over_the_launch_flash_then_the_first_entrance(self):
+        import pygame
+        from exp_runtime.desktop_pause import pause_scale
+        shell, entered = self.shell, []
+        shell.stage, shell.pause_open, shell.age = 'main', False, 0.0
+        shell.boot = HdBootScreen.__new__(HdBootScreen)
+        shell.pause = SimpleNamespace(advance=lambda ms: None, reset=lambda: None)
+        shell.main = SimpleNamespace(tick=lambda seconds: None, start=lambda intro: entered.append(intro),
+                                     hits=[('rect', ('play',))], ready=True)
+        shell.app.play_menu_music = lambda: entered.append('music')
+        box = pygame.Surface((320, 480), pygame.SRCALPHA)
+        shell.zoom_out(box)
+        self.assertEqual(shell.leaving[0].get_size(), (1536, 2048))
+        self.assertEqual((shell.stage, shell.flash_over_black, shell.app.played), ('flash', False, [8005]))
+        self.assertEqual(shell.hits(), [])                           # nothing takes input until it has gone
+        shell.tick(.25)
+        self.assertLess(pause_scale(400 - shell.leaving[1]), 1)
+        shell.tick(.2)
+        self.assertIsNone(shell.leaving)
+        shell.tick(.2)                                               # the flash is over: the first-launch entrance
+        self.assertEqual((shell.stage, entered), ('main', ['music', True]))
+
     def test_links_are_remembered_then_opened_on_confirmation(self):
         shell = self.shell
         for number, link in ((14, 'eula'), (15, 'privacy'), (16, 'terms')):
@@ -329,6 +363,45 @@ class ShellActionTests(unittest.TestCase):
         while shell.fade is not None:
             shell.tick(MAX_STEP)
         self.assertEqual(calls, ['black'])
+
+    def test_the_sound_question_zooms_in_like_the_pause_menu_and_takes_input_once_open(self):
+        from exp_runtime.application_hd import LOADING_TIME, SOUND_DELAY
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        shell, drawn = self.shell, []
+        shell.app.update_holds_launch = lambda seconds: False
+        shell.app.external_music = lambda: False
+
+        def draw(layer, menu_id, **_):
+            drawn.append(layer)
+            pygame.draw.rect(layer, (255, 0, 0), (40, 40, 20, 20))
+            shell.windows.hits = [('rect', ('item', 0))]
+        shell.windows.draw, shell.windows.hits = draw, []
+        shell.fade, shell.pause_open, shell.pressed, shell.body_scroll = None, False, None, 0
+        shell.variables, shell.stage, shell.age = (lambda: {}), 'loading', LOADING_TIME + SOUND_DELAY
+        canvas = pygame.Surface((100, 100))
+        shell.tick(0)                                       # the launch asks "Play with sound?"
+        self.assertEqual(shell.stack.stack, [7])
+        shell.draw_overlay(canvas)
+        self.assertIsNot(drawn[-1], canvas)                 # drawn apart, then scaled from nothing
+        self.assertEqual(canvas.get_at((50, 50))[:3], (0, 0, 0))
+        self.assertEqual(shell.hits(), [])
+        shell.tick(PAUSE_OPEN_MS / 2000)
+        shell.draw_overlay(canvas)
+        self.assertEqual(shell.hits(), [])
+        shell.tick(PAUSE_OPEN_MS / 2000)
+        shell.draw_overlay(canvas)
+        self.assertIs(drawn[-1], canvas)                    # full size: drawn straight onto the frame
+        self.assertEqual(shell.hits(), [('rect', ('item', 0))])
+        shell.stack.queue(17)                               # any other window appears at once
+        shell.draw_overlay(canvas)
+        self.assertIs(drawn[-1], canvas)
+
+    def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
+        canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))
+        canvas.fill((200, 100, 50, 0))
+        self.shell.fade = ('in', .5, None, 1.0)
+        self.shell.draw_fade(canvas)
+        self.assertEqual(tuple(canvas.get_at((0, 0)))[:3], (100, 50, 25))
 
     def test_arriving_from_another_game_flashes_from_black_with_the_jingle(self):
         from exp_runtime.desktop_boot_hd import JINGLE
@@ -395,6 +468,14 @@ class CodShellActionTests(unittest.TestCase):
         self.shell.enter_main = lambda **options: self.entered.append(options)
         self.shell.fade, self.shell.pause_open, self.shell.pressed, self.shell.drag = None, False, None, None
 
+    def test_the_pause_box_zooms_out_over_cods_menu_without_a_flash(self):
+        import pygame
+        shell = self.shell
+        shell.stage = 'main'
+        shell.zoom_out(pygame.Surface((320, 480), pygame.SRCALPHA))
+        self.assertEqual((shell.stage, shell.app.played), ('main', []))
+        self.assertIsNotNone(shell.leaving)
+
     def test_the_sound_answer_goes_straight_to_the_main_menu(self):
         shell, state = self.shell, self.shell.app.state
         shell.stack.queue(7)
@@ -404,6 +485,22 @@ class CodShellActionTests(unittest.TestCase):
         self.assertEqual((self.entered, shell.stack.stack, shell.app.played, shell.fade[0]), ([], [], [], 'out'))
         shell.fade[2]()                                     # once black: the menu, fading in (no EA flash, no jingle)
         self.assertEqual((self.entered, shell.fade[0]), ([dict(intro=True)], 'in'))
+
+    def test_the_ea_screen_holds_then_goes_black_and_the_menu_slowly_fades_in(self):
+        shell, step, clock, seen = self.shell, .01, 0.0, {}
+        shell.age, shell.stage = 0.0, 'menu'               # no launch stage to advance in this test
+        shell.main = SimpleNamespace(tick=lambda seconds: None)
+        shell.perform(1)
+        while clock < 3.3:
+            seen[round(clock, 2)] = (shell.fade_level(), len(self.entered))
+            shell.tick(step)
+            clock += step
+        self.assertEqual(seen[.9], (0.0, 0))               # the EA screen stays
+        self.assertAlmostEqual(seen[1.5][0], .5, places=1)
+        self.assertEqual(seen[2.05], (1.0, 1))              # black, with the menu set up under it
+        self.assertAlmostEqual(seen[2.7][0], .5, places=1)
+        self.assertEqual(seen[3.25][0], 0.0)
+        self.assertIsNone(shell.fade)
 
     def test_legal_links_use_cods_strings_and_exit_game_window(self):
         shell = self.shell
