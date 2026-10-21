@@ -97,8 +97,8 @@
 
 - **Autoplay Dialogue.** Dialogue, title cards and message panels take no taps.
   - Their text reveals at its own pace.
-  - Then, instead of the Continue pill, they wait a second (a title card a
-    second and a half) and advance by themselves.
+  - Then, instead of the Continue pill, they wait 0.75 s (a title card
+    1.5 s) and advance by themselves.
   - Choices, name entry, mini-games and the portrait picker still wait for you.
 - **Disable Choice Timer.** Timed choices hold their clock and show as
   ordinary choices.

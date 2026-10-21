@@ -618,7 +618,7 @@ Mini-Games") is another authored, opt-in preference, off by default:
 - **Play** starts the game, and the same game is not asked again.
 
 **Options → General → Autoplay Dialogue** (this player's, off by default): dialogue, title cards and message panels
-take no taps. Their text reveals at its own pace; then, instead of the Continue pill, they wait 1000 ms (a title card
+take no taps. Their text reveals at its own pace; then, instead of the Continue pill, they wait 750 ms (a title card
 1500 ms; `Desktop.AUTOPLAY_WAIT_MS` / `AUTOPLAY_TITLE_WAIT_MS`, set longer than the pill's 250 ms expansion to be
 safe) and advance as a tap would. It is not a full autoplay: choices, name entry, the mini-games
 and the portrait picker still wait for the player, and the gear still opens the pause menu.

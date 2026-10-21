@@ -135,7 +135,7 @@ class Desktop:
     # is out they wait AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS) and advance by themselves (owner's
     # choice, 2026-10-21: longer than the Continue pill's 250 ms expansion, to be safe).
     autoplay = False
-    AUTOPLAY_WAIT_MS = 1000
+    AUTOPLAY_WAIT_MS = 750
     AUTOPLAY_TITLE_WAIT_MS = 1500
     autoplay_ms = 0
     _disable_choice_timer = False

@@ -109,7 +109,7 @@ class DesktopOptionTests(unittest.TestCase):
         line = ui.session.pending
         while not ui.session.engine.dialogue_animation.complete:
             ui.tick(16)
-        self.assertEqual(ui.AUTOPLAY_WAIT_MS, 1000)
+        self.assertEqual(ui.AUTOPLAY_WAIT_MS, 750)
         ui.tick(ui.AUTOPLAY_WAIT_MS - 20)
         self.assertIs(ui.session.pending, line)
         ui.tick(20)
