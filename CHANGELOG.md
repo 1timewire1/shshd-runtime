@@ -95,10 +95,10 @@
 
 ### Added (Options → General)
 
-- **Autoplay.** Dialogue, title cards and message panels take no taps.
+- **Autoplay Dialogue.** Dialogue, title cards and message panels take no taps.
   - Their text reveals at its own pace.
-  - Then, instead of the Continue pill, they wait half a second and advance by
-    themselves.
+  - Then, instead of the Continue pill, they wait a second (a title card a
+    second and a half) and advance by themselves.
   - Choices, name entry, mini-games and the portrait picker still wait for you.
 - **Disable Choice Timer.** Timed choices hold their clock and show as
   ordinary choices.
@@ -110,6 +110,12 @@
   - Its Choice Hints switch is named Choice & Answer Hints, as only CoD has the
     typed puzzles whose faint answers it shows.
   - Ask to Skip Mini-Games now covers the word quiz in both games.
+- **Cause of Death's emphasised words are styled as in the game.** They now
+  use the italic switch font from `initFonts`: TrebuchetMS-Italic with a
+  0.5-point edge.
+  - The fill is red in the normal theme and blue in the rose theme.
+  - Gray and default-theme emphasis is black with a red edge.
+  - Narration's highlighted words keep their gold, with a 0.6-point edge.
 - **Vibration on devices.** On a device that can vibrate, the Sound page's
   last switch is the game's own Vibration, and the device vibrates instead of
   buzzing.

@@ -617,9 +617,10 @@ Mini-Games") is another authored, opt-in preference, off by default:
   A quiz scores the most it can (32767) or nothing.
 - **Play** starts the game, and the same game is not asked again.
 
-**Options → General → Autoplay** (this player's, off by default): dialogue, title cards and message panels take no
-taps. Their text reveals at its own pace; then, instead of the Continue pill, they wait 500 ms (the pill's 250 ms
-expansion and a beat, `Desktop.AUTOPLAY_WAIT_MS`) and advance as a tap would. Choices, name entry, the mini-games
+**Options → General → Autoplay Dialogue** (this player's, off by default): dialogue, title cards and message panels
+take no taps. Their text reveals at its own pace; then, instead of the Continue pill, they wait 1000 ms (a title card
+1500 ms; `Desktop.AUTOPLAY_WAIT_MS` / `AUTOPLAY_TITLE_WAIT_MS`, set longer than the pill's 250 ms expansion to be
+safe) and advance as a tap would. It is not a full autoplay: choices, name entry, the mini-games
 and the portrait picker still wait for the player, and the gear still opens the pause menu.
 
 **Options → General → Disable Choice Timer** (this player's, off by default): a timed choice holds its clock

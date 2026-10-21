@@ -407,6 +407,29 @@ def cod_vector_font(library, name: str, base: BitmapFont):
         return base
 
 
+COD_EMPHASIS = 'TrebuchetMS_Italic16'
+COD_EMPHASIS_RED = (254, 53, 53)        # 0xfffe3535
+
+
+def cod_emphasis_font(library, name: str, base: BitmapFont):
+    """Cause of Death's backtick switch fonts (cod/profile.py EMPHASIS_FONTS, initFonts 1.3.4 armv7): TrebuchetMS-Italic at
+    16 points, each instance given `setStroke(0.5, colour)`. That stroke is drawn over the fill in the fill's own
+    colour (+0x15af4 red, +0x1ebb4 blue), or red over a black fill for the gray and default sets (+0x27c74 at
+    0002669e, +0x30d34 at 000267fc). The narration's (+0xfa74) has a 0.6-point stroke in its own colour. The fill
+    colour is the layout's (BODY_MARKERS / NARRATION_COLORS). `base` is the installed-face atlas font whose metrics
+    the layout keeps; it is returned as it is when the face is missing."""
+    try:
+        path = system_font_path('trebuchet-italic', library)
+        if path is None:
+            return base
+        width = .6 if name.endswith('NarrationEmphasis') else .5
+        edge = COD_EMPHASIS_RED if name.endswith('RedEdge') else None
+        return vector_font(base, FaceSource(path=path, label='trebuchet-italic'), 16, embolden=width / 16,
+                           embolden_color=edge)
+    except (FontError, pygame.error, OSError, ContentError):
+        return base
+
+
 # HD sizes the Android build has no descriptor for, drawn from the descriptor of
 # the same face (glyph set and baseline are the same; only the size differs):
 # the name-entry field's typed name is Pajama Hip 48 px (24 units).
@@ -421,6 +444,13 @@ def load_font(library, name: str) -> BitmapFont:
     installed-face rendering (fonts.load_font / ios_fonts.py)."""
     if getattr(library, 'kind', 'apk') == 'ipa':
         from .fonts import load_font as base_load_font
+        if getattr(library, 'game_id', None) == 'cod' and name.startswith(COD_EMPHASIS):
+            # CoD's emphasis switch fonts: always vector, with or without the SHS HD art source, since the
+            # installed-face atlas tints one colour and the gray / default ones are black with a red edge.
+            cache = library.__dict__.setdefault('_text_fonts', {})
+            if name not in cache:
+                cache[name] = cod_emphasis_font(library, name, base_load_font(library, COD_EMPHASIS))
+            return cache[name]
         base = base_load_font(library, name)
         if getattr(library, 'game_id', None) == 'cod' and getattr(library, 'shs_hd_art', None) is not None:
             cache = library.__dict__.setdefault('_text_fonts', {})

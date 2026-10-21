@@ -72,8 +72,13 @@ DIALOGUE_COLORS = {1: (0, 0, 0), 2: (180, 78, 78), 3: (0, 0, 0), -1: (0, 0, 0)}
 # +0x142d4 goes to +0x15af4, red 0xfffe3535 italic; theme 2's +0x1d394 (rose) to +0x1ebb4, blue 0xff2968dd; the gray
 # and default sets (+0x26454, +0x2f514) to black (+0x27c74 at 0002669e, +0x30d34 at 000267fc: fill 0xff000000). The
 # switch face is TrebuchetMS-Italic (+0x1ec) with stroke 0.5: the switch font's own colour, except gray and default,
-# whose stroke is red 0xfffe3535 (exp-runtime reads that stroke as their colour; the fill is black). The italic face
-# and the stroke are not drawn here yet: only the fill colour changes.
+# whose stroke is red 0xfffe3535 (exp-runtime reads that stroke as their colour; the fill is black). EMPHASIS_FONTS
+# names the switch font per dialogue theme (vector_text.cod_emphasis_font draws it): the italic face at 16 points with
+# that 0.5-point edge, in the fill's colour or, for gray and default, red. Narration's switch font (+0xfa74) is the
+# narration face itself with a 0.6-point edge in its own colour.
+EMPHASIS_FONTS = {1: 'TrebuchetMS_Italic16Emphasis', 2: 'TrebuchetMS_Italic16Emphasis',
+                  -1: 'TrebuchetMS_Italic16EmphasisRedEdge'}
+NARRATION_EMPHASIS_FONT = 'TrebuchetMS_Italic16NarrationEmphasis'
 NARRATION_COLORS = ((0, 0, 0), (180, 109, 26))
 IOS_DIALOGUE_COLORS = DIALOGUE_COLORS
 BODY_MARKERS = ('`', {1: (254, 53, 53), 2: (41, 104, 221), 3: (0, 0, 0), -1: (0, 0, 0)})

@@ -171,6 +171,9 @@ class DialogueLayout:
                 cap = vector_cap_height(font)
             body_style = replace(body_style, height=cap if cap is not None else 16, gap=9)
             measured = layout_text(font, sizing_text, 220, body_style)
+            # Narration switches to +0xfa74 on '`': the same face with a 0.6-point edge (cod/profile.py).
+            emphasis = GAMES['cod'].NARRATION_EMPHASIS_FONT
+            switch_fonts = {'`': (emphasis, self.font(emphasis))}
             width = max(120, (int(measured.width) + 2) // 2 * 2)
             height = (int(measured.height) + 5) // 2 * 2
             box = Rect(25, top - 5, width + 10, height + 10)
@@ -212,8 +215,12 @@ class DialogueLayout:
                 cap_height = vector_cap_height(font)
             if cap_height is not None and cod:
                 # CSFont uses the face's cap height, not the nominal Cocos label height. CoD keeps this fork's
-                # photo-verified pitch (IMG_0309 / IMG_0310) and BODY_MARKERS' colour switch.
+                # photo-verified pitch (IMG_0309 / IMG_0310) with BODY_MARKERS' colours, and draws emphasis in its
+                # own switch font (cod/profile.py EMPHASIS_FONTS: TrebuchetMS-Italic 16 with a 0.5-point edge).
                 body_style = replace(body_style, height=cap_height, gap=10)
+                fonts = GAMES['cod'].EMPHASIS_FONTS
+                emphasis = fonts.get(theme, fonts[-1])
+                switch_fonts = {'`': (emphasis, self.font(emphasis))}
             elif cap_height is not None:
                 # The tallest registered face determines the
                 # line step, even in a paragraph with no emphasized words.

@@ -1,4 +1,5 @@
-"""This player's options in HD's General page: Autoplay and Disable Choice Timer, and the skip prompt over a word quiz."""
+"""This player's options in HD's General page: Autoplay Dialogue and Disable Choice Timer, and the skip prompt over a
+word quiz."""
 import importlib.util
 import os
 from pathlib import Path
@@ -108,10 +109,25 @@ class DesktopOptionTests(unittest.TestCase):
         line = ui.session.pending
         while not ui.session.engine.dialogue_animation.complete:
             ui.tick(16)
+        self.assertEqual(ui.AUTOPLAY_WAIT_MS, 1000)
         ui.tick(ui.AUTOPLAY_WAIT_MS - 20)
         self.assertIs(ui.session.pending, line)
         ui.tick(20)
         self.assertIsNot(ui.session.pending, line)
+
+    def test_autoplay_gives_a_title_card_longer(self):
+        words, (title, subtitle, line) = text_words('Chapter One', 'A beginning.', 'After the card.')
+        ui = self.ui(Resources(program(*host_call(8, title, subtitle, 1000, 0), *host_call(13, line, 0), 0x33,
+                                       words=words)))
+        ui.autoplay = True
+        card = ui.session.pending
+        self.assertEqual(card.name, 'presentation')
+        while not ui.session.engine.title_screen.ready:
+            ui.tick(16)
+        ui.tick(ui.AUTOPLAY_WAIT_MS)                             # a dialogue's wait is not enough
+        self.assertIs(ui.session.pending, card)
+        ui.tick(ui.AUTOPLAY_TITLE_WAIT_MS - ui.AUTOPLAY_WAIT_MS)
+        self.assertIsNot(ui.session.pending, card)
 
     def test_autoplay_leaves_choices_to_the_player(self):
         ui = self.ui(Resources(branching_program()))

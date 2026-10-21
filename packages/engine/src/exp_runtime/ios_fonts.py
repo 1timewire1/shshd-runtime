@@ -203,6 +203,10 @@ def render_font(library, name):
             # initFonts gives the emphasized face a 0.5-point stroke;
             # atlas padding stores the radius, not CGContext's full width.
             role, stroke = 'TrebuchetMS_Italic16', .25
+        elif name in ('TrebuchetMS_Italic16EmphasisRedEdge', 'TrebuchetMS_Italic16NarrationEmphasis'):
+            # This fork's CoD switch fonts (cod/profile.py EMPHASIS_FONTS). The desktop draws them as vector text
+            # (vector_text.cod_emphasis_font); this atlas, one tint, is their stand-in elsewhere.
+            role, stroke = 'TrebuchetMS_Italic16', .3 if name.endswith('NarrationEmphasis') else .25
         match = re.fullmatch(r'(ArialRoundedMTBold|ArialMT|TrebuchetMS_Bold|TrebuchetMS_Italic)(11|14|15|16|20|22|28|30)', role)
         if match is None:
             raise FontError(f'Unsupported IPA font role: {name}')

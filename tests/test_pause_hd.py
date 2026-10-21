@@ -74,11 +74,11 @@ class HdPauseTests(unittest.TestCase):
         self.settings.update(side_panels=False, hd_backdrop=True)
         self.assertEqual([c[1] for _, c in self.commands() if c[0] == 'pause_toggle'],
                          ['side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'hd_backdrop'])
-        # This player's Autoplay and Disable Choice Timer come after the side panels (owner, 2026-10-21).
+        # This player's Autoplay Dialogue and Disable Choice Timer come after the side panels (owner, 2026-10-21).
         self.settings.update(autoplay=False, disable_choice_timer=True)
         rows = self.menu.option_rows('general', self.settings, self.menu.strings())
         self.assertEqual([(key, label) for _, label, key in rows][:3],
-                         [('side_panels', 'Side Panels'), ('autoplay', 'Autoplay'),
+                         [('side_panels', 'Side Panels'), ('autoplay', 'Autoplay Dialogue'),
                           ('disable_choice_timer', 'Disable Choice Timer')])
         layer, buttons = self.menu.layout(self.settings)
         self.assertLessEqual(max(rect.bottom for rect, _ in buttons), 1024)        # all eight rows fit the frame

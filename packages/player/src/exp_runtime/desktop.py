@@ -131,10 +131,12 @@ class Desktop:
     # `minigame_played` is the game the player chose to play and `ad_asked` the ad choice already asked about.
     skip_minigames = False
     skip_ad_intros = False
-    # Autoplay (this player's option): dialogue, title cards and message panels take no taps; once their text is out
-    # they wait AUTOPLAY_WAIT_MS (the Continue pill's 250 ms expansion, then a beat) and advance by themselves.
+    # Autoplay Dialogue (this player's option): dialogue, title cards and message panels take no taps; once their text
+    # is out they wait AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS) and advance by themselves (owner's
+    # choice, 2026-10-21: longer than the Continue pill's 250 ms expansion, to be safe).
     autoplay = False
-    AUTOPLAY_WAIT_MS = 500
+    AUTOPLAY_WAIT_MS = 1000
+    AUTOPLAY_TITLE_WAIT_MS = 1500
     autoplay_ms = 0
     _disable_choice_timer = False
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
@@ -779,8 +781,8 @@ class Desktop:
                 self._pick(closing['action'], closing['index'])
 
     def _tick_autoplay(self, elapsed_ms):
-        """Autoplay: once a dialogue page's text is out (or a title card or message panel is ready), wait
-        AUTOPLAY_WAIT_MS, then advance it as a tap would. Anything that wants an answer (a choice, name entry, a
+        """Autoplay Dialogue: once a dialogue page's text is out (or a title card or message panel is ready), wait
+        AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS), then advance it as a tap would. Anything that wants an answer (a choice, name entry, a
         mini-game, the portrait picker) waits for the player as usual."""
         action, engine = self.session.pending, self.session.engine
         ready = False
@@ -795,7 +797,8 @@ class Desktop:
             self.autoplay_ms = 0
             return
         self.autoplay_ms += elapsed_ms
-        if self.autoplay_ms >= self.AUTOPLAY_WAIT_MS:
+        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name == 'presentation' else self.AUTOPLAY_WAIT_MS
+        if self.autoplay_ms >= wait:
             self.autoplay_ms = 0
             self._answer()
 

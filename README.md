@@ -147,8 +147,9 @@ original Android menus, where the same switches sit under **Options** and
   grid and word quiz: Win, Lose or Play. Win and Lose finish the game at once
   with that result: football ends at least a touchdown up or down, a quiz with
   the most or the least a quiz can score. It is off by default.
-- **Autoplay** (Options → General) advances dialogue by itself once its text is
-  out; choices, name entry and mini-games still wait for you. Off by default.
+- **Autoplay Dialogue** (Options → General) advances dialogue by itself a second
+  after its text is out (title cards after a second and a half); choices, name
+  entry and mini-games still wait for you. Off by default.
 - **Disable Choice Timer** (Options → General) stops timed choices' clocks and
   adds a last row, Let the Timer Run Out, for scenes that need no answer. Off by
   default.
