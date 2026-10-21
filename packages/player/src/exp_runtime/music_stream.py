@@ -114,7 +114,10 @@ class MusicStream:
             if self.current is not None and self.stored is None and self.fade is None:
                 self.stored = self.position()
                 self.pending = None
-                self.fade = dict(since=now, ms=FADE_MS, store=True)
+                if not self.paused:
+                    self.fade = dict(since=now, ms=FADE_MS, store=True)
+                # A paused stream (an episode left for the main menu and resumed under its pause menu) is silent
+                # already: it stays held, rather than playing for its fade.
         elif self.stored is not None and (self.fade is None or not self.fade['store']) and not held_back:
             position, self.stored = self.stored, None
             if enabled:

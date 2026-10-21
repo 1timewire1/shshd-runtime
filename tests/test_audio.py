@@ -579,6 +579,31 @@ class MusicPlaybackTests(unittest.TestCase):
                     resources.read_asset.assert_called_once_with(8201)
                     self.assertEqual(ui.session.snapshot(), saved)
 
+    def test_a_game_left_for_the_main_menu_comes_back_under_its_pause_menu_silently(self):
+        # Main Menu leaves the episode's cue paused (the game inactive); Continue opens the pause menu over it, and
+        # the cue stays held instead of unpausing to fade out.
+        ui, resources = self.make_ui()
+        with patch('pygame.mixer.music') as music, patch('pygame.time.get_ticks') as clock:
+            clock.return_value = 10000
+            ui._sync_audio()
+            music.play.assert_called_once()
+            ui.active = False
+            clock.return_value = 11000
+            ui._sync_audio()
+            music.pause.assert_called_once()
+            ui.active = True
+            ui.open_pause(sound=False)
+            for now in (11000, 11500, 13000):
+                clock.return_value = now
+                ui._sync_audio()
+            music.unpause.assert_not_called()
+            stored = ui.music_stream.stored
+            self.assertEqual(stored, ui.music_stream.current['start'] + 1.0)    # 1 s played before the pause
+            ui.command(('resume',))
+            ui._sync_audio()
+            self.assertEqual(music.play.call_count, 2)                  # the saved cue, from where it stopped
+            self.assertEqual(music.play.call_args.kwargs['start'], stored)
+
     def test_a_game_resumed_under_its_pause_menu_stays_silent_until_resume(self):
         # SHSEngine::onTick opens the pause menu after a load; the episode's music starts only on Resume (owner, on the
         # iPad: silent until unpausing), never a second of it fading out.
