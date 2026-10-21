@@ -656,7 +656,7 @@ CoD's gear opens its menu engine's windows (logical resource 15, strings in bank
 | Window | Menu | Items |
 | --- | --- | --- |
 | Pause | 24 | Resume (engine 33), Options (queue 20), Help & About (queue 13), Main Menu (engine 34), and an "Alert" item with condition flag 16 |
-| Options | 20 | Vibration (condition 8, hidden on the photographed iPad), Game Music, Music Volume, Sound FX, Sound FX Volume, Play My Music, back |
+| Options | 20 | Vibration (condition 8, hidden on the photographed iPad; this player shows it for its stand-in buzz), Game Music, Music Volume, Sound FX, Sound FX Volume, Play My Music, back |
 | Help & About | 13 | Introduction, Controls, Now Airing, Episodes On Demand, Network, About, back. The pages are menus 0-5. |
 
 **Same structure as SHS HD.** The string ids are SHS HD's (8, 9, 10, 20, 120, 12-15; the pages 133-140, 16 / 0),

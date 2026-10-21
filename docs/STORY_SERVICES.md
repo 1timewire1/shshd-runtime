@@ -736,7 +736,11 @@ player's route to that point; original game assets are not test fixtures.
 
 `FUN_000a3040` requests 1000 ms from the optional vibrator, gated by device and
 settings availability. The desktop has no vibrator backend and completes
-without altering music or sound state. Android's vibrator implementation is
+without altering music, sound or saved state. In its place the desktop player
+sounds a shorter synthesized buzz (400 ms, `vibration.BUZZ_MS`; not an original
+asset) at the Sound FX volume while Sound and the Options Vibration switch (string 11,
+`MenuState.vibration`, shown in this player though the iPad hid it) are on; the engine counts requests in the
+unsaved `EngineState.vibration_serial`. Android's vibrator implementation is
 constructed by `FUN_00102f1c` / `FUN_00108188`, using VibratorAndroidDelegate.
 
 `FUN_00082adc`, called by service 99, contains only two ARM instructions:
@@ -957,3 +961,17 @@ Relationship tests cover icon selection, counts, native cache writes and sounds,
 staggered gains, falling losses, dialogue delays and exact mid-animation restore.
 Extraction of all story scripts is complete; full eight-week playback is not
 yet established.
+
+### Vibration in the iOS games (service 82)
+
+`SHSSoundManager::vibrate` (SHS HD `00053a68`, CoD 1.4.7 `00047054`) calls
+`AudioServicesPlaySystemSound(0xfff)` (the system vibrate) only when the
+player's Vibration option is on (`CSEngine::isVibrationEnabled`, +0x10) and
+`isVibrateAllowed` (+0x20), which the constructor sets when the device model
+name contains "iPhone". So CoD vibrated on an iPhone, and SHS HD, an iPad app,
+never did (its Options hide the row, condition 8). Its episodes still make the
+calls: 301 in the 194 reference HD episodes; 182 of the 186 with a standard
+copy match it script for script (April Fools moves its 3 calls; A Very Tom
+Prince Holiday, Bringing Home Christmas and The Storm Part 1 have fewer). This
+player's buzz (PR #10) works in both games, off by default; real device
+vibration could later use the same calls.

@@ -69,6 +69,7 @@ class MenuState:
         self.library = library
         self.path = library.directory / 'player.json'
         self.music = self.sound = True
+        self.vibration = False         # Options' Vibration switch: service 82's buzz (vibration.py); off by default
         # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
         self.music_volume = self.sound_volume = 50
         self.logging_disabled = False
@@ -111,6 +112,8 @@ class MenuState:
                     self.logging_disabled = data['logging_disabled']
                 if type(data.get('warp_unlocked')) is bool:
                     self.warp_unlocked = data['warp_unlocked']
+                if type(data.get('vibration')) is bool:
+                    self.vibration = data['vibration']
                 if type(data.get('hd_backdrop')) is bool:
                     self.hd_backdrop = data['hd_backdrop']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
@@ -172,7 +175,8 @@ class MenuState:
         return path
 
     def persist(self):
-        data = dict(version=1, selected=self.selected, music=self.music, sound=self.sound, order=self.order,
+        data = dict(version=1, selected=self.selected, music=self.music, sound=self.sound, vibration=self.vibration,
+                    order=self.order,
                     music_volume=self.music_volume, sound_volume=self.sound_volume, logging_disabled=self.logging_disabled,
                     warp_unlocked=self.warp_unlocked, hd_art=self.hd_art,
                     title_language=self.title_language, choice_hints=self.choice_hints,

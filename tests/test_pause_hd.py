@@ -19,7 +19,7 @@ class HdPauseTests(unittest.TestCase):
         self.menu = module.HdPauseMenu.__new__(module.HdPauseMenu)
         self.menu.state = module.PauseState()
         strings = [''] * 273
-        for index, text in {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 13: 'Music Volume',
+        for index, text in {8: 'Pause', 9: 'Main Menu', 10: 'Options', 11: 'Vibration', 12: 'Game Music', 13: 'Music Volume',
                             14: 'Sound FX', 15: 'Sound FX Volume', 16: 'About', 20: 'Resume', 83: 'Episodes On Demand',
                             119: 'Now Airing', 120: 'Help & About', 133: 'Introduction', 134: 'Controls',
                             135: 'Network', 136: 'Welcome. ' * 40, 137: 'Controls text.\n' * 80,
@@ -79,6 +79,13 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(state.screen, 'options')
         self.assertFalse(self.menu.back())
         self.assertEqual(state.screen, 'pause')
+
+    def test_vibration_leads_the_sound_page_when_offered(self):
+        self.menu.state.screen = 'options:sound'
+        self.settings['vibration'] = False
+        buttons = self.commands()
+        self.assertEqual([c[:2] for _, c in buttons][:2], [('pause_toggle', 'vibration'), ('pause_toggle', 'music')])
+        self.assertEqual(self.menu.option_rows('sound', self.settings, self.menu.strings())[0][1], 'Vibration')
 
     def test_title_language_button_and_data_management_on_the_main_menu_only(self):
         state = self.menu.state
@@ -229,7 +236,7 @@ class CodPauseTests(unittest.TestCase):
         self.addCleanup(pygame.quit)
         from exp_runtime.desktop_cod_pause import CodPauseMenu
         strings = [''] * 257
-        for index, text in {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 13: 'Music Volume',
+        for index, text in {8: 'Pause', 9: 'Main Menu', 10: 'Options', 11: 'Vibration', 12: 'Game Music', 13: 'Music Volume',
                             14: 'Sound FX', 15: 'Sound FX Volume', 16: 'About', 20: 'Resume', 83: 'Episodes On Demand',
                             119: 'Now Airing', 120: 'Help & About', 133: 'Introduction', 134: 'Controls',
                             135: 'Network', 136: 'Welcome.'}.items():
@@ -269,6 +276,11 @@ class CodPauseTests(unittest.TestCase):
                           ('pause_slider', 'sound'), ('pause_back',)])
         self.menu.state.screen = 'options:general'
         self.assertEqual([c[:2] for _, c in self.buttons()], [('pause_toggle', 'choice_hints'), ('pause_back',)])
+
+    def test_cods_sound_page_offers_vibration_too(self):
+        self.menu.state.screen = 'options:sound'
+        self.settings['vibration'] = True
+        self.assertEqual([c[:2] for _, c in self.buttons()][0], ('pause_toggle', 'vibration'))
 
     def test_cods_style_over_hds_controls(self):
         # CoD's colours and art; the UIKit controls and the slider's track stay SHS HD's.

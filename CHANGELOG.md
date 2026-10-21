@@ -29,6 +29,13 @@
   - Now Airing and Episodes On Demand now use the game's own menu card, like
     Options and Help & About: no dim behind them, and the back button in the
     card's footer (SHS HD and CoD).
+- **Vibration as a buzz**
+  ([1timewire1/shshd-runtime#10](https://github.com/1timewire1/shshd-runtime/pull/10), by zazatree). When a story
+  asks to vibrate (service 82), the desktop can play a short synthesized buzz in its place, at the Sound FX volume.
+  - Options -> Sound has the games' own Vibration switch, in both games. It is off by default (a quality-of-life
+    addition) and remembered with the other options.
+  - The originals vibrated only on an iPhone, with Vibration on: CoD on the iPhone; SHS HD, an iPad app, never did,
+    though its episodes still make the calls (docs/STORY_SERVICES.md).
 
 ### Fixed
 

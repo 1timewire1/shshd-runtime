@@ -402,7 +402,7 @@ class HdPauseMenu:
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'hd_backdrop'),
+        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'hd_backdrop'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""
@@ -530,8 +530,9 @@ class HdPauseMenu:
         """[(kind, label, key)] of an Options category: 'switch', 'slider', 'cycle' or 'action' rows, those whose
         setting the host offers."""
         if category == 'sound':
-            return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
-                    ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')]
+            vibration = [('switch', strings[11], 'vibration')] if 'vibration' in settings else []
+            return vibration + [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
+                                ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')]
         if category == 'general':
             rows = [('switch', SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
             if 'title_language' in settings:
