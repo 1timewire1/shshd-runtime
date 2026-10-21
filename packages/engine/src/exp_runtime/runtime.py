@@ -1223,7 +1223,8 @@ class Session:
                             decorations.change(motion['expression'], motion['presentation_ms'] - EXPRESSION_MS)
                     motion.setdefault('expression_transition', track)
                     motion.setdefault('expression_decorations', asdict(decorations))
-            if state['content'] != resources.identity:
+            same = getattr(resources, 'same_content', None)
+            if not (same(state['content']) if same else state['content'] == resources.identity):
                 raise SaveError('Save requires the same imported game and episode')
             if type(state['scene']) is not int or not 0 <= state['scene'] <= 65535:
                 raise SaveError('Invalid saved scene ID')
@@ -1259,10 +1260,12 @@ class Session:
                 # A save made with or without the HD bundle, loaded the other way: an idle transition takes this
                 # library's model.
                 engine.scene_transition = wanted()
+            if engine.scene_transition is None and wanted is not None:
+                # CoD had no transition model until this fork's 1.0.2 (fade_transition), so its version 27 saves from
+                # before it hold none: nothing was queued, and the model starts idle.
+                engine.scene_transition = wanted()
             if engine.scene_transition is not None:
                 engine.scene_transition.validate()
-            elif wanted is not None:
-                raise SaveError('Missing game transition state')
             if engine.music_playback is not None:
                 engine.music_playback.validate()
             for sound in engine.sound_playback:

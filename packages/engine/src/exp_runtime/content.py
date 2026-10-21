@@ -609,7 +609,7 @@ class ContentLibrary:
         m = self.manifest
         if not isinstance(m, dict) or m.get('profile') not in PROFILES:
             raise ContentError('Unsupported content library format or game profile')
-        self.profile = m['profile']
+        self.profile = self.recorded_profile = m['profile']
         self.game_id, self.kind = PROFILES[self.profile]
         legacy = m.get('format') == 'shs-content-library'
         if legacy:
@@ -1175,6 +1175,15 @@ class EpisodeResources:
         # checked on open; script/layout/font identities stay with the IPA.
         return dict(profile=self.library.profile, episode_sha256=self.record['sha256'],
                     **{self.library.kind + '_sha256': self.library.manifest[self.library.kind]['sha256']})
+
+    def same_content(self, content) -> bool:
+        """Whether a save's `content` is this episode's. A CoD library from shshd-runtime 1.0.x is recorded under the paid
+        layout and opens under its IPA's own (ContentLibrary.__init__), so the saves made before carry the recorded
+        profile with the same IPA and episode."""
+        if content == self.identity:
+            return True
+        recorded = getattr(self.library, 'recorded_profile', self.library.profile)
+        return recorded != self.library.profile and content == dict(self.identity, profile=recorded)
 
     def read_ui_resource(self, role: int) -> bytes:
         return self.library.read_ui_resource(role)

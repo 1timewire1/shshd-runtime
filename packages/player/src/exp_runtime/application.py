@@ -1433,7 +1433,10 @@ class Application:
             if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.command(('dismiss',))
             elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
-                self._pointer_event(event)
+                if self.screen == 'picker' and self.picker is not None:
+                    self._picker_message_pointer(event)
+                else:
+                    self._pointer_event(event)
             return True
         if not self.ready:
             return True
@@ -1499,6 +1502,17 @@ class Application:
             self._click_sound()
             self._attempt(lambda: self.picker_command(command))
         return True
+
+    def _picker_message_pointer(self, event):
+        """The picker draws the app's message as its own alert (render_picker), whose dimmed layer leaves only its OK
+        to hit: that closes the message."""
+        picker = self.picker
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            picker.pointer_down(self.picker_point(event.pos))
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if picker.pointer_up(self.picker_point(event.pos)) == ('dismiss',):
+                self._click_sound()
+                self.command(('dismiss',))
 
     def picker_command(self, command):
         picker, kind = self.picker, command[0]

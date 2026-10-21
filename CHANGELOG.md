@@ -169,6 +169,15 @@
 - **A two-line speaker name no longer overflows the box**
   ([#11](https://github.com/1timewire1/shshd-runtime/issues/11), "Spud The Stud"). The tall name's extra 40 units
   hold no body lines, so such a page holds 5 lines, not 7, and the rest goes to the next page.
+- **Cause of Death saves from 1.0.1 load again.** Since the v0.6.1 merge, a
+  CoD library recorded by 1.0.x opens under its IPA's own layout, and its
+  earlier saves (same IPA, same episode, the recorded layout's name) were
+  turned away as another game's and set aside as `.corrupt`. They load now, as
+  do CoD saves made before CoD had its fade model. Rename a set-aside
+  `<episode>.shs-auto.json.corrupt` in the library's `saves` folder back to
+  `.shs-auto.json` to restore it.
+- **The "save file was corrupt" notice's OK button responds to clicks** in the
+  episode list (Enter already worked).
 - **The portrait ring no longer runs over the text after a fast tap** (both
   games). A tap during typing calls `SHSUIDialog::stopAnimation` (SHS HD
   `0004440c`, CoD `0003b124`), which clips the ring against the box at once.

@@ -188,6 +188,16 @@ class SceneTransitionTests(unittest.TestCase):
         self.assertEqual(restored.engine.scene_value, 20)
         self.assertEqual(restored.engine.scene_transition.random_state, 1)
 
+    def test_a_version_27_save_from_before_the_cod_fade_model_loads_idle(self):
+        # Saved between the v0.6.1 merge and the fade model: CoD had no transition, so the save holds none.
+        session = story(20)
+        state = session.snapshot()
+        state['engine']['scene_transition'] = None
+        restored = Session.from_snapshot(session.resources, state)
+        self.assertFalse(restored.transitioning)
+        self.assertEqual(restored.engine.scene_transition.phase, 0)
+        self.assertEqual(restored.vm.snapshot(), session.vm.snapshot())
+
     def test_invalid_saved_phase_result_clock_or_random_state_is_rejected(self):
         session = story()
         session.answer()

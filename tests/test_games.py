@@ -166,6 +166,15 @@ class GameLibraryTests(unittest.TestCase):
         with ContentLibrary(path) as library:
             self.assertEqual(library.profile, COD_IOS_FREE)
             self.assertEqual(MenuStrings.load(library)[125], 'CoD string 117')
+            # Its saves from then carry the recorded profile; they are this library's (same IPA and episode).
+            episode = library.open_episode('Volume_One.exp')
+            session = Session(episode); session.advance()
+            state = session.snapshot()
+            state['content'] = dict(state['content'], profile=COD_IOS)
+            self.assertEqual(Session.from_snapshot(episode, state).pending.name, session.pending.name)
+            state['content'] = dict(state['content'], episode_sha256='0' * 64)
+            with self.assertRaisesRegex(SaveError, 'same imported game'):
+                Session.from_snapshot(episode, state)
         (path / 'library.json').write_text(json.dumps(dict(manifest, profile='shs-ios-assets-v1')))
         with self.assertRaises(ContentError):
             ContentLibrary(path)
