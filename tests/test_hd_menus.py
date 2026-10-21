@@ -334,6 +334,20 @@ class PickerKeyTests(unittest.TestCase):
         self.assertEqual(picker.key(pygame.K_SPACE), ('close',))
         self.assertEqual(picker.key(pygame.K_ESCAPE), ('close',))
 
+    def test_the_popup_and_alert_zoom_from_when_each_first_shows(self):
+        from unittest.mock import patch
+        picker, record, pygame = self.picker()
+        picker.popup = record
+        with patch('pygame.time.get_ticks', return_value=1000):
+            self.assertEqual(picker.overlay_ms(), 0)
+        with patch('pygame.time.get_ticks', return_value=1250):
+            self.assertEqual(picker.overlay_ms(), 250)
+            picker.popup, picker.alert = None, ('Title', 'Text')
+            self.assertEqual(picker.overlay_ms(), 0)
+        with patch('pygame.time.get_ticks', return_value=1300):
+            picker.alert = ('Title', 'Text')
+            self.assertEqual(picker.overlay_ms(), 50)
+
     def test_i_opens_the_highlighted_episodes_info_card(self):
         picker, record, pygame = self.picker()
         picker.popup = None

@@ -350,8 +350,5 @@ class HdEpisodeList(HdEpisodePicker):
             self.hits.append((back, ('back',)))
             if self.show_restore:
                 self.hits.append((restore, ('restore',)))
-        if self.popup:
-            self.draw_popup(layer, self.popup, strings)
-        elif self.alert:
-            self.draw_message(layer)
+        self.draw_overlay(layer, strings)
         return layer

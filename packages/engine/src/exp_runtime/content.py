@@ -830,6 +830,33 @@ class ContentLibrary:
                     return None
         return None
 
+    def app_icon(self):
+        if self.kind == 'ipa':
+            try:
+                info = plistlib.loads(_zip_read(self.package, self.app_root + 'Info.plist'))
+            except (ContentError, ValueError, TypeError, OverflowError, ExpatError):
+                return None
+            listed = [info.get('CFBundleIconFile'), *info.get('CFBundleIconFiles', ())]
+            for icons in (info.get('CFBundleIcons'), info.get('CFBundleIcons~ipad')):
+                if isinstance(icons, dict) and isinstance(icons.get('CFBundlePrimaryIcon'), dict):
+                    listed += icons['CFBundlePrimaryIcon'].get('CFBundleIconFiles', ())
+            stems = {name.removesuffix('.png') for name in listed if isinstance(name, str) and name}
+            wanted = {self.app_root + stem + suffix for stem in stems for suffix in ('.png', '@2x.png')}
+            members = [name for name in self.package.namelist() if name in wanted]
+        else:
+            members = [name for name in self.package.namelist()
+                       if re.fullmatch(r'res/drawable[a-z-]*/icon\.png', name)]
+        from .cgbi import CgBIError, decode
+        best = None
+        for name in sorted(members):
+            try:
+                image = decode(_zip_read(self.package, name))
+            except (CgBIError, ContentError):
+                continue
+            if best is None or image.width * image.height > best.width * best.height:
+                best = image
+        return best
+
     def hd_asset(self, resource_id: int) -> bytes | None:
         """The verified HD-native equivalent of a low-id asset, if an HD app
         bundle was imported. Two disjoint cases: HD_ASSET_MAP is a small,

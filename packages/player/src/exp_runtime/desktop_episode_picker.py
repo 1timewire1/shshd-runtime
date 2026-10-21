@@ -12,7 +12,9 @@ Everything is in frame points (768 x 1024); the canvas is drawn at twice that.
   bottom its saved-game screenshot under mask 13 (216 x 136, bottom-aligned), the screenshot sitting 50 points below
   the tile's top; the masks hide where they are 255. Either half opens the resume popup.
 * The popup dims the screen and centers `popupBackground.png` (502 x 444): "New Game" over the preview at card
-  (22, 44), "Continue" over the screenshot at (260, 44), and a blue back button at (22, 359).
+  (22, 44), "Continue" over the screenshot at (260, 44), and a blue back button at (22, 359). It and the alerts zoom
+  in from the centre as the HD menus' windows do (`pause_scale`, 400 ms) while the dim fades in: this fork's choice
+  (owner, 2026-10-21), not measured on the iPad.
 * The bottom bar is a blue arrow button (layout 70/71 with pack 32 frame 12) at (97, 965) and an orange "Restore"
   button (layout 72/73) mirrored at 768 - 97 - 156; Restore shows the app's "Restore Not Necessary" message.
 * The backdrop is the main menu's: wood (resource 6), photo (9), ribbon (8) and title (7), art 640 wide shown at
@@ -31,6 +33,7 @@ from io import BytesIO
 
 import pygame
 
+from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .episode_picker import EpisodeInfo
 from .episode_thumbnails import BUNDLE
 from .hd_layout import HdLayouts
@@ -59,6 +62,7 @@ STRING_RESTORE_TITLE, STRING_RESTORE_TEXT = 191, 192
 DRAG_THRESHOLD = 10
 SCROLL_STEP = 80
 BACKDROP_DIM_ALPHA = 90       # unverified guess (see module docstring); the popup/alert dim to 140 on top of this
+DIM_ALPHA = 140
 ROW_LABEL_POINTS = 14         # unverified (see module docstring); drawn in the row's empty top gutter, TILE_Y tall
 # The episode info button and card (this fork; no native screen). In the lists it is the play / pause icon with an
 # "i"; on a tile it is the SD mark's dark plate (owner, 2026-10-15) holding an "i" in a ring, where that mark sits.
@@ -471,11 +475,40 @@ class HdEpisodePicker(HdUi):
             self.hits.append((back, ('back',)))
             if self.show_restore:
                 self.hits.append((restore, ('restore',)))
+        self.draw_overlay(layer, strings)
+        return layer
+
+    overlay_shown = None
+    overlay_opened = 0
+
+    def overlay_ms(self):
+        shown = ('popup', self.popup['id']) if self.popup else ('alert', self.alert) if self.alert else None
+        now = pygame.time.get_ticks()
+        if shown != self.overlay_shown:
+            self.overlay_shown, self.overlay_opened = shown, now
+        return now - self.overlay_opened
+
+    def draw_overlay(self, layer, strings):
+        if not (self.popup or self.alert):
+            self.overlay_shown = None
+            return
+        ms = self.overlay_ms()
+        if ms >= PAUSE_OPEN_MS:
+            self.dim(layer)
+            self.draw_overlay_card(layer, strings)
+            return
+        self.dim(layer, alpha=round(DIM_ALPHA * min(1.0, ms / PAUSE_OPEN_MS)))
+        card = pygame.Surface(layer.get_size(), pygame.SRCALPHA).convert_alpha()
+        self.draw_overlay_card(card, strings)
+        scale = pause_scale(ms)
+        card = pygame.transform.smoothscale(card, tuple(max(1, round(length * scale)) for length in card.get_size()))
+        layer.blit(card, card.get_rect(center=layer.get_rect().center))
+
+    def draw_overlay_card(self, layer, strings):
         if self.popup:
             self.draw_popup(layer, self.popup, strings)
-        elif self.alert:
+        else:
             self.draw_message(layer)
-        return layer
 
     def draw_message(self, layer):
         """The open alert: an episode's info card or a (title, text) message."""
@@ -484,9 +517,9 @@ class HdEpisodePicker(HdUi):
         else:
             self.draw_alert(layer, *self.alert)
 
-    def dim(self, layer):
+    def dim(self, layer, alpha=DIM_ALPHA):
         shade = pygame.Surface(layer.get_size(), pygame.SRCALPHA)
-        shade.fill((0, 0, 0, 140))
+        shade.fill((0, 0, 0, alpha))
         layer.blit(shade, (0, 0))
         self.hits = []
 
@@ -499,7 +532,6 @@ class HdEpisodePicker(HdUi):
                    (CARD_TOP_LEFT[0] * S, CARD_TOP_LEFT[1] * S))
 
     def draw_popup(self, layer, record, strings):
-        self.dim(layer)
         self.draw_card(layer)
         left, top = CARD_TOP_LEFT
         preview = self.model.preview(record)
@@ -523,7 +555,6 @@ class HdEpisodePicker(HdUi):
         self.hits.insert(0, (pygame.Rect(0, 0, *FRAME), ('close',)))
 
     def draw_alert(self, layer, title, text):
-        self.dim(layer)
         self.draw_card(layer)
         left, top = CARD_TOP_LEFT
         font = self.font(32)
@@ -540,7 +571,6 @@ class HdEpisodePicker(HdUi):
     def draw_info(self, layer, info):
         """An episode's info card on the alert's card: its title, airdate and price, then the store description at
         the largest size that fits above the OK button."""
-        self.dim(layer)
         self.draw_card(layer)
         left, top = CARD_TOP_LEFT
         width = CARD[0] - 60

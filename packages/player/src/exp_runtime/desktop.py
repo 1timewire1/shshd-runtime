@@ -11,7 +11,7 @@ import webbrowser
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 from . import graphics as pygame
 
-from .app_icon import icon_surface
+from .app_icon import set_window_icon
 from .content import ContentError
 from .audio import music_cue
 from .games import GAMES, game_id
@@ -216,7 +216,7 @@ class Desktop:
         # A capture draws one clean frame into `window` (a plain surface): no display, caption, or edge bar.
         self.capture = capture
         if window is None:
-            pygame.display.set_icon(icon_surface())
+            set_window_icon(session.resources.library)
         self.window = window if window is not None else pygame.display.set_mode(DEFAULT_WINDOW_SIZE, pygame.RESIZABLE)
         self.on_main_menu = on_main_menu
         self.on_menu_page = on_menu_page
@@ -1647,6 +1647,21 @@ class Desktop:
             break
         return True
 
+    def open_pause(self, *, sound=True):
+        if self.menu_open:
+            return
+        self.pause_hd.reset()
+        self.menu_focus = None
+        self.picker_pointer_down = False
+        if self.session.engine.word_grid:
+            self.session.grid_pointer('cancel')
+        self.menu_open = True
+        self.session.engine.faceplace_toast = None
+        self.pause_elapsed_ms = 0
+        self._sync_music()
+        if sound:
+            self._menu_sound(opening=True)
+
     def command(self, command):
         self.press.cancel()
         self.gear_pointer_down = False
@@ -1706,20 +1721,7 @@ class Desktop:
         if self.menu_open and kind in ('save', 'load'):
             self._menu_sound()
         if kind == 'menu':
-            if self.menu_open:
-                return
-            self.pause_hd.reset()
-            self.menu_focus = None
-            self.picker_pointer_down = False
-            if self.session.engine.word_grid:
-                self.session.grid_pointer('cancel')
-            self.menu_open = True
-            # Real device confirmed: pausing with the settings menu also
-            # dismisses a showing Faceplace toast (see FaceplaceToast).
-            self.session.engine.faceplace_toast = None
-            self.pause_elapsed_ms = 0
-            self._sync_music()
-            self._menu_sound(opening=True)
+            self.open_pause()
         elif kind == 'resume':
             self.menu_open = False
             self._sync_music()

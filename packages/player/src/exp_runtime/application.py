@@ -15,7 +15,7 @@ import tempfile
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 from . import graphics as pygame
 
-from .app_icon import icon_surface
+from .app_icon import icon_surface, set_window_icon
 from .app_info import PROJECT_URL
 from .content import ContentError, ContentLibrary, import_game, is_bundled
 from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
@@ -69,6 +69,7 @@ class Application:
         default_game = next(iter(GAMES))
         pygame.display.init()
         pygame.font.init()
+        set_window_icon()       # before the window opens, so it never shows pygame's default icon
         # Wider than the 2:3 menu/UI layout so an HD episode's background can
         # show real extra content around it once one is opened (see Desktop).
         self.window = pygame.display.set_mode(DEFAULT_WINDOW_SIZE, pygame.RESIZABLE)
@@ -239,8 +240,12 @@ class Application:
         self.renderer = MenuRenderer()
         self.screen, self.history, self.message = 'setup', [], ''
         pygame.display.set_caption(self.game_title)
-        if self.directory.exists():
-            self.open_library(self.directory)
+        try:
+            if self.directory.exists():
+                self.open_library(self.directory)
+        finally:
+            if self.library is None:
+                set_window_icon()
 
     def release_library(self, *, checkpoint=True):
         # Do not discard a live session if its checkpoint cannot be written.
@@ -292,6 +297,7 @@ class Application:
         self.transition_age = 200
         pygame.key.stop_text_input()
         pygame.display.set_caption(APP_NAME)
+        set_window_icon()
 
     @property
     def busy(self):
@@ -350,6 +356,7 @@ class Application:
         self.release_library(checkpoint=False)
         self.directory, self.library = Path(directory), library
         self.selected_game = library.game_id
+        set_window_icon(library)
         self.state, self.renderer, self.game = state, renderer, None
         self.processes[process_key] = state.process
         if 'SHS_HD_ART' not in os.environ:
@@ -392,6 +399,7 @@ class Application:
         self.selected_game = None
         self.renderer = MenuRenderer()
         pygame.display.set_caption(APP_NAME)
+        set_window_icon()
         self.show('bulk')
 
     def _open_staged(self, result):
@@ -881,6 +889,7 @@ class Application:
         self.game._sync_music()
         self.refresh_saves()
 
+    skip_elapsed = False        # the next frame's time is not counted (see picker_command's Continue)
     autosave_age = 0            # ms of play since the game was last saved (`SHSEngine +0x649d0`)
     unsaved_entry = False       # the game has not been saved since it was entered (`SHSEngine +0x649ce`)
 
@@ -1273,6 +1282,8 @@ class Application:
             elif self.picker_over_menu():
                 self.picker_zoom = min(PAUSE_OPEN_MS, self.picker_zoom + elapsed)
                 self.shell.tick(elapsed / 1000)                # the buttons sliding out behind it
+            elif self.screen == 'picker' and self.shell is not None and self.shell.overlay_active:
+                self.shell.tick_window(elapsed / 1000)         # "Delete Saved Game?" zooming in
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)
@@ -1554,6 +1565,11 @@ class Application:
             picker.popup = None
             self.selected = command[1]
             self.start(resume=kind == 'continue')
+            if kind == 'continue' and self.screen == 'game' and self.game:
+                # the original game resumes paused. The pause menu zooms open without gear sound
+                self.game.open_pause(sound=False)
+                self.skip_elapsed = True
+
     def _pointer_event(self, event):
         if event.type != pygame.MOUSEMOTION and event.button != 1:
             return
@@ -1587,6 +1603,8 @@ class Application:
         try:
             while running:
                 elapsed = clock.tick(60)
+                if self.skip_elapsed:
+                    elapsed, self.skip_elapsed = 0, False
                 with frame_log.section('render'):
                     self.render()
                 token = self.input_token()

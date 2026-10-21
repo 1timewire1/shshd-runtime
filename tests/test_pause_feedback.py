@@ -158,3 +158,23 @@ class PauseFeedbackTests(unittest.TestCase):
                 self.assertEqual(ui.session.snapshot(), before)
                 self.assertEqual([c.args[0] for c in ui.session.resources.library.read_asset.call_args_list],
                                  [opening, click])
+
+    def test_picker_continue_resumes_paused_without_the_gear_sound(self):
+        from exp_runtime.application import Application
+        for kind, paused in (('continue', True), ('new', False)):
+            with self.subTest(kind=kind):
+                app = Application.__new__(Application)
+                app.shell, app.saved = None, set()
+                app.picker = SimpleNamespace(popup=object())
+                app.game = self.ui()
+                app.game._menu_sound = Mock()
+
+                def start(*, resume, app=app):
+                    app.screen = 'game'
+                app.start = start
+                app.picker_command((kind, 'episode'))
+                self.assertIsNone(app.picker.popup)
+                self.assertEqual(app.game.menu_open, paused)
+                self.assertEqual(app.game.pause_elapsed_ms == 0, paused)     # the zoom starts from its first frame
+                self.assertEqual(app.skip_elapsed, paused)
+                app.game._menu_sound.assert_not_called()                      # resumed paused with no gear sound
