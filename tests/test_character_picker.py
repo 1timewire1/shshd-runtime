@@ -39,6 +39,24 @@ class CharacterPickerTests(unittest.TestCase):
         s.advance()
         self.assertEqual(s.answer().request.args, (0,))  # Initial portrait is selected.
 
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_left_and_right_bring_the_previous_or_next_portrait_to_the_front(self):
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        from exp_runtime.desktop import Desktop
+        import pygame
+        self.addCleanup(pygame.quit)
+        s = Session(picker_resources(count=3))
+        s.advance()
+        ui = Desktop(s, audio=False)
+        ui.viewport = pygame.Rect(0, 0, 480, 720)
+        press = lambda key: ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key, mod=0, unicode=''))
+        press(pygame.K_RIGHT)
+        self.assertEqual(s.engine.character_picker.selected, 1)
+        press(pygame.K_LEFT); press(pygame.K_LEFT)
+        self.assertEqual(s.engine.character_picker.selected, 2)     # wraps round
+        press(pygame.K_RETURN)
+        self.assertEqual(s.engine.result_cells[0], 2)
+
     def test_each_game_plays_its_own_swap_and_confirm_sounds(self):
         for game, sounds in (('shs', (8013, 8010)), ('cod', (8005, 8005))):
             with self.subTest(game=game):

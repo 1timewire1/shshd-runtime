@@ -1789,6 +1789,13 @@ class Desktop:
                 self.command(('choose', self.choice_focus))
             elif event.key == pygame.K_RETURN or (event.key == pygame.K_SPACE and action and action.name != 'text_input'):
                 self.command(('continue',))
+            elif action and action.name == 'character_picker' and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                # Left / Right bring the previous / next portrait (by its original place) to the front, as tapping it
+                # does; Enter confirms. Keyboard play is this player's addition.
+                picker = self.session.engine.character_picker
+                if picker is not None and picker.characters:
+                    step = 1 if event.key == pygame.K_RIGHT else -1
+                    self.command(('choose', (picker.selected + step) % len(picker.characters)))
             elif action and action.name == 'character_picker' and pygame.K_1 <= event.key <= pygame.K_5:
                 if event.key - pygame.K_1 < len(self.session.engine.character_picker.characters):
                     self.command(('choose', event.key - pygame.K_1))

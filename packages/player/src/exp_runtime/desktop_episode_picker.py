@@ -97,6 +97,7 @@ class HdEpisodePicker(HdUi):
         self.selected = None
         self.keyboard = False
         self.popup = None            # the record whose resume popup is open
+        self.popup_focus = None      # the popup's highlighted command, while the keyboard drives it
         self.alert = None            # (title, text)
         self.hits = []
         self.pressed = None
@@ -197,6 +198,7 @@ class HdEpisodePicker(HdUi):
         self.pressed = command
         self.drag = dict(start=point, last=point, mode=None, row=self.row_at(point))
         self.keyboard = False
+        self.popup_focus = None
 
     def row_at(self, point):
         index = int((point[1] + self.scroll_y) // ROW_HEIGHT)
@@ -236,14 +238,49 @@ class HdEpisodePicker(HdUi):
             self.scroll_y -= dy * SCROLL_STEP
         self.clamp()
 
+    INFO_KEY = pygame.K_i            # the highlighted episode's info card (an episode that has one)
+
+    def popup_commands(self):
+        """The popup's New Game, Continue and back, in keyboard order."""
+        record = self.popup
+        return [('new', record['id']), ('continue', record['id']), ('close',)]
+
+    def popup_key(self, key):
+        """The New Game / Continue popup's keys: arrows or Tab move a highlight over its two cards and its back button,
+        Enter or Space taps the highlighted one, Escape closes it. Continue is highlighted first."""
+        if key == pygame.K_ESCAPE:
+            return ('close',)
+        commands = self.popup_commands()
+        if self.popup_focus not in commands:
+            if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN, pygame.K_TAB):
+                self.popup_focus = commands[1]
+            elif key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                self.popup_focus = commands[1]
+            return None
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            return self.popup_focus
+        step = (-1 if key in (pygame.K_LEFT, pygame.K_UP) or key == pygame.K_TAB and pygame.key.get_mods() & pygame.KMOD_SHIFT
+                else 1 if key in (pygame.K_RIGHT, pygame.K_DOWN, pygame.K_TAB) else 0)
+        if step:
+            self.popup_focus = commands[(commands.index(self.popup_focus) + step) % len(commands)]
+        return None
+
+    def info_key(self):
+        """`I` on a highlighted episode with an info card: that card."""
+        if self.keyboard and self.selected is not None:
+            record = next((r for row in self.model.rows for r in row.episodes if r['id'] == self.selected), None)
+            if record is not None and self.model.has_info(record):
+                return ('info', record['id'])
+        return None
+
     def key(self, key):
         """A keyboard navigation key -> a command, or None."""
         if self.alert:
             return ('dismiss',) if key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE) else None
         if self.popup:
-            if key == pygame.K_ESCAPE:
-                return ('close',)
-            return None
+            return self.popup_key(key)
+        if key == self.INFO_KEY:
+            return self.info_key()
         if key not in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_SPACE):
             return None
         if not self.model.rows:
@@ -475,8 +512,11 @@ class HdEpisodePicker(HdUi):
             text = font.render(label, True, self.TEXT_COLOR)
             layer.blit(text, text.get_rect(midbottom=((x + TILE[0] / 2) * S, (top + 40) * S)))
             self.hits.append((pygame.Rect(x, top + 44, *TILE), command))
+            if self.popup_focus == command:          # the keyboard's highlight, as on the grid's tiles
+                pygame.draw.rect(layer, (255, 255, 255), ((x - 3) * S, (top + 44 - 3) * S, (TILE[0] + 6) * S,
+                                                          (TILE[1] + 6) * S), 2 * S, border_radius=4 * S)
         back = pygame.Rect(left + 22, top + 359, *BUTTON_SIZE)
-        self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('close',))
+        self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('close',) or self.popup_focus == ('close',))
         self.hits.append((back, ('close',)))
         # A click outside the card closes it.
         self.hits.insert(0, (pygame.Rect(0, 0, *FRAME), ('close',)))

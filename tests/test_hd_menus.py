@@ -313,6 +313,37 @@ class EpisodeListCardTests(unittest.TestCase):
         self.assertEqual(picker.begin_layer(False, dim=False).get_at((5, 5)), (0, 0, 0, 0))
 
 
+class PickerKeyTests(unittest.TestCase):
+    def picker(self):
+        import pygame
+        from exp_runtime.desktop_episode_picker import HdEpisodePicker
+        picker = HdEpisodePicker.__new__(HdEpisodePicker)
+        record = dict(id='ep')
+        picker.alert, picker.keyboard, picker.selected, picker.popup_focus = None, True, 'ep', None
+        picker.model = SimpleNamespace(rows=[SimpleNamespace(episodes=[record])], has_info=lambda r: True)
+        return picker, record, pygame
+
+    def test_the_new_game_continue_popup_takes_arrows_and_enter(self):
+        picker, record, pygame = self.picker()
+        picker.popup = record
+        self.assertIsNone(picker.key(pygame.K_RIGHT))           # the first arrow highlights Continue
+        self.assertEqual(picker.popup_focus, ('continue', 'ep'))
+        picker.key(pygame.K_LEFT)
+        self.assertEqual(picker.key(pygame.K_RETURN), ('new', 'ep'))
+        picker.key(pygame.K_RIGHT); picker.key(pygame.K_RIGHT)
+        self.assertEqual(picker.key(pygame.K_SPACE), ('close',))
+        self.assertEqual(picker.key(pygame.K_ESCAPE), ('close',))
+
+    def test_i_opens_the_highlighted_episodes_info_card(self):
+        picker, record, pygame = self.picker()
+        picker.popup = None
+        self.assertEqual(picker.key(pygame.K_i), ('info', 'ep'))
+        picker.model.has_info = lambda r: False
+        self.assertIsNone(picker.key(pygame.K_i))
+        picker.model.has_info, picker.keyboard = (lambda r: True), False
+        self.assertIsNone(picker.key(pygame.K_i))               # nothing highlighted yet
+
+
 class BootTests(unittest.TestCase):
     def test_the_flash_lasts_its_delay_plus_its_fade(self):
         self.assertAlmostEqual(FLASH_TOTAL, 0.6)

@@ -177,6 +177,9 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | F5 (also Pause → Options → Save without the HD app, and the fallback screen's Save button) | Replace the current episode's manual save slot |
 | F9 (also Pause → Options → Load, and its Load button) | Restore that slot |
 | Arrow keys, Enter or Space | Select and pick a choice, or a pause or main menu item. Left/Right adjust a volume slider |
+| Arrow keys, Enter or Space (episode pickers) | Move between episodes; in the New Game / Continue popup, between its two cards and back (Continue first) |
+| I (episode pickers) | Open the highlighted episode's info card, where it has one (CoD with its store listing) |
+| Left / Right (portrait picker) | Bring the previous / next portrait to the front; Enter confirms |
 | Wheel, arrow keys, Page Up/Down | Scroll long option lists and other non-dialogue screens |
 | Escape | Open/close the pause menu during play; go back within application menus |
 | Main Menu / Close window | Save a separate automatic checkpoint and return to the menu / exit |
@@ -626,7 +629,7 @@ They retain the saved VM frame and, for version 2/3, the page offset.
 
 Version 5 adds `character_picker`, `scene_badge`, `next_dialogue_wobble`, and dialogue animation `wobble_direction`. These hold copied character IDs, their index permutation, per-portrait 50 ms motions, the 200 ms scene-label entrance, and the next dialogue rotation. The complete typed field schema is in [STORY_SERVICES.md](STORY_SERVICES.md#save-schema-additions-version-5). Older saves receive null/false/zero defaults; a retained unsupported service-78 frame upgrades to a working selector without replaying earlier choices. Existing dialogue checkpoints retain their progress.
 
-For portrait selection, click and release a portrait, then click the checkmark. Keys 1–5 select the original portrait index; Enter/Space confirms. `Session.answer(index)` selects without completing, and `Session.answer()` confirms. Animation freezes while paused or unfocused.
+For portrait selection, click and release a portrait, then click the checkmark. Keys 1–5 select the original portrait index, Left / Right the previous / next one; Enter/Space confirms. `Session.answer(index)` selects without completing, and `Session.answer()` confirms. Animation freezes while paused or unfocused.
 
 Version 6 adds the service-91 loading gate and relationship indicator animation
 state. A loading screen continues automatically only when active time exceeds

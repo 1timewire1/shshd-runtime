@@ -169,9 +169,9 @@ class HdEpisodeList(HdEpisodePicker):
         if self.alert:
             return ('dismiss',) if key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE) else None
         if self.popup:
-            if key == pygame.K_ESCAPE:
-                return ('close',)
-            return None
+            return self.popup_key(key)
+        if key == self.INFO_KEY:
+            return self.info_key()
         if key not in (pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_SPACE):
             return None
         episodes = [record for row in self.model.rows if row.key in self.expanded for record in row.episodes]

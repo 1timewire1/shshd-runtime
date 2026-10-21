@@ -8,6 +8,8 @@
   ([1timewire1/shshd-runtime#6](https://github.com/1timewire1/shshd-runtime/pull/6), by zazatree). In choices, the
   pause menu, the main menu and its windows: arrows / Tab move a highlight, Enter or Space activates, Left / Right
   move a volume slider (docs/RUNTIME.md). A desktop addition; the originals are touch-only.
+  - Also the episode pickers' New Game / Continue popup (arrows, Enter; Continue highlighted first), `I` for the
+    highlighted episode's info card, and Left / Right in the portrait picker.
 - **Menu animations** ([1timewire1/shshd-runtime#9](https://github.com/1timewire1/shshd-runtime/pull/9),
   by zazatree).
   - "Play with sound?", Options, Help & About and the pause menu zoom in.

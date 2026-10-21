@@ -1400,6 +1400,8 @@ class Application:
             record = picker.model.by_id[command[1]]
             if command[1] in self.saved:
                 picker.popup = record
+                # Opened from the keyboard: Continue starts highlighted (the popup's own keys move it).
+                picker.popup_focus = ('continue', command[1]) if picker.keyboard else None
             else:
                 self.selected = command[1]
                 self.start(resume=False)
