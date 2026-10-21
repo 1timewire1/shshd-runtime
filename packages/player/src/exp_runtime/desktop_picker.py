@@ -1,6 +1,7 @@
 """Original service-78 portrait layout, artwork, and confirmation control."""
 from functools import lru_cache
 
+from .graphics import faded
 from . import graphics as pygame
 from .desktop_pause import draw_pause_gear
 
@@ -52,7 +53,7 @@ class CharacterPickerRenderer:
             x, y, scale = motion.pose
             layer = pygame.transform.smoothscale(layer, (max(1, round(layer.get_width() * scale)),
                                                         max(1, round(layer.get_height() * scale))))
-            layer.set_alpha(motion.opacity)
+            layer = faded(layer, motion.opacity)
             self.canvas.blit(layer, (round(x + ox * scale), round(y + oy * scale)))
         title = self.text.layout('PajamaHip26', session.pending.details['text'], 300,
                                  TextStyle(16, -16, (255, 255, 255)))
@@ -148,7 +149,7 @@ class HdCharacterPickerRenderer:
             px, py, scale = motion.pose
             layer = pygame.transform.smoothscale(layer, (max(1, round(layer.get_width() * scale)),
                                                         max(1, round(layer.get_height() * scale))))
-            layer.set_alpha(motion.opacity)
+            layer = faded(layer, motion.opacity)
             canvas.blit(layer, (round((px + 32) * U + ox * scale), round(py * U + 3 + oy * scale)))
         title = self.text.layout('PajamaHip26', session.pending.details['text'], 300,
                                  TextStyle(16, -16, (255, 255, 255)))
@@ -228,7 +229,7 @@ class CodCharacterPickerRenderer(CharacterPickerRenderer):
             for image, (ox, oy) in self.pieces(variants[0], color):
                 piece = pygame.transform.smoothscale(image, (max(1, round(image.get_width() * scale)),
                                                              max(1, round(image.get_height() * scale))))
-                piece.set_alpha(motion.opacity)
+                piece = faded(piece, motion.opacity)
                 canvas.blit(piece, (round(cx + ox * scale), round(cy + oy * scale)))
         title = self.text.layout('PajamaHip26', session.pending.details['text'], 300,
                                  TextStyle(16, -16, (255, 255, 255)))

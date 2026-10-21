@@ -30,6 +30,7 @@ from functools import lru_cache
 
 import pygame
 
+from .graphics import faded
 from .hd_ui import HdUi, S, FRAME
 from .menu import MenuFont
 
@@ -232,7 +233,7 @@ class HdMainMenu(HdUi):
             layer.blit(image, image.get_rect(center=(round(ribbon_center[0] * S), round(ribbon_center[1] * S))))
             fade = title if progress >= 1 else title.copy()
             if progress < 1:
-                fade.set_alpha(round(255 * progress))
+                fade = faded(fade, round(255 * progress))
             layer.blit(fade, fade.get_rect(center=(round(title_center[0] * S), round(title_center[1] * S))))
 
     # ------------------------------------------------------------ drawing
@@ -293,7 +294,7 @@ class HdMainMenu(HdUi):
         if alpha > 0:
             info = pygame.transform.smoothscale(info, (max(1, round(info.get_width() * S)), max(1, round(info.get_height() * S))))
             if alpha < 1:
-                info.set_alpha(round(255 * alpha))
+                info = faded(info, round(255 * alpha))
             layer.blit(info, info.get_rect(center=(INFO_CENTER[0] * S, INFO_CENTER[1] * S)))
         if self.ready:
             self.hits.append((pygame.Rect(round(x), round(y), nw * 2, nh * 2), ('options',)))

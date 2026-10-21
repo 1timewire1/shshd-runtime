@@ -19,6 +19,7 @@ import random
 
 import pygame
 
+from .graphics import faded
 from .shs.grid_layout import clamp, ease
 from .desktop_football_hd import HdStrings
 from .hd_gl import GLAtlas, ImageFont, draw_quad, to_pil
@@ -296,7 +297,7 @@ class HdWordRenderer:
             font.draw_line(layer, text, 2, 2, monospace=mono)
             layer = pygame.transform.smoothscale(layer, (max(1, round(layer.get_width() * scale)),
                                                         max(1, round(layer.get_height() * scale))))
-            layer.set_alpha(round(255 * scale))
+            layer = faded(layer, round(255 * scale))
             self.canvas.blit(layer, (round(edge - width * scale - 2 * scale), y))
 
     # -- question and keywords --------------------------------------------
@@ -310,7 +311,7 @@ class HdWordRenderer:
             layer = pygame.transform.smoothscale(layer, (max(1, round(layer.get_width() * scale)),
                                                         max(1, round(layer.get_height() * scale))))
         if alpha < 1:
-            layer.set_alpha(round(255 * clamp(alpha)))
+            layer = faded(layer, round(255 * clamp(alpha)))
         self.canvas.blit(layer, layer.get_rect(center=(round(cx), round(cy))))
 
     def prompts(self, game):
@@ -451,7 +452,7 @@ class HdWordRenderer:
         if scale != 1:
             surface = pygame.transform.smoothscale(surface, (max(1, round(surface.get_width() * scale)),
                                                              max(1, round(surface.get_height() * scale))))
-            surface.set_alpha(round(255 * scale))
+            surface = faded(surface, round(255 * scale))
         self.canvas.blit(surface, (round(left), round(top)))
 
     # -- portraits ------------------------------------------------------
@@ -528,7 +529,7 @@ class HdWordRenderer:
                 piece = pygame.transform.smoothscale(piece, (max(1, round(piece.get_width() * grow)),
                                                               max(1, round(piece.get_height() * grow))))
             if fade < 1:
-                piece.set_alpha(round(255 * fade))
+                piece = faded(piece, round(255 * fade))
             self.canvas.blit(piece, piece.get_rect(center=(cx, cy - 8)))
 
     # -- board ----------------------------------------------------------

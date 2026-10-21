@@ -120,5 +120,5 @@ def draw_quad(target, image, points, *, depth=None, plane=None):
         if plane is not None:
             pixels = depth_mask(pixels, coefficients, plane, bounds, depth, target.get_size())
         layer = graphics.image.frombytes(pixels.tobytes(), pixels.size, 'RGBA')
-        layer.set_alpha(image.get_alpha())
+        layer = graphics.faded(layer, image.get_alpha())
         target.blit(layer, (left, top))

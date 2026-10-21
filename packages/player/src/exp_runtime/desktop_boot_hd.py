@@ -19,6 +19,7 @@ from functools import lru_cache
 
 import pygame
 
+from .graphics import faded
 from .hd_ui import HdUi, S, FRAME
 
 DISC_CENTER, TITLE_CENTER = (384, 341.33), (384, 768)
@@ -77,7 +78,7 @@ class HdBootScreen(HdUi):
         t = max(0.0, min(1.0, (seconds - FLASH_DELAY) / FLASH_TIME))
         white = pygame.Surface(self.canvas.get_size())
         white.fill((255, 255, 255))
-        white.set_alpha(round(255 * t))
+        white = faded(white, round(255 * t))
         self.canvas.blit(white, (0, 0))
         flare = self.resource(5)
         # 4x at 2x would be a 5000 pixel image; a soft glow loses nothing at half that.

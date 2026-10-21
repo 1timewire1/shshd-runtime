@@ -7,6 +7,7 @@ from functools import lru_cache
 from io import BytesIO
 import pygame
 
+from .graphics import faded
 from .hd_layout import HdLayouts, STRINGS_ID
 from .menu import MenuStrings
 from .vector_text import system_font_path
@@ -29,7 +30,7 @@ def window_backdrop(collage, size):
     surface.fill((34, 36, 32))
     factor = max(width / collage.get_width(), height / collage.get_height())
     art = pygame.transform.smoothscale(collage, (round(collage.get_width() * factor), round(collage.get_height() * factor)))
-    art.set_alpha(128)
+    art = faded(art, 128)
     surface.blit(art, art.get_rect(center=(width // 2, height // 2)))
     return surface
 
@@ -142,13 +143,13 @@ class HdUi:
                 plate.blit(dark, (3 * S + dx * S, 3 * S + dy * S))
             shade = pygame.Surface(plate.get_size(), pygame.SRCALPHA)
             shade.blit(dark, (3 * S + 2 * S, 3 * S + 2 * S))
-            shade.set_alpha(110)
+            shade = faded(shade, 110)
             plate.blit(surface, (3 * S, 3 * S))
             layer.blit(shade, (round(x * S) - 3 * S, round(y * S) - 3 * S))
             layer.blit(plate, (round(x * S) - 3 * S, round(y * S) - 3 * S))
             return
         if alpha < 255:
-            surface.set_alpha(alpha)
+            surface = faded(surface, alpha)
         layer.blit(surface, (round(x * S), round(y * S)))
 
     def centered_line(self, layer, text, points, center_x, center_y, color=BLUE):

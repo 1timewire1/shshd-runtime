@@ -38,6 +38,10 @@
   1000 before `onTick`). This was read as one second, so the new face came in
   at 1.4–1.6 s instead of 0.4–0.6 s. Expressions 6–9's effects start with it.
   Android SHS keeps its 1000 ms. Saves are version 28; older ones load.
+- **Fading pictures keep their transparency on macOS.** The main menu's title showed a white box and the info
+  button a dark square while fading in (a player's report, macOS). Pictures with their own transparency now fade by
+  multiplying that transparency (`graphics.faded`) instead of taking SDL's whole-surface alpha over it, which macOS
+  drew wrongly; every fade in the player goes through it. Unchanged on Windows (within one level of 255).
 - **Smoother menus** (measured on a 1080p window with the new frame-time log, `SHSHD_FRAME_LOG`):
   - The main menu's photo intro turns at 1 pixel per point and is scaled up, about three times faster (it ran at
     about 6 fps).

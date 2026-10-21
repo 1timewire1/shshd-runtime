@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import webbrowser
 
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
+from .graphics import faded
 from . import graphics as pygame
 
 from .app_icon import set_window_icon
@@ -900,7 +901,7 @@ class Desktop:
         area = getattr(self, 'bg_viewport', self.window.get_rect()).clip(self.window.get_rect())
         if kind == 6:
             shade = pygame.Surface(area.size)
-            shade.set_alpha(round(255 * amount))
+            shade = faded(shade, round(255 * amount))
             self.window.blit(shade, area)
         else:
             for x, y, w, h in scene_fade.blind_rects(kind, amount, area.size):
@@ -1291,7 +1292,7 @@ class Desktop:
         alpha, overlay = self.panel_alpha, self.panel_overlay
         self.panel_alpha = self.panel_overlay = None
         if alpha is not None and alpha < 1:
-            scaled.set_alpha(round(255 * alpha))
+            scaled = faded(scaled, round(255 * alpha))
         # The column also sits 5.5 units above the frame's bottom edge (box
         # top and bottom lines both measured 21.5 px lower than HD's at
         # 3.9 px per unit; the right border matched to a pixel).
@@ -1320,7 +1321,7 @@ class Desktop:
             with frame_log.section('present'):
                 layer = pygame.transform.smoothscale(layer, area.size)
             if alpha is not None and alpha < 1:
-                layer.set_alpha(round(255 * alpha))
+                layer = faded(layer, round(255 * alpha))
             self.window.blit(layer, area)
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
@@ -1415,7 +1416,7 @@ class Desktop:
             if key != cached_key:
                 cached_surface = pygame.transform.smoothscale(background.subsurface(crop), target_size)
                 self._background_layer_cache = (key, cached_surface)
-            cached_surface.set_alpha(self.pending_background_alpha if self.pending_background_alpha < 255 else None)
+            cached_surface = faded(cached_surface, self.pending_background_alpha)
             self.window.blit(cached_surface, viewport)
             return
         if self.pending_background_origin is None:
@@ -1476,7 +1477,7 @@ class Desktop:
             source = background if self.pending_background_origin is None else background.subsurface(crop)
             scaled_bg = pygame.transform.smoothscale(source, target_size)
             self._background_layer_cache = (key, scaled_bg)
-        scaled_bg.set_alpha(self.pending_background_alpha if self.pending_background_alpha < 255 else None)
+        scaled_bg = faded(scaled_bg, self.pending_background_alpha)
         self.window.blit(scaled_bg, viewport)
 
     def _draw_scene_badge(self, badge, *, previous_glyph=-1):
@@ -1548,7 +1549,7 @@ class Desktop:
         pygame.draw.rect(layer, border_color, (0, 0, width, header_h + body_h), 2,
                          border_top_left_radius=8, border_top_right_radius=8,
                          border_bottom_left_radius=8, border_bottom_right_radius=8)
-        layer.set_alpha(toast.alpha)
+        layer = faded(layer, toast.alpha)
         slide = round(16 * (1 - toast.enter_progress))
         self.canvas.blit(layer, (SIZE[0] - width - margin, margin - slide))
 

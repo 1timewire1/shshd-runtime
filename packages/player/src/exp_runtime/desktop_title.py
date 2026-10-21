@@ -1,6 +1,7 @@
 """Original episode intros and week cards, drawn from the player's APK."""
 from functools import lru_cache
 
+from .graphics import faded
 from . import graphics as pygame
 from .desktop_pause import draw_pause_gear
 
@@ -278,7 +279,7 @@ class CodTitleRenderer(HdTitleRenderer):
                     shift = 0
                 if alpha < 1:
                     piece = piece.copy()
-                    piece.set_alpha(round(255 * alpha))
+                    piece = faded(piece, round(255 * alpha))
                 self.canvas.blit(piece, (round(ox + x * scale - shift), round(oy + y * scale)))
             x += font.font.char_width(char) + font.font.tracking
 

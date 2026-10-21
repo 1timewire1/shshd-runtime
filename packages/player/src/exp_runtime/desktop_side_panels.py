@@ -38,6 +38,7 @@ import logging
 
 import pygame
 
+from .graphics import faded
 from .cgbi import CgBIError, decode as decode_cgbi
 from .content import ContentError
 from .dt_layout import DEFAULT_SZ as DT_DEFAULT_SZ, FONT_UNIT, SZ_RANGE, Layout, Metrics
@@ -325,7 +326,7 @@ class SidePanels:
         else:
             panel.fill((0, 0, 0))
             image = self.scaled_collage((round(1045 * s), round(1024 * s))).copy()
-            image.set_alpha(COLLAGE_ALPHA)
+            image = faded(image, COLLAGE_ALPHA)
             x, y = COLLAGE_ORIGIN[side]
             panel.blit(image, (-round(x * s), -round(y * s)))
         if divider:

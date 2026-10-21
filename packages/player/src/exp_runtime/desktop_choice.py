@@ -2,6 +2,7 @@
 import math
 from functools import lru_cache
 
+from .graphics import faded
 from . import graphics as pygame
 
 from .choice import BODY_FONT, FOOTER_FONT, ChoiceLayout
@@ -253,7 +254,7 @@ class ChoiceRenderer:
                 quadrant = index // 4
                 x = 25 * k - image.get_width() if quadrant >= 2 else 25 * k
                 y = 25 * k - image.get_height() if quadrant in (0, 3) else 25 * k
-                image.set_alpha(round(opacity * 255))
+                image = faded(image, round(opacity * 255))
                 self.canvas.blit(image, (position[0] + 6 * k + x, position[1] + 5 * k + y))
             return
         self.canvas.blit(self.art.frame_scaled(708, 0, k), position)
@@ -524,7 +525,7 @@ class ChoiceRenderer:
             label = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
             x, y = row.origin
             self.text.draw_layout(label, self.OPTION_FONT, row.text, (x - rect.x) * k, (y - row.rect.y) * k, scale=k)
-            label.set_alpha(128)
+            label = faded(label, 128)
             cache[key] = label
         density = geometry.density if geometry is not None else 2
         for offset in label_offsets(home, geometry):
@@ -604,7 +605,7 @@ class ChoiceRenderer:
                                             Rect(ux, uy, w / d, h / d), 10, color, density=d)
             layer = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA).convert_alpha()
             self.text.draw_layout(layer, 'HD_QUIZ_EFFECT', layout, origin[0] * k, origin[1] * k, scale=k)
-            layer.set_alpha(round(255 * max(0., min(1., alpha))))
+            layer = faded(layer, round(255 * max(0., min(1., alpha))))
             self.canvas.blit(layer, (0, 0))
 
     def draw_hd_timer(self, center, remaining_ms, timeout_ms, geometry=None):
@@ -627,7 +628,7 @@ class ChoiceRenderer:
                       else self.hd_layouts().frame(155, 12 + index).get_size())
             x, y = wedge_position(index, *points, centre=size / 2)
             image = image.copy()
-            image.set_alpha(round(255 * opacity))
+            image = faded(image, round(255 * opacity))
             self.overlay.blit(image, (round((left + x / d) * k), round((top + y / d) * k)))
 
     def draw(self, target, session, *, scroll=0, pointer=None, pressed=None, focus=None, choice_hints=False):

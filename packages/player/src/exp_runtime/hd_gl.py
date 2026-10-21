@@ -23,6 +23,7 @@ import pygame
 
 from PIL import Image
 
+from .graphics import faded
 from .atlas import AtlasFont, SpriteAtlas
 from .ui_assets import Raster
 
@@ -97,7 +98,7 @@ class GLAtlas:
             image = pygame.transform.rotate(image, -angle)
         if alpha < 1:
             image = image.copy()
-            image.set_alpha(round(255 * min(1., alpha)))
+            image = faded(image, round(255 * min(1., alpha)))
         if angle:
             canvas.blit(image, image.get_rect(center=(round(px + cx), round(py + cy))))
         else:
@@ -144,7 +145,7 @@ class ImageFont:
                 piece = self.sheet.subsurface((gx, gy, gw, self.font.height))
                 if alpha < 1:
                     piece = piece.copy()
-                    piece.set_alpha(round(255 * alpha))
+                    piece = faded(piece, round(255 * alpha))
                 canvas.blit(piece, (round(x), round(y)))
             x += self.font.char_width(char, monospace) + self.font.tracking
 
@@ -201,5 +202,5 @@ def draw_quad(canvas, source, quad, alpha=1.):
                               Image.Resampling.BILINEAR)
     surface = pygame.image.frombytes(warped.tobytes(), (width, height), 'RGBA').convert_alpha()
     if alpha < 1:
-        surface.set_alpha(round(255 * max(0., alpha)))
+        surface = faded(surface, round(255 * max(0., alpha)))
     canvas.blit(surface, (left, top))

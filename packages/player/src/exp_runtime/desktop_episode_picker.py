@@ -34,6 +34,7 @@ from io import BytesIO
 import pygame
 
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
+from .graphics import faded
 from .episode_picker import EpisodeInfo
 from .episode_thumbnails import BUNDLE
 from .hd_layout import HdLayouts
@@ -582,7 +583,7 @@ class HdEpisodePicker(HdUi):
         meta = '    '.join(part for part in (info.airdate, info.price and f'Price: {info.price}') if part)
         if meta:
             surface = self.font(INFO_META_POINTS).render(meta, True, self.TEXT_COLOR)
-            surface.set_alpha(190)
+            surface = faded(surface, 190)
             layer.blit(surface, surface.get_rect(midtop=(FRAME[0] // 2 * S, (y + 2) * S)))
             y += INFO_META_POINTS + 10
         y += 8

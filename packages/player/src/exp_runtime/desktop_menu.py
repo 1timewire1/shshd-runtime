@@ -4,6 +4,7 @@ from collections import Counter
 from io import BytesIO
 import math
 
+from .graphics import faded
 from . import graphics as pygame
 
 from .app_icon import icon_surface
@@ -219,7 +220,7 @@ class MenuRenderer:
             if exit_ms is None or exit_ms < 250:
                 image = self.art.frame(272, 15 if app.pressed == ('help',) else 14).copy()
                 opacity = min(1, (age - 3000) / 300) if app.intro and exit_ms is None else 1
-                image.set_alpha(round(255 * opacity))
+                image = faded(image, round(255 * opacity))
                 self.canvas.blit(image, (278, 437))
                 if exit_ms is None:
                     self.buttons.append((pygame.Rect(278, 437, 42, 41), ('help',)))

@@ -4,6 +4,7 @@ from functools import lru_cache
 from io import BytesIO
 from math import floor
 
+from .graphics import faded
 from . import graphics as pygame
 
 from .fonts import BitmapFont, FontError, TextStyle, layout_label, layout_text
@@ -116,7 +117,7 @@ class BitmapTextRenderer:
         image, dx, dy = self._glyph(name, placed, scale)
         if alpha != 255:
             image = image.copy()
-            image.set_alpha(alpha)
+            image = faded(image, alpha)
         surface.blit(image, (floor(x + placed.x * scale + dx + .5), floor(y + placed.y * scale + dy + .5)))
 
     def draw(self, surface, name, text, x, y, width, style, *, scale=1):

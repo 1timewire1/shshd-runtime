@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
+from .graphics import faded
 from . import graphics as pygame
 
 from .app_icon import icon_surface, set_window_icon
@@ -1382,7 +1383,7 @@ class Application:
                 canvas = self._menu_transition()
             else:
                 layer = canvas.copy()
-                layer.set_alpha(round(255 * self.transition_age / self.transition_duration))
+                layer = faded(layer, round(255 * self.transition_age / self.transition_duration))
                 canvas = self.transition_from.copy()
                 canvas.blit(layer, (0, 0))
         self.buttons = self.renderer.buttons if self.ready or self.message or self.update_prompt else []

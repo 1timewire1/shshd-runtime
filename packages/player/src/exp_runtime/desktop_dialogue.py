@@ -2,6 +2,7 @@
 from functools import lru_cache
 from io import BytesIO
 
+from .graphics import faded
 from . import graphics as pygame
 
 from .content import ContentError
@@ -384,7 +385,7 @@ class DialogueRenderer:
         pack = {1: 204, 2: 220, 3: 252}.get(theme, 236)
         x, y, width, height = (round(v * scale) for v in (rect.x, rect.y, rect.width, rect.height))
         center = self.frame_scaled(126, 0, scale).copy()
-        center.set_alpha(alpha)
+        center = faded(center, alpha)
         target.blit(pygame.transform.scale(center, (width, height)), (x, y))
         # HD's border art already carries its 242/255 translucency; only the (opaque) center takes the
         # bubble's alpha, so edges and middle show the scene equally (message-panel photos IMG_0240-0242).
@@ -392,7 +393,7 @@ class DialogueRenderer:
         for index, column, row in ((6, 0, 0), (7, 1, 0), (8, 2, 0), (4, 0, 1),
                                    (5, 2, 1), (0, 0, 2), (1, 1, 2), (2, 2, 2)):
             image = self.frame_scaled(pack, index, scale).copy()
-            image.set_alpha(piece_alpha)
+            image = faded(image, piece_alpha)
             w, h = image.get_size()
             size = (width if column == 1 else w, height if row == 1 else h)
             position = (x - w if column == 0 else x + width if column == 2 else x,
@@ -737,7 +738,7 @@ class DialogueRenderer:
         k = self.scale
         if alpha < 255:
             layer = layer.copy()
-            layer.set_alpha(alpha)
+            layer = faded(layer, alpha)
         self.wide.blit(layer, (round(cx * k + x * scale) + self.margin, round(cy * k + y * scale)))
 
     def draw_expression_art(self, motion):
@@ -779,7 +780,7 @@ class DialogueRenderer:
         if alpha > 0:
             size = round(BALL_UNITS * k)
             ball = pygame.transform.smoothscale(self.frame_native(155, BALL_FRAMES[portrait.expression]), (size, size))
-            ball.set_alpha(round(255 * alpha))
+            ball = faded(ball, round(255 * alpha))
             self.wide.blit(ball, ball.get_rect(center=center))
 
     def chrome_image(self, asset_id, density=1):
@@ -873,7 +874,7 @@ class DialogueRenderer:
                 flash = self.indicator_image(pose.flash_asset, k)
                 if flash is not None:
                     flash = pygame.transform.rotozoom(flash, -pose.rotation, pose.flash_scale)
-                    flash.set_alpha(pose.flash_alpha)
+                    flash = faded(flash, pose.flash_alpha)
             if flash is not None and ring_under:
                 self.canvas.blit(flash, flash.get_rect(center=center))
             self.canvas.blit(image, image.get_rect(center=center))
@@ -905,7 +906,7 @@ class DialogueRenderer:
             image = self.text._glyph_image(NOTICE_FONT, glyph, motion.scale * k)
             if motion.alpha < 255:
                 image = image.copy()
-                image.set_alpha(motion.alpha)
+                image = faded(image, motion.alpha)
             self.canvas.blit(image, (round(x + glyph.x * motion.scale * k),
                                      round(y + (glyph.y * motion.scale - motion.glyph_rise(index)) * k)))
 
@@ -973,7 +974,7 @@ class DialogueRenderer:
             image, dx, dy = self.text._glyph(name, glyph, k)
             if alpha < 1:
                 image = image.copy()
-                image.set_alpha(round(255 * alpha))
+                image = faded(image, round(255 * alpha))
             ox, oy = origins[glyph.index]
             left = (ox / d - ox0 + glyph.x - pens[glyph.index]) * k + dx
             top = (oy / d - oy0 + cap + glyph.y - baseline + offset * cap) * k + dy
@@ -1173,8 +1174,7 @@ class DialogueRenderer:
         self.text.draw_layout(self.canvas, page.body_font, page.body,
                               page.body_origin[0] * k, page.body_origin[1] * k,
                               scale=k, source_end=motion.revealed)
-        self.name_layer.set_alpha(motion.name_alpha)
-        self.canvas.blit(self.name_layer, (0, 0))
+        self.canvas.blit(faded(self.name_layer, motion.name_alpha), (0, 0))
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the
         # speaker name -- everything except the portrait itself, which

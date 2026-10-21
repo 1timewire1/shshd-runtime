@@ -22,6 +22,7 @@ import random
 
 import pygame
 
+from .graphics import faded
 from .shs.football import SELECTED_FRAMES, PLAY_FRAMES as ANDROID_PLAY_FRAMES
 from .shs.football_layout import feedback_text, footer_id, heading_id, help_motion, legend_codes, team_name
 from .hd_gl import GLAtlas, ImageFont
@@ -201,7 +202,7 @@ class HdFootballRenderer:
         """The green-cloud frame at 4x and alpha 0.25 (`renderCutupEx` 4, 4, 0.25)."""
         tile = self.atlas(FIELD_ATLAS).frame(HAZE)
         haze = pygame.transform.smoothscale(tile, (tile.get_width() * 4, tile.get_height() * 4))
-        haze.set_alpha(64)
+        haze = faded(haze, 64)
         return haze
 
     # -- HUD ------------------------------------------------------------
@@ -308,7 +309,7 @@ class HdFootballRenderer:
         w, h = image.get_size()
         ring = pygame.transform.rotate(image, -angle)
         ring = pygame.transform.smoothscale(ring, (ring.get_width(), max(1, ring.get_height() // 2)))
-        ring.set_alpha(round(255 * alpha))
+        ring = faded(ring, round(255 * alpha))
         self.canvas.blit(ring, ring.get_rect(center=(x, y)))
 
     # -- effects ---------------------------------------------------------
@@ -448,7 +449,7 @@ class HdFootballRenderer:
                                                          max(1, round(layer.get_height() * scale))))
         if angle:
             layer = pygame.transform.rotate(layer, -angle)
-        layer.set_alpha(round(255 * min(1., alpha)))
+        layer = faded(layer, round(255 * min(1., alpha)))
         self.canvas.blit(layer, layer.get_rect(center=(384, top + height / 2)))
 
     # -- countdown, help, bar -------------------------------------------
@@ -495,13 +496,13 @@ class HdFootballRenderer:
             if scale != 1:
                 size = max(1, round(group.get_width() * scale)), max(1, round(group.get_height() * scale))
                 group = pygame.transform.smoothscale(group, size)
-            group.set_alpha(round(255 * min(1., alpha)))
+            group = faded(group, round(255 * min(1., alpha)))
             x = ox + (1 - scale) * 690
             y = oy + (1 - scale) * 684
             self.canvas.blit(group, (round(x + self.HELP_MARGIN[0] * scale), round(y + self.HELP_MARGIN[1] * scale)))
         image = coach if motion.coach_alpha >= 1 else coach.copy()
         if motion.coach_alpha < 1:
-            image.set_alpha(round(255 * motion.coach_alpha))
+            image = faded(image, round(255 * motion.coach_alpha))
         self.canvas.blit(image, (motion.coach_x, 977 - coach.get_height()))
 
     # The panel group is drawn on a surface whose (0, 0) is this far up-left of its origin.

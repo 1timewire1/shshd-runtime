@@ -87,6 +87,30 @@ def set_music_repeat(repeat, *, start_ms=0, paused=False):
             music.pause()
 
 
+def faded(surface, alpha):
+    """The surface to draw for `surface` at opacity `alpha` (0-255; None or 255: opaque). A pygame surface with its
+    own per-pixel alpha gets a copy with that channel multiplied: SDL's whole-surface alpha over per-pixel alpha
+    drew wrongly on macOS (the image's own transparency was lost while fading: the main menu title's white box and
+    the info button's dark square, owner's report, 2026-10-21), and a multiply draws the same everywhere. Other
+    surfaces take the whole-surface alpha as before (set in place, as `set_alpha` did). `surface`'s pixels are never
+    changed, so a cached surface stays as it was."""
+    if alpha is not None and alpha >= 255:
+        alpha = None
+    # Per-pixel alpha is the pixel format's own alpha channel (pygame-ce also reports SRCALPHA in get_flags once a
+    # plain surface has had a whole-surface alpha, so that flag cannot tell them apart).
+    get_masks = getattr(surface, 'get_masks', None)
+    per_pixel = get_masks is not None and bool(get_masks()[3])
+    if alpha is None and per_pixel:
+        return surface              # (set_alpha(None) would also switch off its per-pixel blending)
+    if alpha is None or not per_pixel:
+        # 255 rather than None: pygame-ce's set_alpha(None) keeps the last alpha of a surface faded before.
+        surface.set_alpha(255 if alpha is None else max(0, round(alpha)))
+        return surface
+    result = surface.copy()
+    result.fill((255, 255, 255, max(0, round(alpha))), special_flags=__getattr__('BLEND_RGBA_MULT'))
+    return result
+
+
 def color_matrix(surface, matrix):
     native = getattr(__getattr__('transform'), 'color_matrix', None)
     if native is not None:
