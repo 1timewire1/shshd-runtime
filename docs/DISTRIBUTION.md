@@ -13,7 +13,7 @@ System-font fallback and current limits are in [IPA.md](IPA.md) and [COD.md](COD
 [Builds](../.github/workflows/desktop-builds.yml) runs on branch pushes,
 pull requests, version tags beginning with `v`, and manual **Run workflow**
 requests. It installs locked dependencies with uv and Python 3.14, runs the
-tests without game content, builds the player and creator, audits their bundles
+tests without game content, builds the player, audits its bundle
 and tests the extracted desktop downloads. It also calls the reusable
 [iOS workflow](../.github/workflows/ios-builds.yml), which verifies the shared
 engine and native presentation in a simulator before packaging the unsigned
@@ -36,7 +36,7 @@ for the required one-time setup and [SDK.md](SDK.md) for component installs.
 
 After a successful run, development downloads are under **Actions → Builds
 → the run → Artifacts**, with one artifact per platform. Each desktop artifact
-contains separate player and creator archives with `.sha256` checksums;
+contains the player archive with its `.sha256` checksum;
 extract the outer artifact ZIP and
 then the app archive (or sign the IPA). The simulator report is a separate
 `ios-simulator-verification` artifact and is not a release download.
@@ -236,20 +236,10 @@ to interpret references to private evidence snapshots.
 
 ## Creator downloads
 
-Desktop jobs also build `EXP Runtime Creator` with `tools/build_desktop.py
---creator`, then package/audit/smoke-test it using `tools/package_desktop.py
---creator --smoke-test`. Files use `exp-runtime-creator-<label>-<target>` and are
-included in the same desktop Actions artifact/release upload as the player.
-For v0.6.1 the required release archives are:
-
-- `exp-runtime-creator-v0.6.1-windows-x64.zip`
-- `exp-runtime-creator-v0.6.1-linux-x64.tar.gz`
-- `exp-runtime-creator-v0.6.1-macos-arm64.zip`
-- `exp-runtime-creator-v0.6.1-macos-x64.zip`
-
-Each has a `.sha256` checksum. A missing archive or checksum stops the release
-upload. The `exp_runtime_creator-0.6.1-py3-none-any.whl` wheel and its checksum
-are also required release files.
+Upstream's desktop jobs also build and package a standalone `EXP Runtime Creator`. This fork does not yet (owner,
+2026-10-21: the creator needs work for the HD features first), so its workflow has no creator build steps and its
+releases carry no creator archives. The `shshd_runtime_creator-<version>-py3-none-any.whl` wheel and its checksum are
+still built, tested (`tools/test_packages.py`) and required release files.
 
 The creator contains Qt and the shared preview player; player and iOS downloads
 exclude the creator and MCP dependencies. The separately installable

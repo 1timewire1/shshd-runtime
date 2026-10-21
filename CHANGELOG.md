@@ -64,7 +64,8 @@
     - The loading runner's 70 ms frames on iOS and in SHS HD
       (`initLoadingBar` 00022fec sets 0.07 s).
     - The optional episode creator, as `shshd-runtime-creator`
-      (`shshd-creator`, `shshd-creator-mcp`).
+      (`shshd-creator`, `shshd-creator-mcp`): a wheel on the release, but no
+      standalone creator app yet (it needs work for the HD features first).
   - **Kept from this fork where the two overlap:**
     - Music and the pause-menu audio handoff (`music_stream.py`).
     - CoD's typed answers keep the native filter: no spaces (upstream allows

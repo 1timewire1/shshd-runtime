@@ -21,8 +21,9 @@ Your libraries and saves from v1.0.x carry over: no re-import needed.
 - **Scene transitions** follow SHS HD's own code: the blinds close over the old
   screen, and title cards appear without a fade-in.
 - **Cause of Death's emphasised words** use the game's own italic switch font.
-- **Upstream exp-runtime v0.6.1**, including the optional episode creator
-  (`shshd-runtime-creator`) and Cause of Death free-edition support.
+- **Upstream exp-runtime v0.6.1**, including Cause of Death free-edition
+  support and the optional episode creator as a Python package
+  (`shshd-runtime-creator`; no standalone creator app yet).
 
 ## Fixes
 

@@ -147,7 +147,7 @@ if creator:
     assert Path('story.exp').read_bytes() == compile_project(project)
     if find_spec('mcp'):
         from exp_runtime.creator.mcp_server import create_server
-        assert create_server(Path.cwd()).name == 'EXP Runtime Creator'
+        assert create_server(Path.cwd()).name == 'SHSHD Runtime Creator'
     if find_spec('PySide6'):
         from PySide6.QtWidgets import QApplication
         from exp_runtime.creator.ui import Editor

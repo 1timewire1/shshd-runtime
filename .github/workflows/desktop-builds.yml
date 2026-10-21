@@ -183,15 +183,10 @@ jobs:
           uv run --locked --extra build python tools/package_desktop.py
           --target "$EXP_TARGET" --label "$EXP_BUILD_LABEL" --smoke-test
 
-      - name: Build standalone episode creator
-        run: uv run --locked --extra build --extra creator --extra creator-mcp python tools/build_desktop.py --creator
+      # This fork does not package exp-runtime's standalone episode creator yet (owner, 2026-10-21: it needs work for the
+      # HD features first); its wheel is still built, tested and attached to releases.
 
-      - name: Package and test standalone episode creator
-        run: >-
-          uv run --locked --extra build --extra creator --extra creator-mcp python tools/package_desktop.py
-          --creator --target "$EXP_TARGET" --label "$EXP_BUILD_LABEL" --smoke-test
-
-      - name: Upload player and creator archives and checksums
+      - name: Upload player archives and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: desktop-${{ matrix.target }}
@@ -379,7 +374,7 @@ jobs:
           persist-credentials: false
           ref: ${{ needs.release-source.outputs.sha }}
 
-      - name: Download player and creator archives and checksums
+      - name: Download player archives and checksums
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: desktop-*
@@ -407,7 +402,7 @@ jobs:
           done
           # The first component release predates the creator.
           if [[ "$EXP_TAG" != v0.5.0 ]]; then
-            file="exp_runtime_creator-$version-py3-none-any.whl"
+            file="shshd_runtime_creator-$version-py3-none-any.whl"
             cp -- "$file" "$file.sha256" ../release/
           fi
 
@@ -419,12 +414,6 @@ jobs:
             test -s "shshd-runtime-$EXP_TAG-$target"
             test -s "shshd-runtime-$EXP_TAG-$target.sha256"
           done
-          if [[ "$EXP_TAG" != v0.5.0 ]]; then
-            for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip; do
-              test -s "exp-runtime-creator-$EXP_TAG-$target"
-              test -s "exp-runtime-creator-$EXP_TAG-$target.sha256"
-            done
-          fi
           sha256sum --check ./*.sha256
 
       - name: Create release or update its downloads
