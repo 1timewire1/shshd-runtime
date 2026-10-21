@@ -59,7 +59,10 @@ def main():
         # Standalone apps deliberately include both available games.
         args += ['--hidden-import', 'exp_runtime.shs.profile',
                  '--hidden-import', 'exp_runtime.cod.profile']
-        # (exp-runtime's kiwi app icon is not applied: this fork's executable keeps its earlier look.)
+        if sys.platform in ('darwin', 'win32'):
+            icon = stage / ('kiwi.icns' if sys.platform == 'darwin' else 'kiwi.ico')
+            build_icon(logo, icon)
+            args += ['--icon', str(icon)]
         if sys.platform == 'darwin':
             args += ['--osx-bundle-identifier', 'org.shshd.runtime']       # this fork's own (never upstream's)
         else:

@@ -10,7 +10,7 @@ import webbrowser
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
 from . import graphics as pygame
 
-from .app_icon import icon_surface
+from .app_icon import set_window_icon
 from .content import ContentError
 from .audio import music_cue
 from .games import GAMES, game_id
@@ -215,7 +215,7 @@ class Desktop:
         # A capture draws one clean frame into `window` (a plain surface): no display, caption, or edge bar.
         self.capture = capture
         if window is None:
-            pygame.display.set_icon(icon_surface())
+            set_window_icon(session.resources.library)
         self.window = window if window is not None else pygame.display.set_mode(DEFAULT_WINDOW_SIZE, pygame.RESIZABLE)
         self.on_main_menu = on_main_menu
         self.on_menu_page = on_menu_page

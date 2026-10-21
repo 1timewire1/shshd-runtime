@@ -396,6 +396,22 @@ class GameChooserTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'cannot save'): app.switch_games()
         self.assertEqual((app.screen, app.library.game_id), ('game', 'shs'))
 
+    def test_window_icon_goes_straight_from_one_game_to_the_other(self):
+        from exp_runtime.application import Application
+        for key, source in (('shs', self.shs), ('cod', self.cod)):
+            path = self.root / key
+            import_game(source, [], path)
+            remember_library(path, key)
+        app = Application(audio=False, check_updates=False); self.addCleanup(app.close)
+        app.choose_game('shs')
+        with patch('exp_runtime.application.set_window_icon') as set_icon:
+            app.switch_games()
+            self.assertEqual([c.args for c in set_icon.call_args_list], [(app.library,)])
+            self.assertEqual(app.library.game_id, 'cod')
+            set_icon.reset_mock()
+            app.show_game_chooser()
+            self.assertEqual([c.args for c in set_icon.call_args_list], [()])
+
     def test_episodes_added_from_the_hd_menus_return_to_them(self):
         from types import SimpleNamespace
         from exp_runtime.application import Application
