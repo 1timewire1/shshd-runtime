@@ -282,6 +282,18 @@ class LibraryMenuTests(unittest.TestCase):
         state.path.write_text(json.dumps(data))
         self.assertTrue(MenuState(self.library).hd_backdrop)
 
+    def test_autoplay_and_the_choice_timer_switch_default_off_and_survive_reopen(self):
+        state = MenuState(self.library)
+        self.assertEqual((state.autoplay, state.disable_choice_timer), (False, False))
+        state.autoplay = state.disable_choice_timer = True
+        state.persist()
+        restored = MenuState(self.library)
+        self.assertEqual((restored.autoplay, restored.disable_choice_timer), (True, True))
+        data = json.loads(state.path.read_text())
+        data['autoplay'] = 'yes'                                 # not a bool: the whole file is refused, as before
+        state.path.write_text(json.dumps(data))
+        self.assertIn('Invalid player preferences', MenuState(self.library).warning)
+
     def test_the_vibration_switch_defaults_off_and_survives_reopen(self):
         state = MenuState(self.library)
         self.assertFalse(state.vibration)

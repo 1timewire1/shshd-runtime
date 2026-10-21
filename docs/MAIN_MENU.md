@@ -603,18 +603,35 @@ answers at score zero and duplicate words with different weights.
 
 **Options → Cheats → Ask to skip mini-games** (HD Options: "Ask to Skip
 Mini-Games") is another authored, opt-in preference, off by default:
-- **When:** a football game or word grid waits on a narrator-styled choice
-  (no portrait, the HD choice panel and its fades). Its clocks don't start
-  until the choice is made.
-- **The prompt:** it states the game's half, side and starting score, or the
-  grid's target, time and words.
+- **When:** a football game, word grid or word quiz (service 71, both games;
+  CoD's Options list the switch for its quizzes) waits on a narrator-styled
+  choice (no portrait, the HD choice panel and its fades). Its clocks don't
+  start until the choice is made.
+- **The prompt:** it states the game's half, side and starting score, the
+  grid's target, time and words, or the quiz's length.
 - **Win and Lose** finish the game through `Session.skip_minigame`, giving the
   script the result a real game would (exp-runtime v0.6.0's skip, which this
   fork's option now uses). Football keeps the starting scores where the chosen
   winner already leads by a touchdown; otherwise the winner ends 7 points ahead
   of the other side. Those are recorded as the scores. The grid passes or fails.
+  A quiz scores the most it can (32767) or nothing.
 - **Play** starts the game, and the same game is not asked again.
-- **Not included:** the rapid-fire word quiz (service 71).
+
+**Options → General → Autoplay** (this player's, off by default): dialogue, title cards and message panels take no
+taps. Their text reveals at its own pace; then, instead of the Continue pill, they wait 500 ms (the pill's 250 ms
+expansion and a beat, `Desktop.AUTOPLAY_WAIT_MS`) and advance as a tap would. Choices, name entry, the mini-games
+and the portrait picker still wait for the player, and the gear still opens the pause menu.
+
+**Options → General → Disable Choice Timer** (this player's, off by default): a timed choice holds its clock
+(`Session.choice_timer`) and is drawn untimed, with one more row, last, **Let the Timer Run Out**, for the scenes
+that need no answer. That row runs the native timeout callback (`Session.expire_choice`), with its own timeout
+result. The word quiz (service 71) keeps its clock; that is Ask to Skip Mini-Games'. Hints mark the real options
+only.
+
+In Cause of Death the Choice Hints switch is named **Choice & Answer Hints**, since only CoD has the typed puzzles
+whose faint answers it also shows. On a device that can vibrate (exp-runtime's iOS host), the Sound page's last
+switch is the game's own **Vibration** (string 11) and the device vibrates; elsewhere it is Simulated Vibration
+Sound.
 
 CoD answer-entry puzzles also show a faint accepted spelling when the field
 is empty. Existing defaults and typed text stay unchanged; confirmation still

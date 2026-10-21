@@ -22,7 +22,6 @@ def story(selector=6, *, game='cod', next_title=False):
     return session
 
 
-@unittest.skip("exp-runtime's engine-level SceneTransition is unset in this fork's profiles (scene_fade.py draws its transitions)")
 class SceneTransitionTests(unittest.TestCase):
     def test_native_backend_draws_the_same_blind_anchors_and_opacity(self):
         from exp_runtime import graphics
@@ -235,7 +234,7 @@ class SceneTransitionTests(unittest.TestCase):
         self.assertEqual(session.engine.scene_transition.phase, 3)
 
 
-@unittest.skip("exp-runtime's engine-level SceneTransition is unset in this fork's profiles (scene_fade.py draws its transitions)")
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'optional desktop is absent')
 class TransitionDrawingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -265,6 +264,8 @@ class TransitionDrawingTests(unittest.TestCase):
                 else:
                     self.assertEqual(surface.get_at((100, 100))[:3], (127, 127, 127))
 
+    @unittest.skip("builds exp-runtime's Desktop without __init__; this fork's check is "
+                   "test_desktop's test_a_queued_transition_runs_blinds_around_the_answer")
     def test_pause_and_pointer_commands_do_not_interrupt_a_transition(self):
         import pygame
         from exp_runtime.desktop import Desktop

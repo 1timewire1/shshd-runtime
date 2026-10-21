@@ -48,13 +48,16 @@ CHOICE_HINTS_LABEL = 'Choice Hints'
 SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
+AUTOPLAY_LABEL = 'Autoplay'                    # dialogue advances by itself (this player's)
+DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
 # player's own: SHS HD's Options is one page). A row shows when its setting is offered (`layout`'s `settings`), so a
 # game leaves out what does not apply to it.
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'hd_backdrop', 'check_updates')
+GENERAL_KEYS = ('side_panels', 'autoplay', 'disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
+                'hd_backdrop', 'check_updates')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -64,7 +67,8 @@ DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
 CONTROL_RIGHT = 26
 CYCLE_SIZE, CYCLE_POINTS = (104, 34), 18
-SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
+SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'autoplay': AUTOPLAY_LABEL,
+                 'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
@@ -527,17 +531,22 @@ class HdPauseMenu:
             return focus
         return None
 
+    SWITCH_LABELS = SWITCH_LABELS        # a game's own wording (desktop_cod_pause.CodPauseMenu)
+
     def option_rows(self, category, settings, strings):
         """[(kind, label, key)] of an Options category: 'switch', 'slider', 'cycle' or 'action' rows, those whose
         setting the host offers."""
         if category == 'sound':
-            # This player's buzz in place of the iPhone's vibration (PR #10): last, under its own name, so a real
-            # Vibration switch could take the game's string 11 later.
-            vibration = [('switch', VIBRATION_SOUND_LABEL, 'vibration')] if 'vibration' in settings else []
+            # This player's buzz in place of the iPhone's vibration (PR #10): last, under its own name. On a device that
+            # can vibrate (exp-runtime's iOS host, graphics.supports_vibration) the same preference is the game's own
+            # Vibration switch (string 11), and the buzz is not played.
+            from . import graphics
+            label = strings[11] if graphics.supports_vibration() else VIBRATION_SOUND_LABEL
+            vibration = [('switch', label, 'vibration')] if 'vibration' in settings else []
             return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
                     ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration
         if category == 'general':
-            rows = [('switch', SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
+            rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
             if 'title_language' in settings:
                 rows.append(('cycle', TITLE_LANGUAGE_LABEL, 'title_language'))
             return rows

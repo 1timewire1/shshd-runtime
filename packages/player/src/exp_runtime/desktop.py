@@ -83,6 +83,39 @@ ACCENT = (247, 190, 94)
 PANEL = (23, 29, 45)
 
 
+class _PromptEngine:
+    """The engine as a host prompt's stand-in session shows it: the same state, but no word quiz, so a prompt over
+    one is drawn as an ordinary choice."""
+    word_game = None
+
+    def __init__(self, engine):
+        self._engine = engine
+
+    def __getattr__(self, name):
+        return getattr(self._engine, name)
+
+
+# Disable Choice Timer's extra row: picking it lets the choice's time run out (Session.expire_choice).
+LET_TIME_RUN_OUT_LABEL = 'Let the Timer Run Out'
+
+
+class _UntimedChoice:
+    """A timed choice as Disable Choice Timer shows it (this player's option): no clock, and one more row, last, that
+    lets the time run out for the scenes that need no answer. Everything else is the real session's."""
+    remaining_ms = None
+
+    def __init__(self, session):
+        self.real_session = session
+        details = session.pending.details
+        shown = dict(details, timeout_ms=0, options=list(details['options']) + [LET_TIME_RUN_OUT_LABEL],
+                     values=list(details['values']) + [details.get('timeout_result', -1)],
+                     enabled=list(details['enabled']) + [True])
+        self.pending = SimpleNamespace(name='choice', details=shown, request=session.pending.request)
+
+    def __getattr__(self, name):
+        return getattr(self.real_session, name)
+
+
 class Desktop:
     story_layer = None
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
@@ -98,6 +131,13 @@ class Desktop:
     # `minigame_played` is the game the player chose to play and `ad_asked` the ad choice already asked about.
     skip_minigames = False
     skip_ad_intros = False
+    # Autoplay (this player's option): dialogue, title cards and message panels take no taps; once their text is out
+    # they wait AUTOPLAY_WAIT_MS (the Continue pill's 250 ms expansion, then a beat) and advance by themselves.
+    autoplay = False
+    AUTOPLAY_WAIT_MS = 500
+    autoplay_ms = 0
+    _disable_choice_timer = False
+    _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     host_prompt = None
     minigame_played = None
@@ -134,7 +174,36 @@ class Desktop:
         if self.names is not None:
             session.share_names(self.names)
         session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
+        session.choice_timer = not self._disable_choice_timer
         self._session = session
+
+    @property
+    def disable_choice_timer(self):
+        """Disable Choice Timer (this player's option): timed choices hold their clock and gain a row that lets it
+        run out. The quiz (service 71) keeps its clock; that is Ask to Skip Mini-Games'."""
+        return self._disable_choice_timer
+
+    @disable_choice_timer.setter
+    def disable_choice_timer(self, value):
+        self._disable_choice_timer = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.choice_timer = not self._disable_choice_timer
+
+    def _choice_source(self):
+        """What the choice renderer draws: the session, or its untimed stand-in under Disable Choice Timer."""
+        action = self.session.pending
+        if (not self._disable_choice_timer or action is None or action.name != 'choice'
+                or self.session.remaining_ms is None):
+            return self.session
+        if self._untimed is None or self._untimed[0] is not action:
+            self._untimed = (action, _UntimedChoice(self.session))
+        return self._untimed[1]
+
+    def _timeout_row(self, action, index):
+        """Whether `index` is the untimed stand-in's last row, Let the Timer Run Out."""
+        source = self._choice_source()
+        return (source is not self.session and action is source.real_session.pending
+                and index == len(action.details['options']))
 
     def __init__(self, session: Session, *, audio: bool = True, window=None, on_main_menu=None, capture=False,
                  episode_title=None, on_menu_page=None, names=None, vibration_enabled=False):
@@ -256,7 +325,7 @@ class Desktop:
                                               # panel.background_id to -1, so the end-of-episode screen falls back
                                               # to this instead of showing no background at all
         self.location_pan = LocationPan()
-        self.fade = None                     # the running scene transition (scene_fade.py)
+        self.fade = None                     # the player's own fade from black (a warp; scene_fade.py)
         self.music_token = None
         self.music_stream = MusicStream()
         self.music_was_enabled = True
@@ -515,8 +584,8 @@ class Desktop:
     buzz_sound = None           # service 82's stand-in for the vibrator (vibration.py), built on first use
 
     def _buzz(self):
-        if not (self.vibration_enabled and self.sound_enabled):
-            return
+        if not (self.vibration_enabled and self.sound_enabled) or pygame.supports_vibration():
+            return                          # (a device that vibrates does so instead: `_sync_vibration`)
         try:
             if self.buzz_sound is None:
                 self.buzz_sound = pygame.mixer.Sound(file=BytesIO(buzz_wav()))
@@ -560,26 +629,20 @@ class Desktop:
                 w * self.viewport.width / 320, h * self.viewport.height / 480))
 
     def _answer(self, *value):
-        """Answer the pending element; a queued transition (service 16) runs around it: the frame as it was
-        stays up under the closing blinds while the script advances, then the new element is revealed."""
-        if self.fade:
+        """Answer the pending element. A queued transition (service 16) is the session's (fade_transition.py): the
+        element stays up under the closing blinds, the script runs once they are shut, and the next one is revealed."""
+        if self.fade or self.session.transitioning:
             return
-        before = self.window.copy() if self.session.engine.scene_value else None
         # A choice that opens a link (service 100, a no-op in HD) and then ends the script -- the High School Story ad's
         # "Go to the High School Story app!" -- would leave the episode stopped: it goes back to the choice instead.
         choice = self.session.pending if self.session.pending and self.session.pending.name == 'choice' else None
         state = self.session.snapshot() if choice is not None else None
         self.session.engine.store_link = ''
-        self.session.transition_kind = 0
         self._attempt(lambda: self.session.answer(*value))
         link = self.session.engine.store_link
         if state is not None and link and self.session.pending and self.session.pending.name == 'finished':
             self.session = Session.from_snapshot(self.session.resources, state)
             self._offer_link(link)
-            return
-        kind = self.session.transition_kind
-        if kind and before is not None and not self.error:
-            self.fade = dict(kind=kind, phase='out', since=pygame.time.get_ticks(), frozen=before)
 
     def _offer_link(self, link):
         """Open a script's link in the browser, behind the app's "Exit Game?" confirmation as the wall's links are. An
@@ -594,13 +657,14 @@ class Desktop:
     SKIP_OPTIONS = ('Win', 'Lose', 'Play')
 
     def _host_prompt(self):
-        """The host prompt over the pending screen, or None; the mini-game prompt opens the first time a football game or
-        word grid is seen."""
+        """The host prompt over the pending screen, or None; the mini-game prompt opens the first time a football game,
+        word grid or word quiz (service 71, both games) is seen."""
         action = self.session.pending
         prompt = self.host_prompt
         if prompt is not None and prompt['action'] is not action:
             prompt = self.host_prompt = None
-        if (prompt is None and self.skip_minigames and action is not None and action.name in ('football', 'word_grid')
+        if (prompt is None and self.skip_minigames and action is not None
+                and action.name in ('football', 'word_grid', 'word_game')
                 and self.minigame_played is not action and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action), self.SKIP_OPTIONS,
                                        lambda index: self._resolve_minigame(action, index))
@@ -612,14 +676,18 @@ class Desktop:
         details = dict(title=title, text=text, options=list(options), values=list(range(len(options))),
                        enabled=[True] * len(options), timeout_ms=0, timeout_result=0, character_id=-1, portrait_mode=0)
         stand_in = SimpleNamespace(pending=SimpleNamespace(name='choice', details=details, request=None),
-                                   engine=self.session.engine, vm=SimpleNamespace(steps_executed=0),
+                                   engine=_PromptEngine(self.session.engine), vm=SimpleNamespace(steps_executed=0),
                                    scene=self.session.scene, remaining_ms=None, resources=self.session.resources)
         self.host_prompt = dict(action=action, session=stand_in, options=tuple(options), resolve=resolve)
         return self.host_prompt
 
     def _pick(self, action, index):
         """Answer the script's choice: the ad's "Play the Surviving High School episode!" first asks whether to skip
-        these intros from now on (ad_intro.py), unless the player already chose to."""
+        these intros from now on (ad_intro.py), unless the player already chose to. Disable Choice Timer's last row
+        lets the time run out."""
+        if self._timeout_row(action, index):
+            self._attempt(self.session.expire_choice)
+            return
         if play_option(action) == index and not self.skip_ad_intros and self.ad_asked is not action:
             self.ad_asked = action
             self._open_prompt(action, 'Skip ad intros?',
@@ -652,6 +720,11 @@ class Desktop:
             half = {1: 'First half', 2: 'Second half'}.get(game.half, 'Overtime')
             side = 'defense' if game.defense else 'offense'
             return f'Football. {half}, starting on {side}. {home} {game.home}, {away} {game.away}.'
+        if action.name == 'word_game':
+            game = engine.word_game
+            seconds = round(game.duration_ms / 1000)
+            return (f'Word quiz. Pick the right word, again and again, for {seconds} seconds. Win scores the most a '
+                    f'quiz can; Lose scores nothing.')
         game = engine.word_grid
         words = []
         for problem in game.problems:
@@ -669,22 +742,20 @@ class Desktop:
         if index == 2:
             self.minigame_played = action
             return
-        before = self.window.copy() if self.session.engine.scene_value else None
-        self.session.transition_kind = 0
         self._attempt(lambda: self.session.skip_minigame(index == 0))
-        kind = self.session.transition_kind
-        if kind and before is not None and not self.error:
-            self.fade = dict(kind=kind, phase='out', since=pygame.time.get_ticks(), frozen=before)
 
     def _hd_choice_closes(self, action, index):
         """Whether a pick of `index` closes the HD choice panel natively (pressed row, then a fade) rather than at once:
         an enabled row of an HD-drawn choice."""
-        return self._choice_enabled(action, index) and self._hd_choice_drawn()
+        return self._choice_pickable(action, index) and self._hd_choice_drawn()
 
     @staticmethod
     def _choice_enabled(action, index):
         enabled = action.details.get('enabled', ())
         return 0 <= index < len(enabled) and bool(enabled[index])
+
+    def _choice_pickable(self, action, index):
+        return self._choice_enabled(action, index) or self._timeout_row(action, index)
 
     def _hd_choice_drawn(self):
         return hasattr(self.choice_renderer.cached_page, 'rows_top')
@@ -700,10 +771,33 @@ class Desktop:
             if closing.get('prompt'):           # a host prompt (not the script's choice)
                 self.host_prompt = None
                 closing['prompt']['resolve'](closing['index'])
-            elif closing['index'] is None:      # timed out: let the clock run out now, as before
+            elif closing['index'] is None and closing['action'].name == 'choice':     # timed out: run out now
+                self._attempt(self.session.expire_choice)
+            elif closing['index'] is None:      # the quiz's clock: let it run out now, as before
                 self._attempt(lambda: self.session.tick(max(1, self.session.remaining_ms or 0)))
             else:
                 self._pick(closing['action'], closing['index'])
+
+    def _tick_autoplay(self, elapsed_ms):
+        """Autoplay: once a dialogue page's text is out (or a title card or message panel is ready), wait
+        AUTOPLAY_WAIT_MS, then advance it as a tap would. Anything that wants an answer (a choice, name entry, a
+        mini-game, the portrait picker) waits for the player as usual."""
+        action, engine = self.session.pending, self.session.engine
+        ready = False
+        if self.autoplay and action is not None and not self.session.transitioning and self.host_prompt is None:
+            if action.name == 'dialogue':
+                ready = engine.dialogue_animation is not None and engine.dialogue_animation.complete
+            elif action.name in ('message_panel', 'survey_confirmation'):
+                ready = engine.message_panel is not None and engine.message_panel.ready
+            elif action.name == 'presentation':
+                ready = engine.title_screen is not None and engine.title_screen.ready
+        if not ready:
+            self.autoplay_ms = 0
+            return
+        self.autoplay_ms += elapsed_ms
+        if self.autoplay_ms >= self.AUTOPLAY_WAIT_MS:
+            self.autoplay_ms = 0
+            self._answer()
 
     def _tick_fade(self, elapsed_ms):
         fade = self.fade
@@ -715,17 +809,32 @@ class Desktop:
 
     def _draw_fade(self):
         fade = self.fade
-        area = getattr(self, 'bg_viewport', self.window.get_rect()).clip(self.window.get_rect())
         if fade['frozen'] is not None:
             self.window.blit(fade['frozen'], (0, 0))
         ms = pygame.time.get_ticks() - fade['since']
-        amount = scene_fade.coverage(fade['kind'], fade['phase'], ms)
-        if fade['kind'] == 6:
+        self._draw_cover(fade['kind'], scene_fade.coverage(fade['kind'], fade['phase'], ms))
+
+    def _draw_transition(self):
+        """The session's queued transition over the frame (fade_transition.FadeTransition; Android's has no layers)."""
+        transition = self.session.engine.scene_transition
+        if transition is not None and transition.active and transition.coverage > 0:
+            self._draw_cover(transition.selector, transition.coverage)
+
+    def _ui_closed(self, action):
+        """Whether `action` is an answered menu, entry or picker waiting under the queued fade-out: it has closed
+        (the menu's view faded out, the entry's panel gone), so only the scene shows under the closing blinds."""
+        transition = self.session.engine.scene_transition
+        return (action is not None and transition is not None and transition.phase == 4
+                and action.name in ('choice', 'text_input', 'character_picker', 'word_game'))
+
+    def _draw_cover(self, kind, amount):
+        area = getattr(self, 'bg_viewport', self.window.get_rect()).clip(self.window.get_rect())
+        if kind == 6:
             shade = pygame.Surface(area.size)
             shade.set_alpha(round(255 * amount))
             self.window.blit(shade, area)
         else:
-            for x, y, w, h in scene_fade.blind_rects(fade['kind'], amount, area.size):
+            for x, y, w, h in scene_fade.blind_rects(kind, amount, area.size):
                 self.window.fill((0, 0, 0), (area.x + x, area.y + y, w, h))
 
     def _submit_input(self, action):
@@ -774,7 +883,8 @@ class Desktop:
         self.pending_background_alpha = 255
         details = action.details if action else {}
         ask = self._host_prompt()
-        if action and not ask and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
+        closed = self._ui_closed(action)
+        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
             try:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
                 # reads and (pre-caching) re-decompressed an HD resource -- for the one the dict ends up
@@ -829,8 +939,8 @@ class Desktop:
                 self.error = str(error)
                 logging.error('Panel rendering stopped: %s', error)
         # The skip prompt (`_minigame_ask`) is drawn as a choice, from a stand-in for the session.
-        source = ask['session'] if ask else self.session
-        if (action and (action.name in ('choice', 'word_game') or ask) and not self.error
+        source = ask['session'] if ask else self._choice_source()
+        if (action and (action.name in ('choice', 'word_game') or ask) and not self.error and not closed
                 and hasattr(self.session.resources, 'read_asset')):
             try:
                 page = self.choice_renderer.page(source)
@@ -876,8 +986,18 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
+        if closed and not self.error:
+            # An answered menu, entry or picker under the closing blinds: the scene and the bottom bar alone.
+            engine = self.session.engine
+            self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
+            self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+            self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', False)
+            self.buttons = []
+            self._present()
+            return
         if action and action.name == 'dialogue' and not self.error:
             try:
+                self.dialogue_renderer.autoplay = self.autoplay
                 self.dialogue_renderer.draw(None, self.session)
                 self.story_layer = self.dialogue_renderer.wide
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.dialogue_renderer.footer_text,
@@ -1170,6 +1290,7 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
+        self._draw_transition()
         if self.fade:
             self._draw_fade()
         if not self.capture:
@@ -1400,6 +1521,7 @@ class Desktop:
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                    autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}))
 
     def pause_box(self):
@@ -1494,7 +1616,7 @@ class Desktop:
         self.gear_pointer_down = False
         self._sync_text_input()
         kind = command[0]
-        if self.fade and kind == 'menu':
+        if (self.fade or self.session.transitioning) and kind == 'menu':
             return                                   # the pause button is off during a transition
         if kind == 'pause_open':
             # A row of the menu (`SHSWidgetMenu::itemSelected`) and its back button (`buttonPressed`, tags 1-4) both
@@ -1525,12 +1647,18 @@ class Desktop:
                 self.skip_minigames = not self.skip_minigames
             elif command[1] == 'skip_ad_intros':
                 self.skip_ad_intros = not self.skip_ad_intros
+            elif command[1] == 'autoplay':
+                self.autoplay, self.autoplay_ms = not self.autoplay, 0
+            elif command[1] == 'disable_choice_timer':
+                self.disable_choice_timer = not self.disable_choice_timer
             elif command[1] == 'hd_backdrop':
                 self.hd_backdrop = not self.hd_backdrop
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
-                if self.vibration_enabled and self.audio:
-                    self._buzz()            # SHSEngine::setVibrationEnabled vibrates once when it is switched on
+                if self.vibration_enabled and pygame.supports_vibration():
+                    pygame.vibrate()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
+                elif self.vibration_enabled and self.audio:
+                    self._buzz()
             else:
                 self.sound_enabled = not self.sound_enabled
                 if self.sound_enabled:
@@ -1591,7 +1719,7 @@ class Desktop:
                 self._notice('Progress loaded')
             except (SaveError, OSError) as error:
                 self._notice(str(error))
-        elif not self.error and not self.fade:
+        elif not self.error and not self.fade and not self.session.transitioning:
             action = self.session.pending
             if action and action.name == 'text_input' and not self.menu_open and self.active:
                 if kind in ('input_dismiss', 'input_focus'):
@@ -1617,14 +1745,15 @@ class Desktop:
                 self._menu_sound()      # `SHSUIMenu::handleMenuSelection`, modes 1 and 3 (a timeout is silent)
                 self.choice_closing = dict(action=action, index=command[1], ms=0)
             elif kind == 'choose' and action and action.name == 'choice':
-                if self._choice_enabled(action, command[1]):
+                if self._choice_pickable(action, command[1]):
                     self._menu_sound()
                 self._pick(action, command[1])
             elif kind == 'choose' and action and action.name == 'word_game':
                 self._answer(command[1])
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
                                                                      'survey_confirmation'):
-                self._answer()
+                if not self.autoplay:           # Autoplay advances these itself (`_tick_autoplay`)
+                    self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
         self._sync_text_input()
@@ -1632,7 +1761,7 @@ class Desktop:
     def _choice_focus_rows(self, action, asking):
         """The rows the arrow keys step through, top to bottom: a choice's enabled options, the quiz's answers or a
         host prompt's options; none while the pause menu, an error or a closing choice holds the screen."""
-        if (self.menu_open or self.error or self.fade or action is None
+        if (self.menu_open or self.error or self.fade or self.session.transitioning or action is None
                 or not (asking or action.name in ('choice', 'word_game'))
                 or self.choice_closing is not None and self.choice_closing['action'] is action):
             return []
@@ -1642,7 +1771,7 @@ class Desktop:
             return [SimpleNamespace(index=index, rect=None)
                     for index, enabled in enumerate(action.details['enabled']) if enabled]
         try:
-            page = self.choice_renderer.page(self.host_prompt['session'] if asking else self.session)
+            page = self.choice_renderer.page(self.host_prompt['session'] if asking else self._choice_source())
         except (ContentError, pygame.error, OSError, ValueError):
             return []
         return sorted((row for row in page.rows if row.enabled), key=lambda row: row.rect.y)
@@ -2045,7 +2174,8 @@ class Desktop:
         if target is None:
             return False
         engine = self.session.engine
-        if self.fade or pygame.time.get_ticks() < self.warp_lockout or engine.dt_view.current is None:
+        if (self.fade or self.session.transitioning or pygame.time.get_ticks() < self.warp_lockout
+                or engine.dt_view.current is None):
             return True
         view = engine.dt_view
         if not self.warp_unlocked:
@@ -2148,6 +2278,7 @@ class Desktop:
             elif ask is not None:
                 pass                            # the mini-game has not started: its clocks wait for the skip prompt
             elif (pending is not None and pending.name in ('choice', 'word_game') and remaining is not None
+                  and (pending.name == 'word_game' or self.session.choice_timer)
                   and remaining < elapsed_ms and self._hd_choice_drawn()):     # exactly 0 is still selectable
                 # `SHSUIMenu::tick`: out of time with nothing selected -> `finishUI`, the same fade-out (no pressed row);
                 # for the quiz this is how the game ends. The clock is held at 0 and runs out after the fade.
@@ -2161,6 +2292,7 @@ class Desktop:
             if self.session.pending is not None and (self.session.pending.name in ('choice', 'word_game')
                                                      or self.host_prompt is not None):
                 self.choice_renderer.age_ms += elapsed_ms     # the HD panel's fade-in and its labels' fly-on
+            self._tick_autoplay(elapsed_ms)
         target = 1.0 if self.panels_open else 0.0
         step = elapsed_ms / 250  # Not a recovered native duration; a reasonable slide speed.
         if self.panels_progress < target:

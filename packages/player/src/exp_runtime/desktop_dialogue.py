@@ -992,7 +992,11 @@ class DialogueRenderer:
     _CONTINUE_FRAME_BY_THEME = {1: 10, 2: 8, 3: 11}
     CONTINUE_FONT = 'TrebuchetMS_Bold14'
 
+    autoplay = False        # Desktop's Autoplay: no Continue pill or tab, the page advances by itself
+
     def draw_continue(self, session, page, theme):
+        if self.autoplay:
+            return
         if not self.has_hd_bundle():
             self.draw_continue_tab(page.box, theme, session.engine.dialogue_animation)
             return

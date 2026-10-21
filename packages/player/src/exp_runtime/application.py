@@ -775,7 +775,11 @@ class Application:
         self.ui_sound('CLICK_SOUND')
 
     def play_buzz(self):
-        """The vibration stand-in's buzz (vibration.py) at the Sound FX volume, while Sound is on."""
+        """The vibration stand-in's buzz (vibration.py) at the Sound FX volume, while Sound is on; a device that can
+        vibrate vibrates instead."""
+        if pygame.supports_vibration():
+            pygame.vibrate()
+            return
         if not (self.audio and self.state.sound):
             return
         from .vibration import buzz_wav
@@ -857,6 +861,8 @@ class Application:
         self.game.choice_hints = self.state.choice_hints
         self.game.skip_minigames = self.state.skip_minigames
         self.game.skip_ad_intros = self.state.skip_ad_intros
+        self.game.autoplay = self.state.autoplay
+        self.game.disable_choice_timer = self.state.disable_choice_timer
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.warp_unlocked = self.state.warp_unlocked
         self.game.on_settings = self.save_game_settings
@@ -919,6 +925,8 @@ class Application:
         self.state.choice_hints = self.game.choice_hints
         self.state.skip_minigames = self.game.skip_minigames
         self.state.skip_ad_intros = self.game.skip_ad_intros
+        self.state.autoplay = self.game.autoplay
+        self.state.disable_choice_timer = self.game.disable_choice_timer
         self.state.hd_backdrop = self.game.hd_backdrop
         self.state.music_volume = round(self.game.music_volume * 100)
         self.state.sound_volume = round(self.game.sound_volume * 100)
@@ -1111,7 +1119,8 @@ class Application:
                 self.set_update_check(not self.settings.check_for_updates)
             elif kind == 'toggle':
                 key = command[1]
-                if key not in ('music', 'sound', 'vibration', 'choice_hints', 'skip_minigames', 'skip_ad_intros'):
+                if key not in ('music', 'sound', 'vibration', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
+                               'autoplay', 'disable_choice_timer'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -1126,6 +1135,8 @@ class Application:
                     self.game.choice_hints = self.state.choice_hints
                     self.game.skip_minigames = self.state.skip_minigames
                     self.game.skip_ad_intros = self.state.skip_ad_intros
+                    self.game.autoplay = self.state.autoplay
+                    self.game.disable_choice_timer = self.state.disable_choice_timer
                     self.game._sync_music()
             elif kind in ('save', 'load') and self.paused_menu:
                 self.game.command((kind,))

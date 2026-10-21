@@ -240,16 +240,19 @@ than special-cased.
 ## Cause of Death (this fork)
 
 Cause of Death is iOS-only, so it always takes the iOS rules above (`hd=True`, `Session.name_input_metrics`), with or
-without an SHS HD art source. Its 1.4.7 `SHSUITextEntry::tick` (`0003ee0e`-`0003ee96`) differs from SHS HD's in one
-way:
-- **The game never recases.** The loop keeps `a-z A-Z 0-9` as typed, a newline ends the entry, and anything else
-  marks the text invalid; nothing follows the loop that recases a letter.
-- **The keyboard capitalizes instead.** On the device the first letter comes out capital because the iPhone keyboard
-  capitalizes a text field's first letter by default.
+without an SHS HD art source. Its 1.4.7 `SHSUITextEntry::tick`:
+- **The filter.** The loop (`0003ee0e`-`0003ee96`) keeps `a-z A-Z 0-9` as typed, a newline ends the entry, and
+  anything else marks the text invalid.
+- **Then the game capitalizes.** After a newline the text is trimmed, and a lowercase first letter is replaced by
+  its capital (`0003f03c`-`0003f0a6`: the first byte, if `a`-`z`, minus 0x20, then `substring(1, length)`). Later
+  letters keep their case. 1.3.4 has the same code (armv6 slice `0003b872`-`0003b8cc`, as exp-runtime cites it).
+  This corrects an earlier reading here, which found no recasing and credited the iPhone keyboard; the result is
+  the same.
 - **The scripts expect that capital.** Answers are compared case-sensitively (service 24), and the scripts expect
   the capital ("Ipconfig" in Volume 8).
 
-So the desktop capitalizes the first letter, as the keyboard does, and keeps the rest as typed. Before this fork
+So the desktop capitalizes the first letter and keeps the rest as typed. (It does so as the letter is typed; the
+game does it when the entry ends, after a keyboard that capitalizes a field's first letter anyway.) Before this fork
 change CoD fell to Android's rules: no capital, and later capitals lowercased. That made "Ipconfig", "EA",
 "WHEELCHAIR" and "MerrittBurke" impossible to type.
 
@@ -260,8 +263,6 @@ recorded what each text prompt's answer was compared with:
   spellings beside capitalized ones, so first-letter capitalization never blocks an answer.
 - Some answers also need later capitals, kept as typed under these rules: "EA", "WHEELCHAIR", "MerrittBurke".
 - Answers with spaces ("Wheel chair", "Christian Rose", "Dr. Rose") cannot be typed natively either: the tick rejects
-  spaces (see COD.md). exp-runtime v0.6.0 accepts ASCII spaces in CoD as its owner's convenience ("CoD input
-  policy" above); the merge keeps that for now, pending this fork owner's decision.
-- exp-runtime reads CoD 1.3.4's `0003b872`-`0003b89e` as the game itself capitalizing the first letter; this
-  fork's reading of 1.4.7 finds no recasing after the loop (the keyboard does it). Both give the same result; the
-  1.3.4 citation has not been checked here.
+  spaces (see COD.md), and each has a space-free spelling the scripts also accept. exp-runtime v0.6.0 accepts ASCII
+  spaces in CoD as its owner's convenience ("CoD input policy" above). This fork does not (owner's decision,
+  2026-10-21): `Session.name_input_metrics` passes `allow_space=False` for both games.

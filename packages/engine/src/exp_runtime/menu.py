@@ -85,6 +85,8 @@ class MenuState:
         # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
         self.skip_minigames = False
         self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
+        self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
+        self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
         self.order = 'episode'
         self.title_language = 'en'
@@ -103,6 +105,8 @@ class MenuState:
                         or type(data.get('choice_hints', False)) is not bool
                         or type(data.get('skip_minigames', False)) is not bool
                         or type(data.get('skip_ad_intros', False)) is not bool
+                        or type(data.get('autoplay', False)) is not bool
+                        or type(data.get('disable_choice_timer', False)) is not bool
                         or type(data.get('vibration', False)) is not bool
                         or not isinstance(data.get('selected'), (str, type(None)))
                         or data.get('order', 'episode') not in ('episode', 'title')
@@ -127,6 +131,8 @@ class MenuState:
                 self.choice_hints = data.get('choice_hints', False)
                 self.skip_minigames = data.get('skip_minigames', False)
                 self.skip_ad_intros = data.get('skip_ad_intros', False)
+                self.autoplay = data.get('autoplay', False)
+                self.disable_choice_timer = data.get('disable_choice_timer', False)
                 names = data.get('names', {})
                 if (not isinstance(names, dict) or len(names) > MAX_NAMES
                         or any(not isinstance(k, str) or not isinstance(v, str) or not 0 < len(k) <= 255
@@ -186,6 +192,7 @@ class MenuState:
                     warp_unlocked=self.warp_unlocked, hd_art=self.hd_art,
                     title_language=self.title_language, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                    autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, names=self.names)      # in the order written: replacement walks the table in that order
         temporary = None
         try:

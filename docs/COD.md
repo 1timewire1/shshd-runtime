@@ -272,11 +272,13 @@ The runtime stops at once for these instead (unverified in scripts). The iOS
 host's mixer has no volume control, so there the cue plays at full volume for
 the fade time and then stops.
 
-exp-runtime v0.6.0 also models CoD's scene blinds and black fades in the engine
-(`cod/scene_transition.py`: selectors 1, 2, 6 and 20, `setupQueuedFade` `0000f998`, `tickFade` `0000ee5c`,
-and the menu's `fadeToGame` `0000f9d8`), plus its own desktop audio handoff with saved playheads. This
-fork leaves both unset (no `SCENE_TRANSITION` in either profile; `music_playback` is not filled): its fades
-are `scene_fade.py`'s and its music `music_stream.py`'s. Comparing the two transition models is open.
+exp-runtime v0.6.0 models CoD's scene blinds and black fades in the session (selectors 1, 2, 6 and 20,
+`setupQueuedFade` `0000f998`, `tickFade` `0000ee5c`). This fork runs that model for CoD and for SHS HD, whose
+GameModel and SHSFadeLayer are the same code (`fade_transition.FadeTransition`; comparison 2026-10-21 in
+legacy/findings.md). One change: the black layer's fade-in is (1, 1, 0) at keyTimes (0, .8, 1), holding black for
+1.2 s and clearing over the last 0.3 s (1.4.7 `0005cbce`), where exp-runtime clears it linearly over 1.2 s. Its
+menu-to-story `fadeToGame` (`0000f9d8`) and desktop audio handoff with saved playheads are not used here: the main
+menu's entry is application.py's and the music `music_stream.py`'s.
 
 Service 80's second argument is the **repeat flag**, not a fade control.
 The dispatcher (`0003354c`) passes `bool(a2)` to `queueMusic` (`0000ebe2`),

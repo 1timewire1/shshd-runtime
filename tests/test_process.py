@@ -28,7 +28,7 @@ class RuntimeProcessTests(unittest.TestCase):
                 first.engine.speaker_names.basis = {}
                 first.engine.text_history.previous_glyph = ord('z')
                 first.engine.text_history.labels['dialogue_name'] = ord('a')
-                if game == 'cod' and first.engine.scene_transition is not None:   # unset in this fork
+                if game == 'cod':
                     first.engine.scene_transition.start(20, 0)
                 saved = copy.deepcopy(first.engine)
                 second = process.attach(session(game))
@@ -38,7 +38,7 @@ class RuntimeProcessTests(unittest.TestCase):
                 self.assertIsNone(second.engine.speaker_names.basis)
                 self.assertEqual(second.engine.text_history, saved.text_history)
                 self.assertFalse(second.transitioning)
-                if game == 'cod' and second.engine.scene_transition is not None:
+                if game == 'cod':
                     self.assertEqual(second.engine.scene_transition.random_state, 16807)
                 self.assertIs(second.process, process)
 

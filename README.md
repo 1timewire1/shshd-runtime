@@ -143,11 +143,15 @@ original Android menus, where the same switches sit under **Options** and
   gains or correct quiz answers green, losses/wrong answers or no-gain
   alternatives red, and mixed effects amber. Unknown or later consequences stay
   unmarked. It is off by default.
-- **Ask to skip mini-games** shows a choice before each football game and word
-  grid: Win, Lose or Play. Win and Lose finish the game at once with that
-  result, as the Decision Tree explorer decides it: football ends a touchdown
-  up or down from its starting score. The rapid-fire word quiz is not included.
-  It is off by default.
+- **Ask to skip mini-games** shows a choice before each football game, word
+  grid and word quiz: Win, Lose or Play. Win and Lose finish the game at once
+  with that result: football ends at least a touchdown up or down, a quiz with
+  the most or the least a quiz can score. It is off by default.
+- **Autoplay** (Options → General) advances dialogue by itself once its text is
+  out; choices, name entry and mini-games still wait for you. Off by default.
+- **Disable Choice Timer** (Options → General) stops timed choices' clocks and
+  adds a last row, Let the Timer Run Out, for scenes that need no answer. Off by
+  default.
 - **Skip ad intros** starts the episodes that open with a High School Story ad
   (Game of Cones, Part 1; The Conned Artist, Parts 1 and 2) at their title
   card. The ad's own "Play the Surviving High School episode!" choice also

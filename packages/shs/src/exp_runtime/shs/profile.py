@@ -6,11 +6,14 @@ from .audio import IOS_DOWNLOADED_MUSIC as DOWNLOADED_MUSIC
 from .football import Football
 from .word_grid import WordGrid
 from .scene_transition import SceneTransition
+from ..fade_transition import FadeTransition
 
 STATE_TYPES = {'word_grid': WordGrid | None, 'football': Football | None,
-               'scene_transition': SceneTransition | None}
-# This fork leaves exp-runtime's engine-level SceneTransition (SCENE_TRANSITION) unset: its scene changes are
-# scene_fade.py's binary-verified fades, drawn by the player, and the main menu's entry is application.py's.
+               'scene_transition': SceneTransition | FadeTransition | None}
+# Android's transition is a nonvisual callback boundary (scene_transition.py). With the HD (iPad) bundle the session runs
+# SHS HD's own SHSFadeLayer blinds and fade (fade_transition.FadeTransition, the same code as CoD's).
+SCENE_TRANSITION = SceneTransition
+HD_SCENE_TRANSITION = FadeTransition
 MENU_TRANSITION = 0
 
 KEY = 'shs'

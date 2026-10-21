@@ -634,7 +634,7 @@ class ChoiceRenderer:
         page = self.page(session)
         if choice_hints and self.hint_key != self.cached_key:
             started = pygame.time.get_ticks()
-            self.hints = preview_choices(session)
+            self.hints = preview_choices(getattr(session, 'real_session', session))     # (Disable Choice Timer's stand-in)
             self.hint_key = self.cached_key
             self.hint_ms += pygame.time.get_ticks() - started
         scroll = min(page.max_scroll, max(0, scroll))

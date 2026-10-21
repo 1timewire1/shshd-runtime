@@ -48,8 +48,9 @@ class InputHintTests(unittest.TestCase):
     def test_only_playable_exact_spellings_are_suggested(self):
         success = host_call(79, 8002)
         session = answer_session([(text, success) for text in
-                                  ('a' * 17, 'Blue-door', 'blue door', 'Blue door', 'BLUE DOOR')])
-        self.assertEqual(preview_answer(session), 'Blue door')
+                                  ('a' * 17, 'Blue-door', 'blue door', 'Blue door', 'BLUE DOOR', 'BlueDoor')])
+        # CoD's entry takes no spaces in this fork (Session.name_input_metrics), so a spaced spelling is never hinted.
+        self.assertEqual(preview_answer(session), 'BlueDoor')
         # The same font/advance limit used by real entry applies to hints.
         session.resources.dialogue_layout = lambda: SimpleNamespace(font=lambda _: font(40))
         self.assertIsNone(preview_answer(session))

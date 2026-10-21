@@ -19,9 +19,10 @@ takes only its styling from CoD's own menus, measured on IMG_0460 (Pause), IMG_0
 * Switches and sliders are UIKit's, as in SHS HD (CoD's photos show no slider; it is drawn as SHS HD's is).
 
 Options lists SHS HD's categories (General, Sound; `desktop_pause_hd.OPTION_CATEGORIES`): Sound has Game Music, Music
-Volume, Sound FX and Sound FX Volume; General has Choice Hints and SHS HD Backdrop. Left out by the owner's choice:
-Play My Music (the device's music library), and Side Panels, Ask to Skip Mini-Games and Skip Ad Intros (CoD has no side
-panels, mini-games or ad intros). The Help & About pages show CoD's own text; SHS's text overrides are SHS's.
+Volume, Sound FX and Sound FX Volume; General has Choice & Answer Hints (CoD's typed puzzles also get faint answers,
+input_hints.py), Ask to Skip Mini-Games (CoD's word quizzes, service 71) and SHS HD Backdrop. Left out by the owner's
+choice: Play My Music (the device's music library), and Side Panels and Skip Ad Intros (CoD has no side panels or ad
+intros). The Help & About pages show CoD's own text; SHS's text overrides are SHS's.
 """
 from functools import lru_cache
 
@@ -29,7 +30,7 @@ import pygame
 
 from .content import ContentError
 from .desktop_cod_menu import draw_cod_card
-from .desktop_pause_hd import BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, S, VERSION, HdPauseMenu
+from .desktop_pause_hd import BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, S, SWITCH_LABELS, VERSION, HdPauseMenu
 from .menu import MenuStrings
 
 # HD pack / frame -> CoD art: the back button's caps and middle (32: 13-15 -> pack 16: 90-92), its arrow (32: 12 ->
@@ -46,6 +47,9 @@ class CodPauseMenu(HdPauseMenu):
     # HD's ids 238 / 240 are CoD's iOS permission prompt ("Would Like to Send You Push Notifications").
     PAGES = {**PAGES, 'push': (235, 237)}
     CYCLE_FRAMES = ((13, 14, 15), (13, 14, 15))      # CoD's blue button: no orange one, no pressed art mapped
+    # Choice hints also show faint answers in CoD's typed puzzles (exp-runtime v0.6.0, input_hints.py); only CoD has
+    # them, so only CoD's label says so (owner's choice, 2026-10-20).
+    SWITCH_LABELS = {**SWITCH_LABELS, 'choice_hints': 'Choice & Answer Hints'}
 
     def __init__(self, resources, art, text=None):
         super().__init__(resources)
@@ -128,8 +132,7 @@ class CodPauseMenu(HdPauseMenu):
 
     # -- screens ----------------------------------------------------------------------------------------------
     def layout(self, settings, host_rows=(), *, message=''):
-        # CoD has no side panels, and neither mini-game nor High School Story ad intros (owner's choice: those switches
-        # are not listed).
-        settings = {key: value for key, value in settings.items()
-                    if key not in ('side_panels', 'skip_minigames', 'skip_ad_intros')}
+        # CoD has no side panels and no High School Story ad intros (owner's choice: those switches are not listed).
+        # Its word quizzes (service 71) take Ask to Skip Mini-Games.
+        settings = {key: value for key, value in settings.items() if key not in ('side_panels', 'skip_ad_intros')}
         return super().layout(settings, host_rows, message=message)

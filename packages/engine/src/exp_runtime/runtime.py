@@ -17,7 +17,7 @@ from .engine import POLL_WAIT_MS, EngineAction, EngineState
 from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
                                  ExpressionTransition, EXPRESSION_MS)
 from .background import BackgroundPan
-from .scene_fade import resolve
+from .fade_transition import FadeTransition
 from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_lifetime, notice_limit
 from .dt_state import install_state
 from .dtview_faceplace import DTNode, DTView, FaceplaceWall
@@ -37,6 +37,17 @@ from .vm import KiwiVM, StopKind, VMError, VMStop, signed16
 
 class SaveError(ValueError):
     pass
+
+
+def transition_class(resources):
+    """The game's queued-transition model: HD_SCENE_TRANSITION with an HD bundle (SHS HD's SHSFadeLayer), else
+    SCENE_TRANSITION, or None."""
+    profile = GAMES[game_id(resources)]
+    library = getattr(resources, 'library', None)
+    hd = library.hd_app_version() if hasattr(library, 'hd_app_version') else None
+    if hd is not None and hasattr(profile, 'HD_SCENE_TRANSITION'):
+        return profile.HD_SCENE_TRANSITION
+    return getattr(profile, 'SCENE_TRANSITION', None)
 
 
 def _typed_value(value, annotation, *, state_types=None):
@@ -130,6 +141,9 @@ class Session:
     # Whether answering a choice requests its click (exp-runtime v0.6.0). This fork's desktop plays the click itself at
     # the tap, before an HD choice's fade-out answers it, and switches this off.
     choice_click = True
+    # Whether a timed choice's clock runs. The desktop's Disable Choice Timer (this player's option, not native) holds
+    # it; `expire_choice` then lets it run out on request. Not saved: the remaining time is kept as it was.
+    choice_timer = True
 
     def __init__(self, resources: EpisodeResources, *, start_script: int = 25001, ephemeral: bool = False):
         GAMES[game_id(resources)]  # Fail before executing with a missing adapter.
@@ -142,13 +156,12 @@ class Session:
         self._set_build()
         self.engine.game_key = game_id(resources)
         self.engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
-        transition = getattr(GAMES[self.engine.game_key], 'SCENE_TRANSITION', None)
+        transition = transition_class(resources)
         if transition is not None:
             self.engine.scene_transition = transition()
         self.pending: EngineAction | None = None
         self.remaining_ms: int | None = None
         self.scene_loads = 0
-        self.transition_kind = 0    # the blind / fade the last completed panel queued (scene_fade.py); not saved
         self._load_dt_view()
         self._vibrations = 0
 
@@ -417,9 +430,11 @@ class Session:
             hd = self.resources.hd_asset(155) is not None or game_id(self.resources) == 'cod'
         except AttributeError:
             hd = game_id(self.resources) == 'cod'
-        # exp-runtime v0.6.0's CoD space policy (text_input.accept_name_character(allow_space=...)); see
-        # docs/NAME_INPUT.md for the decision still open on it.
-        policy = dict(hd=hd, allow_space=game_id(self.resources) == 'cod')
+        # No spaces in CoD answers (owner's decision, 2026-10-21). exp-runtime v0.6.0 accepts ASCII spaces in CoD as its
+        # owner's convenience (text_input.accept_name_character(allow_space=True)). This fork keeps the native filter:
+        # CoD 1.4.7's SHSUITextEntry::tick (0003ee0e-0003ee96) keeps only a-z, A-Z and 0-9, and every answer the
+        # scripts accept has a space-free spelling (docs/NAME_INPUT.md, the 2026-10-15 audit).
+        policy = dict(hd=hd, allow_space=False)
         if not hasattr(self.resources, 'dialogue_layout'):
             return dict(font=None, cursor_width=0, **policy)
         layout = self.resources.dialogue_layout()
@@ -691,14 +706,10 @@ class Session:
         self.engine.message_panel = None
 
     def _complete_panel(self):
+        # 000ab8b8 / 0007efe8, shared by title, message and dialogue panels; a queued transition holds the callback
+        # (_queue_transition). 000a6448 returns zero without writing result cells.
         if self._queue_transition(0):
             return False
-        # 000ab8b8 / 0007efe8, shared by title, message and dialogue panels. A queued
-        # random transition consumes one libc draw, even before its animation
-        # is implemented (scene_fade.py draws it). 000a6448 returns zero without writing result cells.
-        draw = self.engine.random48.next() if self.engine.scene_value == 20 else 0
-        self.transition_kind = resolve(self.engine.scene_value, draw)
-        self.engine.scene_value = 0
         self.vm.resume(0)
         self.pending = None
         return True
@@ -708,7 +719,8 @@ class Session:
         if transition is None or not self.engine.scene_value:
             return False
         selector = self.engine.scene_value
-        if self.engine.game_key == 'shs' and selector == 20:
+        if selector == 20 and not hasattr(transition, 'random_state'):
+            # Android SHS draws lrand48; the iOS games' FadeTransition draws its own libc rand() stream.
             selector = 1 + (self.engine.random48.next() & 1)
         transition.start(selector, result)
         self.engine.scene_value = 0
@@ -746,8 +758,22 @@ class Session:
             transition.clear()
         else:
             transition.reveal()
-            if action.name == 'dialogue' and self.engine.game_key == 'cod':
+            if action.name == 'dialogue' and isinstance(transition, FadeTransition):
+                # GameModel::tick stops the new UI's animations before the fade-in (SHS HD 000158ba, CoD's the same).
                 self.engine.dialogue_animation.stop_layers()
+
+    @_sound_batch
+    def expire_choice(self) -> EngineAction:
+        """Let the pending timed choice run out now, as its clock would (Disable Choice Timer's extra row): the same
+        timeout callback, with one millisecond of the other clocks."""
+        if not self.pending or self.pending.name != 'choice' or self.remaining_ms is None:
+            raise ValueError('There is no timed choice to let run out')
+        held, self.choice_timer = self.choice_timer, True
+        try:
+            self.remaining_ms = 0
+            return self.tick(1)
+        finally:
+            self.choice_timer = held
 
     def _game_sound(self, game, before):
         if game.sound_serial != before:
@@ -783,7 +809,7 @@ class Session:
                     self.vm.continue_after_pause()
                     self.pending = None
                 return self.advance()
-            if self.engine.game_key == 'cod' and transition.phase == 4:
+            if isinstance(transition, FadeTransition) and transition.phase == 4:
                 # UIKit/Core Animation continues while tickFade suppresses
                 # the game's UI tick (CoD 00037e64 only delays expression).
                 self.engine.background_pan.tick(elapsed_ms)
@@ -875,7 +901,7 @@ class Session:
             if finished:
                 return self._complete_minigame()
             return self.pending
-        if self.remaining_ms is not None:
+        if self.remaining_ms is not None and self.choice_timer:
             remaining = self.remaining_ms - elapsed_ms
             self.remaining_ms = max(0, remaining)
             if remaining < 0:  # 000ae4f4: exactly zero remains selectable.
@@ -980,7 +1006,7 @@ class Session:
                 state['engine'].setdefault('music_stop_ms', 0)
                 state['engine'].setdefault('music_playback', None)
                 state['engine'].setdefault('sound_playback', [])
-                transition = getattr(GAMES[game_id(resources)], 'SCENE_TRANSITION', None)
+                transition = transition_class(resources)
                 if state['engine'].get('scene_transition') is None:
                     state['engine']['scene_transition'] = asdict(transition()) if transition else None
                 football = state['engine'].get('football')
@@ -1227,9 +1253,15 @@ class Session:
             engine.dialogue_history.validate()
             engine.speaker_names.validate()
             engine.text_history.validate()
+            wanted = transition_class(resources)
+            if (wanted is not None and type(engine.scene_transition) is not wanted
+                    and engine.scene_transition is not None and not engine.scene_transition.active):
+                # A save made with or without the HD bundle, loaded the other way: an idle transition takes this
+                # library's model.
+                engine.scene_transition = wanted()
             if engine.scene_transition is not None:
                 engine.scene_transition.validate()
-            elif hasattr(GAMES[engine.game_key], 'SCENE_TRANSITION'):
+            elif wanted is not None:
                 raise SaveError('Missing game transition state')
             if engine.music_playback is not None:
                 engine.music_playback.validate()

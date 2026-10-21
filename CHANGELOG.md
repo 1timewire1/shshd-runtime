@@ -63,18 +63,56 @@
     - Random streams and fonts carried across episodes in one process.
     - The loading runner's 70 ms frames on iOS and in SHS HD
       (`initLoadingBar` 00022fec sets 0.07 s).
-    - CoD typed answers may contain spaces (upstream's policy).
     - The optional episode creator, as `shshd-runtime-creator`
       (`shshd-creator`, `shshd-creator-mcp`).
   - **Kept from this fork where the two overlap:**
     - Music and the pause-menu audio handoff (`music_stream.py`).
-    - Scene fades (`scene_fade.py`): upstream's engine-level `SceneTransition`
-      is left unset in both game profiles.
+    - CoD's typed answers keep the native filter: no spaces (upstream allows
+      them; owner's decision, 2026-10-21).
     - The HD choice, dialogue, notice and menu screens.
     - Ask to skip mini-games (upstream's Minigame skips does the same).
     - Low control bytes drawn as a gap or mapped by `DISPLAY_CHARACTERS`.
     - CoD's timeout results (`TIMEOUT_NO_OPTION_RESULT` and
       `TIMEOUT_PAST_OPTIONS_UNMAPPED`).
+- **Scene transitions now follow SHS HD's own code.** Compared against SHS
+  HD's GameModel and SHSFadeLayer, which are the same as CoD's. Both games now
+  run upstream's session model (`fade_transition.FadeTransition`), and the
+  player only draws it.
+  - The old element stays on screen under the closing blinds, and its script
+    runs only once they are shut. Its music and sounds no longer start early.
+  - The next dialogue is revealed already open, and its text starts typing
+    after the reveal, not underneath it.
+  - Title cards appear without a fade-in.
+  - A queued transition now also follows a choice, name entry or the portrait
+    picker. Before, it waited for the next dialogue to finish.
+  - The random blind (selector 20) draws libc `rand()`, as `setupQueuedFade`
+    does. It no longer takes a draw from the script's random stream.
+  - The black fade-in holds black for 1.2 s and clears in 0.3 s, as the
+    binary's keyframes have it. (Upstream clears it over 1.2 s; that is this
+    fork's one change to its model.)
+  - Android SHS (no HD bundle) keeps upstream's tick-only callback, as Android
+    draws no blinds.
+
+### Added (Options → General)
+
+- **Autoplay.** Dialogue, title cards and message panels take no taps.
+  - Their text reveals at its own pace.
+  - Then, instead of the Continue pill, they wait half a second and advance by
+    themselves.
+  - Choices, name entry, mini-games and the portrait picker still wait for you.
+- **Disable Choice Timer.** Timed choices hold their clock and show as
+  ordinary choices.
+  - They get a last row, **Let the Timer Run Out**, for scenes that need no
+    answer. It runs the game's own timeout.
+  - The word quiz keeps its clock (Ask to Skip Mini-Games covers it).
+- **Cause of Death:**
+  - Its Options now list Ask to Skip Mini-Games, for its word quizzes.
+  - Its Choice Hints switch is named Choice & Answer Hints, as only CoD has the
+    typed puzzles whose faint answers it shows.
+  - Ask to Skip Mini-Games now covers the word quiz in both games.
+- **Vibration on devices.** On a device that can vibrate, the Sound page's
+  last switch is the game's own Vibration, and the device vibrates instead of
+  buzzing.
 
 ### Fixed
 
@@ -107,9 +145,9 @@
   - Switches no longer click, in the main menu either.
   - Every call to the native sound player in both games was checked; the table
     is in docs/MAIN_MENU.md, "Interface sounds".
-- **Cause of Death's typed answers now capitalize their first letter.** On an
-  iPhone the keyboard capitalizes the first letter, and CoD's puzzles expect it
-  ("Ipconfig"). The desktop didn't, and CoD also used Android's rules, which
+- **Cause of Death's typed answers now capitalize their first letter.** The
+  game capitalizes a lowercase first letter when the entry ends (1.4.7
+  `0003f03c`), and CoD's puzzles expect it ("Ipconfig"). The desktop didn't, and CoD also used Android's rules, which
   lowercase later capitals. CoD now uses the iOS rules: first letter
   capitalized, the rest as typed. An audit of all 26 answer-checking prompts
   found every accepted answer starting with a capital or digit. Answers needing

@@ -1079,10 +1079,12 @@ class DesktopTests(unittest.TestCase):
                 self.assertFalse(ui.menu_open, (x, y))
 
     def test_a_queued_transition_runs_blinds_around_the_answer(self):
+        # SHS HD's GameModel (fade_transition.py): the panel stays under the closing blinds with the script held, the
+        # script runs once they are shut, and the next panel is revealed with input off throughout.
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
-        from exp_runtime import scene_fade
         from exp_runtime.desktop import Desktop
+        from exp_runtime.fade_transition import FadeTransition
         import pygame
 
         self.addCleanup(pygame.quit)
@@ -1091,26 +1093,32 @@ class DesktopTests(unittest.TestCase):
             resources = Resources(vm_program(*host_call(16, 2), *host_call(33, title, text, 4000),
                                              *host_call(33, title, text, 4000), 0x33, words=words))
             resources.library.directory = Path(temporary)
+            resources.library.hd_app_version = lambda: '1.4.38'          # the HD bundle's own transition model
             ui = Desktop(Session(resources), audio=False)
             ui.window = pygame.display.set_mode((768, 1024), pygame.RESIZABLE)
+            transition = ui.session.engine.scene_transition
+            self.assertIsInstance(transition, FadeTransition)
             self.assertEqual(ui.session.pending.name, 'message_panel')
             ui.session.engine.scene_value = 2
             ui.session.tick(5000)
+            first = ui.session.pending
             ui.command(('continue',))
-            self.assertEqual((ui.fade['kind'], ui.fade['phase']), (2, 'out'))
-            self.assertEqual(ui.session.engine.scene_value, 0)
+            self.assertEqual((transition.selector, transition.phase), (2, 4))
+            self.assertIs(ui.session.pending, first)                # held: the script has not run yet
             before = ui.session.snapshot()
-            ui.command(('continue',))                     # input is off while the blinds run
+            ui.command(('continue',))                               # input is off while the blinds run
+            ui.command(('menu',))
+            self.assertFalse(ui.menu_open)
             self.assertEqual(ui.session.snapshot(), before)
-            ui.tick(16)                                   # the session is frozen behind the closing blinds
-            self.assertEqual(ui.session.snapshot(), before)
-            ui.fade['since'] -= scene_fade.out_ms(2)
-            ui.tick(16)
-            self.assertEqual(ui.fade['phase'], 'in')
-            ui._draw_fade()
-            ui.fade['since'] -= scene_fade.in_ms(2)
-            ui.tick(16)
-            self.assertIsNone(ui.fade)
+            ui._draw_transition()
+            ui.tick(1499)
+            self.assertIs(ui.session.pending, first)
+            ui.tick(1)                                              # shut: the callback, then the next panel
+            self.assertIsNot(ui.session.pending, first)
+            self.assertEqual((ui.session.pending.name, transition.phase), ('message_panel', 3))
+            ui._draw_transition()
+            ui.tick(1800)                                           # 0.3 s wait, then 1.2 s of opening
+            self.assertFalse(ui.session.transitioning)
 
     def test_window_input_save_load_and_resized_mouse_coordinates(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'

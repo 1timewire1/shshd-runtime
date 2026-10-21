@@ -48,8 +48,9 @@ def accept_name_character(current: str, char: str, *, font: BitmapFont | None = 
                           cursor_width: float = 0, hd: bool = False, allow_space: bool = False,
                           capitalize_first: bool = False) -> tuple[str, str | None]:
     # `hd`: the iOS builds' rules (this fork; docs/NAME_INPUT.md): the first letter capitalized, later ones as typed,
-    # no 16-character cap. `capitalize_first` is exp-runtime's CoD rule (it cites 0003b872..0003b89e); `allow_space`
-    # its CoD space convenience.
+    # no 16-character cap. `capitalize_first` is exp-runtime's CoD rule (1.3.4 0003b872..0003b8cc, 1.4.7
+    # 0003f03c..0003f0a6: the game capitalizes the first letter when the entry ends). `allow_space` is exp-runtime's
+    # CoD space convenience, which this fork does not use (Session.name_input_metrics).
     if (len(char) != 1 or not _alphanumeric(char, allow_space=allow_space)
             or (not hd and len(current) >= MAX_NAME_LENGTH) or not _alphanumeric(current, allow_space=allow_space)
             or not _has_room(current, font, cursor_width)):

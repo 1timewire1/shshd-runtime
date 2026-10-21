@@ -1,0 +1,98 @@
+"""The iOS games' queued scene transition: SHSFadeLayer's blinds and fade to black, and GameModel's delayed callback.
+
+exp-runtime v0.6.0 recovered this from Cause of Death (GameModel 0000f998/0000ee5c, SHSFadeLayer 00058188..00058e84,
+its cod/scene_transition.py). SHS HD has the same code (GameModel::setupQueuedFade 000125e0, restartFade 000118bc,
+tickFade 00011a24, GameModel::tick 000158a0, -[SHSFadeLayer doFadeToBlack_Animation:] 0007edf8), so this fork uses one
+model for both:
+
+* finishUI queues the transition (setupQueuedFade). Selector 20 draws libc rand() (the `_rand` stub; only the zip
+  writer ever seeds it) and takes 1 or 2.
+* Phase 4, the fade-out (restartFade(4)): the old UI stays on screen, its game tick held, while the layers close.
+* Phase 1, covered (restartFade(1)): the old UI's callback runs and KiWi makes the next UI.
+* Then GameModel::tick: a title card (UI type 16) cancels the fade (restartFade(0), no fade-in); anything else has
+  its animations stopped and fades in (phase 3, restartFade(3)), its game tick held until the reveal ends.
+
+Each track is a linear CAKeyframeAnimation over 1.5 s with keyTimes (0, .8, 1). The blinds close (0, 1, 1) and open
+(1, 0, 0) after a 0.3 s wait. The black layer's opacity is (0, 1, 1) out and (1, 1, 0) in: it holds black for 1.2 s
+and clears over the last 0.3 s (0007efb6..0007f0e8; CoD 1.4.7 0005cb18 the same). exp-runtime clears it linearly
+over 1.2 s instead; that is this fork's one change to its model. An unrecognized selector starts no layers, and
+isFinished's watchdog releases it only after strictly more than seven seconds.
+"""
+from dataclasses import dataclass
+
+from .game_state import GameState
+from .vm import VMError
+
+DURATION_MS = 1500
+KEY_MS = 1200
+BLIND_DELAY_MS = 300
+WATCHDOG_MS = 7001
+
+
+@dataclass
+class FadeTransition(GameState):
+    selector: int = 0
+    phase: int = 0
+    elapsed_ms: int = 0
+    result: int = 0
+    random_state: int = 1
+
+    @property
+    def active(self):
+        return self.phase != 0
+
+    def start(self, selector, result):
+        if selector == 20:
+            # Darwin's Park-Miller rand(), initially seeded with 1. No game
+            # seeding call exists; the other caller belongs to ZIP encryption.
+            self.random_state = (16807 * (self.random_state or 123459876)) % 2147483647
+            selector = 1 + (self.random_state & 1)
+        self.selector, self.result = selector, result
+        self.phase, self.elapsed_ms = 4, 0
+
+    def reveal(self):
+        self.phase, self.elapsed_ms, self.result = 3, 0, 0
+
+    def wake(self):
+        self.phase, self.elapsed_ms, self.result = 1, 0, 0
+
+    def clear(self):
+        self.selector = self.phase = self.elapsed_ms = self.result = 0
+
+    @property
+    def delay_ms(self):
+        return BLIND_DELAY_MS if self.phase == 3 and self.selector in (1, 2) else 0
+
+    @property
+    def duration_ms(self):
+        return DURATION_MS + self.delay_ms if self.selector in (1, 2, 6) else WATCHDOG_MS
+
+    def tick(self, elapsed_ms):
+        if self.phase == 1:
+            return False
+        self.elapsed_ms = min(self.duration_ms, self.elapsed_ms + elapsed_ms)
+        return self.elapsed_ms == self.duration_ms
+
+    @property
+    def coverage(self):
+        """How much of the frame is black, 0..1: a blind's closed fraction, or the black layer's opacity."""
+        if not self.active or self.selector not in (1, 2, 6):
+            return 0.0
+        if self.phase == 1:
+            return 1.0
+        if self.phase == 4:
+            return min(1., self.elapsed_ms / KEY_MS)
+        if self.selector == 6:
+            return 1. - min(1., max(0., (self.elapsed_ms - KEY_MS) / (DURATION_MS - KEY_MS)))
+        return 1. - min(1., max(0., (self.elapsed_ms - self.delay_ms) / KEY_MS))
+
+    def validate(self):
+        if (not 0 <= self.random_state < 2147483647 or self.phase not in (0, 1, 3, 4)
+                or not -32768 <= self.selector <= 32767
+                or not -32768 <= self.result <= 32767
+                or not 0 <= self.elapsed_ms < self.duration_ms
+                or (self.active and self.selector in (0, 20))
+                or (self.phase != 4 and self.result != 0)
+                or (self.phase == 1 and self.elapsed_ms != 0)
+                or (not self.active and (self.selector or self.elapsed_ms))):
+            raise VMError('Invalid scene transition state')

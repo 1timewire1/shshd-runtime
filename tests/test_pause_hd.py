@@ -74,6 +74,16 @@ class HdPauseTests(unittest.TestCase):
         self.settings.update(side_panels=False, hd_backdrop=True)
         self.assertEqual([c[1] for _, c in self.commands() if c[0] == 'pause_toggle'],
                          ['side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'hd_backdrop'])
+        # This player's Autoplay and Disable Choice Timer come after the side panels (owner, 2026-10-21).
+        self.settings.update(autoplay=False, disable_choice_timer=True)
+        rows = self.menu.option_rows('general', self.settings, self.menu.strings())
+        self.assertEqual([(key, label) for _, label, key in rows][:3],
+                         [('side_panels', 'Side Panels'), ('autoplay', 'Autoplay'),
+                          ('disable_choice_timer', 'Disable Choice Timer')])
+        layer, buttons = self.menu.layout(self.settings)
+        self.assertLessEqual(max(rect.bottom for rect, _ in buttons), 1024)        # all eight rows fit the frame
+        for key in ('autoplay', 'disable_choice_timer'):
+            del self.settings[key]
         # Back: the category list, then the pause panel.
         self.assertFalse(self.menu.back())
         self.assertEqual(state.screen, 'options')
@@ -269,14 +279,18 @@ class CodPauseTests(unittest.TestCase):
         top = (1024 - (hd.HEADER + 4 * hd.ROW + hd.FOOT)) / 2
         self.assertEqual(buttons[0][0], pygame.Rect(hd.PANEL_X, top + hd.HEADER, hd.PANEL_W, hd.ROW))
 
-    def test_options_keeps_choice_hints_but_not_shs_only_switches_or_play_my_music(self):
-        # CoD has no side panels, mini-games or ad intros; Play My Music is not listed (owner's choices).
+    def test_options_keeps_choice_hints_and_minigame_skips_but_not_shs_only_switches(self):
+        # CoD has no side panels or ad intros; Play My Music is not listed (owner's choices). Its word quizzes take Ask
+        # to Skip Mini-Games (owner's choice, 2026-10-21), and its Choice Hints label names the faint answers too.
         self.menu.state.screen = 'options:sound'
         self.assertEqual([c[:2] for _, c in self.buttons()],
                          [('pause_toggle', 'music'), ('pause_slider', 'music'), ('pause_toggle', 'sound'),
                           ('pause_slider', 'sound'), ('pause_back',)])
         self.menu.state.screen = 'options:general'
-        self.assertEqual([c[:2] for _, c in self.buttons()], [('pause_toggle', 'choice_hints'), ('pause_back',)])
+        self.assertEqual([c[:2] for _, c in self.buttons()],
+                         [('pause_toggle', 'choice_hints'), ('pause_toggle', 'skip_minigames'), ('pause_back',)])
+        rows = self.menu.option_rows('general', self.settings, self.menu.strings())
+        self.assertEqual({key: label for _, label, key in rows}['choice_hints'], 'Choice & Answer Hints')
 
     def test_cods_sound_page_offers_vibration_too(self):
         self.menu.state.screen = 'options:sound'

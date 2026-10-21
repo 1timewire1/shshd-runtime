@@ -1,21 +1,19 @@
-"""The scene transition between story elements: blinds or a fade to black.
+"""Drawing the iOS games' scene transitions: SHSFadeLayer's 16 blinds and its black layer.
 
-Decompiled (`SHSFadeLayer`, `GameModel::restartFade` / `tickFade` / `setupQueuedFade`, `SHSUIElement::finishUI`):
-script service 16 queues a transition type; when the element on screen finishes (a tap on a dialogue), the fade-out
-runs over the frame, the script then advances behind it, and the fade-in reveals the next element. Input is off
-throughout. Type 1 is 16 horizontal blinds, 2 is 16 vertical blinds, 6 a fade to black, 20 a random 1 or 2.
-Every animation is a linear three-key `CAKeyframeAnimation` with keyTimes (0, .8, 1) over 1.5 s:
+The queued transition itself (service 16 -> finishUI -> fade-out, callback, reveal) is the session's
+(fade_transition.FadeTransition). This module keeps the timing the player also uses for its own fade from black (a
+Decision Tree warp, `fadeToGame`): every animation is a linear three-key `CAKeyframeAnimation` with keyTimes
+(0, .8, 1) over 1.5 s:
 * out: blind width (or black opacity) runs 0 -> full by 1.2 s and holds;
 * in: full -> 0 over the first 1.2 s and holds at 0; blinds wait 0.3 s before starting, the fade to black
   holds opaque for 1.2 s and fades over the last 0.3 s.
-Photo `dialouge/IMG_0188` catches vertical blinds mid-way. The layer's own 7 s watchdog is not modelled.
+Photo `dialouge/IMG_0188` catches vertical blinds mid-way.
 """
 
 DURATION_MS = 1500
 KEY_MS = 1200
 BLIND_DELAY_MS = 300
 BLINDS = 16
-KINDS = (1, 2, 6)
 
 
 def out_ms(kind):
@@ -47,10 +45,3 @@ def blind_rects(kind, fraction, size):
             strip = height / BLINDS
             rects.append((0, round(index * strip), width, max(0, round(strip * fraction))))
     return [rect for rect in rects if rect[2] > 0 and rect[3] > 0]
-
-
-def resolve(scene_value, draw):
-    """The transition a queued `scene_value` runs: 20 picks a blind by one random draw; unknown types run none."""
-    if scene_value == 20:
-        return 1 + (draw & 1)
-    return scene_value if scene_value in KINDS else 0

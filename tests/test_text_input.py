@@ -62,8 +62,8 @@ class NameInputTests(unittest.TestCase):
         self.assertFalse(Session(r).name_input_metrics()['hd'])
 
     def test_cause_of_death_always_takes_the_ios_rules(self):
-        # CoD is iOS-only: the iPhone keyboard capitalizes the first letter its answers expect ("Ipconfig"), and its
-        # SHSUITextEntry::tick keeps later letters as typed; no HD bundle is involved.
+        # CoD is iOS-only: its SHSUITextEntry::tick capitalizes the first letter its answers expect ("Ipconfig",
+        # 1.4.7 0003f03c) and keeps later letters as typed; no HD bundle is involved.
         from types import SimpleNamespace
         cod = SimpleNamespace(library=SimpleNamespace(game_id='cod'), hd_asset=lambda resource_id: None)
         metrics = Session.name_input_metrics(SimpleNamespace(resources=cod))
@@ -97,7 +97,7 @@ class NameInputTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_name(value, allow_space=True, **metrics)
 
-    def test_cod_spaces_work_through_typing_validation_width_and_saved_drafts(self):
+    def test_the_space_option_works_through_typing_validation_and_width(self):
         draft = ''
         for char in 'blue Door':
             draft, error = accept_name_character(draft, char, allow_space=True, capitalize_first=True,
@@ -118,8 +118,11 @@ class NameInputTests(unittest.TestCase):
             s.pending.details['draft'] = draft
             saved = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
             self.assertEqual(saved.pending.details['draft'], draft)
-            self.assertEqual(saved.answer(draft).request.args, (77, 0x7ff5))
-            self.assertEqual(saved.engine.last_input, draft)
+            # The option stays in text_input; CoD's own entry does not use it (no spaces, owner's decision 2026-10-21).
+            with self.assertRaises(ValueError):
+                saved.answer(draft)
+            self.assertEqual(saved.answer('BlueDoor').request.args, (77, 0x7ff5))
+            self.assertEqual(saved.engine.last_input, 'BlueDoor')
 
     def test_cod_first_character_capitalization_preserves_the_remaining_case(self):
         for current, char, expected in (('', 'b', 'B'), ('B', 'L', 'BL'), ('1', 'Z', '1Z'),
@@ -258,19 +261,20 @@ class DesktopInputTests(unittest.TestCase):
         self.assertEqual(s.engine.last_input, 'Ab')
         self.assertFalse(ui.text_input_started)
 
-    def test_cod_accepts_a_spaced_answer_through_the_shared_desktop_and_ios_input_path(self):
+    def test_cod_rejects_a_space_as_its_native_filter_does(self):
+        # exp-runtime v0.6.0 accepts spaces in CoD answers; this fork keeps the native a-z / A-Z / 0-9 filter
+        # (Session.name_input_metrics, owner's decision 2026-10-21).
         import pygame
         ui = self.desktop()
         ui.session.resources.library.game_id = ui.session.engine.game_key = 'cod'
         ui.render()
-        ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='blue Door'))
-        self.assertEqual(ui.session.pending.details['draft'], 'Blue Door')
+        ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='blue'))
+        self.assertEqual(ui.session.pending.details['draft'], 'Blue')
         self.assertIsNone(ui.input_error)
-        ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
-        self.assertIsNone(ui.error)
-        self.assertIsNone(ui.input_error)
-        self.assertEqual(ui.session.engine.last_input, 'Blue Door')
-        self.assertEqual(ui.session.pending.request.args, (77, 0x7ff5))
+        ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text=' '))
+        self.assertEqual(ui.session.pending.details['draft'], 'Blue')
+        self.assertIsNotNone(ui.input_error)
+        self.assertFalse(Session.name_input_metrics(ui.session)['allow_space'])
 
     def test_pause_focus_save_load_and_resized_alert_click(self):
         import pygame

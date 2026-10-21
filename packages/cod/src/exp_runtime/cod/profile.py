@@ -12,8 +12,8 @@ from .services import dispatch as DISPATCH
 from .scene_transition import SceneTransition
 
 STATE_TYPES = {'scene_transition': SceneTransition | None}
-# This fork leaves exp-runtime's engine-level SceneTransition (SCENE_TRANSITION) unset: its scene changes are
-# scene_fade.py's binary-verified fades, drawn by the player, and the main menu's entry is application.py's.
+# The session runs the queued transition (fade_transition.FadeTransition, shared with SHS HD); the player draws it.
+SCENE_TRANSITION = SceneTransition
 # GameModel::fadeToGame 0000f9d8, app mode 103 at 000201d4/000250f4.
 MENU_TRANSITION = 6
 
@@ -70,7 +70,10 @@ DIALOGUE_COLORS = {1: (0, 0, 0), 2: (180, 78, 78), 3: (0, 0, 0), -1: (0, 0, 0)}
 # to +0xfa74 (the same face in 0xffb46d1a, stroke 0.6). Body text switches only on '`' (CSFont::handleSwitchChar
 # 00004b54 toggles the base font's own switch characters; a ';' in body text is an ordinary character): theme 1's
 # +0x142d4 goes to +0x15af4, red 0xfffe3535 italic; theme 2's +0x1d394 (rose) to +0x1ebb4, blue 0xff2968dd; the gray
-# and default sets (+0x26454, +0x2f514) to black. The switch face is TrebuchetMS-Italic (+0x1ec) with stroke 0.5.
+# and default sets (+0x26454, +0x2f514) to black (+0x27c74 at 0002669e, +0x30d34 at 000267fc: fill 0xff000000). The
+# switch face is TrebuchetMS-Italic (+0x1ec) with stroke 0.5: the switch font's own colour, except gray and default,
+# whose stroke is red 0xfffe3535 (exp-runtime reads that stroke as their colour; the fill is black). The italic face
+# and the stroke are not drawn here yet: only the fill colour changes.
 NARRATION_COLORS = ((0, 0, 0), (180, 109, 26))
 IOS_DIALOGUE_COLORS = DIALOGUE_COLORS
 BODY_MARKERS = ('`', {1: (254, 53, 53), 2: (41, 104, 221), 3: (0, 0, 0), -1: (0, 0, 0)})
