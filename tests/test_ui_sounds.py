@@ -43,6 +43,7 @@ class DesktopUiSoundTests(unittest.TestCase):
 
     def ui(self, game):
         session = choice_session(lambda refs: [])
+        session.tick(250)                       # past the menu's 250 ms attachment (Session.choice_ready)
         ui = self.Desktop(session, audio=False)
         ui.audio, ui._sync_music = True, Mock()
         session.resources.library.game_id = game

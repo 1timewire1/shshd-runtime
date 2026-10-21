@@ -23,7 +23,7 @@ from zlib import error as ZlibError
 
 from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
-from .games import COD_IOS, GAMES, PROFILES, SHS_ANDROID, SHS_IOS
+from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS
 
 
 PROFILE = SHS_ANDROID
@@ -200,20 +200,23 @@ def _inspect_ipa(package: ZipFile):
     game = _ipa_game(identifier)
     members = _resource_members(names, root + 'res_generated/', game)
     if game == 'cod':
-        from .cod.assets import validate_assets
+        from .cod.profile import profile_for
+        profile = profile_for(lambda resource: _zip_read(
+            package, root + 'res_generated/' + str(resource)))
     else:
         from .shs.ios_assets import validate_assets
 
-    def read(resource):
-        if resource not in members:
-            raise ContentError(f'IPA is missing {root}res_generated/{resource}')
-        return _zip_read(package, members[resource])
-    validate_assets(read)
+        def read(resource):
+            if resource not in members:
+                raise ContentError(f'IPA is missing {root}res_generated/{resource}')
+            return _zip_read(package, members[resource])
+        validate_assets(read)
+        profile = IOS_PROFILE
     # Version fields are informative. Source identity is the complete
     # archive hash, including repacks or differently encrypted executables.
     details = {key: info[key] for key in ('CFBundleIdentifier', 'CFBundleShortVersionString', 'CFBundleVersion')
                if isinstance(info.get(key), str)}
-    return root, details
+    return root, details, profile
 
 
 def is_hd_ipa(path) -> bool:
@@ -537,12 +540,13 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         try:
             with ZipFile(final_apk) as apk:
                 if kind == 'ipa':
-                    root, app_info = _inspect_ipa(apk)
+                    root, app_info, profile = _inspect_ipa(apk)
                     source_game = _ipa_game(app_info['CFBundleIdentifier'])
                     assets = root + 'res_generated/'
                 else:
                     native_hash = _inspect_apk(apk)
                     source_game = 'shs'
+                    profile = PROFILE
                     root = assets = 'assets/Assets/'
                 if game is not None and source_game != game:
                     raise ContentError(f'This package belongs to {GAMES[source_game].TITLE}; '
@@ -574,7 +578,6 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         if not records:
             raise ContentError('No episodes found; supply episode EXP files')
         store = _store_listing(episode_paths, game=source_game)
-        profile = COD_IOS if source_game == 'cod' else IOS_PROFILE if kind == 'ipa' else PROFILE
         manifest = dict(format='exp-content-library', version=1, game=source_game, profile=profile,
                         episodes=list(records.values()))
         manifest[kind] = dict(file=f'content/{apk_hash}.{kind}', sha256=apk_hash,
@@ -668,9 +671,18 @@ class ContentLibrary:
             # Retain the existing APK API for clients and old test fixtures.
             self.apk = self.package
             if self.kind == 'ipa':
-                self.app_root, self.app_info = _inspect_ipa(self.package)
+                self.app_root, self.app_info, profile = _inspect_ipa(self.package)
                 if _ipa_game(self.app_info['CFBundleIdentifier']) != self.game_id:
                     raise ContentError('IPA game does not match the library profile')
+                if profile != self.profile:
+                    # shshd-runtime 1.0.x recorded every CoD library under the paid layout, the free editions' too
+                    # (assets.logical_members reads members by content), so such a library opens under the layout
+                    # its IPA actually has. library.json is left as it is.
+                    legacy = (self.game_id == 'cod' and self.profile == GAMES['cod'].PAID_PROFILE
+                              and profile != self.profile)
+                    if not legacy:
+                        raise ContentError('IPA asset layout does not match the library profile')
+                    self.profile = profile
                 self.asset_root = self.app_root + 'res_generated/'
             else:
                 native_hash = _inspect_apk(self.package)

@@ -128,7 +128,28 @@ Tile changes retain the previous board for presentation. Equal-size animated
 boards turn from the old letters to the incoming letters; a dimension change
 shrinks the old board before the new board grows. Tile staggering follows
 `80 * (height - 1 + column - row)` milliseconds. Flips turn about the Y axis
-over 700ms; tile pops use the 600ms overshoot curve with parameter .8.
+with a 700ms clock; tile pops use the 600ms overshoot curve with parameter .8.
+The individual countdowns also advance while their delay remains positive;
+only the frame crossing below zero uses its overshoot. The pose stays at its
+starting value until the delay expires. This can make a late tile jump forward
+and must not be replaced by an elapsed-time-minus-delay approximation.
+Growth and shine expire strictly below zero; flipping expires at zero.
+Shine's crossing frame reads the retained growth delay in both binaries.
+Evidence: Android **000c1d88**, iOS **00096e14**. Isolated execution of both
+functions matches saved clock fields across five delays and five frame sizes.
+
+Only phases 1–6 tick the cubes; initial tutorial phase 0 holds their clocks.
+The shine wait also uses those active board ticks. Frame selection retains
+Android's float32-then-double truncation at the exact 100ms boundaries.
+
+Immediate replacements and equal-size flips generate the incoming board at
+phase-4 entry. Shrinks retain the outgoing board and random state for 800ms,
+then generate the incoming board on advance. Native **000d0ff8** / iOS
+**00097a48** uses `(retained_index+1)%table_count` in that deferred path,
+including tutorial transitions; the immediate path instead uses the explicit
+peeked destination. The model preserves this distinction. Native execution of
+iOS **000983a8** and **00097a48**, with lookup/generation stubs, confirms the
+different index and call boundary. No board generation runs during rendering.
 
 SHS iOS `draw3DCube` **00095f34** defines a 450×450×100 solid, at
 `(column*522+225, row*522+225, -50)`, with normal faces 15/16, selected
@@ -147,6 +168,18 @@ using frames 17–32 at twelve frames per second, then pop the tile back in.
 There are at most twenty live bursts. Evidence: Android **000c3cb0**,
 **000d072c**, and iOS `CubeExplosion::init` **0009542c**, draw **000946ac**,
 tick **00097c0c**, selection **0009a2fc**.
+
+Highlighted start tiles dim as the round countdown expires. Commit shuffles
+the offsets `int(3000*i/start_count)` with one full-range random swap per
+start, then assigns them in column-major order. A highlight's opacity is
+`clamp((round_ms-offset)/3500, .1, 1)`; valid selected tiles use the first
+selected cell's offset and `clamp((round_ms-offset)/7000, .7, 1)`. Bad-prefix
+tiles remain fully bright. This is a countdown, not time since selection.
+The native draw first puts a black normal cube behind a dimmed colored cube;
+letters and shine remain opaque. Evidence: Android **000c43ec**/**000c94f8**,
+iOS **00099424**/**00095858**/**00095f34**. Isolated Android ARM execution
+matches all 0–25 start counts with four seeds, plus selection/highlight
+opacity and black-underlay calls at countdown boundaries.
 
 Each fragment consumes twelve native engine random draws: signed offsets below
 50 for X/Y, signed X velocity below 250, signed Y velocity below 350 minus
@@ -209,12 +242,57 @@ starts at zero and missing banner/outgoing-board state starts null. Their
 historical animation frame cannot be recovered from those older saves. Their
 tile entrance starts settled (`board_entry_ms=2000`).
 
+Version **22** adds native score flights. Android **000cd2c0** starts each
+successful word's points at the projected center of its first selected cell.
+**000c7b9c** moves the text to `(260,42)` over **400 ms**, with smoothstep
+interpolation and font 512. The unit-scale drawTextEx anchor does not change
+that text origin. **000c2a98** collects arriving flights, transfers points at
+**800/s**, then holds the final delta for **300 ms**. The HUD counter eases
+toward that transferred total, independently of the immediately committed
+game score. The Android draw path **000c7cdc** uses `(280-width,width+62)`
+during transfer and `(310-width,42)` during the hold; the iOS implementation
+uses the latter position for both. The common renderer retains Android.
+
+`score_effects` stores `{value:int, x:float, y:float, remaining_ms:int[1..400]}`;
+`score_pending`, `score_phase`, `score_target`, `display_score` and the existing
+`delta_ms` retain the counter stages. Validation checks finite positions,
+positive flight values and conservation against the committed score. Versions
+1–21 start with their saved score already displayed and no fabricated flights.
+
+Version 22 also retains `highlight_offsets` (cell index to 0–2999 ms) and
+the departing transition's `highlight_offsets` and `round_ms`. Committing
+round visuals consumes the native highlight shuffle, even for fixed tutorial
+boards. Rendering and restoring do not shuffle. An older save uses null for
+unknown offsets and retains full brightness until the next commit.
+
+`tiles` contains each cell's flip/growth/shine active flags, remaining clocks
+and delays, plus the shrinking flag. It uses the existing row-major board
+order. Transition `deferred` records whether the next board still needs to be
+generated. Old saves use null tile state and `deferred=false`, preserving
+their prior board, random state and elapsed-time motion until a new setup.
+The legacy `pop_ms` field stays empty for new cube state. Rendering does not
+advance these timers; snapshots during either half of a board change resume
+the same native clocks and random stream.
+
+The portrait ring also follows Android **000c98c0**: three staggered writes
+to the same retained ring during entrance, then the absolute sine pulse at
+`.8 * pi` radians per second, shrinking at most .15. Its last active entrance
+write wins. The iOS immediate-mode path **0009ab88** draws three rings instead;
+that difference does not introduce a separate IPA minigame layout.
+
 Verification includes authored font/layout and save tests, plus optional
 player-content rendering and resized-pointer tests. Football Star's sixteen
 tutorial records and subsequent 4 x 4 boards have been rendered and visually
 inspected locally. These checks do not establish pixel equivalence with an
-original device recording. Remaining work includes native selection opacity,
-ring pulse curves, flying score deltas, GL edge/depth rasterization, and exact
-per-cell delay/timer ordering at frame boundaries. Incoming board generation still occurs
-at phase-4 entry in the model; native can defer it until exit. None of these
-visual changes substitutes a minigame result or resumes the VM without play.
+original device recording. Fragment initialization/ticks now round at native
+float32 operation boundaries. Isolated ARM checks match Android **000c3cb0**
+initialization (96 draws for eight fragments) and Android **000c1fcc** / iOS
+**00097c0c** updates through expiration. Rendering now uses per-pixel reciprocal
+depth, including transparent depth writes and equal-depth replacement, in both
+shared backends. Original GL edge sampling and depth-buffer quantization still
+need device comparison.
+
+The iOS ending overlay eases to black over 800 ms and holds until the 960 ms
+callback. Board/gameplay clocks stop on entering that exit phase, including
+its final callback tick. No visual effect substitutes a result or resumes the
+VM without play.

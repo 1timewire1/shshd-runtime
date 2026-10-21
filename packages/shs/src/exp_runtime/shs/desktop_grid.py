@@ -9,9 +9,10 @@ from ..ui_assets import read_ui
 from ..atlas import AtlasFont, SpriteAtlas
 from ..content import ContentError
 from ..desktop_dialogue import _decoded_size
-from .grid_layout import clamp, ease, heading_lines, prompt_position, tutorial_box
+from .grid_layout import clamp, ease, heading_lines, portrait_ring_scale, prompt_position, tile_opacity, tutorial_box
 from .grid_motion import project, cube_faces
-from ..projection import draw_quad
+from ..projection import draw_quad, draw_depth_quads
+from .desktop_minigame import draw_exit
 from ..menu import MenuStrings
 
 
@@ -121,8 +122,22 @@ class GridRenderer:
         pygame.project_quad(self.canvas, image, points)
 
     @lru_cache(maxsize=256)
-    def cell_image(self, frame, char, picture, glint=-1):
-        tile = self.frame(446, frame).copy()
+    def tile_frame(self, frame, alpha=255):
+        tile = self.frame(446, frame)
+        if alpha == 255:
+            return tile
+        # The native renderer draws a black normal cube beneath the colored
+        # face. Only the artwork dims; its glyph and shine remain opaque.
+        base = self.frame(446, 16 if frame % 2 == 0 else 15).copy()
+        base.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+        tile = tile.copy()
+        tile.set_alpha(alpha)
+        base.blit(tile, (0, 0))
+        return base
+
+    @lru_cache(maxsize=256)
+    def cell_image(self, frame, char, picture, glint=-1, alpha=255):
+        tile = self.tile_frame(frame, alpha).copy()
         if glint >= 0:
             tile.blit(pygame.transform.smoothscale(self.frame(446, 35 + glint), tile.get_size()), (0, 0))
         glyph = self.art.image(picture) if picture is not None else self.glyph(522, char)
@@ -203,7 +218,8 @@ class GridRenderer:
             if side == 'right' and session.engine.numbers.get(session.engine.number_key(char, 651), 0) != 3:
                 portrait = pygame.transform.flip(portrait, True, False)
             self.blit(portrait, cx, cy + 12, scale=scale, alpha=alpha, center=True)
-            self.blit(self.frame(499, 0), cx, cy, scale=base_scale, alpha=alpha, center=True, angle=angle)
+            self.blit(self.frame(499, 0), cx, cy, scale=portrait_ring_scale(game), alpha=alpha, center=True,
+                      angle=angle)
 
     def hud(self, game):
         if game.phase in (-2, -1):
@@ -212,25 +228,40 @@ class GridRenderer:
         for text, edge, y, mono in ((self.strings()[32], 196, 2, None),
                                     (f'{math.ceil(game.remaining_ms / 1000):03}', 206, 22, '3'),
                                     (self.strings()[33], 278, 2, None),
-                                    (f'{game.score:05}', 310, 22, '3')):
+                                    (f'{game.display_score:05}', 310, 22, '3')):
             width = self.font(512).width(text, mono)
             self.label(512, text, edge - width * scale, y, scale=scale, alpha=scale, monospace=mono)
-        if game.delta_ms:
-            text = f'+{game.last_delta}'
-            self.label(512, text, 310 - self.font(512).width(text), 42)
+
+    def score_effects(self, game):
+        for effect in game.score_effects:
+            progress = ease(1 - effect.remaining_ms / 400)
+            x, y = effect.x + (260 - effect.x) * progress, effect.y + (42 - effect.y) * progress
+            text = f'+{effect.value}'
+            # Anchor 4 controls the transform pivot; at unit scale it leaves
+            # the left-justified text at the supplied x/y (0000a184).
+            self.label(512, text, int(x), int(y))
+        if game.score_phase:
+            text = f'+{game.score_pending}' if game.score_pending else '0'
+            width = self.font(512).width(text)
+            x, y = (310 - width, 42) if game.score_phase == 1 else (280 - width, width + 62)
+            self.label(512, text, x, y)
 
     def board(self, game):
         p, board, starts, cells = game.problem, game.board, game.starts, self.cells
+        offsets, remaining = game.highlight_offsets, game.round_ms
         transition = game.transition
         outgoing = transition and transition.mode == 'shrink' and game.phase == 4
         if outgoing:
             p, board, starts = transition.problem, transition.board, transition.starts
+            offsets, remaining = transition.highlight_offsets, transition.round_ms
             cells = self.board_geometry(p)
+        highlight = transition.problem.highlight if transition and game.phase == 4 else p.highlight
         hidden = (transition.tutorial and transition.problem.hide_board
                   if transition and game.phase == 4 else game.tutorial and p.hide_board)
         if game.phase in (-2, -1) or hidden:
             return
         faces = []
+        selection = game.selection if not outgoing or transition.deferred else ()
         for i, (_, rect) in enumerate(cells):
             col, row = i % p.width, i // p.width
             delay = (p.height - 1 + col - row) * 80
@@ -246,22 +277,29 @@ class GridRenderer:
                 size = clamp((2800 - game.phase_ms) / 1400)
             if not outgoing and i in game.pop_ms:
                 size = ease(clamp((600 - game.pop_ms[i]) / 600), bounce=.8)
+            if game.tiles is not None:
+                size, angle = game.tiles[i].scale, game.tiles[i].angle
             if size <= 0:
                 continue
-            selected = not outgoing and i in game.selection
-            bad = not outgoing and i in game.bad_prefix
-            frame = 33 if bad else 43 if selected else 41 if p.highlight and i in starts else 15
+            selected = i in selection
+            bad = selected and i in game.bad_prefix
+            highlighted = highlight and i in starts
+            frame = 33 if bad else 43 if selected else 41 if highlighted else 15
+            alpha = round(255 * tile_opacity(remaining, offsets, i,
+                                             selection, bad, highlighted))
             shine = game.glint_ms - delay
             glint = min(5, shine // 100) if 0 <= shine <= 600 else -1
-            for depth, face, quad in cube_faces(p.width, p.height, col, row, angle, size):
+            if game.tiles is not None:
+                glint = game.tiles[i].glint
+            for depth, face, quad in cube_faces(p.width, p.height, col, row, angle, size, depths=True):
                 if face == 'side':
-                    tile = self.frame(446, frame + 1)
+                    tile = self.tile_frame(frame + 1, alpha)
                 else:
                     char = transition.board[i] if face == 'back' and transition else board[i]
-                    tile = self.cell_image(frame, char, game.symbols.get(ord(char)), glint if face == 'front' else -1)
-                faces.append((depth, tile, quad))
-        for _, tile, quad in sorted(faces, key=lambda item: item[0]):
-            draw_quad(self.canvas, tile, quad)
+                    tile = self.cell_image(frame, char, game.symbols.get(ord(char)),
+                                           glint if face == 'front' else -1, alpha)
+                faces.append((tile, quad))
+        draw_depth_quads(self.canvas, faces)
         if outgoing or game.phase == 4:
             return
         paths = [(game.selection, False)]
@@ -358,10 +396,13 @@ class GridRenderer:
             for fragment in burst:
                 self.blit(self.frame(446, 17 + int(fragment.age_ms * 12 / 1000) % 16),
                           fragment.x, fragment.y, scale=fragment.scale, angle=-fragment.angle, center=True)
+        self.score_effects(game)
         self.banner(game)
         self.tutorial(game)
         # Keep the desktop pause control clear of the original bottom word list.
         # Desktop draws the bar and gear edge to edge (see DialogueRenderer.bottom_bar_layer).
         self.edge_bar = 'gear'
+        if game.phase == 7:
+            draw_exit(self.canvas, game.phase_ms, self.resources)
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

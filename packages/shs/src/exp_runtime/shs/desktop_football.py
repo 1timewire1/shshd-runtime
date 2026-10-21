@@ -6,6 +6,7 @@ import math
 
 from .. import graphics as pygame
 from ..desktop_pause import draw_pause_gear
+from .desktop_minigame import draw_exit
 
 from ..atlas import AtlasFont, SpriteAtlas
 from .football import PLAY_FRAMES, TARGET_CENTERS
@@ -203,7 +204,7 @@ class FootballRenderer:
         self.scoreboard(game)
 
     def targets(self, game):
-        for target, (x, y) in zip(game.targets, TARGET_CENTERS):
+        for index, (target, (x, y)) in enumerate(zip(game.targets, TARGET_CENTERS)):
             if not target.visible:
                 continue
             scale = target.scale
@@ -222,7 +223,8 @@ class FootballRenderer:
                     self.blit(shadow, x, y, scale_y=.5, alpha=alpha, center=True)
                 else:
                     # 000c0ac0: 110ms per exported Android shadow frame.
-                    shadow = self.image(720 + (target.elapsed_ms // 110) % 4)
+                    age = target.elapsed_ms if game.shadow_ms is None else max(0, game.shadow_ms[index])
+                    shadow = self.image(720 + (age // 110) % 4)
                     self.blit(shadow, x, 600 - y, scale=1.3, scale_y=1.2, alpha=alpha / 1.5, center=True)
             elif target.phase == 7 and target.elapsed_ms >= 100:
                 progress = (target.elapsed_ms - 100) / 500
@@ -302,6 +304,10 @@ class FootballRenderer:
         self.field(game)
         self.targets(game)
         self.effects(game)
+        for star in game.touchdown_stars:
+            if star.delay_ms <= 0:
+                self.blit(self.frame(90), int(star.x) + 15, int(star.y) + 15,
+                          alpha=star.alpha, angle=-star.angle, center=True)
         self.hud(game)
         self.feedback(game)
         if game.phase in (20, 21, 22, 23, 25):
@@ -315,5 +321,7 @@ class FootballRenderer:
         footer = footer_id(game)
         if footer is not None:
             self.label(self.strings()[footer], 180, 462, center=True)
+        if game.phase == 26:
+            draw_exit(self.canvas, game.phase_ms, self.resources)
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

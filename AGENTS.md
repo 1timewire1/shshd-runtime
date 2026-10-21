@@ -21,8 +21,8 @@ player's local content is absent. Do not add original assets as test fixtures.
 
 ## Architecture and contracts
 
-One uv workspace produces the `shshd-runtime` umbrella and five component wheels.
-Source lives under `packages/{formats,engine,player,shs,cod}/src/exp_runtime`.
+One uv workspace produces the `shshd-runtime` umbrella and six component wheels.
+Source lives under `packages/{formats,engine,player,shs,cod,creator}/src/exp_runtime`.
 Keep the shared `exp_runtime` namespace free of a root `__init__.py`, and give
 each source file one wheel owner. `tools/build_packages.py` audits the wheels;
 `tools/test_packages.py` checks isolated pip installs. See docs/SDK.md.
@@ -56,6 +56,9 @@ attach them). The commands are `shshd-runtime` / `shshd-tool`, with upstream's
 - `graphics.py`, `platforms/`, `ios/`: pygame/native drawing primitives and the
   Swift iOS host; keep game layout and behavior in the shared Python code.
 - `fonts.py`, `ui_assets.py`, `atlas.py`: native asset and layout contracts.
+- `creator/`: optional desktop story graph, portable authoring documents and
+  native EXP compiler; preview reuses the player with temporary saves. Keep
+  creator/Qt out of ordinary player and iOS bundles.
 
 Follow SCHEMA.md, VM_SPEC.md and docs/ENGINE_ABI.md. Unknown services must
 remain explicit stops with their pending arguments intact. Never invent a

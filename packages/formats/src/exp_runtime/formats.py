@@ -4,7 +4,7 @@
 Decoded ``KiwiProgram`` objects retain their lossless ``to_bytes`` contract.
 Image/font parsers return data, without initializing a display or audio host.
 """
-from .exp import ContentError, ExpArchive, Metadata
+from .exp import ContentError, ExpArchive, Metadata, encode_exp
 from .decode.bytecode import KiwiFormatError, KiwiProgram, decode_program
 from .fonts import BitmapFont, FontError
 from .atlas import AtlasFont, SpriteAtlas
@@ -12,7 +12,7 @@ from .ui_assets import ImagePack, LayoutBank, UIAssetError
 from .menu_assets import MenuFont, MenuStrings
 
 __all__ = [
-    'ContentError', 'ExpArchive', 'Metadata', 'KiwiFormatError', 'KiwiProgram',
+    'ContentError', 'ExpArchive', 'Metadata', 'encode_exp', 'KiwiFormatError', 'KiwiProgram',
     'decode_program', 'BitmapFont', 'FontError', 'AtlasFont', 'SpriteAtlas',
     'ImagePack', 'LayoutBank', 'UIAssetError', 'MenuFont', 'MenuStrings',
 ]

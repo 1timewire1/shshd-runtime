@@ -32,10 +32,18 @@ final class NativeCanvas {
         return value
     }
 
-    private func perspectiveImage(_ op: [String: Any], size: CGSize) throws -> CGImage {
+    private func perspectiveImage(_ op: [String: Any], size: CGSize,
+                                  depth: inout [Double], viewport: CGSize, origin: CGPoint) throws -> CGImage {
         let source = try texture(op)
         let c = try numbers(op["coefficients"]).map { Double($0) }
         let width = Int(size.width), height = Int(size.height)
+        let plane = (op["depth_plane"] as? [NSNumber])?.map { $0.doubleValue }
+        if let plane = plane {
+            guard plane.count == 3, plane.allSatisfy({ $0.isFinite }) else {
+                throw CanvasError(message: "Invalid depth plane")
+            }
+            if depth.isEmpty { depth = Array(repeating: 0, count: Int(viewport.width * viewport.height)) }
+        }
         guard c.count == 8, c.allSatisfy({ $0.isFinite }), width > 0, height > 0,
               width <= 8192, height <= 8192, width * height <= 16_777_216 else {
             throw CanvasError(message: "Invalid perspective texture")
@@ -56,6 +64,14 @@ final class NativeCanvas {
                         let u = un / dn, v = vn / dn
                         un += c[0]; vn += c[3]; dn += c[6]
                         if !u.isFinite || !v.isFinite || u < 0 || v < 0 || u >= 1 || v >= 1 { continue }
+                        if let plane = plane {
+                            let px = Int(origin.x) + x, py = Int(origin.y) + y
+                            if px < 0 || py < 0 || px >= Int(viewport.width) || py >= Int(viewport.height) { continue }
+                            let index = py * Int(viewport.width) + px
+                            let distance = plane[0] * (Double(px) + 0.5) + plane[1] * (Double(py) + 0.5) + plane[2]
+                            if distance < depth[index] { continue }
+                            depth[index] = distance
+                        }
                         let sx = max(0, min(Double(source.width - 1), u * Double(source.width) - 0.5))
                         let sy = max(0, min(Double(source.height - 1), v * Double(source.height) - 0.5))
                         let ix = Int(sx), iy = Int(sy), ax = sx - Double(ix), ay = sy - Double(iy)
@@ -80,6 +96,38 @@ final class NativeCanvas {
             throw CanvasError(message: "Cannot project texture")
         }
         return result
+    }
+
+    private func colorMatrixImage(_ op: [String: Any]) throws -> CGImage {
+        let source = try texture(op)
+        guard let rows = op["matrix"] as? [[NSNumber]], rows.count == 3,
+              rows.allSatisfy({ $0.count == 3 && $0.allSatisfy { $0.doubleValue.isFinite } }) else {
+            throw CanvasError(message: "Invalid color matrix")
+        }
+        let matrix = rows.map { $0.map { $0.doubleValue } }
+        var pixels = Data(count: source.pixels.count)
+        pixels.withUnsafeMutableBytes { output in
+            source.pixels.withUnsafeBytes { input in
+                let src = input.bindMemory(to: UInt8.self), dst = output.bindMemory(to: UInt8.self)
+                for offset in stride(from: 0, to: src.count, by: 4) {
+                    let red = Double(src[offset]), green = Double(src[offset + 1]), blue = Double(src[offset + 2])
+                    for channel in 0..<3 {
+                        let row = matrix[channel]
+                        let value = (red * row[0] + green * row[1]) + blue * row[2]
+                        dst[offset + channel] = UInt8(max(0, min(255, value)))
+                    }
+                    dst[offset + 3] = 255
+                }
+            }
+        }
+        guard let provider = CGDataProvider(data: pixels as CFData), let image = CGImage(
+            width: source.width, height: source.height, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: source.width * 4, space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder32Big),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            throw CanvasError(message: "Cannot transform image colors")
+        }
+        return image
     }
 
     private func numbers(_ value: Any?) throws -> [CGFloat] {
@@ -122,6 +170,7 @@ final class NativeCanvas {
         }
         context.translateBy(x: 0, y: size[1])
         context.scaleBy(x: 1, y: -1)
+        var depth: [Double] = []
         for op in ops {
             guard let kind = op["kind"] as? String else { throw CanvasError(message: "Missing drawing operation") }
             context.saveGState()
@@ -179,9 +228,12 @@ final class NativeCanvas {
                 let source = try image(op)
                 context.interpolationQuality = (op["smooth"] as? Bool) == true ? .medium : .none
                 drawImage(source, CGRect(x: 0, y: 0, width: size[0], height: size[1]), context)
-            case "textured_quad":
+            case "color_matrix":
+                drawImage(try colorMatrixImage(op), CGRect(x: 0, y: 0, width: size[0], height: size[1]), context)
+            case "textured_quad", "depth_quad":
                 let bounds = try rect(op["bounds"])
-                let projected = try perspectiveImage(op, size: bounds.size)
+                let projected = try perspectiveImage(op, size: bounds.size, depth: &depth,
+                    viewport: CGSize(width: size[0], height: size[1]), origin: bounds.origin)
                 context.setAlpha(CGFloat((op["alpha"] as? NSNumber)?.doubleValue ?? 255) / 255)
                 drawImage(projected, bounds, context)
             case "textured_rows":

@@ -30,6 +30,10 @@ system: `shshd-runtime-<version>-windows-x64.zip`, `-linux-x64.tar.gz`,
 open **SHSHD Runtime** inside. Keep the complete app or executable folder
 together. Python and the runtime dependencies are bundled.
 
+To make episodes, download `exp-runtime-creator-v0.6.1-<target>.zip` (or
+`.tar.gz` for Linux) and open **EXP Runtime Creator**. The Creator has separate
+downloads for the same four desktop targets. See [the creator guide](docs/CREATOR.md).
+
 For development builds, open **Actions → Builds**, choose a successful
 run, and download its platform artifact. Extract the artifact ZIP, then the
 app archive inside it.
@@ -234,12 +238,44 @@ python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.0.
 
 # Full desktop player with both games
 python -m pip install --find-links ./wheels "shshd-runtime[player]==1.0.1"
+
+# Visual episode creator (exp-runtime v0.6.0's), with both games and player previews
+python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.0.1"
+
+# Creator MCP server without Qt (combine with [creator] for live editing)
+python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.0.1"
 ```
 
 The bare `shshd-runtime` install supplies file tools; `[desktop]` is an alias
 for `[player]`. See [SDK.md](docs/SDK.md) for the components and custom UIs.
 
 ## Specifications and development
+
+The **desktop episode creator** supports visual dialogue, choices,
+branching, minigames, characters, audio, translations, debugging and native
+`.exp` export with optional imported assets for EXP Runtime
+and the original games. Native loader/VM checks pass; full original-app
+playback remains unverified. New in v0.6.0, it is available as a standalone
+desktop download or through pip. Launch a pip install with `exp-creator`,
+or run it from this checkout:
+
+```sh
+uv run --locked --extra creator exp-creator
+```
+
+The creator automatically finds your player's imported library for the selected
+game. See [the creator guide](docs/CREATOR.md) for saving editable projects,
+using library assets and previewing through the shared player. The creator is
+optional; ordinary player and iOS downloads keep their existing dependencies.
+An optional [MCP server](docs/MCP.md) exposes the same authoring tools without Qt:
+
+```sh
+uv run --locked --extra creator-mcp exp-creator-mcp --workspace /path/to/stories
+```
+
+Open a saved project from that workspace in the creator to edit alongside a
+model. MCP sees unsaved desktop work, and model edits appear live with shared
+undo/redo. Save in the creator to write the shared project.
 
 To contribute code, tests, documentation or compatibility reports, start with
 [MAINTAINERS.md](MAINTAINERS.md).

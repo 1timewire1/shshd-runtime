@@ -195,7 +195,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.6.1;
 				PRODUCT_NAME = "EXP Runtime";
 				SWIFT_OBJC_BRIDGING_HEADER = EXPRuntime/PythonBridge.h;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -216,7 +216,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.6.1;
 				PRODUCT_NAME = "EXP Runtime";
 				SWIFT_OBJC_BRIDGING_HEADER = EXPRuntime/PythonBridge.h;
 				TARGETED_DEVICE_FAMILY = "1,2";

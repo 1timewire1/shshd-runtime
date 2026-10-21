@@ -6,7 +6,8 @@ from math import floor
 
 from . import graphics as pygame
 
-from .fonts import BitmapFont, FontError, layout_text
+from .fonts import BitmapFont, FontError, TextStyle, layout_label, layout_text
+from .menu_assets import MenuStrings
 from .vector_text import VectorFont, load_font
 
 
@@ -50,12 +51,38 @@ class BitmapTextRenderer:
         return self.fonts[name][0]
 
     @lru_cache(maxsize=128)
-    def layout(self, name, text, width, style):
-        return layout_text(self.font(name), text, width, style)
+    def layout(self, name, text, width, style, *, previous_glyph=-1):
+        return layout_text(self.font(name), text, width, style, previous_glyph=previous_glyph)
+
+    @lru_cache(maxsize=64)
+    def footer(self, index, previous_glyph=-1):
+        text = MenuStrings.load(self.library)[index]
+        if getattr(self.library, 'kind', 'apk') == 'ipa':
+            # GameModel::init: the outline tooltip uses layout 18's 252x18
+            # region at (63,459), centered Arial 11, white alpha 176.
+            name = 'ArialMT11'
+            label = self.layout(name, text, 252, TextStyle(11), previous_glyph=previous_glyph)
+            left, top, right, bottom = label.ink_bounds
+            origin = (63 + (252 - (right - left)) / 2 - left,
+                      459 + (18 - (bottom - top)) / 2 - top)
+            return name, label, origin, 176
+        # Android 0007cbbc / 0007d4c8 share this label across story panels:
+        # font registry 11, zero content size, center/center at GL (180,25).
+        name = 'ArialMT14'
+        label = layout_label(self.font(name), text, 0, 0, TextStyle(14, 8), 0x0a,
+                             previous_glyph=previous_glyph)
+        return name, label, (180, 455), 255
+
+    def draw_footer(self, surface, index, previous_glyph=-1):
+        name, label, origin, alpha = self.footer(index, previous_glyph)
+        self.draw_layout(surface, name, label, *origin, alpha=alpha)
 
     def _glyph(self, name, placed, scale):
         """(image, dx, dy): the glyph's surface and its offset, in device
-        pixels, from (placed.x, placed.y) * scale."""
+        pixels, from (placed.x, placed.y) * scale. A glyph in a switch font (exp-runtime's iOS emphasis face) names
+        its own font."""
+        name = getattr(placed, 'font', None) or name
+        self.font(name)
         glyph = placed.glyph
         key = name, glyph.code, placed.color, scale
         if key not in self.glyph_images:
@@ -82,11 +109,14 @@ class BitmapTextRenderer:
     def _glyph_image(self, name, placed, scale):
         return self._glyph(name, placed, scale)[0]
 
-    def _blit(self, surface, name, placed, scale, x, y):
+    def _blit(self, surface, name, placed, scale, x, y, alpha=255):
         # Half-to-even rounding snaps adjacent glyph bearings in opposite
         # directions at a half-pixel line origin (notably Continue's i).
         # Use one translation-invariant pixel rule for the whole line.
         image, dx, dy = self._glyph(name, placed, scale)
+        if alpha != 255:
+            image = image.copy()
+            image.set_alpha(alpha)
         surface.blit(image, (floor(x + placed.x * scale + dx + .5), floor(y + placed.y * scale + dy + .5)))
 
     def draw(self, surface, name, text, x, y, width, style, *, scale=1):
@@ -105,16 +135,17 @@ class BitmapTextRenderer:
             self._blit(surface, name, placed, scale, x, y - top * scale)
         return y + (max(layout.height, bottom) - top) * scale
 
-    def draw_layout(self, surface, name, layout, x, y, *, scale=1, source_end=None, inline=None):
+    def draw_layout(self, surface, name, layout, x, y, *, scale=1, source_end=None, inline=None, alpha=255):
         """Draw a native layout origin without moving its ink overhang. `inline` maps glyph codes to images drawn in
-        place of the glyph (`CSFont::addCharImage`), one layout unit per image pixel."""
+        place of the glyph (`CSFont::addCharImage`), one layout unit per image pixel. `alpha` fades the glyphs (the
+        cursor's blink, Choice hints' faint answers)."""
         self.font(name)
         for placed in layout.glyphs:
             if source_end is not None and placed.index >= source_end:
                 continue
             image = inline.get(placed.glyph.code) if inline else None
             if image is None:
-                self._blit(surface, name, placed, scale, x, y)
+                self._blit(surface, name, placed, scale, x, y, alpha)
                 continue
             if scale != 1:
                 image = self._scaled(image, scale)

@@ -53,12 +53,19 @@ class Resources:
 
 def answer_screen(session, value=None):
     """Walk story fixtures through the real reveal gate before continuing."""
+    while session.transitioning:
+        session.tick(session.engine.scene_transition.duration_ms)
+    if session.pending.name == 'choice' and not session.choice_ready:
+        session.tick(250 - session.engine.choice_ms)
     if session.pending.name == 'presentation':
         session.tick(4000)
     if session.pending.name == 'dialogue' and not session.engine.dialogue_animation.complete:
         session.answer()  # Request completion without acknowledging the VM.
         session.tick(2000)
-    return session.answer(value)
+    action = session.answer(value)
+    while session.transitioning:
+        action = session.tick(session.engine.scene_transition.duration_ms)
+    return action
 
 
 class RuntimeTests(unittest.TestCase):
@@ -95,7 +102,7 @@ class RuntimeTests(unittest.TestCase):
                 self.assertEqual(restored.vm.read_word(len(restored.vm.data) - 1), 1234)
                 self.assertIsNone(restored.vm.a)
                 self.assertIsNone(restored.vm.b)
-                self.assertEqual(restored.answer(option).details['text'], line)
+                self.assertEqual(answer_screen(restored, option).details['text'], line)
                 self.assertEqual(restored.engine.result_cells[0], option)
                 self.assertEqual(answer_screen(restored).name, 'finished')
                 self.assertEqual((restored.scene, restored.scene_loads), (25002, 1))
@@ -124,7 +131,7 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             session.answer(0)
         self.assertEqual(session.snapshot(), saved)
-        self.assertEqual(session.answer(1).request.args, (1,))
+        self.assertEqual(answer_screen(session, 1).request.args, (1,))
         other = Session.from_snapshot(resources, saved)
         self.assertEqual(other.tick(1001).request.args, (77,))
 
@@ -186,7 +193,7 @@ class LocalGameTests(unittest.TestCase):
             self.assertEqual(action.name, 'choice')
             saved = json.loads(json.dumps(session.snapshot()))
             first, second = (Session.from_snapshot(resources, saved) for _ in range(2))
-            left, right = first.answer(0), second.answer(1)
+            left, right = answer_screen(first, 0), answer_screen(second, 1)
             self.assertEqual((left.request.pc, right.request.pc), (336, 352))
             self.assertNotEqual(left.details['text'], right.details['text'])
             for branch in (first, second):

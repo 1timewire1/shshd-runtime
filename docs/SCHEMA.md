@@ -338,3 +338,22 @@ APK) remain readable in place. Primary source and episode records retain
 complete SHA-256 identities; filenames use those hashes. SHS's optional music
 APK stays outside the save identity and never contributes artwork/scripts/fonts.
 See [IPA.md](IPA.md) and [COD.md](COD.md) for platform-specific resource contracts.
+
+## Authored creator extension
+
+New creator exports may contain resource **2** beginning with
+`EXP-RUNTIME-AUTHORED\0`, followed by UTF-8 JSON with
+`format: "exp-runtime-authored"` and `version: 1`. This is EXP Runtime metadata,
+not a recovered native format. It records the versioned editable project,
+source-node PCs and variable/character mappings.
+Embedded image data is referenced using `@resource` in the project record and
+remains stored in its ordinary resource entry. Private library paths are blank.
+
+Playback executes ordinary KiWi from resource 25001 independently of this
+extension. The creator can recover its graph from it; player navigation does
+not read it. Endings use native service 7 and the existing episode/menu picker.
+An older unreleased `links` field has no playback effect. On project/EXP import,
+the creator converts old `episode_link` nodes into native Message/End nodes,
+preserving closing text and translations. Arbitrary original imports retain
+their native resource payloads and expose native blocks instead of adding
+inferred story metadata.

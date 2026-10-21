@@ -6,6 +6,15 @@ imports the application; menus, panel geometry and event handling stay shared.
 _backend = None
 
 
+def supports_vibration():
+    return bool(getattr(_backend, 'vibration_available', False))
+
+
+def vibrate():
+    if supports_vibration():
+        _backend.vibrate()
+
+
 class _MenuMusic:
     """An SDL channel independent of the paused story's streaming music."""
     def __init__(self, mixer):
@@ -19,6 +28,7 @@ class _MenuMusic:
         self.channel = self.sound.play()
         if self.channel is None:
             raise ValueError('No audio channel is available for menu music')
+        self.channel.set_volume(1)
 
     def stop(self):
         if self.channel is not None:
@@ -33,10 +43,58 @@ class _MenuMusic:
         if self.channel is not None:
             self.channel.unpause()
 
+    def get_busy(self):
+        return bool(self.channel is not None and self.channel.get_sound() is self.sound and self.channel.get_busy())
+
+    def set_volume(self, volume):
+        if self.get_busy():
+            self.channel.set_volume(volume)
+
 
 def create_menu_music():
     mixer = __getattr__('mixer')
     return mixer.menu_music if hasattr(mixer, 'menu_music') else _MenuMusic(mixer)
+
+
+def play_sound(stream, start_ms=0):
+    mixer = __getattr__('mixer')
+    if hasattr(mixer, 'play_sound'):
+        return mixer.play_sound(stream, start_ms)
+    from .platforms.sdl_audio import Sound
+    return Sound(stream, start_ms)
+
+
+def music_position(start_ms=0):
+    music = __getattr__('mixer').music
+    if hasattr(music, 'position_ms'):
+        return music.position_ms()
+    from .platforms.sdl_audio import position_ms
+    position = position_ms()
+    return position if position is not None else start_ms + max(0, music.get_pos())
+
+
+def set_music_repeat(repeat, *, start_ms=0, paused=False):
+    music = __getattr__('mixer').music
+    loops = -1 if repeat else 0
+    if hasattr(music, 'set_loops'):
+        music.set_loops(loops)
+    else:
+        # SDL2_mixer cannot alter loop count on an active stream. Reuse its
+        # decoder at the actual current position; do not reload or rewind.
+        position = music_position(start_ms)
+        music.play(loops=loops, start=position / 1000)
+        if paused:
+            music.pause()
+
+
+def color_matrix(surface, matrix):
+    native = getattr(__getattr__('transform'), 'color_matrix', None)
+    if native is not None:
+        return native(surface, matrix)
+    from .color_transform import transform_rgb
+    image = __getattr__('image')
+    pixels = transform_rgb(image.tobytes(surface, 'RGB'), matrix)
+    return image.frombytes(pixels, surface.get_size(), 'RGB')
 
 
 def project_quad(target, image, points):

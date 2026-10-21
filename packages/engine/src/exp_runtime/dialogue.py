@@ -18,6 +18,7 @@ from .speaker_names import (NAME_FONTS, SpeakerNames, fit_speaker_ink, hd_speake
 BODY_FONT = 'ArialRoundedMTBold16'
 NARRATOR_FONT = 'TrebuchetMS_Italic16'
 HD_NARRATOR_WRAP, HD_NARRATOR_GAP, HD_NARRATOR_TOP = 226, 10.9, 110
+EMPHASIS_FONT = 'TrebuchetMS_Italic16Emphasis'
 BLUE = (41, 104, 221)
 # Layout units added to the dialogue body origin when HD vector text is used.
 HD_TEXT_SHIFT = (6, 6)
@@ -29,7 +30,7 @@ COD_BASELINE_DROP = 2.4
 
 
 def dialogue_styles(theme: int, *, narrator: bool = False, emphasis_theme: int = 1,
-                    game: str = 'shs'):
+                    game: str = 'shs', outline: bool = False):
     profile = GAMES[game]
     if narrator:
         body_font = NARRATOR_FONT
@@ -37,11 +38,16 @@ def dialogue_styles(theme: int, *, narrator: bool = False, emphasis_theme: int =
         body = TextStyle(10, 7, color, (('`', emphasis),))
     else:
         body_font = BODY_FONT
-        colors = profile.DIALOGUE_COLORS
-        color = colors.get(theme, colors[-1])
         markers = getattr(profile, 'BODY_MARKERS', None)
+        colors = profile.IOS_DIALOGUE_COLORS if outline and markers is None else profile.DIALOGUE_COLORS
+        color = colors.get(theme, colors[-1])
         if markers is not None:
             body = TextStyle(14, 7, color, ((markers[0], markers[1].get(theme, markers[1][-1])),))
+        elif outline:
+            # initFonts: each body face registers its own italic switch font.
+            # Only backticks toggle it; semicolons remain punctuation here.
+            emphasis = BLUE if theme == 2 else (254, 53, 53)
+            body = TextStyle(14, 7, color, (('`', emphasis),))
         else:
             emphasis = BLUE if emphasis_theme == 2 else (254, 53, 0)
             body = TextStyle(14, 7, color, (('`', emphasis), (';', (1, 76, 215))))
@@ -128,18 +134,22 @@ class DialogueLayout:
         frames = ImagePack.parse(data).images
         return frames[4].width, frames[5].width
 
-    def prepare_name(self, details, names: SpeakerNames):
+    def prepare_name(self, details, names: SpeakerNames, *, text_history=None):
         names.basis = deepcopy(names.fonts)
         label = speaker_label(details['speaker'], details['presentation_mode'], details['theme'],
                               self.bank, self.font, names.fonts)
+        if text_history is not None and details['presentation_mode'] != 4:
+            text_history.update('dialogue_name', self.font(label.font), label.text, label.layout)
         return label.text
 
-    def page(self, details, start=0, *, names: SpeakerNames | None = None):
+    def page(self, details, start=0, *, names: SpeakerNames | None = None, text_history=None):
         mode, theme = details['presentation_mode'], details['theme']
+        font = self.font(NARRATOR_FONT if mode == 4 else BODY_FONT)
+        cap_height = getattr(font, 'cap_height', None)
         name_font, name_style, body_font, body_style = dialogue_styles(
             theme, narrator=mode == 4, emphasis_theme=details['emphasis_theme'],
-            game=game_id(self.resources))
-        font = self.font(body_font)
+            game=game_id(self.resources), outline=cap_height is not None)
+        switch_fonts = None
         text = details['text'][start:]
         sizing_text = details['text']  # Page turns keep the original box size.
         portrait = name_bounds = None
@@ -189,7 +199,9 @@ class DialogueLayout:
                 origin = (0, HD_NARRATOR_TOP)
         else:
             hd_label = self.hd_label(details)
-            label = hd_label or preview_speaker(details, self.bank, self.font, names)
+            label = hd_label or preview_speaker(
+                details, self.bank, self.font, names,
+                previous_glyph=text_history.initial('dialogue_name') if text_history else -1)
             name, name_origin, name_scale, extra = label.layout, label.origin, label.scale, label.extra
             rect = self.bank.rectangle(17, 8)
             cap_height = getattr(font, 'cap_height', None)
@@ -198,10 +210,16 @@ class DialogueLayout:
                 # iPhone branch below, not SHS HD's photo-fitted one.
                 from .vector_text import cap_height as vector_cap_height
                 cap_height = vector_cap_height(font)
-            if cap_height is not None:
-                # CSFont uses the face's cap height, not the nominal Cocos
-                # label height. Both iOS games set ordinary line gap 10.
+            if cap_height is not None and cod:
+                # CSFont uses the face's cap height, not the nominal Cocos label height. CoD keeps this fork's
+                # photo-verified pitch (IMG_0309 / IMG_0310) and BODY_MARKERS' colour switch.
                 body_style = replace(body_style, height=cap_height, gap=10)
+            elif cap_height is not None:
+                # The tallest registered face determines the
+                # line step, even in a paragraph with no emphasized words.
+                emphasis = self.font(EMPHASIS_FONT)
+                switch_fonts = {'`': (EMPHASIS_FONT, emphasis)}
+                body_style = replace(body_style, height=max(cap_height, emphasis.cap_height), gap=10)
             if mode in (1, 2):
                 portrait = self.bank.rectangle(17, 0x30 if mode == 1 else 0x4e)
                 # CSFont line offsets: the iPhone build's and HD's ARR_TEXT_LINE_OFFSETS_LEFT/RIGHT ({160, 140} points);
@@ -209,7 +227,7 @@ class DialogueLayout:
                 vector = getattr(font, 'source', None) is not None
                 insets = (80, 70, 0, 0) if cap_height is not None or vector else (85, 75, 0, 0)
                 body_style = replace(body_style, indents=insets if mode == 1 else tuple(-n for n in insets))
-            measured = layout_text(font, sizing_text, rect.width, body_style)
+            measured = layout_text(font, sizing_text, rect.width, body_style, switch_fonts=switch_fonts)
             capacity = int((rect.height + body_style.gap) / (body_style.height + body_style.gap))
             count = min(capacity, max(3, len(measured.lines)))
             height = int(count * (body_style.height + body_style.gap) - body_style.gap + 7) if count else 8
@@ -271,20 +289,23 @@ class DialogueLayout:
             drawn_origin = origin
         body_width = box.width if body_width is None else body_width
         body_height = box.height if body_height is None else body_height
-        full = layout_text(font, text, body_width, body_style)
+        full = layout_text(font, text, body_width, body_style, switch_fonts=switch_fonts)
         capacity = max(1, int((body_height + body_style.gap) / (body_style.height + body_style.gap)))
         end = full.lines[capacity].start if len(full.lines) > capacity else len(text)
         # setupTypingLayers steps each CoD line container by FPToFixed(gap + cap), a whole number of points; the box
         # was sized from CSFont::getTextHeight's fractional pitch above.
         drawn_style = (replace(body_style, gap=int(body_style.height + body_style.gap) - body_style.height) if cod
                        else body_style)
-        body = layout_text(font, text[:end], body_width, drawn_style)
+        body = layout_text(font, text[:end], body_width, drawn_style,
+                           previous_glyph=text_history.initial('dialogue_body') if text_history else -1,
+                           switch_fonts=switch_fonts)
         if mode != 4:
             # Allow for any glyph becoming the first line on a later page.
             # The whole dialogue supplies one stable name position; neither
             # the native body box nor its byte offsets change for this fit.
-            all_body = layout_text(font, sizing_text, body_width, body_style)
-            ink_tops = (body_style.height - font.line_height + g.glyph.yoffset
+            all_body = layout_text(font, sizing_text, body_width, body_style, switch_fonts=switch_fonts)
+            baseline = cap_height if switch_fonts else body_style.height
+            ink_tops = (baseline - self.font(g.font or body_font).line_height + g.glyph.yoffset
                         for g in all_body.glyphs)
             body_top = origin[1] + min(ink_tops, default=0)
             # Bound the visible title to the actual skin, not the viewport.
@@ -302,8 +323,9 @@ class DialogueLayout:
             bottom = min(header.y + header.height, body_top)
             top = max(0, min(header.y, bottom - 1))
             name_bounds = Rect(left, top, right - left, bottom - top)
-            if hd_label is None:
-                # (HD's title is drawn exactly where SHSUIDialog puts it; this fit corrects Android/iPhone labels.)
+            if hd_label is None and not getattr(self.font(name_font), 'native_face', False):
+                # HD's title is drawn exactly where SHSUIDialog puts it, and native outline titles keep their
+                # 26-point size and region origin; this fit corrects Android labels and substitute faces.
                 name, name_origin, name_scale = fit_speaker_ink(label, name_bounds)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds)

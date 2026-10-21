@@ -22,6 +22,7 @@ from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
 from .application_hd import HdShell
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import FRAME as PICKER_FRAME, HdEpisodePicker
+from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu
 from .desktop_menu import MenuRenderer
@@ -73,6 +74,9 @@ class Application:
         self.window = pygame.display.set_mode(DEFAULT_WINDOW_SIZE, pygame.RESIZABLE)
         pygame.display.set_caption('Surviving High School')
         self.remember_location = directory is None and library_root is None
+        # One RuntimeProcess per game and package kind (exp-runtime v0.6.0): the native app keeps its random
+        # generators and fonts across episodes, so reopening a library continues them (process.py).
+        self.processes = {}
         self.file_picker = file_picker
         self.url_opener = url_opener
         self.settings = AppSettings(settings_path)
@@ -111,6 +115,13 @@ class Application:
         self.menu_age = 0
         self.transition_age = 200
         self.transition_from = None
+        # exp-runtime v0.6.0's native submenu transitions for the Android / iPhone menus (no HD shell): the outgoing
+        # and incoming layers, their direction, and the main rows' 2050 ms departure (`main_exit_ms`).
+        self.transition_layer = None
+        self.transition_direction = 1
+        self.transition_zoom = False
+        self.transition_source = None
+        self.main_exit_ms = None
         self.buttons = []
         self.viewport = pygame.Rect(0, 0, *SIZE)
         self.browser_kind = None
@@ -305,8 +316,19 @@ class Application:
             return not self.busy
         if self.screen == 'picker' and self.picker_zoom < PAUSE_OPEN_MS:
             return False
-        return (not self.busy and self.transition_age >= 200
+        return (not self.busy
+                and (self.transition_from is None or self.transition_age >= self.transition_duration)
                 and (self.screen != 'main' or self.menu_age >= (3000 if self.intro else 500)))
+
+    @property
+    def transition_duration(self):
+        if getattr(self.library, 'kind', 'apk') == 'ipa':
+            return 400
+        if self.library and self.transition_source == 'main':
+            return 300 if self.screen == 'options' else 400
+        if self.library and self.screen == 'main':
+            return 400
+        return 200
 
     def open_library(self, directory, *, remember=False):
         library = ContentLibrary(directory)
@@ -315,7 +337,8 @@ class Application:
                 raise ContentError(f'This library belongs to {library.game_title}. '
                                    f'Select {library.game_title} in the game chooser to open it.')
             library.ensure_builtin_episodes()
-            state = MenuState(library)
+            process_key = (library.game_id, library.kind)
+            state = MenuState(library, process=self.processes.get(process_key))
             renderer = MenuRenderer(library)
             if self.game:
                 self.state.checkpoint(self.game.session)
@@ -328,6 +351,7 @@ class Application:
         self.directory, self.library = Path(directory), library
         self.selected_game = library.game_id
         self.state, self.renderer, self.game = state, renderer, None
+        self.processes[process_key] = state.process
         if 'SHS_HD_ART' not in os.environ:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
         self.expanded_groups = {'saved'}
@@ -340,6 +364,7 @@ class Application:
         self.ui_sounds = None
         self.screen, self.history, self.selected = 'main', [], state.selected
         self.menu_age, self.intro = 0, True
+        self.main_exit_ms = None
         self.message = state.warning
         pygame.display.set_caption(self.game_title)
         self.refresh_saves()
@@ -698,6 +723,17 @@ class Application:
         if self.screen == 'episodes':
             self.episode_scroll = self.scroll
         self.transition_from = self.renderer.canvas.copy()
+        self.transition_layer = self.renderer.layer.copy() if getattr(self.renderer, 'layer', None) is not None else None
+        if self.screen == 'game' and self.game and self.game.pause_renderer is not None:
+            self.transition_layer = self.game.pause_renderer.canvas.copy()
+        self.transition_direction = 1 if remember else -1
+        self.transition_zoom = self.screen in ('main', 'game') or screen == 'main'
+        self.transition_source = self.screen
+        if (self.screen == 'main' and screen != 'main' and self.shell is None
+                and getattr(self.library, 'kind', 'apk') == 'apk'):
+            self.main_exit_ms = 0
+        elif screen == 'main':
+            self.main_exit_ms = None
         if remember and screen != self.screen:
             self.history.append(self.screen)
         self.screen = screen
@@ -788,12 +824,14 @@ class Application:
                 self.menu_music.unpause()
 
     def start(self, *, resume=True, load_path=None):
+        self.main_exit_ms = None
         episode = self.selected
         if self.game and resume and not load_path and self.game.session.resources.record['id'] == episode:
             self.game.menu_open = False
         else:
             if load_path:
                 session = Session.load(self.library.open_episode(episode), load_path)
+                self.state.process.attach(session, restored=True)
                 self.state.selected = episode
                 self.state.persist()
             else:
@@ -808,7 +846,7 @@ class Application:
             # A fresh renderer per episode prevents local image IDs from
             # accidentally reusing the previous episode's cached artwork.
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
-                                names=self.state.names,
+                                names=self.state.names, vibration_enabled=self.state.vibration,
                                 episode_title=self.state.title(session.resources.record), on_menu_page=self.show)
         self.stop_menu_music()
         self.game.episode_title = self.state.title(self.game.session.resources.record)
@@ -1010,7 +1048,8 @@ class Application:
     def command(self, command):
         kind = command[0]
         self.cancel_pointer()
-        if self.busy:
+        if (self.busy or self.main_exit_ms is not None and self.transition_source == 'main'
+                and self.transition_age < self.transition_duration):
             return
         if self.update_prompt is not None and kind not in ('update_yes', 'update_no', 'back'):
             return
@@ -1204,8 +1243,17 @@ class Application:
             if self.game.session.episode_exited:
                 self.return_to_menu()
         else:
-            self.menu_age += elapsed
-            self.transition_age = min(200, self.transition_age + elapsed)
+            if self.main_exit_ms is not None:
+                self.main_exit_ms += elapsed
+                if self.main_exit_ms >= 2050:
+                    self.main_exit_ms = None
+            # Android recreates the main rows in the submenu's 400 ms exit
+            # callback. Its entry clock starts only after that callback.
+            delay = (max(0, self.transition_duration - self.transition_age)
+                     if self.screen == 'main' and self.shell is None and self.transition_from is not None
+                     and getattr(self.library, 'kind', 'apk') == 'apk' else 0)
+            self.menu_age += max(0, elapsed - delay)
+            self.transition_age = min(self.transition_duration, self.transition_age + elapsed)
             if self.shell is not None and self.screen == 'main':
                 self.shell.tick(elapsed / 1000)
             elif self.picker_over_menu():
@@ -1252,12 +1300,16 @@ class Application:
             self.render_shell()
             return
         canvas = self.renderer.draw(self)
-        if (self.transition_from is not None and self.transition_age < 200
+        if (self.transition_from is not None and self.transition_age < self.transition_duration
                 and not self.message and not self.busy and self.update_prompt is None):
-            layer = canvas.copy()
-            layer.set_alpha(round(255 * self.transition_age / 200))
-            canvas = self.transition_from.copy()
-            canvas.blit(layer, (0, 0))
+            if (self.library and self.transition_layer is not None
+                    and getattr(self.renderer, 'layer', None) is not None):
+                canvas = self._menu_transition()
+            else:
+                layer = canvas.copy()
+                layer.set_alpha(round(255 * self.transition_age / self.transition_duration))
+                canvas = self.transition_from.copy()
+                canvas.blit(layer, (0, 0))
         self.buttons = self.renderer.buttons if self.ready or self.message or self.update_prompt else []
         if self.buttons and self.focus == 'buttons':
             rect, _ = self.buttons[self.focus_index % len(self.buttons)]
@@ -1269,6 +1321,45 @@ class Application:
         self.window.fill((8, 12, 20))
         self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
         pygame.display.flip()
+
+    def _menu_transition(self):
+        """exp-runtime v0.6.0's recovered submenu transitions: iOS zooms or slides (UIKit ease, 400 ms); Android's
+        submenus zoom from or slide over the departing main rows."""
+        canvas = self.renderer.background.copy()
+        incoming, outgoing = self.renderer.layer, self.transition_layer
+        if getattr(self.library, 'kind', 'apk') == 'ipa':
+            progress = ease_in_out(self.transition_age / 400)
+            if self.transition_zoom:
+                for layer, scale in ((outgoing, 1 - .99999 * progress), (incoming, .001 + .999 * progress)):
+                    size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
+                    image = pygame.transform.smoothscale(layer, size)
+                    canvas.blit(image, image.get_rect(center=(160, 240)))
+            else:
+                offset = round(320 * progress) * self.transition_direction
+                canvas.blit(outgoing, (-offset, 0))
+                canvas.blit(incoming, (320 * self.transition_direction - offset, 0))
+        else:
+            progress = self.transition_age / self.transition_duration
+            if self.transition_source == 'main' or self.screen == 'main':
+                # Android 00090818, 00077e00, 0006eb7c and 0007aaa8:
+                # zero-size CCNode parents at GL (160,464), linear scale.
+                if self.transition_source == 'main':
+                    start = .1 if self.screen == 'help' else .2
+                    scale, layer = start + (1 - start) * progress, incoming
+                elif self.transition_source == 'episodes':
+                    scale, layer = 1 - .9 * progress, outgoing
+                else:
+                    # Help/Options remove themselves in a delayed callback;
+                    # unlike Play/Resume they do not scale on this path.
+                    scale, layer = 1, outgoing
+                size = max(1, round(320 * scale)), max(1, round(480 * scale))
+                image = pygame.transform.smoothscale(layer, size)
+                canvas.blit(image, (round(160 * (1 - scale)), round(16 * (1 - scale))))
+            else:
+                offset = round(320 * progress) * self.transition_direction
+                canvas.blit(outgoing, (-offset, 0))
+                canvas.blit(incoming, (320 * self.transition_direction - offset, 0))
+        return canvas
 
     def _scroll(self, delta):
         self.press.cancel()
@@ -1284,6 +1375,9 @@ class Application:
             if event.type == pygame.WINDOWFOCUSLOST and self.screen == 'game':
                 self.autosave(screenshot=True, only_if_unsaved=True)      # applicationWillResignActive: -> SHSEngine::onExit
             self._sync_menu_music()
+        if (self.screen != 'game' and self.main_exit_ms is not None and self.transition_source == 'main'
+                and self.transition_age < self.transition_duration):
+            return True                     # the Android main rows are still leaving (exp-runtime v0.6.0)
         if self.screen == 'game':
             return self.game.handle_event(event)
         if self.update_prompt is not None:

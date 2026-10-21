@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">EXP Runtime Creator kiwi and hammer</title>
+  <desc id="desc">The EXP Runtime green kiwi slice with a steel claw hammer and a warm wooden handle, representing the episode creator.</desc>
+  <defs>
+    <linearGradient id="skin" x1="92" y1="90" x2="416" y2="434" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#be9256"/>
+      <stop offset="1" stop-color="#74502e"/>
+    </linearGradient>
+    <linearGradient id="flesh" x1="144" y1="92" x2="376" y2="428" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#cfed68"/>
+      <stop offset="0.5" stop-color="#a7d84b"/>
+      <stop offset="1" stop-color="#6ca438"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="-22" y1="80" x2="22" y2="80" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f4c372"/>
+      <stop offset="0.5" stop-color="#dfa451"/>
+      <stop offset="1" stop-color="#b67638"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="-38" x2="0" y2="25" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e2e9ea"/>
+      <stop offset="0.5" stop-color="#aabcc3"/>
+      <stop offset="1" stop-color="#718b98"/>
+    </linearGradient>
+  </defs>
+  <g transform="rotate(-22 256 256)">
+    <!-- The offset rind gives the slice a little depth without a background. -->
+    <ellipse cx="256" cy="267" rx="201" ry="214" fill="#69472c"/>
+    <ellipse cx="256" cy="247" rx="201" ry="214" fill="url(#skin)"/>
+    <ellipse cx="256" cy="247" rx="184" ry="197" fill="#e0d996"/>
+    <ellipse cx="256" cy="247" rx="177" ry="190" fill="url(#flesh)"/>
+    <g fill="none" stroke="#e3ef9d" stroke-width="7" stroke-linecap="round" opacity="0.48">
+      <path d="M256 76 L256 166 M300 83 L275 166 M342 104 L291 181 M378 141 L305 199 M409 191 L315 222 M414 247 L317 247 M409 302 L311 269 M378 352 L299 289 M342 392 L282 310 M299 414 L267 319 M256 418 L251 322 M211 411 L234 319 M170 390 L220 306 M135 353 L209 288 M106 303 L200 269 M98 247 L197 247 M106 190 L201 225 M135 141 L211 205 M170 103 L225 186 M211 81 L241 168"/>
+    </g>
+    <g transform="translate(256 247) scale(1 1.12)" fill="#293c27">
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(18)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(36)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(54)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(72)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(90)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(108)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(126)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(144)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(162)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(180)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(198)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(216)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(234)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(252)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(270)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(288)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(306)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(324)"/>
+      <path d="M0 -84 C-4 -91 -8 -98 -7 -105 C-6 -114 6 -114 7 -105 C8 -98 4 -91 0 -84Z" transform="rotate(342)"/>
+    </g>
+    <path d="M256 167 C270 161 278 177 283 192 C290 201 282 216 289 228 C296 242 288 250 289 262 C294 279 281 285 278 301 C274 317 263 330 251 324 C239 328 230 313 229 300 C219 290 225 277 219 265 C214 252 223 242 219 231 C216 216 227 211 229 196 C232 180 241 165 256 167Z" fill="#f3efc5"/>
+    <path d="M131 134 C153 101 187 82 224 76" fill="none" stroke="#f5f4c9" stroke-width="8" stroke-linecap="round" opacity="0.65"/>
+  </g>
+  <!-- A light keyline keeps the tool readable over the fruit and at icon sizes. -->
+  <g transform="translate(385 286) rotate(33)" stroke-linejoin="round" stroke-linecap="round">
+    <g fill="none" stroke="#faf3d8" stroke-width="19">
+      <path d="M-15 0 H15 L23 172 Q24 190 6 190 H-6 Q-24 190 -23 172Z"/>
+      <path d="M-24 -32 H35 V-39 H66 Q74 -39 74 -31 V18 Q74 26 66 26 H35 V17 H15 C1 17 -8 11 -20 3 C-39 -11 -62 -7 -87 14 L-103 29 L-97 1 C-88 -24 -68 -36 -42 -36Z"/>
+    </g>
+    <path d="M-15 0 H15 L23 172 Q24 190 6 190 H-6 Q-24 190 -23 172Z" fill="url(#wood)" stroke="#433c32" stroke-width="7"/>
+    <path d="M-5 48 L-10 165" fill="none" stroke="#ffdb94" stroke-width="5"/>
+    <path d="M-21 168 Q0 176 21 168" fill="none" stroke="#a66c36" stroke-width="6"/>
+    <path d="M-24 -32 H35 V-39 H66 Q74 -39 74 -31 V18 Q74 26 66 26 H35 V17 H15 C1 17 -8 11 -20 3 C-39 -11 -62 -7 -87 14 L-103 29 L-97 1 C-88 -24 -68 -36 -42 -36Z" fill="url(#steel)" stroke="#304550" stroke-width="7"/>
+    <path d="M35 -30 V16" fill="none" stroke="#637e8c" stroke-width="5"/>
+    <path d="M-68 -20 Q-45 -29 -23 -23 H23" fill="none" stroke="#f3f7ee" stroke-width="5"/>
+    <path d="M48 -29 H62" fill="none" stroke="#f3f7ee" stroke-width="5"/>
+  </g>
+</svg>

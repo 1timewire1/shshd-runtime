@@ -31,6 +31,36 @@ such an IPA under the 1.3.4 ids, so every contract below applies unchanged.
 The layout is recognized by its contents (1.3.4 has nothing between 17 and
 125), not by its version string. Only the English bank is exposed.
 
+The bundle ID identifies the game, not its resource layout. Import and reopen
+try the supported mappings and require exactly one complete, valid asset bank:
+
+| Layout | Profile | English strings | Layouts / common images | Mask | Fonts |
+| --- | --- | --- | --- | --- | --- |
+| Paid reference | `cod-ios-assets-v1` | 13 | 14 / 16 | 268 | 291–297 |
+| Compact free | `cod-ios-free-assets-v1` | 14 | 15 / 17 | 269 | 292–298 |
+| Multilingual free | `cod-ios-free-localized-assets-v1` | 14 | 19 / 21 | 273 | 296–302 |
+
+Free layouts repeat Volume One at 13; only 12 is canonical. Reference UI
+members 14–297 move by one in the compact free layout and five in the
+multilingual layout. The latter has extra language string banks at 15–18.
+The base member view normalizes UI IDs and omits the duplicate/language banks;
+characters, backgrounds, relationship art, sounds, music and episode assets
+keep their IDs. This does not add localized story or UI selection.
+
+Import records the detected profile (exp-runtime v0.6.0). This fork's `logical_members` gives the same
+mapping from the members themselves, so a library imported by shshd-runtime 1.0.x, which recorded every CoD
+IPA as `cod-ios-assets-v1`, still opens: `ContentLibrary` accepts the IPA's own free layout under that
+record and leaves `library.json` unchanged.
+
+The compact layout comes from the PR contributor's inspected free IPA. The
+multilingual layout comes from the
+[1.4.7 `.bv` review report](https://github.com/joshrmcdaniel/exp-runtime/pull/1#issuecomment-6193379821).
+Both have authored import/reopen fixtures, including identical bundle IDs and
+versions, relocation, missing assets and conflicting manifests. Full original
+1.4.7 playback has not been independently verified here. Required payloads must
+parse correctly; sentinel filenames, version strings or bundle suffixes alone
+cannot make an incompatible archive pass.
+
 Its base resource **12** is a complete EXP containing **Volume One** (metadata
 pack 101 / episode 1 and scripts 25001–25008). Import retains that EXP as a
 hash-named private episode automatically. It does not synthesize a story or
@@ -44,10 +74,45 @@ An EXP's metadata has no reliable game discriminator: the player selects the
 destination game when importing additional episodes.
 
 New libraries use `format: exp-content-library`, `version: 1`, `game: cod` and
-`profile: cod-ios-assets-v1`. A contradictory game/profile/package is rejected.
+the matching profile above. A contradictory game/profile/package is rejected.
 The complete source and EXP hashes bind saves, so the same EXP used in both
 games cannot share progress accidentally. SHS APK music supplementation is
 restricted to SHS IPA libraries.
+
+## Explicit compatibility adaptations
+
+The following adaptations are intentionally distinguished from native parity:
+
+- Undefined bitmap glyphs `0x09`, `0x18` and `0x19` fall back to space,
+  apostrophe and apostrophe respectively in both games. These bytes occur in
+  supplied dialogue, including `0x18` in SHS's The Endorsement. Their positions
+  suggest truncated Unicode punctuation; the authoring conversion itself has
+  not been verified. A reviewer reports that original CoD 1.4.7 displays a
+  missing-glyph box for `0x19`. Existing font glyphs always win, and other
+  missing characters still fail explicitly.
+- CoD incremental timed choices (services 2–4) pass through only the observed
+  out-of-range defaults `-1` and `1000`. This prevents a stop on known content
+  without copying undefined memory. In-range defaults still use the return
+  mapping, and completion updates the VM and result cell once. Other invalid
+  indices, including those in SHS, remain explicit stops.
+- ASCII spaces in CoD text entry are an owner-requested convenience. The native
+  filter rejects spaces, and the cited puzzles have space-free solutions.
+  Typing, final validation and saved drafts share this allowance; other
+  rejected characters and the existing length/width limits remain unchanged.
+  [NAME_INPUT.md](NAME_INPUT.md) distinguishes the native capitalization rule.
+
+For the timeout adaptation, local CoD 1.3.4 `SHSUIMenu::tick` (`00039c8c`)
+copies the configured default. `setReturnValue` (`00039570`) then reads a
+signed short from `this + 0x9a + 2*selection` when mapping is enabled by
+`initTextMenuWait` (`0003a30c`). At `-1` it reads the field at `+0x98`; it
+does not return the default itself. Executing that callback with authored menu
+memory confirms that changing the neighboring field changes the callback.
+Fresh allocation does not guarantee zero, so neither zero nor passthrough is
+claimed as an exact native result. A local static scan found 124 literal `-1`
+timed defaults and one `1000` default across 23 of 81 distinct CoD EXPs; it
+does not establish every dynamically computed default or reachable branch.
+The reviewer's reported equivalent-play comparisons support this narrow
+compatibility policy, rather than a general rule for arbitrary invalid values.
 
 ## Episode catalog and duplicate imports
 
@@ -109,6 +174,23 @@ and `0x12ab4`; `updateFonts` (`000355e4`) binds those objects and the body at
 `0x142d4` to dialogue. Theme 2 keeps its rose color; gray/default themes use
 the same dark-red names and black body as the normal theme. These bindings
 live in `cod/profile.py`; font size and glyph advances are unchanged.
+
+Narration has its own font object: `initFonts` at `00023476` initializes
+engine `+0xe254` with black (`0xff000000`); its backtick switch font at
+`+0xfa74` uses gold (`0xffb46d1a`, `000234a0`). The shared narrator now uses
+this CoD palette rather than SHS's amber/brown pair.
+
+Score notices are theme-dependent in the supplied 1.3.4 native code.
+`updateFonts` (`000355e4`) selects the main letter font at dialog `+0xd4`:
+theme 1 uses engine `+0x17314`, red `(240,81,60)`; theme 2 uses `+0x21bf4`,
+rose `(180,78,78)`; theme 3/default use `+0x2acb4`/`+0x33d74`, black.
+`SHSTextLayer::drawLayerText:` (`00046dec`) draws the outline font first,
+then this main font. The color selection applies to every service-88 notice,
+without matching the text "Detective Score Up!". This verifies black notices
+for neutral/gray themes, not a universal black color for every theme.
+The shared notice face, outline and motion still follow the compatibility
+renderer; see [service 88's remaining iOS differences](STORY_SERVICES.md#dialogue-notifications-service-88).
+
 The owner supplied `decomp/cod/cod-native-1.jpg` and `cod-native-2.jpeg` on
 2026-10-05. Their Man/Sophie scenes corroborate the normal palette and titles
 attached to the top border. They remain private references, not test fixtures
@@ -190,6 +272,12 @@ The runtime stops at once for these instead (unverified in scripts). The iOS
 host's mixer has no volume control, so there the cue plays at full volume for
 the fade time and then stops.
 
+exp-runtime v0.6.0 also models CoD's scene blinds and black fades in the engine
+(`cod/scene_transition.py`: selectors 1, 2, 6 and 20, `setupQueuedFade` `0000f998`, `tickFade` `0000ee5c`,
+and the menu's `fadeToGame` `0000f9d8`), plus its own desktop audio handoff with saved playheads. This
+fork leaves both unset (no `SCENE_TRANSITION` in either profile; `music_playback` is not filled): its fades
+are `scene_fade.py`'s and its music `music_stream.py`'s. Comparing the two transition models is open.
+
 Service 80's second argument is the **repeat flag**, not a fade control.
 The dispatcher (`0003354c`) passes `bool(a2)` to `queueMusic` (`0000ebe2`),
 then `handleQueuedAudio` (`00011c0c`) forwards it to `playMusic` (`0004313c`).
@@ -268,8 +356,19 @@ play all nine base music sources through SDL dummy audio. Authored tests cover
 colliding IDs, game/profile mismatch rejection, unavailable assets, legacy SHS
 saves, launcher migration and switching/checkpoint failures.
 
-Complete episode routes, all CoD service variants, exact iOS animation/font
-parity and CoD story-choice/relationship feedback sounds still require verification.
+`SHSUIMenu::handleMenuSelection` **000395ac** plays **8005** for an accepted
+ordinary or incremental story choice. Timed word selections play **8003** for
+a positive score delta and **8004** for a negative one; zero is silent.
+SHS's corresponding **000afee8** (Android) / **00084600** (iOS) uses
+**8010**, **8001** and **8002**. The shared session now preserves each input's
+ordered sound requests, including script cues immediately after a choice.
+Timeout callbacks and rejected input do not synthesize a click.
+
+CoD `setCurrentSpeaker` **00038008** and the full
+`setStatusIconAnimated` **00043fc0–00044d84** path do not request relationship
+sounds. SHS's relationship sound table is therefore not applied to CoD.
+Complete episode routes, all CoD service variants and exact iOS animation/font
+parity still require verification.
 Unknown services stop explicitly; no score, choice, random result or next scene
 is invented to continue an unsupported episode.
 

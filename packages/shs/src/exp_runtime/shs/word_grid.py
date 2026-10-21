@@ -10,6 +10,8 @@ from collections import Counter
 import math
 
 from .grid_motion import project
+from .grid_animation import GridTile
+from .physics import float32
 
 NEIGHBORS = ((0, 1), (0, -1), (1, 1), (1, 0), (1, -1),
              (-1, 1), (-1, 0), (-1, -1))
@@ -94,6 +96,9 @@ class GridTransition:
     starts: list[int]
     tutorial: bool
     mode: str = 'replace'
+    highlight_offsets: dict[int, int] | None = None
+    round_ms: int = 0
+    deferred: bool = False
 
 
 @dataclass
@@ -106,6 +111,14 @@ class GridFragment:
     spin: float
     angle: float
     age_ms: int
+
+
+@dataclass
+class GridScoreEffect:
+    value: int
+    x: float
+    y: float
+    remaining_ms: int = 400
 
 
 @dataclass
@@ -129,6 +142,8 @@ class WordGrid(GameState):
     board: list[str] = field(default_factory=list)
     starts: list[int] = field(default_factory=list)
     initial_starts: int = 0
+    highlight_offsets: dict[int, int] | None = field(default_factory=dict)
+    tiles: list[GridTile] | None = None
     selection: list[int] = field(default_factory=list)
     bad_prefix: list[int] = field(default_factory=list)
     dragging: bool = False
@@ -146,6 +161,11 @@ class WordGrid(GameState):
     error_sound_ms: int = 0
     last_delta: int = 0
     delta_ms: int = 0
+    score_effects: list[GridScoreEffect] = field(default_factory=list)
+    score_pending: int = 0
+    score_phase: int = 0
+    score_target: int = 0
+    display_score: int = 0
     visual_ms: int = 0
     board_entry_ms: int = 0
     banner: GridBanner | None = None
@@ -156,6 +176,8 @@ class WordGrid(GameState):
 
     @property
     def problem(self):
+        if self.transition and self.transition.deferred and self.phase == 4:
+            return self.transition.problem
         return (self.tutorials[self.problem_index] if self.tutorial else
                 self.problems[self.order[self.problem_index]])
 
@@ -179,6 +201,34 @@ class WordGrid(GameState):
             self.shuffle_order(random)
         self.tutorial = bool(self.tutorials)
         self.load_board(random)
+        self.commit_highlights(random)
+        self.animate_tiles('grow')
+
+    def animate_tiles(self, action):
+        if self.tiles is None:
+            self.tiles = [GridTile() for _ in self.board]
+        p = self.problem
+        for i, tile in enumerate(self.tiles):
+            delay = 80 * (p.height - 1 + i % p.width - i // p.width)
+            if action == 'flip':
+                tile.flip(delay)
+            elif action == 'shine':
+                tile.shine(delay)
+            else:
+                tile.grow(delay, shrinking=action == 'shrink')
+
+    def commit_highlights(self, random):
+        """000c43ec: shuffle one countdown offset per valid starting cell."""
+        if not self.problem.highlight:
+            return
+        count = len(self.starts)
+        # For the native maximum of 25 cells, integer division produces the
+        # same truncated values as the original float32 calculation.
+        offsets = [3000 * i // count for i in range(count)]
+        for i in range(count):
+            j = random.below(count)
+            offsets[i], offsets[j] = offsets[j], offsets[i]
+        self.highlight_offsets = dict(zip(self.starts, offsets))
 
     def shuffle_order(self, random, previous=-1):
         if len(self.order) < 2:
@@ -262,6 +312,8 @@ class WordGrid(GameState):
         p = self.problem
         self.round_ms = self.round_limit_ms
         self.selection, self.bad_prefix, self.dragging = [], [], False
+        self.highlight_offsets = {}
+        self.tiles = [GridTile() for _ in range(p.width * p.height)]
         self.pop_ms = {}
         self.round += 1
         if p.fixed_board is not None:
@@ -314,7 +366,10 @@ class WordGrid(GameState):
             self.break_tiles(random)
             self.last_delta = (self.initial_starts - len(self.starts) + 1) * 100
             self.score += self.last_delta
-            self.delta_ms = 600
+            index, p = self.selection[0], self.problem
+            x, y, _ = project(p.width, p.height, index % p.width * 522 + 225,
+                               index // p.width * 522 + 225)
+            self.score_effects.append(GridScoreEffect(self.last_delta, x, y))
             if self.problem.advance_after_one and self.problem.fixed_board is None:
                 self.complete_round(True, random)
             else:
@@ -338,29 +393,76 @@ class WordGrid(GameState):
             if len(self.explosions) < 20:
                 x, y, _ = project(p.width, p.height, index % p.width * 522 + 225,
                                    index // p.width * 522 + 225)
-                scale = (y - 150) * .0024242424 + 1
+                x, y = float32(x), float32(y)
+                scale = float32(float32(float32(y - 150) * float32(.0024242424)) + 1)
                 burst = []
                 for _ in range(8):
-                    burst.append(GridFragment(x + random.signed_below(50), y + random.signed_below(50),
+                    burst.append(GridFragment(float32(x + random.signed_below(50)),
+                                               float32(y + random.signed_below(50)),
                                                scale, float(random.signed_below(250)),
                                                float(random.signed_below(350) - 250),
                                                float(random.signed_below(360)), float(random.below(360)),
                                                random.below(5000)))
                 self.explosions.append(burst)
-            self.pop_ms[index] = 601  # One-ms delay, then the 600-ms native pop.
+            if self.tiles is None:
+                self.pop_ms[index] = 601  # Legacy saves retain their existing clock.
+            else:
+                self.tiles[index].grow(1)
 
     def tick_fragments(self, dt):
         self.pop_ms = {index: remaining - dt for index, remaining in self.pop_ms.items() if remaining >= dt}
-        self.glint_ms = min(100_000_000, self.glint_ms + dt)
+        if self.tiles is None:
+            self.glint_ms = min(100_000_000, self.glint_ms + dt)
+        seconds = float32(dt / 1000)
         for burst in self.explosions:
             for fragment in burst:
                 fragment.age_ms += dt
-                fragment.x += fragment.vx * dt / 1000
-                fragment.y += fragment.vy * dt / 1000
-                fragment.angle += fragment.spin * dt / 1000
-                fragment.vy += dt * 1.6
+                fragment.x = float32(fragment.x + float32(fragment.vx * seconds))
+                fragment.y = float32(fragment.y + float32(fragment.vy * seconds))
+                fragment.angle = float32(fragment.angle + float32(fragment.spin * seconds))
+                if fragment.y < 480:
+                    fragment.vy = float32(fragment.vy + float32(seconds * 1600))
             burst[:] = [fragment for fragment in burst if fragment.y < 480]
         self.explosions[:] = [burst for burst in self.explosions if burst]
+
+    def tick_tiles(self, dt):
+        if self.tiles is None or self.phase not in (1, 2, 3, 4, 5, 6):
+            return
+        for tile in self.tiles:
+            tile.tick(dt)
+        previous = self.glint_ms
+        self.glint_ms = min(100_000_000, previous + dt)
+        if previous <= 0 < self.glint_ms:
+            self.animate_tiles('shine')
+
+    def tick_score(self, dt):
+        """000c2a98/000cd2c0: fly, accumulate, transfer at 800 points/s.
+
+        The HUD has its own eased counter (SHS iOS 00085698); none of these
+        delayed display values replaces the score used by the script callback.
+        """
+        difference = self.score_target - self.display_score
+        step = int(difference * .5 * (dt / 100))
+        if step == 0 or (difference - step) * difference < 0:
+            self.display_score = self.score_target
+        else:
+            self.display_score += step
+        if self.score_phase == 2:
+            step = min(self.score_pending, int(dt / 1000 * 800))
+            self.score_pending -= step
+            self.score_target += step
+            if not self.score_pending:
+                self.score_phase, self.delta_ms = 1, 300
+        elif self.score_phase == 1:
+            self.delta_ms = max(0, self.delta_ms - dt)
+            if not self.delta_ms:
+                self.score_phase = 0
+        for effect in self.score_effects:
+            effect.remaining_ms -= dt
+            if effect.remaining_ms <= 0:
+                self.score_pending += effect.value
+                self.score_phase = 2
+        self.score_effects[:] = [effect for effect in self.score_effects if effect.remaining_ms > 0]
 
     def pointer(self, phase, index, random):
         if phase not in ('down', 'move', 'up', 'cancel'):
@@ -399,13 +501,17 @@ class WordGrid(GameState):
             self.next_problem(random)
 
     def next_problem(self, random):
-        self.transition = GridTransition(self.problem, self.board.copy(), self.starts.copy(), self.tutorial)
+        previous_index = self.problem_index
+        self.transition = GridTransition(self.problem, self.board.copy(), self.starts.copy(), self.tutorial,
+                                         highlight_offsets=self.highlight_offsets, round_ms=self.round_ms)
         if self.tutorial:
             index = self.problem.success_next if self.round_success else self.problem.failure_next
             if index == -2:
                 self.tutorial = False
                 self.switching_to_game = True
                 self.score = 0
+                self.score_effects.clear()
+                self.score_pending = self.score_phase = self.score_target = self.display_score = self.delta_ms = 0
                 if self.shuffle:
                     self.shuffle_order(random)
                 index = 0
@@ -417,18 +523,35 @@ class WordGrid(GameState):
                 if self.shuffle:
                     self.shuffle_order(random, self.order[self.problem_index])
                 index = 0
-        self.problem_index = index
-        self.phase, self.phase_ms = 4, 800
-        self.load_board(random)
-        if self.problem.animate_board:
-            old = self.transition.problem
-            self.transition.mode = ('flip' if (old.width, old.height) == (self.problem.width, self.problem.height)
+        incoming = self.tutorials[index] if self.tutorial else self.problems[self.order[index]]
+        old = self.transition.problem
+        if incoming.animate_board:
+            self.transition.mode = ('flip' if (old.width, old.height) == (incoming.width, incoming.height)
                                     and not old.hide_board and not self.switching_to_game else 'shrink')
+        self.transition.deferred = self.transition.mode == 'shrink'
+        self.phase, self.phase_ms = 4, 800
+        if self.transition.deferred:
+            # 000d0ff8 advances the retained index at the end of a shrink.
+            # Unlike the immediate/flip path, it does not use the peeked
+            # tutorial destination. Keep that native distinction explicit.
+            count = len(self.tutorials) if self.tutorial else len(self.problems)
+            self.problem_index = (previous_index + 1) % count
+            self.animate_tiles('shrink')
+        else:
+            self.problem_index = index
+            self.load_board(random)
+            if self.transition.mode == 'flip':
+                self.animate_tiles('flip')
 
     def tick(self, elapsed_ms, random):
+        if self.phase == 7:
+            self.phase_ms = max(0, self.phase_ms - elapsed_ms)
+            return self.phase_ms == 0
         # Each native grid update caps dt at 250 ms, including after a stall.
         dt = min(elapsed_ms, 250)
+        self.tick_score(dt)
         self.tick_fragments(dt)
+        self.tick_tiles(dt)
         self.visual_ms += dt
         if self.phase in (2, 6):
             self.board_entry_ms = min(2000, self.board_entry_ms + dt)
@@ -437,7 +560,6 @@ class WordGrid(GameState):
             if self.banner.age_ms > self.banner.enter_ms + self.banner.hold_ms:
                 self.banner = None
         self.error_sound_ms = max(0, self.error_sound_ms - dt)
-        self.delta_ms = max(0, self.delta_ms - dt)
         self.tutorial_entry_ms = max(0, self.tutorial_entry_ms - dt)
         if self.phase == 1:
             if not self.tutorial:
@@ -465,7 +587,8 @@ class WordGrid(GameState):
                     self.phase, self.phase_ms = -1, 1500
                     self.banner = GridBanner('ready', 700, 800)
                 elif self.phase == -1:
-                    self.glint_ms = -4000
+                    if self.tiles is None:
+                        self.glint_ms = -4000
                     self.phase, self.phase_ms = (0, 2800) if self.tutorial else (6, 1600)
                     if not self.tutorial:
                         self.banner = GridBanner('target', 700, 1300)
@@ -477,6 +600,10 @@ class WordGrid(GameState):
                 elif self.phase == 4:
                     self.glint_ms = -4000
                     self.phase, self.phase_ms = (6, 1600) if self.switching_to_game else (2, 1800)
+                    if self.transition and self.transition.deferred:
+                        self.load_board(random)
+                        self.animate_tiles('grow')
+                    self.commit_highlights(random)
                     self.board_entry_ms = 0
                     self.tutorial_entry_ms = 500
                     if self.switching_to_game:
@@ -484,8 +611,6 @@ class WordGrid(GameState):
                     self.switching_to_game = False
                 elif self.phase == 6:
                     self.phase, self.phase_ms = 2, 1800
-                elif self.phase == 7:
-                    return True
         # Native expires an overlay strictly after its full display interval.
         if self.overlay_ms:
             self.overlay_ms = max(0, self.overlay_ms - dt)
@@ -509,6 +634,12 @@ class WordGrid(GameState):
 
     def validate(self):
         self.validate_config()
+        self.validate_highlights(self.highlight_offsets, len(self.board))
+        if self.tiles is not None:
+            if len(self.tiles) != len(self.board):
+                raise ValueError('Invalid grid cube count')
+            for tile in self.tiles:
+                tile.validate()
         if (not -4000 <= self.glint_ms <= 100_000_000 or len(self.pop_ms) > len(self.board)
                 or any(not 0 <= index < len(self.board) or not 0 <= ms <= 601 for index, ms in self.pop_ms.items())
                 or len(self.explosions) > 20 or any(not 1 <= len(burst) <= 8 for burst in self.explosions)):
@@ -528,6 +659,15 @@ class WordGrid(GameState):
                 or not 0 <= self.board_entry_ms <= 2000
                 or not 0 <= self.delta_ms <= 600):
             raise ValueError('Invalid grid presentation clock')
+        if (not 0 <= self.display_score <= self.score or not 0 <= self.score_target <= self.score
+                or not 0 <= self.score_pending <= self.score or self.score_phase not in (0, 1, 2)
+                or len(self.score_effects) > 1000
+                or any(not 0 < effect.value <= self.score or not 0 < effect.remaining_ms <= 400
+                       or not math.isfinite(effect.x) or not math.isfinite(effect.y)
+                       or not -1000 <= effect.x <= 1000 or not -1000 <= effect.y <= 1000
+                       for effect in self.score_effects)
+                or self.score_target + self.score_pending + sum(e.value for e in self.score_effects) != self.score):
+            raise ValueError('Invalid grid score animation')
         if self.banner is not None:
             b = self.banner
             timings = dict(ready=(700, 800), target=(700, 1300), success=(1300, 700),
@@ -538,11 +678,14 @@ class WordGrid(GameState):
         if self.transition is not None:
             t = self.transition
             t.problem.validate()
+            self.validate_highlights(t.highlight_offsets, len(t.board))
             if (self.phase not in (2, 4, 6) or t.mode not in ('replace', 'flip', 'shrink')
+                    or t.deferred and t.mode != 'shrink'
                     or len(t.board) != t.problem.width * t.problem.height
                     or any(len(c) != 1 for c in t.board)
                     or len(t.starts) != len(set(t.starts))
                     or any(not 0 <= i < len(t.board) for i in t.starts)
+                    or not -250 <= t.round_ms <= self.round_limit_ms
                     or t.mode == 'flip' and (t.problem.width, t.problem.height) !=
                     (self.problem.width, self.problem.height)):
                 raise ValueError('Invalid departing grid')
@@ -563,6 +706,12 @@ class WordGrid(GameState):
                 raise ValueError('Saved grid selection is not adjacent')
         if any(not any(self.find_path(i, word) for word in p.words) for i in self.starts):
             raise ValueError('Saved grid has an impossible starting cell')
+
+    @staticmethod
+    def validate_highlights(offsets, cell_count):
+        if offsets is not None and (len(offsets) > cell_count or any(
+                not 0 <= index < cell_count or not 0 <= ms < 3000 for index, ms in offsets.items())):
+            raise ValueError('Invalid grid highlight offsets')
 
 
 def read_grid(vm, args, read_text, resolve_text, *, tutorials_seen=False):

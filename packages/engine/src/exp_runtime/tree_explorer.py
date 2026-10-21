@@ -108,6 +108,11 @@ class Explorer:
         elif name == 'text_input':
             session.answer('Player')
         elif name == 'choice':
+            if not getattr(session, 'choice_ready', True):
+                # The menu ignores taps for its first 250 ms (Session.choice_ready, exp-runtime v0.6.0).
+                session.tick(250 - session.engine.choice_ms)
+                if session.pending is not action:
+                    return
             decision = self.decide(session, playthrough)
             if decision == 'timeout':
                 session.tick(action.details['timeout_ms'] + 1)

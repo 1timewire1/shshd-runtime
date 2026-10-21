@@ -20,9 +20,9 @@ import urllib.request
 from zipfile import ZipFile
 
 if __package__:
-    from .components import check_versions, source_files
+    from .components import RUNTIME_COMPONENTS, check_versions, source_files
 else:
-    from components import check_versions, source_files
+    from components import RUNTIME_COMPONENTS, check_versions, source_files
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPENDENCIES = ROOT / 'build/ios/dependencies'
@@ -118,7 +118,7 @@ def _copy_clean(source, destination):
 
 def stage_runtime(destination):
     """Merge the same disjoint namespace components used by Python installs."""
-    for relative, source in source_files(ROOT).items():
+    for relative, source in source_files(ROOT, RUNTIME_COMPONENTS).items():
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)

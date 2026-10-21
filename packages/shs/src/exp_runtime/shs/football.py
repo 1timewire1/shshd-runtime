@@ -10,6 +10,7 @@ import math
 import struct
 
 from ..vm import signed16
+from .physics import float32
 
 
 # DAT_002a8024 maps a play code to a signed composite frame in atlas 290.
@@ -36,6 +37,32 @@ class FootballEffect:
     scale: float
     selected: bool
     remaining_ms: int
+
+
+@dataclass
+class TouchdownStar:
+    x: float
+    y: float
+    vx: float
+    vy: float
+    angle: float
+    spin: float
+    delay_ms: int
+    alpha: float
+    fade: float
+
+    def tick(self, dt):
+        # 0008f460 (SHS iOS): delayed stars spend the full first active tick,
+        # then use Euler position/velocity updates, including float32 stores.
+        self.delay_ms -= dt
+        if self.delay_ms <= 0:
+            self.x = float32(self.x + float32(self.vx * dt))
+            self.y = float32(self.y + float32(self.vy * dt))
+            # Gravity uses a double constant before the float32 store.
+            self.vy = float32(self.vy + dt * .0001)
+            self.angle = float32(self.angle + float32(self.spin * dt))
+            self.alpha = float32(self.alpha + float32(self.fade * dt))
+        return self.alpha > 0 and self.y < 480
 
 
 @dataclass
@@ -121,6 +148,8 @@ class Football(GameState):
     message_values: list[int] = field(default_factory=list)
     message_hold_ms: int = 800
     effects: list[FootballEffect] = field(default_factory=list)
+    touchdown_stars: list[TouchdownStar] = field(default_factory=list)
+    shadow_ms: list[int] | None = field(default_factory=lambda: [-1] * 9)
 
     def __post_init__(self):
         if self.camera_position is None:
@@ -177,7 +206,7 @@ class Football(GameState):
         else:
             next_phase = transitions[phase]
         self.message_phase, self.message_ms = next_phase
-        if self.phase == 11 and next_phase == 6:
+        if self.phase == 11 and self.message_phase == 6:
             self.sound(8101 if self.home > self.away else 8105)
 
     def eligible(self, play):
@@ -307,6 +336,7 @@ class Football(GameState):
             else:
                 self.home = signed16(self.home + 7)
                 self.score += 70
+                self.start_touchdown_stars(random)
             self.sound(8102, 8108 if self.defense else 8101)
             self.change_possession = True
             messages = [(53 if self.defense else 48, 1000)]
@@ -348,12 +378,26 @@ class Football(GameState):
         self.announce('Halftime' if self.half == 1 else 'Sudden death' if self.home == self.away else 'Full time',
                       11, messages=messages)
 
+    def start_touchdown_stars(self, random):
+        """000b618c/000b4858: home touchdown, 2000ms emitter, 50px span."""
+        self.touchdown_stars = []
+        for _ in range(50):
+            delay = random.below(1000) + 300
+            x = float(145 + random.below(30))
+            vx = float32(random.signed_below(120) / 1000)
+            vy = float32((-50 - random.below(190)) / 1000)
+            angle = float(random.below(360))
+            spin = float32(random.signed_below(720) / 1000)
+            fade = float32((-100 - random.below(1500)) / 1000000)
+            self.touchdown_stars.append(TouchdownStar(x, 235., vx, vy, angle, spin, delay, 1., fade))
+
     def tick_presentation(self, dt):
         """000b1c10 / 000c0310: independent field and scoreboard easing."""
         self.visual_ms += dt
         for effect in self.effects:
             effect.remaining_ms = max(0, effect.remaining_ms - dt)
         self.effects = [effect for effect in self.effects if effect.remaining_ms > 0]
+        self.touchdown_stars[:] = [star for star in self.touchdown_stars if star.tick(dt)]
         self.camera_position += (self.position - self.camera_position) * .5 * min(dt / 100, 1.)
         if abs(self.position - self.camera_position) < .02:
             self.camera_position = float(self.position)
@@ -364,6 +408,15 @@ class Football(GameState):
             self.hud_position = float(self.position)
 
     def tick(self, elapsed_ms, random):
+        # SHSUIMinigameBase ticks the exit before the subclass's 250ms cap.
+        # Its field, targets, feedback and particles stay at their last pose.
+        if self.phase == 26:
+            self.phase_ms = max(0, self.phase_ms - elapsed_ms)
+            return self.phase_ms == 0
+        if self.shadow_ms is not None:
+            # Cocos owns these nine retained animation nodes. Changing a
+            # target's phase or redealing its slot does not restart its action.
+            self.shadow_ms = [(age + elapsed_ms) % 440 if age >= 0 else -1 for age in self.shadow_ms]
         dt = min(250, elapsed_ms)
         self.phase_elapsed_ms += dt
         self.tick_presentation(dt)
@@ -376,6 +429,10 @@ class Football(GameState):
         elif self.phase == 3:
             for target in self.targets:
                 target.tick(dt, self.worst)
+            if self.shadow_ms is not None:
+                for index, target in enumerate(self.targets):
+                    if target.phase in (3, 6) and self.shadow_ms[index] < 0:
+                        self.shadow_ms[index] = 0
             if all(t.phase == 8 for t in self.targets):
                 self.apply_play(*self.worst, random)
             elif all(t.phase == 6 and t.elapsed_ms >= 500 for t in self.targets):
@@ -432,10 +489,6 @@ class Football(GameState):
             self.phase_ms -= dt
             if self.phase_ms <= 0:
                 self.enter(26, 960)
-        elif self.phase == 26:
-            self.phase_ms -= dt
-            if self.phase_ms <= 0:
-                return True
         if active and not self.end_pending:
             if self.half == 3:
                 self.end_pending = self.home != self.away
@@ -462,6 +515,9 @@ class Football(GameState):
 
     def validate(self):
         self.validate_config()
+        if self.shadow_ms is not None and (len(self.shadow_ms) != 9 or
+                                          any(not -1 <= age < 440 for age in self.shadow_ms)):
+            raise ValueError('Invalid football shadow clocks')
         if (self.half not in (1, 2, 3) or not 0 <= self.position <= 100 or not 0 <= self.down <= 4
                 or self.phase not in (0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 13, 20, 21, 22, 23, 25, 26)
                 or not -250 <= self.phase_ms <= 3000 or self.phase_elapsed_ms < 0
@@ -487,6 +543,17 @@ class Football(GameState):
                     or not 0 <= effect.scale <= 1
                     or not 0 < effect.remaining_ms <= (1500 if effect.selected else 1300)):
                 raise ValueError('Invalid saved football effect')
+        if len(self.touchdown_stars) > 50:
+            raise ValueError('Too many touchdown stars')
+        for star in self.touchdown_stars:
+            if (not all(math.isfinite(value) for value in (star.x, star.y, star.vx, star.vy,
+                                                          star.angle, star.spin, star.alpha, star.fade))
+                    or not -5000 < star.x < 5000 or not -5000 < star.y < 480
+                    or not -.12 < star.vx < .12 or not -.24 <= star.vy < 2
+                    or not -10000 < star.angle < 10000 or not -.72 < star.spin < .72
+                    or not -10000 < star.delay_ms < 1300 or not 0 < star.alpha <= 1
+                    or not -.0016 < star.fade < 0):
+                raise ValueError('Invalid saved touchdown star')
         for t in self.targets:
             if (t.code not in PLAY_FRAMES or not 0 <= t.delay_ms < 1200
                     or t.hold_ms not in (800, 1300) or not 1 <= t.phase <= 8 or t.elapsed_ms < 0):

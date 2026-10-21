@@ -117,7 +117,7 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 | 79 (`4f`) | a1 resource | Selects music request for 8201–8232, otherwise SFX path; native playback through `FUN_000a3bc8`. | 0 | C (basic audio) |
 | 80 (`50`) | a1 resource, bool(a2) | Stores music resource and flag through `FUN_0007b550`; repeat/fade flag meaning unresolved. | 0 | C (basic audio; flag retained) |
 | 81 (`51`) | a1 | Calls audio stop helper `FUN_000a3260(audio,a1,1)`; Python stops requested music, with simplified channel handling. | 0 | C |
-| 82 (`52`) | none | Optional 1000 ms vibration via `FUN_000a3040`; no desktop vibration device, so the player sounds a synthesized buzz instead (unsaved `vibration_serial`); music/SFX state unchanged. | 0 | C (no hardware effect) |
+| 82 (`52`) | none | Optional 1000 ms Android vibration via `FUN_000a3040`; iPhone uses the iOS system vibration alert (exp-runtime's device contract, the iOS host only). The desktop has no vibrator, so it can sound a synthesized buzz instead (opt-in, unsaved `vibration_serial`). Music/SFX unchanged. [Device contract](STORY_SERVICES.md#optional-device-request-and-native-stub-services-82-99). | 0 | C (iPhone hardware; desktop buzz) |
 | 83 (`53`) | none read here | Audio helper `FUN_000a3208`; detailed effect unresolved. | 0 | X |
 | 84 (`54`) | none read here | Audio helper `FUN_000a31bc`; detailed effect unresolved. | 0 | X |
 | 85 (`55`) | none read here | Scene helper `FUN_0007b494`; effect unresolved. | 0 | X |
@@ -161,6 +161,12 @@ It is not CoD 1.3.4's default path: SHS reads a URL and flag, sets a scene flag
 when requested, and saves state before platform handoff. SHS iOS names the
 helpers `saveGame` and `exitAndShowURL`; Android calls `0008b618` and `000db5e0`.
 Its external-application lifecycle and resume flag still need implementation.
+The follow-up trace confirms iOS **000061ac** uses `UIApplication.openURL:`
+and returns. Scene flag `+0x1f` is tested by **00022440/00022a28** when ticking
+and deciding whether queued scripts can continue. This is more than a URL
+string or a return-zero stub. The bounded choice-tree audit encounters it in
+Game of Cones and Conned Artist promotional branches; hints stop at the call
+without opening a URL or changing the live save.
 
 ## 3. Verified state-service contracts
 
@@ -271,10 +277,10 @@ saved `music_id`, and exact content lookup keep the original requested ID;
 the renderer reads the mapped source and passes seconds to SDL_mixer's
 `music.play(start=...)`. Different cues sharing a source still restart at
 their distinct offsets. SFX and episode resource IDs are not remapped.
-Existing libraries/saves work without reimport or migration because the
-complete source APK was retained. Saving the in-progress playback position
-and matching Android's codec seek precision remain outside the current
-audio save contract.
+Existing libraries work without reimport because the complete source APK was
+retained. Version-22 host saves also retain the actual cue/playhead, repeat
+flag, outgoing fade and active effects; older saves start their requested cue.
+Android's exact codec seek precision remains unverified.
 
 #### Music
 
@@ -314,8 +320,13 @@ The story's music follows `SHSSoundManager` as both iOS games build it
 - **Not applied:** the pause menu's effects fade (0.1 s) and their restore on
   Resume.
 
-The fade time and a count of music requests are playback state on the engine,
-not saved fields. No audio transport fields are added to the save schema.
+The engine keeps the request count and the stop's fade time as exp-runtime's
+saved `music_serial` and `music_stop_ms` (save version 27); the player reads
+them as requests and keeps the playing stream itself.
+
+exp-runtime v0.6.0 has its own desktop audio (CoD fades, a store/restore handoff and saved
+playheads in `music_playback` / `sound_playback`, save version 27 here). Those fields are kept in
+saves, but this player does not fill them: its music is the model above.
 
 Evidence: `SHS09SoundEngine.java` debug lines 145–253, inspected as Dalvik
 instructions in the player-supplied APK. The DEX hash is recorded in

@@ -194,7 +194,12 @@ class NamedDialogueTests(unittest.TestCase):
             restored = Session.from_snapshot(original.resources, saved)
             self.assertEqual(saved, untouched)
             self.assertEqual(restored.vm.snapshot(), original.vm.snapshot())
-            self.assertEqual(restored.snapshot(), fresh.snapshot())
+            expected = fresh.snapshot()
+            if legacy:
+                # The discarded portrait never saved its child poses. Loading
+                # an old checkpoint must not fabricate historical decorations.
+                expected['engine']['dialogue_history']['indicators'] = []
+            self.assertEqual(restored.snapshot(), expected)
             self.assertEqual(Session.from_snapshot(original.resources, restored.snapshot()).snapshot(),
                              restored.snapshot())
 

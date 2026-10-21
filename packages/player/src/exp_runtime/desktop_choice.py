@@ -12,6 +12,9 @@ from .fonts import TextStyle
 from .ui_assets import Rect
 
 
+# Choice hints' row tints (choice_hints.preview_choices), shared with exp-runtime's minigame prompt colours.
+HINT_COLORS = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
+               'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}
 # `SHSWidgetMenu::setPortrait` keeps three ARGB colors per theme: (even row, odd row, pressed row). Blue, pink
 # and gold are (white, near-white tint, saturated tint); theme 3 (gray) holds opaque green / red / blue, which
 # reads as an unfinished placeholder (no gray character ever has a choice). The odd-row values below are the
@@ -96,6 +99,7 @@ class ChoiceRenderer:
                 page = self.cod_page(details, theme, has_portrait)
             if page is None:
                 page = self.layout.page(details, theme=theme, has_portrait=has_portrait,
+                                        text_history=getattr(session, 'bitmap_history', None),
                                         timer_panel=not self.hd_timer())
             self.cached_page = page
             if game is None or self.cached_key is None or self.cached_key[0] != key[0] or self.cached_key[3] is None:
@@ -452,8 +456,7 @@ class ChoiceRenderer:
                 pygame.Rect(page.table.x, page.table.y, page.table.width, page.table.height))
             hint = (self.hints[row.index].kind if choice_hints and self.hint_key == self.cached_key
                     and row.index < len(self.hints) else 'unknown')
-            hint_color = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
-                          'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}.get(hint)
+            hint_color = HINT_COLORS.get(hint)
             down = (pressed == ('choose', row.index) or focus == row.index
                     or pointer is not None and hit.collidepoint(pointer))
             if game is not None:
@@ -663,8 +666,7 @@ class ChoiceRenderer:
             hit = rect.clip(self.viewport)
             hint = (self.hints[row.index].kind if choice_hints and row.enabled
                     and self.hint_key == self.cached_key and row.index < len(self.hints) else 'unknown')
-            hint_color = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
-                          'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}.get(hint)
+            hint_color = HINT_COLORS.get(hint)
             if hint_color is not None:
                 pygame.draw.rect(self.canvas, hint_color, px(rect))
             if row.enabled and (pressed == ('choose', row.index) or focus == row.index
@@ -693,7 +695,7 @@ class ChoiceRenderer:
                 offset = (game.animation_ms / 200) * (-210 if row.index % 2 == 0 else 410)
             self.canvas.set_clip(px(hit))
             self.text.draw_layout(self.canvas, BODY_FONT, row.text, (row.origin[0] + offset) * k,
-                                  (row.origin[1] - scroll) * k, scale=k)
+                                  (row.origin[1] - scroll) * k, scale=k * page.text_scale)
             self.canvas.set_clip(px(self.viewport))
             if row.enabled and hit.height:
                 buttons.append((hit, ('choose', row.index)))
@@ -802,10 +804,11 @@ class ChoiceRenderer:
                 image = image.copy()
                 image.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
                 self.wide.blit(image, (left + self.margin, top))
+        # exp-runtime v0.6.0's overflow fit (choice.ChoiceLayout.page) shrinks the text instead of scrolling.
         self.text.draw_layout(self.canvas, page.title_font, page.title, page.title_origin[0] * k,
-                              (page.title_origin[1] - scroll) * k, scale=k)
+                              (page.title_origin[1] - scroll) * k, scale=k * page.text_scale)
         self.text.draw_layout(self.canvas, BODY_FONT, page.description, page.description_origin[0] * k,
-                              (page.description_origin[1] - scroll) * k, scale=k)
+                              (page.description_origin[1] - scroll) * k, scale=k * page.text_scale)
         self.canvas.set_clip(None)
         if page.timer_panel is not None:
             panel = page.timer_panel

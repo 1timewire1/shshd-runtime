@@ -14,7 +14,7 @@ from PIL import ImageFont
 
 from exp_runtime.audio import music_cue
 from exp_runtime.content import ContentError, ContentLibrary, import_game
-from exp_runtime.games import COD_IOS
+from exp_runtime.games import COD_IOS, COD_IOS_FREE, COD_IOS_FREE_LOCALIZED
 from exp_runtime.launcher import default_library, remember_library
 from exp_runtime.menu import MenuStrings
 from exp_runtime.runtime import SaveError, Session
@@ -28,7 +28,11 @@ from test_vm import program
 LOCAL_COD_IPA = Path('decomp/cod/Cause+of+Death+(World)+1.3.4.ipa')
 
 
-def make_cod_ipa(path, episode, *, missing=None, info=None, free=False):
+def make_cod_ipa(path, episode, *, missing=None, info=None, free=False, localized=None):
+    """Authored paid, compact free or multilingual free resource banks. `free=True` alone is the 1.4.7 .bv build in
+    this project's reference set (language banks at 15-18, the rest +5) and `free='compact'` the build upstream PR
+    joshrmcdaniel/exp-runtime#1 describes (no language banks, the rest +1); with those two, `missing` is a 1.3.4 id.
+    exp-runtime's own tests pass `localized` explicitly, and their `missing` is a stored member number."""
     # Reuse only authored image/layout fixtures and Pillow's own default font.
     # No original game bytes, executable, proprietary font or art is included.
     # `free` lays the same assets out like the 1.4.7 free edition (cod/assets.py, `logical_members`).
@@ -42,21 +46,25 @@ def make_cod_ipa(path, episode, *, missing=None, info=None, free=False):
         assets[cod] = ASSET_DATA[shs]
     assets[272] = image_pack(count=16, pixels=b'\x01\x01\xff\x01\x02\x03' * 16)
     assets.update({key: f'CoD music {key}'.encode() for key in range(8201, 8210)})
+    assets.update({key: f'Script asset {key}'.encode() for key in (1001, 2001, 3000, 8005)})
     identifier = 'com.ea.causeofdeath.bv'
     if free:
-        # True: the .bv build in the reference set (language banks at 15-18, the rest +5). 'compact': the build
-        # upstream PR joshrmcdaniel/exp-runtime#1 describes (no language banks, the rest +1).
+        logical_missing = localized is None
+        if localized is None:
+            localized = free != 'compact'
         identifier = 'com.ea.causeofdeathfree.bv'
-        shift = 1 if free == 'compact' else 5
+        shift = 5 if localized else 1
         moved = {key: data for key, data in assets.items() if key <= 12 or key >= 1000}
         moved[13] = b'retained older Volume One'
         moved[14] = assets[13]
-        if shift == 5:
+        if localized:
             for key, language in zip(range(15, 19), ('French', 'Italian', 'German', 'Spanish')):
                 moved[key] = string_bank([f'{language} {i}' for i in range(257)])
         moved.update({key + shift: data for key, data in assets.items() if 14 <= key < 1000})
         stored = {13: 14, **{key: key + shift for key in range(14, 1000)}}
-        assets, missing = moved, stored.get(missing, missing)
+        assets = moved
+        if logical_missing:
+            missing = stored.get(missing, missing)
     with ZipFile(path, 'w') as package:
         package.writestr(APP + 'Info.plist', plistlib.dumps(info if info is not None else dict(
             CFBundleIdentifier=identifier, CFBundleVersion='any-compatible-version')))
@@ -137,6 +145,83 @@ class GameLibraryTests(unittest.TestCase):
             self.assertEqual(cod.read_asset(297), ASSET_DATA[531])            # stored at 298
             with self.assertRaises(ContentError):
                 cod.read_asset(298)
+
+    def test_free_edition_imports_under_its_own_profile_and_opens(self):
+        free, path = self.root / 'free.ipa', self.root / 'free'
+        make_cod_ipa(free, self.episode, free=True, localized=False)
+        manifest = import_game(free, [], path, game='cod')
+        self.assertEqual((manifest['game'], manifest['profile']), ('cod', COD_IOS_FREE))
+        self.assertEqual(manifest['episodes'][0]['builtin'], 'volume-one')
+        free.unlink()
+        with ContentLibrary(path) as library:
+            self.assertEqual(library.game_id, 'cod')
+            episode = library.open_episode('Volume_One.exp')
+            # Members are addressed by reference (1.3.4) numbers after translation.
+            self.assertEqual(episode.read_asset(42), b'CoD base art')
+            self.assertEqual(episode.read_ui_resource(528), ASSET_DATA[526])
+            self.assertEqual(MenuStrings.load(library)[125], 'CoD string 117')
+            self.assertEqual(library.ensure_builtin_episodes(), 0)
+        # shshd-runtime 1.0.x recorded a free library under the paid layout: it opens under the IPA's own.
+        (path / 'library.json').write_text(json.dumps(dict(manifest, profile=COD_IOS)))
+        with ContentLibrary(path) as library:
+            self.assertEqual(library.profile, COD_IOS_FREE)
+            self.assertEqual(MenuStrings.load(library)[125], 'CoD string 117')
+        (path / 'library.json').write_text(json.dumps(dict(manifest, profile='shs-ios-assets-v1')))
+        with self.assertRaises(ContentError):
+            ContentLibrary(path)
+
+    def test_asset_layout_selection_relocation_and_manifest_validation(self):
+        # All layouts deliberately use the same identifier and version. The
+        # multilingual free fixture previously read a string bank as a layout.
+        profiles = (COD_IOS, COD_IOS_FREE, COD_IOS_FREE_LOCALIZED)
+        for free, localized, expected in ((False, False, COD_IOS), (True, False, COD_IOS_FREE),
+                                           (True, True, COD_IOS_FREE_LOCALIZED)):
+            with self.subTest(profile=expected):
+                source, path = self.root / f'{expected}.ipa', self.root / expected
+                make_cod_ipa(source, self.episode, free=free, localized=localized,
+                             info=dict(CFBundleIdentifier='com.ea.causeofdeathfree.bv',
+                                       CFBundleVersion='arbitrary'))
+                manifest = import_game(source, [], path, game='cod')
+                self.assertEqual(manifest['profile'], expected)
+                self.assertEqual(len(manifest['episodes']), 1)
+                source.unlink()
+                moved = self.root / (expected + '-moved')
+                path.rename(moved)
+                before = (moved / 'library.json').read_bytes()
+                with ContentLibrary(moved) as library:
+                    episode = library.open_episode('Volume_One.exp')
+                    self.assertEqual(library.profile, expected)
+                    self.assertEqual(library.read_asset(14), ASSET_DATA[13])
+                    self.assertEqual(library.read_asset(268), ASSET_DATA[267])
+                    self.assertEqual(library.read_asset(291), ImageFont.load_default().font_bytes)
+                    self.assertEqual(library.read_ui_resource(528), ASSET_DATA[526])
+                    self.assertEqual(library.read_ui_resource(533), ASSET_DATA[531])
+                    self.assertEqual(MenuStrings.load(library)[125], 'CoD string 117')
+                    for key in (1001, 2001, 3000, 8005):
+                        self.assertEqual(episode.read_asset(key), f'Script asset {key}'.encode())
+                    self.assertEqual(episode.read_asset(26000), b'episode-specific art')
+                    self.assertEqual(library.ensure_builtin_episodes(), 0)
+                self.assertEqual((moved / 'library.json').read_bytes(), before)
+                for wrong in profiles:
+                    if wrong == expected or wrong == COD_IOS:
+                        # shshd-runtime 1.0.x recorded every CoD library as the paid layout; those still open
+                        # (content.ContentLibrary), under the layout the IPA has.
+                        continue
+                    (moved / 'library.json').write_text(json.dumps(dict(manifest, profile=wrong)))
+                    with self.subTest(wrong=wrong), self.assertRaisesRegex(ContentError, 'asset layout'):
+                        ContentLibrary(moved)
+
+    def test_free_layout_detection_still_validates_assets_and_aborts_failed_imports(self):
+        for localized, mask in ((False, 269), (True, 273)):
+            for missing in (14, mask):
+                with self.subTest(localized=localized, missing=missing):
+                    source = self.root / 'incomplete.ipa'
+                    destination = self.root / 'incomplete'
+                    make_cod_ipa(source, self.episode, free=True, localized=localized, missing=missing)
+                    with self.assertRaisesRegex(ContentError, 'Unsupported CoD asset layout'):
+                        import_game(source, [], destination, game='cod')
+                    self.assertFalse(destination.exists())
+                    self.assertFalse(list(self.root.glob('.exp-import-*')))
 
     def test_wrong_game_missing_assets_and_spoofed_manifest_are_rejected(self):
         target = self.root / 'target'
@@ -367,6 +452,8 @@ class LocalCoDTests(unittest.TestCase):
                         self.assertTrue(all(app.renderer.menu_fonts[1].glyph(c) for c in 'SwitchGame'))
                 app.selected = app.library.select('Volume_One.exp')['id']
                 app.start(resume=False)
+                app.tick(1000)  # Native menu/story audio handoff.
+                app.game._sync_audio()
                 ui, seen, speakers, wrapped = app.game, set(), set(), set()
                 for _ in range(150):
                     session, action = ui.session, ui.session.pending
@@ -387,8 +474,16 @@ class LocalCoDTests(unittest.TestCase):
                         if page.name.glyphs:
                             ink = ui.dialogue_renderer.name_layer.get_bounding_rect()
                             bounds = page.name_bounds
+                            if getattr(session.resources.dialogue_layout().font(page.name_font), 'native_face', False):
+                                from exp_runtime.ui_assets import Rect
+                                x, y = page.name_origin
+                                left, top, right, bottom = page.name.ink_bounds
+                                bounds = Rect(x + left, y + top, right - left, bottom - top)
+                                self.assertEqual(page.name_scale, 1)
                             # Include actual atlas outlines and pygame rounding,
-                            # not just the layout's floating-point rectangles.
+                            # not just floating-point rectangles. Original
+                            # outlines can overhang the skin; only substitute
+                            # faces use the compatibility ink-fit boundary.
                             self.assertGreaterEqual(ink.left, bounds.x - 1)
                             self.assertGreaterEqual(ink.top, bounds.y - 1)
                             self.assertLessEqual(ink.right, bounds.x + bounds.width + 1)

@@ -70,6 +70,7 @@ class MessagePanelTests(unittest.TestCase):
                     restored.answer()
                     self.assertEqual(restored.engine.scene_value, 0)
                     self.assertEqual(restored.engine.random48, random)
+                    # (exp-runtime holds the panel here for its SceneTransition, which this fork leaves unset.)
                     self.assertEqual(restored.pending.request.args, (77, 0))
 
     def test_older_unsupported_stop_upgrades_without_replaying_vm_or_random(self):
@@ -164,6 +165,7 @@ class MessagePanelTests(unittest.TestCase):
             # Any screen click acknowledges, except the gear's menu region.
             ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1,
                                               pos=ui.viewport.center))
+            ui.tick(0)  # Native SHS defers its nonvisual callback to the next tick.
             self.assertEqual(ui.session.pending.name, 'word_game')
             self.assertEqual(ui.session.pending.request.pc, 638)
             self.assertIsNone(ui.session.engine.message_panel)

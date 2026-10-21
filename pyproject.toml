@@ -25,12 +25,14 @@ shs = ["shshd-runtime-shs==1.0.1"]
 cod = ["shshd-runtime-cod==1.0.1"]
 player = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
 desktop = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
+creator = ["shshd-runtime-creator[desktop]==1.0.1"]
+creator-mcp = ["shshd-runtime-creator[mcp]==1.0.1"]
 build = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1", "pyinstaller>=6.16,<7"]
 
 # Source contributors get the full test/app environment. Published wheel
 # dependencies remain minimal; use --no-default-groups to develop a subset.
 [dependency-groups]
-dev = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
+dev = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1", "shshd-runtime-creator==1.0.1"]
 
 [tool.setuptools]
 include-package-data = false
@@ -45,3 +47,4 @@ shshd-runtime-engine = { workspace = true }
 shshd-runtime-player = { workspace = true }
 shshd-runtime-shs = { workspace = true }
 shshd-runtime-cod = { workspace = true }
+shshd-runtime-creator = { workspace = true }

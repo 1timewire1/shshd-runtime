@@ -25,7 +25,8 @@ pending VM frame remains intact until the terminal callback. Time is in integer
 milliseconds in this engine; native panels use floating-point milliseconds.
 Football and grid updates cap each supplied frame interval at 250 ms. Service
 71 does not have that cap. Desktop focus loss and the gear menu suspend active
-time. Input does not invent a result to dismiss an unfinished game.
+time. Ordinary input does not invent a result to dismiss an unfinished game;
+the optional skip cheat below is an explicit user-selected override.
 
 | Service | Return in VM R | Other callback effects |
 | --- | --- | --- |
@@ -38,6 +39,40 @@ Evidence: `000add90`, `000b10d8`, grid virtual result method `000c1bc4`, footbal
 completion `000c0310`, dispatcher cases 94–96. Native football writes
 application offsets `+0x6aaec/+0x6aaf0`, which correspond to scene offsets
 `+0x1c0c/+0x1c10` with the scene at application `+0x68ee0`.
+
+### Optional minigame skips
+
+**Options → Cheats → Minigame skips** is an authored feature, disabled by
+default and saved separately from Answer hints. Before **each** service-71,
+94 or 96 minigame, the shared desktop/iOS player uses the native system-menu
+skin to offer **Skip with success**, **Skip with failure**, and **Play minigame**.
+Timers, introductory animation and game input wait for this decision. A native
+scene reveal may finish first. Choosing Play releases the original entry gate
+and saves that decision for the current call; resuming it does not prompt
+again. The next minigame gets a new prompt, even in the same scene. Existing
+saves already in play are not interrupted. Both skips remain available from
+the pause menu while that minigame is active and the preference is enabled.
+
+This covers SHS football and word grids, plus the four-option word-selection
+game shared with CoD. The inspected CoD collection contains service-71 calls;
+its services 94/96 are not SHS minigames. Ordinary choices, including timed
+services 1/4, character selection and unknown services never receive this
+prompt and cannot be completed by `Session.skip_minigame()`.
+
+Skip outcomes deliberately override normal play, then use its existing VM
+callback: word selection returns **32767** for success and **0** for failure,
+including result cell 0 and any queued native scene transition. Service 71
+supplies no success target; these are a maximum positive signed-word score
+and a zero score, and the episode still decides how to interpret them.
+Football preserves starting scores where possible, puts the requested winner
+at least a touchdown ahead within 0–32767, and updates both service-95 scores.
+Grid skipping returns **1/0** directly, including a requested failure of a
+zero-target tutorial. Football/grid callbacks leave UI result cells unchanged.
+
+Initial setup uses the usual random draws; skipping does not simulate rounds
+or consume their future random draws. Subsequent script execution and native
+scene transitions keep their own effects. The optional `minigame_started`
+pending-action flag is validated as a boolean and needs no save-version bump.
 
 ## 2. Random streams
 
@@ -108,8 +143,9 @@ are swapped. Entry identity is by list index, so equal text in different list
 positions is not deduplicated. The four weights remain attached to their text.
 
 Input is ignored during the first 400 ms. A selected positive/negative item adds
-`+1/-1`, clamps score to zero, requests sound `8001/8002`, deals again and starts
-the 200 ms label transition. Its value is not a story choice index. Expiry uses
+`+1/-1`, clamps score to zero, requests sound `8001/8002` in SHS or `8003/8004`
+in CoD, deals again and starts the 200 ms label transition. Its value is not a
+story choice index. Expiry uses
 `remaining_ms < 0`, strictly: at exactly zero the frame remains pending. The
 refresh counter is decremented and saved, but the inspected Android tick does
 not redeal when it expires. Do not add an automatic reshuffle based on that
@@ -450,6 +486,11 @@ fragments per selected tile consume twelve native engine RNG draws each, up to
 twenty active bursts. Rendering does not draw randomness. Older saves retain
 their existing gameplay/RNG state and start the missing effects inactive.
 
+Version **22** preserves grid score flights/pending and displayed counters,
+and football touchdown stars. Home touchdowns now consume 450 engine RNG
+draws to create 50 stars. Rendering consumes none. Old saves start these
+missing effects inactive without reconstructing historical random draws.
+
 Service 88 queues a substituted notification for the next dialogue, with the
 original Pajama Hip S font, rising letters and length-dependent fade
 (`0009c814/0009c750`). This shared path handles post-game notifications and stat
@@ -465,16 +506,18 @@ malformed saves, actual user-supplied script frames, original atlas decoding,
 resized mouse coordinates and pause/focus gating. These are implementation and
 native-derived rule checks; no running-original frame trace has been compared.
 
-Remaining differences include football touchdown particles and their random
-draws, flying internal score deltas, parts of sound staging and the final exit
-overlay (see [FOOTBALL_UI.md](FOOTBALL_UI.md)); grid ring pulses, flying score deltas,
-selection opacity, native GL depth-buffer rasterization,
-board-load timing during outgoing animation and some overlay boundaries. The grid currently builds
-the incoming board when phase 4 begins, whereas native may defer it until the
-outgoing animation completes. Integer clocks may differ at floating-point
+Remaining differences include football internal score-flight reachability,
+the full audio timeline (see [FOOTBALL_UI.md](FOOTBALL_UI.md)), native GL
+depth precision/edge sampling and uncommon overlay-reuse boundaries. Native
+minigame exit fades, football shadows/final-score sound, float32 grid fragments,
+per-pixel depth, selection opacity, highlight shuffles, per-cell clocks and
+the deferred outgoing-board generation path are now modeled;
+see [GRID_UI.md](GRID_UI.md) for isolated native checks and save migration.
+Integer clocks may differ from fractional native frame deltas at floating-point
 boundaries. Fonts outside the recovered glyph path use existing APK bitmap fonts,
-but not every native font-object parameter. Cross-episode native global lifetimes
-are not fully represented. Full visual fidelity remains an explicit requirement.
+but not every native font-object parameter. Random generators and speaker fonts
+now persist across episodes in the same application process; other native
+widget lifetimes remain partial. Full visual fidelity remains a requirement.
 
 Unimplemented surrounding engine services remain explicit stops. Service 91's
 loading timer and service 99's native stub have since been recovered; Football

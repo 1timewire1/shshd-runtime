@@ -2,6 +2,7 @@
 from copy import deepcopy
 from dataclasses import asdict, fields, is_dataclass
 import gzip
+from functools import wraps
 import json
 import logging
 import os
@@ -13,16 +14,22 @@ from typing import get_args, get_origin, get_type_hints
 from .content import EpisodeResources, digest
 from .games import GAMES, game_id
 from .engine import POLL_WAIT_MS, EngineAction, EngineState
-from .dialogue_animation import DialogueAnimation, DialoguePortrait, DialogueHistory, EXPRESSION_MS
+from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
+                                 ExpressionTransition, EXPRESSION_MS)
 from .background import BackgroundPan
 from .scene_fade import resolve
-from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_limit
+from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_lifetime, notice_limit
 from .dt_state import install_state
 from .dtview_faceplace import DTNode, DTView, FaceplaceWall
+from .portrait_effects import ExpressionDecorations
 from .relationships import RelationshipAnimation, RelationshipChange
 from .speaker_names import SpeakerNames
+from .fonts import TextHistory, TextStyle, layout_text
+from .menu_assets import MenuStrings
+from .story_labels import prepare_labels, story_labels
 from .title_screen import TitleScreen
 from .loading import loading_waits, retained_word
+from .minigames import MINIGAMES
 from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
 from .vm import KiwiVM, StopKind, VMError, VMStop, signed16
@@ -51,7 +58,7 @@ def _typed_value(value, annotation, *, state_types=None):
             # Only the selected installed adapter supplies these concrete
             # dataclasses. Other games must have null fields, even when SHS
             # happens to be installed. Saved input cannot select a type.
-            hints.update(word_grid=type(None), football=type(None))
+            hints.update(word_grid=type(None), football=type(None), scene_transition=type(None))
             hints.update(state_types or {})
         return annotation(**{key: _typed_value(item, hints[key]) for key, item in value.items()})
     if origin is dict:
@@ -100,12 +107,29 @@ def _validate_choice(details):
         raise SaveError('Incomplete choice data') from error
 
 
+def _sound_batch(operation):
+    @wraps(operation)
+    def run(self, *args, **kwargs):
+        engine = self.engine
+        if engine._sound_batch is not None:
+            return operation(self, *args, **kwargs)
+        engine._sound_batch = []
+        try:
+            return operation(self, *args, **kwargs)
+        finally:
+            engine._sound_batch = None
+    return run
+
+
 class Session:
     """Execute original KiWi code until real player input is required.
 
     Unknown engine services stay suspended. A bounded advance prevents an
     unsupported script loop from freezing the desktop event loop forever.
     """
+    # Whether answering a choice requests its click (exp-runtime v0.6.0). This fork's desktop plays the click itself at
+    # the tap, before an HD choice's fade-out answers it, and switches this off.
+    choice_click = True
 
     def __init__(self, resources: EpisodeResources, *, start_script: int = 25001, ephemeral: bool = False):
         GAMES[game_id(resources)]  # Fail before executing with a missing adapter.
@@ -118,11 +142,20 @@ class Session:
         self._set_build()
         self.engine.game_key = game_id(resources)
         self.engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
+        transition = getattr(GAMES[self.engine.game_key], 'SCENE_TRANSITION', None)
+        if transition is not None:
+            self.engine.scene_transition = transition()
         self.pending: EngineAction | None = None
         self.remaining_ms: int | None = None
         self.scene_loads = 0
         self.transition_kind = 0    # the blind / fade the last completed panel queued (scene_fade.py); not saved
         self._load_dt_view()
+        self._vibrations = 0
+
+    def take_vibrations(self) -> int:
+        """Drain live device requests; saves never replay a past vibration."""
+        count, self._vibrations = self._vibrations, 0
+        return count
 
     @property
     def save_path(self) -> Path:
@@ -275,13 +308,98 @@ class Session:
     def episode_exited(self) -> bool:
         return self.pending is not None and self.pending.name == 'episode_exit'
 
+    @property
+    def transitioning(self) -> bool:
+        transition = self.engine.scene_transition
+        return transition is not None and transition.active
+
+    @property
+    def choice_ready(self) -> bool:
+        """Native SHSUIMenu ignores selections during its 250 ms attachment."""
+        return self.engine.choice_ms >= 250
+
+    @property
+    def minigame_unstarted(self) -> bool:
+        """Entry prompt eligibility, including saves made before this feature."""
+        action = self.pending
+        if not action or action.name not in MINIGAMES or action.details.get('minigame_started', False):
+            return False
+        game = getattr(self.engine, action.name)
+        if action.name == 'word_game':
+            return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
+        if action.name == 'word_grid':
+            return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
+        return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
+
+    def start_minigame(self):
+        if not self.pending or self.pending.name not in MINIGAMES:
+            raise ValueError('There is no pending minigame')
+        self.pending.details['minigame_started'] = True
+
+    @_sound_batch
+    def skip_minigame(self, success: bool):
+        """Explicit cheat; finish only an implemented minigame's real callback."""
+        if type(success) is not bool:
+            raise ValueError('Minigame success must be true or false')
+        if not self.pending or self.pending.name not in MINIGAMES or self.transitioning:
+            raise ValueError('There is no skippable minigame')
+        self.start_minigame()
+        kind = self.pending.name
+        game = getattr(self.engine, kind)
+        if kind == 'word_game':
+            # This service returns a score, not a boolean or a supplied target.
+            # Award the highest positive VM word, or zero. Retain a valid deal
+            # count if a native scene transition holds the callback for saving.
+            game.score = 32767 if success else 0
+            game.round = max(game.round, game.score + 1)
+        elif kind == 'word_grid':
+            # Explicit success/failure, including tutorial grids with target 0
+            # that ordinary play cannot fail. No raw grid score escapes the UI.
+            return self._complete_minigame(result=int(success))
+        else:
+            # Preserve starting scores where possible, adding enough points for
+            # the requested side to win by a touchdown without signed overflow.
+            winner, loser = (game.home, game.away) if success else (game.away, game.home)
+            loser = min(32760, max(0, loser))
+            winner = min(32767, max(winner, loser + 7))
+            game.home, game.away = (winner, loser) if success else (loser, winner)
+        return self._complete_minigame()
+
+    def _complete_minigame(self, *, result=None):
+        kind = self.pending.name
+        game = getattr(self.engine, kind)
+        if kind == 'word_game':
+            if not self._complete_choice(game.score):
+                return self.pending
+        else:
+            if kind == 'football':
+                self.engine.football_scores = [game.home, game.away]
+            self.vm.resume(game.result if result is None else result)  # UI result cells are unchanged.
+            self.pending = None
+        setattr(self.engine, kind, None)
+        return self.advance()
+
     def dialogue_page(self):
         """Layout is a session contract, shared by headless and desktop input."""
         action = self.pending
         if not action or action.name != 'dialogue' or not hasattr(self.resources, 'dialogue_layout'):
             return None
         return self.resources.dialogue_layout().page(action.details, action.details.get('page_start', 0),
-                                                    names=self.engine.speaker_names)
+                                                    names=self.engine.speaker_names, text_history=self.bitmap_history)
+
+    @property
+    def bitmap_history(self):
+        # CSFont does not use Android's global previous-byte variable.
+        return self.engine.text_history if getattr(self.resources.library, 'kind', 'apk') == 'apk' else None
+
+    def _prepare_continue_text(self):
+        if (self.bitmap_history is None or not hasattr(self.resources, 'dialogue_layout')
+                or not hasattr(self.resources, 'read_ui_resource')):
+            return
+        font = self.resources.dialogue_layout().font('TrebuchetMS_Bold14')
+        text = MenuStrings.load(self.resources)[29]
+        self.bitmap_history.update('dialogue_continue', font, text,
+                                   layout_text(font, text, 2**31, TextStyle(16, 5)))
 
     def name_input_metrics(self):
         """Use the selected game's glyph advances for both input paths.
@@ -299,24 +417,42 @@ class Session:
             hd = self.resources.hd_asset(155) is not None or game_id(self.resources) == 'cod'
         except AttributeError:
             hd = game_id(self.resources) == 'cod'
+        # exp-runtime v0.6.0's CoD space policy (text_input.accept_name_character(allow_space=...)); see
+        # docs/NAME_INPUT.md for the decision still open on it.
+        policy = dict(hd=hd, allow_space=game_id(self.resources) == 'cod')
         if not hasattr(self.resources, 'dialogue_layout'):
-            return dict(font=None, cursor_width=0, hd=hd)
+            return dict(font=None, cursor_width=0, **policy)
         layout = self.resources.dialogue_layout()
         name, cursor = input_fonts(self.resources)
-        return dict(font=layout.font(name), cursor_width=layout.font(cursor).glyph('|').advance, hd=hd)
+        return dict(font=layout.font(name), cursor_width=layout.font(cursor).glyph('|').advance, **policy)
 
-    def _prepare_dialogue(self, *, new_name=False):
+    def _prepare_dialogue(self, *, new_name=False, update_text=False):
         details = self.pending.details
+        history = self.bitmap_history if update_text else None
         if new_name and hasattr(self.resources, 'dialogue_layout'):
-            displayed = self.resources.dialogue_layout().prepare_name(details, self.engine.speaker_names)
+            displayed = self.resources.dialogue_layout().prepare_name(
+                details, self.engine.speaker_names, text_history=history)
             if details['presentation_mode'] != 4:
                 # Native display-only spacing corrections modify the panel's
                 # retained string; the script's character metadata stays intact.
                 self.engine.panel.speaker = displayed
         details.setdefault('page_start', 0)
+        if history is not None:
+            history.labels['dialogue_body'] = history.previous_glyph
         page = self.dialogue_page()
         details['page_end'] = page.end if page else len(details['text'])
+        if history is not None and page is not None:
+            history.previous_glyph = page.body.previous_glyph
+            # 000aaa40: name -> body -> Continue -> optional score notice.
+            if new_name:
+                self._prepare_continue_text()
+            if new_name and self.engine.notice:
+                from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE
+                font = self.resources.dialogue_layout().font(NOTICE_FONT)
+                history.update('dialogue_notice', font, self.engine.notice,
+                               layout_text(font, self.engine.notice, 2**31, NOTICE_STYLE))
 
+    @_sound_batch
     def advance(self, *, max_steps: int = 100_000, max_events: int = 10_000,
                 observe=None) -> EngineAction:
         if self.pending is not None:
@@ -339,9 +475,13 @@ class Session:
                     self._save_dt_view()
                     if action.name == 'dt_add_node':
                         self._save_tree_state(self.engine.dt_view.current)
+                if action.name == 'vibrate':
+                    self._vibrations += 1
                 if observe is not None:
                     observe(action)
                 if action.completed:
+                    if action.name in ('loading', 'set_scene_badge'):
+                        prepare_labels(self, action)
                     continue
                 if action.name == 'choice':
                     _validate_choice(action.details)
@@ -357,12 +497,15 @@ class Session:
                     current = self.engine.dt_view.current
                     if current is not None and self.engine.dt_view.awaiting_result:
                         current.choice_labels = dict(zip(action.details['values'], action.details['options']))
+                    self.engine.choice_ms = 0
                 self.pending = action
                 if action.name == 'dialogue':
-                    self._prepare_dialogue(new_name=True)
+                    self._prepare_dialogue(new_name=True, update_text=True)
                     self.engine.dialogue_animation = DialogueAnimation.start(
                         action.details, self.engine.character_art_variants, self.engine.dialogue_animation,
-                        self.engine.dialogue_history)
+                        self.engine.dialogue_history,
+                        retain_suppressed=self.engine.game_key == 'shs'
+                        and getattr(self.resources.library, 'kind', 'apk') == 'apk')
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
                         # HD's letters wait for the portrait (dialogue_notice.hd_letter_start_ms).
@@ -375,10 +518,12 @@ class Session:
                             self.engine.notice_mode = portrait.mode if portrait is not None else 0
                         else:
                             self.engine.notice_ms = min(self.engine.notice_ms, limit)
+                prepare_labels(self, action)
                 # Native addUIElement covers the dialogue panel; removing the
                 # temporary panel returns to the same speaker/expression.
                 # Hidden dialogue does not tick. Only explicit teardown or a
                 # new scene discards it.
+                self._reveal_transition()
                 return action
             if request.kind == StopKind.HALT and self.engine.scheduled_scripts:
                 scene, _flag = self.engine.scheduled_scripts[-1]
@@ -387,7 +532,7 @@ class Session:
                 self.vm.load_next(program)
                 # runScript09 clears the old scene UI before loadScript09.
                 # The global hidden portrait position outlives that panel.
-                self.engine.dialogue_animation = None
+                self.engine.clear_dialogue()
                 self.engine.clear_scene_expressions()
                 self.scene, self.scene_loads = scene, self.scene_loads + 1
                 self.engine.panel.location_follow = True   # GameModel::loadScript09NoGUI
@@ -397,46 +542,67 @@ class Session:
             self.pending = EngineAction('finished' if request.kind == StopKind.HALT else 'vm_pause',
                                         request, False)
             if self.pending.name == 'finished':
-                self.engine.dialogue_animation = None
+                self.engine.clear_dialogue()
+            self._reveal_transition()
             return self.pending
         raise VMError('Session service budget exceeded before the next input')
 
     def _complete_choice(self, result: int):
+        if self._queue_transition(result):
+            return False
         self.engine.result_cells[0] = signed16(result)  # FUN_000add90
         self.vm.resume(result)
         self.pending, self.remaining_ms = None, None
+        return True
 
+    def _complete_text_input(self, value: str):
+        self.engine.dynamic_strings[0] = self.engine.last_input = value
+        if self._queue_transition(0x7ff5):
+            return False
+        self.vm.resume(0x7ff5)  # FUN_000d3f5c
+        self.pending = None
+        return True
+
+    @_sound_batch
     def answer(self, value=None) -> EngineAction:
         action = self.pending
         if action is None:
             raise VMError('There is no pending input')
         if self.episode_exited:
             raise VMError('The episode has ended; there is no pending input')
+        if self.transitioning:
+            return action
         if action.name == 'choice':
             options = action.details
             if (type(value) is not int or not 0 <= value < len(options['values'])
                     or not options['enabled'][value]):
                 raise ValueError('Choose an enabled option by its zero-based index')
+            if not self.choice_ready:
+                return action
+            if self.choice_click:
+                self.engine.request_sound(GAMES[self.engine.game_key].CLICK_SOUND)
             self._complete_choice(options['values'][value])
         elif action.name == 'character_picker':
             picker = self.engine.character_picker
             swap_sound, confirm_sound = GAMES[self.engine.game_key].PICKER_SOUNDS
             if value is not None:
                 if picker.select(value):
-                    self.engine.sound_id, self.engine.sound_ids = swap_sound, [swap_sound]
-                    self.engine.sound_serial += 1
+                    self.engine.request_sound(swap_sound)
                 return action
-            self.engine.sound_id, self.engine.sound_ids = confirm_sound, [confirm_sound]
-            self.engine.sound_serial += 1
-            self._complete_choice(picker.selected)  # FUN_000d1b48: original index, not ID.
+            self.engine.request_sound(confirm_sound)
+            if not self._complete_choice(picker.selected):  # FUN_000d1b48: original index, not ID.
+                return action
             self.engine.character_picker = None
         elif action.name == 'word_game':
             game = self.engine.word_game
+            previous_options = game.options[:]
             if game.pick(value, self.engine.random48):
+                labels = story_labels(self)
+                if labels is not None:
+                    labels.word_round(previous_options)
                 right, wrong = GAMES[self.engine.game_key].WORD_GAME_SOUNDS
-                self.engine.sound_id = right if game.last_delta > 0 else wrong
-                self.engine.sound_ids = [self.engine.sound_id]
-                self.engine.sound_serial += 1
+                if game.last_delta:
+                    self.engine.request_sound(right if game.last_delta > 0 else wrong)
             return action
         elif action.name == 'word_grid':
             if value is not None:
@@ -450,9 +616,8 @@ class Session:
             return action
         elif action.name == 'text_input':
             validate_name(value, **self.name_input_metrics())
-            self.engine.dynamic_strings[0] = self.engine.last_input = value
-            self.vm.resume(0x7ff5)  # FUN_000d3f5c
-            self.pending = None
+            if not self._complete_text_input(value):
+                return action
         elif action.name in ('message_panel', 'survey_confirmation'):
             if value is not None:
                 raise ValueError('This screen expects an acknowledgement')
@@ -461,14 +626,16 @@ class Session:
             if action.name == 'survey_confirmation':
                 self._complete_survey(action)
             else:
-                self._complete_panel()
+                if not self._complete_panel():
+                    return action
                 self.engine.message_panel = None
         elif action.name == 'presentation':
             if value is not None:
                 raise ValueError('This screen expects an acknowledgement')
             if not self.engine.title_screen.acknowledge():
                 return action
-            self._complete_panel()
+            if not self._complete_panel():
+                return action
             self.engine.title_screen = None
         elif action.name == 'download_poll':
             return action                            # the bar takes no input; the download's end completes it
@@ -492,13 +659,14 @@ class Session:
                 return action
             if action.name == 'dialogue' and action.details['page_end'] < len(action.details['text']):
                 action.details['page_start'] = action.details['page_end']
-                self._prepare_dialogue()
+                self._prepare_dialogue(update_text=True)
                 self.engine.dialogue_animation.next_page(len(action.details['text']) - action.details['page_start'])
                 return action
             if action.name == 'vm_pause':
                 self.vm.continue_after_pause()
             else:
-                self._complete_panel()
+                if not self._complete_panel():
+                    return action
             self.pending = None
         else:
             raise VMError(f'Cannot answer {action.name}; its native contract is not implemented')
@@ -523,43 +691,69 @@ class Session:
         self.engine.message_panel = None
 
     def _complete_panel(self):
+        if self._queue_transition(0):
+            return False
         # 000ab8b8 / 0007efe8, shared by title, message and dialogue panels. A queued
         # random transition consumes one libc draw, even before its animation
-        # is implemented. 000a6448 returns zero without writing result cells.
+        # is implemented (scene_fade.py draws it). 000a6448 returns zero without writing result cells.
         draw = self.engine.random48.next() if self.engine.scene_value == 20 else 0
         self.transition_kind = resolve(self.engine.scene_value, draw)
         self.engine.scene_value = 0
         self.vm.resume(0)
         self.pending = None
+        return True
 
-    def skip_minigame(self, won: bool):
-        """Finish the pending football game or word grid as a win or a loss without playing it: the player's
-        "Ask to skip mini-games" option (off by default). The script gets the result a real game hands it (football:
-        home minus away, its scores recorded as `football_scores`; the grid: pass or fail), decided the way the tree
-        explorer decides it rather than played. A game can start mid-match (the second half from 35-21), so the
-        winning side ends one touchdown (7) ahead of the higher starting score and the other keeps its own."""
-        kind = self.pending.name if self.pending else None
-        if kind == 'football':
-            game = self.engine.football
-            lead = max(game.home, game.away) + 7
-            home, away = (lead, game.away) if won else (game.home, lead)
-            self.engine.football_scores = [home, away]
-            result = home - away
-        elif kind == 'word_grid':
-            result = int(won)
+    def _queue_transition(self, result):
+        transition = self.engine.scene_transition
+        if transition is None or not self.engine.scene_value:
+            return False
+        selector = self.engine.scene_value
+        if self.engine.game_key == 'shs' and selector == 20:
+            selector = 1 + (self.engine.random48.next() & 1)
+        transition.start(selector, result)
+        self.engine.scene_value = 0
+        return True
+
+    def _finish_transition(self, *, advance=True):
+        """0000ee5c/00012516: wake the old UI, return once, then run KiWi."""
+        transition = self.engine.scene_transition
+        kind = self.pending.name
+        if kind in ('choice', 'character_picker', 'word_game'):
+            self.engine.result_cells[0] = signed16(transition.result)
+        self.vm.resume(transition.result)
+        self.pending, self.remaining_ms = None, None
+        if kind == 'presentation':
+            self.engine.title_screen = None
+        elif kind == 'message_panel':
+            self.engine.message_panel = None
+        elif kind in ('character_picker', 'word_game'):
+            setattr(self.engine, kind, None)
+        # A VM pause or debugger stop can occur before the next UI is ready.
+        # Retain native phase 1 so a later tick/advance cannot return twice.
+        transition.wake()
+        return self.advance() if advance else None
+
+    def _reveal_transition(self):
+        transition = self.engine.scene_transition
+        if transition is None or transition.phase != 1:
+            return
+        action = self.pending
+        if action.name == 'vm_pause':
+            return
+        if action.name in ('presentation', 'episode_exit', 'finished', 'unhandled_yield'):
+            # GameModel::tick skips fade-in for UI type 16. An explicit
+            # unsupported-service stop must also remain visible to the host.
+            transition.clear()
         else:
-            raise VMError('No football game or word grid is waiting')
-        self.vm.resume(result)
-        self.pending = None
-        setattr(self.engine, kind, None)
-        return self.advance()
+            transition.reveal()
+            if action.name == 'dialogue' and self.engine.game_key == 'cod':
+                self.engine.dialogue_animation.stop_layers()
 
     def _game_sound(self, game, before):
         if game.sound_serial != before:
-            self.engine.sound_ids = game.sound_ids[:]
-            self.engine.sound_id = game.sound_ids[0]
-            self.engine.sound_serial += 1
+            self.engine.request_sound(*game.sound_ids)
 
+    @_sound_batch
     def grid_pointer(self, phase, index=None):
         """Feed a down/move/up/cancel event to the pending original grid."""
         if not self.pending or self.pending.name != 'word_grid':
@@ -570,11 +764,39 @@ class Session:
         self._game_sound(game, before)
         return self.pending
 
-    def tick(self, elapsed_ms: int) -> EngineAction:
+    @_sound_batch
+    def tick(self, elapsed_ms: int, *, pause_minigame: bool = False) -> EngineAction:
         """Advance active time only; time spent outside the app is excluded."""
         if type(elapsed_ms) is not int or elapsed_ms < 0:
             raise ValueError('Elapsed time must be nonnegative milliseconds')
         if self.episode_exited:
+            return self.pending
+        hold = pause_minigame and self.pending and self.pending.name in MINIGAMES
+        if hold and not self.transitioning:
+            return self.pending
+        if self.pending and self.pending.name == 'choice':
+            self.engine.choice_ms = min(250, self.engine.choice_ms + elapsed_ms)
+        if self.transitioning:
+            transition = self.engine.scene_transition
+            if transition.phase == 1:
+                if self.pending and self.pending.name == 'vm_pause':
+                    self.vm.continue_after_pause()
+                    self.pending = None
+                return self.advance()
+            if self.engine.game_key == 'cod' and transition.phase == 4:
+                # UIKit/Core Animation continues while tickFade suppresses
+                # the game's UI tick (CoD 00037e64 only delays expression).
+                self.engine.background_pan.tick(elapsed_ms)
+                if self.engine.scene_badge:
+                    self.engine.scene_badge.tick(elapsed_ms)
+                if self.pending and self.pending.name == 'dialogue':
+                    self.engine.dialogue_animation.tick(elapsed_ms, ui=False)
+            if not transition.tick(elapsed_ms):
+                return self.pending
+            if transition.phase == 4:
+                return self._finish_transition()
+            transition.clear()
+        if hold:
             return self.pending
         self.engine.background_pan.tick(elapsed_ms)
         if self.engine.scene_badge:
@@ -604,7 +826,10 @@ class Session:
             return self.pending
         if self.pending and self.pending.name == 'dialogue':
             motion = self.engine.dialogue_animation
+            was_complete = motion.complete
             motion.tick(elapsed_ms)
+            if motion.complete and not was_complete:
+                self._prepare_continue_text()
             if motion.portrait is not None and motion.presentation_ms >= EXPRESSION_MS:
                 value = motion.expression & 255
                 self.engine.dialogue_history.expressions[motion.portrait.character_id] = value - 256 if value > 127 else value
@@ -612,8 +837,21 @@ class Session:
         if self.pending and self.pending.name == 'character_picker':
             self.engine.character_picker.tick(elapsed_ms)
             return self.pending
+        if self.pending and self.pending.name == 'text_input':
+            details = self.pending.details
+            period = 400 if getattr(self.resources.library, 'kind', 'apk') == 'ipa' else 500
+            details['cursor_ms'] = (details.get('cursor_ms', 0) + elapsed_ms) % period
+            labels = story_labels(self)
+            if labels is not None:
+                labels.entry()
+            return self.pending
         if self.pending and self.pending.name in ('message_panel', 'survey_confirmation'):
-            self.engine.message_panel.tick(elapsed_ms)
+            panel = self.engine.message_panel
+            previous_caption = panel.ready, panel.countdown
+            panel.tick(elapsed_ms)
+            labels = story_labels(self)
+            if labels is not None:
+                labels.message(previous_caption=previous_caption)
             return self.pending  # Reading time never acknowledges the panel.
         if self.pending and self.pending.name == 'presentation':
             self.engine.title_screen.tick(elapsed_ms)
@@ -623,14 +861,10 @@ class Session:
             finished = game.tick(elapsed_ms, self.engine.random48)
             if game.scored:
                 right, wrong = GAMES[self.engine.game_key].WORD_GAME_SOUNDS
-                self.engine.sound_id = right if game.scored > 0 else wrong
-                self.engine.sound_ids = [self.engine.sound_id]
-                self.engine.sound_serial += 1
+                self.engine.request_sound(right if game.scored > 0 else wrong)
                 game.scored = 0
             if finished:
-                self._complete_choice(game.score)  # FUN_000add90, mode 2.
-                self.engine.word_game = None
-                return self.advance()
+                return self._complete_minigame()  # FUN_000add90, mode 2.
             return self.pending
         if self.pending and self.pending.name in ('word_grid', 'football'):
             kind = self.pending.name
@@ -639,12 +873,7 @@ class Session:
             finished = game.tick(elapsed_ms, self.engine.random)
             self._game_sound(game, before)
             if finished:
-                if kind == 'football':
-                    self.engine.football_scores = [game.home, game.away]
-                self.vm.resume(game.result)  # 000b10d8: result cells are unchanged.
-                self.pending = None
-                setattr(self.engine, kind, None)
-                return self.advance()
+                return self._complete_minigame()
             return self.pending
         if self.remaining_ms is not None:
             remaining = self.remaining_ms - elapsed_ms
@@ -686,7 +915,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=26,
+        return dict(format='shs-runtime-save', version=27,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -727,8 +956,57 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 27):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 28):
                 raise SaveError('Unsupported save format or version')
+            # Version 27 adds exp-runtime v0.6.1's state (its own versions 22-24, numbered independently of this
+            # fork's): the choice entrance clock, Android's bitmap text history, the music/sound playback records,
+            # the minigames' new effects and the expression decorations. Every field is filled with setdefault, so
+            # any older save of this fork takes them.
+            if state['version'] < 27:
+                state = deepcopy(state)
+                state['engine'].setdefault('choice_ms', 250)
+            if state['version'] < 27:
+                state = deepcopy(state)
+                state['engine'].setdefault('text_history', asdict(TextHistory()))
+                history = state['engine'].get('dialogue_history')
+                if history is not None:
+                    history.setdefault('indicators', [])
+                motion = state['engine'].get('dialogue_animation')
+                if motion is not None and motion.get('relationship') is not None:
+                    motion['relationship'].setdefault('retained', None)
+            if state['version'] < 27:
+                state = deepcopy(state)
+                state['engine'].setdefault('music_serial', 0)
+                state['engine'].setdefault('music_stop_ms', 0)
+                state['engine'].setdefault('music_playback', None)
+                state['engine'].setdefault('sound_playback', [])
+                transition = getattr(GAMES[game_id(resources)], 'SCENE_TRANSITION', None)
+                if state['engine'].get('scene_transition') is None:
+                    state['engine']['scene_transition'] = asdict(transition()) if transition else None
+                football = state['engine'].get('football')
+                if football is not None:
+                    football.setdefault('touchdown_stars', [])
+                    football.setdefault('shadow_ms', None)
+                grid = state['engine'].get('word_grid')
+                if grid is not None:
+                    grid.setdefault('score_effects', [])
+                    grid.setdefault('score_pending', 0)
+                    grid.setdefault('score_phase', 0)
+                    grid.setdefault('score_target', grid['score'])
+                    grid.setdefault('display_score', grid['score'])
+                    # Historical highlight shuffles are unknown. Preserve
+                    # their full brightness without consuming random draws.
+                    grid.setdefault('highlight_offsets', None)
+                    grid.setdefault('tiles', None)
+                    if grid.get('transition') is not None:
+                        grid['transition'].setdefault('highlight_offsets', None)
+                        grid['transition'].setdefault('round_ms', 0)
+                        grid['transition'].setdefault('deferred', False)
+                motion = state['engine'].get('dialogue_animation')
+                if motion is not None:
+                    # Older saves have no decoration history. Do not invent
+                    # an in-progress burst on an already visible portrait.
+                    motion.setdefault('expression_effects', False)
             if state['version'] < 26:
                 state = deepcopy(state)
                 state['engine']['notice_mode'] = 0
@@ -902,6 +1180,23 @@ class Session:
             if legacy:
                 state = deepcopy(state)
                 state['engine']['panel'].update(presentation_mode=0, theme=-1, emphasis_theme=1)
+            # exp-runtime's version 25 (its expression layers); every save of this fork before 27 lacks them.
+            if state['version'] < 27:
+                state = deepcopy(state)
+                motion = state['engine'].get('dialogue_animation')
+                if motion is not None:
+                    track = None
+                    decorations = ExpressionDecorations()
+                    if (motion['native_lifecycle'] and motion['portrait'] is not None
+                            and motion['initial_expression'] != motion['expression']
+                            and motion['presentation_ms'] >= EXPRESSION_MS):
+                        track = asdict(ExpressionTransition(
+                            DialoguePortrait(**motion['initial_portrait']), DialoguePortrait(**motion['portrait']),
+                            motion['expression'], motion['presentation_ms'] - EXPRESSION_MS))
+                        if motion['expression_effects']:
+                            decorations.change(motion['expression'], motion['presentation_ms'] - EXPRESSION_MS)
+                    motion.setdefault('expression_transition', track)
+                    motion.setdefault('expression_decorations', asdict(decorations))
             if state['content'] != resources.identity:
                 raise SaveError('Save requires the same imported game and episode')
             if type(state['scene']) is not int or not 0 <= state['scene'] <= 65535:
@@ -926,9 +1221,20 @@ class Session:
             engine = session.engine
             engine.game_key = game_id(resources)
             engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
+            if engine.music_serial < 0 or not 0 <= engine.music_stop_ms <= 32767:
+                raise SaveError('Invalid music request state')
             engine.background_pan.validate()
             engine.dialogue_history.validate()
             engine.speaker_names.validate()
+            engine.text_history.validate()
+            if engine.scene_transition is not None:
+                engine.scene_transition.validate()
+            elif hasattr(GAMES[engine.game_key], 'SCENE_TRANSITION'):
+                raise SaveError('Missing game transition state')
+            if engine.music_playback is not None:
+                engine.music_playback.validate()
+            for sound in engine.sound_playback:
+                sound.validate()
             if engine.title_screen is not None:
                 engine.title_screen.validate()
             if not 0 <= engine.random48.state <= RAND48_MASK:
@@ -937,6 +1243,8 @@ class Session:
                 raise SaveError('Invalid native random generator state')
             if engine.word_game is not None:
                 engine.word_game.validate()
+            if not 0 <= engine.choice_ms <= 250:
+                raise SaveError('Invalid choice entrance clock')
             if engine.word_grid is not None:
                 engine.word_grid.validate()
             if engine.football is not None:
@@ -1008,6 +1316,8 @@ class Session:
                         allowed.pop(unsupported)
                 if name != 'unhandled_yield' and (name not in allowed or request.yield_id not in allowed[name]):
                     raise SaveError('Pending screen does not match its native service')
+                if name in MINIGAMES and 'minigame_started' in details:
+                    _typed_value(details['minigame_started'], bool)
                 if name == 'choice':
                     _validate_choice(details)
                 elif name == 'episode_exit':
@@ -1127,12 +1437,17 @@ class Session:
                         _typed_value(details[key], str)
                     if 'draft' in details:
                         _typed_value(details['draft'], str)
+                    if 'cursor_ms' in details:
+                        _typed_value(details['cursor_ms'], int)
+                        period = 400 if getattr(resources.library, 'kind', 'apk') == 'ipa' else 500
+                        if not 0 <= details['cursor_ms'] < period:
+                            raise SaveError('Invalid name cursor clock')
                 session.pending = EngineAction(name, request, False, deepcopy(details))
                 if name == 'dialogue':
                     saved_end = details.get('page_end')
-                    # exp-runtime's own IPA save versions 14-15; this fork's saves gained IPA libraries only
-                    # with its version 23, so none of them reflow.
-                    reflow_ipa = (state['format'] == 'exp-runtime-save' and state['version'] < 16
+                    # exp-runtime v0.6.1 changed IPA dialogue typography (its version 26); this fork's saves before its
+                    # version 27 reflow an IPA library's dialogue page without replaying script commands.
+                    reflow_ipa = (state['version'] < 27
                                   and getattr(getattr(resources, 'library', None), 'kind', None) == 'ipa')
                     rebuild_names = reflow_ipa and state['version'] < 15
                     if rebuild_names:
@@ -1169,7 +1484,12 @@ class Session:
             motion = engine.dialogue_animation
             if motion is not None:
                 motion.validate()
-                if not session.pending or session.pending.name in ('finished', 'episode_exit'):
+                if (motion.relationship is not None and motion.relationship.retained is not None
+                        and (engine.game_key != 'shs' or getattr(resources.library, 'kind', 'apk') != 'apk')):
+                    raise SaveError('Retained relationship icons require the Android SHS widget')
+                continuing = engine.scene_transition is not None and engine.scene_transition.phase == 1
+                if ((not session.pending and not continuing)
+                        or session.pending and session.pending.name in ('finished', 'episode_exit')):
                     raise SaveError('Dialogue animation does not match its pending screen')
                 if motion.native_lifecycle and motion.portrait is not None:
                     expression = motion.expression if motion.presentation_ms >= EXPRESSION_MS else motion.initial_expression
@@ -1203,6 +1523,30 @@ class Session:
                 raise SaveError('Message panel does not match its pending screen')
             if (engine.title_screen is not None) != bool(session.pending and session.pending.name == 'presentation'):
                 raise SaveError('Title screen does not match its pending screen')
+            transition = engine.scene_transition
+            if transition is not None and transition.active:
+                kind = session.pending.name if session.pending else None
+                if transition.phase == 1:
+                    if kind not in (None, 'vm_pause'):
+                        raise SaveError('Scene transition is waiting on an already prepared UI')
+                elif kind not in ('dialogue', 'choice', 'presentation', 'message_panel',
+                                'text_input', 'character_picker', 'word_game', 'vm_pause'):
+                    raise SaveError('Scene transition has no pending UI')
+                if transition.phase == 4:
+                    expected = {0}
+                    if kind == 'choice':
+                        details = session.pending.details
+                        expected = set(details['values']) | {details['timeout_result']}
+                    elif kind == 'text_input':
+                        expected = {0x7ff5}
+                    elif kind == 'character_picker':
+                        expected = {engine.character_picker.selected}
+                    elif kind == 'word_game':
+                        expected = {engine.word_game.score}
+                    elif kind == 'vm_pause':
+                        expected = set()
+                    if transition.result not in expected:
+                        raise SaveError('Scene transition result does not match its pending UI')
             session.remaining_ms = state['remaining_ms']
             if session.remaining_ms is not None:
                 if (session.pending is None or session.pending.name != 'choice'

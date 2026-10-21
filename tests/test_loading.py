@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import Mock
 
 from exp_runtime.engine import EngineAction
 from exp_runtime.runtime import SaveError, Session
@@ -22,6 +23,47 @@ def resources(*arguments, dynamic_count=False, retained=None):
 
 
 class LoadingTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_runner_uses_native_cadence_without_changing_loading_wait_or_saved_clock(self):
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import pygame
+        from exp_runtime.desktop_loading import LoadingRenderer
+        pygame.display.init()
+        pygame.display.set_mode((320, 480))
+        self.addCleanup(pygame.quit)
+        for kind in ('apk', 'ipa'):
+            with self.subTest(kind=kind):
+                r = resources(1)
+                r.library.game_id, r.library.kind = 'shs', kind
+                session = Session(r)
+                session.advance()
+                frozen = session.vm.snapshot()
+                frames = {}
+                for index in range(23, 28):
+                    frames[index] = pygame.Surface((8, 8))
+                    frames[index].fill((index, 40, 80))
+                art = Mock()
+                art.frame.side_effect = lambda bank, index: frames[index]
+                renderer = LoadingRenderer(r, None, art)
+                renderer.panel = Mock(return_value=pygame.Surface((320, 480)))
+                target = pygame.Surface((320, 480))
+                timeline = ((0, 23), (69, 23), (70, 24), (139, 24), (140, 25),
+                            (210, 26), (280, 27), (349, 27), (350, 23), (420, 24),
+                            (1500, 24), (3000, 25)) if kind == 'ipa' else (
+                            (0, 23), (70, 23), (499, 23), (500, 24), (1000, 25),
+                            (1500, 26), (2000, 27), (2499, 27), (2500, 23), (3000, 24))
+                for elapsed, expected in timeline:
+                    session.tick(elapsed - session.engine.loading.elapsed_ms)
+                    self.assertEqual(session.vm.snapshot(), frozen)
+                    saved = session.snapshot()
+                    session = Session.from_snapshot(r, saved)
+                    for _ in range(2):
+                        renderer.draw(target, session)
+                        self.assertEqual(target.get_at((155, 317))[:3], (expected, 40, 80))
+                        self.assertEqual(session.snapshot(), saved)
+                self.assertEqual(session.tick(1).request.args, (77, 0))
+                self.assertIsNone(session.engine.loading)
+
     def test_timer_gate_call_frame_return_and_save_for_both_argument_forms(self):
         for arguments, retained in (((), 0), ((), 407), ((), -1),
                                     ((0,), None), ((1,), None), ((-1,), None),

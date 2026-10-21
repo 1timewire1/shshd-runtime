@@ -128,7 +128,7 @@ class CoDServiceTests(unittest.TestCase):
                                 if action.name == 'choice':
                                     choice_count += 1
                                     first = next(i for i, on in enumerate(action.details['enabled']) if on)
-                                    action = s.answer(choices.get(choice_count, first))
+                                    action = answer_screen(s, choices.get(choice_count, first))
                                 else:
                                     self.assertIn(action.name, ('presentation', 'dialogue', 'vm_pause'))
                                     action = answer_screen(s)

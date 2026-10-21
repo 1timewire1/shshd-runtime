@@ -435,7 +435,7 @@ class CatalogBrowserTests(unittest.TestCase):
                                                              f'{i}.exp') for i in range(20))
             app.show('episodes')
             app.scope = 'all'
-            app.tick(200)
+            app.tick(1550)
             app.render()
             headers = [(rect, cmd) for rect, cmd in app.buttons if cmd[0] == 'episode_group']
             self.assertEqual(len(headers), 2)

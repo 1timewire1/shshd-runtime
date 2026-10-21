@@ -1123,6 +1123,7 @@ class DesktopTests(unittest.TestCase):
             resources = Resources(branching_program())
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
+            ui.session.tick(250)
             ui.render()
             saved = ui.session.snapshot()
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
@@ -1170,6 +1171,7 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNone(ui.choice_focus)                  # the mouse takes over
             key(pygame.K_UP)
             self.assertEqual(ui.choice_focus, 1)                # Up first selects the bottom row
+            ui.tick(250)                                        # past the menu's 250 ms attachment
             key(pygame.K_RETURN)
             self.assertEqual(ui.session.pending.details['text'], 'Went right.')
             ui.render()

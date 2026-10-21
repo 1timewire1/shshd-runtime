@@ -8,6 +8,7 @@ from .content import ContentError
 from .dialogue import BODY_FONT
 from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE, NoticeMotion, hd_letter_state, notice_lifetime
 from .fonts import TextStyle
+from .games import GAMES
 from .menu import MenuStrings
 from .portrait_effects import BALL_FRAMES, BALL_UNITS, STARBURST_FRAME, ball_alpha, starburst
 from .ui_assets import ImagePack, Raster, Rect, UIAssetError, read_ui
@@ -65,7 +66,20 @@ class DialogueRenderer:
     def draw_background(self, target, engine):
         background = self.image(engine.panel.background_id)
         if background is not None:
-            target.blit(background, engine.background_pan.origin(*background.get_size()))
+            x, y = engine.background_pan.origin(*background.get_size())
+            # exp-runtime v0.6.0: Android stretches some locations' X axis (profile BACKGROUND_SCALE_X), aligned by the
+            # unscaled width.
+            scale = getattr(GAMES[engine.game_key], 'BACKGROUND_SCALE_X', {}).get(engine.panel.background_id, 1)
+            if scale != 1:
+                width = background.get_width()
+                background = self.scaled_background(engine.panel.background_id, scale)
+                x = round(x + (width - background.get_width()) / 2)
+            target.blit(background, (x, y))
+
+    @lru_cache(maxsize=8)
+    def scaled_background(self, asset_id, scale):
+        image = self.image(asset_id)
+        return pygame.transform.smoothscale(image, (round(image.get_width() * scale), image.get_height()))
 
     @staticmethod
     def background_origin(background, engine):
@@ -730,11 +744,11 @@ class DialogueRenderer:
         """The portrait's art: the expression it entered with (`initial_portrait`: neutral for a new speaker, else
         the last one shown) until `changeExpression` crossfades to the line's own a second in, on two independent
         tracks (DialogueAnimation.expression_alphas: the new art in over 0.2 s from 1.4 s, the old out over 0.8 s
-        from 1.6 s)."""
-        portrait = motion.portrait
+        from 1.6 s). Since exp-runtime v0.6.0 a running crossfade is its own track, which can outlast the line that
+        started it, so the pair drawn is the track's (`expression_portraits`)."""
+        old, portrait = motion.expression_portraits
         if portrait is None:
             return
-        old = motion.initial_portrait
         if old is None or old.asset_id == portrait.asset_id:
             self.draw_portrait(portrait, motion.portrait_scale, 'art')
             return

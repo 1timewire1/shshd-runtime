@@ -75,6 +75,8 @@ class SpriteAtlas:
             for index, _, __ in group:
                 if not (-len(parts) <= index < count):
                     raise UIAssetError('Invalid atlas part reference')
+        if any(not -len(parts) <= index < count for sequence in sequences for index in sequence):
+            raise UIAssetError('Invalid atlas sequence reference')
         return cls(flags, tuple(sequences), tuple(parts), transforms, tuple(frames),
                    Raster(size, size, bytes(rgba)))
 
@@ -83,17 +85,30 @@ class SpriteAtlas:
         if not 0 <= index < len(self.frames):
             raise UIAssetError('Absent atlas frame')
         f = self.frames[index]
-        if f.width != f.stored_width or f.height != f.stored_height:
-            raise UIAssetError('Scaled atlas frame requires renderer resampling')
-        row_size = f.width * 4
+        # CSGLMasterImage draws a quad at the stored dimensions. The logical
+        # dimensions are used for metrics and mirrored placement, not scaling
+        # (Android 00050ecc, iOS SHS 0000a95c / 0000d96c).
+        row_size = f.stored_width * 4
         pixels = b''.join(self.image.pixels[(y * self.image.width + f.x) * 4:
                                           (y * self.image.width + f.x) * 4 + row_size]
-                          for y in range(f.y, f.y + f.height))
-        result = Raster(f.width, f.height, pixels)
-        for frame, transform in self.transforms:
-            if frame == index:
-                result = result.transformed(transform)
-        return result
+                          for y in range(f.y, f.y + f.stored_height))
+        result = Raster(f.stored_width, f.stored_height, pixels)
+        # Atlas transforms are vertex permutations, distinct from ImagePack's
+        # eight generated-image transforms. Native cases 1, 4 and 7 are no-ops.
+        transform = (0, 0, 2, 3, 0, 4, 7, 0)[self.transform(index)]
+        return result.transformed(transform) if transform else result
+
+    def transform(self, index):
+        # The native parser assigns a per-frame byte; later records overwrite
+        # earlier ones rather than applying a sequence of transformations.
+        return next((value for frame, value in reversed(self.transforms) if frame == index), 0)
+
+    def origin(self, index):
+        """Offset of stored pixels from the literal's logical drawing origin."""
+        if not 0 <= index < len(self.frames):
+            raise UIAssetError('Absent atlas frame')
+        frame = self.frames[index]
+        return (frame.width - frame.stored_width if self.transform(index) == 2 else 0), 0
 
     def literals(self, index):
         """Flatten signed composite references, preserving painter order/origin."""
@@ -103,7 +118,8 @@ class SpriteAtlas:
             if ref >= 0:
                 if ref >= len(self.frames) or len(result) >= 4096:
                     raise UIAssetError('Invalid or oversized atlas composite')
-                result.append((ref, x, y))
+                dx, dy = self.origin(ref)
+                result.append((ref, x + dx, y + dy))
                 return
             if ref in ancestors or len(ancestors) >= 64 or ~ref >= len(self.parts):
                 raise UIAssetError('Invalid or cyclic atlas composite')

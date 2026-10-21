@@ -3,7 +3,7 @@
 #import <CoreText/CoreText.h>
 #import <ImageIO/ImageIO.h>
 
-static CTFontRef makeFont(NSDictionary *request) {
+static CTFontRef makeFont(NSDictionary *request, BOOL *nativeFace) {
     CGFloat size = [request[@"size"] doubleValue];
     NSString *encoded = request[@"data"];
     if (encoded) {
@@ -14,6 +14,7 @@ static CTFontRef makeFont(NSDictionary *request) {
         if (!graphics) return NULL;
         CTFontRef font = CTFontCreateWithGraphicsFont(graphics, size, NULL, NULL);
         CGFontRelease(graphics);
+        *nativeFace = YES;
         return font;
     }
     NSString *face = request[@"face"];
@@ -22,6 +23,7 @@ static CTFontRef makeFont(NSDictionary *request) {
     if ([face isEqual:@"VerdanaBoldItalic"]) face = @"Verdana-BoldItalic";
     UIFont *font = face ? [UIFont fontWithName:face size:size] : nil;
     if (!font) {
+        *nativeFace = NO;
         CTFontRef system = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, size, NULL);
         CTFontSymbolicTraits traits = 0;
         if ([face containsString:@"Bold"]) traits |= kCTFontBoldTrait;
@@ -32,6 +34,7 @@ static CTFontRef makeFont(NSDictionary *request) {
         }
         return system;
     }
+    *nativeFace = YES;
     return CTFontCreateWithName((__bridge CFStringRef)font.fontName, size, NULL);
 }
 
@@ -69,7 +72,8 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
     NSDictionary *request = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
                                                            options:0 error:error];
     if (!request) return nil;
-    CTFontRef font = makeFont(request);
+    BOOL nativeFace = NO;
+    CTFontRef font = makeFont(request, &nativeFace);
     if (!font) {
         if (error) *error = [NSError errorWithDomain:@"org.expruntime.font" code:1
                                           userInfo:@{NSLocalizedDescriptionKey: @"Cannot decode supplied font"}];
@@ -78,8 +82,10 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
     CGColorRef foreground = color(request[@"color"]);
     if ([request[@"operation"] isEqual:@"atlas"]) {
-        int size = [request[@"size"] intValue], stroke = [request[@"stroke"] intValue];
-        int cell = (size + stroke * 2) * 3, edge = cell * 16;
+        int size = [request[@"size"] intValue];
+        CGFloat stroke = [request[@"stroke"] doubleValue];
+        int padding = ceil(stroke);
+        int cell = (size + padding * 2) * 3, edge = cell * 16;
         CGContextRef context = bitmap(edge, edge);
         NSMutableArray *glyphs = [NSMutableArray array];
         for (UniChar code = 32; code < 256; ++code) {
@@ -92,10 +98,10 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
             CTFontGetAdvancesForGlyphs(font, kCTFontOrientationHorizontal, &glyph, &advance, 1);
             int left = 0, top = 0, width = 0, height = 0;
             if (!CGRectIsEmpty(bounds)) {
-                left = floor(CGRectGetMinX(bounds)) - stroke;
-                top = -ceil(CGRectGetMaxY(bounds)) - stroke;
-                width = ceil(CGRectGetMaxX(bounds)) + stroke - left;
-                height = -floor(CGRectGetMinY(bounds)) + stroke - top;
+                left = floor(CGRectGetMinX(bounds)) - padding;
+                top = -ceil(CGRectGetMaxY(bounds)) - padding;
+                width = ceil(CGRectGetMaxX(bounds)) + padding - left;
+                height = -floor(CGRectGetMinY(bounds)) + padding - top;
             }
             if (width > cell || height > cell) {
                 CGColorRelease(foreground); CFRelease(font); CGContextRelease(context);
@@ -120,6 +126,7 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
         result[@"glyphs"] = glyphs;
         result[@"cap"] = @(CTFontGetCapHeight(font));
         result[@"descent"] = @(CTFontGetDescent(font));
+        result[@"native_face"] = @(nativeFace);
         result[@"png"] = png(context);
         CGContextRelease(context);
     } else {

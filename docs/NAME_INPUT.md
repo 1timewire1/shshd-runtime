@@ -40,12 +40,64 @@ Empty Return hides the virtual keyboard without resuming. Callback
 then resumes with handle `0x7ff5`. It does not write a numeric result cell.
 
 `text_input.py` supplies the pure character helper and confirmation validator.
-`Session.answer()` rejects empty, non-ASCII, non-alphanumeric, overlength, and
-overwidth values before changing any host or VM state. A programmatic answer
+`Session.answer()` rejects empty, non-ASCII, unsupported-character, overlength,
+and overwidth values before changing any host or VM state. A programmatic answer
 is a complete value, so it retains its supplied case; only interactive typing
 performs case conversion. Both paths use the same APK font advances. Authored
 headless fixtures without an asset loader exercise the byte/length contract
 without a width measurement.
+
+### CoD input policy
+
+The supplied CoD 1.3.4 `SHSUITextEntry::tick` (`0003b5f4`, character filter at
+`0003b682`–`0003b6b4`) accepts only ASCII letters/digits and handles Return
+separately. The capitalization path at `0003b872`–`0003b89e` uppercases an
+initial lowercase ASCII character and preserves subsequent case. Shared
+desktop/iOS typing follows that CoD rule; programmatic answers retain their
+exact supplied case, and SHS retains the Android rule above.
+
+CoD additionally accepts ASCII spaces as a deliberate owner-requested
+convenience. This is not required to solve the inspected puzzles: the cited
+Volume One names trigger a wrong-guess branch, while Volume Four accepts
+single-word alternatives. Spaces count toward existing length and width limits;
+space-only answers, tabs, Unicode whitespace and punctuation remain rejected.
+No trimming or rewriting changes the submitted string. `name_input_metrics()`
+shares the space policy with typing, player confirmation and `Session.answer()`,
+so the desktop and iOS paths agree with headless callers. Saved drafts preserve
+their contents and remain subject to validation on confirmation.
+
+### Optional answer hints
+
+**Options → Cheats → Answer hints** also covers CoD text puzzles on desktop
+and iOS. With the preference enabled, an empty entry field can show one
+accepted spelling at alpha 96/255 in its normal input font. The hint fits and
+clips to the entry region. Script defaults such as “Guess” remain visible;
+clear them to see the hint. Any typed character hides it. Empty Return still
+hides the keyboard without submitting, and a hint never becomes a draft or
+saved answer. The existing `choice_hints` preference retains its value.
+
+`input_hints.py` runs isolated copies from the actual pending service 17/40.
+Two different probe inputs identify service-24 comparisons involving the
+entered text, including copies through service 28 and dynamic strings. The
+comparison operands are candidates, not an answer key: scripts also compare
+wrong guesses and optional Easter eggs. Each candidate must pass the real
+input length, character, width and initial-capitalization rules. Native CoD
+`CSString::equals` (`00005490`) delegates to the bytewise `compareTo`
+(`00005398`); hints preserve the script's spelling and case.
+
+Candidate continuations are compared using the same explicit score notices,
+relationship effects and correct/wrong sound cues as choice hints. A silent
+retry loop can also establish acceptance when the probes both return to this
+input and all accepted spellings follow the same subsequent panels. Distinct
+silent branches remain uncertain: one could be a wrong guess corrected by
+the story. Merely matching a string in a name field is insufficient.
+
+Each trace is bounded to 12,000 VM steps and 96 panels, with at most 32
+comparison candidates and a stop at the next decision. Unknown services,
+ambiguous outcomes and exhausted budgets produce no placeholder. No episode
+names or answer tables are embedded. The cache belongs to the current pending
+input; cursor ticks, typing and clearing do not rerun the search. Previewing
+does not change live VM memory, RNG, clocks, drafts, saves, audio or vibration.
 
 ## Screen composition
 
@@ -122,6 +174,13 @@ pass the new rules. Drafts do not update `last_input` or dynamic strings until
 submission. Alert, keyboard visibility, and cursor phase are transient desktop
 state, reset on restoring a save or changing the pending action.
 
+For IPA fonts, the cursor's top-left origin is the entry origin plus
+`(measured name width - 3, -4)`, verified in SHS **000a1308/000a1314** and
+CoD **0003b5f4**; its native anchor is zero (**000a04c8**). The shared renderer
+now keeps this offset separate from Android's retained bitmap-label origin.
+SHS **000a0088/000a01e4** attaches/removes the input view and keyboard
+immediately; there is no additional recovered panel entrance tween to add.
+
 Authored tests cover both service IDs, callback/frame preservation, ASCII and
 case rules, both limits (including the pre-append width boundary), empty
 Return, backspace, modal rejection, focus/pause, save/load, scaled alert hit
@@ -130,10 +189,13 @@ actual layouts, image packs, fonts, and menu strings. Local rendering checks
 are not a pixel comparison against a running original build.
 
 The mobile system keyboard is supplied through native host interfaces and
-is not reproduced as a drawn desktop keyboard. Cross-label global kerning,
-native panel transitions, inherited mutable layout/font state from other UI
-paths, and exact cursor animation timing still require a live reference
-comparison. No unsupported native service is acknowledged to reach this UI.
+is not reproduced as a drawn desktop keyboard. Android bitmap history now
+follows `000d4f34/000d4658` (empty footer, title, prompt, name) and `000d3ae8`
+(name reassigned every active tick). The ordinary BMFont title-anchor rebuild
+does not update the custom global byte. The cursor's application-startup seed,
+unmodeled updates in other UI paths and native frame scheduling remain open;
+see [the font-history scope](UI_FIDELITY.md#bitmap-history-and-reused-portrait-follow-up).
+No unsupported native service is acknowledged to reach this UI.
 
 ## iOS HD build
 
@@ -198,4 +260,8 @@ recorded what each text prompt's answer was compared with:
   spellings beside capitalized ones, so first-letter capitalization never blocks an answer.
 - Some answers also need later capitals, kept as typed under these rules: "EA", "WHEELCHAIR", "MerrittBurke".
 - Answers with spaces ("Wheel chair", "Christian Rose", "Dr. Rose") cannot be typed natively either: the tick rejects
-  spaces (see COD.md).
+  spaces (see COD.md). exp-runtime v0.6.0 accepts ASCII spaces in CoD as its owner's convenience ("CoD input
+  policy" above); the merge keeps that for now, pending this fork owner's decision.
+- exp-runtime reads CoD 1.3.4's `0003b872`-`0003b89e` as the game itself capitalizing the first letter; this
+  fork's reading of 1.4.7 finds no recasing after the loop (the keyboard does it). Both give the same result; the
+  1.3.4 citation has not been checked here.

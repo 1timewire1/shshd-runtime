@@ -64,16 +64,19 @@ class GridTests(unittest.TestCase):
             s.grid_pointer(phase, cell)
         g = s.engine.word_grid
         self.assertEqual([len(burst) for burst in g.explosions], [8, 8, 8])
-        self.assertEqual(g.pop_ms, {0: 601, 1: 601, 2: 601})
+        self.assertFalse(g.pop_ms)
+        self.assertEqual([(g.tiles[i].grow_ms, g.tiles[i].grow_delay) for i in (0, 1, 2)],
+                         [(600, 1)] * 3)
         self.assertEqual(s.engine.random.state, expected_random.state)
         self.assertEqual(s.vm.snapshot(), held)
         fragment = copy.deepcopy(g.explosions[0][0])
         s.tick(100)
         moved = g.explosions[0][0]
-        self.assertAlmostEqual(moved.x, fragment.x + fragment.vx / 10)
-        self.assertAlmostEqual(moved.y, fragment.y + fragment.vy / 10)
-        self.assertAlmostEqual(moved.vy, fragment.vy + 160)
-        self.assertEqual(g.pop_ms, {0: 501, 1: 501, 2: 501})
+        self.assertAlmostEqual(moved.x, fragment.x + fragment.vx / 10, places=4)
+        self.assertAlmostEqual(moved.y, fragment.y + fragment.vy / 10, places=4)
+        self.assertAlmostEqual(moved.vy, fragment.vy + 160, places=4)
+        self.assertEqual([(g.tiles[i].grow_ms, g.tiles[i].grow_delay) for i in (0, 1, 2)],
+                         [(501, -99)] * 3)
         saved = json.loads(json.dumps(s.snapshot()))
         restored = Session.from_snapshot(r, saved)
         for _ in range(30):
@@ -101,10 +104,10 @@ class GridTests(unittest.TestCase):
         self.assertEqual(restored.engine.random, s.engine.random)
         self.assertEqual(restored.engine.word_grid.selection, [0])
         current = restored.snapshot()
-        self.assertEqual(current['version'], 26)
+        self.assertEqual(current['version'], 27)
         for key, value in (('pop_ms', {}), ('explosions', []), ('glint_ms', 100_000_000)):
             self.assertEqual(current['engine']['word_grid'].pop(key), value)
-        self.assertEqual(current['engine']['word_grid'], old['engine']['word_grid'])
+        self.assertEqual(json.loads(json.dumps(current['engine']['word_grid'])), old['engine']['word_grid'])
 
     def test_native_grid_words_trim_controls_and_drop_empty_fields(self):
         for text, expected in [(' cat ||\x1f| cat | ', ['cat', 'cat']),
@@ -132,7 +135,10 @@ class GridTests(unittest.TestCase):
         saved = json.loads(json.dumps(s.snapshot()))
         s = Session.from_snapshot(r, saved); g = s.engine.word_grid
         self.assertEqual(json.loads(json.dumps(s.snapshot())), saved)
-        self.assertEqual(s.engine.random.state, initial_random)  # Fixed boards consume no randomness.
+        # Fixed letters consume no random draws, but committing the exercise
+        # shuffles its one valid start's highlight offset once.
+        expected_random = NativeRandom(initial_random); expected_random.next()
+        self.assertEqual(s.engine.random.state, expected_random.state)
         s.answer(); play_phase(s)
         self.assertEqual(g.problem_index, 3)
         self.assertTrue(g.problem.show_hints)

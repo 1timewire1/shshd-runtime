@@ -52,7 +52,8 @@ class Host:
         session = game.session if game else None
         return (self.app.input_token(), id(game.session) if game else None, game.menu_open if game else False,
                 id(action), action.details.get('page_start') if action else None,
-                (session.scene, session.vm.steps_executed) if session else None)
+                (session.scene, session.vm.steps_executed) if session else None,
+                game.minigame_prompt if game else False)
 
     def handle_events(self, events):
         screen = self.app.screen
@@ -120,10 +121,19 @@ class Host:
         if not value:
             b.mixer.stop()
             if self.app.game:
-                self.app._attempt(lambda: self.app.state.checkpoint(self.app.game.session))
+                def checkpoint():
+                    self.app.game.capture_audio()
+                    return self.app.state.checkpoint(self.app.game.session)
+                self.app._attempt(checkpoint)
 
     def request(self, message):
         operation = message.get('operation', 'frame')
+        if 'vibration_available' in message:
+            self.backend.vibration_available = message['vibration_available'] is True
+        if 'audio_playing' in message:
+            self.backend.mixer.playing = dict(message['audio_playing'])
+        if 'audio_positions' in message:
+            self.backend.mixer.positions = dict(message['audio_positions'])
         verification = {}
         if operation in ('verify_start', 'verify_next'):
             import exp_ios_probe
@@ -131,10 +141,16 @@ class Host:
                 self.test_steps = exp_ios_probe.presentation_steps(self)
                 verification['drawing_test'] = exp_ios_probe.drawing_fixture()
                 verification['audio_test'] = exp_ios_probe.audio_fixture()
+                verification['vibration_test'] = True
             try:
                 verification['verification_check'] = next(self.test_steps)
             except StopIteration:
                 verification['verification_done'] = True
+            except Exception as error:
+                # AssertionError can have an empty message. Keep the failed
+                # authored check's location in the simulator report.
+                import traceback
+                raise RuntimeError(''.join(traceback.format_exception(error))) from error
             message = dict(message, elapsed=50)
         elif operation == 'import':
             kind = message['kind']
@@ -188,6 +204,9 @@ class Host:
             self.generation += 1
         frame = self.encoder.encode(self.backend.window)
         audio, self.backend.mixer.commands = self.backend.mixer.commands, []
+        vibrations, self.backend.vibrations = self.backend.vibrations, 0
+        if not self.last_active or not self.backend.vibration_available:
+            vibrations = 0
         picker, self.picker = self.picker, None
         url, self.url = self.url, None
         update_request, self.update_request = self.update_request, None
@@ -201,7 +220,11 @@ class Host:
         if (operation.startswith('verify_')
                 and str(verification.get('verification_check', '')).endswith('menu click')):
             verification['verify_click_audio'] = True
+        if (operation.startswith('verify_') and game
+                and str(verification.get('verification_check', '')).endswith('stat-increase sound')):
+            verification['verify_effect_audio'] = game.sound_players[-1][1].channel
         return dict(verification, status='ok', frame=frame, audio=audio, keyboard=self.backend.keyboard, picker=picker, open_url=url,
+                    vibrations=vibrations,
                     update_request=update_request,
                     generation=self.generation,
                     scrollable=self.app.screen in ('episodes', 'browser') or bool(game and game.max_scroll),

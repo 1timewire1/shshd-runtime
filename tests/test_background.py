@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -171,7 +172,7 @@ class BackgroundTests(unittest.TestCase):
             saved = json.loads(json.dumps(session.snapshot()))
             restored = Session.from_snapshot(session.resources, saved)
             self.assertEqual(restored.snapshot(), session.snapshot())
-            self.assertEqual(saved['version'], 26)
+            self.assertEqual(saved['version'], 27)
             for ms in (42, 125, 1000):
                 session.tick(ms)
                 restored.tick(ms)
@@ -270,6 +271,30 @@ class BackgroundTests(unittest.TestCase):
                     frames[source_x] = rendered.tobytes()
                 else:
                     self.assertEqual(rendered.tobytes(), frames[source_x])
+
+    def test_shs_special_background_scales_width_about_its_unscaled_pan_center(self):
+        from exp_runtime.desktop_dialogue import DialogueRenderer
+        from exp_runtime.platforms import drawing
+        image = drawing.Surface.from_pixels(Image.new('RGBA', (200, 100), 'white'))
+        art = DialogueRenderer.__new__(DialogueRenderer)
+        art.image = lambda resource: image
+        for game, asset, left in (('shs', 1013, 59), ('shs', 1014, 60), ('cod', 1013, 60)):
+            with self.subTest(game=game, asset=asset):
+                session = story()
+                engine = session.engine
+                engine.game_key, engine.panel.background_id = game, asset
+                engine.background_pan.center()
+                before = session.snapshot()
+                canvas = drawing.Surface((320, 480))
+                canvas.fill((0, 0, 0))
+                with patch('exp_runtime.desktop_dialogue.pygame.transform', drawing.Transform()):
+                    art.draw_background(canvas, engine)
+                rendered = drawing.raster(canvas.snapshot())
+                self.assertEqual(rendered.getpixel((left - 1, 180))[:3], (0, 0, 0))
+                self.assertEqual(rendered.getpixel((left, 180))[:3], (255, 255, 255))
+                self.assertEqual(rendered.getpixel((160, 129))[:3], (0, 0, 0))
+                self.assertEqual(rendered.getpixel((160, 130))[:3], (255, 255, 255))
+                self.assertEqual(session.snapshot(), before)
 
 
 if __name__ == '__main__':

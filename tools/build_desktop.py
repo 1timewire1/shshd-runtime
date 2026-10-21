@@ -12,9 +12,9 @@ import sys
 import tempfile
 
 if __package__:
-    from .components import COMPONENTS, check_versions, source_roots
+    from .components import RUNTIME_COMPONENTS as COMPONENTS, check_versions, source_roots
 else:
-    from components import COMPONENTS, check_versions, source_roots
+    from components import RUNTIME_COMPONENTS as COMPONENTS, check_versions, source_roots
 
 
 def build_icon(svg, destination):
@@ -51,7 +51,7 @@ def main():
                 '--add-data', str(logo) + ':exp_runtime/assets',
                 '--copy-metadata', 'shshd-runtime',
                 '--exclude-module', 'tkinter']
-        for source in source_roots(root):
+        for source in source_roots(root, COMPONENTS):
             args += ['--paths', str(source)]
         for component in COMPONENTS:
             args += ['--copy-metadata', f'shshd-runtime-{component}']

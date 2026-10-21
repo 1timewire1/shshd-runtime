@@ -21,6 +21,8 @@ class PauseFeedbackTests(unittest.TestCase):
     def ui(self, resources=None):
         pg = self.pygame
         ui = self.Desktop(Session(resources or Resources(branching_program())), audio=False)
+        if ui.session.pending.name == 'choice':
+            ui.tick(250)
         ui.viewport = pg.Rect(80, 0, 480, 720)  # A letterboxed window.
         ui.buttons = [(pg.Rect(0, 633, 90, 87), ('menu',)),
                       (pg.Rect(0, 0, 480, 720), ('continue',))]

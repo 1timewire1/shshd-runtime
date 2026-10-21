@@ -4,7 +4,7 @@ See [MAINTAINERS.md](../MAINTAINERS.md) for contributor setup, reporting issues,
 compatibility requirements and pull request guidance.
 
 The project is a single uv workspace with component source under
-`packages/{formats,engine,player,shs,cod}/src/exp_runtime`. It does not import
+`packages/{formats,engine,player,shs,cod,creator}/src/exp_runtime`. It does not import
 modules from the old decoder checkout or require any extracted game files
 to install, test its synthetic fixtures, or build an executable.
 
@@ -23,6 +23,15 @@ uv run --locked --extra desktop python -m unittest discover -s tests
 uv run --locked --extra desktop shshd-runtime
 uv run --locked --extra build python tools/build_desktop.py
 uv run --locked --extra build python tools/package_desktop.py --label local --smoke-test
+```
+
+For creator and MCP development, including the live editing tests:
+
+```sh
+uv sync --locked --extra build --extra creator --extra creator-mcp
+uv run --locked --extra build --extra creator --extra creator-mcp python -m unittest discover -s tests
+uv run --locked --extra creator shshd-creator
+uv run --locked --extra creator-mcp shshd-creator-mcp --workspace /path/to/stories
 ```
 
 `shshd-tool` (aliases `exp-tool`, `shs-tool`) provides `import`, `list`, `play`, `trace` and, for

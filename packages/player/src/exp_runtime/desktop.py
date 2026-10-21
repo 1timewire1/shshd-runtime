@@ -45,6 +45,7 @@ from .desktop_input import InputRenderer, INPUT_RECT
 from .desktop_side_panels import SidePanels
 from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
+from .loading import LoadingScreen
 from .runtime import SaveError, Session
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
@@ -132,10 +133,11 @@ class Desktop:
     def session(self, session):
         if self.names is not None:
             session.share_names(self.names)
+        session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
         self._session = session
 
     def __init__(self, session: Session, *, audio: bool = True, window=None, on_main_menu=None, capture=False,
-                 episode_title=None, on_menu_page=None, names=None):
+                 episode_title=None, on_menu_page=None, names=None, vibration_enabled=False):
         self.names = names
         pygame.display.init()
         pygame.font.init()
@@ -266,7 +268,8 @@ class Desktop:
         self.vibration_serial = session.engine.vibration_serial
         self.audio = False
         self.music_enabled = self.sound_enabled = True
-        self.vibration_enabled = False      # the buzz is an opt-in addition (PR #10)
+        # Off by default (the buzz is an opt-in addition, PR #10); set here so the first script's requests obey it.
+        self.vibration_enabled = vibration_enabled
         self.choice_hints = False
         self.active = True
         self.menu_open = False
@@ -291,6 +294,21 @@ class Desktop:
         except (ContentError, VMError, SaveError, OSError, ValueError) as error:
             self.error = str(error)
             logging.error('Playback stopped: %s', error)
+        finally:
+            self._sync_vibration()
+
+    def _sync_vibration(self):
+        """exp-runtime v0.6.0's device vibration (graphics.vibrate: the iOS backend; nothing on a desktop). This fork's
+        simulated buzz is separate (`_buzz`, from service 82's serial)."""
+        count = self.session.take_vibrations()
+        if not count or not self.vibration_enabled or not self.active or self.menu_open:
+            return
+        for _ in range(count):
+            pygame.vibrate()
+
+    def capture_audio(self):
+        """exp-runtime's checkpoint hook (platforms/ios.py): its own player stores the playing cue's playhead in
+        `engine.music_playback`. This fork's music is music_stream.py's and is not captured, so the hook does nothing."""
 
     def _notice(self, message):
         self.message, self.message_until = message, pygame.time.get_ticks() + 3500
@@ -409,7 +427,7 @@ class Desktop:
             self.music_was_enabled = self.music_enabled
             if not self.music_enabled:
                 stream.disable(now)                  # setMusicEnabled(false): stopMusic(-1, true)
-        token = (engine.music_id, engine.music_flag, engine.music_requests)
+        token = (engine.music_id, engine.music_flag, engine.music_serial)
         if token != self.music_token:
             if self.music_token is None:
                 stream.reset()                       # a new or reloaded session starts its own cue
@@ -418,7 +436,7 @@ class Desktop:
                 if self.music_enabled:               # playMusic ignores requests while Music is off
                     stream.play(engine.music_id, engine.music_flag, self._open_cue, now)
             else:
-                stream.stop(engine.music_stop_fade_ms, now)
+                stream.stop(engine.music_stop_ms, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
                       paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
         self._sync_pause_song(now)
@@ -772,7 +790,8 @@ class Desktop:
                 }
                 renderer = selectors[action.name]()
                 options = (dict(error=self.input_error,
-                                cursor_visible=self.text_input_started and pygame.time.get_ticks() % 1000 < 500)
+                                cursor_visible=self.text_input_started and pygame.time.get_ticks() % 1000 < 500,
+                                choice_hints=self.choice_hints)
                            if action.name == 'text_input' else {})
                 # The name-entry screen draws at story density (see STORY_SCALE)
                 # and is composited by _present(), like dialogue and choices.
@@ -781,8 +800,9 @@ class Desktop:
                     # from a stand-in for the state they read (the scene's background and the runner's frame), so service 91's own
                     # state and drawing are untouched; the poll's bar takes no clicks (`g_pauseButton setEnabled:NO`).
                     engine = self.session.engine
-                    frame = 23 + (details['elapsed_ms'] // 500) % 5
-                    view = SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=SimpleNamespace(frame=frame)))
+                    poll = LoadingScreen(blocking=False, elapsed_ms=min(3000, details['elapsed_ms']))
+                    poll.elapsed_ms = details['elapsed_ms']        # the poll's own clock, past service 91's 3 s cap
+                    view = SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=poll))
                     renderer.draw(self.canvas, view)
                     buttons = []
                 else:
@@ -1025,7 +1045,7 @@ class Desktop:
                     self._collage = hd_collage(library)
                 else:
                     self._collage = self.side_panels.collage()
-            except (ContentError, pygame.error, OSError, ValueError, AttributeError):
+            except (ContentError, pygame.error, OSError, ValueError, AttributeError, TypeError):
                 self._collage = None
         return self._collage
 
@@ -1041,7 +1061,8 @@ class Desktop:
                 if self.badge_hd.available():
                     hd_badge = self.badge_hd.draw(engine.scene_badge, engine.panel.theme)
                 else:
-                    self._draw_scene_badge(engine.scene_badge)
+                    self._draw_scene_badge(engine.scene_badge,
+                                           previous_glyph=engine.text_history.initial('scene_badge'))
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Scene label rendering stopped: %s', error)
@@ -1255,7 +1276,7 @@ class Desktop:
         scaled_bg.set_alpha(self.pending_background_alpha if self.pending_background_alpha < 255 else None)
         self.window.blit(scaled_bg, viewport)
 
-    def _draw_scene_badge(self, badge):
+    def _draw_scene_badge(self, badge, *, previous_glyph=-1):
         layer = self.dialogue_renderer.frame(204 if badge.blue else 236, 13).copy()
         icon = self._chrome_image(badge.asset_id)
         if icon is not None:
@@ -1267,7 +1288,8 @@ class Desktop:
             region = self.session.resources.dialogue_layout().bank.rectangle(67, 3)
             text, (x, y), scale = outline_badge_text(badge.text, self.story_text.font(name), region, color)
         else:
-            text = self.story_text.layout(name, badge.text, 110, TextStyle(14, 1, color))
+            text = self.story_text.layout(name, badge.text, 110, TextStyle(14, 1, color),
+                                          previous_glyph=previous_glyph)
             x, y, scale = badge.text_origin
         self.story_text.draw_layout(layer, name, text, x, y, scale=scale)
         # 200ms MoveTo from x=-width/2 to center x=100. Ad-free top inset=10.
@@ -1559,6 +1581,8 @@ class Desktop:
         elif kind == 'load':
             try:
                 restored = Session.load(self.session.resources, self.session.save_path)
+                if hasattr(self.session, 'process'):
+                    self.session.process.attach(restored, restored=True)
                 self.session = restored
                 self.error, self.music_token = None, None
                 self.sound_serial = restored.engine.sound_serial
@@ -1587,6 +1611,8 @@ class Desktop:
                     else:
                         self.host_prompt = None
                         ask['resolve'](command[1])
+            elif kind == 'choose' and action and action.name == 'choice' and not self.session.choice_ready:
+                pass                    # SHSUIMenu ignores selections during its 250 ms attachment (Session.choice_ready)
             elif kind == 'choose' and action and action.name == 'choice' and self._hd_choice_closes(action, command[1]):
                 self._menu_sound()      # `SHSUIMenu::handleMenuSelection`, modes 1 and 3 (a timeout is silent)
                 self.choice_closing = dict(action=action, index=command[1], ms=0)
@@ -2060,6 +2086,8 @@ class Desktop:
         except (SaveError, VMError, OSError, ValueError) as error:
             self._notice(f'Could not warp: {error}')
             return
+        if hasattr(self.session, 'process') and restored is not self.session:
+            self.session.process.attach(restored, restored=True)
         self.session = restored
         self.error, self.music_token = None, None
         self.sound_serial = restored.engine.sound_serial

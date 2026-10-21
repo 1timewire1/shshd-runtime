@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+from itertools import product
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,66 @@ def npc_session(*, value=0, previous_asset=3012, previous_count=-1, words=None):
 
 
 class RelationshipTests(unittest.TestCase):
+    def test_suppressed_android_widget_retains_cancelled_children_across_speakers_and_teardown(self):
+        for kind, (value, prior_count, elapsed) in product(('apk', 'ipa'), ((0, 3, 1400), (3, 1, 1450))):
+            for intervening in ('none', 'narration', 'close', 'player', 'special'):
+                with self.subTest(kind=kind, value=value, intervening=intervening):
+                    words, refs = text_words('X')
+                    middle = (host_call(13, refs[0], 7) if intervening == 'narration' else
+                              host_call(13, refs[0], 0) if intervening == 'player' else
+                              host_call(39) if intervening == 'close' else [])
+                    target = 45 if intervening == 'special' else 2
+                    r = Resources(program(*host_call(13, refs[0], 1), *middle,
+                                          *host_call(13, refs[0], target), 0x33, words=words))
+                    r.library.kind = kind
+                    s = Session(r)
+                    s.engine.ui_defaults = {74: 0, 75: 7}
+                    s.engine.character_names = {0: 'Player', 1: 'First', target: 'Next'}
+                    s.engine.character_art_variants = {c: [100] * 5 for c in (0, 1, target)}
+                    for key, number in ((407, value), (3000, 3012), (3001, prior_count)):
+                        s.engine.numbers[s.engine.number_key(1, key)] = number
+                    s.engine.numbers[s.engine.number_key(target, 629)] = 1
+                    s.advance(); s.tick(elapsed)
+                    frozen = s.engine.dialogue_animation.relationship.poses()
+                    self.assertTrue(frozen)
+                    self.assertTrue(s.engine.dialogue_animation.complete)
+                    sound_serial = s.engine.sound_serial
+                    s.answer()
+                    if intervening in ('narration', 'player'):
+                        self.assertIsNone(s.engine.dialogue_animation.relationship)
+                        s.tick(2000); s.answer()
+                    rel = s.engine.dialogue_animation.relationship
+                    expected = () if kind == 'ipa' or intervening in ('player', 'special') else frozen
+                    self.assertEqual(rel.poses(), expected)
+                    self.assertEqual(s.engine.sound_serial, sound_serial)
+                    saved = s.snapshot()
+                    restored = Session.from_snapshot(r, json.loads(json.dumps(saved)))
+                    self.assertEqual(restored.snapshot(), saved)
+                    for session in (s, restored):
+                        session.tick(3000)
+                        self.assertEqual(session.engine.dialogue_animation.relationship.poses(), expected)
+
+    def test_retained_pose_saves_are_validated_and_legacy_state_is_not_invented(self):
+        s = npc_session(value=3, previous_count=1)
+        s.tick(1450)
+        s.engine.dialogue_history.remember(s.engine.dialogue_animation)
+        saved = s.snapshot()
+        for key, bad in (('x', float('nan')), ('rotation', -999.), ('asset_id', 42), ('flash_alpha', 201)):
+            invalid = copy.deepcopy(saved)
+            invalid['engine']['dialogue_history']['indicators'][0][key] = bad
+            with self.subTest(key=key), self.assertRaises(SaveError):
+                Session.from_snapshot(s.resources, invalid)
+        old = copy.deepcopy(saved)
+        old['version'] = 22
+        del old['engine']['text_history']
+        del old['engine']['dialogue_history']['indicators']
+        del old['engine']['dialogue_animation']['relationship']['retained']
+        migrated = Session.from_snapshot(s.resources, old)
+        self.assertEqual(migrated.vm.snapshot(), s.vm.snapshot())
+        self.assertEqual(migrated.engine.dialogue_animation.relationship.poses(),
+                         s.engine.dialogue_animation.relationship.poses())
+        self.assertEqual(migrated.engine.dialogue_history.indicators, [])
+
     def test_vm_relationship_updates_refresh_icons_and_script_visible_caches(self):
         words, refs = text_words('First meeting.', 'The relationship changes.')
         r = Resources(program(
@@ -76,7 +137,7 @@ class RelationshipTests(unittest.TestCase):
                     if len(seen) == 3:
                         break
                 if action.name == 'choice':
-                    session.answer(next(i for i, enabled in enumerate(action.details['enabled']) if enabled))
+                    answer_screen(session, next(i for i, enabled in enumerate(action.details['enabled']) if enabled))
                 elif action.name == 'text_input':
                     session.answer('Alex')
                 elif action.name == 'character_picker':

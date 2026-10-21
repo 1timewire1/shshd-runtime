@@ -1,19 +1,18 @@
 import unittest
 
-from exp_runtime.dialogue_animation import DialogueAnimation, DialoguePortrait
+from exp_runtime.dialogue_animation import DialogueAnimation, DialoguePortrait, ExpressionTransition
 from exp_runtime.portrait_effects import EXPRESSION_CHANGE_MS, ball_alpha, starburst
 
 
 class TimelineTests(unittest.TestCase):
     def test_the_old_and_new_art_fade_on_their_own_tracks(self):
-        # exp-runtime's shared model since v0.4.2 (DialogueAnimation.expression_alphas): from the change at 1 s,
-        # the new art in over 0.2 s after 0.4 s, the old out over 0.8 s after 0.6 s.
-        motion = DialogueAnimation(10, DialoguePortrait(10, 2006, 2, 1, 6),
-                                   initial_portrait=DialoguePortrait(10, 2000, 2, 1, 0))
+        # exp-runtime's shared model (since v0.6.0 its ExpressionTransition track, DialogueAnimation.expression_alphas):
+        # from the change at 1 s, the new art in over 0.2 s after 0.4 s, the old out over 0.8 s after 0.6 s.
         for at, alphas in ((EXPRESSION_CHANGE_MS + 399, (255, 0)), (EXPRESSION_CHANGE_MS + 500, (255, 128)),
                            (EXPRESSION_CHANGE_MS + 1000, (128, 255)), (EXPRESSION_CHANGE_MS + 1400, (0, 255))):
-            motion.presentation_ms = at
-            self.assertEqual(motion.expression_alphas, alphas)
+            track = ExpressionTransition(DialoguePortrait(10, 2000, 2, 1, 0), DialoguePortrait(10, 2006, 2, 1, 6), 6,
+                                         at - EXPRESSION_CHANGE_MS)
+            self.assertEqual(track.alphas, alphas)
 
     def test_angry_starburst_runs_for_six_tenths_of_a_second_after_its_delay(self):
         start = EXPRESSION_CHANGE_MS + 650

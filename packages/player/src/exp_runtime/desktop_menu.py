@@ -15,7 +15,8 @@ from .desktop_text import BitmapTextRenderer
 from .fonts import TextStyle
 from .languages import TITLE_LANGUAGES
 from .games import GAMES
-from .menu import MenuFont, MenuStrings, main_button_rects
+from .menu import MenuFont, MenuStrings, main_button_rects, main_button_x
+from .animation_curves import power_in_out
 from .ui_assets import ImagePack, LayoutBank, Rect, read_ui
 from .vector_text import system_font_path
 from .app_info import UPDATE_REPOSITORY
@@ -31,6 +32,7 @@ class MenuRenderer:
     def __init__(self, library=None):
         self.library = library
         self.canvas = pygame.Surface((320, 480)).convert(32)
+        self.background = self.layer = None
         self.buttons = []
         self.pressed = None
         # Before a library exists there's no player-supplied font yet (it's copied in during import), and no
@@ -143,6 +145,10 @@ class MenuRenderer:
                     self.canvas.blit(pygame.transform.scale(image, (bounds.width, bounds.height)), (bounds.x, bounds.y))
 
     def backdrop(self, *, age=None):
+        paused = getattr(self, 'pause_background', None)
+        if paused is not None:
+            self.canvas.blit(pygame.transform.smoothscale(paused, (320, 480)), (0, 0))
+            return
         if not self.library:
             self.canvas.fill((243, 244, 247))
             return
@@ -160,39 +166,67 @@ class MenuRenderer:
             self.canvas.blit(ribbon, ribbon.get_rect(center=(160, 96)))
             self.canvas.blit(self.image(7), self.image(7).get_rect(center=(160, 96)))
 
-    def main(self, app):
+    def main(self, app, *, exit_ms=None):
         age = app.menu_age
-        self.backdrop(age=age if app.intro else None)
+        self.backdrop(age=age if app.intro and exit_ms is None else None)
+        self.begin_layer()
         start = 1600 if app.intro else 0
-        progress = min(1, max(0, (age - start) / 500))
+        progress = min(1, max(0, (age - start) / 500)) if exit_ms is None else 1
         shift = round(-275 * (1 - progress))
+        if exit_ms is not None:
+            # 000de9fc -> 000de7fc moves the strip after the last row.
+            shift = -round(275 * min(1, max(0, (exit_ms - 1550) / 500)))
         self.layout(79, Rect(shift, 353, 275, 109))
         labels = [self.strings[126 if app.can_resume() else 125], self.strings[127],
                   self.strings[91], 'Switch Game']
         commands = [('episodes', 'play'), ('episodes', 'weekly'), ('episodes', 'all'), ('switch_games',)]
         for i, (rect, label, command) in enumerate(zip(main_button_rects(self.bank), labels, commands)):
-            t = min(1, max(0, (age - start - 400) / ((i + 1) * 250))) if app.intro else progress
-            # Exponential slide-in; native actions use a rate-10 ease.
-            t = 1 if t == 1 else 1 - 2 ** (-10 * t) if t > 0 else 0
-            x = round(rect.x - (rect.x + rect.width) * (1 - t))
+            if exit_ms is None:
+                t = min(1, max(0, (age - start - 400) / ((i + 1) * 250))) if app.intro else progress
+                t = power_in_out(t)
+            else:
+                # 000df168 -> 000dede4 -> 000df270: gear 250ms,
+                # info 300ms, then four rate-10 moves of 250..1000ms.
+                t = 1 - power_in_out(min(1, max(0, (exit_ms - 550) / ((i + 1) * 250))))
+            x = main_button_x(self.bank, i, 1 - t if exit_ms is not None else t,
+                              exiting=exit_ms is not None)
             bounds = Rect(x, rect.y, rect.width, rect.height)
             self.layout(77 if app.pressed == command else 75, bounds)
             image = self.menu_label(label, int(i == 3))
             self.canvas.blit(image, image.get_rect(center=(x + rect.width // 2, rect.y + rect.height // 2 - 1)))
-            if app.ready:
+            if app.ready and exit_ms is None:
                 self.buttons.append((pygame.Rect(rect.x, rect.y, rect.width, rect.height), command))
-        if progress == 1 and (not app.intro or age >= 3000):
-            gear = Rect(180, 443, 39, 28)
-            self.layout(77 if app.pressed == ('options',) else 75, gear)
-            image = self.art.frame(272, 13)
-            self.canvas.blit(image, image.get_rect(center=(200, 457)))
-            image = self.art.frame(272, 15 if app.pressed == ('help',) else 14)
-            self.canvas.blit(image, (278, 437))
-            self.buttons.extend([(pygame.Rect(180, 440, 41, 35), ('options',)),
-                                 (pygame.Rect(278, 437, 42, 41), ('help',))])
+        if progress == 1 and (exit_ms is not None or not app.intro or age >= 3000):
+            # 000dede4 fades info for 300ms; its completion schedules
+            # 000df168's 250ms gear scale from .1 to 1.
+            # The exit runs a child scale/fade while its menu parent is
+            # already hidden (CCMenu vtable +0x6c -> 0013b518). Preserve
+            # those callback intervals without drawing the hidden children.
+            if exit_ms is None and (not app.intro or age >= 3300):
+                scale = min(1, .1 + .9 * (age - 3300) / 250) if app.intro else 1
+                original = self.canvas
+                self.canvas = pygame.Surface((320, 480), pygame.SRCALPHA).convert_alpha()
+                try:
+                    self.layout(77 if app.pressed == ('options',) else 75, Rect(180, 443, 39, 28))
+                    image = self.art.frame(272, 13)
+                    self.canvas.blit(image, image.get_rect(center=(200, 457)))
+                    image = self.canvas.subsurface((180, 443, 40, 28))
+                    image = pygame.transform.smoothscale(image, (max(1, round(40 * scale)), max(1, round(28 * scale))))
+                finally:
+                    self.canvas = original
+                self.canvas.blit(image, image.get_rect(center=(200, 457)))
+                self.buttons.append((pygame.Rect(180, 440, 41, 35), ('options',)))
+            if exit_ms is None or exit_ms < 250:
+                image = self.art.frame(272, 15 if app.pressed == ('help',) else 14).copy()
+                opacity = min(1, (age - 3000) / 300) if app.intro and exit_ms is None else 1
+                image.set_alpha(round(255 * opacity))
+                self.canvas.blit(image, (278, 437))
+                if exit_ms is None:
+                    self.buttons.append((pygame.Rect(278, 437, 42, 41), ('help',)))
 
     def panel(self, title, *, back=True):
         self.backdrop()
+        self.begin_layer()
         if self.library:
             self.art.box(self.canvas, Rect(19, 88, 282, 324), 1, alpha=248)
         else:
@@ -202,9 +236,17 @@ class MenuRenderer:
             self.button('Back', (12, 436, 78, 29), ('back',))
 
     def draw(self, app):
+        self.background = self.layer = None
+        self.pause_background = (app.game.pause_renderer.background
+                                 if app.paused_menu and app.game.pause_renderer is not None else None)
         self.buttons = []
         self.pressed = app.pressed
         screen = app.screen
+        outgoing = None
+        if getattr(app, 'main_exit_ms', None) is not None:
+            self.main(app, exit_ms=app.main_exit_ms)
+            outgoing = self.canvas
+            self.canvas = self.background.copy()
         if screen == 'main':
             self.main(app)
         elif screen == 'games':
@@ -341,11 +383,17 @@ class MenuRenderer:
                     self.button('New Game', (83, 350, 154, 33), ('restart',))
         elif screen == 'options':
             self.panel('Options')
+            y = 120
             if app.state is not None:
-                for y, label, value, setting in ((120, 'Music', app.state.music, 'music'), (164, 'Sound', app.state.sound, 'sound')):
+                settings = [('Music', app.state.music, 'music'), ('Sound', app.state.sound, 'sound')]
+                spacing = 44
+                if pygame.supports_vibration():
+                    settings.append(('Vibration', app.state.vibration, 'vibration'))
+                    y, spacing = 108, 34
+                for label, value, setting in settings:
                     self.label(label, (31, y + 5, 147, 30), size=20)
                     self.button('On' if value else 'Off', (213, y, 78, 29), ('toggle', setting))
-            y = 208 if app.state is not None else 120
+                    y += spacing
             if UPDATE_REPOSITORY is not None:          # only with a release source (app_info)
                 self.label('Update checks', (31, y + 5, 173, 30), size=16)
                 self.button('On' if app.settings.check_for_updates else 'Off', (213, y, 78, 29), ('toggle_updates',))
@@ -368,12 +416,12 @@ class MenuRenderer:
                 self.button('Switch Game', (165, 436, 143, 29), ('switch_games',))
         elif screen == 'cheats':
             self.panel('Cheats')
-            self.label('Choice hints', (31, 126, 170, 30), size=20)
+            self.label('Answer hints', (31, 126, 170, 30), size=20)
             self.button('On' if app.state.choice_hints else 'Off', (213, 124, 78, 29),
                         ('toggle', 'choice_hints'))
             self.label('Green: gain or correct answer.\nRed: loss, wrong answer, or no gain where another answer gains.\nAmber: mixed effects.',
                        (30, 184, 260, 120), color=GRAY)
-            self.label('Includes classroom and word quizzes, and short sequences with delayed rewards. Uncertain outcomes stay unmarked.',
+            self.label('Includes classroom and word quizzes, and short sequences with delayed rewards. Uncertain outcomes stay unmarked. An empty CoD answer field shows a faint answer.',
                        (30, 284, 260, 80), color=GRAY)
             self.label('Ask to skip mini-games', (31, 372, 170, 30), size=20)
             self.button('On' if app.state.skip_minigames else 'Off', (213, 370, 78, 29),
@@ -457,7 +505,18 @@ class MenuRenderer:
             self.overlay(app.game_title, app.message)
             self.buttons = []
             self.button('OK', (121, 355, 78, 29), ('dismiss',))
+        if self.background is not None:
+            self.layer = self.canvas
+            if outgoing is not None:
+                self.background.blit(outgoing, (0, 0))
+            self.canvas = self.background.copy()
+            self.canvas.blit(self.layer, (0, 0))
         return self.canvas
+
+    def begin_layer(self):
+        """exp-runtime v0.6.0: draw the screen's own layer apart from its backdrop, for the menu transitions."""
+        self.background = self.canvas.copy()
+        self.canvas = pygame.Surface((320, 480), pygame.SRCALPHA).convert_alpha()
 
     def confirmation(self, message, *, single=False):
         """Original two-button menu skin, with No on the left and Yes right (`single`: one OK, centred, which

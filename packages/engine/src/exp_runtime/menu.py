@@ -14,6 +14,7 @@ from .languages import TITLE_LANGUAGES, episode_title
 from .games import GAMES, game_id
 from .launcher import default_library, remember_library
 from .runtime import SaveError, Session
+from .process import RuntimeProcess
 from .menu_assets import MenuFont, MenuStrings
 from .ui_assets import Rect
 
@@ -65,8 +66,9 @@ class MenuState:
     Automatic checkpoints have their own file, preserving the player's F5
     slot. Resume uses the newer of those two saves and validates it on load.
     """
-    def __init__(self, library):
+    def __init__(self, library, *, process=None):
         self.library = library
+        self.process = process or RuntimeProcess()
         self.path = library.directory / 'player.json'
         self.music = self.sound = True
         self.vibration = False         # Options' Vibration switch: service 82's buzz (vibration.py); off by default
@@ -79,7 +81,9 @@ class MenuState:
                                         # 'fill' is the only one reachable without hand-editing player.json
         self.warp_unlocked = False     # `SHSEngine +0x6490a` (a lock) is set at first run and cleared when Football Season ends
         self.choice_hints = False
-        self.skip_minigames = False    # ask whether to play, win or lose each football game / word grid
+        # ask whether to play, win or lose each football game / word grid: this fork's counterpart of exp-runtime
+        # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
+        self.skip_minigames = False
         self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
         self.order = 'episode'
@@ -99,6 +103,7 @@ class MenuState:
                         or type(data.get('choice_hints', False)) is not bool
                         or type(data.get('skip_minigames', False)) is not bool
                         or type(data.get('skip_ad_intros', False)) is not bool
+                        or type(data.get('vibration', False)) is not bool
                         or not isinstance(data.get('selected'), (str, type(None)))
                         or data.get('order', 'episode') not in ('episode', 'title')
                         or data.get('title_language', 'en') not in TITLE_LANGUAGES):
@@ -203,6 +208,7 @@ class MenuState:
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)
+        self.process.attach(session, restored=path is not None)
         self.selected = resources.record['id']
         self.persist()
         return session
@@ -212,6 +218,19 @@ class MenuState:
         self.selected = session.resources.record['id']
         self.persist()
         return path
+
+
+def main_button_x(bank, index, progress, *, exiting=False):
+    """000df488/000df270: MoveBy distances in the retained parent space."""
+    group, button = bank.rectangle(74, 0), bank.rectangle(75, 0)
+    width = 155 if index == 3 else button.width
+    travel = int(button.width * 2.6) - 20 * index
+    child_x = -width + (-50, -5, 2, -35)[index] + travel
+    if exiting:
+        child_x -= int(group.width // 2 + child_x) * progress
+    else:
+        child_x -= travel * (1 - progress)
+    return round(-group.width / 2 + child_x - width / 2)
 
 
 def main_button_rects(bank):
@@ -225,8 +244,6 @@ def main_button_rects(bank):
     widths = (button.width, button.width, button.width, 155)
     total_height = button.height * 4 + 15
     top = 480 - (group.height // 2 + 5) - total_height / 2
-    travel = int(button.width * 2.6)
-    offsets = (-50, -5, 2, -35)
-    return tuple(Rect(round(-group.width / 2 - w + offsets[i] + travel - 20 * i - w / 2),
+    return tuple(Rect(main_button_x(bank, i, 1),
                       round(top + i * (button.height + 5)), w, button.height)
                  for i, w in enumerate(widths))

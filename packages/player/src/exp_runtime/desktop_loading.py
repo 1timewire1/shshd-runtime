@@ -44,7 +44,8 @@ class LoadingRenderer:
         self.pending_background = self.art.image(session.engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, session.engine)
         self.canvas.blit(self.panel(), (0, 0))
-        icon = self.art.frame(126, session.engine.loading.frame)
+        icon = self.art.frame(126, session.engine.loading.animation_frame(
+            ios=getattr(self.resources.library, 'kind', 'apk') == 'ipa'))
         self.canvas.blit(icon, icon.get_rect(center=(155, 317)))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return []  # Completion comes from the active timer, never a click.
@@ -130,6 +131,10 @@ class HdLoadingRenderer:
         canvas.set_clip(clip)
         pygame.draw.circle(canvas, (255, 255, 255), (cx, cy), round(r * 0.965))
         pygame.draw.circle(canvas, (224, 224, 224), (cx, cy), round(r * 0.81))
-        runner = self.runner((session.engine.loading.frame - 23) % 5)
+        # SHSEngine::initLoadingBar (HD 00022fec) gives each runner frame 0.07 s (0x23020), as both iPhone games do
+        # (exp-runtime v0.6.0, loading.LoadingScreen.animation_frame); Android's is 500 ms.
+        loading = session.engine.loading
+        frame = loading.animation_frame(ios=True) if hasattr(loading, 'animation_frame') else loading.frame
+        runner = self.runner((frame - 23) % 5)
         canvas.blit(runner, runner.get_rect(center=(cx, cy)))
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

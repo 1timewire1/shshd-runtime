@@ -34,8 +34,9 @@ class RelationshipChange:
 
     @property
     def gain_from(self):
+        shs = GAMES.get('shs')
         if (self.asset_id < 0 or not self.changed or self.loss
-                or (self.character_id == 45 and self.asset_id in GAMES['shs'].RELATIONSHIP_ASSETS)):
+                or (self.character_id == 45 and shs is not None and self.asset_id in shs.RELATIONSHIP_ASSETS)):
             return None
         return self.previous_count if self.asset_id == self.previous_asset else 0
 
@@ -48,8 +49,10 @@ class RelationshipChange:
 
     @property
     def sound(self):
-        # CoD has no verified mapping to SHS's feedback sound IDs.
-        if self.asset_id in GAMES['shs'].RELATIONSHIP_ASSETS:
+        # CoD's setCurrentSpeaker (00038008) and setStatusIconAnimated
+        # (00043fc0) do not request relationship sounds.
+        shs = GAMES.get('shs')
+        if shs is not None and self.asset_id in shs.RELATIONSHIP_ASSETS:
             from .shs.relationships import sound
             return sound(self)
         return None
@@ -71,12 +74,26 @@ class IndicatorPose:
     flash_scale: float = 0.0
     flash_alpha: int = 0
 
+    def validate(self):
+        if (self.asset_id not in {*FLASH_ASSETS, *LOSS_ASSETS.values()}
+                or self.flash_asset not in {-1, *FLASH_ASSETS.values()}
+                or not all(math.isfinite(v) for v in (self.x, self.y, self.rotation, self.flash_scale))
+                or abs(self.x) > 100 or not -100 <= self.y <= 600
+                or not -720 <= self.rotation <= 360
+                or not 0 <= self.flash_scale <= 2 or not 0 <= self.flash_alpha <= 200
+                or self.flash_alpha and self.flash_asset == -1):
+            raise ValueError('Invalid retained relationship icon')
+
 
 @dataclass
 class RelationshipAnimation:
     change: RelationshipChange
     delay_ms: int
     elapsed_ms: int = 0
+    # Android's -1 request leaves the existing sprite children untouched.
+    # Dialogue reattachment has already cancelled their actions recursively,
+    # so retain the actual poses, including a partially faded ring.
+    retained: list[IndicatorPose] | None = None
 
     @property
     def duration_ms(self):
@@ -92,6 +109,8 @@ class RelationshipAnimation:
         self.elapsed_ms = self.duration_ms
 
     def poses(self):
+        if self.retained is not None:
+            return tuple(self.retained)
         change = self.change
         if change.asset_id < 0 or self.elapsed_ms < self.delay_ms:
             return ()
@@ -121,7 +140,7 @@ class RelationshipAnimation:
             # Cocos rotates clockwise in GL coordinates. Convert to top Y.
             px = x * math.cos(radians) + y * math.sin(radians)
             py = x * math.sin(radians) - y * math.cos(radians) + drop
-            result.append(IndicatorPose(asset, px, py, angle - 190 - 20 * index,
+            result.append(IndicatorPose(asset, px, py, float(angle - 190 - 20 * index),
                                         flash_asset, flash_scale, flash_alpha))
         return tuple(result)
 
@@ -192,3 +211,8 @@ class RelationshipAnimation:
         self.change.validate()
         if not 0 <= self.delay_ms <= 850 or not 0 <= self.elapsed_ms <= self.duration_ms:
             raise ValueError('Invalid relationship animation clock')
+        if self.retained is not None:
+            if self.change.asset_id != -1 or self.change.character_id == 45 or len(self.retained) > 4:
+                raise ValueError('Invalid retained relationship request')
+            for pose in self.retained:
+                pose.validate()

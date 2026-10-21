@@ -87,6 +87,46 @@ class NameInputTests(unittest.TestCase):
         self.assertEqual(accept_name_character(sixteen[:-1], 'A'), (sixteen, None))
         self.assertEqual(accept_name_character(sixteen, 'a'), (sixteen, NAME_ENTRY_ERROR))
 
+    def test_spaces_are_accepted_only_when_the_game_allows_them(self):
+        # Optional ASCII-space policy; native CoD puzzles do not require it.
+        metrics = dict(font=font(), cursor_width=12)
+        with self.assertRaisesRegex(ValueError, 'alphanumeric'):
+            validate_name('Blue door', **metrics)
+        validate_name('Blue door', allow_space=True, **metrics)
+        for value in ('Blue-door', ' ', 'Blue door!'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_name(value, allow_space=True, **metrics)
+
+    def test_cod_spaces_work_through_typing_validation_width_and_saved_drafts(self):
+        draft = ''
+        for char in 'blue Door':
+            draft, error = accept_name_character(draft, char, allow_space=True, capitalize_first=True,
+                                                font=font(), cursor_width=12)
+            self.assertIsNone(error)
+        self.assertEqual(draft, 'Blue Door')
+        for char in ('\t', '\n', '\u00a0', '-', '!'):
+            self.assertEqual(accept_name_character(draft, char, allow_space=True), (draft, NAME_ENTRY_ERROR))
+        # A space still counts toward both existing native limits.
+        self.assertEqual(accept_name_character('A' * 16, ' ', allow_space=True), ('A' * 16, NAME_ENTRY_ERROR))
+        self.assertEqual(accept_name_character('A' * 12, ' ', allow_space=True, font=font(19), cursor_width=12),
+                         ('A' * 12, NAME_ENTRY_ERROR))
+        for service in (17, 40):
+            r = resources(service)
+            r.library.game_id = 'cod'
+            s = Session(r)
+            s.advance()
+            s.pending.details['draft'] = draft
+            saved = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
+            self.assertEqual(saved.pending.details['draft'], draft)
+            self.assertEqual(saved.answer(draft).request.args, (77, 0x7ff5))
+            self.assertEqual(saved.engine.last_input, draft)
+
+    def test_cod_first_character_capitalization_preserves_the_remaining_case(self):
+        for current, char, expected in (('', 'b', 'B'), ('B', 'L', 'BL'), ('1', 'Z', '1Z'),
+                                       ('', '1', '1'), ('Blue ', 'D', 'Blue D')):
+            self.assertEqual(accept_name_character(current, char, allow_space=True, capitalize_first=True),
+                             (expected, None))
+
     def test_native_width_gate_checks_existing_text_and_cursor_before_append(self):
         metrics = dict(font=font(19), cursor_width=12)
         # Exactly 240 fails, despite ink being narrower from AA kerning.
@@ -218,6 +258,20 @@ class DesktopInputTests(unittest.TestCase):
         self.assertEqual(s.engine.last_input, 'Ab')
         self.assertFalse(ui.text_input_started)
 
+    def test_cod_accepts_a_spaced_answer_through_the_shared_desktop_and_ios_input_path(self):
+        import pygame
+        ui = self.desktop()
+        ui.session.resources.library.game_id = ui.session.engine.game_key = 'cod'
+        ui.render()
+        ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='blue Door'))
+        self.assertEqual(ui.session.pending.details['draft'], 'Blue Door')
+        self.assertIsNone(ui.input_error)
+        ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+        self.assertIsNone(ui.error)
+        self.assertIsNone(ui.input_error)
+        self.assertEqual(ui.session.engine.last_input, 'Blue Door')
+        self.assertEqual(ui.session.pending.request.args, (77, 0x7ff5))
+
     def test_pause_focus_save_load_and_resized_alert_click(self):
         import pygame
         ui = self.desktop('Alex'); ui.render()
@@ -252,17 +306,25 @@ class DesktopInputTests(unittest.TestCase):
         self.assertEqual(ui.session.vm.snapshot(), held)
         self.assertTrue(ui.text_input_started)
 
-    def test_cursor_redraw_is_transient_and_title_uses_cumulative_kerning(self):
+    def test_cursor_uses_active_time_and_title_uses_cumulative_kerning(self):
         import pygame
         ui = self.desktop('Alex')
-        with patch('pygame.time.get_ticks', return_value=0):
-            ui.render()
+        ui.tick(250)
+        ui.render()
         before = ui.session.snapshot()
         visible = pygame.image.tobytes(ui.input_renderer.canvas, 'RGBA')
         with patch('pygame.time.get_ticks', return_value=600):
             ui.render()
         self.assertNotEqual(pygame.image.tobytes(ui.input_renderer.canvas, 'RGBA'), visible)
         self.assertEqual(ui.session.snapshot(), before)
+        ui.active = False
+        ui.tick(250)
+        self.assertEqual(ui.session.snapshot(), before)
+        ui.active = True
+        ui.tick(250)
+        ui.render()
+        self.assertFalse(pygame.image.tobytes(ui.canvas, 'RGB') == visible)
+        self.assertEqual(ui.session.vm.snapshot(), before['vm'])
         layout, width, scale = ui.input_renderer.title('AAA')
         self.assertEqual(([g.x for g in layout.glyphs], width, scale), ([0, 6, 12], 20, 1))
         self.assertEqual([command for _, command in ui.buttons], [('input_focus',)])

@@ -12,6 +12,7 @@ from . import graphics as pygame
 from .content import ContentError
 from .fonts import TextStyle, layout_label
 from .hd_layout import FRAME_TO_COLUMN, HdLayouts
+from .input_hints import preview_answer
 from .menu import MenuStrings
 from .text_input import CURSOR_FONT, NAME_FONT
 from .ui_assets import Rect, read_ui
@@ -82,6 +83,49 @@ class InputRenderer:
         self.pending_background_origin = (160, 180)
         self.edge_bar = None
         self.hd = HdLayouts(resources.library)
+        self.hint_key = self.hint = None
+        self.answer = None              # this frame's faint answer (Choice hints), or None
+
+    def answer_hint(self, session, enabled):
+        """exp-runtime v0.6.0's answer hint (input_hints.preview_answer: CoD's puzzle answers, from a bounded script
+        preview) while the field is empty and Choice hints is on."""
+        details = session.pending.details
+        if not enabled or details.get('draft', details['default']):
+            return None
+        key = session, id(session.pending), session.vm.steps_executed
+        if key != self.hint_key:
+            self.hint = preview_answer(session)
+            self.hint_key = key
+        return self.hint
+
+    def draw_hint(self, name, rect, style):
+        """exp-runtime v0.6.0's faint answer: alpha 96 in the input font, its ink fitted and clipped to the entry
+        region `rect` (layout units)."""
+        if not self.answer:
+            return
+        k = self.scale if self.canvas.get_width() != 320 else 1
+        label = self.text.layout(name, self.answer, 2**31, style)
+        left, top, right, bottom = label.ink_bounds
+        left, top = min(0, left), min(0, top)
+        fit = min(1., rect.width / max(1, right - left), rect.height / max(1, bottom - top))
+        clip = self.canvas.get_clip()
+        self.canvas.set_clip(pygame.Rect(round(rect.x * k), round(rect.y * k), round(rect.width * k),
+                                         round(rect.height * k)))
+        try:
+            self.text.draw_layout(self.canvas, name, label, (rect.x - left * fit) * k, (rect.y - top * fit) * k,
+                                  scale=fit * k, alpha=96)
+        finally:
+            self.canvas.set_clip(clip)
+
+    def draw_hint_at(self, name, x, y, width, style):
+        """The faint answer where the typed text starts (CoD's own panel places its text by baseline), shrunk to fit
+        `width`."""
+        if not self.answer:
+            return
+        k = self.scale
+        label = self.text.layout(name, self.answer, 2**31, style)
+        fit = min(1., width / max(1, label.width))
+        self.text.draw_layout(self.canvas, name, label, x * k, y * k, scale=fit * k, alpha=96)
 
     def hd_available(self):
         return self.hd.bank() is not None and self.hd.frame(155, 4) is not None and self.hd.frame(247, 0) is not None
@@ -204,6 +248,8 @@ class InputRenderer:
         self.text.draw_layout(self.canvas, 'ArialRoundedMTBold16', prompt, prompt_rect.x, prompt_rect.y)
         entry = bank.rectangle(46, 44, bounds)
         draft = details.get('draft', details['default'])
+        if not draft:
+            self.draw_hint('PajamaHip24', entry, TextStyle(24))
         entered = self.text.layout('PajamaHip24', draft, 2**31, TextStyle(24))
         self.text.draw_layout(self.canvas, 'PajamaHip24', entered, entry.x, entry.y)
         if cursor_visible:
@@ -211,8 +257,9 @@ class InputRenderer:
             self.text.draw_layout(self.canvas, 'PajamaHip24', cursor, entry.x + entered.width, entry.y)
         return [(pygame.Rect(entry.x, entry.y, entry.width, entry.height), ('input_focus',))]
 
-    def draw(self, target, session, *, error=None, cursor_visible=True):
+    def draw(self, target, session, *, error=None, cursor_visible=True, choice_hints=False):
         k = self.scale
+        self.answer = None if error else self.answer_hint(session, choice_hints)
         self.canvas.fill((0, 0, 0, 0))
         self.edge_bar = None
         self.pending_background = self.art.image(session.engine.panel.background_id)
@@ -250,6 +297,8 @@ class InputRenderer:
             shadow = self._image(706)
             self.canvas.blit(shadow, shadow.get_rect(center=(160 * k, 197 * k)))
             draft = details.get('draft', details['default'])
+            if not draft:
+                self.draw_hint(NAME_FONT, Rect(35, 190, 240, 27), TextStyle(26, -26, BLUE))
             entered = self.text.layout(NAME_FONT, draft, 2**31, TextStyle(26, -26, BLUE))
             self.text.draw_layout(self.canvas, NAME_FONT, entered, 35 * k, 190 * k, scale=k)
             if cursor_visible:
@@ -321,6 +370,8 @@ class InputRenderer:
         entered = self.text.layout(HD_NAME_FONT, draft, 2**31, style(HD_NAME_FONT, (255, 255, 255)))
         name_font = self.text.font(HD_NAME_FONT)
         nx, ny = name_rect[0], name_rect[1] + COD_NAME_BASELINE - name_font.base
+        if not draft:
+            self.draw_hint_at(HD_NAME_FONT, nx, ny, name_rect[2], style(HD_NAME_FONT, (255, 255, 255)))
         self.text.draw_layout(self.canvas, HD_NAME_FONT, entered, nx * k, ny * k, scale=k)
         if cursor_visible:
             end = entered.ink_bounds[2] if entered.glyphs else 0

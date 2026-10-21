@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import unittest
 
 from exp_runtime.dialogue_animation import DialogueAnimation, DialoguePortrait
+from exp_runtime.portrait_effects import PortraitEffect, expression_effects
 from exp_runtime.runtime import SaveError, Session
 from exp_runtime.ui_assets import Rect
 from test_label_layout import authored_dialogue
@@ -32,6 +33,148 @@ def story(calls, *, game='shs', text='Hello.', second=None):
 
 
 class DialogueLifecycleTests(unittest.TestCase):
+    def test_special_expressions_use_native_frames_timing_and_saved_active_clock(self):
+        for game in ('shs', 'cod'):
+            for expression, frame in ((6, 32), (7, 34), (8, 35), (9, 36)):
+                with self.subTest(game=game, expression=expression):
+                    session = story(lambda ref, *_: host_call(13, ref, 1, expression), game=game)
+                    motion = session.engine.dialogue_animation
+                    self.assertTrue(motion.expression_effects)
+                    session.tick(1649)
+                    self.assertEqual(expression_effects(expression, motion.presentation_ms-1000, game=game), ())
+                    session.tick(1 + (500 if expression == 6 else 150))
+                    poses = expression_effects(expression, motion.presentation_ms-1000, game=game)
+                    self.assertEqual((poses[0].frame, poses[0].alpha), (frame, 255))
+                    restored = Session.from_snapshot(session.resources, session.snapshot())
+                    before = restored.snapshot()
+                    for _ in range(3):
+                        self.assertEqual(expression_effects(expression, restored.engine.dialogue_animation.presentation_ms-1000,
+                                                             game=game), poses)
+                    self.assertEqual(restored.snapshot(), before)
+                    restored.tick(1000)
+                    self.assertEqual(expression_effects(expression, restored.engine.dialogue_animation.presentation_ms-1000,
+                                                         game=game), ())
+        for game, ios in (('shs', False), ('shs', True), ('cod', True)):
+            flash = expression_effects(6, 1000, game=game, ios=ios)[1]
+            self.assertEqual((flash.frame, flash.alpha, flash.rotation), (33, 255 if ios else 128, 22.5))
+            self.assertEqual(expression_effects(5, 1000, game=game), ())
+        self.assertEqual(expression_effects(6, 2000, game='shs'), ())
+        self.assertEqual(expression_effects(6, 2000, game='cod')[0].alpha, 38)
+        self.assertEqual(expression_effects(6, 2000, game='shs', ios=True)[0].alpha, 38)
+        for elapsed in (700, 975, 1000, 1299):
+            shs = expression_effects(6, elapsed, game='shs', ios=True)
+            self.assertEqual(shs, expression_effects(6, elapsed, game='cod'))
+            self.assertEqual(shs[1].alpha, 255)
+        self.assertEqual(expression_effects(6, 975, game='shs', ios=True)[1].scale, 1.1)
+        self.assertEqual(len(expression_effects(6, 1300, game='shs', ios=True)), 1)
+
+    def test_short_same_speaker_lines_keep_both_expression_layers_until_the_next_request(self):
+        for game in ('shs', 'cod'):
+            for next_expression in (2, 3):
+                with self.subTest(game=game, next_expression=next_expression):
+                    session = story(lambda ref, *_: [*host_call(13, ref, 1, 2),
+                        *host_call(13, ref, 1, next_expression)], game=game)
+                    session.tick(1500)
+                    prior = session.engine.dialogue_animation
+                    session.answer()
+                    motion = session.engine.dialogue_animation
+                    self.assertEqual(motion.presentation_ms, 0)
+                    self.assertEqual(motion.initial_expression, 2)
+                    self.assertEqual(tuple(p.asset_id for p in motion.expression_portraits), (200, 202))
+                    self.assertEqual(motion.expression_alphas, (255, 128))
+                    self.assertEqual(motion.expression_transition, prior.expression_transition)
+                    self.assertIsNot(motion.expression_transition, prior.expression_transition)
+                    restored = Session.from_snapshot(session.resources, json.loads(json.dumps(session.snapshot())))
+                    session.tick(500)
+                    for _ in range(50):
+                        restored.tick(10)
+                    self.assertEqual(restored.snapshot(), session.snapshot())
+                    self.assertEqual(motion.expression_alphas, (128, 255))
+                    session.tick(500)
+                    expected = ((202, 203), (255, 0)) if next_expression == 3 else ((200, 202), (0, 255))
+                    self.assertEqual((tuple(p.asset_id for p in motion.expression_portraits), motion.expression_alphas), expected)
+                    self.assertEqual(Session.from_snapshot(session.resources, session.snapshot()).snapshot(), session.snapshot())
+
+    def test_pause_cancels_active_expression_layers_without_firing_a_future_request(self):
+        for elapsed in (900, 1500, 1800):
+            session = story(lambda ref, *_: host_call(13, ref, 1, 6))
+            session.tick(elapsed)
+            motion = session.engine.dialogue_animation
+            before = deepcopy(session.engine.dialogue_history)
+            vm = session.vm.snapshot()
+            motion.stop_layers()
+            self.assertEqual(motion.presentation_ms, elapsed)
+            self.assertEqual(session.engine.dialogue_history, before)
+            self.assertEqual(session.vm.snapshot(), vm)
+            self.assertEqual(motion.expression_alphas, (255, 0) if elapsed < 1000 else (0, 255))
+            self.assertEqual(motion.expression_decorations.poses(game='shs', ios=True), ())
+            restored = Session.from_snapshot(session.resources, session.snapshot())
+            restored.tick(600)
+            self.assertEqual(restored.engine.dialogue_animation.expression_alphas,
+                             (255, 128) if elapsed == 900 else (0, 255))
+
+    def test_expression_decorations_survive_next_line_and_new_art_request_independently(self):
+        for next_expression in (3, 7):
+            session = story(lambda ref, *_: [*host_call(13, ref, 1, 6),
+                *host_call(13, ref, 1, next_expression)])
+            session.tick(1100)
+            session.answer()
+            motion = session.engine.dialogue_animation
+            session.tick(1000)
+            self.assertEqual(motion.expression_transition.expression, next_expression)
+            # The old flash still runs after the next art request. An ordinary
+            # expression leaves the overlay alone; another special replaces it.
+            poses = motion.expression_decorations.poses(game='shs', ios=True)
+            self.assertEqual([p.frame for p in poses], [32, 33] if next_expression == 3 else [33])
+            self.assertEqual(poses[-1].alpha, 255)
+            self.assertAlmostEqual(poses[-1].rotation, 30)
+            restored = Session.from_snapshot(session.resources, session.snapshot())
+            restored.tick(200)
+            self.assertNotIn(33, [p.frame for p in restored.engine.dialogue_animation.expression_decorations.poses(game='cod')])
+
+    def test_v24_expression_migration_preserves_visible_fades_and_vm(self):
+        for elapsed in (900, 1500, 1800, 2500):
+            session = story(lambda ref, *_: host_call(13, ref, 1, 6))
+            session.tick(elapsed)
+            old = session.snapshot()
+            old['version'] = 24
+            state = old['engine']['dialogue_animation']
+            del state['expression_transition'], state['expression_decorations']
+            before = deepcopy(old)
+            restored = Session.from_snapshot(session.resources, old)
+            self.assertEqual(old, before)
+            self.assertEqual(restored.snapshot(), session.snapshot())
+
+    def test_invalid_expression_layer_history_is_rejected(self):
+        session = story(lambda ref, *_: [*host_call(13, ref, 1, 2), *host_call(13, ref, 1, 3)])
+        session.tick(1500)
+        session.answer()
+        for field, key, value in (('expression_transition', 'elapsed_ms', -1),
+                                  ('expression_transition', 'elapsed_ms', 2151),
+                                  ('expression_decorations', 'flash_ms', 1301),
+                                  ('expression_decorations', 'expression', 5)):
+            bad = session.snapshot()
+            bad['engine']['dialogue_animation'][field][key] = value
+            with self.subTest(field=field, key=key, value=value), self.assertRaises(SaveError):
+                Session.from_snapshot(session.resources, bad)
+        bad = session.snapshot()
+        bad['engine']['dialogue_animation']['expression_transition']['portrait']['asset_id'] = 999
+        with self.assertRaises(SaveError):
+            Session.from_snapshot(session.resources, bad)
+
+    def test_v21_audio_and_expression_migrate_without_replaying_old_effects(self):
+        session = story(lambda ref, *_: host_call(13, ref, 1, 6))
+        old = session.snapshot()
+        old['version'] = 21
+        del old['engine']['music_serial'], old['engine']['music_stop_ms']
+        del old['engine']['dialogue_animation']['expression_effects']
+        original = deepcopy(old)
+        restored = Session.from_snapshot(session.resources, old)
+        self.assertEqual(old, original)
+        self.assertEqual(restored.vm.snapshot(), session.vm.snapshot())
+        self.assertFalse(restored.engine.dialogue_animation.expression_effects)
+        self.assertEqual((restored.engine.music_serial, restored.engine.music_stop_ms), (0, 0))
+
     def test_new_speaker_enters_neutral_then_changes_expression_without_changing_script_defaults(self):
         for game in ('shs', 'cod'):
             with self.subTest(game=game):
@@ -230,7 +373,8 @@ class DialogueLifecycleTests(unittest.TestCase):
 
     def test_lifecycle_and_cached_expression_corruption_is_rejected(self):
         session = story(lambda ref, *_: host_call(13, ref, 1, 2))
-        for key, value in (('native_lifecycle', 1), ('presentation_ms', -1), ('presentation_ms', 2401),
+        for key, value in (('native_lifecycle', 1), ('presentation_ms', -1), ('presentation_ms', 3151),
+                           ('expression_effects', 1),
                            ('visuals_finished', True), ('housing_clipped', 'yes'), ('housing_clipped', True), ('anchor_mode', 1),
                            ('expression', 3), ('initial_expression', 2)):
             bad = session.snapshot()
@@ -309,5 +453,11 @@ class PortraitLayerTests(unittest.TestCase):
                     # Cached source artwork must not be punched through or tinted.
                     pixel = native.raster(housing.snapshot()).getpixel if name == 'native' else housing.get_at
                     self.assertEqual(tuple(pixel((1, 42))), (200, 0, 0, 255))
+                    effect = backend.Surface((20, 20), backend.SRCALPHA); effect.fill((200, 0, 200, 255))
+                    art.frame = lambda _, index: housing if index == 37 else effect if index == 34 else ring
+                    layer, origin = art.portrait_group(portrait, None, None, 0, 255, (PortraitEffect(34, 255),))
+                    pixel = native.raster(layer.snapshot()).getpixel if name == 'native' else layer.get_at
+                    self.assertEqual(tuple(pixel((22, 30))), (200, 0, 200, 255))  # Above the ring.
+                    self.assertEqual(tuple(pixel((32, 30))), (200, 200, 0, 255))  # Below the character.
                 finally:
                     graphics.install(previous)

@@ -3,12 +3,34 @@ import struct
 import unittest
 from dataclasses import replace
 
-from exp_runtime.atlas import AtlasFont, SpriteAtlas
+from exp_runtime.atlas import AtlasFont, AtlasFrame, SpriteAtlas
 from exp_runtime.content import ContentLibrary
 from exp_runtime.ui_assets import Raster, UIAssetError
 
 
 class AtlasTests(unittest.TestCase):
+    def test_stored_quad_dimensions_vertex_transforms_and_mirrored_origin(self):
+        # Six authored pixels in a non-square frame distinguish every vertex
+        # permutation. Logical dimensions deliberately differ from the crop.
+        image = Raster(3, 2, b''.join(bytes((i, 0, 0, 255)) for i in range(1, 7)))
+        atlas = SpriteAtlas(16, (), (((0, 7, -2),),), (),
+                            (AtlasFrame(0, 0, 8, 9, 3, 2),), image)
+        cases = ((0, (3, 2), [1, 2, 3, 4, 5, 6]),
+                 (1, (3, 2), [1, 2, 3, 4, 5, 6]),
+                 (2, (3, 2), [3, 2, 1, 6, 5, 4]),
+                 (3, (3, 2), [6, 5, 4, 3, 2, 1]),
+                 (4, (3, 2), [1, 2, 3, 4, 5, 6]),
+                 (5, (2, 3), [1, 4, 2, 5, 3, 6]),
+                 (6, (2, 3), [6, 3, 5, 2, 4, 1]),
+                 (7, (3, 2), [1, 2, 3, 4, 5, 6]))
+        for transform, size, pixels in cases:
+            with self.subTest(transform=transform):
+                value = replace(atlas, transforms=((0, 3), (0, transform)))
+                raster = value.raster(0)
+                self.assertEqual((raster.width, raster.height), size)
+                self.assertEqual(list(raster.pixels[::4]), pixels)
+                self.assertEqual(value.literals(-1), ((0, 12 if transform == 2 else 7, -2),))
+
     def test_distinct_abgr_pixels_frames_and_bounds(self):
         data = (struct.pack('>Bhbhhhhh', 16, 1, 0, 0, 0, 0, 1, 2)
                 + struct.pack('>h6h',1,1,0,1,2,1,2)

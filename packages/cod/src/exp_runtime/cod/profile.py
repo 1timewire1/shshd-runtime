@@ -1,9 +1,21 @@
-"""Cause of Death content and host-service profile (iOS 1.3.4 reference)."""
+"""Cause of Death asset layouts, normalized to the iOS 1.3.4 reference.
+
+Free packages share a duplicate Volume One at 13 and English strings at 14.
+The compact layout shifts later UI members by one; the reported multilingual
+layout inserts four more string banks and shifts them by five. Bundle IDs do
+not distinguish these layouts. See docs/COD.md for evidence and limits.
+"""
+from ..exp import ContentError
 from .audio import music_cue as MUSIC_CUE
 from .content import BUILTIN, extract_builtin
 from .services import dispatch as DISPATCH
+from .scene_transition import SceneTransition
 
-STATE_TYPES = {}
+STATE_TYPES = {'scene_transition': SceneTransition | None}
+# This fork leaves exp-runtime's engine-level SceneTransition (SCENE_TRANSITION) unset: its scene changes are
+# scene_fade.py's binary-verified fades, drawn by the player, and the main menu's entry is application.py's.
+# GameModel::fadeToGame 0000f9d8, app mode 103 at 000201d4/000250f4.
+MENU_TRANSITION = 6
 
 KEY = 'cod'
 TITLE = 'Cause of Death'
@@ -20,9 +32,22 @@ def read_store_listing(data):
 # Native loadOptions 00019098 / saveOptions 000195b4: five flag bytes and
 # two s32 values precede the current entry; EOF follows the rename table.
 CATALOG_LAYOUTS = {17: ((33, 0),)}
-PROFILES = {'cod-ios-assets-v1': 'ipa'}
-# `com.ea.causeofdeathfree.bv` is the free edition (1.4.7); its resources are renumbered (assets.logical_members).
+PAID_PROFILE = 'cod-ios-assets-v1'
+FREE_PROFILE = 'cod-ios-free-assets-v1'
+LOCALIZED_FREE_PROFILE = 'cod-ios-free-localized-assets-v1'
+UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
+PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
+# Reference UI members. Character/background/audio banks retain their IDs.
+SHIFTED_UI = range(14, 298)
+
+# `com.ea.causeofdeathfree.bv` is the free edition (1.4.7, LOCALIZED_FREE_PROFILE). This fork's
+# assets.logical_members re-keys a library's members by content, the same mapping as translate_members, so a
+# 1.4.7 library imported before v0.6.1 (recorded as PAID_PROFILE) still opens.
 BUNDLE_PATTERN = r'com\.ea\.causeofdeath(?:free)?(?:\.[A-Za-z0-9-]+)*'
+# Explicit compatibility exceptions for observed out-of-range script defaults.
+# Native setReturnValue reads outside the mapping; it does not define a result.
+# Preserve these sentinels instead of guessing heap contents. See docs/COD.md.
+CHOICE_TIMEOUT_FALLBACKS = frozenset((-1, 1000))
 
 
 def in_game_banner(library) -> bool:
@@ -47,10 +72,15 @@ DIALOGUE_COLORS = {1: (0, 0, 0), 2: (180, 78, 78), 3: (0, 0, 0), -1: (0, 0, 0)}
 # +0x142d4 goes to +0x15af4, red 0xfffe3535 italic; theme 2's +0x1d394 (rose) to +0x1ebb4, blue 0xff2968dd; the gray
 # and default sets (+0x26454, +0x2f514) to black. The switch face is TrebuchetMS-Italic (+0x1ec) with stroke 0.5.
 NARRATION_COLORS = ((0, 0, 0), (180, 109, 26))
+IOS_DIALOGUE_COLORS = DIALOGUE_COLORS
 BODY_MARKERS = ('`', {1: (254, 53, 53), 2: (41, 104, 221), 3: (0, 0, 0), -1: (0, 0, 0)})
 NAME_COLORS = {'PajamaHip24': (0, 0, 0), 'PajamaHip26': (139, 0, 0),
                'PajamaHip266': (180, 78, 78), 'PajamaHipG26': (139, 0, 0),
-               'PajamaHipY26': (139, 0, 0), 'PajamaHipS26': (254, 53, 0)}
+               'PajamaHipY26': (139, 0, 0), 'PajamaHipS26': (0, 0, 0),
+               'PajamaHipS26Normal': (240, 81, 60), 'PajamaHipS26Rose': (180, 78, 78)}
+# updateFonts 000355e4 selects the letter-effect fonts by dialogue theme.
+# Keep these colors separate from the shared notice geometry/animation.
+NOTICE_FONTS = {1: 'PajamaHipS26Normal', 2: 'PajamaHipS26Rose'}
 MUSIC_RANGE = range(8201, 8210)
 # CoD doSoundManagerTransition (00022b04), splashScreenFlewIn (00014c0c).
 MENU_MUSIC = 8209
@@ -60,6 +90,8 @@ RELATIONSHIP_FLASH = {3000: 3003, 3001: 3005, 3002: 3007}
 RELATIONSHIP_LOSS = {3000: 3004, 3001: 3006, 3002: 3008}
 # SHSEngine::buttonPressed 000249d0 and SHSWidgetMenu::buttonPressed 0003fd60.
 CLICK_SOUND = 8005
+# SHSUIMenu::handleMenuSelection 000395ac; zero score delta is silent.
+WORD_CHOICE_SOUNDS = {1: 8003, -1: 8004}
 # SHSEngine::buttonPressed pause branch (00024d86).
 PAUSE_SOUND = 8006
 # CoD 1.4.7's Options (ui_sound.py): the click for all three -- switching Sound on (setSoundEnabled 0001f4e4, the
@@ -97,8 +129,56 @@ WORD_GAME_SOUNDS = (8003, 8004)
 # the front portrait's original index (setReturnValue 0004f840). touchesEnded (0004fe00) plays 8005, CoD's click, for
 # both a swap and the confirm button; tapping the front portrait is silent.
 PICKER_SOUNDS = (8005, 8005)
-# SHS answer-feedback resource IDs do not establish semantics for CoD assets.
-CHOICE_FEEDBACK_SOUNDS = {}
 # Score notices (service 88) are SHS HD's letter effect (`SHSUIDialog::startLetterEffectAnimation`, 1.4.7
 # 00038d84: the same timings), not Android's typed notice: dialogue_notice.COD_NOTICE.
 LETTER_NOTICE = True
+# CoD scripts use these cues for positive/negative choice feedback, including
+# lethal branches without a score notice (Volume 2's opening fight). These
+# are distinct from both SHS's quiz cues and CoD's timed-word sounds above.
+CHOICE_FEEDBACK_SOUNDS = {8002: 1, 8001: -1}
+
+
+def profile_for(read):
+    """Select the one layout whose complete required asset bank validates.
+
+    Import and reopen use payload validation rather than bundle suffixes.
+    Keep the compact-free profile ID readable for existing libraries.
+    """
+    from .assets import validate_assets
+
+    matches, failures = [], []
+    for profile in PROFILES:
+        try:
+            validate_assets(lambda resource: read(base_resource(profile, resource)))
+        except ContentError as error:
+            failures.append(f'{profile}: {error}')
+        else:
+            matches.append(profile)
+    if len(matches) > 1:
+        raise ContentError('Ambiguous CoD asset layout: multiple resource banks validate')
+    if not matches:
+        raise ContentError('Unsupported CoD asset layout; ' + '; '.join(failures))
+    return matches[0]
+
+
+def base_resource(profile, resource):
+    """The package member number holding reference resource ``resource``."""
+    shift = UI_SHIFTS[profile]
+    if shift and resource == 13:
+        return 14  # English precedes any other language banks.
+    if resource in SHIFTED_UI:
+        return resource + shift
+    return resource
+
+
+def translate_members(profile, members):
+    """Re-key a package's numeric members by reference resource ID."""
+    if profile == PAID_PROFILE:
+        return members
+    aliases = {base_resource(profile, resource): resource for resource in (13, *SHIFTED_UI)}
+    omitted = {13, *range(15, 19)} if profile == LOCALIZED_FREE_PROFILE else {13}
+    translated = {}
+    for number, member in members.items():
+        if number not in omitted:
+            translated[aliases.get(number, number)] = member
+    return translated

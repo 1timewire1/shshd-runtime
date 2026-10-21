@@ -38,6 +38,96 @@ def start_play(session):
 
 
 class FootballTests(unittest.TestCase):
+    def test_final_score_cue_waits_for_the_second_message_entrance(self):
+        for home, away, cue in ((7, 0, 8101), (0, 7, 8105), (7, 7, 8105)):
+            s = Session(resources(home=home, away=away)); s.advance()
+            game = s.engine.football
+            game.phase, game.message_phase, game.message_ms = 11, 4, 100
+            serial = game.sound_serial
+            game.tick_message(99)
+            self.assertEqual(game.sound_serial, serial)
+            game.tick_message(1)
+            self.assertEqual((game.message_phase, game.sound_ids, game.sound_serial), (6, [cue], serial + 1))
+            game.tick_message(1)
+            self.assertEqual(game.sound_serial, serial + 1)
+
+    def test_exit_freezes_the_field_until_the_native_960ms_callback(self):
+        s = Session(resources()); s.advance()
+        g = s.engine.football
+        g.enter(26, 960)
+        before = copy.deepcopy(g)
+        held, random = s.vm.snapshot(), copy.deepcopy(s.engine.random)
+        s.tick(800)
+        self.assertEqual(g.phase_ms, 160)
+        before.phase_ms = 160
+        self.assertEqual(g, before)
+        self.assertEqual(s.vm.snapshot(), held)
+        restored = Session.from_snapshot(s.resources, s.snapshot())
+        s.tick(159); restored.tick(159)
+        self.assertEqual(s.snapshot(), restored.snapshot())
+        self.assertIsNotNone(s.engine.football)
+        s.tick(1)
+        self.assertIsNone(s.engine.football)
+        self.assertEqual(s.engine.random, random)
+
+    def test_shadow_action_survives_target_phases_redeal_and_save(self):
+        s = Session(resources(100, 100)); s.advance(); start_play(s)
+        g = s.engine.football
+        wait_for(s, lambda: any(age >= 0 for age in g.shadow_ms))
+        clocks = g.shadow_ms[:]
+        s.tick(17)
+        for old, new in zip(clocks, g.shadow_ms):
+            if old >= 0:
+                self.assertEqual(new, (old + 17) % 440)
+        g.deal(s.engine.random)
+        self.assertTrue(any(age >= 0 for age in g.shadow_ms))
+        restored = Session.from_snapshot(s.resources, s.snapshot())
+        s.tick(111); restored.tick(111)
+        self.assertEqual(s.snapshot(), restored.snapshot())
+        bad = s.snapshot(); bad['engine']['football']['shadow_ms'][0] = 440
+        with self.assertRaises(SaveError):
+            Session.from_snapshot(s.resources, bad)
+
+    def test_home_touchdown_stars_consume_native_draws_and_survive_save(self):
+        s = Session(resources(100, 100, home=0, away=0)); s.advance()
+        g = s.engine.football
+        s.engine.random = NativeRandom(1)
+        expected = NativeRandom(1)
+        for _ in range(450):
+            expected.next()
+        g.position = 4
+        g.apply_play(1, 4, s.engine.random)
+        self.assertEqual((g.home, g.away, g.score), (7, 0, 78))
+        self.assertEqual(len(g.touchdown_stars), 50)
+        self.assertEqual(s.engine.random, expected)
+        self.assertTrue(all(300 <= star.delay_ms < 1300 and star.alpha == 1 and star.y == 235
+                            and 145 <= star.x < 175 for star in g.touchdown_stars))
+        s.tick(250); s.tick(250)
+        self.assertTrue(any(star.delay_ms <= 0 and star.y < 235 for star in g.touchdown_stars))
+        held = s.vm.snapshot()
+        saved = s.snapshot()
+        restored = Session.from_snapshot(s.resources, saved)
+        for _ in range(30):
+            s.tick(100); restored.tick(100)
+            self.assertEqual(s.snapshot(), restored.snapshot())
+        self.assertEqual(s.vm.snapshot(), held)
+        self.assertEqual(s.engine.random, expected)
+        for key, value in (('alpha', float('nan')), ('delay_ms', 2000), ('spin', 2.)):
+            bad = copy.deepcopy(saved)
+            bad['engine']['football']['touchdown_stars'][0][key] = value
+            with self.subTest(key=key), self.assertRaises(SaveError):
+                Session.from_snapshot(s.resources, bad)
+        old = copy.deepcopy(saved); old['version'] = 21
+        del old['engine']['football']['touchdown_stars']
+        migrated = Session.from_snapshot(s.resources, old)
+        self.assertFalse(migrated.engine.football.touchdown_stars)
+        self.assertEqual(migrated.engine.random.state, saved['engine']['random']['state'])
+        g.touchdown_stars.clear()
+        g.position, g.defense = 96, True
+        g.apply_play(-1, -4, s.engine.random)
+        self.assertFalse(g.touchdown_stars)  # No celebration for the opponent.
+        self.assertEqual(s.engine.random, expected)
+
     def test_help_gate_held_frame_and_unattended_match_result(self):
         s = Session(resources()); a = s.advance(); g = s.engine.football
         held = s.vm.snapshot()

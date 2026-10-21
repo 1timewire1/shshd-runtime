@@ -169,7 +169,8 @@ class NoticeTests(unittest.TestCase):
         s = notice_session()
         # An authored four-character page separates reveal, page, and VM gates.
         s.resources.dialogue_layout = lambda: SimpleNamespace(
-            page=lambda details, start, **kwargs: SimpleNamespace(end=min(start + 4, len(details['text']))))
+            page=lambda details, start, **kwargs: SimpleNamespace(end=min(start + 4, len(details['text'])),
+                                                                 body=SimpleNamespace(previous_glyph=-1)))
         s._prepare_dialogue()
         held = s.vm.snapshot()
         s.answer()
@@ -254,6 +255,8 @@ class NoticeTests(unittest.TestCase):
         self.assertEqual(pygame.image.tobytes(renderer.canvas, 'RGB'), bytes(320 * 480 * 3))
         # The frontend must not spend notice time while its menu or focus is lost.
         ui = Desktop.__new__(Desktop)
+        ui.audio = ui.audio_stored = False
+        ui.pause_closing_ms = 0
         ui.session, ui.error, ui.menu_open, ui.active = s, None, True, True
         ui.panels_open, ui.panels_progress, ui._panels_wide = False, 0.0, False
         ui.pause_elapsed_ms = 400
@@ -265,5 +268,6 @@ class NoticeTests(unittest.TestCase):
         ui.tick(1000)
         self.assertEqual(s.engine.notice_ms, remaining)
         ui.active = True
+        ui.audio = False
         ui.tick(16)
         self.assertEqual(s.engine.notice_ms, remaining - 16)

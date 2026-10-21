@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import lzma
 import struct
+from collections.abc import Mapping
 
 from .decode.bytecode import decode_program
 
@@ -22,6 +23,51 @@ class Metadata:
     @property
     def title(self):
         return self.titles[0]
+
+    def to_bytes(self) -> bytes:
+        """Encode the native five-title metadata record (resource 1)."""
+        for value in (self.pack_id, self.episode_id):
+            if type(value) is not int or not 0 <= value <= 65535:
+                raise ContentError('Metadata IDs must be unsigned 16-bit integers')
+        if len(self.titles) != 5 or any(not isinstance(t, str) for t in self.titles):
+            raise ContentError('Metadata requires exactly five title strings')
+        data = bytearray(struct.pack('>HH', self.pack_id, self.episode_id))
+        for title in self.titles:
+            try:
+                encoded = title.encode('utf-8')
+            except UnicodeError as error:
+                raise ContentError('Invalid Unicode in localized title') from error
+            if len(encoded) > 65535:
+                raise ContentError('Localized title exceeds the native 16-bit length')
+            data.extend(struct.pack('>H', len(encoded)))
+            data.extend(encoded)
+        return bytes(data)
+
+
+def encode_exp(resources: Mapping[int, bytes]) -> bytes:
+    """Write a deterministic native CSPUD archive with literal records.
+
+    This constructs a new archive; it does not preserve an existing archive's
+    physical offsets, compression, aliases or padding. Resource IDs and payload
+    bytes are retained exactly. No game profile or image dependency is needed.
+    """
+    if not resources or len(resources) > 65536:
+        raise ContentError('An EXP needs between 1 and 65536 resources')
+    for resource, data in resources.items():
+        if type(resource) is not int or not 0 <= resource <= 65535:
+            raise ContentError('EXP resource IDs must be unsigned 16-bit integers')
+        if not isinstance(data, bytes) or len(data) > MAX_PAYLOAD:
+            raise ContentError(f'Invalid payload for resource {resource}')
+    offset = 9 + 6 * len(resources)
+    index, records = bytearray(), bytearray()
+    for resource, data in sorted(resources.items()):
+        if offset + 12 + len(data) > 0xffffffff:
+            raise ContentError('EXP exceeds the native 32-bit archive size')
+        index.extend(struct.pack('>HI', resource, offset))
+        records.extend(struct.pack('>III', len(data), len(data), 0))
+        records.extend(data)
+        offset += 12 + len(data)
+    return b'CSPUD' + struct.pack('>I', len(resources)) + index + records
 
 
 class ExpArchive:

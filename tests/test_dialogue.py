@@ -132,6 +132,8 @@ class DialogueTests(unittest.TestCase):
 
     def engine(self):
         engine = EngineState()
+        from exp_runtime.shs.scene_transition import SceneTransition
+        engine.scene_transition = SceneTransition()
         engine.ui_defaults = {74: 0, 75: 7}
         engine.character_names = {0: 'Player', 7: 'A narrator', 32: 'Event'}
         engine.character_art_variants = {0: [100] * 5, 32: [200] * 5, 7: [-1] * 5}
@@ -315,7 +317,7 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(restored.vm.snapshot(), original.vm.snapshot())
         self.assertEqual(restored.pending.details['speaker'], '')
         self.assertEqual(restored.pending.details['presentation_mode'], 4)
-        self.assertEqual(restored.snapshot()['version'], 26)
+        self.assertEqual(restored.snapshot()['version'], 27)
         self.assertEqual(restored.answer().name, 'finished')
 
 

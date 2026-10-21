@@ -19,6 +19,138 @@ established native outline-font title/body rules within that skin; see
 [IPA dialogue](IPA.md#dialogue-text-placement). The Android font evidence below
 is retained for bitmap playback, not imposed on the IPA's CSFont metrics.
 
+## 2026-10-15 presentation audit
+
+Updated 2026-10-16 after the implementation and simulator checks below.
+
+**Full 1:1 parity is not established.** This audit follows the supplied
+`libshs09.so`, `Surviving_HS` and `CoD` in Ghidra, supplementing truncated
+Objective-C decompilation with read-only instruction listings. The owner has
+released v0.6.0; fixes from this audit are included in **v0.6.1**. Addresses below
+identify evidence, not permission to package the native code or resources.
+
+| Surface | Native evidence and implemented behavior | Open comparison or implementation gap |
+| --- | --- | --- |
+| Dialogue body/name/portrait | Android `000a8544`/`000aa0a0`; both iOS outline-font paths in [IPA.md](IPA.md#dialogue-text-placement); shared skin, native regions, mask, pagination, saved cross-label kerning and choice/title font history | Substitute system fonts and GPU rasterization cannot be certified pixel-identical; startup/menu and other unmodeled bitmap updates remain outside the tracked story-label order |
+| Dialogue entrances/Continue/shake | iOS bubble 120+200 ms owner override, 250 ms Continue, delayed expression art and retained panel lifecycle | Device traces of nominal typing cadence and uncommon reuse paths |
+| Expression transitions/decorations | Both iOS portrait-layer paths: retained art fades, independent effect clocks, pause cancellation; Android `0009d918`/`0009d8ac`/`0009cdcc` decoration variant | No original-device frame comparison; Android/iOS differences are kept explicit below |
+| Relationships/notices/background | Android `000a916c`, `0009c814`/`0009c750`, `000a92f4`; native icon mappings, ordered cues, Android notice motion, background pan, resource 1013's width correction and frozen suppressed portrait children | iOS notices use separate per-letter position/bounds/opacity keyframes that are not implemented; original-device frame/audio comparison; retained children are Android-only, as both iOS games explicitly clear them |
+| Ordinary and timed choices | Android `000d9038`/`000d6afc`, CoD `000405e0`; original skin, signed portrait insets, alternate left/right headers, title repairs, timer, 250 ms attachment/input gate and IPA fade | Common outer geometry follows supplied screenshots, not every native header-height branch; oversized-text fitting is an adaptation, with no choice scrolling |
+| Title, message, loading, name entry, appearance picker | Recovered layout/font/gate paths in [TITLE_SCREENS.md](TITLE_SCREENS.md), [NAME_INPUT.md](NAME_INPUT.md) and [STORY_SERVICES.md](STORY_SERVICES.md); native iOS cursor offset, immediate keyboard-panel attachment, held checkmark art, story-label assignment order and loading runner cadence (70 ms IPA / 500 ms APK per frame) | Some mutable font/layout history remains; the verified uninitialized Android message-padding field uses deterministic zero |
+| Main menu and pause | Android info/gear/row/strip departure, concurrent submenu zooms and 200 ms slides, bronze pause tint; iOS 400 ms zoom/slide transitions, captured sepia background, pressed artwork and row sounds | Full original-device transition comparison; library/search/cheat content is authored |
+| Sprite atlases | Android `00050ecc`, SHS iOS `0000a95c`/`0000d96c`; stored-size quads, logical mirror offset and atlas-specific vertex transforms | Shipped minigame atlases have no sequence/transform records; no invented automatic sequence clock |
+| Timed word choices | Theme panels, 37-pixel rows, timer/score art, 200 ms label transition and per-game answer cues | Original-device frame/audio comparison still required |
+| Word/picture grid | Restored ring pulse, point flights, countdown opacity/shuffle, per-cell clocks, deferred generation, float32 fragment ticks, shared per-pixel depth and iOS exit fade | GL depth precision/edge sampling and original-device frame comparison |
+| Football | Restored 50-star home-touchdown effect and 450 engine RNG draws; native field/HUD/help/targets, retained shadow frames, final-message cue and iOS exit fade | Full audio timeline and device rasterization; the apparent extra score-flight routine is not a reachable feature in the inspected iOS override |
+| Music and sound | CoD linear fades/repeated requests, saved music/effect playheads, IPA pause/menu store/fade/restore handoffs, iOS repeat updates in place; verified menu/gear/row/relationship/minigame cue IDs | SDL's repeat-only change restarts its decoder at the current position, effect playheads use a host clock, and device output latency remains unverified |
+| Vibration | SHS iOS `000762e8` and CoD `0004334c`; one system vibration alert per script request, independent saved preference and enable-preview, iPhone/activity gates, no save or hint replay | Physical sensation and device settings need an iPhone check; simulator verifies routing only |
+| Whole-screen scene transitions | CoD blinds/opacity, delayed callbacks, intermediate VM pauses, outgoing animation clocks and menu-to-story fade; Android's nonvisual tick boundary; retained per-game process RNG/font state | Original-device frame/audio comparison and native widget lifetimes beyond the retained streams/fonts |
+
+The latest follow-up adds the 250 ms ordinary-choice attachment gate/fade,
+including rejection of fingers pressed before attachment; shared footer roles;
+Android submenu motion; and the separate sprite-atlas transform convention.
+Optional hints now recognize CoD's script feedback cues, including the reported
+Volume Two chapter-3 death/retry branch. The [bounded corpus audit](
+MAIN_MENU.md#pause-menu-and-choice-hints) describes coverage and unknown paths.
+CoD text puzzles can also show [faint answer hints](NAME_INPUT.md#optional-answer-hints)
+in empty fields. This optional runtime feature preserves ordinary entry and
+leaves ambiguous script branches unhinted.
+The optional [minigame skip prompt](MINIGAMES.md#optional-minigame-skips) uses
+the shared native menu skin before each supported minigame, with frozen clocks
+and a saved Play decision. Its success/failure overrides are authored cheats;
+ordinary timed choices retain their original behavior.
+
+The current full suite completes 674 tests with four optional-content skips.
+Component wheel/source audits and eleven isolated pip-install combinations
+pass. Both simulator and unsigned device builds succeed. The iOS 27.0
+three-profile simulator verification passes 109 checks: import/VM/saves, CoreGraphics pixels,
+native audio playback and the original-content checks using the supplied SHS
+APK, SHS IPA and CoD IPA. This includes classroom quiz hints, football and word
+minigames, plus vibration routing, preferences and save-replay prevention;
+faint input hints and explicit submission; and entry prompts, native held rows,
+frozen timers, saved Play decisions and pause-menu skips for every minigame type.
+The loading runner check renders all five supplied frames at 70 ms for SHS IPA
+and 500 ms for SHS APK, verifies repetition and save/load, and checks that the
+separate loading wait still gates the VM.
+Physical vibration still needs an iPhone check. Earlier CoreAudio
+`HALPlugIn::StartIOProc` error-35 failures cleared
+on rerun; the audio checks remain enabled. The classroom probe now waits for
+the real 250 ms choice attachment gate before answering. These checks verify
+EXP Runtime with original assets, not execution of the original apps or
+physical-device equivalence.
+
+The SHS Android fade state machine finishes on later ticks without drawing
+the iOS fade layers. CoD instead uses 16 horizontal/vertical blinds for
+selectors 1/2, or a black opacity layer for 6. Its 1500 ms tracks have motion
+through 80% followed by a hold; blind fade-in also waits 300 ms. Selector 20
+uses `rand()` to choose 1/2, whereas Android uses `lrand48()`. CoD now holds
+the original UI and callback until covered, advances the VM once, waits for
+the next UI across bytecode/debugger pauses, then settles and reveals it.
+A title skips fade-in. Both halves and the independent random stream survive
+save/load. Isolated ARM checks cover queue selection and callback/input flag
+ordering, with UIKit completion and VM execution stubbed; authored tests cover
+shared drawing and actual VM/save continuation. See [COD.md](COD.md#scene-transitions).
+SHS retains the Android policy of no visible layers: the queued answer waits
+for the next tick, then the incoming UI is released on a subsequent tick.
+Debug pauses preserve the intermediate wakeup state. Both games retain their
+random generators and speaker-font banks across new episodes in the same
+application process; explicit save loads replace those streams with saved
+state. Standalone headless sessions remain isolated unless attached to a
+`RuntimeProcess`.
+
+CoD `fadeToGame` **0000f9d8**, app-mode dispatch **000201d4** and tick path
+**000250f4** also establish the menu-entry fade. A menu Start/Resume request
+now covers the old screen with selector 6, switches at 1500 ms, and reveals
+the story for another 1500 ms. It neither posts a story callback nor consumes
+random values. This is separate from a script's queued transition.
+
+The alternate Android narration anchor is tied to the advertising flag,
+not another dialogue presentation mode: **000ab4c4**, **00092b3c** and the
+purchase handler **0008f4f4** link it to the paid/ad-free layout. The runtime
+continues using the ad-free anchor rather than adding a second story layout.
+
+An isolated ARM execution check compared all 50 touchdown-star records from
+the original Android initializer under four supplied deterministic random
+streams. All 450 underlying draws and float32 fields matched. Original iOS
+star ticks also matched through expiration, including their double-precision
+gravity intermediate. This checks those routines only: random helper calls
+are supplied by the harness, and it does not run the original app or graphics.
+Likewise, the presence of football score-flight routines alone does not prove
+they run: its iOS `addToScore` override at **0008ded4** returns zero. That path
+needs reachability verification before enabling an additional score display.
+
+A second isolated ARM check covers Android's fragment initializer
+**000c3cb0** (eight records, 96 random draws) and both Android **000c1fcc**
+and iOS **00097c0c** fragment updates through expiration. Float32 fields match
+the supplied deterministic streams and tick sequences. The shared drawing
+backend now uses a per-pixel depth buffer, including transparent depth writes
+and equal-depth replacement; native GL depth quantization remains unverified.
+
+Authored tests, original-resource render/save checks and native routine checks
+establish specific contracts. None substitutes for synchronized original-game
+frame/audio captures with the same inputs. Deliberate library/creator/cheat,
+offline survey and font-fallback adaptations also remain outside literal
+original-app equivalence.
+
+The iOS 27.0 simulator build, embedded Python runtime and authored presentation
+verification pass, including depth intersections, the sepia transform, music
+volume, pause/resume, repeat changes without replacing AVAudioPlayer, and
+reported music/effect playback positions. The extended run also passes with
+both supplied original IPAs, covering menus, story playback, quizzes, football,
+the word grid and save/background round trips. A further sound check uses the
+supplied SHS 8007 and CoD 8002 WAV resources with an authored choice/stat notice
+and confirms the effects actually start in AVAudioPlayer. Some original stat
+notices have no separate sound request; see [STORY_SERVICES.md](STORY_SERVICES.md#dialogue-notifications-service-88).
+Earlier CoreAudio error-35
+failures cleared on the later simulator run. This verifies the host primitives
+and shared UI; it does not certify original-game frame or audio equivalence.
+
+The initial audit passed 620 tests with four optional-content skips. All
+seven wheels/source archives pass the packaging audit; eleven isolated pip
+installation combinations and the uninstall-isolation check pass. Simulator
+and unsigned arm64 device builds succeed. These checks run authored fixtures
+and optional user-owned content without distributing the original resources.
+
 ## Confirmed clues in the supplied APK
 
 `assets/Assets/fonts/` contains **18 bitmap-font sets**. Every set has a text
@@ -289,9 +421,10 @@ titles attached to the box's top border and corroborate its separate palette;
 see [COD.md](COD.md#native-ui-and-audio-bindings). Tests now require bounded title height
 and box attachment in addition to non-overlap. These checks establish bounded
 drawing in this renderer; exact native pixel
-equivalence still requires comparison with a running original game. Shared
-kerning and measurements performed by other UI paths, such as `FUN_000d9038`,
-are not yet included in the dialogue font-history model.
+equivalence still requires comparison with a running original game.
+`FUN_000d9038` choice-title measurement now updates the live default name
+font's line count without replacing the current dialogue's saved layout basis.
+The cross-label coverage and remaining limits are described below.
 
 ### Name-entry screen
 
@@ -358,15 +491,19 @@ delimiters do not update the previous drawn glyph. Native `__data_start` at
 writers in the inspected program. It therefore persists across lines and
 separate text objects. The next lookup uses `LDRSB`, sign-extending that byte
 before packing its low 16 bits into the high half of the pair key. Thus byte
-233 uses first-key half 65513, not 233. The pure layout accepts/returns the previous glyph;
-the current frontend initializes each text block to -1. Exact object-update
-ordering and its cross-object kerning state are still missing.
+233 uses first-key half 65513, not 233. The pure layout accepts/returns the
+previous glyph. `TextHistory` now carries it between native story-label
+assignments and saves each label's incoming byte separately. Drawing and
+measurement leave the global unchanged; height-clipped lines do not update
+it, while an inkless nonspace glyph does. Coverage is specified below.
 
 `FUN_0004c90c` registers color delimiters. Ordinary dialogue registers backtick
 and semicolon. They share **one toggle**, so a different registered delimiter
 can close the active color span. A matched delimiter is invisible and does not
 change the font. Color persists across wrapped lines. This corrects the earlier
-assumption that backticks implied an italic font. **Narration** selects the
+assumption that Android backticks implied an italic font. Both iOS games do
+switch to a separate italic face; their outline-font rules are documented in
+[IPA dialogue](IPA.md#dialogue-text-placement). **Android narration** selects the
 italic font through panel mode 4. A service-13 thought prefix of -2 instead
 adds parentheses and retains the ordinary speaker panel and body font.
 
@@ -382,12 +519,93 @@ from character-owned numeric key 651. `FUN_000a81d8` applies these RGB values:
 
 The initial ordinary backtick color is (254,53,0); the semicolon color is
 (1,76,215). Narration body/backtick colors are (223,163,52) / (125,67,0).
+These are SHS's colors. CoD uses its verified black/gold narration pair and
+theme-dependent notice colors from the game adapter; see [CoD](COD.md).
 Color modulates the original atlas RGB while preserving its alpha and colored
 variants. The engine now retains the last theme-1/2 backtick selection through
-other themes and serializes it. Other font-object lifetime effects, including
-cross-object kerning and interactions with other UI widgets, remain incomplete.
+other themes and serializes it. Other font-object lifetime effects outside
+the story-label assignments below remain incomplete.
 Dialogue name gaps, line counts, sizes and indents are retained as specified
 above.
+
+### Bitmap history and reused portrait follow-up
+
+The 2026-10-16 follow-up adds explicit assignment history to the shared engine,
+rather than letting render order or a cache miss change the next label. This
+is Android bitmap behavior; IPA CSFont metrics keep their separate contract.
+The verified assignment paths are:
+
+- `000aaa40`: name, body, Continue, then the optional score notice. Dialogue
+  activation `000a9ac0` sets footer 36. Page input `000a9868` rebuilds only
+  the body; reveal changes glyph visibility without assigning the string.
+  Completion `0007db0c/0007d770` reassigns Continue.
+- `000d9038`: choice-title measurement mutates the shared default Pajama Hip
+  font's line count. `000d6afc/0006bd5c` construct/assign each option before
+  assigning the description and heading. `000b001c` assigns footer 38/40.
+- `000b033c/000d5914`: timed word choices construct the score before option
+  labels. `000afee8/000d5e18` rebuild score and delta on an accepted pick;
+  `000af32c` assigns the four outgoing strings before the four new ones.
+  Ignored taps and timer ticks do not rebuild these labels.
+- `000abd0c`: each new message title/body font starts with the literal
+  constructor string before its final text. `000acc28` assigns Continue;
+  `000acb18` updates changed captions and the reading/ready footer.
+- `000d4f34/000d4658`: empty footer, input title, prompt and name;
+  `000d3ae8` reassigns the name on each active tick. The ordinary BMFont
+  anchor rebuild does not touch the custom global byte.
+- `0008d43c`: loading title then body. `000d2558`: appearance-picker prompt
+  then footer 37, using a separate font object from the dialogue name bank.
+  Title-screen activation `000a6868` assigns footer 36. `0007d4c8` suppresses
+  repeated assignments of an identical footer in every path above.
+- `0007b97c`: scene-badge creation and replacement initialize the new font
+  with `SHS` before assigning the caption. Removing the badge does not
+  update history, and nonblocking script calls finish these assignments
+  before the next dialogue is prepared.
+
+An isolated ARM check executed the supplied Android `0004cb90` with authored
+glyph records and controlled kerning pairs. Incoming signed bytes, outgoing
+history and glyph X positions matched the Python layout. Kerning lookup,
+sprite lookup/texture updates and virtual sprite setters were explicit stubs;
+this was not an app or GPU rendering test. Another isolated check poisoned
+font memory before its real constructor: field `+0x13c` remained unchanged.
+Together with `00092b3c/000858cc`, this resolves the message-padding question
+as an uninitialized field, not an unknown stable layout constant. Zero is a
+documented compatibility policy; arbitrary heap contents cannot be reproduced
+portably. [Message-panel evidence](STORY_SERVICES.md#message-panel-service-33)
+describes the affected nonzero-episode branch.
+
+Portrait reuse follows a separate native lifetime. `000aaa40/000a7e64`
+remove and reattach the active portrait with cleanup enabled.
+`0014cbc4/0014fe90/0013b2dc` recursively stop child actions, so a suppressed
+`0009ce2c` request retains **frozen current poses**, including partially
+rotated icons, falling loss icons or partially faded flash rings. The active
+portrait is not exchanged with the two outgoing copies. Narration and panel
+removal retain those hidden children; a player portrait and character 45
+clear them. Choice constructors `000aed50/000aeae8` allocate a separate
+portrait, so its zero-count reset does not clear dialogue history. SHS iOS
+`0006b4b0` and CoD `00043fc0` explicitly remove status children/actions even
+for a negative asset; their rendering continues to clear suppressed icons.
+This difference is preserved across saves without replaying sounds.
+
+Save version 23 stores the last bitmap byte, per-label input bytes, footer
+text and retained indicator poses. Authored tests cover clipping, signed-byte
+kerning, unchanged/redrawn text, page turns, choice measurement, word-game
+gates/redeals, picker movement, both import platforms, interrupted gain/loss,
+narration/removal/player handoffs, exact save restoration and malformed state.
+Older saves start missing global history at -1 and hidden icon history empty.
+
+The follow-up suite passes 629 tests with four optional skips. All seven
+wheels/source archives pass the packaging audit. Simulator playback covers
+the supplied SHS APK, SHS IPA and CoD IPA using the shared renderer; this is
+verification of EXP Runtime with original assets, not execution of either
+original app.
+
+This closes the verified story-label and suppressed-portrait gaps. It does
+not establish every application-startup/menu/minigame label assignment, the
+startup cursor seed or uncommon widget reconstruction paths. Native frame
+scheduling and whole-screen pixels/audio still need a running-original
+comparison. The supplied SHS iOS executable is ARMv6 and cannot run on the
+available modern simulator; no runnable original installation is available.
+Tests of EXP Runtime on that simulator do not replace that comparison.
 
 ## Dialogue panel composition
 
@@ -633,8 +851,13 @@ ink overhang, without normalizing it into a different rectangle.
 
 Backgrounds start at the native unscaled center, GL `(160,300)` or downward
 `(160,180)`. Shared desktop/iOS presentation now implements the recovered
-speaker-side pan for both games. The special resource-1013 width adjustment
-and scene transitions still need reproduction.
+speaker-side pan for both games. SHS resource 1013 also receives the native
+1.01 X scale around that unscaled center; Y scale and pan calculations keep
+the original image dimensions. Android **000a92f4** calls the X-only setter
+**0013be58**, rather than uniformly scaling the image. The common SHS renderer
+keeps that selected Android reference for both asset sources. CoD's native
+location setter has no corresponding special case, so its adapter does not
+apply this adjustment.
 
 Direct Ghidra inspection confirms the horizontal movement during SHS dialogue.
 Android `000aaa40` calls `000a7dcc` during
@@ -698,7 +921,8 @@ adds 4 to height and rounds it to even, and enforces a minimum inner width 120.
 The box fill is then `(25,115,inner_w+10,inner_h+10)` in downward coordinates;
 the displayed italic font starts at `(30,120)`. Because measurement and display
 fonts differ, even a short narration can wrap when drawn. The alternate native
-constructor branch that shifts the narrator anchor by 15 remains unimplemented.
+constructor branch shifts the narrator anchor by 15 for advertising; the
+runtime uses the verified paid/ad-free anchor described in the audit above.
 
 The native input handler at `0x000a9868` first completes an unfinished reveal.
 When reveal is finished, it either acknowledges the final page or starts the
@@ -887,8 +1111,9 @@ does not impose a tap lock. SHS's early checks at game-model `+0x3b4` and
 `+0x1c44` refer to the script loading gate and global fade respectively.
 `SHSScript::executeWithSyscalls` **0006d728** clears the former after the loading
 timer; the shared loading screen already gates that interval. No invented
-blanket portrait/box lock was added. Whole-screen fade transitions and their
-associated input gate remain outside this dialogue implementation.
+blanket portrait/box lock was added. CoD whole-screen fades and their separate
+input gate are implemented by the session/adapter, as described in the audit
+above; they do not add a lock to ordinary dialogue entrances.
 
 ### Delayed expressions and panel reuse
 
@@ -911,6 +1136,22 @@ Thus new art appears at dialogue time 1400–1600 ms; the old art finishes
 fading at 2400 ms. The cache changes at the request, before the visual fade.
 Outgoing portraits use the cached identity, as the native cached layer does.
 
+The **2026-10-16 expression follow-up** distinguishes the per-line UI clock
+from the two reusable portrait layers. SHS `setSpeaker:…` **0006a4d4** and
+CoD **00045344** cancel portrait animations only when the speaker or side
+changes. An unchanged speaker redraws the current art but keeps its opacity
+tracks and the other expression layer. Advancing at 1500 ms, halfway through
+the new art's fade, must therefore preserve both images and their opacities;
+the following line schedules its own expression request one second later.
+The shared renderer previously snapped to the cached image on each new line.
+
+SHS `stopAnimation` **0006ce94** / CoD **000439dc** remove the art and
+decoration tracks. At an IPA pause capture, the new art becomes fully opaque,
+the old art disappears, and decorations return to their zero-opacity model
+state. This does not fire a future one-second UI request. Resuming an early
+pause still permits that request; resuming an already cancelled fade does not
+restart it. Ordinary tap-to-reveal continues to leave portrait tracks alone.
+
 SHS `addUIElement` **000210a0** covers the previous panel;
 `removeUIElement` **00021fb4** exposes it again. Choices and other temporary
 panels retain dialogue speaker/expression state rather than creating a fresh
@@ -919,11 +1160,44 @@ dispose the old scene. Both games' `loadScript09NoGUI` (SHS **00020ab0**, CoD
 **00011f2c**) clear the 200 script expression bytes and 200 last-expression
 bytes. Names, art bindings and the hidden global portrait position survive.
 
-**Verification boundary:** these recovered dialogue paths are shared by both
-games and both rendering backends. There is no separate IPA layout or Swift
-game-animation implementation. Special portrait decorations for expressions
-6–9, service-16 whole-screen transitions and original-device recordings of
-the nominal letter cadence remain outside the verified parity claim.
+Expressions **6–9** now add native decorations, above the ring and below the
+character. The clock starts at `changeExpression`, 1000 ms into dialogue:
+
+| Expression | Common atlas layer | Motion after the request |
+| --- | --- | --- |
+| 6 | 32 | Start at 650 ms, fade in for 500 ms, then out for 850 ms (Android SHS) or 1000 ms (both iOS games) |
+| 6 | 33 | Visible at 700–1300 ms, rotates 0–45 degrees; Android opacity rises 0–1 and scale .4–.8; both iOS games hold opacity 1 and scale .7–1.1–.7 |
+| 7/8/9 | 34/35/36 | Start at 650 ms, fade in for 150 ms, then out for 850 ms |
+
+Both iOS games' flash scale autoreverses after 325 ms using timing control points
+(.5,.2,.8,.35). Android uses a 325 ms linear scale; its flash visibility
+callback is separate from the overlay fade. Evidence: Android **0009d918**,
+**0009d8ac**, **0009cdcc**, constructor **0009dd8c**; SHS iOS **0006ad38** /
+**00068ee0** and CoD **00044dc8** / **00045f78**. In particular SHS
+**00069720–0006977c** and CoD **000466c8–00046710** set both flash-opacity
+endpoints to **1**. The previous CoD fade-out interpretation was incorrect.
+SHS IPA now uses this verified iOS effect timing; APK imports retain Android's
+variant. All use the same renderer, layout and native atlas indices.
+
+Art, overlay and flash tracks are independent. An ordinary expression request
+does not remove a running decoration, and expression 7–9 replaces the overlay
+without cancelling an earlier expression-6 flash. Version 25 saves these
+clocks separately, so interrupted fades and effects survive consecutive lines
+and save/load. Versions 1–24 migrate the presentation they already recorded;
+missing earlier layer history is not invented. No effect consumes randomness.
+
+Ghidra decompilation stops early at Objective-C message stubs in these
+binaries. Full local ARM disassembly, checked against Ghidra's memory bytes,
+supplies the remaining selector calls and constants. Authored regressions
+cover rapid line changes, overlapping decorations, pause before/after the
+request, clock partitioning, migration and corrupt saves. The iOS probe checks
+the production portrait compositor's retained layers and pause result using
+authored pixels in CoreGraphics, plus supplied-art playback for each import.
+
+**Verification boundary:** these paths share a renderer across both backends.
+There is no separate IPA layout or Swift game-animation implementation.
+Remaining whole-screen transition cases and original-device recordings of the
+nominal letter cadence remain outside the verified parity claim.
 
 ## Implemented text foundation and remaining UI work
 
@@ -1056,15 +1330,24 @@ the same atlas with 12/1. Nominal height changes the line origin, not glyph
 bitmap size. Theme 1 text is RGB `(1,76,215)`, theme 2 `(166,45,45)`.
 
 Description measurement uses width 246, nominal height/gap 16/10, and tests
-one, two, then three insets from `(105,95,85)` for a visible portrait. The
-negative native inset tables for the alternate header branch also exist at
-`0x0025b858`; the current screenshot-based layout keeps the portrait at the
-left and does not claim full equivalence for that alternate branch.
+one, two, then three insets for a visible portrait. Android's left table at
+`0x0025b898` is `(105,95,103)`; the right table at `0x0025b858` is
+`(-105,-95,-85)`. Both iOS games use `(95,85,65)` with the corresponding sign
+(CoD **000405e0**, tables **001200f0/00120120**; SHS **00312a54/00312a78**).
+The shared renderer now uses header 7/16 for left/right portraits, respective
+title indents 20/5, and the corresponding portrait center. It retains the
+common screenshot-based outer geometry below.
+
+Android **000d6afc** also repairs three bitmap headings after measuring their
+original strings: blue-theme `Fight!` becomes `Fi ght!`, `Think fast!` becomes
+`Th ink fast`, and `The answer is...?` becomes `Th e answer is...?`. The
+display and saved bitmap assignment history use those repaired strings;
+script memory and IPA outline labels retain their original text.
 
 ### Screenshot-based placement and remaining differences
 
 The reference's panel starts at x=20 and is 280 pixels wide. The title field
-comes from layout 7 node 9 (width 194), or layout 8 without a portrait. The
+comes from layout 7/16 node 9 (width 194), or layout 8 without a portrait. The
 implemented placement, in downward coordinates, is:
 
 ```text
@@ -1074,7 +1357,7 @@ header_height = ceil(max(portrait ? 112 : 38,
 row_height[i] = max(44, ceil(option_ink_height[i] + 16))
 footer_height = timed ? layout22.height : 20
 H = header_height + sum(row_height) + footer_height
-panel = (20, max(32, floor((480-H)/2) + 11), 280, H)
+panel = (20, max(32, min(floor((480-H)/2) + 11, 421-H)), 280, H)
 title_origin = (panel.x + header_node.x, panel.y - 9)
 description_origin = (panel.x + 7, panel.y + description_y)
 portrait_rect = (panel.x - 27, panel.y - 24, 128, 128)
@@ -1089,15 +1372,25 @@ count-specific positions. This frontend follows the supplied screenshot's
 breaks from the iPhone screenshot. Preserve that distinction when refining
 platform/release fidelity; do not use a successful render as proof of equality.
 
-Long options expand instead of truncating text; tall panels scroll above the
-footer. This is a desktop accommodation, not a recovered original scrolling
-contract. Hit rectangles follow that scroll, exclude the gear/footer, and
-retain each original option index and enabled state. Hover tint, scroll offset
-and the host menu are frontend state and are not included in game saves.
+Choices never scroll. The panel first moves up to keep its bottom at or above
+y=421, retaining its original text size. This fixes Football Star's classroom
+quiz at scene 25004 / PC 300: the earlier centered placement extended below
+the available area and unnecessarily enabled a scrollbar. The layout uses the
+actual body font and full option-row width inside the skin's padding.
 
-The gear opens a host Resume/Save/Load menu; the original settings/menu flow
-remains unimplemented. Opening it suspends desktop timer ticks, and keyboard
-choice shortcuts do not bypass it. Dialogue, choices and the appearance picker
+When a panel exceeds the entire 389-pixel available height, labels reflow at
+a smaller shared drawing scale, including row spacing. Portraits, skin width
+and timer dimensions remain unchanged. Every option and disabled state is
+retained, with matching visible hit rectangles. This fit for unusually long
+authored content or substitute fonts is an adaptation, not a recovered native
+scaling rule. The old scrolling accommodation and scrollbar are removed from
+both drawing backends; `ChoicePage.max_scroll` remains zero for API callers.
+Short panels retain their placement and type size.
+
+The gear opens the recovered Resume/Options/Help & About/Main Menu panel;
+its remaining transition limits are in [MAIN_MENU.md](MAIN_MENU.md#pause-menu-and-choice-hints).
+Opening it suspends timer ticks, and keyboard choice shortcuts do not bypass
+it. Dialogue, choices and the appearance picker
 share the recovered 12-row portrait crop and bottom alignment.
 
 Timed choices now use the APK's circular timer and a separate lower panel from
@@ -1105,18 +1398,41 @@ layout 22, with its ordinary score capsule hidden. Node 10 supplies the clock
 background rectangle; resources 708 and 709 are each 61 by 60 pixels. The
 progress texture covers the base clockwise from twelve o'clock as elapsed time
 increases (`001441b4`, `00138ac8`, `001388a8`). The static base is present before
-the first active tick. The footer retains its ordinary instruction without the
-prototype numeric countdown suffix. Nonpositive choice durations have neither
+the first active tick. The footer uses native role 40 for timed choices and
+role 38 otherwise, without a numeric countdown suffix. Nonpositive durations have neither
 the timer nor its extra panel space. Word choices share the same sweep helper
 and retain their separate score display.
 
 The lower panel occupies the supplied layout's 60-pixel height below the last
 row. This placement follows this frontend's existing 44-pixel rows and expanded
 text; it is not the Android renderer's complete count-specific placement
-algorithm. For tall lists, the timer remains pinned above y=421 while the choice
-rows scroll in a reduced viewport. Option hit rectangles stop above it, so the
-timer cannot select an obscured row. These scrolling rules remain desktop
-accommodations. The native 0.2-second ordinary-choice entrance is still unmodeled.
+algorithm. The timer follows the last fitted row and stays above y=421.
+Option hit rectangles stop above it, so the timer cannot select an obscured
+row. No options are hidden behind the timer or moved by scrolling.
+
+### Choice attachment and shared footer
+
+The earlier 0.2-second ordinary-choice claim was incorrect. Android
+**000b001c** returns **0.25 seconds**; **000afee8** rejects selections while
+the application transition clock is positive. CoD `internalTransitionOn`
+**0003ab60**, verified against instructions **0003ad28/0003ad38/0003ad4a**,
+sets UIKit curve 0 and fades the menu view to alpha 1 over **0.25 seconds**.
+SHS iOS **00081dd4**, double constant **000821c8**, confirms the same duration.
+Android has the input gate without that visual fade. The shared active clock
+and save version 24 now preserve both. A script's choice timer starts on
+attachment and is not extended by the entrance; a very short timer can expire
+before manual input is accepted. Pausing freezes entry and timeout together.
+The backdrop/footer are separate from the fading IPA panel.
+
+Dialogue, title, choice, message and portrait-picker footer text now share
+one renderer and each game's string bank. Android **0007cbbc/0007d4c8** uses
+registry 11 (`ArialMT14`), nominal height/gap 14/8, zero content size,
+flags `0x0a` and GL `(180,25)` (downward `(180,455)`). CoD `GameModel::init`
+**00010864** and `initFonts` **000230b8** bind the outline tooltip to Arial 11,
+white alpha 176, centered in the existing `(63,459,252,18)` region. SHS IPA
+uses the same outline footer role. The common skin is unchanged. CoD maps
+ordinary/timed footer roles 38/40 to its own strings 35/37; it never borrows
+SHS text. Drawing uses the saved incoming bitmap byte and never reassigns it.
 
 The sweep derives entirely from the session's saved remaining milliseconds.
 Rendering does not consume time, resume the VM or draw randomness. Both service
@@ -1128,7 +1444,7 @@ Verification covers the original New Girl choice and both VM continuations,
 blue/pink themes, portrait-free panels, multiline/tall option lists, disabled
 options, custom return values, scaled mouse coordinates, menu timer suspension,
 save/load while a choice is pending, authored radial-sweep pixels, absence of
-timers on untimed choices, scrolling around the timer and the exact expiry
+timers on untimed choices, fitting every row above the timer and the exact expiry
 boundary for both choice formats. The user images remain local references
 and are excluded from wheel/source distributions.
 
@@ -1152,11 +1468,11 @@ camera easing, countdown and result/selection animations are specified in
 [FOOTBALL_UI.md](FOOTBALL_UI.md).
 No artwork is embedded in the implementation.
 
-These paths still need visual comparison with original recordings. Football
-touchdown particles, internal score flights, parts of audio staging and the
-final exit overlay remain incomplete. Grid tile
-side faces, highlights, particles, ring pulses, flying score deltas, outgoing-board
-generation timing and some overlay boundaries remain approximate. Fast grid pointer
+These paths still need visual comparison with original recordings. Football's
+complete audio timeline and internal score-flight reachability remain open.
+Exit overlays, final-score sound, retained shadows, float32 grid fragments and
+per-pixel depth are now modeled. GL edge sampling/depth precision and some
+widget-reuse boundaries remain partial. Fast grid pointer
 motion does not interpolate skipped cells. Service 88 notices now use the
 original font, portrait-relative placement, rising letters, fade and input
 lifecycle, specified in [STORY_SERVICES.md](STORY_SERVICES.md#dialogue-notifications-service-88). See the
@@ -1219,7 +1535,10 @@ checkmark are implemented. See [STORY_SERVICES.md](STORY_SERVICES.md#portrait-se
 for geometry, asset IDs, native addresses and save fields. Tests cover all five
 Homecoming Queen appearances and release input in a resized window. Selection
 uses common frames 43/44 (the fifth portrait argument is 1), not the dialogue
-ring pair. The pressed-checkmark tint remains a visual refinement.
+ring pair. Both iOS `updateButtonLayer` paths (SHS **0009f57c**, CoD
+**0004912c**) choose common frame 41 while held and 42 on release. Pointer
+tracking now applies that artwork and cancels a confirmation dragged outside;
+the APK retains its original frame 41.
 
 ## NPC relationship indicators
 
@@ -1233,7 +1552,7 @@ zero; `FUN_000a90f0` selects the asset from numeric state:
 
 | Condition | Result |
 | --- | --- |
-| NPC-owned key 629 equals 1 | Hide indicators |
+| NPC-owned key 629 equals 1 | Suppress the new indicator with asset -1; Android can retain old children as described below |
 | NPC-owned key 407 (`0x197`) is negative | Skull, resource 3011 |
 | NPC matches global key 601 and relationship is nonnegative | Heart, resource 3010 |
 | Otherwise | Smiley face, resource 3012 |
@@ -1341,9 +1660,11 @@ without changing their saved text progress or replaying sounds.
 Tests cover smileys, hearts, skulls, suppression, the count mapping, cache reads
 by actual VM services, frame-rate-independent gain/loss timing, shortest-arc
 rotation, sound transitions, save validation and exact restored pixels using
-the user's original artwork. Native reused-widget edge cases remain partial:
-the low-level asset=-1 call can retain stale children except for character 45;
-the runtime clears suppressed indicators instead of preserving stale emotes.
+the user's original artwork. Android's low-level asset=-1 call now retains
+the previously visible children at their frozen poses, except for character
+45. Both iOS adapters retain their native clearing behavior. The [follow-up](
+#bitmap-history-and-reused-portrait-follow-up) documents cleanup, handoffs,
+save fields and the original-device comparison still needed.
 
 Local initialization confirms Football Star leaves the suppression flag clear
 for its NPCs; Homecoming Queen sets key 629 to 1 for many NPCs. The New Girl

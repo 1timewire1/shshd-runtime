@@ -4,10 +4,27 @@ Coordinates use the original 320 x 480 screen. These functions are pure:
 rendering and hit testing cannot advance the game or its random stream.
 """
 from dataclasses import dataclass
+import math
 
 
 def clamp(value):
     return min(1., max(0., value))
+
+
+def tile_opacity(round_ms, offsets, index, selection=(), bad=False, highlighted=False):
+    """000c94f8: fade tile artwork against black as the round clock runs out.
+
+    A selection uses its first cell's shuffled offset, including every later
+    cell in the trace. Letters, shine and bad-prefix tiles remain fully lit.
+    None retains the settled appearance of saves without offset history.
+    """
+    if offsets is None or bad:
+        return 1.
+    if index in selection:
+        return min(1., max(.7, (round_ms - offsets.get(selection[0], 0)) / 7000))
+    if highlighted:
+        return min(1., max(.1, (round_ms - offsets.get(index, 0)) / 3500))
+    return 1.
 
 
 def ease(value, low=0., high=1., bounce=None):
@@ -22,6 +39,21 @@ def ease(value, low=0., high=1., bounce=None):
     if value - bounce > (1 - bounce) / 2:
         return (bounce + 1 - value) / bounce
     return value / bounce
+
+
+def portrait_ring_scale(game):
+    """000c98c0: reused Android ring node, then the .8 Hz sine pulse."""
+    if game.phase == 0:
+        progress = 1 - game.phase_ms / 2800
+        # Each positive stagger writes the same retained node. The last
+        # active write wins; iOS's immediate GL path instead draws all three.
+        active = [progress - delay for delay in (0, .15, .3) if progress > delay]
+        if not active:
+            return 0.
+        value = active[-1]
+        return 1.3 * ease(value, 0, .7) if value < .7 else 1 + .3 * (1 - ease(value, .7, 1))
+    pulse = abs(math.sin(game.visual_ms / 1000 * .800000011920929 * 3.1415926))
+    return 1 - max(0, .15 - pulse)
 
 
 @dataclass(frozen=True)

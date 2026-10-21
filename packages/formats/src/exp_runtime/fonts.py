@@ -4,7 +4,7 @@ No glyph metrics or images are embedded here. They come from the player's APK.
 This module does not depend on a window system. See docs/UI_FIDELITY.md for
 native addresses, scope, and the distinction between pen advances and kerning.
 """
-from dataclasses import KW_ONLY, dataclass, replace
+from dataclasses import KW_ONLY, dataclass, field, replace
 import math
 import re
 import shlex
@@ -161,6 +161,7 @@ class PlacedGlyph:
     x: float
     y: float
     color: Color
+    font: str | None = None
 
 
 @dataclass(frozen=True)
@@ -184,14 +185,18 @@ class TextLayout:
 
 
 def layout_text(font: BitmapFont, text: str, width: float, style: TextStyle,
-                *, previous_glyph: int = -1) -> TextLayout:
+                *, previous_glyph: int = -1,
+                switch_fonts: dict[str, tuple[str, BitmapFont]] | None = None) -> TextLayout:
     """Lay out a complete byte string with native unkerned wrapping.
 
     Coordinates use a downward Y axis and the native nominal line-box origin.
     Kerning displaces only the drawn glyph, never the pen or wrap boundary.
     Spaces and color markers do not update the previous *drawn* glyph. Return
-    that state explicitly; native code uses a global whose lifetime across
-    separate text objects is not yet reproduced by the desktop frontend.
+    that state explicitly. Label updates use TextHistory to carry it between
+    font objects; measurement and rendering must not advance that history.
+    Outline dialogue can associate a marker with another face/atlas role.
+    Its glyphs use that face's advances on the base face's common baseline;
+    the caller supplies the maximum cap height as the nominal line height.
     """
     if (not all(math.isfinite(v) for v in (width, style.height, style.gap, *style.indents))
             or width <= 0 or style.height <= 0 or style.height + style.gap < 0):
@@ -202,7 +207,13 @@ def layout_text(font: BitmapFont, text: str, width: float, style: TextStyle,
     except UnicodeError:
         raise FontError('Native story text must be Latin-1') from None
     markers = dict(style.markers)
-    advances = [0 if c in markers or c == '\n' else font.glyph(c).advance for c in text]
+    faces, advances, selected = [], [], None
+    for character in text:
+        if character in markers and switch_fonts:
+            selected = switch_fonts.get(character) if selected is None else None
+        role, face = selected if selected is not None else (None, font)
+        faces.append((role, face))
+        advances.append(0 if character in markers or character == '\n' else face.glyph(character).advance)
     lines, index = [], 0
     while index < len(text):
         while index < len(text) and text[index] == ' ':
@@ -235,6 +246,7 @@ def layout_text(font: BitmapFont, text: str, width: float, style: TextStyle,
                               max(0, sum(advances[start:end]))))
     placements = []
     color, alternate, highlighted = style.color, style.color, False
+    baseline = getattr(font, 'cap_height', style.height) if switch_fonts else style.height
     for line in lines:
         pen = line.x
         for index in range(line.start, line.end):
@@ -247,12 +259,15 @@ def layout_text(font: BitmapFont, text: str, width: float, style: TextStyle,
                     color, alternate = markers[character], color
                 highlighted = not highlighted
                 continue
-            glyph = font.glyph(character)
+            role, face = faces[index]
+            glyph = face.glyph(character)
             if character != ' ':
-                kerning = font.kernings.get((previous_glyph & 0xffff, glyph.code), 0)
+                kerning = face.kernings.get((previous_glyph & 0xffff, glyph.code), 0)
                 if glyph.width and glyph.height:
+                    # CSFont switches faces on the same baseline. Its line
+                    # step uses the tallest registered face's cap height.
                     placements.append(PlacedGlyph(index, glyph, pen + glyph.xoffset + kerning,
-                        line.y + style.height - font.line_height + glyph.yoffset, color))
+                        line.y + baseline - face.line_height + glyph.yoffset, color, role))
                 # FUN_0004cb90 stores a byte, then LDRSB sign-extends it on
                 # the next lookup (before packing it into the high half).
                 previous_glyph = glyph.code if glyph.code < 128 else glyph.code - 256
@@ -266,7 +281,7 @@ def layout_text(font: BitmapFont, text: str, width: float, style: TextStyle,
 
 
 def layout_label(font: BitmapFont, text: str, width: float, height: float,
-                 style: TextStyle, flags: int) -> TextLayout:
+                 style: TextStyle, flags: int, *, previous_glyph: int = -1) -> TextLayout:
     """FUN_0004dc20: wrapped/aligned text in a native node's content rectangle.
 
     Coordinates start at the node's bottom-left corner and increase downward,
@@ -279,7 +294,7 @@ def layout_label(font: BitmapFont, text: str, width: float, height: float,
     wrapping = bool(flags & 0x10)
     if wrapping and width == 0:
         # Native aborts when the zero-sized initial label cannot fit a glyph.
-        return layout_text(font, '', 1, style)
+        return replace(layout_text(font, '', 1, style), previous_glyph=previous_glyph)
     text_width = width if wrapping else layout_text(font, text, 2**31, style).width + .1
     measured = layout_text(font, text, text_width, style)
     horizontal = {2: .5, 3: 1}.get(flags & 3, 0)
@@ -298,4 +313,61 @@ def layout_label(font: BitmapFont, text: str, width: float, height: float,
         lines.append(replace(line, x=line.x + shift_x, y=line.y - block_y))
         glyphs.extend(replace(g, x=g.x + shift_x, y=g.y - block_y)
                       for g in measured.glyphs if line.start <= g.index < line.end)
-    return replace(measured, lines=tuple(lines), glyphs=tuple(glyphs))
+    result = replace(measured, lines=tuple(lines), glyphs=tuple(glyphs))
+    return kern_layout(font, text, result, previous_glyph, markers=style.markers)
+
+
+def kern_layout(font, text, layout, previous_glyph, *, markers=()):
+    """Apply a label's incoming byte without changing its line measurements.
+
+    Only drawn lines visit FUN_0004cb90. Spaces and registered color markers
+    leave the global byte alone; zero-ink glyphs still update it. Layouts passed
+    here start with the ordinary -1 sentinel, so only their first glyph can
+    need a displacement. This also handles height-clipped labels correctly.
+    """
+    ignored = {' ', '\n', *(key for key, _ in markers)}
+    first = True
+    glyphs = layout.glyphs
+    for line in layout.lines:
+        for index in range(line.start, line.end):
+            if text[index] in ignored:
+                continue
+            code = font.glyph(text[index]).code
+            if first:
+                shift = (font.kernings.get((previous_glyph & 0xffff, code), 0)
+                         - font.kernings.get((0xffff, code), 0))
+                if shift:
+                    glyphs = tuple(replace(g, x=g.x + shift) if g.index == index else g for g in glyphs)
+                first = False
+            previous_glyph = code if code < 128 else code - 256
+    return replace(layout, glyphs=glyphs, previous_glyph=previous_glyph)
+
+
+@dataclass
+class TextHistory:
+    """Android's process-wide last drawn byte and each live label's input.
+
+    Update explicitly when native setString creates/repositions glyph nodes,
+    including repeated assignments of the same string. Cached layout, drawing,
+    letter visibility and measurement are pure reads. No font/asset bytes are
+    stored in a save.
+    """
+    previous_glyph: int = -1
+    labels: dict[str, int] = field(default_factory=dict)
+    footer: str = ''
+
+    def initial(self, label):
+        return self.labels.get(label, -1)
+
+    def update(self, label, font, text, layout, *, markers=()):
+        result = kern_layout(font, text, layout, self.previous_glyph, markers=markers)
+        self.labels[label] = self.previous_glyph
+        self.previous_glyph = result.previous_glyph
+        return result
+
+    def validate(self):
+        if (not -128 <= self.previous_glyph <= 127 or len(self.labels) > 65536
+                or '\0' in self.footer
+                or any(not key or len(key) > 80 or not -128 <= value <= 127
+                       for key, value in self.labels.items())):
+            raise FontError('Invalid bitmap label history')

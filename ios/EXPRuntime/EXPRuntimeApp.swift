@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import AVFAudio
+import AudioToolbox
 
 @main
 struct EXPRuntimeApp: App {
@@ -89,7 +90,7 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
     func perform(_ commands: [[String: Any]]) throws {
         for command in commands {
             guard let kind = command["kind"] as? String else { throw CanvasError(message: "Missing audio command") }
-            let track = kind.hasPrefix("menu_") ? "menu" : "music"
+            let track = command["track"] as? String ?? (kind.hasPrefix("menu_") ? "menu" : "music")
             let action = kind.hasPrefix("menu_") ? "music_" + kind.dropFirst(5) : kind
             switch action {
             case "music_load", "sound":
@@ -123,6 +124,10 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
                 }
             case "music_stop":
                 tracks[track]?.stop(); tracks.removeValue(forKey: track); pausedTracks.remove(track)
+            case "music_volume":
+                tracks[track]?.volume = (command["volume"] as? NSNumber)?.floatValue ?? 1
+            case "music_loops":
+                tracks[track]?.numberOfLoops = (command["loops"] as? NSNumber)?.intValue ?? 0
             case "sounds_stop": sounds.forEach { $0.stop() }; sounds.removeAll()
             default: throw CanvasError(message: "Unsupported audio command")
             }
@@ -130,6 +135,18 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
     }
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         sounds.removeAll { $0 === player }
+        for (key, value) in tracks where key.hasPrefix("effect:") && value === player {
+            tracks.removeValue(forKey: key)
+            pausedTracks.remove(key)
+        }
+    }
+
+    var playing: [String: Bool] {
+        tracks.mapValues { $0.isPlaying }
+    }
+
+    var positions: [String: Int] {
+        tracks.mapValues { max(0, Int($0.currentTime * 1000)) }
     }
 
     func verifyMenuPlaying() throws {
@@ -140,13 +157,29 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
         guard sounds.contains(where: { $0.isPlaying }) else { throw CanvasError(message: "Click sound is not playing") }
     }
 
+    func verifyEffectPlaying(_ track: String) throws {
+        guard tracks[track]?.isPlaying == true else { throw CanvasError(message: "Script sound is not playing: \(track)") }
+    }
+
     static func verify(_ encoded: String) throws {
         let audio = NativeAudio()
         defer { try? audio.perform([["kind": "music_stop"], ["kind": "menu_stop"]]) }
         try audio.perform([["kind": "music_load", "data": encoded], ["kind": "music_play", "start": 1.0, "loops": -1]])
         guard let story = audio.tracks["music"], story.isPlaying else { throw CanvasError(message: "Story audio did not start") }
+        try audio.perform([["kind": "music_volume", "volume": 0.25]])
+        guard story.volume == 0.25, audio.playing["music"] == true else {
+            throw CanvasError(message: "Music fade changed the active stream or failed to set its volume")
+        }
+        try audio.perform([["kind": "music_volume", "volume": 1.0]])
         try audio.perform([["kind": "music_pause"]])
+        guard audio.playing["music"] == false else { throw CanvasError(message: "Paused music reported itself playing") }
         let position = story.currentTime
+        try audio.perform([["kind": "music_loops", "loops": 0]])
+        guard audio.tracks["music"] === story, story.numberOfLoops == 0,
+              story.currentTime == position, audio.positions["music"] == Int(position * 1000) else {
+            throw CanvasError(message: "Changing repeat mode reset the music playhead")
+        }
+        try audio.perform([["kind": "music_loops", "loops": -1]])
         try audio.perform([["kind": "menu_load", "data": encoded], ["kind": "menu_play"]])
         try audio.verifyMenuPlaying()
         guard audio.tracks["music"] === story, !story.isPlaying, story.currentTime == position else {
@@ -175,6 +208,44 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
         story.stop() // A finished stream must not restart on a focus round trip.
         try audio.perform([["kind": "music_pause"], ["kind": "music_resume"]])
         guard !story.isPlaying else { throw CanvasError(message: "A stopped track restarted on resume") }
+        try audio.perform([["kind": "music_load", "track": "effect:1", "data": encoded],
+                           ["kind": "music_play", "track": "effect:1", "start": 0.75, "loops": 0],
+                           ["kind": "music_pause", "track": "effect:1"]])
+        guard let effect = audio.tracks["effect:1"], !effect.isPlaying,
+              abs(effect.currentTime - 0.75) < 0.5, audio.tracks["music"] === story else {
+            throw CanvasError(message: "Saved sound effect did not retain its independent playback position")
+        }
+        try audio.perform([["kind": "music_volume", "track": "effect:1", "volume": 0.5],
+                           ["kind": "music_resume", "track": "effect:1"]])
+        guard effect.isPlaying, effect.volume == 0.5 else {
+            throw CanvasError(message: "Sound effect fade/resume failed")
+        }
+        try audio.perform([["kind": "music_stop", "track": "effect:1"]])
+        guard audio.tracks["effect:1"] == nil else { throw CanvasError(message: "Stopped sound effect was retained") }
+    }
+}
+
+enum NativeVibration {
+    static var available: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+
+    static func perform(_ count: Int, active: Bool, available: Bool,
+                        play: (SystemSoundID) -> Void = AudioServicesPlayAlertSound) {
+        guard active && available && count > 0 else { return }
+        // Both original iOS games request this system alert, not a timed
+        // Android vibration or a custom Taptic Engine pattern.
+        for _ in 0..<count { play(kSystemSoundID_Vibrate) }
+    }
+
+    static func verify() throws {
+        var alerts: [SystemSoundID] = []
+        let record: (SystemSoundID) -> Void = { alerts.append($0) }
+        perform(2, active: true, available: true, play: record)
+        perform(1, active: false, available: true, play: record)
+        perform(1, active: true, available: false, play: record)
+        perform(0, active: true, available: true, play: record)
+        guard alerts == [kSystemSoundID_Vibrate, kSystemSoundID_Vibrate] else {
+            throw CanvasError(message: "Vibration did not honor device/activity gates or the native alert ID")
+        }
     }
 }
 
@@ -189,6 +260,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var requests: [[String: Any]] = []
     private var working = false
     private var running = true
+    private var activityGeneration = 0
     private var failed = false
     private var lastFrame = CACurrentMediaTime()
     private var pickerKind: String?
@@ -224,6 +296,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
 
     @objc private func suspend() {
         running = false
+        activityGeneration += 1
         events.removeAll()
         canvas.resignFirstResponder()
         requests.append(["operation": "active", "active": false])
@@ -236,6 +309,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     @objc private func resume() {
+        activityGeneration += 1
         running = true
         lastFrame = CACurrentMediaTime()
         requests.append(["operation": "active", "active": true])
@@ -260,12 +334,15 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             lastFrame += Double(elapsed) / 1000
         }
         if operation["operation"] as? String != "frame" { lastFrame = now }
+        let request = operation.merging(["audio_playing": audio.playing, "audio_positions": audio.positions,
+                                         "vibration_available": NativeVibration.available]) { _, value in value }
         let directory = documents.path
         let renderer = self.renderer
+        let feedbackGeneration = activityGeneration
         engineQueue.async {
             let response: Result<([String: Any], CGImage?), Error>
             do {
-                let input = String(data: try JSONSerialization.data(withJSONObject: operation), encoding: .utf8)!
+                let input = String(data: try JSONSerialization.data(withJSONObject: request), encoding: .utf8)!
                 let output = try PythonBridge().request(input, directory: directory)
                 guard let result = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else {
                     throw CanvasError(message: "Invalid runtime response")
@@ -284,14 +361,23 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     self.canvas.scrollable = result["scrollable"] as? Bool ?? false
                     if self.running && result["keyboard"] as? Bool == true { self.canvas.becomeFirstResponder() }
                     else { self.canvas.resignFirstResponder() }
+                    NativeVibration.perform(result["vibrations"] as? Int ?? 0,
+                                            active: self.running && feedbackGeneration == self.activityGeneration
+                                                && UIApplication.shared.applicationState == .active,
+                                            available: NativeVibration.available)
                     do {
+                        if result["vibration_test"] as? Bool == true {
+                            try NativeVibration.verify()
+                            self.verificationChecks.append("Native vibration alert routing and device/activity gates (hardware not measured)")
+                        }
                         if let fixture = result["audio_test"] as? String {
                             try NativeAudio.verify(fixture)
-                            self.verificationChecks.append("Native audio looping and one-shot completion, independent menu stream, pause and resume")
+                            self.verificationChecks.append("Native audio looping, one-shot completion, in-place repeat/volume changes, playback positions, independent menu stream, pause and resume")
                         }
                         try self.audio.perform(result["audio"] as? [[String: Any]] ?? [])
                         if result["verify_menu_audio"] as? Bool == true { try self.audio.verifyMenuPlaying() }
                         if result["verify_click_audio"] as? Bool == true { try self.audio.verifySoundPlaying() }
+                        if let track = result["verify_effect_audio"] as? String { try self.audio.verifyEffectPlaying(track) }
                     }
                     catch { self.showError("Audio: \(error.localizedDescription)", fatal: false); return }
                     if let picker = result["picker"] as? String { self.pick(picker) }
@@ -385,7 +471,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         })
         present(alert, animated: true)
         if verifying {
-            let report: [String: Any] = ["status": "failed", "platform": "ios", "error": message]
+            let report: [String: Any] = ["status": "failed", "platform": "ios", "error": message, "checks": verificationChecks]
             try? JSONSerialization.data(withJSONObject: report).write(to: documents.appendingPathComponent("ios-presentation-verification.json"), options: .atomic)
         }
     }
@@ -440,7 +526,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
 
     private func verifyPresentation(_ core: [String: Any]) {
         verificationReport = core
-        verificationChecks = (core["checks"] as? [String] ?? []) + ["Native CoreGraphics pixels: orientation, clipping, scale, rotation, alpha, background panning, dialogue-box growth, portrait housing and expression fades"]
+        verificationChecks = (core["checks"] as? [String] ?? []) + ["Native CoreGraphics pixels: orientation, clipping, scale, rotation, alpha, background panning, dialogue-box growth, portrait housing, expression fades, intersecting depth and pause sepia"]
         requests.append(["operation": "verify_start"])
     }
 }

@@ -6,6 +6,11 @@ as upstream; they remain one project, repository, version and uv workspace. No g
 renderer is copied between packages. Do not install upstream's `exp-runtime` distributions into the
 same environment: both fill that one namespace.
 
+In **v0.6.0**, the [episode creator](CREATOR.md) adds a sixth optional component,
+bringing the total to seven wheels including the umbrella.
+Headless authoring needs only the formats component, and its desktop extra
+adds Qt and the existing player. Player and iOS bundles exclude it.
+
 ## Choose an install
 
 This fork does not publish to PyPI. Each version-tag release attaches all six wheels (with SHA-256
@@ -21,6 +26,8 @@ you need:
 | `shshd-runtime[engine,shs,cod]` | Headless engine with both games |
 | `shshd-runtime[player]` | Desktop player with both games by default |
 | `shshd-runtime[desktop]` | Compatibility alias for the full desktop player install |
+| `shshd-runtime[creator-mcp]` | Creator MCP server, playtesting and player previews; no Qt (exp-runtime v0.6.0+) |
+| `shshd-runtime[creator]` | Visual desktop editor, native EXP export and player preview with both games (exp-runtime v0.6.0+) |
 
 For example:
 
@@ -37,8 +44,9 @@ The umbrella's bare install supplies file tools; app users choose `[player]` or 
 (with the aliases `exp-runtime` and `shs`) belongs to the player wheel.
 
 The independently installable distributions are `shshd-runtime-formats`,
-`shshd-runtime-engine`, `shshd-runtime-player`, `shshd-runtime-shs` and
-`shshd-runtime-cod`. For a desktop player containing just CoD:
+`shshd-runtime-engine`, `shshd-runtime-player`, `shshd-runtime-shs`,
+`shshd-runtime-cod` and `shshd-runtime-creator`. The creator's bare install provides its
+headless model/compiler without Qt or the player. For a desktop player containing just CoD:
 
 ```sh
 python -m pip install --find-links ./wheels 'shshd-runtime-player[desktop]==1.0.1' 'shshd-runtime-cod==1.0.1'
@@ -61,15 +69,15 @@ No package publication is performed by these tools. From this checkout:
 
 ```sh
 uv run --locked --extra build python tools/build_packages.py
-uv run --locked --extra build python tools/test_packages.py
+uv run --locked --extra build --extra creator --extra creator-mcp python tools/test_packages.py
 ```
 
-The build writes six wheels, six source archives and SHA-256 checksums to
+The current build writes seven wheels, seven source archives and SHA-256 checksums to
 `dist/packages/`. It rebuilds each wheel from its source archive and audits the
 file ownership, source bytes, versions and content exclusions. The test creates
 fresh virtual environments and uses real pip resolution outside the checkout,
-including single-game and tools-only installs. It downloads the locked Pillow
-and Pygame wheels once into `build/package-test-dependencies/`; `--offline`
+including single-game, tools-only and headless/GUI/MCP creator installs. It downloads
+the locked Pillow, Pygame and Qt wheels once into `build/package-test-dependencies/`; `--offline`
 reuses that cache. It does not read original game content.
 
 Test your own project against the local wheels:
@@ -82,7 +90,7 @@ python -m venv /tmp/my-exp-project
 For a game/player install, omit `--no-index` to obtain third-party dependencies,
 or also pass `--find-links build/package-test-dependencies` after running the
 test tool. On Windows use the virtual environment's `Scripts/python.exe`.
-Keep all six wheels together so pip can resolve the selected components.
+Keep all component wheels together so pip can resolve the selected components.
 Components are pinned to the same release version; mixing versions is rejected
 by the dependency resolver. Plain index installs never find these builds:
 the fork's distributions are not on PyPI.
@@ -106,6 +114,11 @@ game from an EXP or substitute another resource ID. `archive.programs()`
 returns all KiWi programs indexed by resource ID. Malformed content raises
 `ContentError`; invalid bytecode raises `KiwiFormatError`.
 
+The writer `exp_runtime.formats.encode_exp(resources)`, added in v0.6.0, constructs
+a native archive from an ID-to-bytes mapping, and `Metadata.to_bytes()` encodes
+resource 1. It emits deterministic literal records; use the creator compiler
+to generate story bytecode. See [CREATOR.md](CREATOR.md) for the authoring API.
+
 ```sh
 shshd-tool inspect episode.exp
 shshd-tool extract episode.exp --output extracted-resources
@@ -118,8 +131,8 @@ a record is invalid. These commands work with only the formats wheel installed.
 `exp_runtime.formats` also exports `ImagePack`, `LayoutBank`, `SpriteAtlas`,
 `AtlasFont`, `BitmapFont`, `MenuFont` and `MenuStrings`. Use each parser's
 `parse(bytes)` method to inspect original resource structures in an editor.
-Bytecode has lossless serialization; the API does **not** yet provide a general
-EXP container writer or a complete visual editor. Editors must preserve the
+Bytecode has lossless serialization; `encode_exp` writes native containers and
+the optional creator provides visual story authoring. Editors must preserve the
 contracts in [SCHEMA.md](SCHEMA.md) and [VM_SPEC.md](VM_SPEC.md).
 
 ## Drive the engine from your own UI

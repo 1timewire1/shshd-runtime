@@ -12,12 +12,14 @@ from exp_runtime.choice import ChoiceLayout
 from exp_runtime.content import ContentLibrary
 from exp_runtime.fonts import BitmapFont, Glyph, layout_text
 from exp_runtime.runtime import Session
+from exp_runtime.vm import VMError
 from exp_runtime.ui_assets import Layout, LayoutBank, LayoutNode
 from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
-def timed_resources(service=1, timeout=2000, count=3, selection=1):
+def timed_resources(service=1, timeout=2000, count=3, selection=1, default=None):
+    selection = selection if default is None else default
     labels = [f'Option {i}' for i in range(count)]
     words, refs = text_words('Choose', 'A question.', '|'.join(labels), *labels)
     if service == 1:
@@ -47,23 +49,101 @@ def authored_layout():
 
 
 class ChoiceTimingTests(unittest.TestCase):
-    def test_both_choice_forms_expire_after_zero_and_keep_their_result_mapping(self):
-        for service, result in ((1, 1), (2, 101)):
-            with self.subTest(service=service):
-                r = timed_resources(service); s = Session(r); s.advance()
-                s.engine.result_cells[0] = 42
-                held = s.vm.snapshot()
-                s.tick(2000)
-                self.assertEqual(s.remaining_ms, 0)
+    def test_choice_attachment_ignores_early_taps_and_restores_its_clock(self):
+        from exp_runtime.runtime import SaveError
+        for service in (1, 2):
+            r = timed_resources(service)
+            s = Session(r); action = s.advance()
+            held = s.vm.snapshot()
+            for elapsed in (0, 100, 149):
+                s.tick(elapsed)
+                self.assertIs(s.answer(1), action)
                 self.assertEqual(s.vm.snapshot(), held)
-                self.assertEqual(s.engine.result_cells[0], 42)
-                saved = json.loads(json.dumps(s.snapshot()))
-                restored = Session.from_snapshot(r, saved)
+                self.assertEqual(s.engine.sound_serial, 0)
+            saved = s.snapshot()
+            restored = Session.from_snapshot(r, saved)
+            self.assertFalse(restored.choice_ready)
+            restored.tick(1)
+            self.assertTrue(restored.choice_ready)
+            self.assertEqual(restored.answer(1).request.args, (1 if service == 1 else 101,))
+            for invalid in (-1, 251, True):
+                malformed = copy.deepcopy(saved)
+                malformed['engine']['choice_ms'] = invalid
+                with self.assertRaises(SaveError):
+                    Session.from_snapshot(r, malformed)
+            saved['version'] = 23
+            del saved['engine']['choice_ms']
+            migrated = Session.from_snapshot(r, saved)
+            self.assertTrue(migrated.choice_ready)
+            self.assertEqual(migrated.vm.snapshot(), held)
+
+    def test_portrait_modes_select_opposite_native_header_and_text_insets(self):
+        layout = authored_layout()
+        details = dict(title='Choose a response', text='An authored prompt with enough words to wrap. ' * 3,
+                       options=['First', 'Second'], enabled=[True, True])
+        for kind in ('apk', 'ipa'):
+            layout.resources = SimpleNamespace(library=SimpleNamespace(kind=kind))
+            left = layout.page(dict(details, portrait_mode=1), has_portrait=True)
+            right = layout.page(dict(details, portrait_mode=2), has_portrait=True)
+            self.assertEqual(left.portrait.center[0], 57)
+            self.assertEqual(right.portrait.center[0], 263)
+            self.assertEqual(left.description.lines[0].x, 95 if kind == 'ipa' else 105)
+            self.assertEqual(right.description.lines[0].x, 0)
+            self.assertTrue(all(row.index == i for i, row in enumerate(right.rows)))
+
+    def test_both_choice_forms_expire_after_zero_and_keep_their_result_mapping(self):
+        for game in ('shs', 'cod'):
+            for service, result in ((1, 1), (2, 101)):
+                with self.subTest(game=game, service=service):
+                    r = timed_resources(service); r.library.game_id = game
+                    s = Session(r); s.advance()
+                    s.engine.result_cells[0] = 42
+                    held = s.vm.snapshot()
+                    s.tick(2000)
+                    self.assertEqual(s.remaining_ms, 0)
+                    self.assertEqual(s.vm.snapshot(), held)
+                    self.assertEqual(s.engine.result_cells[0], 42)
+                    saved = json.loads(json.dumps(s.snapshot()))
+                    restored = Session.from_snapshot(r, saved)
+                    self.assertEqual(restored.tick(0).name, 'choice')
+                    self.assertEqual(restored.tick(1).request.args, (result,))
+                    self.assertEqual(restored.engine.result_cells[0], result)
+                    # A click at exactly zero still wins before the next active tick.
+                    self.assertEqual(s.answer(2).request.args, (2 if service == 1 else 102,))
+
+    def test_cod_observed_timeout_sentinels_survive_save_and_resume_once(self):
+        # Explicit compatibility policy; the native out-of-bounds read has no
+        # defined callback. In-range indices still use the mapped values above.
+        # This fork returns -1's slot as 0 (cod/profile.py TIMEOUT_NO_OPTION_RESULT) and 1000 unmapped.
+        for default, result in ((-1, 0), (1000, 1000)):
+            with self.subTest(default=default):
+                r = timed_resources(2, default=default); r.library.game_id = 'cod'
+                s = Session(r); s.advance(); held = s.vm.snapshot()
+                s.tick(2000)
+                self.assertEqual(s.vm.snapshot(), held)
+                restored = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
                 self.assertEqual(restored.tick(0).name, 'choice')
                 self.assertEqual(restored.tick(1).request.args, (result,))
                 self.assertEqual(restored.engine.result_cells[0], result)
-                # A click at exactly zero still wins before the next active tick.
-                self.assertEqual(s.answer(2).request.args, (2 if service == 1 else 102,))
+                after = restored.vm.snapshot()
+                restored.tick(100)
+                self.assertEqual(restored.vm.snapshot(), after)
+
+    def test_other_invalid_timeouts_keep_the_pending_call_in_both_games(self):
+        for game in ('shs', 'cod'):
+            # CoD returns any selection past its options unmapped in this fork (TIMEOUT_PAST_OPTIONS_UNMAPPED).
+            defaults = (-2,) if game == 'cod' else (-2, -1, 3, 1000, 32767)
+            for default in defaults:
+                with self.subTest(game=game, default=default):
+                    r = timed_resources(2, default=default); r.library.game_id = game
+                    s = Session(r); action = s.advance()
+                    s.engine.result_cells[0] = 42
+                    held = s.vm.snapshot()
+                    with self.assertRaisesRegex(VMError, 'timeout index is out of range'):
+                        s.tick(2001)
+                    self.assertIs(s.pending, action)
+                    self.assertEqual(s.vm.snapshot(), held)
+                    self.assertEqual(s.engine.result_cells[0], 42)
 
     def test_an_incremental_timeout_selecting_no_option(self):
         from exp_runtime.vm import VMError
@@ -85,24 +165,61 @@ class ChoiceTimingTests(unittest.TestCase):
     def test_nonpositive_durations_have_no_timer_and_do_not_expire(self):
         for service in (1, 2):
             for timeout in (-1, 0):
-                s = Session(timed_resources(service, timeout)); s.advance()
+                s = Session(timed_resources(service, timeout)); s.advance(); s.tick(250)
                 before = s.snapshot()
                 s.tick(100000)
                 self.assertIsNone(s.remaining_ms)
                 self.assertEqual(s.snapshot(), before)
                 self.assertIsNone(authored_layout().page(s.pending.details).timer_panel)
 
-    def test_timer_has_room_below_rows_and_stays_visible_above_scrolling_choices(self):
+    def test_every_row_and_timer_fit_above_the_footer_without_scrolling(self):
         layout = authored_layout()
         for count in (2, 3, 9):
             s = Session(timed_resources(count=count)); s.advance()
             page = layout.page(s.pending.details)
             self.assertLessEqual(page.timer_panel.y + page.timer_panel.height, 421)
             last = page.rows[-1].rect
-            self.assertEqual(last.y + last.height - page.max_scroll, page.timer_panel.y)
+            self.assertEqual(last.y + last.height, page.timer_panel.y)
+            self.assertEqual(page.max_scroll, 0)
+            self.assertEqual(len(page.rows), count)
             plain = layout.page(dict(s.pending.details, timeout_ms=0))
-            self.assertEqual(page.box.height - plain.box.height, 20)
+            if count < 9:
+                self.assertEqual(page.box.height - plain.box.height, 20)
+                self.assertEqual(page.text_scale, 1)
             self.assertIsNone(plain.timer_panel)
+
+    def test_tall_quiz_repositions_before_shrinking_and_extreme_text_reflows(self):
+        layout = authored_layout()
+        details = dict(title='Make your choice!', text='Choose the correct response.',
+                       options=['Answer'] * 6, enabled=[True] * 6, timeout_ms=1000)
+        original = copy.deepcopy(details)
+        page = layout.page(details)
+        self.assertEqual(page.text_scale, 1)
+        self.assertEqual(page.box.y + page.box.height, 421)
+        self.assertEqual(details, original)
+        for kind in ('apk', 'ipa'):
+            layout.resources = SimpleNamespace(library=SimpleNamespace(kind=kind))
+            for portrait in (False, True):
+                for timed in (0, 1000):
+                    d = dict(details, text='A longer authored question. ' * 8,
+                             options=['A long answer with multiple words. ' * 4] * 9,
+                             enabled=[True, False, True] * 3, timeout_ms=timed)
+                    before = copy.deepcopy(d)
+                    page = layout.page(d, has_portrait=portrait)
+                    self.assertEqual(d, before)
+                    self.assertEqual(page.max_scroll, 0)
+                    self.assertLess(page.text_scale, 1)
+                    self.assertGreaterEqual(page.box.y, 32)
+                    self.assertLessEqual(page.box.y + page.box.height, 421)
+                    self.assertEqual([row.index for row in page.rows], list(range(9)))
+                    self.assertEqual([row.enabled for row in page.rows], d['enabled'])
+                    for row, label in zip(page.rows, d['options']):
+                        self.assertEqual(len(row.text.glyphs), len(label.replace(' ', '')))
+                        left, top, right, bottom = row.text.ink_bounds
+                        self.assertGreaterEqual(row.origin[0] + left * page.text_scale, row.rect.x)
+                        self.assertLessEqual(row.origin[0] + right * page.text_scale, row.rect.x + row.rect.width)
+                        self.assertGreaterEqual(row.origin[1] + top * page.text_scale, row.rect.y)
+                        self.assertLessEqual(row.origin[1] + bottom * page.text_scale, row.rect.y + row.rect.height)
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
@@ -129,12 +246,48 @@ class ChoiceTimerRenderTests(unittest.TestCase):
         art.frame_scaled = lambda asset, index, scale: frame(asset, index)
         art.draw_bottom_bar = lambda *args, **kwargs: None
         art.box = lambda *args, **kwargs: None
-        text = SimpleNamespace(layout=lambda name, value, width, style:
-                               layout_text(layout.font(name), value, width, style),
-                               draw_layout=lambda *args, **kwargs: None)
+        text = SimpleNamespace(layout=lambda name, value, width, style, **kwargs:
+                               layout_text(layout.font(name), value, width, style, **kwargs),
+                               draw_layout=lambda *args, **kwargs: None, draw_footer=lambda *args: None)
         renderer = ChoiceRenderer(None, text, art)
         renderer.layout = layout
         return renderer
+
+    @unittest.skip("exp-runtime's iPhone choice entrance fade (SHSUIMenu::internalTransitionOn); not ported to this fork's choice renderer yet")
+    @unittest.skip("exp-runtime's iPhone choice entrance fade (SHSUIMenu::internalTransitionOn); not ported to this fork's choice renderer yet")
+    def test_ipa_choice_fades_over_background_and_restores_mid_entrance(self):
+        import pygame
+        r = timed_resources(timeout=0)
+        r.library.kind = 'ipa'
+        s = Session(r); s.advance()
+        renderer = self.renderer()
+        renderer.resources = r
+        renderer.art.draw_background = lambda canvas, engine: canvas.fill((20, 40, 60))
+        renderer.art.box = lambda canvas, rect, *args, **kwargs: pygame.draw.rect(
+            canvas, (220, 140, 80), (rect.x, rect.y, rect.width, rect.height))
+        target = pygame.Surface((320, 480))
+        page, _ = renderer.draw(target, s)
+        point = page.box.x + 12, page.box.y + 12
+        self.assertEqual(target.get_at(point)[:3], (20, 40, 60))
+        s.tick(125)
+        before = s.snapshot()
+        renderer.draw(target, s)
+        self.assertEqual(s.snapshot(), before)
+        color = target.get_at(point)[:3]
+        self.assertTrue(all(abs(a - b) <= 1 for a, b in zip(color, (120, 90, 70))))
+        pixels = pygame.image.tobytes(target, 'RGB')
+        restored = Session.from_snapshot(r, before)
+        renderer.draw(target, restored)
+        self.assertEqual(pygame.image.tobytes(target, 'RGB'), pixels)
+        restored.tick(125)
+        renderer.draw(target, restored)
+        self.assertEqual(target.get_at(point)[:3], (220, 140, 80))
+        # Android attaches its panel immediately, with the same input gate.
+        r.library.kind = 'apk'
+        s = Session(r); s.advance()
+        renderer.draw(target, s)
+        self.assertEqual(target.get_at(point)[:3], (220, 140, 80))
+        self.assertFalse(s.choice_ready)
 
     def test_clock_sweep_restores_from_saved_time_and_rendering_does_not_advance_vm(self):
         import pygame
@@ -163,7 +316,7 @@ class ChoiceTimerRenderTests(unittest.TestCase):
                 self.assertEqual(target.get_at(left)[:3], (200, 0, 0))
                 self.assertEqual(restored.pending.name, 'choice')
 
-    def test_scroll_keeps_timer_fixed_and_out_of_option_hit_rectangles(self):
+    def test_all_option_hits_fit_above_the_timer_and_rendering_preserves_state(self):
         import pygame
         s = Session(timed_resources(count=9)); s.advance(); s.tick(1000)
         renderer = self.renderer(); target = pygame.Surface((320, 480))
@@ -171,11 +324,14 @@ class ChoiceTimerRenderTests(unittest.TestCase):
         panel = pygame.Rect(page.timer_panel.x, page.timer_panel.y,
                             page.timer_panel.width, page.timer_panel.height)
         pixels = pygame.image.tobytes(target.subsurface(panel), 'RGB')
-        for scroll in (0, page.max_scroll // 2, page.max_scroll):
-            _, buttons = renderer.draw(target, s, scroll=scroll)
+        before = s.snapshot()
+        for _ in range(2):
+            _, buttons = renderer.draw(target, s)
             self.assertEqual(pygame.image.tobytes(target.subsurface(panel), 'RGB'), pixels)
             self.assertTrue(all(not rect.colliderect(panel) for rect, _ in buttons))
-        self.assertIn(('choose', 8), [command for _, command in buttons])
+        self.assertEqual([command for _, command in buttons],
+                         [('choose', i) for i in range(9)] + [('menu',)])
+        self.assertEqual(before, s.snapshot())
         self.assertEqual(s.pending.name, 'choice')
 
 
@@ -210,13 +366,13 @@ class ChoiceTests(unittest.TestCase):
         details['options'] = ['A long option with multiple lines. ' * 4] * 9
         details['enabled'] = [True] * 9
         long = layout.page(details, theme=1, has_portrait=True)
-        self.assertGreater(long.max_scroll, 0)
+        self.assertEqual(long.max_scroll, 0)
+        self.assertLessEqual(long.box.y + long.box.height, 421)
         self.assertEqual(len(long.rows), 9)
         for row in long.rows:
             _, top, _, bottom = row.text.ink_bounds
-            self.assertGreater(row.rect.height, 44)
-            self.assertGreaterEqual(row.origin[1] + top, row.rect.y)
-            self.assertLessEqual(row.origin[1] + bottom, row.rect.y + row.rect.height)
+            self.assertGreaterEqual(row.origin[1] + top * long.text_scale, row.rect.y)
+            self.assertLessEqual(row.origin[1] + bottom * long.text_scale, row.rect.y + row.rect.height)
 
     @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
     def test_translucent_panel_matches_on_rgb_and_cocoa_default_canvases(self):
@@ -333,7 +489,7 @@ class ChoiceTests(unittest.TestCase):
         self.assertIsNone(ui.error)
 
     @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
-    def test_real_choice_survives_rendering_and_scroll_keeps_last_index_reachable(self):
+    def test_real_choice_and_last_index_remain_reachable_without_scrolling(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
         from exp_runtime.desktop import Desktop
@@ -351,6 +507,7 @@ class ChoiceTests(unittest.TestCase):
         self.assertEqual([c for _, c in ui.buttons], [('choose', 0), ('choose', 1), ('menu',)])
         for choice, pc in ((0, 336), (1, 352)):
             ui.session = Session.from_snapshot(resources, before)
+            ui.session.tick(250)
             ui.render()
             ui.command(('choose', choice))
             self.assertEqual(ui.session.pending.request.pc, pc)
@@ -359,11 +516,18 @@ class ChoiceTests(unittest.TestCase):
         resources.programs[65000] = program(*host_call(1, title, options, prompt, 0, -1, -1, 0, 1),
                                             0x21, (0x1f, 0xfe01), words=words)
         ui.session = Session(resources, start_script=65000)
-        ui.session.advance()
+        ui.session.advance(); ui.session.tick(250)
         ui.render()
-        self.assertGreater(ui.max_scroll, 0)
-        ui.scroll = ui.max_scroll
+        self.assertEqual(ui.max_scroll, 0)
+        before = ui.session.snapshot()
+        hits = [(tuple(rect), command) for rect, command in ui.buttons]
+        for event in (pygame.event.Event(pygame.MOUSEWHEEL, y=-5),
+                      pygame.event.Event(pygame.KEYDOWN, key=pygame.K_PAGEDOWN)):
+            ui.handle_event(event)
+            self.assertEqual(ui.scroll, 0)
         ui.render()
+        self.assertEqual(hits, [(tuple(rect), command) for rect, command in ui.buttons])
+        self.assertEqual(before, ui.session.snapshot())
         rect = next(rect for rect, command in ui.buttons if command == ('choose', 8))
         gear = next(rect for rect, command in ui.buttons if command == ('menu',))
         self.assertFalse(rect.colliderect(gear))

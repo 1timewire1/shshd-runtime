@@ -18,10 +18,12 @@ from .scene_badge import SceneBadge
 from .loading import LoadingScreen
 from .message_panel import MessagePanel
 from .speaker_names import SpeakerNames
+from .fonts import TextHistory
 from .title_screen import TitleScreen
 from .relationships import RelationshipChange
 from .dialogue_animation import DialogueAnimation, DialogueHistory
 from .background import BackgroundPan
+from .music_state import MusicPlayback, SoundPlayback
 from .dialogue_notice import notice_lifetime
 from .dt_state import CLEARED_WITH_CHARACTER, read_state
 from .dtview_faceplace import DTView, FaceplaceToast, FaceplaceWall
@@ -79,6 +81,7 @@ class EngineState:
     # Derived from the validated library, never accepted from saved engine data.
     game_key: ClassVar[str] = 'shs'
     app_version: ClassVar[str | None] = None
+    _sound_batch: ClassVar[list[int] | None] = None
     numbers: dict[int, int] = field(default_factory=dict)
     strings: dict[str, str] = field(default_factory=dict)
     character_names: dict[int, str] = field(default_factory=dict)
@@ -98,17 +101,19 @@ class EngineState:
     background_pan: BackgroundPan = field(default_factory=BackgroundPan)
     music_id: int = -1
     music_flag: bool = False
-    # Playback state, not saved fields: the last service 81's fade-out, and a count of music requests and stops so the
-    # player sees the same cue asked for again (music_stream.py).
-    music_stop_fade_ms = 0
-    music_requests = 0
+    music_serial: int = 0
+    music_stop_ms: int = 0
+    music_playback: MusicPlayback | None = None
     sound_id: int = -1
     sound_serial: int = 0
     sound_ids: list[int] = field(default_factory=list)
+    sound_playback: list[SoundPlayback] = field(default_factory=list)
     scene_value: int = 0
+    scene_transition: GameState | None = None
     last_input: str = ''
     result_cells: list[int | None] = field(default_factory=lambda: [None] * 10)
     choice_builder: dict | None = None
+    choice_ms: int = 250
     random48: Random48 = field(default_factory=Random48)
     word_game: WordGame | None = None
     random: NativeRandom = field(default_factory=NativeRandom)
@@ -128,10 +133,25 @@ class EngineState:
     loading: LoadingScreen | None = None
     message_panel: MessagePanel | None = None
     speaker_names: SpeakerNames = field(default_factory=SpeakerNames)
+    text_history: TextHistory = field(default_factory=TextHistory)
     title_screen: TitleScreen | None = None
     dt_view: DTView = field(default_factory=DTView)
     faceplace: FaceplaceWall = field(default_factory=FaceplaceWall)
     faceplace_toast: FaceplaceToast | None = None
+
+    def clear_dialogue(self):
+        self.dialogue_history.remember(self.dialogue_animation)
+        self.dialogue_animation = None
+
+    def request_sound(self, *assets):
+        """Keep every cue emitted by one session input/tick in native order."""
+        self.sound_id = assets[0]
+        if self._sound_batch is None:
+            self.sound_ids = list(assets)
+        else:
+            self._sound_batch.extend(assets)
+            self.sound_ids = self._sound_batch[:]
+        self.sound_serial += 1
 
     def clear_scene_expressions(self):
         """loadScript09NoGUI clears both 200-byte expression tables."""
@@ -157,8 +177,11 @@ class EngineState:
         self.word_game = self.word_grid = self.football = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
+        self.choice_ms = 250
         self.next_dialogue_notice = self.notice = self.last_input = ''
         self.notice_ms = self.notice_mode = self.scene_value = 0
+        if self.scene_transition is not None:
+            self.scene_transition.clear()
 
     @staticmethod
     def number_key(owner: int, key: int) -> int:
@@ -266,8 +289,7 @@ class EngineState:
         self.numbers[self.number_key(character, 3000)] = asset
         self.numbers[self.number_key(character, 3001)] = count
         if not settled and change.sound is not None:
-            self.sound_id, self.sound_ids = change.sound, [change.sound]
-            self.sound_serial += 1
+            self.request_sound(change.sound)
         return change
 
     def _alert_for(self, post) -> None:
@@ -500,7 +522,7 @@ class EngineState:
             # dialogue lines after football rendered as -1 (blank) for
             # several steps until an explicit yield 35 set a new background.
             self.panel = PanelState(background_id=self.panel.background_id)
-            self.dialogue_animation = None
+            self.clear_dialogue()
             self.next_dialogue_notice, self.notice, self.notice_ms, self.notice_mode = '', '', 0, 0
             return complete('close_dialogue_panel')
         if y in (11, 34, 35, 86):
@@ -556,17 +578,21 @@ class EngineState:
             need(1)
             self.audio_stopped = True
             self.music_id = -1
-            self.music_requests += 1
-            # SHSSoundManager::stopMusic(short, true) (SHS HD case 0x51 -> 00053424, CoD 1.4.7 00046a10): 0 stops at once,
-            # 0xffff means 1000 ms and any other value is the fade in ms (-[SHSSound setFadeTime:] divides it by 1000.0).
-            # Other negative shorts would never finish natively; they stop at once here. (Android's stop is unverified.)
+            # SHSSoundManager::stopMusic(short, true) (SHS HD case 0x51 -> 00053424, CoD 1.4.7 00046a10 / 1.3.4 00042d70):
+            # 0 stops at once, 0xffff means 1000 ms and any other value is the fade in ms (-[SHSSound setFadeTime:]
+            # divides it by 1000.0). Other negative shorts would never finish natively; they stop at once here. SHS
+            # Android's 000a3260 ignores the argument, so SHS without its HD build stops at once.
             fade = args[0] & 0xffff
-            self.music_stop_fade_ms = 1000 if fade == 0xffff else fade if fade < 0x8000 else 0
-            return complete('stop_audio')
+            fades = self.game_key == 'cod' or self.hd_version is not None
+            self.music_stop_ms = (1000 if fade == 0xffff else fade if fade < 0x8000 else 0) if fades else 0
+            self.music_serial += 1
+            self.music_playback = None
+            return complete('stop_audio', fade_ms=self.music_stop_ms)
         if y == 82:
             need(0)
             # FUN_000a3040 requests 1000ms from the optional vibrator, only
-            # when present and enabled. Desktop has no vibrator; it plays a buzz of that length instead.
+            # when present and enabled. The iPhone host uses its native
+            # system vibration alert; the desktop plays a buzz in its place (vibration.py, PR #10).
             self.vibration_serial += 1
             return complete('vibrate', duration_ms=1000)
         if y in (79, 80):
@@ -574,12 +600,12 @@ class EngineState:
             if y == 80 or args[0] in GAMES[self.game_key].MUSIC_RANGE:
                 self.music_id = args[0]
                 self.music_flag = bool(args[1]) if y == 80 else False
-                self.music_requests += 1
+                self.music_stop_ms = 0
+                self.music_serial += 1
+                self.music_playback = None
                 self.audio_stopped = False
             else:
-                self.sound_id = args[0]
-                self.sound_ids = [args[0]]
-                self.sound_serial += 1
+                self.request_sound(args[0])
             return complete('request_audio', asset_id=args[0])
         if y == 18:  # Explicit default/no-op in this Android dispatcher.
             need(0)

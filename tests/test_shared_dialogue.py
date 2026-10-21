@@ -8,7 +8,7 @@ from exp_runtime.content import EpisodeResources
 from exp_runtime.dialogue import DialogueLayout, dialogue_styles
 from exp_runtime.fonts import TextStyle, layout_text
 from exp_runtime.runtime import SaveError, Session
-from exp_runtime.speaker_names import NameFontState, SpeakerNames
+from exp_runtime.speaker_names import NameFontState, SpeakerNames, outline_speaker_label
 from exp_runtime.ui_assets import Rect
 import test_label_layout
 from test_label_layout import authored_dialogue
@@ -40,7 +40,14 @@ def check_original_page(test, session):
         if outline:
             test.assertLessEqual(page.body_origin[1] + page.body.ink_bounds[3],
                                  page.box.y + page.box.height + 1)
-        test_label_layout.SpeakerPlacementTests.assert_name_fits(test, page)
+        name_font = layout.font(page.name_font)
+        if getattr(name_font, 'native_face', False):
+            label = outline_speaker_label(session.pending.details['speaker'], mode, page.name_font,
+                                          layout.bank, name_font)
+            test.assertEqual((page.name, page.name_origin, page.name_scale),
+                             (label.layout, label.origin, 1))
+        else:
+            test_label_layout.SpeakerPlacementTests.assert_name_fits(test, page)
         test.assertTrue(session.engine.speaker_names.fonts)
 
 
@@ -53,6 +60,11 @@ class SharedDialogueTests(unittest.TestCase):
             self.assertEqual((cod[3].height, cod[3].gap), (14, 7))
             self.assertEqual(cod[3].color, (180, 78, 78) if theme == 2 else (0, 0, 0))
         self.assertEqual(dialogue_styles(1, game='shs')[3].color, (41, 104, 221))
+        for game, color, emphasis in (('shs', (223, 163, 52), (125, 67, 0)),
+                                      ('cod', (0, 0, 0), (180, 109, 26))):
+            style = dialogue_styles(-1, game=game, narrator=True)[3]
+            self.assertEqual((style.height, style.gap), (10, 7))
+            self.assertEqual((style.color, style.markers), (color, (('`', emphasis),)))
 
     def test_all_package_adapters_use_v013_geometry_and_speaker_history(self):
         reference = authored_dialogue()
@@ -94,6 +106,9 @@ class SharedDialogueTests(unittest.TestCase):
                                      [n * expected_step for n in range(len(page.body.lines))])
                     if mode != 4:
                         test_label_layout.SpeakerPlacementTests.assert_name_fits(self, page)
+                    else:
+                        self.assertEqual({g.color for g in page.body.glyphs},
+                                         {(0, 0, 0) if game == 'cod' else (223, 163, 52)})
                 expected_names, names = SpeakerNames(), SpeakerNames()
                 reference.resources.library.game_id = game
                 for mode in (2, 1, 3):
@@ -144,7 +159,7 @@ class SharedDialogueTests(unittest.TestCase):
                 self.assertNotEqual(restored.pending.details['page_end'], old['pending']['details']['page_end'])
                 self.assertTrue(restored.engine.speaker_names.fonts)
                 current = restored.snapshot()
-                self.assertEqual(current['version'], 21)
+                self.assertEqual(current['version'], 27)
                 self.assertEqual(Session.from_snapshot(session.resources, current).snapshot(), current)
                 current['pending']['details']['page_end'] -= 1
                 with self.assertRaisesRegex(SaveError, 'page does not match'):
@@ -183,7 +198,7 @@ class SharedDialogueTests(unittest.TestCase):
             self.assertEqual(restored.pending.details['page_start'], old['pending']['details']['page_start'])
             self.assertNotEqual(restored.pending.details['page_end'], old['pending']['details']['page_end'])
             current = restored.snapshot()
-            self.assertEqual(current['version'], 21)
+            self.assertEqual(current['version'], 27)
             self.assertEqual(Session.from_snapshot(session.resources, current).snapshot(), current)
             bad = deepcopy(old)
             bad['engine']['speaker_names']['fonts']['PajamaHip26']['lines'] += 1

@@ -159,6 +159,12 @@ layout dimensions and these native placement operations. Half-pixel origins
 are rounded at rasterization. The gear and info controls occupy the lower
 right corner. The desktop uses the ad-free arrangement.
 
+Entry uses the native relative moves of 478, 458, 438 and 418 pixels for the
+supplied 184-pixel button bank, over 250, 500, 750 and 1000 ms with rate-10
+ease-in/out. Exit derives a different relative distance from each child's
+retained parent-space X; it is not the reverse of the entrance or a move just
+to the screen edge. Intermediate positions keep half pixels until drawing.
+
 `000df868` centers the background/photo at logical `(160,240)`;
 `000dfa48` centers the title/ribbon at GL `(160,384)`, or top-origin y=96.
 The title ribbon rotates -5 degrees in the native clockwise convention.
@@ -335,21 +341,60 @@ slot; the manual slot is preserved. Existing libraries without preferences use
 their most recent save, or the New Girl metadata ID `(5,9)` when no save exists.
 
 Music/Sound preferences gate playback separately from VM-visible audio state.
-Leaving a live episode pauses its music stream; resuming that same session
-continues from its current position. Starting another episode, restarting, or
-loading a saved session instead loads its requested cue. Playback position is
-not saved to disk.
+APK playback pauses a live episode's music stream; resuming that same session
+continues from its current position. IPA playback uses the native stored-audio
+handoff described below. Starting another episode, restarting, or loading a
+saved session selects its own cue. Version-22 host checkpoints also
+save the actual outgoing music cue, playhead, repeat flag and fade phase, so
+restoring a save can continue a queued replacement rather than restart it.
+Headless saves without playback information start the requested cue normally.
 
 The shared menu now requests the selected game's original theme: **8215**
 for SHS and **8209** for CoD. Ghidra identifies these in iOS
 `splashScreenFlewIn:` (SHS `0002adb0`, CoD `00014c0c`) and
 `doSoundManagerTransition` (SHS `0003b44c`, CoD `00022b04`). Both supplied
 IPAs contain their menu track. Playback uses a separate SDL channel on desktop
-and a separate AVAudioPlayer on iOS, retaining the live story stream and
-playhead while navigating the main menu. Music mute and focus/background
-holds apply to the menu too. Switching games releases the old theme.
-Native looping/fades and exact splash-to-theme scheduling remain unverified;
-the theme currently plays once on entering the menu.
+and a separate AVAudioPlayer on iOS. Music mute and focus/background holds
+apply to the menu too. Switching games releases the old theme.
+Both native menu call sites request one-shot playback, matching the player.
+CoD story cue replacement and service-81 stop fades now follow its native
+sound manager; see [COD.md](COD.md). Both games' IPA pause/main-menu handoffs
+snapshot story music and effects, fade them over 1000/100 ms, and restore their
+saved playheads after the outgoing menu audio has faded. SHS `storeGameAudio`
+**0003ffb4**, `restoreGameAudio` **0003ff0c**, `stopMusic` **00075d5c** and
+`stopSounds` **00075c10** confirm the matching SHS path. The menu theme waits
+until story audio has stopped; a pause subpage does not start the theme. The
+saved positions precede the fade, use the native whole-second truncation, and
+cannot be overwritten by a later paused checkpoint. Effects are restored
+independently and obey Sound mute. Exact
+splash-to-theme scheduling and device output latency still need comparison.
+
+APK main-menu exits hide the gear parent, run its child scale for 250 ms,
+then hide the info parent and run its child fade over 300 ms, followed by the
+staggered 1000 ms row departure. Native callbacks
+**000df168 → 000dede4 → 000e0988 → 000df270 → 000de9fc** establish this
+sequence. Menu vtable **002a2708** slot `+0x6c` resolves to **0013b518**, which
+writes the visibility flag read by **00169d54** before traversing children.
+Thus the outgoing gear scale and info fade run while hidden; only the row
+departure is visible. After the last row, **000de9fc → 000de7fc** moves the
+underlying strip offscreen over another 500 ms. The photo background stays fixed.
+
+Android **00090818** attaches the requested submenu and starts the main-menu
+departure together. **00077e00** scales Options from 0.2 to 1 over 300 ms;
+**0006eb7c** scales Help from 0.1 to 1 over 400 ms; **0007aaa8** scales
+Play/Resume from 0.2 to 1 over 400 ms. Their zero-size CCNode parents are at
+GL `(160,464)`, giving a downward-coordinate pivot `(160,16)`. These are
+linear `CCScaleTo` actions, not fades or UIKit easing. A submenu becomes
+selectable after its entry while the main rows continue departing behind it.
+Subpage movement uses a 200 ms linear slide. On return, Play/Resume shrinks
+to 0.1 over 400 ms (**0007a1b4**); Help/Options hold until their 400 ms removal
+callbacks (**0006eefc/0006e4fc**, **00077040/00076480**). The main-menu entry
+clock starts afterward. Library/search/cheat screens retain authored content
+within these shared transitions, not original store behavior.
+
+IPA submenus use the recovered 400 ms UIKit
+zoom/slide transitions. CoD Start/Resume additionally uses its native black
+menu-to-story fade, described in [COD.md](COD.md#scene-transitions).
 
 ## 5. Executable and content boundary
 
@@ -414,8 +459,19 @@ The supplied menu banks select entry transition **20** for Pause (SHS menu
 assembly **00045620–00045720**, scales the menu from **0.001** to **1** about
 its center over **400 ms**, with UIKit ease-in/out (curve 0). The frontend
 uses that curve and duration, with story clocks frozen and pointer input gated
-until entry finishes. Dimming opacity and exit/subpage transitions retain their
-previous behavior; those details are not claimed as native-equivalent.
+until entry finishes. Closing an IPA pause menu scales from 1 to 0.00001 over
+400 ms before resuming the story. Subpages preserve the captured background
+and use the corresponding zoom/slide direction.
+
+iOS `updatePauseLayer` (SHS **0003b9a8**, CoD **00018728**) settles the dialogue
+layers, captures the scene and applies a sepia RGB matrix. The renderer now
+uses those double-precision coefficients, truncation and channel saturation,
+once per pause opening; Options/Help retain the same image. Pending expression
+UI timers and the VM stay paused. Android **0008b900** instead attaches a
+full-screen color layer with packed RGBA `0x6e2483b8`: `(184,131,36,110)`.
+The layer initializer **0013a708** and draw path **0013a7e4** confirm that
+nonopaque colors use source-alpha/one-minus-source-alpha blending. APK pause
+now uses that bronze tint in place of the previous black overlay.
 
 ### Menu entrances (PR #9, checked against SHS HD)
 
@@ -526,7 +582,17 @@ followed by release dispatch. Normal alternating RGBA colors are
 Shared menu buttons use their supplied pressed artwork. Dragging off, scrolling,
 losing focus, replacing a panel or redealing a timed quiz cancels the old press.
 
-**Options → Cheats → Choice hints**, added in v0.4.0, is an
+**Options → Cheats → Minigame skips** is a separate, default-off per-game
+preference. It prompts before every football, word-grid or four-option
+word-selection game, holding the timer until **Skip with success**, **Skip
+with failure**, or **Play minigame** is selected. A saved Play decision applies
+only to that call; the next minigame prompts again. The pause menu also offers
+both skips after play starts. Ordinary timed choices are excluded. Football
+and grids are SHS-only; word selection also occurs in CoD. The prompt and pause
+rows share the original system-menu artwork and held/released selection.
+See [the skip contract](MINIGAMES.md#optional-minigame-skips) for callback values.
+
+**Options → Cheats → Answer hints** (formerly **Choice hints**), added in v0.4.0, is an
 authored, opt-in per-game preference, off by default. Green marks recognized
 gains/correct answers, red recognized losses/wrong answers or a
 no-gain alternative when another option has a known gain, amber mixed effects.
@@ -543,18 +609,26 @@ Mini-Games") is another authored, opt-in preference, off by default:
 - **The prompt:** it states the game's half, side and starting score, or the
   grid's target, time and words.
 - **Win and Lose** finish the game through `Session.skip_minigame`, giving the
-  script the result a real game would. Football ends 7 points over the higher
-  starting score for the winning side and records that as the scores. The grid
-  passes or fails.
+  script the result a real game would (exp-runtime v0.6.0's skip, which this
+  fork's option now uses). Football keeps the starting scores where the chosen
+  winner already leads by a touchdown; otherwise the winner ends 7 points ahead
+  of the other side. Those are recorded as the scores. The grid passes or fails.
 - **Play** starts the game, and the same game is not asked again.
 - **Not included:** the rapid-fire word quiz (service 71).
+
+CoD answer-entry puzzles also show a faint accepted spelling when the field
+is empty. Existing defaults and typed text stay unchanged; confirmation still
+requires a typed answer. This uses the same saved preference. Ordinary name
+entry and uncertain answers stay unhinted. See the [input hint contract](
+NAME_INPUT.md#optional-answer-hints) for comparison discovery and preview limits.
 
 The preview executes isolated copies of the current session, bounded to
 6,000 VM steps/48 panels per path, 16 options per decision, four decisions
 including the current one, and 192 branch copies across the whole preview.
 It observes relationship property 407, actually dispatched service-88
-“Score Up!”/“Detective Score Up!” notices and SHS's explicit service-79 answer
-feedback sounds (8007 correct / 8003 wrong). It does not infer score from
+“Score Up!”/“Detective Score Up!” notices and game-specific service-79 answer
+feedback sounds (SHS: 8007 correct / 8003 wrong; CoD: 8002 correct / 8001 wrong).
+It does not infer score from
 arbitrary counters or words in dialogue. When feedback is deferred, it compares
 every matching sequence of later answers across the initial options. Later
 questions must match by scene, instruction and enabled return values. An
@@ -567,6 +641,9 @@ Missing resources, unmatched decisions, unknown services and exhausted
 budgets stay unknown. Previewing never saves, emits audio/host requests or
 changes live VM state, clocks or random state. The real choice still runs the
 original branch, including the ordinary Score Up animation.
+Native bytecode pauses, loading waits and the local survey receipt can be
+crossed on the isolated copy. Their real callback/continuation is used;
+neither an external request nor a fabricated result is introduced.
 
 Football Star's classroom questions use ordinary **service 1**, not the
 service-71 timed-word minigame. Its shared quiz routine (scene25004, PC300)
@@ -581,6 +658,25 @@ Android `000a3bc8` and SHS iOS `playSound` **0004a714** confirm the resource
 handoff; the original EXP establishes the correct/wrong meaning. Authored tests
 cover shuffled values, muted/stale audio independence, mixed feedback, unknown
 services and saves; optional replays check original APK/IPA classroom questions.
+
+The reported CoD Volume Two opening fight is in chapter 3, scene 25006.
+At PC187 the successful branch plays 8002; the fatal branch plays 8001 and
+reaches the retry/menu decision at PC2080. There is no Score Up notice on
+that fatal path. CoD's native `SHSSoundManager::playSound` **000431cc**
+confirms the asset handoff; the EXP establishes each cue's meaning. The
+runtime uses the profile's cue mapping for every episode, with no character,
+scene, PC or dialogue-text exception. CoD's timed-word cues (8003/8004) are
+separate and use the minigame's explicit weights.
+
+A bounded walk reached 10,355 choice states across 80 unique CoD archives
+and 271 unique archives in the supplied SHS episode folder. CoD's literal
+service-79 sites include 2,326 positive and 2,618 negative feedback calls.
+The walk limits each archive to 48 choice states, depth 12 and five seconds;
+it stops at minigames and unsupported contracts. These counts are sampled
+coverage, not an exhaustive proof or a promise to solve every ending.
+Uninitialized script storage, SHS promotional service 100, resource-dependent
+minigames and budget limits remain explicit boundaries. All original scripts
+and the detailed audit stay outside distribution artifacts.
 
 The original gray choice skin (property 651 = 3, resource 252) does contain
 red/green button art, but those are native selection colors rather than an
@@ -620,8 +716,9 @@ yet established. Known adaptations and gaps:
   settings. Original episode preview/download details are not reconstructed.
 - Entrance models the one-second photo scale, title at 1.1s, menu backdrop at
   1.6s, and staggered 250/500/750/1000ms buttons starting at 2s. Native
-  `000dede4`/`000df168` subsequently fade the info button and grow the gear;
-  these appear immediately at 3s here. Returning main menu uses a 500ms slide;
+  `000dede4`/`000df168` subsequently fade the info button over 300 ms from
+  3s, then grow the gear from .1 to 1 over 250 ms. Those two stages are now
+  implemented. Returning main menu uses a 500ms slide;
   submenus use a 200ms crossfade rather than the full native panel movement.
 - Save formats and automatic checkpoints are compatible-runtime features,
   not emulation of the original binary `.sav` files.

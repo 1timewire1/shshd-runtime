@@ -13,15 +13,15 @@ System-font fallback and current limits are in [IPA.md](IPA.md) and [COD.md](COD
 [Builds](../.github/workflows/desktop-builds.yml) runs on branch pushes,
 pull requests, version tags beginning with `v`, and manual **Run workflow**
 requests. It installs locked dependencies with uv and Python 3.14, runs the
-tests without game content, builds the app, audits its bundle and tests the
-extracted desktop download. It also calls the reusable
+tests without game content, builds the player and creator, audits their bundles
+and tests the extracted desktop downloads. It also calls the reusable
 [iOS workflow](../.github/workflows/ios-builds.yml), which verifies the shared
 engine and native presentation in a simulator before packaging the unsigned
 device app. Third-party actions are pinned to verified commit hashes.
 
 The Python packaging job builds all component wheels and source archives,
 then checks isolated pip installs on Python 3.10 and 3.14. Its
-`python-packages` Actions artifact contains the six distributions and their
+`python-packages` Actions artifact contains the component distributions and their
 checksums. Version-tag runs also publish these tested wheels and source
 archives to PyPI after all checks pass. See [PyPI publishing](#pypi-publishing)
 for the required one-time setup and [SDK.md](SDK.md) for component installs.
@@ -35,8 +35,9 @@ for the required one-time setup and [SDK.md](SDK.md) for component installs.
 | `ios-arm64-unsigned` | `macos-26` | Unsigned IPA for users to sign and install |
 
 After a successful run, development downloads are under **Actions → Builds
-→ the run → Artifacts**, with one artifact per platform. Each contains
-an app archive and its `.sha256` checksum; extract the outer artifact ZIP and
+→ the run → Artifacts**, with one artifact per platform. Each desktop artifact
+contains separate player and creator archives with `.sha256` checksums;
+extract the outer artifact ZIP and
 then the app archive (or sign the IPA). The simulator report is a separate
 `ios-simulator-verification` artifact and is not a release download.
 These artifacts expire after 30 days. GitHub requires
@@ -65,6 +66,10 @@ release history, with upcoming changes under **Unreleased**.
 The prepared release notes ([RELEASE.md](../RELEASE.md)) describe this fork's **v1.0.1**. Upstream's
 earlier releases remain documented in the changelog.
 
+exp-runtime v0.6.0 added an optional seventh distribution, the episode creator (`shshd-runtime-creator` here). Its wheel
+is built and audited with the others; the player downloads do not include Qt or the editor, and this fork
+builds no standalone Creator downloads.
+
 Rerunning a version-tag workflow updates matching assets on an existing
 release using `gh release upload --clobber`, then publishes any draft left by
 an interrupted upload. If GitHub release immutability is enabled, publish a
@@ -83,15 +88,16 @@ reference:
 The `publish-pypi` job runs only for pushed `v*` tags, after both Python
 packaging jobs, all desktop builds and iOS verification succeed. It downloads
 the same run's `python-packages` artifact, verifies every SHA-256 checksum and
-stages only the six wheels and six source archives. The publishing job does
+stages only the component wheels and source archives. The publishing job does
 not check out, build or install the project. Metadata validation and PyPI
 attestations remain enabled in the pinned PyPA publishing action.
 
 Before the first tag using this workflow, configure
 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
 for **each** project: `exp-runtime`, `exp-runtime-formats`,
-`exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs` and
-`exp-runtime-cod`. Each registration uses the same values:
+`exp-runtime-engine`, `exp-runtime-player`, `exp-runtime-shs`,
+`exp-runtime-cod` and `exp-runtime-creator`. The creator is new in v0.6.0 and
+needs its own publisher registration. Each registration uses the same values:
 
 | Publisher field | Value |
 | --- | --- |
@@ -104,23 +110,23 @@ For an existing project you own, add this publisher in its PyPI **Publishing**
 settings. For a new project, register a pending publisher through your
 [account's Publishing page](https://pypi.org/manage/account/publishing/);
 [PyPI creates the project on its first successful upload](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
-A pending publisher does not reserve a name. Configure all six before
+A pending publisher does not reserve a name. Configure every component before
 releasing, since every component is pinned to the common version.
 
 In GitHub **Settings → Environments**, create `pypi` and restrict its deployment
 tags to `v*`. The PyPI environment field must match this name exactly. No
 PyPI API token or repository secret is needed: only the publishing job has
 `id-token: write`, allowing the action to obtain short-lived PyPI credentials.
-Branch pushes, pull requests and manual runs build artifacts without uploading
-to PyPI.
+Branch pushes, pull requests and ordinary manual builds do not upload to PyPI.
+Manual recovery can retry publishing artifacts from a tested version-tag run.
 
-PyPI files cannot be replaced. The workflow intentionally fails on an existing
-filename rather than silently skipping it. After a successful upload, rerun
-only failed jobs if an unrelated release job needs another attempt. If an
-upload fails after publishing some files, inspect that PyPI release before
-retrying; a full retry will reject those existing files. Use a new common
-version and tag for changed distributions. The GitHub app release and PyPI
-upload are separate jobs, so check both when releasing.
+PyPI files cannot be replaced. The workflow skips already published files
+only when their SHA-256 checksums match the tested artifacts; different bytes
+under an existing filename stop publication. If an upload partially succeeds,
+retry with the same tested artifacts. The manual workflow accepts the original
+tag run's `release_run_id` and a `retry_pypi` option to upload the remaining
+files. Use a new common version and tag for changed distributions. The GitHub
+app release and PyPI upload are separate jobs, so check both when releasing.
 
 ### Adding an IPA to an existing release
 
@@ -227,3 +233,24 @@ Their JSON outputs belong in ignored local directories, not in the published
 source. The format and VM specifications retain evidence addresses and
 historical verification summaries. See [PROVENANCE.md](PROVENANCE.md) for how
 to interpret references to private evidence snapshots.
+
+## Creator downloads
+
+Desktop jobs also build `EXP Runtime Creator` with `tools/build_desktop.py
+--creator`, then package/audit/smoke-test it using `tools/package_desktop.py
+--creator --smoke-test`. Files use `exp-runtime-creator-<label>-<target>` and are
+included in the same desktop Actions artifact/release upload as the player.
+For v0.6.1 the required release archives are:
+
+- `exp-runtime-creator-v0.6.1-windows-x64.zip`
+- `exp-runtime-creator-v0.6.1-linux-x64.tar.gz`
+- `exp-runtime-creator-v0.6.1-macos-arm64.zip`
+- `exp-runtime-creator-v0.6.1-macos-x64.zip`
+
+Each has a `.sha256` checksum. A missing archive or checksum stops the release
+upload. The `exp_runtime_creator-0.6.1-py3-none-any.whl` wheel and its checksum
+are also required release files.
+
+The creator contains Qt and the shared preview player; player and iOS downloads
+exclude the creator and MCP dependencies. The separately installable
+`exp-runtime[creator-mcp]` extra runs the headless stdio server.

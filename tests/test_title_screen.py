@@ -101,6 +101,7 @@ class TitleScreenTests(unittest.TestCase):
                     random.next()
                     self.assertEqual(restored.engine.random48, random)
                     self.assertEqual(restored.engine.scene_value, 0)
+                    # (exp-runtime holds the title here for its SceneTransition, which this fork leaves unset.)
                     self.assertEqual(restored.pending.request.args, (77, 0))
 
     def test_old_saves_settle_the_intro_and_invalid_current_saves_are_rejected(self):
