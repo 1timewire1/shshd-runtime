@@ -228,6 +228,24 @@ class TitleCardRunTests(unittest.TestCase):
         self.assertEqual(session.skips, [('word_game', True)])
         self.assertEqual((session.answers, session.ticks), ([1], [episode_thumbnails.CHOICE_PACE_MS]))
 
+    def test_fourth_of_july_part_two_borrows_part_ones_card_with_its_own_subtitle(self):
+        pygame.display.init()
+        pygame.display.set_mode((1, 1))
+        self.addCleanup(pygame.display.quit)
+        part1 = dict(id='one', pack_id=20000, episode_id=13)
+        part2 = dict(id='two', pack_id=20000, episode_id=14)
+        opened = []
+        library = SimpleNamespace(game_id='cod', episodes=[part1, part2], open_episode=lambda key: opened.append(key))
+        details = dict(title='Side Stories', subtitle='Fourth of July Special, Part 1')
+        session = SimpleNamespace(pending=SimpleNamespace(details=details), engine=SimpleNamespace(title_screen=None))
+        view = SimpleNamespace(tick=lambda ms: None, render=lambda: None, error=None)
+        with patch.object(episode_thumbnails, 'Session', return_value=session), \
+                patch.object(episode_thumbnails, 'run_to_title_card', return_value=True), \
+                patch('exp_runtime.desktop.Desktop', return_value=view):
+            self.assertIsNotNone(episode_thumbnails.capture_title_card(library, part2))
+        self.assertEqual(opened, ['one'])
+        self.assertEqual(details['subtitle'], 'Fourth of July Special, Part 2')
+
     def test_an_episode_with_no_title_card_or_an_unhandled_stop_is_given_up_on(self):
         self.assertFalse(episode_thumbnails.run_to_title_card(FakeSession('dialogue')))
         self.assertFalse(episode_thumbnails.run_to_title_card(FakeSession('episode_exit')))

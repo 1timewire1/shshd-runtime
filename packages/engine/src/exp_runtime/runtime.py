@@ -441,6 +441,14 @@ class Session:
         name, cursor = input_fonts(self.resources)
         return dict(font=layout.font(name), cursor_width=layout.font(cursor).glyph('|').advance, **policy)
 
+    def _typed_length(self, details):
+        """The source indices a page's reveal runs over. Android's cursor scans the whole remaining substring; the iOS
+        builds type only the page's own lines (`-[SHSTextLayer setupTypingLayers]` lays out the visible lines and
+        `addTypingAnimations:lineTime:` ends with the last of them), so their Continue comes when the page is out."""
+        ios = self.engine.hd_version is not None or getattr(self.resources.library, 'kind', 'apk') == 'ipa'
+        end = details.get('page_end', len(details['text'])) if ios else len(details['text'])
+        return end - details['page_start']
+
     def _prepare_dialogue(self, *, new_name=False, update_text=False):
         details = self.pending.details
         history = self.bitmap_history if update_text else None
@@ -520,7 +528,8 @@ class Session:
                         action.details, self.engine.character_art_variants, self.engine.dialogue_animation,
                         self.engine.dialogue_history,
                         retain_suppressed=self.engine.game_key == 'shs'
-                        and getattr(self.resources.library, 'kind', 'apk') == 'apk')
+                        and getattr(self.resources.library, 'kind', 'apk') == 'apk',
+                        length=self._typed_length(action.details))
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
                         # HD's letters wait for the portrait (dialogue_notice.hd_letter_start_ms).
@@ -675,7 +684,7 @@ class Session:
             if action.name == 'dialogue' and action.details['page_end'] < len(action.details['text']):
                 action.details['page_start'] = action.details['page_end']
                 self._prepare_dialogue(update_text=True)
-                self.engine.dialogue_animation.next_page(len(action.details['text']) - action.details['page_start'])
+                self.engine.dialogue_animation.next_page(self._typed_length(action.details))
                 return action
             if action.name == 'vm_pause':
                 self.vm.continue_after_pause()
@@ -1535,7 +1544,9 @@ class Session:
                         raise SaveError('Dialogue expression does not match its portrait history')
             if session.pending and session.pending.name == 'dialogue':
                 details = session.pending.details
-                if (motion is None or motion.text_length != len(details['text']) - details['page_start']
+                # Saves from before 1.0.2 hold the whole remaining length on iOS too.
+                if (motion is None or motion.text_length not in (len(details['text']) - details['page_start'],
+                                                                 session._typed_length(details))
                         or motion.portrait != DialoguePortrait.from_details(details, engine.character_art_variants)
                         or motion.initial_portrait != DialoguePortrait.from_details(
                             dict(details, expression=details['initial_expression']), engine.character_art_variants)

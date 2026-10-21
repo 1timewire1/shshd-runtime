@@ -16,10 +16,12 @@ from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
-def story(calls, *, game='shs', text='Hello.', second=None):
+def story(calls, *, game='shs', text='Hello.', second=None, kind=None):
     words, refs = text_words(text, 'Continue', 'Yes|No')
     resources = Resources(program(*calls(*refs), 0x33, words=words), second)
     resources.library.game_id = game
+    if kind is not None:
+        resources.library.kind = kind
     resources.dialogue_layout = authored_dialogue
     session = Session(resources)
     session.engine.ui_defaults = {74: 0, 75: 7}
@@ -227,6 +229,23 @@ class DialogueLifecycleTests(unittest.TestCase):
         for _ in range(3):
             _ = motion.expression_alphas, motion.box_rect(Rect(1, 2, 30, 40), None)
         self.assertEqual(session.snapshot(), before)
+
+    def test_ios_types_only_the_page_and_android_the_whole_remaining_text(self):
+        # SHSTextLayer types the visible lines (addTypingAnimations:lineTime:); Android's cursor scans the remainder.
+        for kind in ('ipa', 'apk'):
+            with self.subTest(kind=kind):
+                session = story(lambda ref, *_: host_call(13, ref, 1, 3), text='Long authored text. ' * 80, kind=kind)
+                details, motion = session.pending.details, session.engine.dialogue_animation
+                self.assertLess(details['page_end'], len(details['text']))
+                expected = details['page_end'] if kind == 'ipa' else len(details['text'])
+                self.assertEqual(motion.text_length, expected)
+                session.tick(motion.duration_ms)
+                self.assertTrue(motion.complete)
+                restored = Session.from_snapshot(session.resources, session.snapshot())
+                self.assertEqual(restored.engine.dialogue_animation.text_length, expected)
+                session.answer()                                   # the next page
+                self.assertEqual(motion.text_length, (details['page_end'] if kind == 'ipa' else len(details['text']))
+                                 - details['page_start'])
 
     def test_choices_retain_speaker_but_do_not_tick_hidden_dialogue(self):
         for game in ('shs', 'cod'):

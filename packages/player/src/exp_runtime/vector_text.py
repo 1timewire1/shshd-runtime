@@ -444,7 +444,8 @@ def load_font(library, name: str) -> BitmapFont:
     installed-face rendering (fonts.load_font / ios_fonts.py)."""
     if getattr(library, 'kind', 'apk') == 'ipa':
         from .fonts import load_font as base_load_font
-        if getattr(library, 'game_id', None) == 'cod' and name.startswith(COD_EMPHASIS):
+        # Only the switch fonts: the narration body itself is plain `TrebuchetMS_Italic16` (dialogue.NARRATOR_FONT).
+        if getattr(library, 'game_id', None) == 'cod' and name.startswith(COD_EMPHASIS) and name != COD_EMPHASIS:
             # CoD's emphasis switch fonts: always vector, with or without the SHS HD art source, since the
             # installed-face atlas tints one colour and the gray / default ones are black with a red edge.
             cache = library.__dict__.setdefault('_text_fonts', {})

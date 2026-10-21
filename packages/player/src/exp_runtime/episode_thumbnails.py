@@ -25,8 +25,12 @@ BUNDLE = 'Payload/Surviving_HS.app/'
 MISSING = 'missingEpisodePreview.jpg'
 # The content of the `.none` marker an episode without a title card gets. Bumped when `run_to_title_card` learns to get
 # past something new, so episodes marked by an older pipeline are tried once more (2: the High School Story ad's choice;
-# 3: minigames and paced choices, CoD's Sunset).
-MARKER = b'3'
+# 3: minigames and paced choices, CoD's Sunset; 4: BORROWED_CARDS).
+MARKER = b'4'
+# Episodes with no title card of their own (no service 8 in any script), shown a sibling's card with their own subtitle
+# (owner, 2026-10-21): (game, pack, episode) -> ((pack, episode) of the card's episode, subtitle). CoD's Fourth of July
+# Special, Part 2 opens on the picture of Part 1's card.
+BORROWED_CARDS = {('cod', 20000, 14): ((20000, 13), 'Fourth of July Special, Part 2')}
 
 
 def thumbnail_path(library, record):
@@ -105,11 +109,21 @@ def run_to_title_card(session):
 
 
 def capture_title_card(library, record):
-    """The episode's title card as a SIZE surface, or None when it has none (or cannot be run)."""
+    """The episode's title card as a SIZE surface, or None when it has none (or cannot be run). An episode in
+    BORROWED_CARDS is shown its sibling's card with its own subtitle."""
     from .desktop import Desktop
+    borrowed = BORROWED_CARDS.get((getattr(library, 'game_id', None), record.get('pack_id'), record.get('episode_id')))
+    if borrowed is not None:
+        (pack_id, episode_id), subtitle = borrowed
+        record = next((other for other in library.episodes
+                       if (other.get('pack_id'), other.get('episode_id')) == (pack_id, episode_id)), None)
+        if record is None:
+            return None
     session = Session(library.open_episode(record['id']), ephemeral=True)
     if not run_to_title_card(session):
         return None
+    if borrowed is not None:
+        session.pending.details['subtitle'] = subtitle
     window = pygame.Surface(FRAME).convert()
     view = Desktop(session, audio=False, window=window, capture=True)
     for _ in range(300):

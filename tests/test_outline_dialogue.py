@@ -107,6 +107,9 @@ class OutlineDialogueTests(unittest.TestCase):
             session.advance()
             answer_screen(session)
             session.tick(250)
+            # Before 1.0.2 an iOS reveal ran over the whole remaining text, as Android's does.
+            details = session.pending.details
+            session.engine.dialogue_animation.text_length = len(details['text']) - details['page_start']
             saved = session.snapshot()
             saved['version'] = 25
             untouched = deepcopy(saved)

@@ -109,6 +109,17 @@ class VectorTextTests(unittest.TestCase):
         self.assertIn((255, 255, 255), colors)     # the outline
         self.assertIn(vt.NOTICE_FILL, colors)      # the fill survives on top of it
 
+    def test_cod_switch_fonts_are_edged_but_the_narration_body_is_not(self):
+        # The narration body (dialogue.NARRATOR_FONT) shares the switch fonts' name prefix.
+        vt = self.vt
+        os.environ['SHS_TREBUCHET_ITALIC_FONT'] = self.source.path
+        self.addCleanup(os.environ.pop, 'SHS_TREBUCHET_ITALIC_FONT', None)
+        library = SimpleNamespace(kind='ipa', game_id='cod')
+        with mock.patch('exp_runtime.fonts.load_font', return_value=self.base):
+            self.assertIs(vt.load_font(library, 'TrebuchetMS_Italic16'), self.base)
+            self.assertAlmostEqual(vt.load_font(library, 'TrebuchetMS_Italic16NarrationEmphasis').embolden, .6 / 16)
+            self.assertAlmostEqual(vt.load_font(library, 'TrebuchetMS_Italic16Emphasis').embolden, .5 / 16)
+
     def test_names_map_to_sizes_and_are_ignored_without_an_hd_bundle(self):
         vt = self.vt
         self.assertEqual(vt.parse_name('ArialRoundedMTBold16'), ('ArialRoundedMTBold', 16))

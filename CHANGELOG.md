@@ -196,7 +196,13 @@
   repeat until their clock runs out) and skips mini-games on the way. CoD's
   Sunset gets its title card, as do SHS episodes that open on a chapter
   select. Libraries retry the episodes that had no preview. CoD's Fourth of
-  July Special, Part 2 has no title card, so it keeps the plain one.
+  July Special, Part 2 has no title card of its own; its preview is Part 1's
+  card with its own subtitle (it opens on that picture).
+- **Continue comes when the page's text is out** (SHS HD and CoD). A line too
+  long for one box waited for the whole line to type, unseen pages included.
+  The iOS games type only the visible lines (`SHSTextLayer
+  addTypingAnimations:lineTime:`). Android keeps its own rule: its cursor scans
+  the whole remaining text.
 
 ## 1.0.1 (shshd-runtime)
 
