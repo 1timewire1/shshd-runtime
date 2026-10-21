@@ -1618,6 +1618,21 @@ class Desktop:
             break
         return True
 
+    def open_pause(self, *, sound=True):
+        if self.menu_open:
+            return
+        self.pause_hd.reset()
+        self.menu_focus = None
+        self.picker_pointer_down = False
+        if self.session.engine.word_grid:
+            self.session.grid_pointer('cancel')
+        self.menu_open = True
+        self.session.engine.faceplace_toast = None
+        self.pause_elapsed_ms = 0
+        self._sync_music()
+        if sound:
+            self._menu_sound(opening=True)
+
     def command(self, command):
         self.press.cancel()
         self.gear_pointer_down = False
@@ -1677,20 +1692,7 @@ class Desktop:
         if self.menu_open and kind in ('save', 'load'):
             self._menu_sound()
         if kind == 'menu':
-            if self.menu_open:
-                return
-            self.pause_hd.reset()
-            self.menu_focus = None
-            self.picker_pointer_down = False
-            if self.session.engine.word_grid:
-                self.session.grid_pointer('cancel')
-            self.menu_open = True
-            # Real device confirmed: pausing with the settings menu also
-            # dismisses a showing Faceplace toast (see FaceplaceToast).
-            self.session.engine.faceplace_toast = None
-            self.pause_elapsed_ms = 0
-            self._sync_music()
-            self._menu_sound(opening=True)
+            self.open_pause()
         elif kind == 'resume':
             self.menu_open = False
             self._sync_music()

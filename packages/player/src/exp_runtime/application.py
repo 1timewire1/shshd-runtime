@@ -878,6 +878,7 @@ class Application:
         self.game._sync_music()
         self.refresh_saves()
 
+    skip_elapsed = False        # the next frame's time is not counted (see picker_command's Continue)
     autosave_age = 0            # ms of play since the game was last saved (`SHSEngine +0x649d0`)
     unsaved_entry = False       # the game has not been saved since it was entered (`SHSEngine +0x649ce`)
 
@@ -1550,6 +1551,11 @@ class Application:
             picker.popup = None
             self.selected = command[1]
             self.start(resume=kind == 'continue')
+            if kind == 'continue' and self.screen == 'game' and self.game:
+                # the original game resumes paused. The pause menu zooms open without gear sound
+                self.game.open_pause(sound=False)
+                self.skip_elapsed = True
+
     def _pointer_event(self, event):
         if event.type != pygame.MOUSEMOTION and event.button != 1:
             return
@@ -1583,6 +1589,8 @@ class Application:
         try:
             while running:
                 elapsed = clock.tick(60)
+                if self.skip_elapsed:
+                    elapsed, self.skip_elapsed = 0, False
                 self.render()
                 token = self.input_token()
                 for event in pygame.event.get():
