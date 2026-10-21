@@ -81,6 +81,7 @@ class HdEpisodePicker(HdUi):
     hd_layer = True
     # Style, overridable by a game that keeps this screen in its own dress (desktop_cod_episodes.py).
     TEXT_COLOR = BLUE                                   # the popup's labels and the alert's text
+    FOCUS_TEXT_COLOR = (213, 138, 58)                   # the keyboard's choice in the popup: SHS HD's orange accent
     # The list's play / pause icon colours (desktop_episode_list_hd.py), shared by the info button.
     ICON_RING_COLOR, PLAY_COLOR, PAUSE_COLOR = (60, 157, 255), (10, 133, 255), (10, 133, 255)
     RING_ALPHA, PLAY_ALPHA, PAUSE_ALPHA = 140, 220, 220
@@ -509,7 +510,7 @@ class HdEpisodePicker(HdUi):
             layer.blit(shade, ((x - 16 + 6) * S, (top + 44 - 16 + 6) * S))
             layer.blit(image, (x * S, (top + 44) * S))
             font = self.font(28)
-            text = font.render(label, True, self.TEXT_COLOR)
+            text = font.render(label, True, self.FOCUS_TEXT_COLOR if self.popup_focus == command else self.TEXT_COLOR)
             layer.blit(text, text.get_rect(midbottom=((x + TILE[0] / 2) * S, (top + 40) * S)))
             self.hits.append((pygame.Rect(x, top + 44, *TILE), command))
             if self.popup_focus == command:          # the keyboard's highlight, as on the grid's tiles

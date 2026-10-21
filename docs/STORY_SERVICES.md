@@ -973,5 +973,8 @@ never did (its Options hide the row, condition 8). Its episodes still make the
 calls: 301 in the 194 reference HD episodes; 182 of the 186 with a standard
 copy match it script for script (April Fools moves its 3 calls; A Very Tom
 Prince Holiday, Bringing Home Christmas and The Storm Part 1 have fewer). This
-player's buzz (PR #10) works in both games, off by default; real device
-vibration could later use the same calls.
+player's buzz (PR #10) works in both games: the "Simulated Vibration Sound"
+switch at the end of Options -> Sound, off by default, buzzing once when
+switched on (`SHSEngine::setVibrationEnabled` calls `vibrate` the same way).
+Real device vibration could later use the same calls and the games' own
+Vibration switch (string 11).

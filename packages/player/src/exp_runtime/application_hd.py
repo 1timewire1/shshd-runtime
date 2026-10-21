@@ -246,6 +246,8 @@ class HdShell:
         setattr(state, which, not getattr(state, which))
         state.persist()
         self.app.menu_music_changed(switched=which == 'music')
+        if which == 'vibration' and state.vibration:
+            self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
         if which == 'sound' and state.sound:
             # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.
             self.app.ui_sound('SOUND_ON_SOUND', stop_others=True)

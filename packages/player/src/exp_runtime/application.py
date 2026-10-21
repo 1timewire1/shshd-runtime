@@ -738,6 +738,18 @@ class Application:
     def _click_sound(self):
         self.ui_sound('CLICK_SOUND')
 
+    def play_buzz(self):
+        """The vibration stand-in's buzz (vibration.py) at the Sound FX volume, while Sound is on."""
+        if not (self.audio and self.state.sound):
+            return
+        from .vibration import buzz_wav
+        try:
+            sound = pygame.mixer.Sound(file=BytesIO(buzz_wav()))
+            sound.set_volume(self.state.sound_volume / 100)
+            sound.play()
+        except pygame.error as error:
+            logging.warning('Vibration buzz cannot be played: %s', error)
+
     def ui_sound(self, name, *, volume=None, stop_others=False, when_idle=False):
         """Play the selected game's interface sound `name` (a profile attribute) from its base bank: at the Sound FX
         volume and only with Sound on, unless a `volume` of its own is given (the Music slider's preview)."""

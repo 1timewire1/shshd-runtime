@@ -47,6 +47,7 @@ SIDE_PANELS_LABEL = 'Side Panels'
 CHOICE_HINTS_LABEL = 'Choice Hints'
 SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
+VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
@@ -530,9 +531,11 @@ class HdPauseMenu:
         """[(kind, label, key)] of an Options category: 'switch', 'slider', 'cycle' or 'action' rows, those whose
         setting the host offers."""
         if category == 'sound':
-            vibration = [('switch', strings[11], 'vibration')] if 'vibration' in settings else []
-            return vibration + [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
-                                ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')]
+            # This player's buzz in place of the iPhone's vibration (PR #10): last, under its own name, so a real
+            # Vibration switch could take the game's string 11 later.
+            vibration = [('switch', VIBRATION_SOUND_LABEL, 'vibration')] if 'vibration' in settings else []
+            return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
+                    ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration
         if category == 'general':
             rows = [('switch', SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
             if 'title_language' in settings:

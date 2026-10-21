@@ -67,10 +67,12 @@ class DesktopBuzzTests(unittest.TestCase):
         engine.vibration_serial += 1
         ui._sync_audio()
         self.Sound.return_value.play.assert_not_called()
-        ui.command(('pause_toggle', 'vibration'))
+        ui.audio = True
+        ui.command(('pause_toggle', 'vibration'))        # switched on: one buzz of feedback (setVibrationEnabled)
+        self.assertEqual(self.Sound.return_value.play.call_count, 1)
         engine.vibration_serial += 1
         ui._sync_audio()
-        self.assertEqual(self.Sound.return_value.play.call_count, 1)
+        self.assertEqual(self.Sound.return_value.play.call_count, 2)
 
 
 if __name__ == '__main__':

@@ -8,8 +8,10 @@
   ([1timewire1/shshd-runtime#6](https://github.com/1timewire1/shshd-runtime/pull/6), by zazatree). In choices, the
   pause menu, the main menu and its windows: arrows / Tab move a highlight, Enter or Space activates, Left / Right
   move a volume slider (docs/RUNTIME.md). A desktop addition; the originals are touch-only.
-  - Also the episode pickers' New Game / Continue popup (arrows, Enter; Continue highlighted first), `I` for the
-    highlighted episode's info card, and Left / Right in the portrait picker.
+  - Also the episode pickers' New Game / Continue popup (arrows, Enter; Continue highlighted first, its card
+    outlined and its label in the game's accent colour), `I` for the highlighted episode's info card, and Left /
+    Right in the portrait picker. Portrait keys wait for a running swap to end, so mashing them no longer leaves the
+    rings misplaced.
 - **Menu animations** ([1timewire1/shshd-runtime#9](https://github.com/1timewire1/shshd-runtime/pull/9),
   by zazatree).
   - "Play with sound?", Options, Help & About and the pause menu zoom in.
@@ -32,8 +34,10 @@
 - **Vibration as a buzz**
   ([1timewire1/shshd-runtime#10](https://github.com/1timewire1/shshd-runtime/pull/10), by zazatree). When a story
   asks to vibrate (service 82), the desktop can play a short synthesized buzz in its place, at the Sound FX volume.
-  - Options -> Sound has the games' own Vibration switch, in both games. It is off by default (a quality-of-life
-    addition) and remembered with the other options.
+  - Options -> Sound ends with a "Simulated Vibration Sound" switch, in both games (named apart from the games'
+    own Vibration switch, which a real vibration option could use later). It is off by default (a quality-of-life
+    addition) and remembered with the other options. Switching it on buzzes once, as `setVibrationEnabled` vibrates
+    an iPhone once.
   - The originals vibrated only on an iPhone, with Vibration on: CoD on the iPhone; SHS HD, an iPad app, never did,
     though its episodes still make the calls (docs/STORY_SERVICES.md).
 

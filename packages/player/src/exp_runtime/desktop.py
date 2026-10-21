@@ -1497,6 +1497,8 @@ class Desktop:
                 self.hd_backdrop = not self.hd_backdrop
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
+                if self.vibration_enabled and self.audio:
+                    self._buzz()            # SHSEngine::setVibrationEnabled vibrates once when it is switched on
             else:
                 self.sound_enabled = not self.sound_enabled
                 if self.sound_enabled:
@@ -1816,11 +1818,13 @@ class Desktop:
                 # Left / Right bring the previous / next portrait (by its original place) to the front, as tapping it
                 # does; Enter confirms. Keyboard play is this player's addition.
                 picker = self.session.engine.character_picker
-                if picker is not None and picker.characters:
+                if picker is not None and picker.characters and not picker.moving:
                     step = 1 if event.key == pygame.K_RIGHT else -1
                     self.command(('choose', (picker.selected + step) % len(picker.characters)))
             elif action and action.name == 'character_picker' and pygame.K_1 <= event.key <= pygame.K_5:
-                if event.key - pygame.K_1 < len(self.session.engine.character_picker.characters):
+                picker = self.session.engine.character_picker
+                # Keys wait for a running swap to end (CharacterPicker.moving): mashed keys left the rings misplaced.
+                if event.key - pygame.K_1 < len(picker.characters) and not picker.moving:
                     self.command(('choose', event.key - pygame.K_1))
             elif action and (action.name in ('choice', 'word_game', 'football') or asking) and pygame.K_1 <= event.key <= pygame.K_9:
                 index = event.key - pygame.K_1

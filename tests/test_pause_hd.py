@@ -80,12 +80,13 @@ class HdPauseTests(unittest.TestCase):
         self.assertFalse(self.menu.back())
         self.assertEqual(state.screen, 'pause')
 
-    def test_vibration_leads_the_sound_page_when_offered(self):
+    def test_the_simulated_vibration_switch_ends_the_sound_page_when_offered(self):
         self.menu.state.screen = 'options:sound'
         self.settings['vibration'] = False
-        buttons = self.commands()
-        self.assertEqual([c[:2] for _, c in buttons][:2], [('pause_toggle', 'vibration'), ('pause_toggle', 'music')])
-        self.assertEqual(self.menu.option_rows('sound', self.settings, self.menu.strings())[0][1], 'Vibration')
+        rows = self.menu.option_rows('sound', self.settings, self.menu.strings())
+        self.assertEqual([key for _, _, key in rows], ['music', 'music', 'sound', 'sound', 'vibration'])
+        self.assertEqual(rows[-1][1], 'Simulated Vibration Sound')
+        self.assertEqual([c[:2] for _, c in self.commands()][-2], ('pause_toggle', 'vibration'))
 
     def test_title_language_button_and_data_management_on_the_main_menu_only(self):
         state = self.menu.state
@@ -280,7 +281,7 @@ class CodPauseTests(unittest.TestCase):
     def test_cods_sound_page_offers_vibration_too(self):
         self.menu.state.screen = 'options:sound'
         self.settings['vibration'] = True
-        self.assertEqual([c[:2] for _, c in self.buttons()][0], ('pause_toggle', 'vibration'))
+        self.assertEqual([c[:2] for _, c in self.buttons()][-2], ('pause_toggle', 'vibration'))   # last, then back
 
     def test_cods_style_over_hds_controls(self):
         # CoD's colours and art; the UIKit controls and the slider's track stay SHS HD's.

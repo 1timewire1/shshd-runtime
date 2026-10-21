@@ -63,6 +63,12 @@ class CharacterPicker:
                 self.portraits[original].opacity = 255 if position == 0 else 91
         return True
 
+    @property
+    def moving(self):
+        """Whether a swap is still running. A selection meanwhile reorders the portraits without restarting their motion
+        (as FUN_000d1d78 does), which leaves the drawn positions out of step; keyboard selection waits for this."""
+        return any(portrait.elapsed_ms < SWAP_MS for portrait in self.portraits)
+
     def tick(self, elapsed_ms):
         for portrait in self.portraits:
             portrait.elapsed_ms = min(SWAP_MS, portrait.elapsed_ms + elapsed_ms)

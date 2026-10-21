@@ -67,6 +67,7 @@ def recolor_border(image, color):
 
 class CodPickerStyle(CodButtons):
     TEXT_COLOR = (0, 0, 0)
+    FOCUS_TEXT_COLOR = BORDER                           # the keyboard's choice in the popup: CoD's window blue
     NEW_GAME, CONTINUE, RESTORE = 19, 26, 194
     RESTORE_TITLE, RESTORE_TEXT = 188, 189
     # Pack 16's play / pause icon (frames 101 / 96) at the frames' own alphas; the info button takes them too.
