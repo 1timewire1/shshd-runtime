@@ -1270,6 +1270,8 @@ class Application:
             elif self.picker_over_menu():
                 self.picker_zoom = min(PAUSE_OPEN_MS, self.picker_zoom + elapsed)
                 self.shell.tick(elapsed / 1000)                # the buttons sliding out behind it
+            elif self.screen == 'picker' and self.shell is not None and self.shell.overlay_active:
+                self.shell.tick_window(elapsed / 1000)         # "Delete Saved Game?" zooming in
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)

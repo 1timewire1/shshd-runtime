@@ -536,3 +536,8 @@ class HdShell:
         """Ask "Delete Saved Game?" before starting over an episode that has a save."""
         self.pending_title, self.pending_yes = title, callback
         self.stack.queue(self.DELETE_MENU)
+        self.window_ms = 0
+
+    def tick_window(self, seconds):
+        if self.stack.stack:
+            self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + min(seconds, MAX_STEP) * 1000)
