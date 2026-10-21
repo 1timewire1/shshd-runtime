@@ -121,6 +121,8 @@ class Desktop:
     # (Session.share_names), so a name typed in one episode is the one every later episode shows. None plays alone.
     names = None
     notice_stack = None             # the native notice/confirm windows, when an HD bundle provides them (see __init__)
+    notice_shown = None             # the notice window last drawn, and ms since it opened (its zoom, `pause_scale`)
+    notice_ms = PAUSE_OPEN_MS
 
     @property
     def session(self):
@@ -1394,9 +1396,17 @@ class Desktop:
             return
         if dim:
             self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
+        current = self.notice_stack.current
+        if current != self.notice_shown:
+            # A window that has just opened zooms in over the tinted scene, as "Play with sound?" does
+            # (`notifyNewMenu`'s 0.4 s zoom; the owner, on the device).
+            self.notice_shown, self.notice_ms = current, 0
         layer = pygame.Surface((HD_FRAME[0] * HD_S, HD_FRAME[1] * HD_S), pygame.SRCALPHA)
-        self.notice_windows.draw(layer, self.notice_stack.current, pressed=self.notice_pressed)
-        self.window.blit(pygame.transform.smoothscale(layer, area.size), area)
+        self.notice_windows.draw(layer, current, pressed=self.notice_pressed)
+        scale = pause_scale(self.notice_ms)
+        size = tuple(max(1, round(length * scale)) for length in area.size)
+        self.window.blit(pygame.transform.smoothscale(layer, size),
+                         pygame.Rect((0, 0), size).move(area.centerx - size[0] // 2, area.centery - size[1] // 2))
 
     def _pause_point(self, position):
         frame = self.bg_viewport
@@ -1979,8 +1989,8 @@ class Desktop:
     def _notice_pointer(self, event):
         """Pointer input while a native notice/confirm window is open (same hit-list convention as
         `HdShell.pointer_down`/`pointer_up`, driven here instead of there)."""
-        if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
-            return
+        if event.type not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) or self.notice_ms < PAUSE_OPEN_MS:
+            return                          # nothing takes input while the window zooms in
         point = self._pause_point(event.pos)
         if event.type == pygame.MOUSEBUTTONDOWN:
             self.notice_pressed = next((c for r, c in reversed(self.notice_windows.hits) if r.collidepoint(point)), None)
@@ -2085,6 +2095,10 @@ class Desktop:
             discount = min(elapsed_ms, self.hint_discount_ms)
             self.hint_discount_ms -= discount
             elapsed_ms -= discount
+        if self.active and self.notice_stack is not None and self.notice_stack.stack:
+            self.notice_ms = min(PAUSE_OPEN_MS, self.notice_ms + elapsed_ms)
+        elif self.notice_stack is not None and not self.notice_stack.stack:
+            self.notice_shown = None
         if self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
             self.pause_hd.advance(elapsed_ms)

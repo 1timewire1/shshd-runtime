@@ -426,6 +426,9 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   in a 0.4 s UIKit ease-in/out. These are "Play with sound?" (menu 7), the main
   menu's Help & About (15) and Options (22), and the pause menu (25). CoD's are
   the same windows (7, 14, 21 and 24).
+- **In-game notices.** The "Exit Game?" confirmation (a Faceplace link) and the Decision Tree's "Locked" notice
+  zoom in the same way over the scene, which turns sepia at once (the owner, on the device). Their menus carry no
+  entrance byte (0xff), so this follows the device rather than `notifyNewMenu`'s byte test.
 - **Any other entrance: slide** (`00027f1a`). Examples are 16, the Options and
   Help & About pages opened from the pause menu. The new window starts one
   width to the right and moves in while the old one moves a width to the left,

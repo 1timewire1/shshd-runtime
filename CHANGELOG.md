@@ -14,7 +14,8 @@
     rings misplaced.
 - **Menu animations** ([1timewire1/shshd-runtime#9](https://github.com/1timewire1/shshd-runtime/pull/9),
   by zazatree).
-  - "Play with sound?", Options, Help & About and the pause menu zoom in.
+  - "Play with sound?", Options, Help & About and the pause menu zoom in, as do the in-game "Exit Game?" (a
+    Faceplace link) and the Decision Tree's "Locked" notices, over the sepia scene.
   - Pages opened from them slide in and out (0.4 s, as SHS HD's menu engine
     does). Options opened from the main menu no longer stops responding after
     choosing a category.

@@ -113,6 +113,23 @@ class PauseFeedbackTests(unittest.TestCase):
         self.assertLess(pause_scale(100), .25)
         self.assertGreater(pause_scale(300), .75)
 
+    def test_a_notice_window_zooms_in_and_takes_no_input_until_open(self):
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        ui = self.ui()
+        pressed = []
+        ui.notice_stack = SimpleNamespace(stack=[28], current=28, press=pressed.append, pop=lambda: None)
+        ui.notice_windows = SimpleNamespace(hits=[(self.pygame.Rect(0, 0, 768, 1024), ('item', 1))])
+        ui.notice_data = SimpleNamespace(action=lambda number: number)
+        ui.bg_viewport = self.pygame.Rect(0, 0, 768, 1024)
+        ui.notice_shown, ui.notice_ms = 28, 0                    # just opened (as `_draw_notice` sets it)
+        click = lambda kind: ui._notice_pointer(self.pygame.event.Event(kind, button=1, pos=(10, 10)))
+        click(self.pygame.MOUSEBUTTONDOWN); click(self.pygame.MOUSEBUTTONUP)
+        self.assertEqual(pressed, [])
+        ui.tick(PAUSE_OPEN_MS)
+        self.assertEqual(ui.notice_ms, PAUSE_OPEN_MS)
+        click(self.pygame.MOUSEBUTTONDOWN); click(self.pygame.MOUSEBUTTONUP)
+        self.assertEqual(pressed, [1])
+
     def test_both_games_play_open_and_row_sounds_from_base_bank_and_respect_mute(self):
         for game, opening, click in (('shs', 8011, 8010), ('cod', 8006, 8005)):
             ui = self.ui()
