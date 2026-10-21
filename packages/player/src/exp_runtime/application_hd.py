@@ -557,6 +557,14 @@ class HdShell:
         window slides."""
         return bool(self.stack.stack) and self.stack.current == self.DELETE_MENU
 
+    def window_layer(self, menu, size):
+        """`menu`'s window alone, unpressed, on a transparent layer of `size`: the picture "Delete Saved Game?" slides
+        back out with after its "No" (Application.render_picker)."""
+        layer = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
+        self.windows.draw(layer, menu, variables=self.variables(), pressed=None, body_scroll=0.)
+        self.windows.hits = []
+        return layer
+
     def tick_window(self, seconds):
         if self.stack.stack:
             self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + min(seconds, MAX_STEP) * 1000)

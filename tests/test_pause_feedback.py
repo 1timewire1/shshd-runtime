@@ -159,6 +159,19 @@ class PauseFeedbackTests(unittest.TestCase):
                 self.assertEqual([c.args[0] for c in ui.session.resources.library.read_asset.call_args_list],
                                  [opening, click])
 
+    def test_no_to_delete_saved_game_slides_the_picker_back_with_its_popup(self):
+        from exp_runtime.application import Application
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        app = Application.__new__(Application)
+        app.shell = SimpleNamespace(overlay_active=True, window_slides=lambda: True)
+        self.assertFalse(app.follow_delete_prompt())                  # open: the picker zooms out under it
+        self.assertTrue(app.picker_under_window)
+        app.shell = SimpleNamespace(overlay_active=False, window_slides=lambda: False)
+        self.assertTrue(app.follow_delete_prompt())                   # "No": the slide back begins
+        self.assertEqual((app.picker_back_ms, app.picker_under_window), (0, False))
+        self.assertFalse(app.follow_delete_prompt())
+        self.assertLess(app.picker_back_ms, PAUSE_OPEN_MS)
+
     def test_picker_continue_resumes_paused_without_the_gear_sound(self):
         from exp_runtime.application import Application
         for kind, paused in (('continue', True), ('new', False)):
@@ -169,8 +182,10 @@ class PauseFeedbackTests(unittest.TestCase):
                 app.game = self.ui()
                 app.game._menu_sound = Mock()
 
-                def start(*, resume, app=app):
+                def start(*, resume, paused, app=app):          # start() opens it before the music's first sync
                     app.screen = 'game'
+                    if paused:
+                        app.resume_paused()
                 app.start = start
                 app.picker_command((kind, 'episode'))
                 self.assertIsNone(app.picker.popup)

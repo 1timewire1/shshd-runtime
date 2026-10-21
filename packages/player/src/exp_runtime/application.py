@@ -307,6 +307,10 @@ class Application:
     # the menus do: docs/MAIN_MENU.md, "Menu entrances") while the menu's buttons slide out; ms into that, or done.
     picker_zoom = PAUSE_OPEN_MS
     picker_under_window = False     # "Delete Saved Game?" is open over the picker (render_picker)
+    # Its "No": ms into the window sliding back out to the right while the picker slides in from the left, or done;
+    # and the window's picture for that slide.
+    picker_back_ms = PAUSE_OPEN_MS
+    picker_back_layer = None
 
     def picker_over_menu(self):
         """Whether the picker is drawn over the live HD main menu: while it zooms in and until the menu's buttons have
@@ -321,7 +325,7 @@ class Application:
     def ready(self):
         if self.shell is not None and self.screen == 'main':
             return not self.busy
-        if self.screen == 'picker' and self.picker_zoom < PAUSE_OPEN_MS:
+        if self.screen == 'picker' and min(self.picker_zoom, self.picker_back_ms) < PAUSE_OPEN_MS:
             return False
         return (not self.busy
                 and (self.transition_from is None or self.transition_age >= self.transition_duration)
@@ -652,6 +656,7 @@ class Application:
         zoom = self.shell is not None and self.screen == 'main' and self.shell.stage == 'main'
         self.show('picker')
         self.picker_zoom = 0 if zoom else PAUSE_OPEN_MS
+        self.picker_back_ms, self.picker_back_layer, self.picker_under_window = PAUSE_OPEN_MS, None, False
 
     def end_menu_backdrop(self):
         # When an episode has ended: (the last frame dimmed sepia, whether it was Football Season), else None.
@@ -839,8 +844,11 @@ class Application:
             else:
                 self.menu_music.unpause()
 
-    def start(self, *, resume=True, load_path=None):
+    def start(self, *, resume=True, load_path=None, paused=False):
+        """`paused`: the episode resumes under its pause menu (the picker's Continue), opened before its first music sync
+        so the episode's cue waits for Resume."""
         self.main_exit_ms = None
+        self.picker_under_window = False                # "Delete Saved Game?" -> Yes: no slide back to the picker
         episode = self.selected
         if self.game and resume and not load_path and self.game.session.resources.record['id'] == episode:
             self.game.menu_open = False
@@ -887,8 +895,15 @@ class Application:
             self.return_to_menu()
             return
         self._sync_menu_music()
+        if paused:
+            self.resume_paused()
         self.game._sync_music()
         self.refresh_saves()
+
+    def resume_paused(self):
+        """The original game resumes paused. The pause menu zooms open without gear sound."""
+        self.game.open_pause(sound=False)
+        self.skip_elapsed = True
 
     skip_elapsed = False        # the next frame's time is not counted (see picker_command's Continue)
     autosave_age = 0            # ms of play since the game was last saved (`SHSEngine +0x649d0`)
@@ -1285,13 +1300,23 @@ class Application:
                 self.shell.tick(elapsed / 1000)                # the buttons sliding out behind it
             elif self.screen == 'picker' and self.shell is not None and self.shell.overlay_active:
                 self.shell.tick_window(elapsed / 1000)         # "Delete Saved Game?" sliding in
-            if self.screen == 'picker' and self.shell is not None:
-                # Its "No" brings the picker back, zooming in over the main menu as it first did (unverified on the
-                # iPad); "Yes" starts the episode instead.
-                under = self.shell.overlay_active and self.shell.window_slides()
-                if self.picker_under_window and not under and not self.shell.overlay_active:
-                    self.picker_zoom = 0
-                self.picker_under_window = under
+            if self.screen == 'picker' and self.shell is not None and not self.follow_delete_prompt():
+                if self.picker_back_ms < PAUSE_OPEN_MS:
+                    self.picker_back_ms = min(PAUSE_OPEN_MS, self.picker_back_ms + elapsed)
+                    if self.picker_back_ms >= PAUSE_OPEN_MS:
+                        self.picker_back_layer = None
+
+    def follow_delete_prompt(self):
+        """Notice "Delete Saved Game?" closing over the picker (from the frame's tick or its render, whichever comes
+        first). Its "No" slides the window back out to the right while the picker, its New Game / Continue popup still
+        open, slides in from the left (owner, on the iPad, 2026-10-21); "Yes" starts the episode. Returns whether that
+        slide has just begun."""
+        under = self.shell.overlay_active and self.shell.window_slides()
+        closed = self.picker_under_window and not under and not self.shell.overlay_active
+        if closed:
+            self.picker_back_ms, self.picker_back_layer = 0, None
+        self.picker_under_window = under
+        return closed
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)
@@ -1299,23 +1324,34 @@ class Application:
         pending = picker.alert
         if self.message:
             picker.alert = (self.game_title, self.message)
-        # "Delete Saved Game?" slides in while the picker zooms out over the main menu (HdShell.window_slides).
+        # "Delete Saved Game?" slides in while the picker zooms out over the main menu (HdShell.window_slides), and
+        # after its "No" slides out as the picker slides back in.
+        if self.shell is not None:
+            self.follow_delete_prompt()
         under = self.shell is not None and self.shell.overlay_active and self.shell.window_slides()
-        live = self.picker_over_menu() or under
+        back = self.shell is not None and not under and self.picker_back_ms < PAUSE_OPEN_MS
+        live = self.picker_over_menu() or under or back
         canvas = picker.draw(backdrop=not live)
         picker.alert = pending
         if self.shell is not None and self.shell.overlay_active and not under:
             self.shell.draw_overlay(canvas)
         if live:
-            # Once the main menu's buttons have slid out they stay out behind the picker (it zooms back in after "No").
+            # Once the main menu's buttons have slid out they stay out behind the picker (it slides back after "No").
             menu = self.shell.render(overlay=not under, buttons=not getattr(self.shell.main, 'left', False)).copy()
             if menu.get_size() != canvas.get_size():
                 menu = pygame.transform.smoothscale(menu, canvas.get_size())
-            scale = pause_scale(PAUSE_OPEN_MS - self.shell.window_ms) if under else pause_scale(self.picker_zoom)
-            if scale < 1:
-                size = tuple(max(1, round(length * scale)) for length in canvas.get_size())
-                canvas = pygame.transform.smoothscale(canvas, size)
-            menu.blit(canvas, canvas.get_rect(center=menu.get_rect().center))
+            if back:
+                if self.picker_back_layer is None:
+                    self.picker_back_layer = self.shell.window_layer(self.shell.DELETE_MENU, menu.get_size())
+                offset = round(menu.get_width() * ease_in_out(self.picker_back_ms / PAUSE_OPEN_MS))
+                menu.blit(canvas, (offset - menu.get_width(), 0))
+                menu.blit(self.picker_back_layer, (offset, 0))
+            else:
+                scale = pause_scale(PAUSE_OPEN_MS - self.shell.window_ms) if under else pause_scale(self.picker_zoom)
+                if scale < 1:
+                    size = tuple(max(1, round(length * scale)) for length in canvas.get_size())
+                    canvas = pygame.transform.smoothscale(canvas, size)
+                menu.blit(canvas, canvas.get_rect(center=menu.get_rect().center))
             canvas = menu
         if under:
             self.shell.draw_overlay(canvas)
@@ -1571,17 +1607,18 @@ class Application:
                 self.start(resume=False)
         elif kind == 'new' and self.shell is not None and command[1] in self.saved:
             record = picker.model.by_id[command[1]]
-            picker.popup = None
             self.selected = command[1]
-            self.shell.confirm_new_game(picker.model.label(record), lambda: self.start(resume=False))
+
+            # The New Game / Continue popup stays open under the prompt: the picker zooms out with it, and "No" brings
+            # it back.
+            def start_over():
+                picker.popup = None
+                self.start(resume=False)
+            self.shell.confirm_new_game(picker.model.label(record), start_over)
         elif kind in ('new', 'continue'):
             picker.popup = None
             self.selected = command[1]
-            self.start(resume=kind == 'continue')
-            if kind == 'continue' and self.screen == 'game' and self.game:
-                # the original game resumes paused. The pause menu zooms open without gear sound
-                self.game.open_pause(sound=False)
-                self.skip_elapsed = True
+            self.start(resume=kind == 'continue', paused=kind == 'continue')
 
     def _pointer_event(self, event):
         if event.type != pygame.MOUSEMOTION and event.button != 1:
