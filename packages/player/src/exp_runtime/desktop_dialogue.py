@@ -742,9 +742,10 @@ class DialogueRenderer:
 
     def draw_expression_art(self, motion):
         """The portrait's art: the expression it entered with (`initial_portrait`: neutral for a new speaker, else
-        the last one shown) until `changeExpression` crossfades to the line's own a second in, on two independent
-        tracks (DialogueAnimation.expression_alphas: the new art in over 0.2 s from 1.4 s, the old out over 0.8 s
-        from 1.6 s). Since exp-runtime v0.6.0 a running crossfade is its own track, which can outlast the line that
+        the last one shown) until `changeExpression` crossfades to the line's own (requested on the first tick in
+        SHS HD and CoD, a second in on Android: DialogueAnimation.expression_ms), on two independent tracks
+        (expression_alphas: the new art in over 0.2 s from 0.4 s after the request, the old out over 0.8 s from
+        0.6 s). Since exp-runtime v0.6.0 a running crossfade is its own track, which can outlast the line that
         started it, so the pair drawn is the track's (`expression_portraits`)."""
         old, portrait = motion.expression_portraits
         if portrait is None:

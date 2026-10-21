@@ -15,7 +15,7 @@ from .content import EpisodeResources, digest
 from .games import GAMES, game_id
 from .engine import POLL_WAIT_MS, EngineAction, EngineState
 from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
-                                 ExpressionTransition, EXPRESSION_MS)
+                                 ExpressionTransition, EXPRESSION_MS, IOS_EXPRESSION_MS)
 from .background import BackgroundPan
 from .fade_transition import FadeTransition
 from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_lifetime, notice_limit
@@ -441,12 +441,15 @@ class Session:
         name, cursor = input_fonts(self.resources)
         return dict(font=layout.font(name), cursor_width=layout.font(cursor).glyph('|').advance, **policy)
 
+    def _ios_dialogue(self):
+        """The iOS builds' dialogue (SHS HD, or an IPA library): CSFont paging and SHSUIDialog's own clocks."""
+        return self.engine.hd_version is not None or getattr(self.resources.library, 'kind', 'apk') == 'ipa'
+
     def _typed_length(self, details):
         """The source indices a page's reveal runs over. Android's cursor scans the whole remaining substring; the iOS
         builds type only the page's own lines (`-[SHSTextLayer setupTypingLayers]` lays out the visible lines and
         `addTypingAnimations:lineTime:` ends with the last of them), so their Continue comes when the page is out."""
-        ios = self.engine.hd_version is not None or getattr(self.resources.library, 'kind', 'apk') == 'ipa'
-        end = details.get('page_end', len(details['text'])) if ios else len(details['text'])
+        end = details.get('page_end', len(details['text'])) if self._ios_dialogue() else len(details['text'])
         return end - details['page_start']
 
     def _prepare_dialogue(self, *, new_name=False, update_text=False):
@@ -529,7 +532,8 @@ class Session:
                         self.engine.dialogue_history,
                         retain_suppressed=self.engine.game_key == 'shs'
                         and getattr(self.resources.library, 'kind', 'apk') == 'apk',
-                        length=self._typed_length(action.details))
+                        length=self._typed_length(action.details),
+                        expression_ms=IOS_EXPRESSION_MS if self._ios_dialogue() else EXPRESSION_MS)
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
                         # HD's letters wait for the portrait (dialogue_notice.hd_letter_start_ms).
@@ -865,7 +869,7 @@ class Session:
             motion.tick(elapsed_ms)
             if motion.complete and not was_complete:
                 self._prepare_continue_text()
-            if motion.portrait is not None and motion.presentation_ms >= EXPRESSION_MS:
+            if motion.portrait is not None and motion.presentation_ms >= motion.expression_ms:
                 value = motion.expression & 255
                 self.engine.dialogue_history.expressions[motion.portrait.character_id] = value - 256 if value > 127 else value
             return self.pending
@@ -950,7 +954,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=27,
+        return dict(format='shs-runtime-save', version=28,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -991,7 +995,7 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 28):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 29):
                 raise SaveError('Unsupported save format or version')
             # Version 27 adds exp-runtime v0.6.1's state (its own versions 22-24, numbered independently of this
             # fork's): the choice entrance clock, Android's bitmap text history, the music/sound playback records,
@@ -1232,6 +1236,12 @@ class Session:
                             decorations.change(motion['expression'], motion['presentation_ms'] - EXPRESSION_MS)
                     motion.setdefault('expression_transition', track)
                     motion.setdefault('expression_decorations', asdict(decorations))
+            # Version 28: each line's expression request time (issue #2). Earlier saves made the request at 1000 ms.
+            if state['version'] < 28:
+                state = deepcopy(state)
+                motion = state['engine'].get('dialogue_animation')
+                if motion is not None:
+                    motion.setdefault('expression_ms', EXPRESSION_MS)
             same = getattr(resources, 'same_content', None)
             if not (same(state['content']) if same else state['content'] == resources.identity):
                 raise SaveError('Save requires the same imported game and episode')
@@ -1536,7 +1546,8 @@ class Session:
                         or session.pending and session.pending.name in ('finished', 'episode_exit')):
                     raise SaveError('Dialogue animation does not match its pending screen')
                 if motion.native_lifecycle and motion.portrait is not None:
-                    expression = motion.expression if motion.presentation_ms >= EXPRESSION_MS else motion.initial_expression
+                    expression = (motion.expression if motion.presentation_ms >= motion.expression_ms
+                                  else motion.initial_expression)
                     byte = expression & 255
                     if (engine.dialogue_history.anchor_mode != motion.anchor_mode or
                             engine.dialogue_history.expressions.get(motion.portrait.character_id) !=

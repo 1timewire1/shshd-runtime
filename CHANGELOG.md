@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (shshd-runtime)
+
+### Fixed
+
+- **Expressions change a second sooner in SHS HD and Cause of Death**
+  ([#2](https://github.com/1timewire1/shshd-runtime/issues/2)). Both games
+  request a line's expression on the dialog's first tick: `SHSUIDialog::tick`
+  waits for 1.0 of a clock counted in milliseconds (the run loop multiplies by
+  1000 before `onTick`). This was read as one second, so the new face came in
+  at 1.4–1.6 s instead of 0.4–0.6 s. Expressions 6–9's effects start with it.
+  Android SHS keeps its 1000 ms. Saves are version 28; older ones load.
+
 ## 1.0.2 (shshd-runtime)
 
 ### Added

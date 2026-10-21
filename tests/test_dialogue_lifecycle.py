@@ -7,7 +7,7 @@ import os
 from types import SimpleNamespace
 import unittest
 
-from exp_runtime.dialogue_animation import DialogueAnimation, DialoguePortrait
+from exp_runtime.dialogue_animation import DialogueAnimation, DialoguePortrait, EXPRESSION_MS, IOS_EXPRESSION_MS
 from exp_runtime.portrait_effects import PortraitEffect, expression_effects
 from exp_runtime.runtime import SaveError, Session
 from exp_runtime.ui_assets import Rect
@@ -229,6 +229,33 @@ class DialogueLifecycleTests(unittest.TestCase):
         for _ in range(3):
             _ = motion.expression_alphas, motion.box_rect(Rect(1, 2, 30, 40), None)
         self.assertEqual(session.snapshot(), before)
+
+    def test_ios_requests_the_expression_on_the_first_tick_and_android_after_a_second(self):
+        # Issue #2: SHSUIDialog::tick's 1.0 threshold counts milliseconds, so both iOS games request the new expression
+        # on the first tick; its art is in 0.4-0.6 s after that. Android keeps upstream's 1000 ms.
+        for kind, request in (('ipa', IOS_EXPRESSION_MS), ('apk', EXPRESSION_MS)):
+            with self.subTest(kind=kind):
+                session = story(lambda ref, *_: host_call(13, ref, 1, 2), kind=kind)
+                motion = session.engine.dialogue_animation
+                self.assertEqual((motion.expression_ms, motion.initial_expression, motion.expression), (request, 0, 2))
+                session.tick(16)
+                self.assertEqual(motion.expression_transition is not None, kind == 'ipa')
+                session.tick(600)
+                self.assertEqual(motion.expression_alphas[1], 255 if kind == 'ipa' else 0)
+                session.tick(400)
+                self.assertIsNotNone(motion.expression_transition)
+                self.assertEqual(motion.presentation_ms, min(1016, motion.expression_end_ms))
+                restored = Session.from_snapshot(session.resources, session.snapshot())
+                self.assertEqual(restored.snapshot(), session.snapshot())
+        # A save from before version 28 made its request at 1000 ms, and keeps doing so for that line.
+        session = story(lambda ref, *_: host_call(13, ref, 1, 2), kind='ipa')
+        state = session.snapshot()
+        state['version'] = 27
+        del state['engine']['dialogue_animation']['expression_ms']
+        state['engine']['dialogue_animation']['presentation_ms'] = 0
+        state['engine']['dialogue_animation']['expression_transition'] = None
+        self.assertEqual(Session.from_snapshot(session.resources, state).engine.dialogue_animation.expression_ms,
+                         EXPRESSION_MS)
 
     def test_ios_types_only_the_page_and_android_the_whole_remaining_text(self):
         # SHSTextLayer types the visible lines (addTypingAnimations:lineTime:); Android's cursor scans the remainder.

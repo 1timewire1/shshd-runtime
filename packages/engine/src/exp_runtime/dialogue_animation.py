@@ -18,6 +18,12 @@ BOX_TRAVEL_MS = 120
 BOX_OPEN_MS = 200
 EXPRESSION_MS = 1000
 EXPRESSION_END_MS = 3150
+# SHS HD and CoD request the line's expression on the dialog's first tick (issue #2): `SHSUIDialog::tick` (HD 00044654,
+# CoD 0003b370) adds the frame time to a counter that `animateLayers` zeroes and calls `changeExpression:` once it
+# reaches 1.0, and that frame time is in milliseconds (`loopTimerCallback` multiplies by 1000 before `onTick`, HD
+# 0001af9c / CoD 0001988c; HD's autosave limit is 60000). Upstream read the 1.0 as a second (EXPRESSION_MS), which
+# Android SHS keeps until its own timing is checked.
+IOS_EXPRESSION_MS = 1
 
 
 @dataclass(frozen=True)
@@ -132,9 +138,16 @@ class DialogueAnimation:
     expression_effects: bool = True
     expression_transition: ExpressionTransition | None = None
     expression_decorations: ExpressionDecorations = field(default_factory=ExpressionDecorations)
+    # When the line's expression is requested, in presentation time: EXPRESSION_MS, or IOS_EXPRESSION_MS (start()).
+    expression_ms: int = EXPRESSION_MS
+
+    @property
+    def expression_end_ms(self):
+        return self.expression_ms + EXPRESSION_END_MS - EXPRESSION_MS
 
     @classmethod
-    def start(cls, details, variants, previous=None, history=None, *, retain_suppressed=False, length=None):
+    def start(cls, details, variants, previous=None, history=None, *, retain_suppressed=False, length=None,
+              expression_ms=EXPRESSION_MS):
         """`length`: the source indices the reveal runs over (Session._typed_length), by default the whole remaining
         text, as Android's cursor scans it."""
         if history is not None:
@@ -146,7 +159,7 @@ class DialogueAnimation:
         motion = cls(len(details['text']) - details['page_start'] if length is None else length, portrait,
                    old if changed else None, changed,
                    wobble_direction=(20 if details['presentation_mode'] == 2 else -20)
-                   if details.get('box_wobble', False) else 0)
+                   if details.get('box_wobble', False) else 0, expression_ms=expression_ms)
         motion.box_grow = bool(changed and not motion.wobble_direction)
         motion.anchor_mode = portrait.mode if portrait else history.anchor_mode if history else (
             previous.anchor_mode if previous else 0)
@@ -284,7 +297,7 @@ class DialogueAnimation:
     @property
     def displayed_portrait(self):
         # The native cache changes at the tick boundary, before the art fades.
-        return self.portrait if self.presentation_ms >= EXPRESSION_MS else self.initial_portrait
+        return self.portrait if self.presentation_ms >= self.expression_ms else self.initial_portrait
 
     @property
     def expression_alphas(self):
@@ -314,18 +327,18 @@ class DialogueAnimation:
         self.age_ms += elapsed_ms           # this fork's HD renderer clock (letters, portrait housing)
         before = self.presentation_ms
         self.expression_decorations.tick(elapsed_ms)
-        if ui or self.presentation_ms >= EXPRESSION_MS:
+        if ui or self.presentation_ms >= self.expression_ms:
             # The UI tick triggers changeExpression once. Its installed CA
             # tracks then run independently, including under an outgoing fade.
-            self.presentation_ms = min(EXPRESSION_END_MS, self.presentation_ms + elapsed_ms)
+            self.presentation_ms = min(self.expression_end_ms, self.presentation_ms + elapsed_ms)
         if (self.native_lifecycle and self.portrait is not None
                 and self.initial_expression != self.expression
-                and before < EXPRESSION_MS <= self.presentation_ms):
+                and before < self.expression_ms <= self.presentation_ms):
             self.expression_transition = ExpressionTransition(
                 self.initial_portrait, self.portrait, self.expression,
-                self.presentation_ms - EXPRESSION_MS)
+                self.presentation_ms - self.expression_ms)
             if self.expression_effects:
-                self.expression_decorations.change(self.expression, self.presentation_ms - EXPRESSION_MS)
+                self.expression_decorations.change(self.expression, self.presentation_ms - self.expression_ms)
         elif self.expression_transition is not None:
             self.expression_transition.tick(elapsed_ms)
         if (self.native_lifecycle and (self.box_grow or self.wobble_direction)
@@ -406,7 +419,7 @@ class DialogueAnimation:
     def settle(self):
         """Old saves showed all text; migrate without replaying the entrance."""
         self.stop_layers()
-        self.presentation_ms = EXPRESSION_END_MS
+        self.presentation_ms = self.expression_end_ms
         if self.native_lifecycle and self.portrait and self.initial_expression != self.expression:
             self.expression_transition = ExpressionTransition(
                 self.initial_portrait, self.portrait, self.expression,
@@ -418,7 +431,7 @@ class DialogueAnimation:
                 portrait.validate()
         track = self.expression_transition
         self.expression_decorations.validate()
-        requested = self.presentation_ms >= EXPRESSION_MS and self.initial_expression != self.expression
+        requested = self.presentation_ms >= self.expression_ms and self.initial_expression != self.expression
         if track is not None:
             track.validate()
             if (not self.native_lifecycle or self.portrait is None
@@ -435,7 +448,8 @@ class DialogueAnimation:
         if (type(self.box_grow) is not bool or type(self.expression_effects) is not bool
                 or (self.box_grow and (not self.changed or self.wobble_direction))
                 or self.anchor_mode not in (0, 1, 2)
-                or not 0 <= self.presentation_ms <= EXPRESSION_END_MS
+                or self.expression_ms not in (EXPRESSION_MS, IOS_EXPRESSION_MS)
+                or not 0 <= self.presentation_ms <= self.expression_end_ms
                 or not -128 <= self.initial_expression <= 32767
                 or not 0 <= self.expression <= 32767
                 or (self.visuals_finished and not self.finish_requested)

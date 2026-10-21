@@ -1127,6 +1127,17 @@ SHS `tick` **0007c1d8** / CoD **00037e64** request the target expression at
 **1000 ms** of active dialogue time and update that cache. Page turns do not
 restart this clock; leaving the line early does not force the target into it.
 
+**This fork, issue #2 (both iOS games):** the 1.0 that `tick` compares against
+is milliseconds, not a second. `loopTimerCallback` multiplies the elapsed
+seconds by 1000 before `SHSEngine::onTick` (SHS HD **0001af9c**, CoD
+**0001988c**), which hands the same value to `GameModel::tick` and on to the
+dialog (SHS HD **00044654**, CoD **0003b370**); HD's autosave limit, 60000,
+is in the same unit. So SHS HD and CoD request the expression on the dialog's
+first tick (`IOS_EXPRESSION_MS`), and the new art is in at 400–600 ms of the
+line, not 1400–1600 ms. Android SHS keeps the 1000 ms until its own timing is
+checked. Saves are version 28: each line keeps its request time
+(`DialogueAnimation.expression_ms`); older saves made it at 1000 ms.
+
 SHS `SHSPortrait::changeExpression:` **0006ad38** / CoD **00044dc8** use two
 independent fill-both opacity tracks after that request:
 
