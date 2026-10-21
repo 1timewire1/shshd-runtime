@@ -3,7 +3,7 @@
 Evidence: FUN_000ab048, FUN_000a90f0, FUN_0009ce2c, FUN_0009caf4.
 Asset bytes remain in the player's APK. Drawing never writes relationship state.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 
 from .games import GAMES
@@ -148,7 +148,7 @@ class RelationshipAnimation:
     HD_LOSS_MS, HD_FALL_UNITS = 800, 458
     HD_ANGLE_STEP, HD_LOSS_END_DEGREES = 16.5, -15
 
-    def hd_poses(self, slots):
+    def hd_poses(self, slots, *, mirror=False):
         """HD's icon flourish (`SHSPortraitLayer setStatusIconAnimated`, `createRingEffect`), `slots` being each
         icon's resting offset from the housing's center in layout units.
 
@@ -158,7 +158,15 @@ class RelationshipAnimation:
         completion and the ring layer's own bounds are empty (`createRingEffect`; an earlier reading of this had it
         stay for the whole line, which the owner's photos disproved).
         Loss: each lost icon (3014 / 3016 / 3018) rides the circle from its slot on to -15 degrees, then falls in a
-        straight line, 0.8 s in all at constant speed. Icons are not rotated."""
+        straight line, 0.8 s in all at constant speed. Icons are not rotated.
+
+        The arc's angles are constants (`CGPathAddArc` 0 -> 195 + 16.5 i, 0005554e..00055598; the loss's 00055176..
+        00055240), shaped for a right-side portrait, whose icons rest on the ring's left. A left-side portrait's
+        (`mirror`: mode 1, the player's) rest on its right (layout 17's other slot nodes), so its flourish is the same
+        path mirrored, and each icon lands on its own slot (issue #7: it used to arc to the left and snap back)."""
+        if mirror:
+            poses = self.hd_poses([(-x, y) for x, y in slots])
+            return tuple(replace(pose, x=-pose.x) for pose in poses)
         change = self.change
         if change.asset_id < 0 or self.elapsed_ms < self.delay_ms:
             return ()

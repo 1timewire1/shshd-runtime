@@ -433,8 +433,7 @@ verified map. With it:
 
 Since ported from CoD's own code (sections below): the choice geometry,
 choice-panel colours and title placement, the chapter card and the score
-banner. Still open: the highlight's face change (colour only so far) and the
-free edition's scene-caption offset (see "Dialogue geometry").
+banner. Still open: the highlight's face change (colour only so far).
 
 ## Dialogue geometry
 
@@ -461,8 +460,10 @@ source; SHS HD's photo-fitted placements never apply.
     (`GameModel::init` `00012964`, `+0x1c20`, read by
     `displayScheduleCaption`) and is read by
     `SHSUIChapterScreen::initChapterScreen`. The chapter card's use is ported
-    (`desktop_title.CodTitleRenderer.BANNER`); the scene caption's is still
-    to port.
+    (`desktop_title.CodTitleRenderer.BANNER`). The scene caption's never
+    shows: no CoD script raises a caption. Service 90 appears once, in
+    Volume One, as a dismissal (`90(-1, -1)`). Its frame is
+    (-171, `+0x1c20`, 171 x 60) CoD points (1.4.7 `00011024`).
 - **Typed lines** (`-[SHSTextLayer setupTypingLayers]` `0004db50`).
   - Each line is its own layer inside a container placed at
     (x − 4, line top − 4). The line layer sits at (−4, −4) in it

@@ -32,7 +32,7 @@ What the binary states:
 Measured from the app's screenshots rather than read: the default `sz` (52.7; the static starts at 50), and the first row's top
 below the title bar (48.5 points).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 import logging
 
@@ -342,6 +342,15 @@ class SidePanels:
             font = load_font_sized(self.resources.library, family, size)
             if font is None:
                 return None
+            if family == 'ArialMT14':
+                # `DTcheckFontInit` (000916c4) and `-[SHSFSView checkInit]` build the exit-line, help-line and N/A
+                # labels from the ArialMT face with the +0x7024 CSFontInfo, which `initFonts` fills from Arial Rounded
+                # MT Bold: Arial's letters at Rounded's advances, as on the faceplace wall.
+                rounded = load_font_sized(self.resources.library, 'ArialRoundedMTBold14', size)
+                if rounded is not None:
+                    font = replace(font, glyphs={code: replace(glyph, advance=rounded.glyphs[code].advance)
+                                                 if code in rounded.glyphs else glyph
+                                                 for code, glyph in font.glyphs.items()})
             self.text.fonts[name] = (font, None)
         return name
 

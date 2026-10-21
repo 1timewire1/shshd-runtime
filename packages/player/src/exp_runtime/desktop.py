@@ -1319,6 +1319,9 @@ class Desktop:
         the unchanged, Android-authored UI chrome is closer to HD's own
         proportions without needing HD's still-undeciphered chrome layout.
         """
+        # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
+        # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
+        self.window.fill((0, 0, 0), viewport)
         background = self.pending_background
         if background is None:
             return

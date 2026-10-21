@@ -212,7 +212,7 @@ class DialogueLifecycleTests(unittest.TestCase):
         session.tick(900)
         motion = session.engine.dialogue_animation
         self.assertTrue(motion.complete)
-        self.assertFalse(motion.housing_clipped)
+        self.assertTrue(motion.housing_clipped)     # the tap's SHSUIDialog::stopAnimation clips at once
         session.answer()
         self.assertTrue(motion.page_turn)
         self.assertEqual(motion.presentation_ms, 900)
@@ -222,7 +222,7 @@ class DialogueLifecycleTests(unittest.TestCase):
             restored.tick(7)
         self.assertEqual(restored.snapshot(), session.snapshot())
         self.assertEqual(motion.expression_alphas, (255, 255))
-        self.assertFalse(motion.housing_clipped)  # Cancelled grow has no completion callback.
+        self.assertTrue(motion.housing_clipped)   # a page turn keeps the clip
         before = session.snapshot()
         for _ in range(3):
             _ = motion.expression_alphas, motion.box_rect(Rect(1, 2, 30, 40), None)
@@ -322,6 +322,7 @@ class DialogueLifecycleTests(unittest.TestCase):
             self.assertEqual(motion.portrait_scale, .5)
             session.answer()
             self.assertEqual((motion.box_alpha, motion.box_scale, motion.box_rotation, motion.name_alpha), (255, 1, 0, 255))
+            self.assertTrue(motion.housing_clipped)     # stopAnimation clips against the settled bubble
             self.assertEqual(motion.portrait_scale, .5)
             session.answer()
             self.assertEqual(session.vm.snapshot(), vm)
@@ -329,7 +330,7 @@ class DialogueLifecycleTests(unittest.TestCase):
             self.assertTrue(motion.complete)
             self.assertEqual(motion.portrait_scale, 1)
             self.assertEqual(motion.expression_alphas, (255, 255))
-            self.assertFalse(motion.housing_clipped)
+            self.assertTrue(motion.housing_clipped)
             self.assertEqual(session.vm.snapshot(), vm)
 
     def test_grow_clips_housing_only_after_completion_and_same_speaker_clips_immediately(self):

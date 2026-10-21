@@ -187,5 +187,41 @@ def positional_frames(cod_bytes, hd_bytes, pairs):
 
 @lru_cache(maxsize=2)
 def derived_common(cod_bytes, hd_bytes):
-    """SHS HD's pack 155 with each COMMON_FRAMES frame turned into CoD's look (other frames untouched)."""
-    return derive_pack(cod_bytes, hd_bytes, {hd: cod for cod, hd in COMMON_FRAMES.items()})[0]
+    """SHS HD's pack 155 with each COMMON_FRAMES frame turned into CoD's look (other frames untouched). The gear is the
+    exception (owner's choice, 2026-10-20, the approved mockup): CoD never changed the normal gear, so SHS HD's frame 58
+    stays as it is, and the pressed gear is SHS HD's sharp frame 59 with CoD's grey-white glow (pressed_gear)."""
+    frames = {hd: cod for cod, hd in COMMON_FRAMES.items() if hd not in (GEAR, GEAR_PRESSED)}
+    out = bytearray(derive_pack(cod_bytes, hd_bytes, frames)[0])
+    hd = ImagePack.parse(hd_bytes)
+    _write_frame(out, hd, GEAR_PRESSED, pressed_gear(hd.images[GEAR_PRESSED], ImagePack.parse(cod_bytes).images[50]))
+    return bytes(out)
+
+
+GEAR, GEAR_PRESSED = 58, 59             # SHS HD pack 155's gear and pressed gear (CoD 126: 49 / 50)
+
+
+def pressed_gear(hd_frame, cod_frame):
+    """RGBA bytes: SHS HD's pressed gear (sharp, 2x) with its yellow glow replaced by CoD's own pressed gear scaled up.
+    Each pixel blends toward CoD's by how saturated SHS HD's is (max - min of RGB, full at 150): the grey gear itself
+    keeps SHS HD's pixels, the glow takes CoD's. The colour-keyed recolour (derive_frame) turned that glow into a
+    banded, noisy outline."""
+    from PIL import Image
+    size = (hd_frame.width, hd_frame.height)
+    cod = Image.frombytes('RGBA', (cod_frame.width, cod_frame.height), cod_frame.pixels).resize(
+        size, Image.BICUBIC).tobytes()
+    hd = hd_frame.pixels
+    out = bytearray(len(hd))
+    for i in range(0, len(hd), 4):
+        r, g, b = hd[i], hd[i + 1], hd[i + 2]
+        weight = min(1., (max(r, g, b) - min(r, g, b)) / 150)
+        for c in range(4):
+            out[i + c] = max(0, min(255, round((1 - weight) * hd[i + c] + weight * cod[i + c])))
+    return bytes(out)
+
+
+def _write_frame(out, pack, index, rgba):
+    """Put RGBA bytes into `out` (a copy of `pack`'s bytes) as frame `index`, in the pack's own ARGB order."""
+    offset = pack.pixel_offsets[index]
+    argb = bytearray(len(rgba))
+    argb[0::4], argb[1::4], argb[2::4], argb[3::4] = rgba[3::4], rgba[0::4], rgba[1::4], rgba[2::4]
+    out[offset:offset + len(argb)] = argb

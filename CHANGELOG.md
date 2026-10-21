@@ -80,8 +80,9 @@
   player only draws it.
   - The old element stays on screen under the closing blinds, and its script
     runs only once they are shut. Its music and sounds no longer start early.
-  - The next dialogue is revealed already open, and its text starts typing
-    after the reveal, not underneath it.
+  - The next dialogue is revealed already open with its text in full:
+    `GameModel::tick` stops the new screen's animations before the fade-in
+    (SHS HD `000158ba`).
   - Title cards appear without a fade-in.
   - A queued transition now also follows a choice, name entry or the portrait
     picker. Before, it waited for the next dialogue to finish.
@@ -158,6 +159,35 @@
   capitalized, the rest as typed. An audit of all 26 answer-checking prompts
   found every accepted answer starting with a capital or digit. Answers needing
   later capitals ("EA", "WHEELCHAIR", "MerrittBurke") can now be typed too.
+- **The relationship badge's flourish on a left-hand portrait**
+  ([#7](https://github.com/1timewire1/shshd-runtime/issues/7)). `setStatusIconAnimated`'s arc constants are
+  shaped for a right-hand portrait. A left-hand one now takes the same path mirrored onto its own slots, so the
+  icon sweeps over the top to its slot instead of snapping across.
+- **Episodes that open on no background show black**
+  ([#8](https://github.com/1timewire1/shshd-runtime/issues/8)), as Spirit Week and the Series Finale do, instead of
+  whatever was drawn last.
+- **A two-line speaker name no longer overflows the box**
+  ([#11](https://github.com/1timewire1/shshd-runtime/issues/11), "Spud The Stud"). The tall name's extra 40 units
+  hold no body lines, so such a page holds 5 lines, not 7, and the rest goes to the next page.
+- **The portrait ring no longer runs over the text after a fast tap** (both
+  games). A tap during typing calls `SHSUIDialog::stopAnimation` (SHS HD
+  `0004440c`, CoD `0003b124`), which clips the ring against the box at once.
+  Before, a tap during the box's grow left the ring whole for the rest of the
+  line.
+- **Cause of Death's pressed gear** is CoD's own pressed art over SHS HD's
+  gear, not a recolour of the plain one.
+- **The scene caption, the Decision Tree's exit labels and its "not supported"
+  notice space their letters as the originals do.** Every ArialMT text in
+  both iOS games advances by Arial Rounded MT Bold's widths (`initFonts`
+  builds the ArialMT advance table from the Rounded face; `DTcheckFontInit`
+  `000916c4`). "Before School" is now 97 units wide, as photographed (89.5
+  before).
+- **Previews for more episodes.** The preview capture now answers choices at a
+  person's pace (a choice ignores taps for its first moments, and CoD's fights
+  repeat until their clock runs out) and skips mini-games on the way. CoD's
+  Sunset gets its title card, as do SHS episodes that open on a chapter
+  select. Libraries retry the episodes that had no preview. CoD's Fourth of
+  July Special, Part 2 has no title card, so it keeps the plain one.
 
 ## 1.0.1 (shshd-runtime)
 

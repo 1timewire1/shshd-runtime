@@ -188,10 +188,12 @@ class ModelTests(unittest.TestCase):
 
 class FakeSession:
     """Serves a fixed list of pending actions; each answer moves to the next one."""
+    transitioning = False
+
     def __init__(self, *names):
         self.queue = [SimpleNamespace(name=name, details=dict(enabled=[False, True, True])) for name in names]
         self.pending = None
-        self.answers, self.ticks = [], []
+        self.answers, self.ticks, self.skips = [], [], []
         self.engine = SimpleNamespace(dialogue_animation=SimpleNamespace(complete=True))
 
     def advance(self):
@@ -199,6 +201,10 @@ class FakeSession:
 
     def answer(self, value=None):
         self.answers.append(value)
+        self.advance()
+
+    def skip_minigame(self, success):
+        self.skips.append((self.pending.name, success))
         self.advance()
 
     def tick(self, milliseconds):
@@ -212,12 +218,19 @@ class TitleCardRunTests(unittest.TestCase):
         session = FakeSession('dialogue', 'choice', 'character_picker', 'text_input', 'loading', 'presentation')
         self.assertTrue(episode_thumbnails.run_to_title_card(session))
         self.assertEqual(session.answers, [None, 1, 0, 'Player'])        # the first enabled choice option
-        self.assertEqual(session.ticks, [3001])
+        self.assertEqual(session.ticks, [episode_thumbnails.CHOICE_PACE_MS, 3001])
         self.assertEqual(session.pending.name, 'presentation')
+
+    def test_minigames_are_skipped_and_choices_are_answered_at_a_persons_pace(self):
+        # CoD's Sunset (16.7): its "Squeeze!" fight repeats until its clock runs out.
+        session = FakeSession('word_game', 'choice', 'presentation')
+        self.assertTrue(episode_thumbnails.run_to_title_card(session))
+        self.assertEqual(session.skips, [('word_game', True)])
+        self.assertEqual((session.answers, session.ticks), ([1], [episode_thumbnails.CHOICE_PACE_MS]))
 
     def test_an_episode_with_no_title_card_or_an_unhandled_stop_is_given_up_on(self):
         self.assertFalse(episode_thumbnails.run_to_title_card(FakeSession('dialogue')))
-        self.assertFalse(episode_thumbnails.run_to_title_card(FakeSession('football')))
+        self.assertFalse(episode_thumbnails.run_to_title_card(FakeSession('episode_exit')))
 
 
 class ScreenTests(unittest.TestCase):

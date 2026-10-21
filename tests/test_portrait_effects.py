@@ -65,6 +65,20 @@ class HdRelationshipFlourishTests(unittest.TestCase):
         pose = motion.hd_poses(self.SLOTS)[1]
         self.assertEqual((pose.flash_asset, pose.flash_alpha, (pose.x, pose.y)), (-1, 0, self.SLOTS[1]))
 
+    def test_a_left_portraits_flourish_is_the_same_path_mirrored_onto_its_own_slots(self):
+        # Issue #7: the player's (mode 1) icons rest on the ring's right; they arc there over the top from the left,
+        # not to the left and then snap across.
+        right_slots = [(-x, y) for x, y in self.SLOTS]
+        for elapsed in (500 + 1, 500 + 150, 500 + 299, 500 + 300 + 250):
+            motion = self.animation(1, 2)
+            motion.elapsed_ms = elapsed
+            plain, mirrored = motion.hd_poses(self.SLOTS), motion.hd_poses(right_slots, mirror=True)
+            for a, b in zip(plain, mirrored):
+                self.assertAlmostEqual(b.x, -a.x)
+                self.assertAlmostEqual(b.y, a.y)
+        motion.elapsed_ms = 500 + 300 + 500
+        self.assertEqual([(p.x, p.y) for p in motion.hd_poses(right_slots, mirror=True)], right_slots[:2])
+
     def test_lost_icon_rides_the_circle_then_falls(self):
         motion = self.animation(2, 1)
         motion.elapsed_ms = 500

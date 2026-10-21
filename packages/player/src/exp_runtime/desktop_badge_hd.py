@@ -6,7 +6,10 @@ Decompiled (`GameModel::displayScheduleCaption`, `GameModel::render(ctx, 4)`, `G
 theme's pack, frame 13), node 2 (26, 10, 100 x 100) the scene icon, drawn centered, and node 3 (136, 30,
 216 x 60) the text, wrapped in that region, left aligned and vertically centered (`drawTextInRegion` flags
 0x19). The text is ArialMT, 28 pt, colored by the bubble theme when the caption last redrew: blue (47, 90, 168),
-pink (180, 78, 78), gray (137, 137, 137), otherwise gold (180, 109, 26). Lines are 26 pt apart (photo).
+pink (180, 78, 78), gray (137, 137, 137), otherwise gold (180, 109, 26). Lines are 26 pt apart (photo). Like every
+ArialMT CSFont it advances by Arial Rounded MT Bold's widths (`SHSEngine::initFonts` 0002b04a builds the ArialMT
+advance table from the Rounded face; see desktop_faceplace_alert.py): "Before School" is 194 pt, the photographed
+~97 units, where Arial's own advances give 179.
 
 Motion: shown after a 0.5 s delay, position x runs -362 -> 33 -> 30 over 0.6 s, each half eased in and out;
 `displayScheduleCaption(-1)` slides it back to -362 in 0.3 s (ease out; the drawn label is the one that was showing). The engine keeps its own 200 ms
@@ -93,6 +96,32 @@ class HdSceneBadge:
         # neither depends on anything but FONT_POINTS, so this loads once per process rather than every draw().
         return pygame.font.Font(pygame.font.match_font('arial'), FONT_POINTS * S)
 
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _advance_font():
+        """The face whose advances the ArialMT CSFont carries (Arial Rounded MT Bold, or its stand-in), else None."""
+        from .vector_text import system_font_path
+        path = system_font_path('arial-rounded')
+        return pygame.font.Font(path, FONT_POINTS * S) if path else None
+
+    @classmethod
+    def advances(cls, font, text):
+        source = cls._advance_font() or font
+        return [metric[4] if metric else 0 for metric in source.metrics(text)]
+
+    @classmethod
+    def render_line(cls, font, text, color):
+        """Arial's glyphs, each at the pen the Rounded advances put it."""
+        advances = cls.advances(font, text)
+        line = pygame.Surface((max(1, sum(advances) + font.size(text[-1:])[0] if text else 1), font.get_height()),
+                              pygame.SRCALPHA)
+        pen = 0
+        for character, advance in zip(text, advances):
+            if character != ' ':
+                line.blit(font.render(character, True, color), (pen, 0))
+            pen += advance
+        return line
+
     def available(self):
         try:
             return self.art.hd_chrome() and bool(pygame.font.match_font('arial'))
@@ -113,12 +142,12 @@ class HdSceneBadge:
         size = TAB[0] * S, TAB[1] * S
         return tab if tab.get_size() == size else pygame.transform.smoothscale(tab, size)
 
-    @staticmethod
-    def wrap(font, text, width):
+    @classmethod
+    def wrap(cls, font, text, width):
         lines, current = [], ''
         for word in text.split(' '):
             trial = f'{current} {word}' if current else word
-            if current and font.size(trial)[0] > width:
+            if current and sum(cls.advances(font, trial)) > width:
                 lines.append(current)
                 current = word
             else:
@@ -168,7 +197,7 @@ class HdSceneBadge:
             cap = font.render('H', True, (0, 0, 0)).get_bounding_rect()
             for index, line in enumerate(lines):
                 middle = (y + height / 2 + (index - (len(lines) - 1) / 2) * LINE_PITCH) * S
-                tab.blit(font.render(line, True, color), (x * S, round(middle - cap.y - cap.height / 2)))
+                tab.blit(self.render_line(font, line, color), (x * S, round(middle - cap.y - cap.height / 2)))
             self._tab_cache = (content_key, tab)
         layer.blit(tab, (round(left * S), TAB_TOP * S))
         return layer

@@ -365,9 +365,13 @@ class DialogueAnimation:
     def finish(self):
         self.finish_requested = True
         # touchesBegan stops the bubble and title, but leaves portrait and
-        # expression tracks running. Cancelled grow callbacks do not clip.
+        # expression tracks running. Its SHSUIDialog::stopAnimation (CoD
+        # 0003b124, SHS HD 0004440c) clips the housing against the settled
+        # bubble at once, so a tap during the grow does not leave the ring
+        # whole over the box.
         if self.native_lifecycle:
             self.visuals_finished = True
+            self.housing_clipped = True
 
     def next_page(self, length):
         self.wobble_direction = 0
@@ -433,7 +437,7 @@ class DialogueAnimation:
                 or not -128 <= self.initial_expression <= 32767
                 or not 0 <= self.expression <= 32767
                 or (self.visuals_finished and not self.finish_requested)
-                or (self.native_lifecycle and self.housing_clipped and not self.page_turn
+                or (self.native_lifecycle and self.housing_clipped and not self.page_turn and not self.visuals_finished
                     and (self.box_grow or self.wobble_direction) and self.elapsed_ms < self.housing_clip_ms)
                 or ((self.initial_portrait is None) != (self.portrait is None))
                 or (self.portrait is not None and (

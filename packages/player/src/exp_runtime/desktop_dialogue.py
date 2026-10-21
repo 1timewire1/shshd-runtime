@@ -857,7 +857,8 @@ class DialogueRenderer:
         cx, cy = rect.center[0] * k, (rect.center[1] - 5) * k
         # Indicator parents are siblings of the head's scaled node. They
         # appear after its entrance and do not inherit the head-only flip.
-        poses = (motion.relationship.hd_poses(self.relationship_slots(motion.portrait.mode)) if self.hd_chrome()
+        poses = (motion.relationship.hd_poses(self.relationship_slots(motion.portrait.mode),
+                                              mirror=motion.portrait.mode == 1) if self.hd_chrome()
                  else motion.relationship.poses())
         ring_under = self.hd_chrome()             # HD's ring-effect layers sit under the icon layers
         for pose in poses:

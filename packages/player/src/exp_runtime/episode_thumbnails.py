@@ -20,11 +20,13 @@ from .runtime import Session
 FRAME = (768, 1024)
 SIZE = (432, 580)                 # 2x the picker's 216 x 290 tile
 MAX_STEPS = 300
+CHOICE_PACE_MS = 300
 BUNDLE = 'Payload/Surviving_HS.app/'
 MISSING = 'missingEpisodePreview.jpg'
 # The content of the `.none` marker an episode without a title card gets. Bumped when `run_to_title_card` learns to get
-# past something new, so episodes marked by an older pipeline are tried once more (2: the High School Story ad's choice).
-MARKER = b'2'
+# past something new, so episodes marked by an older pipeline are tried once more (2: the High School Story ad's choice;
+# 3: minigames and paced choices, CoD's Sunset).
+MARKER = b'3'
 
 
 def thumbnail_path(library, record):
@@ -65,6 +67,9 @@ def run_to_title_card(session):
         name = pending.name
         if name == 'presentation':
             return True
+        if session.transitioning:
+            session.tick(100)
+            continue
         if name == 'dialogue':
             if not session.engine.dialogue_animation.complete:
                 session.answer()
@@ -80,9 +85,16 @@ def run_to_title_card(session):
         elif name == 'choice':
             # Some episodes ask something before their title card: take the first option on offer -- except the High
             # School Story ad's (ad_intro.py), whose first option ends the script: there, the one that plays the episode.
+            # Tapped at a person's pace: CoD's fights (Sunset's "Squeeze!") repeat their choice until their clock runs out,
+            # which never happens when every answer comes at once.
+            session.tick(CHOICE_PACE_MS)
+            if session.pending is not pending:
+                continue
             play = play_option(pending)
             session.answer(play if play is not None else
                            next((i for i, ok in enumerate(pending.details['enabled']) if ok), 0))
+        elif name in ('word_game', 'word_grid', 'football'):
+            session.skip_minigame(True)
         elif name == 'character_picker':
             session.answer(0)
         elif name == 'text_input':

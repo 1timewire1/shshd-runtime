@@ -514,3 +514,24 @@ class HdTitleTests(unittest.TestCase):
                 if mode in (1, 2):
                     # The second line takes the title's line offset (40 / 10 points).
                     self.assertEqual(label.layout.lines[1].x, {1: 20, 2: 5}[mode])
+
+
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class HdTallNameCapacityTests(unittest.TestCase):
+    def test_a_two_line_name_does_not_give_the_page_more_lines(self):
+        # Issue #11 (Hector's Guide To Girls, "Spud The Stud"): HD text starts at node 8 whatever the title does,
+        # so the tall title's extra 40 units hold no body lines.
+        from exp_runtime.vector_text import VectorFont
+        layout = authored_dialogue()
+        name = layout.font('PajamaHip26')
+        body = VectorFont(**layout.font('Body').__dict__, source=object())      # HD's vector text branch
+        layout.font = lambda role: name if role.startswith('PajamaHip') else body
+        pages = []
+        for speaker in ('Jo', 'Spud The Stud Who Wraps To Two Lines'):
+            page = layout.page(dict(presentation_mode=2, theme=1, emphasis_theme=1, speaker=speaker,
+                                    text='word ' * 120))
+            last = page.body.lines[-1]
+            self.assertLessEqual(page.body_origin[1] + last.y + 14, page.box.y + page.box.height)
+            pages.append(page)
+        self.assertLess(pages[1].box.y, pages[0].box.y)                        # the tall header
+        self.assertEqual(len(pages[1].body.lines), len(pages[0].body.lines))

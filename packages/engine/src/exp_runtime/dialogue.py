@@ -270,6 +270,10 @@ class DialogueLayout:
                 # line, `IMG_0069`) only reproduce with real HD glyph advances at the
                 # measured 246, so vector-font text wraps there.
                 body_width = rect.width
+                # The text starts at node 8 whatever the title does, so a tall title's extra 40 units (the box grows
+                # upward for it) hold no body lines: a page holds what fits in `height`. Counting them let a two-line
+                # name's page take two lines too many, which ran past the box (issue #11, Spud The Stud).
+                body_height = height
             elif cap_height is not None:
                 # animateTextLayer (CoD 0003788a / SHS 0007d628) positions
                 # text at node 8, independently of the expanded frame. The
