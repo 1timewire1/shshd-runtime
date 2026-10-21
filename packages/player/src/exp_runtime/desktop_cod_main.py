@@ -121,6 +121,7 @@ class CodButtonLayouts:
 
 
 class CodMainMenu(HdMainMenu):
+    INFO_FRAMES = (14, 15)              # CoD's own at rest / pressed (through INFO_SWAP), unchanged
     LABELS = LABELS
 
     def __init__(self, library, bank):

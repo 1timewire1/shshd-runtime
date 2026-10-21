@@ -451,6 +451,8 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   - Taking any main-menu option slides them out in reverse (`animateMainMenuButtonsOut(0)`): the gear shrinks, the
     info button fades, More EA Games leaves first and the wedge last. Coming in, the gear grows and the info button
     fades in (checked on the iPad).
+  - The info button's frames are swapped in SHS HD (owner's choice): pack 315 frame 15 at rest and 14 pressed, where
+    the app draws 14 at rest, so a resting button does not look like the keyboard's highlight. CoD's are unchanged.
   - An episode picker (`SHSMTXMenu`) zooms in over the menu meanwhile (`setAppMode` -> `animateView(20)`), as do
     Options and Help & About.
     - Now Airing and Episodes On Demand use the game's menu card (`HdPauseMenu` / `CodPauseMenu`): a tall card like

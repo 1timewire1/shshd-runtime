@@ -76,6 +76,10 @@ def keyframes(times, values, t):
 class HdMainMenu(HdUi):
     hd_layer = True
     LABELS = (STRING_PLAY, STRING_AIRING, STRING_DEMAND, STRING_MORE)      # the four buttons' string ids
+    # The info button's frames (pack 315), (at rest, pressed). SHS HD draws 14 at rest and 15 pressed; here they are
+    # the other way round (owner's choice, 2026-10-20) so the button at rest does not look highlighted next to the
+    # keyboard's highlight. CoD's own states already read that way (desktop_cod_main.CodMainMenu).
+    INFO_FRAMES = (15, 14)
 
     def __init__(self, library):
         super().__init__(library)
@@ -273,7 +277,7 @@ class HdMainMenu(HdUi):
                 surface = pygame.transform.smoothscale(surface, (max(1, round(surface.get_width() * scale)),
                                                                  max(1, round(surface.get_height() * scale))))
             layer.blit(surface, surface.get_rect(center=center))
-        info = self.layouts.frame(315, 15 if self.pressed == ('help',) else 14)
+        info = self.layouts.frame(315, self.INFO_FRAMES[1 if self.pressed == ('help',) else 0])
         if alpha > 0:
             info = pygame.transform.smoothscale(info, (max(1, round(info.get_width() * S)), max(1, round(info.get_height() * S))))
             if alpha < 1:
