@@ -48,7 +48,7 @@ class CreatorMCPTests(unittest.IsolatedAsyncioTestCase):
                 async with stdio_client(params) as (read, write):
                     async with ClientSession(read, write) as client:
                         info = await client.initialize()
-                        self.assertEqual(info.serverInfo.name, 'EXP Runtime Creator')
+                        self.assertEqual(info.serverInfo.name, 'SHSHD Runtime Creator')    # this fork's own app name
                         tools = await client.list_tools()
                         self.assertIn('project_export_exp', {tool.name for tool in tools.tools})
                         for tool in tools.tools:
