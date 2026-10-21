@@ -306,6 +306,7 @@ class Application:
     # An episode picker opened from the HD main menu zooms in over it (`setAppMode` -> `animateView(20)`, 0.4 s, as
     # the menus do: docs/MAIN_MENU.md, "Menu entrances") while the menu's buttons slide out; ms into that, or done.
     picker_zoom = PAUSE_OPEN_MS
+    picker_under_window = False     # "Delete Saved Game?" is open over the picker (render_picker)
 
     def picker_over_menu(self):
         """Whether the picker is drawn over the live HD main menu: while it zooms in and until the menu's buttons have
@@ -1283,7 +1284,14 @@ class Application:
                 self.picker_zoom = min(PAUSE_OPEN_MS, self.picker_zoom + elapsed)
                 self.shell.tick(elapsed / 1000)                # the buttons sliding out behind it
             elif self.screen == 'picker' and self.shell is not None and self.shell.overlay_active:
-                self.shell.tick_window(elapsed / 1000)         # "Delete Saved Game?" zooming in
+                self.shell.tick_window(elapsed / 1000)         # "Delete Saved Game?" sliding in
+            if self.screen == 'picker' and self.shell is not None:
+                # Its "No" brings the picker back, zooming in over the main menu as it first did (unverified on the
+                # iPad); "Yes" starts the episode instead.
+                under = self.shell.overlay_active and self.shell.window_slides()
+                if self.picker_under_window and not under and not self.shell.overlay_active:
+                    self.picker_zoom = 0
+                self.picker_under_window = under
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)
@@ -1291,21 +1299,26 @@ class Application:
         pending = picker.alert
         if self.message:
             picker.alert = (self.game_title, self.message)
-        live = self.picker_over_menu()
+        # "Delete Saved Game?" slides in while the picker zooms out over the main menu (HdShell.window_slides).
+        under = self.shell is not None and self.shell.overlay_active and self.shell.window_slides()
+        live = self.picker_over_menu() or under
         canvas = picker.draw(backdrop=not live)
         picker.alert = pending
-        if self.shell is not None and self.shell.overlay_active:
+        if self.shell is not None and self.shell.overlay_active and not under:
             self.shell.draw_overlay(canvas)
         if live:
-            menu = self.shell.render().copy()
+            # Once the main menu's buttons have slid out they stay out behind the picker (it zooms back in after "No").
+            menu = self.shell.render(overlay=not under, buttons=not getattr(self.shell.main, 'left', False)).copy()
             if menu.get_size() != canvas.get_size():
                 menu = pygame.transform.smoothscale(menu, canvas.get_size())
-            scale = pause_scale(self.picker_zoom)
+            scale = pause_scale(PAUSE_OPEN_MS - self.shell.window_ms) if under else pause_scale(self.picker_zoom)
             if scale < 1:
                 size = tuple(max(1, round(length * scale)) for length in canvas.get_size())
                 canvas = pygame.transform.smoothscale(canvas, size)
             menu.blit(canvas, canvas.get_rect(center=menu.get_rect().center))
             canvas = menu
+        if under:
+            self.shell.draw_overlay(canvas)
         self.present_frame(canvas)
         with frame_log.section('flip'):
             pygame.display.flip()

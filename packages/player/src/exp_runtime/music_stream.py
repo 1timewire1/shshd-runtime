@@ -53,9 +53,14 @@ class MusicStream:
 
     # ------------------------------------------------------------------ native operations
 
-    def play(self, music_id, flag, opener, now):
-        """`playMusic` with Music on. `opener(music_id)` returns (MP3 bytes, start in s)."""
+    def play(self, music_id, flag, opener, now, *, held=False):
+        """`playMusic` with Music on. `opener(music_id)` returns (MP3 bytes, start in s). `held`: the pause menu is
+        open and nothing is playing (a saved game resumed under it, as `SHSEngine::onTick` opens it after a load), so
+        the cue waits for Resume instead of starting and fading out."""
         current = self.current
+        if held and current is None:
+            self.pending = (music_id, flag, opener)
+            return
         if self.stored is not None and current is not None and current['id'] != music_id:
             self._drop_stored()             # (scripts do not run under the pause menu; a load or test can ask)
             current = None
@@ -100,7 +105,7 @@ class MusicStream:
                 self._unload(stop=not (self.pending is not None and enabled))     # starting the next cue stops it
         if self.current is not None and self.stored is None and not self.paused and self._finished():
             self._unload()
-        if self.current is None and self.pending is not None:
+        if self.current is None and self.pending is not None and not menu_open:
             music_id, flag, opener = self.pending
             self.pending = None
             if enabled:

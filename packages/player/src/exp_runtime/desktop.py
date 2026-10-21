@@ -506,7 +506,7 @@ class Desktop:
             self.music_token = token
             if engine.music_id >= 0:
                 if self.music_enabled:               # playMusic ignores requests while Music is off
-                    stream.play(engine.music_id, engine.music_flag, self._open_cue, now)
+                    stream.play(engine.music_id, engine.music_flag, self._open_cue, now, held=self.menu_open)
             else:
                 stream.stop(engine.music_stop_ms, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,

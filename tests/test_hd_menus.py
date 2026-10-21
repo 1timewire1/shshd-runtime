@@ -618,6 +618,7 @@ class ShellActionTests(unittest.TestCase):
         shell, calls = self.shell, []
         shell.confirm_new_game('Some Episode', lambda: calls.append('started'))
         self.assertEqual((shell.stack.stack, shell.pending_title), ([12], 'Some Episode'))
+        self.assertTrue(shell.window_slides())                     # slides in from the right over the picker
         shell.perform(10)
         self.assertEqual((calls, shell.stack.stack), (['started'], []))
         shell.perform(10)                                           # nothing pending: nothing happens

@@ -20,6 +20,7 @@ import pygame
 from .desktop_boot_hd import FLASH_TOTAL, HdBootScreen, JINGLE, LOADING_TIME
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
+from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, focus_step
 from .hd_ui import S, FRAME
@@ -172,8 +173,10 @@ class HdShell:
         if self.stack.stack:
             self.window_ms = min(PAUSE_OPEN_MS, self.window_ms + seconds * 1000)
         covered = self.overlay_active or self.pause_open
-        if self.stage == 'main' and self.was_covered and not covered:
-            self.main.start(intro=False)          # the buttons slide in again when a window closes
+        if self.stage == 'main' and self.was_covered and not covered and getattr(self.app, 'screen', 'main') == 'main':
+            # The buttons slide in again when a window closes over the main menu (not one closing over the episode
+            # picker, such as "Delete Saved Game?").
+            self.main.start(intro=False)
         self.was_covered = covered
         if (self.stage == 'loading' and self.age >= LOADING_TIME + SOUND_DELAY
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
@@ -255,8 +258,9 @@ class HdShell:
 
     # ------------------------------------------------------------ rendering
 
-    def render(self):
-        """The current screen as a 2x canvas."""
+    def render(self, *, overlay=True, buttons=True):
+        """The current screen as a 2x canvas (without the open window when `overlay` is off, and without the main
+        menu's buttons when `buttons` is off)."""
         if self.stage in ('loading', 'sound'):
             canvas = self.boot.draw_loading(min(1.0, self.age / LOADING_TIME))
         elif self.stage == 'flash':
@@ -272,8 +276,9 @@ class HdShell:
             self.main.pressed = shown if shown and shown[0] in ('play', 'airing', 'demand', 'more', 'options', 'help') else None
             # The buttons also show while they slide out under a window that has just opened.
             leaving = self.main.leaving is not None and not self.main.left
-            canvas = self.main.draw(buttons=leaving or not (self.overlay_active or self.pause_open))
-        self.draw_overlay(canvas)
+            canvas = self.main.draw(buttons=buttons and (leaving or not (self.overlay_active or self.pause_open)))
+        if overlay:
+            self.draw_overlay(canvas)
         if self.stage == 'main':
             self.draw_leaving(canvas)
         self.draw_fade(canvas)
@@ -306,6 +311,14 @@ class HdShell:
         self.windows.hits = []
         if self.stack.stack:
             current = self.stack.current
+            if self.window_slides():
+                # It slides in from the right, as `notifyNewMenu` (00027bd0) moves in a window whose entrance is not 20.
+                layer = pygame.Surface(canvas.get_size(), pygame.SRCALPHA).convert_alpha()
+                self.windows.draw(layer, current, variables=self.variables(), pressed=self.pressed or self.focus,
+                                  body_scroll=self.body_scroll)
+                shift = 1 - ease_in_out(min(1., self.window_ms / PAUSE_OPEN_MS))
+                canvas.blit(layer, (round(canvas.get_width() * shift), 0))
+                return
             scale = pause_scale(self.window_ms)
             if scale >= 1:
                 self.windows.draw(canvas, current, variables=self.variables(), pressed=self.pressed or self.focus,
@@ -537,6 +550,12 @@ class HdShell:
         self.pending_title, self.pending_yes = title, callback
         self.stack.queue(self.DELETE_MENU)
         self.window_ms = 0
+
+    def window_slides(self):
+        """"Delete Saved Game?" (entrance byte 0xff) slides in from the right while the episode picker zooms out behind
+        it (owner, on the iPad, 2026-10-21). The in-game notices carry 0xff too but zoom on the device, so only this
+        window slides."""
+        return bool(self.stack.stack) and self.stack.current == self.DELETE_MENU
 
     def tick_window(self, seconds):
         if self.stack.stack:
