@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shshd-runtime-formats"
-version = "1.0.1"
+version = "1.0.2"
 description = "EXP containers, KiWi decoding and native resource parsers"
 readme = "README.md"
 license = {file = "LICENSE"}

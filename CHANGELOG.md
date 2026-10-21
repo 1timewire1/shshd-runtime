@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (shshd-runtime)
+## 1.0.2 (shshd-runtime)
 
 ### Added
 
@@ -94,14 +94,20 @@
   - Android SHS (no HD bundle) keeps upstream's tick-only callback, as Android
     draws no blinds.
 
-### Added (Options → General)
+### Added (Options)
 
-- **Autoplay Dialogue.** Dialogue, title cards and message panels take no taps.
+- **An Extras category** (under Sound; above Data Management on the main
+  menu) holds the play aids: Disable Choice Timer, Choice Hints (CoD: Choice &
+  Answer Hints) and Ask to Skip Mini-Games. General keeps Side Panels,
+  Autoplay Dialogue, SHS HD Backdrop, Episode Titles and Check for Updates.
+  Skip Ad Intros is listed on the main menu only, since it acts as an episode
+  starts.
+- **Autoplay Dialogue** (General). Dialogue, title cards and message panels take no taps.
   - Their text reveals at its own pace.
   - Then, instead of the Continue pill, they wait 0.75 s (a title card
     1.5 s) and advance by themselves.
   - Choices, name entry, mini-games and the portrait picker still wait for you.
-- **Disable Choice Timer.** Timed choices hold their clock and show as
+- **Disable Choice Timer** (Extras). Timed choices hold their clock and show as
   ordinary choices.
   - They get a last row, **Let the Timer Run Out**, for scenes that need no
     answer. It runs the game's own timeout.
@@ -117,6 +123,8 @@
   - The fill is red in the normal theme and blue in the rose theme.
   - Gray and default-theme emphasis is black with a red edge.
   - Narration's highlighted words keep their gold, with a 0.6-point edge.
+- **About** (both games): thanks to zazatree for their code contributions, and
+  the upstream exp-runtime release last merged (v0.6.1) under the version.
 - **Vibration on devices.** On a device that can vibrate, the Sound page's
   last switch is the game's own Vibration, and the device vibrates instead of
   buzzing.
@@ -169,13 +177,13 @@
 - **A two-line speaker name no longer overflows the box**
   ([#11](https://github.com/1timewire1/shshd-runtime/issues/11), "Spud The Stud"). The tall name's extra 40 units
   hold no body lines, so such a page holds 5 lines, not 7, and the rest goes to the next page.
-- **Cause of Death saves from 1.0.1 load again.** Since the v0.6.1 merge, a
-  CoD library recorded by 1.0.x opens under its IPA's own layout, and its
-  earlier saves (same IPA, same episode, the recorded layout's name) were
-  turned away as another game's and set aside as `.corrupt`. They load now, as
-  do CoD saves made before CoD had its fade model. Rename a set-aside
-  `<episode>.shs-auto.json.corrupt` in the library's `saves` folder back to
-  `.shs-auto.json` to restore it.
+- **Cause of Death saves made with 1.0.x keep loading.** Since the v0.6.1
+  merge, a CoD library recorded by 1.0.x opens under its IPA's own layout.
+  Its saves name the recorded layout, with the same IPA and episode, and are
+  recognized as its own; during development they were turned away and set
+  aside as `.corrupt`. A save the app could not load is kept as
+  `<episode>.shs-auto.json.corrupt` in the library's `saves` folder; renaming
+  it back to `.shs-auto.json` restores it.
 - **The "save file was corrupt" notice's OK button responds to clicks** in the
   episode list (Enter already worked).
 - **The portrait ring no longer runs over the text after a fast tap** (both
@@ -961,7 +969,7 @@ The first release of this fork. Earlier sections are upstream exp-runtime's hist
   Faceplace (SHS only).
 - Any negative background base keeps the scene background, and closing the
   panel keeps the background and its pan position.
-## v0.6.1 (upstream exp-runtime; merged into shshd-runtime, see Unreleased)
+## v0.6.1 (upstream exp-runtime; merged into shshd-runtime, see 1.0.2)
 
 ### Added
 
@@ -1052,7 +1060,7 @@ The first release of this fork. Earlier sections are upstream exp-runtime's hist
 The native presentation audit and remaining parity gaps are recorded in
 [UI_FIDELITY.md](docs/UI_FIDELITY.md#2026-10-15-presentation-audit).
 
-## v0.6.0 (upstream exp-runtime; merged into shshd-runtime, see Unreleased)
+## v0.6.0 (upstream exp-runtime; merged into shshd-runtime, see 1.0.2)
 
 ### Added
 

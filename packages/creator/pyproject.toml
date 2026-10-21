@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shshd-runtime-creator"
-version = "1.0.1"
+version = "1.0.2"
 description = "Visual desktop episode creator and native EXP compiler for SHSHD Runtime"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["shshd-runtime-formats==1.0.1"]
+dependencies = ["shshd-runtime-formats==1.0.2"]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.28,<2", "shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
-desktop = ["PySide6-Essentials>=6.10,<7", "shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
+mcp = ["mcp>=1.28,<2", "shshd-runtime-player[desktop]==1.0.2", "shshd-runtime-shs==1.0.2", "shshd-runtime-cod==1.0.2"]
+desktop = ["PySide6-Essentials>=6.10,<7", "shshd-runtime-player[desktop]==1.0.2", "shshd-runtime-shs==1.0.2", "shshd-runtime-cod==1.0.2"]
 
 [project.scripts]
 shshd-creator-mcp = "exp_runtime.creator.mcp_server:main"

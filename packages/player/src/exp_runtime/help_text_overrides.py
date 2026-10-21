@@ -38,7 +38,7 @@ This is an unofficial fan preservation project, not affiliated with or endorsed 
 [shshd-runtime](https://github.com/1timewire1/shshd-runtime) by 1timewire1
 Based on the original [exp-runtime](https://github.com/joshrmcdaniel/exp-runtime) by Josh Mcdaniel
 
-Special thanks to the [Cause of Death Discord](https://discord.gg/NdCru4Vz3q) (especially racheletc) for keeping the game preserved & alive! This project wouldn't have been possible without their contributions.
+Special thanks to zazatree for their code contributions, and the [Cause of Death Discord](https://discord.gg/NdCru4Vz3q) (especially racheletc) for keeping the game preserved & alive! This project wouldn't have been possible without their contributions.
 
 MUSIC
 Chromosone Why,  No Hanging Fruit and Euphoric Neurosis  
@@ -65,6 +65,7 @@ Written by  Brad Derrick
 
 
 Version: ~259~
+Upstream EXP Runtime: ~upstream~
 
 Join the Cause of Death Discord: https://discord.gg/NdCru4Vz3q"""),
 }
@@ -93,7 +94,7 @@ This is an unofficial fan preservation project, not affiliated with or endorsed 
 [shshd-runtime](https://github.com/1timewire1/shshd-runtime) by 1timewire1
 Based on the original [exp-runtime](https://github.com/joshrmcdaniel/exp-runtime) by Josh Mcdaniel
 
-Special thanks to Alejandro for preserving Surviving High School HD, and the [Surviving High School Community Discord](https://discord.gg/reJT83aAeD) in general for keeping the game alive! This project wouldn't have been possible without their contributions.
+Special thanks to Alejandro for preserving Surviving High School HD, zazatree for their code contributions, and the [Surviving High School Community Discord](https://discord.gg/reJT83aAeD) in general for keeping the game alive! This project wouldn't have been possible without their contributions.
 
 Credits:
 Andrew Shvarts
@@ -159,6 +160,7 @@ Wai Mui
 Won Sang Jo
 
 Version: ~276~
+Upstream EXP Runtime: ~upstream~
 
 Join the Surviving High School Discord: https://discord.gg/reJT83aAeD"""),
 }

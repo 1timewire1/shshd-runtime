@@ -491,7 +491,7 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   0.4 s ease-in/out, with no delay. Both kinds wait 0.4 s while a loading
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
-  this player adds (General / Sound / Data Management) slide like native pages.
+  this player adds (General / Sound / Extras / Data Management) slide like native pages.
   Native exits (`notifyMenuRemoved` -> `animateView` with the exit byte) are not
   decompiled, so the reverse slide is ours.
 - **Music switch.** In the main menu, off fades the menu's song over 1000 ms
@@ -623,7 +623,7 @@ take no taps. Their text reveals at its own pace; then, instead of the Continue 
 safe) and advance as a tap would. It is not a full autoplay: choices, name entry, the mini-games
 and the portrait picker still wait for the player, and the gear still opens the pause menu.
 
-**Options → General → Disable Choice Timer** (this player's, off by default): a timed choice holds its clock
+**Options → Extras → Disable Choice Timer** (this player's, off by default): a timed choice holds its clock
 (`Session.choice_timer`) and is drawn untimed, with one more row, last, **Let the Timer Run Out**, for the scenes
 that need no answer. That row runs the native timeout callback (`Session.expire_choice`), with its own timeout
 result. The word quiz (service 71) keeps its clock; that is Ask to Skip Mini-Games'. Hints mark the real options

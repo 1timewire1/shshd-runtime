@@ -1523,10 +1523,11 @@ class Desktop:
             frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
 
     def _pause_settings(self):
+        # No Skip Ad Intros here: it only acts as an episode starts, so the main menu's Options alone lists it (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
-                    skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                    skip_minigames=self.skip_minigames,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}))
 

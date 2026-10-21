@@ -56,7 +56,8 @@ class HdPauseTests(unittest.TestCase):
         state = self.menu.state
         state.screen = 'options'
         self.assertEqual([c for _, c in self.commands()],
-                         [('pause_open', 'options:general'), ('pause_open', 'options:sound'), ('pause_back',)])
+                         [('pause_open', 'options:general'), ('pause_open', 'options:sound'),
+                          ('pause_open', 'options:extras'), ('pause_back',)])
         state.screen = 'options:sound'
         commands = [c for _, c in self.commands()]
         self.assertEqual([c[:2] for c in commands], [('pause_toggle', 'music'), ('pause_slider', 'music'),
@@ -66,20 +67,24 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual((track.left + 10, track.width - 20), (143, 460))
         state.screen = 'options:general'
         rows = self.commands()
-        self.assertEqual([c[:2] for _, c in rows], [('pause_toggle', key) for key in
-                                                    ('choice_hints', 'skip_minigames', 'skip_ad_intros')]
-                         + [('pause_back',)])
-        self.assertGreaterEqual(rows[1][0].top, rows[0][0].bottom)          # Ask to Skip Mini-Games under Choice Hints
+        self.assertEqual([c[:2] for _, c in rows], [('pause_toggle', 'skip_ad_intros'), ('pause_back',)])
         # Offered settings add their rows: the side panels in a story, the backdrop switch where there is a collage.
         self.settings.update(side_panels=False, hd_backdrop=True)
         self.assertEqual([c[1] for _, c in self.commands() if c[0] == 'pause_toggle'],
-                         ['side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'hd_backdrop'])
-        # This player's Autoplay Dialogue and Disable Choice Timer come after the side panels (owner, 2026-10-21).
+                         ['side_panels', 'skip_ad_intros', 'hd_backdrop'])
+        # This player's Autoplay Dialogue comes after the side panels (owner, 2026-10-21).
         self.settings.update(autoplay=False, disable_choice_timer=True)
         rows = self.menu.option_rows('general', self.settings, self.menu.strings())
-        self.assertEqual([(key, label) for _, label, key in rows][:3],
-                         [('side_panels', 'Side Panels'), ('autoplay', 'Autoplay Dialogue'),
-                          ('disable_choice_timer', 'Disable Choice Timer')])
+        self.assertEqual([(key, label) for _, label, key in rows][:2],
+                         [('side_panels', 'Side Panels'), ('autoplay', 'Autoplay Dialogue')])
+        # Extras: the play aids, in the owner's order (2026-10-21).
+        state.screen = 'options:extras'
+        rows = self.commands()
+        self.assertEqual([c[:2] for _, c in rows], [('pause_toggle', key) for key in
+                                                    ('disable_choice_timer', 'choice_hints', 'skip_minigames')]
+                         + [('pause_back',)])
+        self.assertGreaterEqual(rows[1][0].top, rows[0][0].bottom)
+        state.screen = 'options:general'
         layer, buttons = self.menu.layout(self.settings)
         self.assertLessEqual(max(rect.bottom for rect, _ in buttons), 1024)        # all eight rows fit the frame
         for key in ('autoplay', 'disable_choice_timer'):
@@ -165,6 +170,10 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(state.scroll, state.max_scroll)
         with patch.object(self.module, 'HELP_TEXT_OVERRIDES', {}):
             self.assertEqual(self.menu.text_lines('about')[1], f'Version: {self.module.VERSION}')
+        # The owner's About: the upstream release last merged under the version, and the contributors (2026-10-21).
+        about = self.menu.text_lines('about')[1]
+        self.assertIn(f'Version: {self.module.VERSION}\nUpstream EXP Runtime: {self.module.UPSTREAM_VERSION}\n', about)
+        self.assertIn('zazatree', about)
 
     def test_long_titles_take_two_lines(self):
         self.assertEqual(self.menu.title_lines('Pause'), ['Pause'])
@@ -286,10 +295,10 @@ class CodPauseTests(unittest.TestCase):
         self.assertEqual([c[:2] for _, c in self.buttons()],
                          [('pause_toggle', 'music'), ('pause_slider', 'music'), ('pause_toggle', 'sound'),
                           ('pause_slider', 'sound'), ('pause_back',)])
-        self.menu.state.screen = 'options:general'
+        self.menu.state.screen = 'options:extras'
         self.assertEqual([c[:2] for _, c in self.buttons()],
                          [('pause_toggle', 'choice_hints'), ('pause_toggle', 'skip_minigames'), ('pause_back',)])
-        rows = self.menu.option_rows('general', self.settings, self.menu.strings())
+        rows = self.menu.option_rows('extras', self.settings, self.menu.strings())
         self.assertEqual({key: label for _, label, key in rows}['choice_hints'], 'Choice & Answer Hints')
 
     def test_cods_sound_page_offers_vibration_too(self):
@@ -339,7 +348,9 @@ class CodPauseTests(unittest.TestCase):
         # The owner's About keeps the disclaimer, credits and a link; without it, CoD's own page is shown.
         about = self.menu.text_lines('about')[1]
         self.assertIn('unofficial fan preservation project', about)
-        self.assertIn(f'Version: {desktop_cod_pause.VERSION}', about)
+        self.assertIn(f'Version: {desktop_cod_pause.VERSION}\nUpstream EXP Runtime: {desktop_cod_pause.UPSTREAM_VERSION}\n',
+                      about)
+        self.assertIn('zazatree', about)
         self.menu.strings()[0] = 'Version: ~259~'
         overrides = {k: v for k, v in help_text_overrides.COD_HELP_TEXT_OVERRIDES.items() if k != 'about'}
         with patch.dict(help_text_overrides.COD_HELP_TEXT_OVERRIDES, overrides, clear=True):

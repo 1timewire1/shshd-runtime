@@ -992,6 +992,9 @@ newlines and color controls consume source indices even though some have no
 visible glyph. Full layout precedes reveal, so line breaks, indents, colors
 and box size never change as letters appear. The native cursor scans the
 whole remaining substring, including source indices beyond the visible page.
+The iOS builds (SHS HD and CoD, this fork) type only the visible lines
+(`-[SHSTextLayer addTypingAnimations:lineTime:]`), so there the reveal runs
+over the page's own indices (`Session._typed_length`).
 After its last index, another callback marks completion. A finish request
 respects the entrance delay: the next callback visits one index and moves the
 cursor to the end, and the following callback unhides the whole label. It
@@ -1000,7 +1003,7 @@ the page. The desktop also stops processing queued game input when a tap
 changes the reveal state, requiring the resulting frame to be displayed first.
 
 **Saved state.** `engine.dialogue_animation` contains `text_length` (length of
-the remaining substring), `portrait` and `previous` (nullable objects containing
+the remaining substring, or on iOS the page's), `portrait` and `previous` (nullable objects containing
 `character_id`, resolved `asset_id`, `mode`, `theme`), `changed`, `page_turn`,
 `elapsed_ms`, `revealed`, `complete`, `finish_requested`, and `finish_step`.
 Clocks and counters are nonnegative integers; flags are booleans. A portrait

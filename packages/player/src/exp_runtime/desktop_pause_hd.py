@@ -55,9 +55,10 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
 # player's own: SHS HD's Options is one page). A row shows when its setting is offered (`layout`'s `settings`), so a
 # game leaves out what does not apply to it.
-OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'autoplay', 'disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
-                'hd_backdrop', 'check_updates')
+# Extras holds the play aids that change how a story plays (owner, 2026-10-21).
+OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
+GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'hd_backdrop', 'check_updates')
+EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -80,7 +81,10 @@ SEPIA = (0.779, 0.166, 0.0, 102.1,
 # string bank's ~276~ token appears at all is the About page (checked against a real HD string bank), and only
 # this project's own override of it (`help_text_overrides.py`) is ever shown, so this reports shshd-runtime's
 # own release instead. The one line to edit on a release; nothing else about the About text needs to change.
-VERSION = '1.0.1'
+VERSION = '1.0.2'
+# The upstream exp-runtime release this fork last merged (owner, 2026-10-21: shown under the version, About pages'
+# `~upstream~`). Change it with each upstream merge.
+UPSTREAM_VERSION = 'v0.6.1'
 # A text page's own body never carries a literal URL natively (EULA/Privacy/Terms are full menu rows, never
 # inline text); these only ever match inside override text (`help_text_overrides.py`), making it tappable: a bare
 # URL, or `[label](url)` shown as the label (this fork, 2026-10-15: the About page's project links). A page may have
@@ -195,7 +199,7 @@ class HdPauseMenu:
         override = HELP_TEXT_OVERRIDES.get(page)
         if override is not None:
             title, body = override
-            return title, body.replace('~276~', VERSION)
+            return title, body.replace('~276~', VERSION).replace('~upstream~', UPSTREAM_VERSION)
         title_id, body_id = self.PAGES[page]
         strings = self.strings()
         # HD's string bank stores the trademark sign as control byte 2 (EA, Arts).
@@ -550,6 +554,8 @@ class HdPauseMenu:
             if 'title_language' in settings:
                 rows.append(('cycle', TITLE_LANGUAGE_LABEL, 'title_language'))
             return rows
+        if category == 'extras':
+            return [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
         if category == 'data':
             return [('action', label, key) for key, label in DATA_ACTIONS if key in settings]
         return []

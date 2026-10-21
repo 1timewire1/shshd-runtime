@@ -18,9 +18,10 @@ takes only its styling from CoD's own menus, measured on IMG_0460 (Pause), IMG_0
   SHS HD's doubles filled with CoD's colours (cod/hd_art.positional_frames).
 * Switches and sliders are UIKit's, as in SHS HD (CoD's photos show no slider; it is drawn as SHS HD's is).
 
-Options lists SHS HD's categories (General, Sound; `desktop_pause_hd.OPTION_CATEGORIES`): Sound has Game Music, Music
-Volume, Sound FX and Sound FX Volume; General has Choice & Answer Hints (CoD's typed puzzles also get faint answers,
-input_hints.py), Ask to Skip Mini-Games (CoD's word quizzes, service 71) and SHS HD Backdrop. Left out by the owner's
+Options lists SHS HD's categories (General, Sound, Extras; `desktop_pause_hd.OPTION_CATEGORIES`): Sound has Game Music,
+Music Volume, Sound FX and Sound FX Volume; General has Autoplay Dialogue and SHS HD Backdrop; Extras has Disable Choice
+Timer, Choice & Answer Hints (CoD's typed puzzles also get faint answers, input_hints.py) and Ask to Skip Mini-Games
+(CoD's word quizzes, service 71). Left out by the owner's
 choice: Play My Music (the device's music library), and Side Panels and Skip Ad Intros (CoD has no side panels or ad
 intros). The Help & About pages show CoD's own text; SHS's text overrides are SHS's.
 """
@@ -30,7 +31,8 @@ import pygame
 
 from .content import ContentError
 from .desktop_cod_menu import draw_cod_card
-from .desktop_pause_hd import BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, S, SWITCH_LABELS, VERSION, HdPauseMenu
+from .desktop_pause_hd import (BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, S, SWITCH_LABELS, UPSTREAM_VERSION, VERSION,
+                               HdPauseMenu)
 from .menu import MenuStrings
 
 # HD pack / frame -> CoD art: the back button's caps and middle (32: 13-15 -> pack 16: 90-92), its arrow (32: 12 ->
@@ -89,7 +91,7 @@ class CodPauseMenu(HdPauseMenu):
             title_id, body_id = self.PAGES[page]
             strings = self.strings()
             title, body = strings[title_id], strings[body_id].replace('\x02', '™')
-        return title, body.replace('~259~', VERSION).replace('~276~', VERSION)
+        return title, body.replace('~259~', VERSION).replace('~276~', VERSION).replace('~upstream~', UPSTREAM_VERSION)
 
     @lru_cache(maxsize=1)
     def hd_pieces(self):

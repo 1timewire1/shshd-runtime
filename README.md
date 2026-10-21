@@ -135,9 +135,10 @@ you close the app.
 ### Options
 
 With the SHS HD IPA (and for Cause of Death), Options lists **General**,
-**Sound** and, on the main menu, **Data Management**. Without it, SHS uses the
-original Android menus, where the same switches sit under **Options** and
-**Options → Cheats**.
+**Sound**, **Extras** and, on the main menu, **Data Management**. Extras holds
+the play aids: Disable Choice Timer, Choice Hints and Ask to Skip Mini-Games.
+Without it, SHS uses the original Android menus, where the same switches sit
+under **Options** and **Options → Cheats**.
 
 - **Choice hints** optionally marks recognized near-term score/relationship
   gains or correct quiz answers green, losses/wrong answers or no-gain
@@ -150,13 +151,14 @@ original Android menus, where the same switches sit under **Options** and
 - **Autoplay Dialogue** (Options → General) advances dialogue by itself 0.75 s
   after its text is out (title cards after 1.5 s); choices, name
   entry and mini-games still wait for you. Off by default.
-- **Disable Choice Timer** (Options → General) stops timed choices' clocks and
+- **Disable Choice Timer** (Options → Extras) stops timed choices' clocks and
   adds a last row, Let the Timer Run Out, for scenes that need no answer. Off by
   default.
 - **Skip ad intros** starts the episodes that open with a High School Story ad
   (Game of Cones, Part 1; The Conned Artist, Parts 1 and 2) at their title
   card. The ad's own "Play the Surviving High School episode!" choice also
-  offers to turn it on. It is off by default.
+  offers to turn it on. It is off by default, and listed in the main menu's
+  Options only, since it acts as an episode starts.
 - **Episode Titles** (main menu) selects English, French, Italian, German or
   Spanish names where the EXP includes them. Story text remains in the language
   supplied by each episode.
@@ -235,20 +237,20 @@ fork does not publish to PyPI. Install from a release's downloaded wheels:
 
 ```sh
 # EXP readers, bytecode decoders and the inspect/extract CLI
-python -m pip install --find-links ./wheels "shshd-runtime[tools]==1.0.1"
+python -m pip install --find-links ./wheels "shshd-runtime[tools]==1.0.2"
 
 # Headless engine with one or both games, for a custom player UI
-python -m pip install --find-links ./wheels "shshd-runtime[engine,shs]==1.0.1"
-python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.0.1"
+python -m pip install --find-links ./wheels "shshd-runtime[engine,shs]==1.0.2"
+python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.0.2"
 
 # Full desktop player with both games
-python -m pip install --find-links ./wheels "shshd-runtime[player]==1.0.1"
+python -m pip install --find-links ./wheels "shshd-runtime[player]==1.0.2"
 
 # Visual episode creator (exp-runtime v0.6.0's), with both games and player previews
-python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.0.1"
+python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.0.2"
 
 # Creator MCP server without Qt (combine with [creator] for live editing)
-python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.0.1"
+python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.0.2"
 ```
 
 The bare `shshd-runtime` install supplies file tools; `[desktop]` is an alias

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shshd-runtime"
-version = "1.0.1"
+version = "1.0.2"
 description = "A compatible EXP engine for Surviving High School (including its iPad HD release) and Cause of Death, using player-supplied game files"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 keywords = ["shs", "surviving-high-school", "cause-of-death", "kiwi", "exp", "game-engine", "shs-runtime", "cod-runtime"]
-dependencies = ["shshd-runtime-formats==1.0.1"]
+dependencies = ["shshd-runtime-formats==1.0.2"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
@@ -19,20 +19,20 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-tools = ["shshd-runtime-formats==1.0.1"]
-engine = ["shshd-runtime-engine==1.0.1"]
-shs = ["shshd-runtime-shs==1.0.1"]
-cod = ["shshd-runtime-cod==1.0.1"]
-player = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
-desktop = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1"]
-creator = ["shshd-runtime-creator[desktop]==1.0.1"]
-creator-mcp = ["shshd-runtime-creator[mcp]==1.0.1"]
-build = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1", "pyinstaller>=6.16,<7"]
+tools = ["shshd-runtime-formats==1.0.2"]
+engine = ["shshd-runtime-engine==1.0.2"]
+shs = ["shshd-runtime-shs==1.0.2"]
+cod = ["shshd-runtime-cod==1.0.2"]
+player = ["shshd-runtime-player[desktop]==1.0.2", "shshd-runtime-shs==1.0.2", "shshd-runtime-cod==1.0.2"]
+desktop = ["shshd-runtime-player[desktop]==1.0.2", "shshd-runtime-shs==1.0.2", "shshd-runtime-cod==1.0.2"]
+creator = ["shshd-runtime-creator[desktop]==1.0.2"]
+creator-mcp = ["shshd-runtime-creator[mcp]==1.0.2"]
+build = ["shshd-runtime-player[desktop]==1.0.2", "shshd-runtime-shs==1.0.2", "shshd-runtime-cod==1.0.2", "pyinstaller>=6.16,<7"]
 
 # Source contributors get the full test/app environment. Published wheel
 # dependencies remain minimal; use --no-default-groups to develop a subset.
 [dependency-groups]
-dev = ["shshd-runtime-player[desktop]==1.0.1", "shshd-runtime-shs==1.0.1", "shshd-runtime-cod==1.0.1", "shshd-runtime-creator==1.0.1"]
+dev = ["shshd-runtime-player[desktop]==1.0.2", "shshd-runtime-shs==1.0.2", "shshd-runtime-cod==1.0.2", "shshd-runtime-creator==1.0.2"]
 
 [tool.setuptools]
 include-package-data = false
