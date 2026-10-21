@@ -27,7 +27,7 @@ from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu
 from .desktop_menu import MenuRenderer
 from .episode_picker import PickerModel
-from . import episode_thumbnails
+from . import episode_thumbnails, frame_log
 from .languages import TITLE_LANGUAGES
 from .launcher import APP_NAME
 from .games import GAMES
@@ -675,10 +675,12 @@ class Application:
         size = max(1, round(PICKER_FRAME[0] * factor)), max(1, round(PICKER_FRAME[1] * factor))
         self.viewport = pygame.Rect((width - size[0]) // 2, (height - size[1]) // 2, *size)
         self.buttons = []
-        self.window.fill((8, 12, 20))
-        if size != (width, height) and self.shell is not None:      # beside the frame, or above and below it
-            self.window.blit(self.shell.main.side_art((width, height)), (0, 0))
-        self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
+        with frame_log.section('backdrop'):
+            self.window.fill((8, 12, 20))
+            if size != (width, height) and self.shell is not None:      # beside the frame, or above and below it
+                self.window.blit(self.shell.main.side_art((width, height)), (0, 0))
+        with frame_log.section('present'):
+            self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
 
     def render_shell(self):
         canvas = self.shell.render()
@@ -695,7 +697,8 @@ class Application:
                 ('No', 'Yes') if self.can_quit else ('OK',))
             self.shell_prompt = list(zip(rects, commands))
         self.present_frame(canvas)
-        pygame.display.flip()
+        with frame_log.section('flip'):
+            pygame.display.flip()
 
     def shell_event(self, event):
         shell = self.shell
@@ -1293,7 +1296,8 @@ class Application:
             menu.blit(canvas, canvas.get_rect(center=menu.get_rect().center))
             canvas = menu
         self.present_frame(canvas)
-        pygame.display.flip()
+        with frame_log.section('flip'):
+            pygame.display.flip()
 
     def render(self):
         self._sync_menu_music()
@@ -1329,9 +1333,11 @@ class Application:
         factor = min(width / 320, height / 480)
         size = max(1, round(320 * factor)), max(1, round(480 * factor))
         self.viewport = pygame.Rect((width - size[0]) // 2, (height - size[1]) // 2, *size)
-        self.window.fill((8, 12, 20))
-        self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
-        pygame.display.flip()
+        with frame_log.section('present'):
+            self.window.fill((8, 12, 20))
+            self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
+        with frame_log.section('flip'):
+            pygame.display.flip()
 
     def _menu_transition(self):
         """exp-runtime v0.6.0's recovered submenu transitions: iOS zooms or slides (UIKit ease, 400 ms); Android's
@@ -1581,19 +1587,36 @@ class Application:
         try:
             while running:
                 elapsed = clock.tick(60)
-                self.render()
+                with frame_log.section('render'):
+                    self.render()
                 token = self.input_token()
-                for event in pygame.event.get():
-                    running = self.handle_event(event) and not self.quit_requested
-                    # Do not deliver a queued click to a newly opened screen.
-                    if not running or self.input_token() != token:
-                        break
-                    if self.screen == 'game' and self.game.screen_token != self.game._screen_token():
-                        break
+                with frame_log.section('events'):
+                    for event in pygame.event.get():
+                        running = self.handle_event(event) and not self.quit_requested
+                        # Do not deliver a queued click to a newly opened screen.
+                        if not running or self.input_token() != token:
+                            break
+                        if self.screen == 'game' and self.game.screen_token != self.game._screen_token():
+                            break
                 if running:
-                    self.tick(elapsed)
+                    with frame_log.section('tick'):
+                        self.tick(elapsed)
+                if frame_log.LOG is not None:
+                    frame_log.LOG.frame(elapsed, *self._frame_log_place())
         finally:
+            if frame_log.LOG is not None:
+                frame_log.LOG.close()
             self.close()
+
+    def _frame_log_place(self):
+        """(screen, menu stage, pending story action) for the frame-time log."""
+        stage = getattr(self.shell, 'stage', '') if self.shell is not None else ''
+        pending = ''
+        if self.screen == 'game' and self.game is not None and self.game.session.pending is not None:
+            pending = self.game.session.pending.name
+            if self.game.menu_open:
+                pending += '+pause'
+        return self.screen, stage, pending
 
 
 def main(argv=None):

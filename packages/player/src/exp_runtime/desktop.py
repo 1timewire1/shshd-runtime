@@ -27,7 +27,7 @@ except ImportError:
     HdFootballRenderer = HdWordRenderer = None
 from .location_pan import LocationPan
 from .desktop_message_hd import HdMessageRenderer
-from . import scene_fade
+from . import frame_log, scene_fade
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
@@ -1218,7 +1218,8 @@ class Desktop:
         frame = pygame.Rect(0, 0, max(1, round(FRAME_UNITS[0] * scale)), max(1, round(FRAME_UNITS[1] * scale)))
         frame.center = (width // 2, height // 2)
         target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
-        scaled = pygame.transform.smoothscale(self.canvas, target_size)
+        with frame_log.section('present'):
+            scaled = pygame.transform.smoothscale(self.canvas, target_size)
         alpha, overlay = self.panel_alpha, self.panel_overlay
         self.panel_alpha = self.panel_overlay = None
         if alpha is not None and alpha < 1:
@@ -1230,12 +1231,13 @@ class Desktop:
                                     frame.bottom - target_size[1] - round(UI_BOTTOM_INSET * scale), *target_size)
         self.bg_viewport = frame
         bg_size = frame.size
-        backdrop = self._window_backdrop(self.window.get_size())
-        if backdrop is not None:
-            self.window.blit(backdrop, (0, 0))
-        else:
-            self.window.fill((8, 12, 20))
-        self._draw_background_layer(bg_size, self.bg_viewport)
+        with frame_log.section('backdrop'):
+            backdrop = self._window_backdrop(self.window.get_size())
+            if backdrop is not None:
+                self.window.blit(backdrop, (0, 0))
+            else:
+                self.window.fill((8, 12, 20))
+            self._draw_background_layer(bg_size, self.bg_viewport)
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
@@ -1247,7 +1249,8 @@ class Desktop:
                 area = pygame.Rect(self.bg_viewport.x, self.viewport.y, self.bg_viewport.width, self.viewport.height)
             else:
                 area = self.viewport
-            layer = pygame.transform.smoothscale(layer, area.size)
+            with frame_log.section('present'):
+                layer = pygame.transform.smoothscale(layer, area.size)
             if alpha is not None and alpha < 1:
                 layer.set_alpha(round(255 * alpha))
             self.window.blit(layer, area)
@@ -1281,15 +1284,17 @@ class Desktop:
         # the outermost strip of that wider background instead of sitting
         # fully beside it. Margins now start at bg_viewport's own edge.
         if (self.panels_open or self.panels_progress > 0) and not self.error:
+            left_margin = pygame.Rect(0, 0, self.bg_viewport.x, height)
+            right_margin = pygame.Rect(self.bg_viewport.right, 0, width - self.bg_viewport.right, height)
             try:
-                left_margin = pygame.Rect(0, 0, self.bg_viewport.x, height)
-                right_margin = pygame.Rect(self.bg_viewport.right, 0, width - self.bg_viewport.right, height)
-                if self.side_panels.available():
-                    self.side_panels.warp_locked = not self.warp_unlocked
-                    self.side_panels.draw(self.window, self.session, self.panels_progress, left_margin, right_margin)
-                else:
-                    self.dtview_renderer.draw(self.window, self.session, self.panels_progress, left_margin)
-                    self.faceplace_panel_renderer.draw(self.window, self.session, self.panels_progress, right_margin)
+                with frame_log.section('panels'):
+                    if self.side_panels.available():
+                        self.side_panels.warp_locked = not self.warp_unlocked
+                        self.side_panels.draw(self.window, self.session, self.panels_progress, left_margin, right_margin)
+                    else:
+                        self.dtview_renderer.draw(self.window, self.session, self.panels_progress, left_margin)
+                        self.faceplace_panel_renderer.draw(self.window, self.session, self.panels_progress,
+                                                           right_margin)
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
@@ -1297,7 +1302,8 @@ class Desktop:
         if self.fade:
             self._draw_fade()
         if not self.capture:
-            pygame.display.flip()
+            with frame_log.section('flip'):
+                pygame.display.flip()
 
     def _draw_background_layer(self, target_size, viewport):
         """Composited directly at window resolution, under the UI canvas.
