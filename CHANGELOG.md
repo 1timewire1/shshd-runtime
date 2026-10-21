@@ -2,6 +2,18 @@
 
 ## Unreleased (shshd-runtime)
 
+### Changed
+
+- **Episode picker popups, resuming and the app icon**
+  ([#12](https://github.com/1timewire1/shshd-runtime/pull/12), thanks @zazatree):
+  - The New Game / Continue popup zooms open (an accepted difference: the original shows it at once).
+  - **"Delete Saved Game?"** slides in from the right while the picker, its popup still open, zooms out behind it.
+    "No" slides it back out to the right as the picker slides in from the left (matched to iPad photos).
+  - **Continue resumes the episode paused**, as `SHSEngine::onTick` opens the pause menu after a load, with no gear
+    sound. The episode's music stays silent until Resume, also when the episode was left for the main menu.
+  - The window shows the game's own icon, and the Windows and macOS builds use the kiwi icon instead of
+    PyInstaller's default.
+
 ### Fixed
 
 - **Expressions change a second sooner in SHS HD and Cause of Death**
