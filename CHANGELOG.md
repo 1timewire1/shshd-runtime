@@ -11,6 +11,19 @@
   1000 before `onTick`). This was read as one second, so the new face came in
   at 1.4–1.6 s instead of 0.4–0.6 s. Expressions 6–9's effects start with it.
   Android SHS keeps its 1000 ms. Saves are version 28; older ones load.
+- **Smoother menus** (measured on a 1080p window with the new frame-time log, `SHSHD_FRAME_LOG`):
+  - The main menu's photo intro turns at 1 pixel per point and is scaled up, about three times faster (it ran at
+    about 6 fps).
+  - The pause menu and notices tint the held scene once, as the original does, and keep the finished card while it
+    is still: a frame takes about 12 ms instead of 40.
+  - Every HD menu frame no longer re-reads the HD layout data twice (two screens' copies evicted each other from a
+    one-entry cache) or looks up the Arial Rounded font file for each text measurement.
+  - On the owner's machine (median frame, before / after): the photo intro 160 / 27 ms (6 / about 38 fps), the
+    pause menu 48 / 17.5 ms, the episode picker 25.6 / 22.2 ms; dialogue holds 60 fps (16.5 ms).
+  - **Still slow, to revisit:** the photo intro is not yet 60 fps (turning the full-frame photo on the CPU; drawing
+    on the GPU would fix it, with the planned move onto the shared drawing layer); the pause menu's page slides
+    (~40 ms a frame for 0.4 s, both cards rebuilt each frame); returning to the main menu from a story (one burst of
+    ~30 frames at ~58 ms); opening the episode picker and other menu windows (~35-42 ms bursts).
 
 ## 1.0.2 (shshd-runtime)
 

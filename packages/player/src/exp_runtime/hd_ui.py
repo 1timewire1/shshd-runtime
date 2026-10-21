@@ -96,9 +96,14 @@ class HdUi:
 
     # ------------------------------------------------------------ text
 
+    _factor = None
+
     def factor(self):
-        path = (system_font_path('arial-rounded', self.library) or '').lower()
-        return 1. if 'round' in path else FALLBACK_WIDTH
+        # Looked up once: the search scans the library's fonts folder, and text is measured many times a frame.
+        if self._factor is None:
+            path = (system_font_path('arial-rounded', self.library) or '').lower()
+            self._factor = 1. if 'round' in path else FALLBACK_WIDTH
+        return self._factor
 
     def measure(self, text, points):
         return self.font(points).size(text)[0] / S * self.factor()

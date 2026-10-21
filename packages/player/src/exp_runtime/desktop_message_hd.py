@@ -59,10 +59,17 @@ class HdMessageRenderer:
         self.pending_background_origin = (160, 180)
         self.footer_text = ''
 
+    _rounded = ''
+
+    def rounded_path(self):
+        """The Arial Rounded face's file, or None; looked up once (the search scans the library's fonts folder)."""
+        if self._rounded == '':
+            self._rounded = system_font_path('arial-rounded', self.resources.library)
+        return self._rounded
+
     def available(self):
         try:
-            return (self.art.hd_chrome() and self.layouts.bank() is not None
-                    and system_font_path('arial-rounded', self.resources.library) is not None)
+            return (self.art.hd_chrome() and self.layouts.bank() is not None and self.rounded_path() is not None)
         except (AttributeError, ValueError):
             return False
 
@@ -77,8 +84,7 @@ class HdMessageRenderer:
     def wrap(self, text, points, width):
         """Lines of `text` wrapped at `width` points; explicit newlines break (an empty line keeps its height)."""
         font, lines = self.font(points), []
-        path = (system_font_path('arial-rounded', self.resources.library) or '').lower()
-        factor = 1. if 'round' in path else FALLBACK_WIDTH
+        factor = 1. if 'round' in (self.rounded_path() or '').lower() else FALLBACK_WIDTH
         for paragraph in text.split('\n'):
             current = ''
             for word in paragraph.split(' '):

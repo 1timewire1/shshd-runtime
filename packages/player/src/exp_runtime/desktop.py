@@ -1,5 +1,6 @@
 """Shared gameplay frontend; all story decisions remain in the KiWi runtime."""
 from collections import OrderedDict
+from dataclasses import astuple
 from io import BytesIO
 import logging
 import os
@@ -1271,6 +1272,8 @@ class Desktop:
             self._draw_hd_pause(frame)
         if self.notice_stack is not None and self.notice_stack.stack:
             self._draw_notice(frame, dim=not hd_pause)
+        elif not hd_pause:
+            self._tinted = None             # the next pause menu or notice tints the scene as it is then
         # Real device confirmed: panels occupy the window space *beside*
         # the game view -- not overlaid on top of it -- and render at real
         # window resolution instead of being funneled through self.canvas's
@@ -1515,18 +1518,38 @@ class Desktop:
             return self.title_cod
         return self.title_hd if self.title_hd.available() else self.title_renderer
 
+    _tinted = None          # (area, window size, the sepia scene) while a pause menu or notice is open
+    _pause_card = None      # (key, the scaled card, its buttons) while the pause menu rests
+
+    def _draw_tinted(self, area):
+        """The scene under a pause menu or notice, dimmed sepia. The game is held while one is open, so the tint is
+        made once (as the original captures the scene) and reused, not recomputed every frame (~18 ms at 1080p)."""
+        key = (tuple(area), self.window.get_size())
+        if self._tinted is None or self._tinted[0] != key:
+            self._tinted = key, self.pause_hd.sepia(self.window.subsurface(area).copy())
+        self.window.blit(self._tinted[1], area)
+
     def _draw_hd_pause(self, frame):
         """HD's pause menu: the frame dimmed sepia with UIKit panels over it (desktop_pause_hd.py)."""
         area = frame.clip(self.window.get_rect())
         if area.width <= 0 or area.height <= 0:
             return
-        self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
-        layer, self.pause_buttons = self.pause_hd.layout(
-            self._pause_settings(), message=self.message if pygame.time.get_ticks() < self.message_until else '')
+        self._draw_tinted(area)
+        settings = self._pause_settings()
+        message = self.message if pygame.time.get_ticks() < self.message_until else ''
         scale = pause_scale(self.pause_elapsed_ms)
         size = tuple(max(1, round(length * scale)) for length in frame.size)
-        self.window.blit(pygame.transform.smoothscale(layer, size), pygame.Rect((0, 0), size).move(
-            frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
+        # At rest (fully zoomed, no page sliding) the card only changes with what it shows, so the drawn and scaled
+        # card is kept until then (~15 ms a frame at 1080p).
+        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and self.pause_hd.slide is None
+        key = (repr(settings), message, astuple(self.pause_hd.state), getattr(self.pause_hd, 'pressed', None), size)
+        if resting and self._pause_card is not None and self._pause_card[0] == key:
+            card, self.pause_buttons = self._pause_card[1:]
+        else:
+            layer, self.pause_buttons = self.pause_hd.layout(settings, message=message)
+            card = pygame.transform.smoothscale(layer, size)
+            self._pause_card = (key, card, self.pause_buttons) if resting else None
+        self.window.blit(card, pygame.Rect((0, 0), size).move(frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
 
     def _pause_settings(self):
         # No Skip Ad Intros here: it only acts as an episode starts, so the main menu's Options alone lists it (owner).
@@ -1552,7 +1575,7 @@ class Desktop:
         if area.width <= 0 or area.height <= 0:
             return
         if dim:
-            self.window.blit(self.pause_hd.sepia(self.window.subsurface(area).copy()), area)
+            self._draw_tinted(area)
         current = self.notice_stack.current
         if current != self.notice_shown:
             # A window that has just opened zooms in over the tinted scene, as "Play with sound?" does

@@ -385,6 +385,15 @@ and HD copies of the stories:
 Rerun the export after improving that library's store; the new `VERSION`
 makes every library rebuild once.
 
+### Frame-time log (this fork)
+
+Set `SHSHD_FRAME_LOG` to a file path before launching to record one CSV line per application frame
+(`frame_log.py`): the frame interval and wall time, and within the render the time spent fitting the canvas to
+the window (`present`), the background and the art beside the frame (`backdrop`), the side panels and the display
+flip, then the tick and event handling, with the screen, menu stage and pending story action. Drawing is the
+render less those parts. Without the variable nothing is timed or written. The 2026-10-21 measurements and what
+is still slow are in CHANGELOG.md ("Smoother menus").
+
 ## Resource and execution boundaries
 
 | Layer | Responsibility |
@@ -452,7 +461,7 @@ while data and PC/SP/FP reset according to the core VM contract.
 <a id="runtime-save-schema-version-25"></a>
 <a id="runtime-save-schema-version-26"></a>
 
-## Runtime save schema, version 27
+## Runtime save schema, version 28
 
 This is a new format for the reimplementation. No pickle, object deserialization,
 or original executable code is used.
@@ -471,7 +480,7 @@ the animation's `expression_committed`, the portraits' `from_asset_id`); the
 animation keeps this fork's uncapped `age_ms` for HD's emotion effects. An HD build's saved notice clock may also run past Android's
 lifetime, to the HD letters' start plus their own lifetime. Version 26 adds
 `engine.notice_mode`, the portrait side (1 or 2) those letters started on, which they keep on later lines; older
-saves load with 0, following the current portrait. Version 27 adds exp-runtime v0.6.x's fields (upstream's own versions 22-26, described below in their terms): music and effect playheads (`music_serial`, `music_stop_ms`, `music_playback`, `sound_playback`), the scene-transition state and its random stream, bitmap/widget text history, the choice entrance clock, expression layers and the minigame effects; older saves take their defaults without inventing missing history, and an IPA library's older save reflows its typography. This fork's player does not fill the audio playheads yet (its music is `music_stream.py`'s). The scene transition is the session's: Android SHS's tick boundary, or with an HD bundle (and in CoD) `fade_transition.FadeTransition`, whose fields (`selector`, `phase`, `elapsed_ms`, `result`, `random_state`) are saved; the player only draws it. The fork keeps the `shs-runtime-save` marker; upstream's
+saves load with 0, following the current portrait. Version 27 adds exp-runtime v0.6.x's fields (upstream's own versions 22-26, described below in their terms): music and effect playheads (`music_serial`, `music_stop_ms`, `music_playback`, `sound_playback`), the scene-transition state and its random stream, bitmap/widget text history, the choice entrance clock, expression layers and the minigame effects; older saves take their defaults without inventing missing history, and an IPA library's older save reflows its typography. This fork's player does not fill the audio playheads yet (its music is `music_stream.py`'s). The scene transition is the session's: Android SHS's tick boundary, or with an HD bundle (and in CoD) `fade_transition.FadeTransition`, whose fields (`selector`, `phase`, `elapsed_ms`, `result`, `random_state`) are saved; the player only draws it. Version 28 adds each dialogue line's expression request time (`dialogue_animation.expression_ms`: 1 ms in SHS HD and CoD, whose dialog requests the expression on its first tick, issue #2; 1000 ms on Android); older saves take 1000 ms, the time they were made with. The fork keeps the `shs-runtime-save` marker; upstream's
 `exp-runtime-save` saves are not accepted, because the same version numbers
 describe different fields there. Version-number references below that concern
 IPA libraries and survey receipts are upstream's numbering. JSON fields are:

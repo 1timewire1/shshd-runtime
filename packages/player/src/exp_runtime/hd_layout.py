@@ -34,14 +34,18 @@ class HdLayouts:
     def __init__(self, library):
         self.library = library
 
-    @lru_cache(maxsize=1)
+    _bank = _UNREAD = object()
+
     def bank(self):
-        """The HD `LayoutBank`, or None when no HD app bundle was imported."""
-        try:
-            data = self.library.hd_raw_resource(BANK_ID)
-            return None if data is None else LayoutBank.parse(data)
-        except (AttributeError, ContentError, UIAssetError):
-            return None
+        """The HD `LayoutBank`, or None when no HD app bundle was imported. Kept per instance: a shared
+        `lru_cache(maxsize=1)` let two screens' instances evict each other, re-parsing the bank twice a frame."""
+        if self._bank is self._UNREAD:
+            try:
+                data = self.library.hd_raw_resource(BANK_ID)
+                self._bank = None if data is None else LayoutBank.parse(data)
+            except (AttributeError, ContentError, UIAssetError):
+                self._bank = None
+        return self._bank
 
     @lru_cache(maxsize=16)
     def pack(self, pack_id):
