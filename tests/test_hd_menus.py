@@ -798,6 +798,14 @@ class CodShellActionTests(unittest.TestCase):
         shell = object.__new__(CodShell)
         self.assertEqual((shell.fade, shell.flash_over_black, shell.fade_level()), (None, False, 0.0))
 
+    def test_the_episode_loading_band_is_shs_hds_in_cods_dress_not_the_stretched_iphone_panel(self):
+        from exp_runtime.application_cod import CodShell
+        from exp_runtime.desktop_loading import CodLoadingBand, HdLoadingRenderer
+        self.assertIs(CodShell.band_class(), CodLoadingBand)
+        self.assertIs(HdShell.band_class(), HdLoadingRenderer)
+        self.assertEqual((CodLoadingBand.RULE, HdLoadingRenderer.RULE), ((79, 81, 81), HdLoadingRenderer.BLUE))
+        self.assertEqual((CodLoadingBand.TEXT, HdLoadingRenderer.TEXT), ((0, 0, 0), HdLoadingRenderer.BLUE))
+
     def test_only_a_complete_cod_library_gets_the_shell(self):
         from exp_runtime.application_cod import CodShell
         self.assertFalse(CodShell.available(SimpleNamespace(game_id='shs')))

@@ -72,6 +72,7 @@ class HdLoadingRenderer:
     edge_bar = 'bar'
     footer_text = ''
     BLUE = (41, 104, 221)
+    RULE = TEXT = BLUE                  # the rules and the border bulging around the wheel; "Loading", "Please wait..."
     TOP_RULE, BOTTOM_RULE, RULE_THICKNESS = 402, 626, 6
     TITLE = dict(width=150, ink_top=447, ink_bottom=476)     # "Loading": cap top and baseline
     MESSAGE = dict(width=188, ink_top=531, ink_bottom=546)   # "Please wait...": cap top and baseline
@@ -99,7 +100,7 @@ class HdLoadingRenderer:
 
     def line(self, text, spec):
         font = self.font_for(text, spec['width'])
-        surface = font.render(text, True, self.BLUE)
+        surface = font.render(text, True, self.TEXT)
         # Place by the capital top: the font's ascent, less the cap height, is the gap above capitals.
         cap = font.render('H', True, (0, 0, 0)).get_bounding_rect()
         x = (self.FRAME[0] * self.S - surface.get_width()) // 2
@@ -130,8 +131,8 @@ class HdLoadingRenderer:
         width = self.FRAME[0] * S
         top, bottom, thick = self.TOP_RULE * S, self.BOTTOM_RULE * S, self.RULE_THICKNESS * S
         pygame.draw.rect(canvas, (255, 255, 255, 243), (0, top, width, bottom - top + thick))
-        pygame.draw.rect(canvas, self.BLUE, (0, top, width, thick))
-        pygame.draw.rect(canvas, self.BLUE, (0, bottom, width, thick))
+        pygame.draw.rect(canvas, self.RULE, (0, top, width, thick))
+        pygame.draw.rect(canvas, self.RULE, (0, bottom, width, thick))
         title, message, self.footer_text = self.strings()
         self.line(title, self.TITLE)
         self.line(message, self.MESSAGE)
@@ -140,7 +141,7 @@ class HdLoadingRenderer:
         # Below the lower rule the blue border bulges around the wheel; above it the wheel has a gray rim.
         clip = canvas.get_clip()
         canvas.set_clip(pygame.Rect(0, bottom - S, width, canvas.get_height()))
-        pygame.draw.circle(canvas, self.BLUE, (cx, cy), round(r * 1.1))
+        pygame.draw.circle(canvas, self.RULE, (cx, cy), round(r * 1.1))
         canvas.set_clip(pygame.Rect(0, 0, width, bottom - S))
         pygame.draw.circle(canvas, (177, 177, 177), (cx, cy), r)
         canvas.set_clip(clip)
@@ -149,3 +150,34 @@ class HdLoadingRenderer:
         runner = self.runner((frame - 23) % 5)
         canvas.blit(runner, runner.get_rect(center=(cx, cy)))
         return canvas
+
+
+class CodLoadingBand(HdLoadingRenderer):
+    """Cause of Death has no HD release: the menus' episode loading screen (application_hd.HdShell.load_episode)
+    draws SHS HD's band in CoD's dress (owner, 2026-10-22), not its iPhone panels stretched to the HD frame. The rules
+    take the iPhone panel's dark grey (layout 50's border, sampled 79 / 81 / 81), the text its strings 31 / 35 in black
+    (owner), and the runner is CoD's pack 126 frames 23-27 (with the SHS HD art source SHS HD's poses turned grey,
+    cod/hd_art.py) at twice its iPhone points, SHS HD's size."""
+    RULE, TEXT = (79, 81, 81), (0, 0, 0)
+
+    def available(self):
+        try:
+            return bool(pygame.font.match_font('arial', bold=True))
+        except (AttributeError, ValueError):
+            return False
+
+    @lru_cache(maxsize=1)
+    def strings(self):
+        strings = MenuStrings.load(self.resources.library)
+        return strings[31], strings[35], ''
+
+    def runner(self, index):
+        if not getattr(self.resources, 'hd_ready', lambda: True)():
+            # CoD's HD frames are still being derived (CodShell.warm_hd_art): its own iPhone runner meanwhile, rather
+            # than deriving them here and holding up the frame.
+            frame = self.art._android_pack(126).images[23 + index]
+            image = pygame.image.frombytes(frame.pixels, (frame.width, frame.height), frame.mode).convert_alpha()
+            return pygame.transform.smoothscale(image, (frame.width * 2 * self.S, frame.height * 2 * self.S))
+        width, height = self.art.logical_size(126, 23 + index)
+        return pygame.transform.smoothscale(self.art.frame_native(126, 23 + index),
+                                            (round(width * 2 * self.S), round(height * 2 * self.S)))

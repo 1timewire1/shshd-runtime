@@ -174,15 +174,24 @@ class HdShell:
             self.stage = 'main'                 # what the menu returns to once the episode is left
             then()
 
+    @staticmethod
+    def band_class():
+        """The episode loading screen's band: SHS HD's own (CodShell's is CoD's)."""
+        from .desktop_loading import HdLoadingRenderer
+        return HdLoadingRenderer
+
+    def band_resources(self):
+        return SimpleNamespace(library=self.library)
+
     def loading_band(self, frame):
         """The story's loading overlay (service 91) with runner `frame` (23-27) as a transparent 2x frame layer, or
         None: SHS HD's band (desktop_loading.HdLoadingRenderer) where the HD chrome is, else the iPhone panels
         (LoadingRenderer) fitted to the frame's width, as the story picks them (Desktop's 'loading')."""
         if self.band is None:
-            from .desktop_loading import HdLoadingRenderer, LoadingRenderer
+            from .desktop_loading import LoadingRenderer
             menu = self.app.renderer
             try:
-                band = HdLoadingRenderer(SimpleNamespace(library=self.library), menu.art)
+                band = self.band_class()(self.band_resources(), menu.art)
                 if not band.available():
                     resources = SimpleNamespace(library=self.library, dialogue_layout=lambda: SimpleNamespace(bank=menu.bank))
                     band = LoadingRenderer(resources, menu.text, menu.art)
