@@ -226,6 +226,14 @@ final class NativeCanvas {
                 let bounds = CGRect(x: center[0] - radius, y: center[1] - radius, width: radius * 2, height: radius * 2)
                 if width > 0 { context.strokeEllipse(in: bounds.insetBy(dx: width / 2, dy: width / 2)) }
                 else { context.fillEllipse(in: bounds) }
+            case "ellipse":
+                var bounds = try rect(op["rect"])
+                if width > 0 {
+                    bounds = bounds.insetBy(dx: width / 2, dy: width / 2)
+                    context.strokeEllipse(in: bounds)
+                } else {
+                    context.fillEllipse(in: bounds)
+                }
             case "blit":
                 let source = try image(op)
                 let at = try numbers(op["at"])

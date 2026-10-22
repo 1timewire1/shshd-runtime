@@ -189,6 +189,9 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
         result[@"height"] = @(ceil(ascent + descent + CTFontGetLeading(font)));
         result[@"ascent"] = @(ceil(ascent));
         result[@"descent"] = @(ceil(descent));
+        // Unrounded, for vector_text's cap height and descent of a system face (no font file to read tables from).
+        result[@"cap"] = @(CTFontGetCapHeight(font));
+        result[@"descender"] = @(descent);
         if (![request[@"measure"] boolValue]) {
             int w = MAX(1, [result[@"width"] intValue]), h = MAX(1, [result[@"height"] intValue]);
             CGContextRef context = bitmap(w, h);

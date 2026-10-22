@@ -221,8 +221,8 @@ class VectorFont(BitmapFont):
         from .glyph_outline import Outlines, coverage
         outlines = _OUTLINES.get(id(self.source))
         if outlines is None:
-            if self.source.data is None and not os.path.isfile(self.source.path or ''):
-                return None             # a face by name (iOS's system fonts): no outline data to read
+            if _system_face(self.source):
+                return None             # no outline data to read
             data = self.source.data if self.source.data is not None else Path(self.source.path).read_bytes()
             outlines = _OUTLINES[id(self.source)] = Outlines(data)
         if not outlines.available:
@@ -250,6 +250,11 @@ class VectorFont(BitmapFont):
 
 
 _OUTLINES = {}
+
+
+def _system_face(source):
+    """Whether `source` is a face by name with no file to read (iOS's system fonts: drawing.Fonts.match_font)."""
+    return source.data is None and not os.path.isfile(source.path or '')
 
 
 def _grow(layer, image, pad, radius):
@@ -490,6 +495,8 @@ def cap_height(font) -> float | None:
     if source is None:
         return None
     key = (source.path, id(source.data), source.label)
+    if key not in _CAP_HEIGHTS and _system_face(source):
+        _CAP_HEIGHTS[key] = source.reference().cap_height() / REFERENCE_PX     # CoreText's CGFontGetCapHeight
     if key not in _CAP_HEIGHTS:
         import struct
         data = source.data if source.data is not None else Path(source.path).read_bytes()
@@ -520,6 +527,8 @@ def descent(font) -> float | None:
     if source is None:
         return None
     key = (source.path, id(source.data), source.label)
+    if key not in _DESCENTS and _system_face(source):
+        _DESCENTS[key] = source.reference().descender() / REFERENCE_PX         # CoreText's CGFontGetDescent
     if key not in _DESCENTS:
         import struct
         data = source.data if source.data is not None else Path(source.path).read_bytes()

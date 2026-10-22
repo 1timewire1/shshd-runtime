@@ -433,6 +433,22 @@ class Draw:
     def circle(surface, color, center, radius, width=0):
         surface._append(dict(kind='circle', color=rgba(color), center=center, radius=radius, width=width))
 
+    @staticmethod
+    def lines(surface, color, closed, points, width=1):
+        """A polyline (the Decision Tree panel's branches), on the host's `line` path."""
+        points = tuple(tuple(point) for point in points)
+        if closed and points:
+            points += (points[0],)
+        surface._append(dict(kind='line', color=rgba(color), points=points, width=width))
+
+    @classmethod
+    def aalines(cls, surface, color, closed, points):
+        cls.lines(surface, color, closed, points, 1)
+
+    @staticmethod
+    def ellipse(surface, color, rect, width=0):
+        surface._append(dict(kind='ellipse', color=rgba(color), rect=tuple(Rect(rect)), width=width))
+
 
 class Transform:
     @staticmethod
@@ -590,6 +606,11 @@ def raster(node):
                 x, y = op['center']
                 r = op['radius']
                 draw.ellipse((x - r, y - r, x + r - 1, y + r - 1), fill=None if width else color, outline=color, width=width or 1)
+            elif kind == 'ellipse':
+                x, y, w, h = op['rect']
+                if w > 0 and h > 0:
+                    draw.ellipse((x, y, x + w - 1, y + h - 1), fill=None if width else color, outline=color,
+                                 width=width or 1)
             else:
                 raise DrawingError(f'Unsupported drawing operation: {kind}')
         x, y, w, h = op['clip']
@@ -617,6 +638,17 @@ class ImageAPI:
     @staticmethod
     def tobytes(surface, mode):
         return raster(surface.snapshot()).convert(mode).tobytes()
+
+    @staticmethod
+    def save(surface, file, namehint=''):
+        """pygame's: the surface written to `file` (a path or a stream) in the format its name or `namehint` gives
+        (the episode screenshots and picker thumbnails are JPEG files)."""
+        name = (namehint or str(getattr(file, 'name', file))).rsplit('.', 1)[-1].lower()
+        image = raster(surface.snapshot())
+        if name in ('jpg', 'jpeg'):
+            image.convert('RGB').save(file, 'JPEG')
+        else:
+            image.save(file, 'PNG' if name not in ('bmp', 'tga') else name.upper())
 
     def load_sized_svg(self, source, size):
         # The build renders the project's authored SVG; no game image is bundled.
@@ -669,6 +701,14 @@ class PlatformFont:
 
     def get_descent(self):
         return -self._measure('Mg')['descent']
+
+    def cap_height(self):
+        """CoreText's cap height in pixels, unrounded (not pygame's: vector_text reads it for a system face)."""
+        return self._measure('Mg')['cap']
+
+    def descender(self):
+        """CoreText's descent in pixels, unrounded (as `cap_height`)."""
+        return self._measure('Mg')['descender']
 
     @lru_cache(maxsize=512)
     def _glyphs(self, text):

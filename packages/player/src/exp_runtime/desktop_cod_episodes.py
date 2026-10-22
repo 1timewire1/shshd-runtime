@@ -45,24 +45,21 @@ BUNDLE_IMAGES = ('popupBackground.png', 'VT_divider.png')
 def recolor_border(image, color):
     """`image` (SHS HD's popup card) with its flat border colour, and the antialiased blend from it to white, moved to
     `color`. Each pixel's place on the white-to-border blend is read from its green channel."""
-    surface = image.copy()
     span = 255 - HD_BORDER[1]
-    pixels = pygame.PixelArray(surface)
+    # As RGBA bytes (not pygame's PixelArray, which the iOS drawing backend has no counterpart for).
+    pixels = bytearray(pygame.image.tobytes(image, 'RGBA'))
     cache = {}
-    for x in range(surface.get_width()):
-        for y in range(surface.get_height()):
-            mapped = surface.unmap_rgb(pixels[x, y])
-            r, g, b, a = mapped
-            if a == 0 or not (b > 240 and r < 250):
-                continue
-            key = (g, a)
-            if key not in cache:
-                t = max(0.0, min(1.0, (255 - g) / span))
-                cache[key] = surface.map_rgb((round(255 + (color[0] - 255) * t), round(255 + (color[1] - 255) * t),
-                                              round(255 + (color[2] - 255) * t), a))
-            pixels[x, y] = cache[key]
-    del pixels
-    return surface
+    for i in range(0, len(pixels), 4):
+        r, g, b, a = pixels[i:i + 4]
+        if a == 0 or not (b > 240 and r < 250):
+            continue
+        key = (g, a)
+        if key not in cache:
+            t = max(0.0, min(1.0, (255 - g) / span))
+            cache[key] = bytes((round(255 + (color[0] - 255) * t), round(255 + (color[1] - 255) * t),
+                                round(255 + (color[2] - 255) * t), a))
+        pixels[i:i + 4] = cache[key]
+    return pygame.image.frombytes(bytes(pixels), image.get_size(), 'RGBA')
 
 
 class CodPickerStyle(CodButtons):

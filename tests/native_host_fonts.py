@@ -28,7 +28,7 @@ class FontHost:
         ascent, descent = face.getmetrics()
         left = max(0, request.get('left', 0))
         result = dict(width=max(1, round(face.getlength(text) + left)), height=ascent + descent, ascent=ascent,
-                      descent=descent)
+                      descent=descent, cap=-face.getbbox('H', anchor='ls')[1], descender=descent)
         if not request.get('measure'):
             image = Image.new('RGBA', (result['width'], result['height']))
             ImageDraw.Draw(image).text((left, ascent), text, font=face, fill=tuple(request['color']), anchor='ls')

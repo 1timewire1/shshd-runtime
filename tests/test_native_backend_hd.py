@@ -118,6 +118,39 @@ class FontTests(unittest.TestCase):
         self.assertEqual(image.get_height(), font.get_height())
 
 
+class DrawingTests(unittest.TestCase):
+    def test_polylines_and_ellipses(self):
+        # The side panels' Decision Tree branches and Faceplace badges.
+        surface = Surface((20, 20), SRCALPHA)
+        Draw.lines(surface, (255, 0, 0), False, [(0, 0), (10, 0), (10, 10)], 1)
+        Draw.aalines(surface, (0, 255, 0), True, [(15, 15), (19, 15), (19, 19)])
+        Draw.ellipse(surface, (0, 0, 255), (2, 12, 6, 6))
+        self.assertEqual(pixel(surface, (5, 0)), (255, 0, 0, 255))
+        self.assertEqual(pixel(surface, (10, 5)), (255, 0, 0, 255))
+        self.assertEqual(pixel(surface, (17, 17)), (0, 255, 0, 255))     # closed: the last point joins the first
+        self.assertEqual(pixel(surface, (5, 15)), (0, 0, 255, 255))
+        self.assertEqual(surface.snapshot().ops[-1]['kind'], 'ellipse')
+
+    def test_image_save_writes_the_named_format(self):
+        surface = Surface((3, 2))
+        surface.fill((10, 200, 30))
+        api = drawing.ImageAPI(None)
+        with tempfile.TemporaryDirectory() as folder:
+            jpeg, png = Path(folder) / 'shot.tmp', Path(folder) / 'tile.png'
+            api.save(surface, str(jpeg), 'jpg')
+            api.save(surface, str(png))
+            with Image.open(jpeg) as image:
+                self.assertEqual(image.format, 'JPEG')
+            with Image.open(png) as image:
+                self.assertEqual(image.getpixel((2, 1)), (10, 200, 30, 255))
+
+    def test_system_faces_report_their_cap_height_and_descender(self):
+        # vector_text reads these for a face it has no file for (iOS's system fonts).
+        font = drawing.Fonts(FontHost()).Font('ArialMT', 100)
+        self.assertGreater(font.cap_height(), 0)
+        self.assertGreater(font.descender(), 0)
+
+
 class SoundTests(unittest.TestCase):
     def test_interface_sounds_play_on_effect_channels_at_their_volume(self):
         mixer = drawing.Mixer()
