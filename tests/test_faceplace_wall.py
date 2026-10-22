@@ -139,6 +139,78 @@ class WallConfirmTests(unittest.TestCase):
             opened.assert_called_once_with('http://example.invalid/pogo')
         self.assertEqual(self.ui.notice_stack.stack, [])
 
+    def _choice_link(self, finished):
+        """`_answer` on a choice whose answer opens a link (`_link_probe` stands in for the episode's script)."""
+        answered = []
+        self.probe = patch.object(self.ui, '_link_probe', return_value=('https://example.invalid/book', finished))
+        self.probe.start()
+        self.addCleanup(self.probe.stop)
+        patcher = patch.object(self.ui.session, 'answer', side_effect=lambda *value: answered.append(value))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.ui._answer(0)
+        self.assertEqual(self.ui.notice_stack.stack, [self.ui.exit_menu])
+        self.assertEqual(self.ui.wall_link, 'https://example.invalid/book')
+        self.ui.tick(1000)
+        self.assertEqual(answered, [])                      # the choice waits behind the prompt
+        return answered
+
+    def test_a_choice_link_asks_first_then_the_story_goes_on(self):
+        # The novels' "Yes, please!": service 100 opens the book's page, then the script goes on to the survey.
+        answered = self._choice_link(finished=False)
+        with patch('exp_runtime.desktop.webbrowser.open', return_value=True) as opened:
+            self._tap(self.yes_rect)
+            opened.assert_called_once_with('https://example.invalid/book')
+        self.probe.stop()
+        self.ui.tick(16)
+        self.assertEqual(answered, [(0,)])
+        self.ui.tick(16)
+        self.assertEqual(answered, [(0,)])
+
+    def test_no_to_a_choice_link_still_goes_on(self):
+        answered = self._choice_link(finished=False)
+        with patch('exp_runtime.desktop.webbrowser.open', return_value=True) as opened:
+            self._tap(self.no_rect)
+            opened.assert_not_called()
+        self.ui.tick(16)
+        self.assertEqual(answered, [(0,)])
+
+    def test_a_choice_link_that_ends_the_script_stays_on_the_choice(self):
+        # The High School Story ad's "Go to the High School Story app!" ends its script: the choice stays up.
+        answered = self._choice_link(finished=True)
+        self._tap(self.no_rect)
+        self.ui.tick(16)
+        self.assertEqual(answered, [])
+
+    def test_a_link_only_another_app_opens_shows_connection_error_and_keeps_the_choice(self):
+        # CoD's Halloween special: "Unlock my Maskmaker ghost" calls service 100 with ghostharvest://crosspromotion.
+        answered = []
+        self.ui.connection_menu = self.ui.exit_menu         # (this fixture's data has no Connection Error window)
+        with patch.object(self.ui, '_link_probe', return_value=('ghostharvest://crosspromotion', False)),                 patch.object(self.ui.session, 'answer', side_effect=lambda *value: answered.append(value)),                 patch('exp_runtime.desktop.webbrowser.open', return_value=True) as opened:
+            self.ui._answer(1)
+            self.assertEqual((self.ui.notice_stack.stack, self.ui.wall_link), ([self.ui.connection_menu], ''))
+            self.ui.tick(1000)
+            self.ui.handle_event(self.event(self.pygame.KEYDOWN, key=self.pygame.K_ESCAPE))
+            self.ui.tick(16)
+            opened.assert_not_called()
+        self.assertEqual(answered, [])
+
+    def test_the_choice_stays_faded_out_behind_the_prompt_and_comes_back_as_a_new_menu(self):
+        self.ui.connection_menu = self.ui.exit_menu         # (this fixture's data has no Connection Error window)
+        pending = self.ui.session.pending
+        with patch.object(self.ui, '_link_probe', return_value=('ghostharvest://crosspromotion', True)),                 patch.object(self.ui, '_hd_choice_drawn', return_value=True):
+            self.ui._answer(1)
+        self.assertEqual((self.ui.choice_held['action'], self.ui.choice_held['index']), (pending, 1))
+        self.assertTrue(self.ui._choice_busy(pending))
+        self.ui.tick(1000)                                  # the prompt is up: the choice stays faded out
+        self.assertIsNotNone(self.ui.choice_held)
+        self.ui.session.engine.choice_ms = 5000
+        self.ui.handle_event(self.event(self.pygame.KEYDOWN, key=self.pygame.K_ESCAPE))
+        self.ui.tick(16)
+        self.assertIsNone(self.ui.choice_held)              # OK: it fades in again as a new menu
+        self.assertLessEqual(self.ui.session.engine.choice_ms, 16)
+        self.assertLessEqual(self.ui.choice_renderer.age_ms, 16)
+
     def test_no_closes_without_opening(self):
         self.ui.handle_event(self.event(self.pygame.MOUSEBUTTONDOWN, pos=(1200, 420), button=1))
         self.ui.handle_event(self.event(self.pygame.MOUSEBUTTONUP, pos=(1200, 420), button=1))

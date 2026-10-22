@@ -32,6 +32,16 @@ def has_ad(resources):
     return False
 
 
+def has_links(resources):
+    """Whether any of the episode's scripts holds a link (service 100's App Store and book pages): only these choices
+    can open one."""
+    for program in getattr(resources, 'programs', {}).values():
+        data = b''.join(word.to_bytes(2, 'big') for word in program.main_words + program.extra_words)
+        if b'://' in data:
+            return True
+    return False
+
+
 def skip_ad_intro(session):
     """`session` (a game just started) with its ad intro played through to the title card, or the same session
     unchanged when the episode does not open with the ad."""

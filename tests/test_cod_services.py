@@ -85,6 +85,8 @@ class CoDServiceTests(unittest.TestCase):
                             action = answer_screen(s)
                         self.assertEqual(action.name, 'episode_exit')
                         self.assertEqual(s.vm.sp, 0)
+                        # CoD 1.4.7 opens it (exitAndShowURL); it is kept for the host to offer instead.
+                        self.assertEqual(s.engine.store_link, target)
         # (This fork's SHS takes HD's default case for 100: test_shs_services.py.)
         for game, services in (('cod', (9, 91, 95, 101, 255)),):
             for service in services:

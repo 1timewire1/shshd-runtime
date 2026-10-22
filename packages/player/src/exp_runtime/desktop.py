@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from dataclasses import astuple
 from io import BytesIO
+from copy import deepcopy
 import logging
 import os
 import re
@@ -32,7 +33,7 @@ from . import frame_log, scene_fade
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
-from .ad_intro import play_option
+from .ad_intro import has_links, play_option
 from .hd_choice import SELECT_MS, TRANSITION_MS, panel_alpha
 from .hd_ui import FRAME as HD_FRAME, S as HD_S
 from .menu_engine import MenuEngineData, MenuEngineError, MenuStack
@@ -84,6 +85,10 @@ ACCENT = (247, 190, 94)
 PANEL = (23, 29, 45)
 
 
+# Links a browser can open (an App Store link's itms:// becomes its web page in _offer_link).
+WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
+
+
 class _PromptEngine:
     """The engine as a host prompt's stand-in session shows it: the same state, but no word quiz, so a prompt over
     one is drawn as an ordinary choice."""
@@ -122,6 +127,10 @@ class Desktop:
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
+    # An HD choice kept faded out after its pick opened a prompt (a script link, _answer): {'action', 'index'}. The scene
+    # under the prompt is the one without the panel; once the prompt has closed, the choice fades in again with its
+    # whole entrance, unless the pick went on.
+    choice_held = None
     # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
     choice_focus = None
     # The same for the Android pause menu's rows (HD's pause menu keeps its own, `pause_hd.state.focus`).
@@ -283,8 +292,9 @@ class Desktop:
         # without an HD bundle imported (no resource 17 to read); a wall link opens directly without confirming,
         # and the lock falls back to the toast, matching the base app either way.
         self.notice_data = self.notice_windows = self.notice_stack = None
-        # The "Exit Game?" window and its Yes action: SHS HD's menu 17 / action 18, CoD's menu 16 / action 24.
-        self.exit_menu, self.exit_action = 17, 18
+        # The "Exit Game?" window and its Yes action: SHS HD's menu 17 / action 18, CoD's menu 16 / action 24. The
+        # Connection Error window (SHS HD's 41, CoD's 38) answers a link only another app could open (_answer).
+        self.exit_menu, self.exit_action, self.connection_menu = 17, 18, 41
         raw = self.pause_hd.raw(17)
         if raw is not None:
             try:
@@ -296,16 +306,18 @@ class Desktop:
         elif self.dialogue_renderer.game_id() == 'cod' and self.dialogue_renderer.cod_hd_common() is not None:
             # Cause of Death's own menu engine (logical resource 15) and its "Exit Game?" alert (desktop_cod_menu.py),
             # with the SHS HD art source like the rest of its HD presentation.
-            from .desktop_cod_menu import EXIT_ACTION, EXIT_GAME, CodMenuWindows
+            from .desktop_cod_menu import CONNECTION_ERROR, EXIT_ACTION, EXIT_GAME, CodMenuWindows
             try:
                 self.notice_data = MenuEngineData(session.resources.library.android_asset(15))
                 self.notice_windows = CodMenuWindows(session.resources.library, self.notice_data, self.dialogue_renderer)
                 self.notice_stack = MenuStack(self.notice_data, self._wall_perform)
-                self.exit_menu, self.exit_action = EXIT_GAME, EXIT_ACTION
+                self.exit_menu, self.exit_action, self.connection_menu = EXIT_GAME, EXIT_ACTION, CONNECTION_ERROR
             except (MenuEngineError, ContentError) as error:
                 logging.warning('Native notice/confirm windows unavailable: %s', error)
                 self.notice_data = self.notice_windows = self.notice_stack = None
         self.wall_link = ''
+        self.link_answer = None         # a choice answered once its link's "Exit Game?" prompt closes (_answer)
+        self.link_resources = None      # (resources, whether their scripts hold links)
         self.notice_pressed = None
         self.input_action = None
         self.input_error = None
@@ -636,16 +648,61 @@ class Desktop:
         element stays up under the closing blinds, the script runs once they are shut, and the next one is revealed."""
         if self.fade or self.session.transitioning:
             return
-        # A choice that opens a link (service 100, a no-op in HD) and then ends the script -- the High School Story ad's
-        # "Go to the High School Story app!" -- would leave the episode stopped: it goes back to the choice instead.
-        choice = self.session.pending if self.session.pending and self.session.pending.name == 'choice' else None
-        state = self.session.snapshot() if choice is not None else None
+        # A choice that opens a link (service 100, a no-op in HD) is offered behind the "Exit Game?" prompt. One that
+        # then ends the script -- the High School Story ad's "Go to the High School Story app!" -- would leave the
+        # episode stopped: it stays on the choice. Any other (the novels' "Yes, please!") goes on, to the survey, once
+        # the prompt has closed.
+        probe = self._link_probe(value)
+        if probe is not None:
+            link, finished = probe
+            if self._hd_choice_drawn():
+                self.choice_held = dict(action=self.session.pending, index=value[0] if value else None)
+            if not WEB_LINK.match(link):
+                # An app's own scheme (CoD's Halloween special: `ghostharvest://crosspromotion`, to unlock a ghost in
+                # Ghost Harvest) has nothing to open here: the Connection Error window, and the choice stays up (owner's
+                # choice, 2026-10-21).
+                self.wall_link = ''
+                if self.notice_stack is not None:
+                    self.notice_stack.queue(self.connection_menu)
+                else:
+                    self._notice('Connection Error')
+                return
+            self._offer_link(link)
+            if finished:
+                return
+            if self.notice_stack is not None and self.notice_stack.stack:
+                self.link_answer = value
+                return
+        self._answer_now(value)
+
+    def _answer_now(self, value):
         self.session.engine.store_link = ''
         self._attempt(lambda: self.session.answer(*value))
-        link = self.session.engine.store_link
-        if state is not None and link and self.session.pending and self.session.pending.name == 'finished':
-            self.session = Session.from_snapshot(self.session.resources, state)
-            self._offer_link(link)
+        self.session.engine.store_link = ''
+
+    def _link_probe(self, value):
+        """(link, whether the script then finishes) if answering the pending choice with `value` opens a link, found on
+        a throwaway copy of the session (as choice_hints previews a branch), else None."""
+        session = self.session
+        if session.pending is None or session.pending.name != 'choice':
+            return None
+        if self.link_resources is None or self.link_resources[0] is not session.resources:
+            self.link_resources = (session.resources, has_links(session.resources))
+        if not self.link_resources[1]:
+            return None
+        try:
+            probe = deepcopy(session, {id(session.resources): session.resources,
+                                       id(session.vm.program): session.vm.program})
+            probe.ephemeral, probe.durable = True, False
+            probe.engine.store_link = ''
+            probe.answer(*value)
+        except (VMError, ValueError) as error:
+            logging.debug('Link probe failed: %s', error)
+            return None
+        link = probe.engine.store_link
+        if not link:
+            return None
+        return link, probe.episode_exited or (probe.pending is not None and probe.pending.name == 'finished')
 
     def _offer_link(self, link):
         """Open a script's link in the browser, behind the app's "Exit Game?" confirmation as the wall's links are. An
@@ -780,6 +837,14 @@ class Desktop:
                 self._attempt(lambda: self.session.tick(max(1, self.session.remaining_ms or 0)))
             else:
                 self._pick(closing['action'], closing['index'])
+
+    def _release_choice(self):
+        """Show a held choice again as a new menu is: the panel fades in, its labels fly on and taps wait out its
+        attachment."""
+        held, self.choice_held = self.choice_held, None
+        if held['action'] is self.session.pending:          # (not loaded, restarted or answered elsewhere)
+            self.choice_renderer.age_ms = 0
+            self.session.engine.choice_ms = 0
 
     def _tick_autoplay(self, elapsed_ms):
         """Autoplay Dialogue: once a dialogue page's text is out (or a title card or message panel is ready), wait
@@ -957,6 +1022,8 @@ class Desktop:
                         pointer = ((x - self.viewport.x) * 320 / self.viewport.width,
                                    (y - self.viewport.y) * 480 / self.viewport.height)
                 closing = self.choice_closing if self.choice_closing and self.choice_closing['action'] is action else None
+                if closing is None and self.choice_held is not None and self.choice_held['action'] is action:
+                    closing = dict(index=self.choice_held['index'], ms=SELECT_MS + TRANSITION_MS)     # faded out
                 pressed = self.press.pressed if not self.menu_open else None
                 focus = self.choice_focus if not self.menu_open else None
                 if focus is not None:
@@ -1767,7 +1834,7 @@ class Desktop:
             if action and action.name == 'character_picker' and kind in ('choose', 'continue'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
             ask = self.host_prompt if self.host_prompt and self.host_prompt['action'] is action else None
-            if self.choice_closing is not None and self.choice_closing['action'] is action:
+            if self._choice_busy(action):
                 pass                    # `SHSMenu`: one selection per menu; input is over until it has closed
             elif ask is not None:
                 if kind == 'choose' and 0 <= command[1] < len(ask['options']):
@@ -1796,12 +1863,16 @@ class Desktop:
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
         self._sync_text_input()
 
+    def _choice_busy(self, action):
+        """Whether `action`'s choice is closing after a pick, or held faded out behind a link's prompt."""
+        return any(state is not None and state['action'] is action for state in (self.choice_closing, self.choice_held))
+
     def _choice_focus_rows(self, action, asking):
         """The rows the arrow keys step through, top to bottom: a choice's enabled options, the quiz's answers or a
         host prompt's options; none while the pause menu, an error or a closing choice holds the screen."""
         if (self.menu_open or self.error or self.fade or self.session.transitioning or action is None
                 or not (asking or action.name in ('choice', 'word_game'))
-                or self.choice_closing is not None and self.choice_closing['action'] is action):
+                or self._choice_busy(action)):
             return []
         if not hasattr(self.session.resources, 'read_asset'):
             if asking or action.name != 'choice':
@@ -2295,6 +2366,10 @@ class Desktop:
             self.notice_ms = min(PAUSE_OPEN_MS, self.notice_ms + elapsed_ms)
         elif self.notice_stack is not None and not self.notice_stack.stack:
             self.notice_shown = None
+            if self.link_answer is not None:
+                value, self.link_answer = self.link_answer, None
+                self.choice_held = None
+                self._answer_now(value)
         if self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
             self.pause_hd.advance(elapsed_ms)
@@ -2313,6 +2388,8 @@ class Desktop:
             if self.choice_closing is not None:
                 # The selection is pending: the menu's own clock no longer runs out (`SHSUIMenu::tick`).
                 self._tick_choice_closing(elapsed_ms)
+            elif self.choice_held is not None:
+                self._release_choice()          # the prompt has closed (this runs only without one)
             elif ask is not None:
                 pass                            # the mini-game has not started: its clocks wait for the skip prompt
             elif (pending is not None and pending.name in ('choice', 'word_game') and remaining is not None

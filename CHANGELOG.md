@@ -16,6 +16,17 @@
 
 ### Fixed
 
+- **The novels' "Yes, please!" opens the book's page.** Episodes plugging the Surviving High School novel and *How to
+  Be a Star* (Snow Ball 2, Howard's Holidays, A New Start Season 3, Cheer Off and Season 6's later episodes) ask for
+  the book's link and then go on to the survey, so the link was dropped. It now asks with the "Exit Game?" prompt
+  first, as the wall's links do, and the episode moves on to the survey once the prompt closes, whatever the answer.
+  Only episodes whose scripts hold a link try a choice's answer ahead (on a copy of the game). SHS's What Happened to
+  Colt, Part 1 ("download Part 2 in Cause of Death") works the same way.
+- **Cause of Death's links are offered too.** CoD 1.4.7 opens a script's link (service 100), which the runtime had
+  treated as CoD 1.3.4's no-op: What Happened to Colt, Part 2's SHS plug and the Halloween special's "Check out
+  'Ghost Harvest'." now ask with the "Exit Game?" prompt. The Halloween special's "Unlock my Maskmaker ghost" needs
+  the Ghost Harvest app: it shows the Connection Error window, and after OK the choice comes back with its whole
+  entrance. Behind either prompt the scene is dimmed without the choice, which has already faded out.
 - **What Happened to Colt, Part 1 no longer stops when a timed choice runs out.** Its "Dodge!" / "Collide!" choice
   times out to "no option", which stopped the episode with "Incremental choice timeout index is out of range". SHS
   HD's menu returns the empty slot before its option table (`SHSUIMenu::setReturnValue`), which is zero for a new

@@ -30,6 +30,7 @@ from .menu import MenuStrings
 from .ui_assets import ImagePack
 
 EXIT_GAME, EXIT_ACTION = 16, 24
+CONNECTION_ERROR = 38           # SHS HD's 41
 BUTTON_PIECES = {False: (90, 91, 92), True: (93, 94, 95)}     # left cap, middle, right cap; True = pressed
 ARROW = 89
 TOP_HEIGHT, BOTTOM_HEIGHT = 112, 86                              # frames 80 / 79 at HD's size (56 / 43 CoD points)

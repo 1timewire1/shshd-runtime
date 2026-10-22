@@ -708,9 +708,15 @@ with no prompt. Its menu engine does have the prompt:
 (`Desktop._offer_link`, `exit_menu` / `exit_action`). That is this player's addition, so a desktop browser never opens
 unasked. Like the SHS notices, it dims the scene sepia and holds the game.
 
-Only two CoD episodes call service 100. Both go to an App Store page:
-- Halloween Special Dead Man Walking 1, for Ghost Harvest;
-- What Happened To Colt Part 2, for SHS's free edition.
+Only two CoD episodes call service 100 (`cod/services.py` keeps the link in `engine.store_link`):
+- What Happened To Colt Part 2: its opening "Yes." goes to SHS's free edition on the App Store, then the title card.
+- Halloween Special Dead Man Walking 1: after the bonus short story, "Check out 'Ghost Harvest'." goes to Ghost
+  Harvest's App Store page, then the title card. Its two "Unlock my Maskmaker ghost" rows (the first choice, and
+  again after the short story) call `ghostharvest://crosspromotion`, a link only the Ghost Harvest app could open.
+  Those show the Connection Error window (menu 38) over the sepia-dimmed choice instead, and its OK leaves the choice
+  up (owner's choice, 2026-10-21).
+
+A link whose script goes on afterwards waits: the choice is answered once the prompt closes (`Desktop._answer`).
 
 **The window** (`desktop_cod_menu.CodMenuWindows`). Since 2026-10-14 it is SHS HD's window
 (`desktop_hd_menu.HdMenuWindows`: the 604-point card centred in the 768 x 1024 frame, its title, message, button strip
@@ -1128,6 +1134,12 @@ seen. The owner will compare this on device. Other negative selections, and
 SHS, keep the explicit error.
 
 ## Native audit: service 100
+
+CoD 1.4.7, the build this runtime follows, opens the link: `SHSScript::syscall` (00036a3c, case 100 at 00037fb4)
+sets scene flag +0x1f when the second word is non-zero, calls `SHSEngine::saveGame`, reads the first argument with
+`getStringFromStack(1)` and passes it to `CSEngine::exitAndShowURL`. The adapter reads the link and completes with
+R=0 (see "The Exit Game? prompt"); the save and the flag are not modelled. The 1.3.4 audit below is kept for the
+record.
 
 The supplied episodes contain four calls, all two-word calls in scene 25001.
 Each passes a promotional URL string reference followed by `-1`; none reads
