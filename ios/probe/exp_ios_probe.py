@@ -623,7 +623,9 @@ def presentation_steps(host):
         app.tick(0)
         app.render()
         assert app.update_prompt is not None
-        assert [command for _, command in app.buttons] == [('update_no',), ('update_yes',)]
+        # shshd-runtime: an iOS app cannot update itself, so its offer only informs (one OK, `update_no`).
+        expected = [('update_no',), ('update_yes',)] if app.can_quit else [('update_no',)]
+        assert [command for _, command in app.buttons] == expected, app.buttons
     app.command(('options',)); app.tick(200); app.render()
     assert ('toggle_updates',) in [command for _, command in app.buttons]
     app.command(('toggle_updates',))
