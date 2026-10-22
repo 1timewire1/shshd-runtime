@@ -16,6 +16,11 @@
 
 ### Fixed
 
+- **Skip Ad Intros skips the High School Story ad again** (Game of Cones, The Conned Artist Parts 1 and 2). Since
+  exp-runtime v0.6.1's merge a choice ignores taps for its first 250 ms, as SHS's menu does, and the skip answered
+  the ad's choice at once, so it gave up and the ad played. It now waits out those 250 ms first. It also stops at
+  the end of the ad (its "And now..."), so Game of Cones' "Previously, on Surviving High School..." recap before
+  the title card is no longer skipped with it.
 - **The novels' "Yes, please!" opens the book's page.** Episodes plugging the Surviving High School novel and *How to
   Be a Star* (Snow Ball 2, Howard's Holidays, A New Start Season 3, Cheer Off and Season 6's later episodes) ask for
   the book's link and then go on to the survey, so the link was dropped. It now asks with the "Exit Game?" prompt
