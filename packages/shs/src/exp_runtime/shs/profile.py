@@ -76,5 +76,10 @@ PICKER_SOUNDS = (8013, 8010)
 # font has a glyph for them. Adaptation, owner's choice (2026-10-14): show the straight quote. Display only
 # (engine.substitute); 0x09 already lays out as a space.
 DISPLAY_CHARACTERS = {'\x18': "'", '\x19': "'"}
+# A timed incremental choice (service 4) whose timeout selection is -1, "no option" (What Happened to Colt, Part 1's
+# "Dodge!" / "Collide!"): as in Cause of Death (cod/profile.py), SHS HD's SHSUIMenu::setReturnValue (00046100)
+# returns mapping[-1], the short at +0xa4 before the table at +0xa6. The constructor (00047d94) never writes it and
+# only loadElement (0004649a, a restored menu) does, so a new menu returns its allocation's initial memory: zero.
+TIMEOUT_NO_OPTION_RESULT = 0
 # Android's typed notice; an HD build (engine.hd_version) uses the letter effect instead.
 LETTER_NOTICE = False

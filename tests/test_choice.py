@@ -132,7 +132,7 @@ class ChoiceTimingTests(unittest.TestCase):
     def test_other_invalid_timeouts_keep_the_pending_call_in_both_games(self):
         for game in ('shs', 'cod'):
             # CoD returns any selection past its options unmapped in this fork (TIMEOUT_PAST_OPTIONS_UNMAPPED).
-            defaults = (-2,) if game == 'cod' else (-2, -1, 3, 1000, 32767)
+            defaults = (-2,) if game == 'cod' else (-2, 3, 1000, 32767)
             for default in defaults:
                 with self.subTest(game=game, default=default):
                     r = timed_resources(2, default=default); r.library.game_id = game
@@ -147,10 +147,10 @@ class ChoiceTimingTests(unittest.TestCase):
 
     def test_an_incremental_timeout_selecting_no_option(self):
         from exp_runtime.vm import VMError
-        # CoD reads the never-written slot before its mapping table (cod/profile.py, TIMEOUT_NO_OPTION_RESULT);
-        # SHS keeps the explicit error, as does any other out-of-range selection.
+        # Both games read the never-written slot before their mapping table (TIMEOUT_NO_OPTION_RESULT in each
+        # profile); any other out-of-range selection keeps the explicit error.
         # A selection past the options returns itself unmapped for CoD (the adaptation for Volume 2's 1000).
-        for game, selection, expected in (('cod', -1, 0), ('shs', -1, None), ('cod', -2, None), ('cod', 3, 3),
+        for game, selection, expected in (('cod', -1, 0), ('shs', -1, 0), ('cod', -2, None), ('cod', 3, 3),
                                           ('cod', 1000, 1000), ('shs', 1000, None)):
             with self.subTest(game=game, selection=selection):
                 r = timed_resources(2, selection=selection); r.library.game_id = game

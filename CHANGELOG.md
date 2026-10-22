@@ -16,6 +16,10 @@
 
 ### Fixed
 
+- **What Happened to Colt, Part 1 no longer stops when a timed choice runs out.** Its "Dodge!" / "Collide!" choice
+  times out to "no option", which stopped the episode with "Incremental choice timeout index is out of range". SHS
+  HD's menu returns the empty slot before its option table (`SHSUIMenu::setReturnValue`), which is zero for a new
+  menu, as Cause of Death already does here.
 - **Expressions change a second sooner in SHS HD and Cause of Death**
   ([#2](https://github.com/1timewire1/shshd-runtime/issues/2)). Both games
   request a line's expression on the dialog's first tick: `SHSUIDialog::tick`
