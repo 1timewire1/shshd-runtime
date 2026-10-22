@@ -194,6 +194,8 @@ def drawing_fixture():
     from exp_runtime.desktop_dialogue import DialogueRenderer
     from exp_runtime.engine import EngineState
     art = DialogueRenderer.__new__(DialogueRenderer)
+    # No library: the renderer's optional lookups (CoD's HD frames, Android sizes) fall back.
+    art.resources = None
     background = Surface((640, 360))
     for column in range(8):
         background.fill((column * 30, 255 - column * 30, column * 10), (column * 80, 0, 80, 360))
@@ -216,6 +218,7 @@ def drawing_fixture():
     center, edge = Surface((2, 2)), Surface((4, 4))
     center.fill((230, 220, 180)); edge.fill((80, 110, 200))
     art.frame = lambda asset, index: center if asset == 126 else edge
+    art.frame_native = art.frame          # shs-hd-runtime: the box draws its frames at the canvas's density
     motion = DialogueAnimation(20, portrait=DialoguePortrait(1, 100, 1, 1), box_grow=True)
     for column, elapsed in enumerate((550, 610, 670, 770, 870)):
         motion.tick(elapsed - motion.elapsed_ms)
@@ -226,22 +229,31 @@ def drawing_fixture():
         target.blit(scene, (column * 64, 112))
         points.extend((column * 64 + x, 112 + y) for x in (7, 11, 29, 40, 55)
                       for y in (4, 15, 21, 39, 65, 89, 93))
-    # Native housing cutout and expression layers: clipping may erase only
-    # frame 37, and transparent fades must preserve the ring and old art.
-    housing, ring = Surface((60, 60), SRCALPHA), Surface((30, 30), SRCALPHA)
-    housing.fill((200, 0, 0)); ring.fill((0, 200, 0))
-    old, new = Surface((10, 30), SRCALPHA), Surface((10, 30), SRCALPHA)
-    old.fill((0, 0, 200)); new.fill((200, 200, 0))
-    new.fill((0, 0, 0, 0), (0, 0, 5, 30))
-    art.frame = lambda _, index: housing if index == 37 else ring
-    art.portrait = lambda asset, _: old if asset == 100 else new
-    portrait, initial = DialoguePortrait(0, 101, 1, 1), DialoguePortrait(0, 100, 1, 1)
-    motion = DialogueAnimation(20, portrait=portrait, initial_portrait=initial, expression=1)
-    for column, elapsed in enumerate((1000, 1500, 1600, 2000, 2400)):
-        motion.tick(elapsed - motion.presentation_ms)
-        layer, _ = art.portrait_group(portrait, (-30, 0, 60, 35), initial, *motion.expression_alphas)
-        target.blit(layer, (column * 64, 214))
-        points.extend((column * 64 + x, 214 + y) for x, y in ((1, 31), (1, 42), (20, 42), (27, 42), (30, 42)))
+    # shshd-runtime: the HD screens' drawing on CoreGraphics. The dialogue renderer draws its column into the
+    # frame-wide layer through a subsurface; the menus fade by multiplying an opaque canvas and fade art in over
+    # black additively; the side panels draw ellipses and polylines (upstream's portrait layers, replaced by the HD
+    # housing, are covered by the desktop tests).
+    from exp_runtime.platforms.drawing import BLEND_RGB_ADD, BLEND_RGB_MULT
+    wide = Surface((96, 40))
+    wide.fill((40, 40, 40))
+    column = wide.subsurface((16, 0, 64, 40))
+    column.fill((200, 120, 60), (0, 0, 64, 20))
+    Draw.rect(column, (20, 200, 90), (-8, 24, 80, 8))
+    wide.fill((128, 128, 128), special_flags=BLEND_RGB_MULT)
+    art = Surface((40, 12))
+    art.fill((60, 90, 120))
+    black = Surface((40, 12))
+    black.fill((0, 0, 0))
+    black.blit(art, (0, 0), special_flags=BLEND_RGB_ADD)
+    wide.blit(black, (50, 26))
+    target.blit(wide, (0, 214))
+    points.extend((x, 214 + y) for x in (8, 16, 40, 79, 80, 60) for y in (5, 27, 30))
+    shapes = Surface((96, 40), SRCALPHA)
+    Draw.ellipse(shapes, (240, 220, 40), (4, 4, 30, 20))
+    Draw.ellipse(shapes, (40, 220, 240), (40, 4, 30, 20), 3)
+    Draw.lines(shapes, (230, 30, 200), False, [(76, 2), (92, 2), (92, 36)], 3)
+    target.blit(shapes, (110, 214))
+    points.extend((110 + x, 214 + y) for x, y in ((19, 14), (8, 14), (55, 14), (41, 14), (55, 5), (84, 2), (92, 20)))
     # Intersecting grid faces require per-pixel depth, including clipped and
     # transparent texels. Exercise the same command on CoreGraphics.
     from exp_runtime.projection import draw_depth_quads
@@ -258,30 +270,6 @@ def drawing_fixture():
         bytes((255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 17, 38, 79))).convert('RGBA'))
     target.blit(graphics.color_matrix(colors, SEPIA), (40, 285))
     points.extend((x, 285) for x in range(40, 45))
-    # Consecutive same-speaker lines retain the two art layers while the
-    # next one-second expression request is pending. Pause settles them.
-    third = new.copy(); third.fill((200, 0, 200))
-    art.portrait = lambda asset, _: {100: old, 101: new, 102: third}[asset]
-    details = dict(text='Hello.', page_start=0, visible_character_id=0,
-                   presentation_mode=1, theme=1, expression=1, initial_expression=0)
-    variants = {0: [100, 101, 102]}
-    motion = DialogueAnimation.start(details, variants)
-    motion.tick(1500)
-    expected_colors = ((100, 100, 100), (200, 200, 0), (200, 200, 0), (200, 100, 100), (200, 0, 200))
-    for column in range(5):
-        if column == 1:
-            motion = DialogueAnimation.start(dict(details, expression=2, initial_expression=1), variants, motion)
-            motion.tick(200)
-        elif column in (2, 3):
-            motion.tick(900 if column == 2 else 400)
-        elif column == 4:
-            motion.stop_layers()
-        initial, portrait = motion.expression_portraits
-        layer, _ = art.portrait_group(portrait, (-30, 0, 60, 35), initial, *motion.expression_alphas)
-        actual = raster(layer.snapshot()).getpixel((30, 42))[:3]
-        assert all(abs(a - b) <= 1 for a, b in zip(actual, expected_colors[column])), actual
-        target.blit(layer, (column * 64, 330))
-        points.extend((column * 64 + x, 330 + y) for x, y in ((27, 42), (30, 42)))
     expected = raster(target.snapshot())
     return dict(frame=FrameEncoder().encode(target), samples=[dict(at=p, rgba=expected.getpixel(p)) for p in points])
 
