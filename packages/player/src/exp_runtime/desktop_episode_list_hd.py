@@ -38,7 +38,7 @@ screen, so no reference to sample: the episode's own category and its researched
 aren't grouped by category, so each one names its own), or just the airdate on Episodes On Demand (its header
 already names the category). Dulled down from the title's own blue via alpha rather than a second invented color.
 """
-import pygame
+from . import graphics as pygame
 
 from .desktop_episode_picker import BACK_X, BUTTON_SIZE, BUTTON_Y, FRAME, HdEpisodePicker, S
 from .desktop_main_hd import STRING_AIRING, STRING_DEMAND

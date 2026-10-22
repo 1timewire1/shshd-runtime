@@ -1,5 +1,4 @@
 """Service 82: this fork's simulated buzz (vibration.py) and exp-runtime's device vibration (take_vibrations)."""
-import base64
 import importlib.util
 from io import BytesIO
 import math
@@ -159,22 +158,13 @@ class PlayerVibrationTests(unittest.TestCase):
 
 class NativeVibrationTests(unittest.TestCase):
     def test_native_bridge_drains_feedback_and_drops_background_or_unsupported_requests(self):
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image
         from exp_runtime import graphics
         from exp_runtime.app_icon import icon_surface
         from exp_runtime.platforms.drawing import Backend
         from exp_runtime.platforms.ios import Host
-
-        def font(request):
-            face = ImageFont.load_default(size=request['size'])
-            width, height = max(1, round(face.getlength(request['text']))), request['size'] + 5
-            result = dict(width=width, height=height)
-            if not request.get('measure'):
-                image = Image.new('RGBA', (width, height))
-                ImageDraw.Draw(image).text((0, 0), request['text'], font=face, fill=tuple(request['color']))
-                stream = BytesIO(); image.save(stream, format='PNG')
-                result['png'] = base64.b64encode(stream.getvalue()).decode('ascii')
-            return result
+        from native_host_fonts import FontHost
+        font = FontHost()
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

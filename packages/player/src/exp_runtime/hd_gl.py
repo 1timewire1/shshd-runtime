@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import math
 
-import pygame
+from . import graphics as pygame
 
 from PIL import Image
 

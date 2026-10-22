@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from io import BytesIO
 import logging
 
-import pygame
+from . import graphics as pygame
 
 from . import episode_thumbnails
 from .content import ContentError, is_bundled

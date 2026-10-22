@@ -187,6 +187,14 @@ final class NativeCanvas {
                 context.setStrokeColor(color)
                 context.setBlendMode(.copy)
             }
+            // SDL's RGB multiply fill and additive blit over opaque pixels (drawing.py Surface.fill / blit: the HD
+            // menus' fades, drawn every frame).
+            switch op["blend"] as? String {
+            case "multiply"?: context.setBlendMode(.multiply)
+            case "add"?: context.setBlendMode(.plusLighter)
+            case nil: break
+            default: throw CanvasError(message: "Unsupported blend")
+            }
             let width = (op["width"] as? NSNumber)?.doubleValue ?? 0
             context.setLineWidth(width)
             switch kind {

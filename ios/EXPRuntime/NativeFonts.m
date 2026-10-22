@@ -72,6 +72,34 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
     NSDictionary *request = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
                                                            options:0 error:error];
     if (!request) return nil;
+    if ([request[@"operation"] isEqual:@"register"]) {
+        // A font file's bytes (the HD app's Pajama Hip, a library's fonts/ folder) registered for this process, so
+        // later requests name it by its PostScript name instead of sending the bytes again.
+        NSData *data = [[NSData alloc] initWithBase64EncodedString:request[@"data"] ?: @"" options:0];
+        CGDataProviderRef provider = data ? CGDataProviderCreateWithCFData((__bridge CFDataRef)data) : NULL;
+        CGFontRef graphics = provider ? CGFontCreateWithDataProvider(provider) : NULL;
+        if (provider) CGDataProviderRelease(provider);
+        if (!graphics) {
+            if (error) *error = [NSError errorWithDomain:@"org.expruntime.font" code:1
+                                              userInfo:@{NSLocalizedDescriptionKey: @"Cannot decode supplied font"}];
+            return nil;
+        }
+        CFErrorRef failure = NULL;
+        if (!CTFontManagerRegisterGraphicsFont(graphics, &failure) && failure) {
+            BOOL already = CFErrorGetCode(failure) == kCTFontManagerErrorAlreadyRegistered;
+            CFRelease(failure);
+            if (!already) {
+                CGFontRelease(graphics);
+                if (error) *error = [NSError errorWithDomain:@"org.expruntime.font" code:3
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"Cannot register supplied font"}];
+                return nil;
+            }
+        }
+        NSString *name = CFBridgingRelease(CGFontCopyPostScriptName(graphics));
+        CGFontRelease(graphics);
+        NSData *reply = [NSJSONSerialization dataWithJSONObject:@{@"face": name ?: @""} options:0 error:error];
+        return reply ? [[NSString alloc] initWithData:reply encoding:NSUTF8StringEncoding] : nil;
+    }
     BOOL nativeFace = NO;
     CTFontRef font = makeFont(request, &nativeFace);
     if (!font) {
@@ -129,6 +157,24 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
         result[@"native_face"] = @(nativeFace);
         result[@"png"] = png(context);
         CGContextRelease(context);
+    } else if ([request[@"operation"] isEqual:@"glyphs"]) {
+        // pygame's Font.metrics: per character (min x, max x, min y, max y, advance), y up from the baseline.
+        NSString *text = request[@"text"] ?: @"";
+        NSMutableArray *glyphs = [NSMutableArray array];
+        for (NSUInteger i = 0; i < text.length; ++i) {
+            UniChar code = [text characterAtIndex:i];
+            CGGlyph glyph = 0;
+            CTFontGetGlyphsForCharacters(font, &code, &glyph, 1);
+            CGRect bounds;
+            CGSize advance;
+            CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationHorizontal, &glyph, &bounds, 1);
+            CTFontGetAdvancesForGlyphs(font, kCTFontOrientationHorizontal, &glyph, &advance, 1);
+            if (CGRectIsEmpty(bounds)) bounds = CGRectZero;
+            [glyphs addObject:@[@(floor(CGRectGetMinX(bounds))), @(ceil(CGRectGetMaxX(bounds))),
+                                @(floor(CGRectGetMinY(bounds))), @(ceil(CGRectGetMaxY(bounds))),
+                                @(round(advance.width))]];
+        }
+        result[@"glyphs"] = glyphs;
     } else {
         NSAttributedString *text = [[NSAttributedString alloc] initWithString:request[@"text"] ?: @""
             attributes:@{(__bridge NSString *)kCTFontAttributeName: (__bridge id)font,
@@ -136,12 +182,17 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
         CTLineRef line = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)text);
         CGFloat ascent = CTFontGetAscent(font), descent = CTFontGetDescent(font);
         CGFloat width = CTLineGetTypographicBounds(line, NULL, NULL, NULL);
-        result[@"width"] = @(ceil(width));
+        // `left`: the pen starts this far in, so a first glyph whose ink begins left of it (a negative bearing) is
+        // kept whole, as SDL_ttf's images start at the leftmost ink.
+        CGFloat left = MAX(0, [request[@"left"] doubleValue]);
+        result[@"width"] = @(ceil(width + left));
         result[@"height"] = @(ceil(ascent + descent + CTFontGetLeading(font)));
+        result[@"ascent"] = @(ceil(ascent));
+        result[@"descent"] = @(ceil(descent));
         if (![request[@"measure"] boolValue]) {
             int w = MAX(1, [result[@"width"] intValue]), h = MAX(1, [result[@"height"] intValue]);
             CGContextRef context = bitmap(w, h);
-            CGContextSetTextPosition(context, 0, h - ceil(ascent));
+            CGContextSetTextPosition(context, left, h - ceil(ascent));
             CTLineDraw(line, context);
             result[@"png"] = png(context);
             CGContextRelease(context);

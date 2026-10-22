@@ -17,7 +17,7 @@ Not decompiled: how long real loading takes (a desktop has nothing to load, so t
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .graphics import faded
 from .hd_ui import HdUi, S, FRAME

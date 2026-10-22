@@ -27,7 +27,7 @@ intros). The Help & About pages show CoD's own text; SHS's text overrides are SH
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .content import ContentError
 from .desktop_cod_menu import draw_cod_card

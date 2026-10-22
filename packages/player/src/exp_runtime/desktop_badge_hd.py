@@ -19,7 +19,7 @@ Everything is drawn 2x supersampled into a full-frame layer (a point is `S` laye
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 S = 2
 FRAME = (768, 1024)

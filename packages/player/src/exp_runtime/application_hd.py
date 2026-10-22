@@ -16,7 +16,7 @@ engine (`stack`) and the pause menu's Options / Help pages (`pause`, drawn by de
 from types import SimpleNamespace
 import webbrowser
 
-import pygame
+from . import graphics as pygame
 
 from .desktop_boot_hd import FLASH_TOTAL, HdBootScreen, JINGLE, LOADING_TIME
 from .desktop_hd_menu import HdMenuWindows

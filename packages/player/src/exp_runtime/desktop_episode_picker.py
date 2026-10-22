@@ -31,7 +31,7 @@ tiles, which is this player's own addition with no native equivalent to measure.
 from functools import lru_cache
 from io import BytesIO
 
-import pygame
+from . import graphics as pygame
 
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .graphics import faded

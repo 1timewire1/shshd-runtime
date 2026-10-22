@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 import re
 
-import pygame
+from . import graphics as pygame
 from PIL import Image
 
 from .desktop_pause import ease_in_out

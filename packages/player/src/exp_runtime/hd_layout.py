@@ -12,7 +12,7 @@ slot -> pack as `SLOT_PACKS` (slot 2 is the per-theme box pack).
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .content import ContentError
 from .ui_assets import ImagePack, LayoutBank, Rect, UIAssetError

@@ -28,7 +28,7 @@ Not decompiled: the exact origin of the button group (fitted to the photo).
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .graphics import faded
 from .hd_ui import HdUi, S, FRAME

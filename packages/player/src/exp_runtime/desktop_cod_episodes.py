@@ -28,7 +28,7 @@ CoD's styling:
 from functools import lru_cache
 from io import BytesIO
 
-import pygame
+from . import graphics as pygame
 
 from .desktop_cod_main import title_layer
 from .desktop_cod_menu import CodButtons

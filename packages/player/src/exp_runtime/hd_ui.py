@@ -5,7 +5,7 @@ Bold, or Arial Bold when it is not installed (widths then differ by about 1%, `F
 """
 from functools import lru_cache
 from io import BytesIO
-import pygame
+from . import graphics as pygame
 
 from .graphics import faded
 from .hd_layout import HdLayouts, STRINGS_ID

@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 import logging
 
-import pygame
+from . import graphics as pygame
 
 from .graphics import faded
 from .cgbi import CgBIError, decode as decode_cgbi

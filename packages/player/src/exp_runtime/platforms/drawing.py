@@ -8,13 +8,15 @@ and performs the small, byte-exact asset operations used by masks and atlases.
 import base64
 from dataclasses import dataclass, field
 from functools import lru_cache
+from hashlib import sha256
 from io import BytesIO
 from itertools import count
 import math
+import os
 import struct
 from types import SimpleNamespace
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 
 class DrawingError(ValueError):
@@ -45,53 +47,38 @@ class Rect:
     def __eq__(self, other):
         return tuple(self) == tuple(other)
 
-    @property
-    def size(self):
-        return self.width, self.height
+    # pygame's positional attributes, readable and settable (setting one moves the rectangle; `size` resizes it).
+    def _half(self, length):
+        return length // 2 if self.cast is int else length / 2
 
-    @property
-    def topleft(self):
-        return self.x, self.y
+    size = property(lambda self: (self.width, self.height),
+                    lambda self, value: self._set(width=value[0], height=value[1]))
+    w = property(lambda self: self.width, lambda self, value: self._set(width=value))
+    h = property(lambda self: self.height, lambda self, value: self._set(height=value))
+    left = property(lambda self: self.x, lambda self, value: self._set(x=value))
+    top = property(lambda self: self.y, lambda self, value: self._set(y=value))
+    right = property(lambda self: self.x + self.width, lambda self, value: self._set(x=self.cast(value) - self.width))
+    bottom = property(lambda self: self.y + self.height,
+                      lambda self, value: self._set(y=self.cast(value) - self.height))
+    centerx = property(lambda self: self.x + self._half(self.width),
+                       lambda self, value: self._set(x=self.cast(value) - self._half(self.width)))
+    centery = property(lambda self: self.y + self._half(self.height),
+                       lambda self, value: self._set(y=self.cast(value) - self._half(self.height)))
 
-    @property
-    def top(self):
-        return self.y
+    def _set(self, **values):
+        for key, value in values.items():
+            object.__setattr__(self, key, self.cast(value))
 
-    @property
-    def bottom(self):
-        return self.y + self.height
+    def _pair(horizontal, vertical):
+        return property(lambda self: (getattr(self, horizontal), getattr(self, vertical)),
+                        lambda self, point: (setattr(self, horizontal, point[0]), setattr(self, vertical, point[1])))
 
-    @property
-    def left(self):
-        return self.x
-
-    @property
-    def right(self):
-        return self.x + self.width
-
-    @property
-    def centerx(self):
-        return self.x + (self.width // 2 if self.cast is int else self.width / 2)
-
-    @centerx.setter
-    def centerx(self, value):
-        self.x = self.cast(value) - (self.width // 2 if self.cast is int else self.width / 2)
-
-    @property
-    def centery(self):
-        return self.y + (self.height // 2 if self.cast is int else self.height / 2)
-
-    @centery.setter
-    def centery(self, value):
-        self.y = self.cast(value) - (self.height // 2 if self.cast is int else self.height / 2)
-
-    @property
-    def center(self):
-        return self.centerx, self.centery
-
-    @center.setter
-    def center(self, point):
-        self.centerx, self.centery = point
+    topleft, topright = _pair('left', 'top'), _pair('right', 'top')
+    bottomleft, bottomright = _pair('left', 'bottom'), _pair('right', 'bottom')
+    midtop, midbottom = _pair('centerx', 'top'), _pair('centerx', 'bottom')
+    midleft, midright = _pair('left', 'centery'), _pair('right', 'centery')
+    center = _pair('centerx', 'centery')
+    del _pair
 
     def clip(self, other):
         other = type(self)(other)
@@ -106,8 +93,27 @@ class Rect:
     def inflate_ip(self, x, y):
         self.x, self.y, self.width, self.height = self.inflate(x, y)
 
-    def move(self, x, y):
+    def move(self, x, y=None):
+        if y is None:
+            x, y = x
         return type(self)(self.x + self.cast(x), self.y + self.cast(y), self.width, self.height)
+
+    def move_ip(self, x, y=None):
+        self.x, self.y = self.move(x, y).topleft
+
+    def union(self, other):
+        return self.unionall([other])
+
+    def contains(self, other):
+        other = type(self)(other)
+        return (self.x <= other.x and self.y <= other.y and other.right <= self.right
+                and other.bottom <= self.bottom)
+
+    def __len__(self):
+        return 4
+
+    def __repr__(self):
+        return f'<{type(self).__name__}({self.x}, {self.y}, {self.width}, {self.height})>'
 
     def unionall(self, rectangles):
         rectangles = [self, *(type(self)(rect) for rect in rectangles)]
@@ -133,10 +139,33 @@ class FRect(Rect):
 
 _ids = count(1)
 SRCALPHA, BLEND_RGBA_MULT, RESIZABLE = 1, 2, 4
+# The other blends the HD and CoD screens use (values private to this backend, as pygame's are to it).
+BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT = 8, 16, 32, 64
+BLENDS = (BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT)
 
 
 def rgba(color):
     return tuple(color) if len(color) == 4 else (*color, 255)
+
+
+def _multiply(a, b):
+    # SDL's multiply is (a*b + 255) >> 8.
+    return Image.frombytes(a.mode, a.size, bytes((x * y + 255) >> 8 for x, y in zip(a.tobytes(), b.tobytes())))
+
+
+def blend(destination, source, flags):
+    """SDL's `special_flags` blend of two same-sized RGBA images: the RGBA ones on every channel, the RGB ones on
+    colour only (the destination keeps its alpha)."""
+    if flags == BLEND_RGBA_MULT:
+        return _multiply(destination, source)
+    if flags == BLEND_RGBA_MIN:
+        return ImageChops.darker(destination, source)
+    if flags == BLEND_RGBA_MAX:
+        return ImageChops.lighter(destination, source)
+    rgb = (_multiply(destination.convert('RGB'), source.convert('RGB')) if flags == BLEND_RGB_MULT
+           else ImageChops.add(destination.convert('RGB'), source.convert('RGB')))
+    rgb.putalpha(destination.getchannel('A'))
+    return rgb
 
 
 @dataclass(eq=False)
@@ -239,17 +268,13 @@ class Surface:
         if region.width <= 0 or region.height <= 0:
             return region
         if special_flags:
-            if special_flags != BLEND_RGBA_MULT:
-                raise DrawingError('Unsupported fill blend')
-            pixels = raster(self.snapshot())
-            box = (region.x, region.y, region.right, region.bottom)
-            patch = pixels.crop(box)
-            # SDL's multiply is (a*b + 255) >> 8, including alpha.
-            patch = Image.merge('RGBA', [channel.point(lambda a, b=b: (a * b + 255) >> 8)
-                                        for channel, b in zip(patch.split(), rgba(color))])
-            pixels.paste(patch, box)
-            self._ops, self._node = [], Node(self._size, pixels=pixels)
-            self.opaque = pixels.getextrema()[3] == (255, 255)
+            if special_flags == BLEND_RGB_MULT and self.opaque:
+                # An opaque surface's darkening (the HD menus' fades, every frame over the whole canvas): drawn by the
+                # host with its multiply blend, as SDL's RGB multiply leaves opaque pixels opaque.
+                self._append(dict(kind='fill', color=rgba(color)[:3] + (255,), rect=tuple(region), blend='multiply'))
+                return region
+            solid = Image.new('RGBA', region.size, rgba(color))
+            self._blend_into(solid, region.topleft, special_flags, 'fill')
         else:
             if region == self.get_rect():
                 self._ops, self._node = [], None
@@ -264,15 +289,13 @@ class Surface:
         at = int(x), int(y)
         bounds = Rect(*at, *source.get_size()).clip(self._clip)
         if special_flags:
-            if special_flags != BLEND_RGBA_MULT or at != (0, 0) or source.get_size() != self._size:
-                raise DrawingError('Unsupported image blend')
-            a, b = raster(self.snapshot()), raster(source.snapshot())
-            # The timer mask has binary channels. General multiply uses the
-            # same rounded multiplication as the atlas modulation above.
-            pixels = Image.frombytes('RGBA', self._size,
-                                     bytes((x * y + 255) >> 8 for x, y in zip(a.tobytes(), b.tobytes())))
-            self._ops, self._node = [], Node(self._size, pixels=pixels)
-            self.opaque = pixels.getextrema()[3] == (255, 255)
+            if special_flags == BLEND_RGB_ADD and self.opaque and source.opaque:
+                # Opaque over opaque (the episode loading screen's art fading in over black, every frame): drawn by the
+                # host with its additive blend.
+                if bounds.width > 0 and bounds.height > 0:
+                    self._append(dict(kind='blit', source=source.snapshot(), at=at, alpha=source._alpha, blend='add'))
+                return bounds
+            self._blend_into(raster(source.snapshot()), at, special_flags, 'image')
         elif bounds.width > 0 and bounds.height > 0:
             node = source.snapshot()
             if source.opaque and source._alpha == 255 and bounds == self.get_rect():
@@ -281,16 +304,100 @@ class Surface:
             self._append(dict(kind='blit', source=node, at=at, alpha=source._alpha))
         return bounds
 
+    def _blend_into(self, source, at, flags, what):
+        """SDL's blend of the PIL image `source` placed at `at` into this surface, computed exactly here (masks and
+        small pieces: the timer and picker masks, the choice shadows, the switches' pill), within the clip."""
+        region = Rect(*at, *source.size).clip(self._clip)
+        if region.width <= 0 or region.height <= 0:
+            return
+        if flags not in BLENDS:
+            raise DrawingError(f'Unsupported {what} blend')
+        pixels = raster(self.snapshot())
+        box = (region.x, region.y, region.right, region.bottom)
+        piece = source.crop((region.x - at[0], region.y - at[1], region.right - at[0], region.bottom - at[1]))
+        pixels.paste(blend(pixels.crop(box), piece, flags), box)
+        self._ops, self._node = [], Node(self._size, pixels=pixels)
+        self.opaque = pixels.getextrema()[3] == (255, 255)
+
+    def get_bounding_rect(self, min_alpha=1):
+        """pygame's: the smallest rectangle holding every pixel whose alpha is at least `min_alpha` (the HD screens
+        place text by its ink)."""
+        alpha = raster(self.snapshot()).getchannel('A').point(lambda a: 255 if a >= min_alpha else 0)
+        box = alpha.getbbox()
+        return Rect(0, 0, 0, 0) if box is None else Rect(box[0], box[1], box[2] - box[0], box[3] - box[1])
+
     def subsurface(self, rect):
         rect = Rect(rect)
         if rect.x < 0 or rect.y < 0 or rect.right > self.get_width() or rect.bottom > self.get_height():
             raise DrawingError('Subsurface lies outside its source')
-        node = self.snapshot()
+        return SurfaceView(self, rect)
+
+
+def _translated(op, dx, dy):
+    """`op` (a drawing command) moved by (dx, dy)."""
+    op = dict(op)
+    if op['kind'] in ('textured_quad', 'depth_quad', 'textured_rows') and (dx or dy):
+        raise DrawingError(f"Unsupported operation on a subsurface: {op['kind']}")
+    if 'rect' in op:
+        op['rect'] = tuple(Rect(op['rect']).move(dx, dy))
+    if 'at' in op:
+        op['at'] = (op['at'][0] + dx, op['at'][1] + dy)
+    if 'points' in op:
+        op['points'] = tuple((x + dx, y + dy) for x, y in op['points'])
+    if 'center' in op:
+        op['center'] = (op['center'][0] + dx, op['center'][1] + dy)
+    return op
+
+
+class SurfaceView(Surface):
+    """pygame's subsurface: a window onto `parent` that draws into it, clipped to itself (the HD dialogue and choice
+    renderers draw their 320-unit column into the frame-wide layer through one). Reading it (a blit from it, `copy`)
+    takes the parent's pixels as they are then."""
+    def __init__(self, parent, rect):
+        self._parent, self._offset, self._size = parent, (rect.x, rect.y), rect.size
+        self._alpha = 255
+        self._clip = Rect(0, 0, *self._size)
+        self.opaque = False
+
+    def _on_parent(self, call):
+        parent, saved = self._parent, self._parent._clip
+        parent._clip = self._clip.move(*self._offset)
+        try:
+            return call(parent)
+        finally:
+            parent._clip = saved
+
+    def _append(self, op):
+        self._on_parent(lambda parent: parent._append(_translated(op, *self._offset)))
+
+    def fill(self, color, rect=None, special_flags=0):
+        rect = self.get_rect() if rect is None else Rect(rect)
+        region = self._on_parent(lambda parent: parent.fill(color, rect.move(*self._offset), special_flags))
+        return region.move(-self._offset[0], -self._offset[1])
+
+    def blit(self, source, destination, area=None, special_flags=0):
+        x, y = tuple(destination)[:2]
+        at = (x + self._offset[0], y + self._offset[1])
+        bounds = self._on_parent(lambda parent: parent.blit(source, at, area, special_flags))
+        return bounds.move(-self._offset[0], -self._offset[1])
+
+    def snapshot(self):
+        node = self._parent.snapshot()
+        (x, y), (w, h) = self._offset, self._size
         if node.pixels is not None:
-            return self.from_pixels(node.pixels.crop((rect.x, rect.y, rect.right, rect.bottom)))
-        result = Surface(rect.size, SRCALPHA)
-        result.blit(self, (-rect.x, -rect.y))
+            return Node(self._size, pixels=node.pixels.crop((x, y, x + w, y + h)))
+        return Node(self._size, (dict(kind='blit', source=node, at=(-x, -y), alpha=255, clip=(0, 0, w, h)),))
+
+    def copy(self):
+        result = Surface.from_node(self.snapshot())
+        result._alpha = self._alpha
         return result
+
+    def subsurface(self, rect):
+        rect = Rect(rect)
+        if rect.x < 0 or rect.y < 0 or rect.right > self.get_width() or rect.bottom > self.get_height():
+            raise DrawingError('Subsurface lies outside its source')
+        return SurfaceView(self._parent, rect.move(*self._offset))
 
 
 class Draw:
@@ -434,7 +541,16 @@ def raster(node):
                 image.paste(rotated, ((image.width - rotated.width) // 2, (image.height - rotated.height) // 2))
             continue
         layer = image.copy()
-        if kind == 'blit':
+        if op.get('blend'):
+            # The host's multiply / additive blends over opaque pixels (Surface.fill / blit), here as SDL's.
+            if kind == 'fill':
+                x, y, w, h = op['rect']
+                piece, at, flags = Image.new('RGBA', (w, h), tuple(op['color'])), (x, y), BLEND_RGB_MULT
+            else:
+                piece, at, flags = raster(op['source']), tuple(op['at']), BLEND_RGB_ADD
+            box = (*at, at[0] + piece.width, at[1] + piece.height)
+            layer.paste(blend(layer.crop(box), piece, flags), box)
+        elif kind == 'blit':
             source = raster(op['source'])
             if op['alpha'] != 255:
                 source.putalpha(source.getchannel('A').point(lambda a: a * op['alpha'] // 255))
@@ -530,30 +646,104 @@ class FrameEncoder:
 
 
 class PlatformFont:
+    """pygame's Font on CoreText: `face` is a PostScript name (a system face, or one `Fonts` registered from a file's
+    bytes), None for the system face."""
     def __init__(self, bridge, face, size):
         self.bridge, self.face, self.points = bridge, face, max(1, round(size * .75)) if face is None else size
 
     @lru_cache(maxsize=512)
-    def metrics(self, text):
+    def _measure(self, text):
         return self.bridge(dict(operation='text', face=self.face, size=self.points, text=text, measure=True))
 
     def size(self, text):
-        result = self.metrics(text)
+        result = self._measure(text)
         return result['width'], result['height']
 
     def get_linesize(self):
-        return self.metrics('Mg')['height']
+        return self._measure('Mg')['height']
+
+    get_height = get_linesize
+
+    def get_ascent(self):
+        return self._measure('Mg')['ascent']
+
+    def get_descent(self):
+        return -self._measure('Mg')['descent']
+
+    @lru_cache(maxsize=512)
+    def _glyphs(self, text):
+        return tuple(tuple(values) for values in
+                     self.bridge(dict(operation='glyphs', face=self.face, size=self.points, text=text))['glyphs'])
+
+    def metrics(self, text):
+        """pygame's: (min x, max x, min y, max y, advance) per character, y up from the baseline."""
+        return list(self._glyphs(text))
 
     @lru_cache(maxsize=128)
     def render(self, text, antialias, color):
-        result = self.bridge(dict(operation='text', face=self.face, size=self.points, text=text, color=rgba(color)))
+        # SDL_ttf starts the image at the first character's leftmost ink; CoreText draws at the pen, so a negative left
+        # bearing moves the pen in by as much (vector_text steps back by that bearing, as on desktop).
+        left = -min(0, self._glyphs(text[:1])[0][0]) if text else 0
+        result = self.bridge(dict(operation='text', face=self.face, size=self.points, text=text, color=rgba(color),
+                                  left=left))
         return ImageAPI.load(BytesIO(base64.b64decode(result['png'])))
+
+
+class Fonts:
+    """pygame's font module for the HD screens: system faces by family name (`match_font` returns the iOS PostScript
+    name), and fonts from a file or bytes (the HD app's Pajama Hip, a library's `fonts/` folder) registered with
+    CoreText once and then used by name."""
+    # Family -> (regular, bold, italic, bold italic) of the faces iOS ships.
+    FACES = {'arialroundedmtbold': ('ArialRoundedMTBold',) * 4, 'arialrounded': ('ArialRoundedMTBold',) * 4,
+             'arial': ('ArialMT', 'Arial-BoldMT', 'Arial-ItalicMT', 'Arial-BoldItalicMT'),
+             'arialbold': ('Arial-BoldMT', 'Arial-BoldMT', 'Arial-BoldItalicMT', 'Arial-BoldItalicMT'),
+             'trebuchetms': ('TrebuchetMS', 'TrebuchetMS-Bold', 'TrebuchetMS-Italic', 'Trebuchet-BoldItalic'),
+             'trebuchet': ('TrebuchetMS', 'TrebuchetMS-Bold', 'TrebuchetMS-Italic', 'Trebuchet-BoldItalic'),
+             'verdana': ('Verdana', 'Verdana-Bold', 'Verdana-Italic', 'Verdana-BoldItalic'),
+             'helveticaneue': ('HelveticaNeue', 'HelveticaNeue-Bold', 'HelveticaNeue-Italic',
+                               'HelveticaNeue-BoldItalic'),
+             'helvetica': ('Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique')}
+
+    def __init__(self, bridge):
+        self.bridge = bridge
+        self.registered = {}            # sha256 of the bytes -> the PostScript name the host gave them
+
+    @staticmethod
+    def init():
+        pass
+
+    @staticmethod
+    def get_init():
+        return True
+
+    def match_font(self, family, bold=False, italic=False):
+        faces = self.FACES.get(family.replace(' ', '').lower())
+        return None if faces is None else faces[bool(bold) + 2 * bool(italic)]
+
+    def Font(self, source, size):
+        if hasattr(source, 'read'):
+            source = self.register(source.read())
+        elif isinstance(source, str) and os.path.isfile(source):
+            with open(source, 'rb') as stream:
+                source = self.register(stream.read())
+        return PlatformFont(self.bridge, source, size)
+
+    def register(self, data):
+        key = sha256(data).hexdigest()
+        if key not in self.registered:
+            result = self.bridge(dict(operation='register', data=base64.b64encode(data).decode('ascii')))
+            self.registered[key] = result['face']
+        return self.registered[key]
 
 
 class Music:
     def __init__(self, owner, channel='music'):
         self.owner, self.channel = owner, channel
         self.paused = False
+        self.sound = None               # the EffectSound an effect channel plays (pygame's Channel.get_sound)
+
+    def get_sound(self):
+        return self.sound
 
     def command(self, action, **details):
         if self.channel.startswith('effect:'):
@@ -600,6 +790,37 @@ class Music:
             self.owner.playing[self.channel] = True
 
 
+class EffectSound:
+    """pygame's Sound for the HD screens (interface clicks, the pause menu's song, script sounds): each play is one of
+    the host's effect channels, at this sound's volume."""
+    def __init__(self, mixer, data):
+        self.mixer, self.data = mixer, data
+        self.volume = 1.0
+        self.channels = []
+
+    def set_volume(self, volume):
+        self.volume = volume
+        for channel in self.channels:
+            if channel.get_busy():
+                channel.set_volume(volume)
+
+    def get_volume(self):
+        return self.volume
+
+    def play(self):
+        channel = self.mixer.effect(self)
+        self.channels = [playing for playing in self.channels if playing.get_busy()] + [channel]
+        return channel
+
+    def stop(self):
+        for channel in self.channels:
+            channel.stop()
+        self.channels = []
+
+    def get_num_channels(self):
+        return sum(1 for channel in self.channels if channel.get_busy())
+
+
 class Mixer:
     def __init__(self):
         self.commands = []
@@ -608,16 +829,39 @@ class Mixer:
         self.music = Music(self)
         self.menu_music = Music(self, 'menu')
         self.sound_serial = 0
+        self.effects = []               # the effect channels EffectSound.play started, oldest first
 
     def init(self):
         pass  # AVAudioSession is owned by the native host.
 
+    def get_init(self):
+        return True
+
     def stop(self):
         self.commands.append(dict(kind='sounds_stop'))
+        for channel in self.effects:
+            channel.stop()
+        self.effects = []
 
     def Sound(self, *, file):
-        data = base64.b64encode(file.read()).decode('ascii')
-        return SimpleNamespace(play=lambda: self.commands.append(dict(kind='sound', data=data)))
+        return EffectSound(self, base64.b64encode(file.read()).decode('ascii'))
+
+    def effect(self, sound):
+        self.sound_serial += 1
+        channel = Music(self, f'effect:{self.sound_serial}')
+        channel.sound = sound
+        channel.command('load', data=sound.data)
+        channel.set_volume(sound.volume)
+        channel.play()
+        self.effects = [playing for playing in self.effects if playing.get_busy()] + [channel]
+        return channel
+
+    def get_num_channels(self):
+        self.effects = [playing for playing in self.effects if playing.get_busy()]
+        return len(self.effects)
+
+    def Channel(self, index):
+        return self.effects[index]
 
     def play_sound(self, stream, start_ms=0):
         self.sound_serial += 1
@@ -630,6 +874,7 @@ class Mixer:
 class Backend:
     error, Rect, FRect, Surface = DrawingError, Rect, FRect, Surface
     SRCALPHA, BLEND_RGBA_MULT, RESIZABLE = SRCALPHA, BLEND_RGBA_MULT, RESIZABLE
+    BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT = BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT
     # Event values are private to this host. Keyboard digit ordering is used by
     # the shared accessibility/shortcut path, so keep ASCII digits contiguous.
     QUIT, WINDOWFOCUSLOST, WINDOWFOCUSGAINED, DROPBEGIN, DROPFILE, DROPCOMPLETE = range(1, 7)
@@ -637,6 +882,10 @@ class Backend:
     K_1, K_5, K_9 = 49, 53, 57
     K_BACKSPACE, K_RETURN, K_ESCAPE, K_SPACE, K_TAB = 8, 13, 27, 32, 9
     K_UP, K_DOWN, K_PAGEUP, K_PAGEDOWN, K_F5, K_F9 = range(256, 262)
+    # Keys the HD menus also read; the host sends only Return, Backspace and Escape (ios.Host._event).
+    K_LEFT, K_RIGHT, K_KP_ENTER = range(262, 265)
+    K_i = 105
+    KMOD_SHIFT = 3
 
     def __init__(self, bridge, icon_path):
         self.bridge = bridge
@@ -649,12 +898,12 @@ class Backend:
         self.image = ImageAPI(icon_path)
         self.draw, self.transform = Draw(), Transform()
         self.mixer = Mixer()
-        self.font = SimpleNamespace(init=lambda: None, match_font=lambda *a, **k: 'ArialRoundedMTBold',
-                                    Font=lambda face, size: PlatformFont(bridge, face, size))
+        self.font = Fonts(bridge)
         self.time = SimpleNamespace(get_ticks=lambda: self.ticks)
         self.mouse = SimpleNamespace(get_pos=lambda: self.pointer)
         self.key = SimpleNamespace(start_text_input=lambda: self._keyboard(True),
-                                   stop_text_input=lambda: self._keyboard(False), set_text_input_rect=lambda rect: None)
+                                   stop_text_input=lambda: self._keyboard(False), set_text_input_rect=lambda rect: None,
+                                   get_mods=lambda: 0)
         self.display = SimpleNamespace(init=lambda: None, set_mode=self._window, flip=lambda: None,
                                        set_icon=lambda icon: None, set_caption=lambda caption: None)
 

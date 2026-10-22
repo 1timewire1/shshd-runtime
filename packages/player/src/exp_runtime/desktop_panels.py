@@ -63,7 +63,7 @@ are styled to look at home next to the rest of this desktop app's own
 host-UI chrome (matching Desktop._draw_menu's approach), not matched pixel
 for pixel to native art that was never decompiled here.
 """
-import pygame
+from . import graphics as pygame
 
 
 NODE_HEIGHT = 52

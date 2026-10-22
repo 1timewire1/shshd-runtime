@@ -21,7 +21,7 @@ styling from CoD's own windows (IMG_0514 "Exit Game?", IMG_0473 "Play with sound
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .content import ContentError
 from .desktop_hd_menu import CARD_LEFT, CARD_W, HdMenuWindows

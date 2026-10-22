@@ -36,7 +36,7 @@ import os
 from pathlib import Path
 import re
 
-import pygame
+from . import graphics as pygame
 
 from .content import ContentError
 from .fonts import BitmapFont, FontError, Glyph
@@ -117,7 +117,8 @@ def _library_font_path(library, families):
 
 def system_font_path(role: str, library=None):
     """A font file for `role`: an explicit SHS_*_FONT override, else a file the player supplied in their own
-    library's `fonts/` folder (when `library` is given), else one installed on this machine, else None."""
+    library's `fonts/` folder (when `library` is given), else one installed on this machine, else None. On iOS an
+    installed face is its PostScript name (platforms/drawing.Fonts.match_font), which `pygame.font.Font` opens too."""
     variable, families, bold, italic = SYSTEM_FONTS[role]
     override = os.environ.get(variable)
     if override:
@@ -220,6 +221,8 @@ class VectorFont(BitmapFont):
         from .glyph_outline import Outlines, coverage
         outlines = _OUTLINES.get(id(self.source))
         if outlines is None:
+            if self.source.data is None and not os.path.isfile(self.source.path or ''):
+                return None             # a face by name (iOS's system fonts): no outline data to read
             data = self.source.data if self.source.data is not None else Path(self.source.path).read_bytes()
             outlines = _OUTLINES[id(self.source)] = Outlines(data)
         if not outlines.available:

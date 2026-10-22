@@ -1,7 +1,5 @@
 """Release metadata, opt-out, launch lifecycle and both host handoffs."""
-import base64
 from concurrent.futures import Future
-from io import BytesIO
 import json
 import importlib.util
 import os
@@ -283,17 +281,9 @@ class NativeUpdateTests(unittest.TestCase):
         from exp_runtime.app_icon import icon_surface
         from exp_runtime.platforms.drawing import Backend
         from exp_runtime.platforms.ios import Host
-        from PIL import Image, ImageDraw, ImageFont
-        def font(request):
-            face = ImageFont.load_default(size=request['size'])
-            width, height = max(1, round(face.getlength(request['text']))), request['size'] + 5
-            result = dict(width=width, height=height)
-            if not request.get('measure'):
-                image = Image.new('RGBA', (width, height))
-                ImageDraw.Draw(image).text((0, 0), request['text'], font=face, fill=tuple(request['color']))
-                stream = BytesIO(); image.save(stream, format='PNG')
-                result['png'] = base64.b64encode(stream.getvalue()).decode('ascii')
-            return result
+        from PIL import Image
+        from native_host_fonts import FontHost
+        font = FontHost()
         with tempfile.TemporaryDirectory() as temporary, \
                 patch('exp_runtime.updates.runtime_version', return_value='0.4.1'):
             root = Path(temporary)

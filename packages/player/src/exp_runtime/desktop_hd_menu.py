@@ -21,7 +21,7 @@ Not photographed: the notices' single button (an orange OK, string 154), the pre
 menu's highlighted row, a shade darker; the arrow keys' highlight looks the same) and the info-page form (unused by the
 main menu, which shows the pause menu's pages).
 """
-import pygame
+from . import graphics as pygame
 
 from .desktop_pause_hd import FOCUS_SHADE
 from .hd_ui import HdUi, S, FRAME, BLUE

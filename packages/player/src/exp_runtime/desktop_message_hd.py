@@ -19,7 +19,7 @@ Drawn 2x supersampled, so layer pixels are the HD art's native pixels.
 """
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .hd_layout import HdLayouts, STRINGS_ID
 from .menu import MenuStrings

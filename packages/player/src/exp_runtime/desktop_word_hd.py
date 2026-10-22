@@ -17,7 +17,7 @@ from functools import lru_cache
 import math
 import random
 
-import pygame
+from . import graphics as pygame
 
 from .graphics import faded
 from .shs.grid_layout import clamp, ease

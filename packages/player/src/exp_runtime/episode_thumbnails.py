@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 import tempfile
 
-import pygame
+from . import graphics as pygame
 
 from .ad_intro import play_option
 from .content import ContentError

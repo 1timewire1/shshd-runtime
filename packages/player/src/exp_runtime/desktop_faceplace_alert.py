@@ -20,7 +20,7 @@ a photo of a real HD alert (reference/IMG_0092.PNG) and marked below.
 from dataclasses import dataclass, replace
 from functools import lru_cache
 
-import pygame
+from . import graphics as pygame
 
 from .dialogue_animation import DialoguePortrait
 from .fonts import Glyph, TextStyle

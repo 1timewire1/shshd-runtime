@@ -20,7 +20,7 @@ from functools import lru_cache
 import math
 import random
 
-import pygame
+from . import graphics as pygame
 
 from .graphics import faded
 from .shs.football import SELECTED_FRAMES, PLAY_FRAMES as ANDROID_PLAY_FRAMES

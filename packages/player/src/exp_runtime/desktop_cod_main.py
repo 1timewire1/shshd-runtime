@@ -19,7 +19,7 @@ question (IMG_0473).
 from functools import lru_cache
 from io import BytesIO
 
-import pygame
+from . import graphics as pygame
 
 from .desktop_main_hd import HdMainMenu
 from .hd_layout import BankLayouts
