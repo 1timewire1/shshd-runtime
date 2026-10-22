@@ -340,6 +340,7 @@ class HdShell:
     def toggle(self, which):
         if which == 'check_updates':
             self.app.set_update_check(not self.app.settings.check_for_updates)
+            self.app.ui_sound('SOUND_ON_SOUND')
             return
         state = self.app.state
         setattr(state, which, not getattr(state, which))
@@ -347,9 +348,9 @@ class HdShell:
         self.app.menu_music_changed(switched=which == 'music')
         if which == 'vibration' and state.vibration:
             self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
-        if which == 'sound' and state.sound:
-            # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.
-            self.app.ui_sound('SOUND_ON_SOUND', stop_others=True)
+        # `SHSEngine::setSoundEnabled(true, true)`: the Sound switch's own sound, other effects stopped. Every switch
+        # plays it while Sound is on, as in the pause menu (desktop.Desktop.command, owner's choice 2026-10-23).
+        self.app.ui_sound('SOUND_ON_SOUND', stop_others=which == 'sound')
 
     # ------------------------------------------------------------ rendering
 

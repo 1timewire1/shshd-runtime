@@ -786,6 +786,33 @@ class MusicPlaybackTests(unittest.TestCase):
                     ui._sync_audio()
                     self.assertEqual(music.play.call_args.kwargs, dict(loops=-1, start=.2))
 
+    def test_leaving_the_sound_page_fades_the_pause_menus_song(self):
+        ui, resources = self.make_ui(music=8201, repeat=1)
+        resources.library.read_asset = Mock(return_value=b'menu song')
+        with patch('pygame.mixer.music'), patch('pygame.time.get_ticks') as clock, \
+                patch('pygame.mixer.Sound') as sound:
+            song = sound.return_value
+            song.get_num_channels.return_value = 1
+            clock.return_value = 10000
+            ui._sync_audio()
+            ui.command(('menu',))
+            ui.command(('pause_open', 'options:sound'))
+            clock.return_value = 11100
+            ui.music_enabled = False
+            ui.command(('pause_toggle', 'music'))
+            ui._sync_audio()
+            self.assertIs(ui.pause_song, song)
+            ui.command(('pause_back',))                     # back to Options: the song fades at once
+            clock.return_value = 11200
+            ui._sync_audio()
+            clock.return_value = 11700
+            ui._sync_audio()
+            self.assertAlmostEqual(song.set_volume.call_args.args[0], .5 * ui.music_volume)
+            self.assertIsNone(ui.take_pause_song())
+            clock.return_value = 12300
+            ui._sync_audio()
+            song.stop.assert_called_once_with()
+
     def test_the_pause_menus_song_carries_on_into_the_main_menu(self):
         ui, resources = self.make_ui(music=8201, repeat=1)
         resources.library.read_asset = Mock(return_value=b'menu song')

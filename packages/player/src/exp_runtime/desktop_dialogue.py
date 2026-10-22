@@ -1064,6 +1064,15 @@ class DialogueRenderer:
 
     CONTINUE_EXPAND_MS = 250
 
+    def previous_box(self, motion, page):
+        """The last line's final box, which a retained speaker's box resizes from (DialogueAnimation.box_rect). Kept
+        by the renderer, not the save: a restored line already shows its own frame."""
+        if getattr(self, '_box_motion', None) is not motion:
+            self._box_from = getattr(self, '_box_final', None) if getattr(self, '_box_motion', None) else None
+            self._box_motion = motion
+        self._box_final = page.box
+        return self._box_from
+
     def continue_progress(self, session):
         """0..1 through the pill's 250 ms expansion, counted from when this
         dialogue page first shows its text complete. Purely visual, so it
@@ -1145,6 +1154,7 @@ class DialogueRenderer:
         # a full-width strip, to its final height (setupAnimationsForTextLayer, `box_rect`).
         angle, zoom = motion.box_rotation, motion.box_scale
         k = self.scale
+        previous = self.previous_box(motion, page)
         if motion.box_alpha == 0:
             pass                                   # the shake keeps the box hidden until it starts
         elif angle or zoom != 1:
@@ -1158,7 +1168,7 @@ class DialogueRenderer:
             # left of the column's edge. The entrance starts at the portrait housing (the retained one for a
             # speaker without art), the same origin draw_portrait uses.
             mode = motion.portrait.mode if motion.portrait is not None else motion.anchor_mode
-            box = motion.box_rect(page.box, self._portrait_rect(mode) if mode else None)
+            box = motion.box_rect(page.box, self._portrait_rect(mode) if mode else None, previous)
             m = self.margin / k
             self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
                      details['theme'], alpha=self.box_alpha(), scale=k)

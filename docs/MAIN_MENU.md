@@ -545,7 +545,7 @@ SHS HD's own bundle holds byte-identical copies of 8004, 8007, 8009, 8010 and
 | Choice timing out | none | none | `SHSUIMenu::tick` `00046814` / `0003d298` calls `finishUI` directly |
 | Menu row (pause and Options rows, Resume, Main Menu) | 8010 | 8005 | `SHSWidgetMenu::itemSelected` `0004f028` / `000436e8` |
 | Menu button (back, tags 1-4) | 8010 | 8005 | `SHSWidgetMenu::buttonPressed` `0004f288` / `00043944` |
-| Switches (tags 10-12) | none | none | `buttonPressed` |
+| Switches (tags 10-12) | none (ours: 8004, owner's choice) | none (ours: 8005) | `buttonPressed`; this fork plays the Sound-on cue for every switch while Sound is on |
 | Sound switched on | 8004 | 8005 | `SHSEngine::setSoundEnabled(true, true)` `00022280` / `0001f4e4` |
 | Sound FX slider | 8007 | 8005 | `sliderChanged` `0004f1cc` / `00043888`, `getToggleSoundID` |
 | Music slider, while Music is on | 8009 | 8005 | `sliderChanged` |

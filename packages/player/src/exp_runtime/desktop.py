@@ -346,9 +346,10 @@ class Desktop:
         self.music_stream = MusicStream()
         self.music_was_enabled = True
         # The menu's song in the pause menu (see `_sync_pause_song`): its Sound, the ticks its fade-out began, and
-        # whether the Music switch has asked for it (SHSEngine +0xb22c).
+        # whether the Music switch has asked for it (SHSEngine +0xb22c), and the pause page that switch was on.
         self.pause_song = self.pause_song_fade = None
         self.pause_song_wanted = False
+        self.pause_song_page = None
         self.sound_serial = session.engine.sound_serial
         self.vibration_serial = session.engine.vibration_serial
         self.audio = False
@@ -530,11 +531,15 @@ class Desktop:
         """The menu's song in the pause menu. Switching Music on sets `SHSEngine` +0xb22c, which
         `doSoundManagerTransition` (SHS HD 0002a830, CoD 00025c60) turns into the menu's song (MENU_MUSIC, once) as
         soon as the paused episode's music has gone quiet. Switching Music off again fades it over 1000 ms; Resume
-        fades it too, and the episode's song comes back only after it has stopped (`restoreGameAudio`). The Main Menu
-        row hands a song still playing to the main menu (`take_pause_song`)."""
+        fades it too, and the episode's song comes back only after it has stopped (`restoreGameAudio`). Leaving the
+        page whose switch turned Music on (Options > Sound) fades it as Resume does (owner's choice, 2026-10-23). The
+        Main Menu row hands a song still playing to the main menu (`take_pause_song`)."""
         song = self.pause_song
         if song is not None and song.get_num_channels() == 0:
             song = self.pause_song = self.pause_song_fade = None             # it played out
+        left_page = self.pause_hd.state.screen != self.pause_song_page
+        if left_page:
+            self.pause_song_wanted = False
         if (self.pause_song_wanted and song is None and self.menu_open and self.music_enabled and self.active
                 and self.music_stream.silent):
             self.pause_song_wanted = False
@@ -551,8 +556,8 @@ class Desktop:
             self.pause_song_wanted = False
         if song is None:
             return
-        if self.pause_song_fade is None and (not self.menu_open or not self.music_enabled):
-            self.pause_song_fade = now                                      # Resume, or Music off: stop(false)
+        if self.pause_song_fade is None and (not self.menu_open or not self.music_enabled or left_page):
+            self.pause_song_fade = now                                      # Resume, Music off or Back: stop(false)
         if self.pause_song_fade is None:
             song.set_volume(self.music_volume)
             return
@@ -1607,16 +1612,17 @@ class Desktop:
         message = self.message if pygame.time.get_ticks() < self.message_until else ''
         scale = pause_scale(self.pause_elapsed_ms)
         size = tuple(max(1, round(length * scale)) for length in frame.size)
-        # At rest (fully zoomed, no page sliding) the card only changes with what it shows, so the drawn and scaled
-        # card is kept until then (~15 ms a frame at 1080p).
-        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and self.pause_hd.slide is None
+        # At rest (fully zoomed, no page sliding, no switch moving) the card only changes with what it shows, so the
+        # drawn and scaled card is kept until then (~15 ms a frame at 1080p).
+        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and not self.pause_hd.animating()
         key = (repr(settings), message, astuple(self.pause_hd.state), getattr(self.pause_hd, 'pressed', None), size)
         if resting and self._pause_card is not None and self._pause_card[0] == key:
             card, self.pause_buttons = self._pause_card[1:]
         else:
             layer, self.pause_buttons = self.pause_hd.layout(settings, message=message)
             card = pygame.transform.smoothscale(layer, size)
-            self._pause_card = (key, card, self.pause_buttons) if resting else None
+            # A switch drawn with a new value has only just started moving.
+            self._pause_card = (key, card, self.pause_buttons) if resting and not self.pause_hd.animating() else None
         self.window.blit(card, pygame.Rect((0, 0), size).move(frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
 
     def _pause_settings(self):
@@ -1757,9 +1763,11 @@ class Desktop:
             if command[1] == 'music':
                 self.music_enabled = not self.music_enabled
                 self.pause_song_wanted = self.music_enabled                 # SHSEngine::setMusicEnabled(on, true)
+                self.pause_song_page = self.pause_hd.state.screen
                 self._sync_music()
             elif command[1] == 'side_panels':
                 self.toggle_panels()
+                self._ui_sound('SOUND_ON_SOUND')
                 return
             elif command[1] == 'choice_hints':
                 self.choice_hints = not self.choice_hints
@@ -1781,9 +1789,10 @@ class Desktop:
                     self._buzz()
             else:
                 self.sound_enabled = not self.sound_enabled
-                if self.sound_enabled:
-                    # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.
-                    self._ui_sound('SOUND_ON_SOUND', stop_others=True)
+            # `SHSEngine::setSoundEnabled(true, true)` plays the Sound switch's own sound, other effects stopped; the
+            # other switches are silent natively. Adaptation, owner's choice (2026-10-23): every switch plays it, while
+            # Sound is on (so switching Sound off is silent).
+            self._ui_sound('SOUND_ON_SOUND', stop_others=command[1] == 'sound')
             if self.on_settings:
                 self.on_settings()
             return
