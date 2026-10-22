@@ -26,14 +26,15 @@
     sound. The episode's music stays silent until Resume, also when the episode was left for the main menu.
   - The window shows the game's own icon, and the Windows and macOS builds use the kiwi icon instead of
     PyInstaller's default.
-- **Starting an episode shows a loading screen first**, as the original games do: the "Loading / Please wait..."
-  overlay with its running man shows over the main menu's art, which at once fades out to black under it (1 s); the
-  overlay stays on black for another second, then the story starts. The episode picker zooms out over it (0.4 s, as the pause box does), and the menu's music
-  fades out over 1 s instead of stopping at the click. Cause of Death, which has no HD release, uses SHS HD's band
-  with CoD's grey rules, its own "Loading / Please wait..." strings in black and its grey runner. CoD's HD runner
-  and chrome (about 2 s to derive) are prepared in the background during the launch, so the click no longer stalls. This covers
-  New Game, Continue, the "Delete Saved Game?" Yes and the end menu's Replay, in SHS HD and Cause of Death. The
-  durations are estimates, not measured from the original games.
+- **Starting an episode shows a loading screen first**, as the original games do
+  ([#13](https://github.com/1timewire1/shshd-runtime/pull/13), thanks @zazatree): the "Loading / Please wait..."
+  overlay with its running man shows over the main menu's art, which at once fades out to black under it (1 s), and
+  the story starts after 1.5 s, the original's own loading time (`showLoadingBar`'s timer in SHS HD and Cause of Death
+  1.4.7). The episode picker zooms out over it (0.4 s, as the pause box does), and the menu's music fades out over
+  1 s instead of stopping at the click. Cause of Death, which has no HD release, uses SHS HD's band with CoD's grey
+  rules, its own "Loading / Please wait..." strings in black and its grey runner. CoD's HD runner and chrome (about
+  2 s to derive) are prepared in the background during the launch, so the click no longer stalls. This covers New
+  Game, Continue, the "Delete Saved Game?" Yes and the end menu's Replay, in SHS HD and Cause of Death.
 
 ### Fixed
 

@@ -44,11 +44,13 @@ END_MENU, MISS_MENU = 23, 24
 SOUND_DELAY = 0.3                 # seconds the finished loading screen shows before the question
 # Starting an episode (owner, from the original games and a photo of SHS on an iPod touch, 2026-10-22): the story's
 # "Loading / Please wait..." overlay with its running man over the main menu's art (without its buttons); the art fades
-# out to black under it, and the story starts (its first screen, the title card, opens on black). The original's real
-# loading time is not measured; these are the owner's. The runner's frames last 0.07 s each, as `initLoadingBar` gives
-# both iOS games.
-EPISODE_FADE, EPISODE_LOAD, RUNNER_FRAME = 1.0, 1.0, 0.07         # the art fades at once; the overlay stays on black
-EPISODE_TOTAL = EPISODE_FADE + EPISODE_LOAD
+# out to black under it, and the story starts (its first screen, the title card, opens on black). How long: SHS HD's
+# `startNewGame` (00028648) and `resumeGame` both call `showLoadingBar` (000281e4), which sets a 1500 ms timer (0x5dc,
+# engine +0x649d8; CoD 1.4.7's 00024620 sets its +0x64938 the same); `onTick` takes min(200, the frame's ms) off it
+# and the story's script waits until it is below 1 (`isLoadingBarTimerDone`, from `executeWithSyscalls`). The fade's
+# 1 s inside that is the owner's. The runner's frames last 0.07 s each, as `initLoadingBar` gives both iOS games.
+EPISODE_TOTAL, EPISODE_FADE, RUNNER_FRAME = 1.5, 1.0, 0.07        # the art fades at once; the overlay stays on black
+EPISODE_LOAD = EPISODE_TOTAL - EPISODE_FADE
 URLS = {14: 204, 15: 205, 16: 203}        # engine actions 14 / 15 / 16 -> the string holding the EULA / privacy / terms link
 SETTLE = 0.05
 
@@ -152,9 +154,9 @@ class HdShell:
 
     def load_episode(self, then, *, picture=None):
         """An episode is starting: the loading overlay over the main menu's art, which at once fades out under it over
-        EPISODE_FADE seconds; the overlay stays on black for EPISODE_LOAD more, and then `then` (Application.start)
-        takes over. `picture` (the episode
-        picker's own layer) zooms out over it first, as the pause box does (`zoom_out`). Nothing takes input meanwhile."""
+        EPISODE_FADE seconds; the overlay stays on black until the native EPISODE_TOTAL has passed, and then `then`
+        (Application.start) takes over. `picture` (the episode picker's own layer) zooms out over it first, as the
+        pause box does (`zoom_out`). Nothing takes input meanwhile."""
         self.stack.clear()
         self.pause_open = False
         self.pressed = self.drag = self.focus = None

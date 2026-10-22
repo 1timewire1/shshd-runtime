@@ -496,8 +496,9 @@ class ShellActionTests(unittest.TestCase):
         self.assertEqual(calls, ['black'])
 
     def test_an_episode_starts_after_the_loading_overlay_and_the_menu_art_fading_out(self):
-        from exp_runtime.application_hd import EPISODE_FADE, EPISODE_LOAD, MAX_STEP
+        from exp_runtime.application_hd import EPISODE_FADE, EPISODE_LOAD, EPISODE_TOTAL, MAX_STEP
         from exp_runtime.hd_ui import S
+        self.assertEqual(EPISODE_TOTAL, 1.5)        # showLoadingBar's 1500 ms in both iOS games, the fade inside it
         pygame.display.init()
         pygame.display.set_mode((1, 1))
         shell, started, entered = self.shell, [], []
@@ -547,6 +548,7 @@ class ShellActionTests(unittest.TestCase):
         self.assertEqual(started, [])
         while not started:
             shell.tick(MAX_STEP)
+        self.assertAlmostEqual(shell.episode_age, EPISODE_TOTAL, delta=MAX_STEP)
         self.assertEqual(started, ['main'])                                      # back to the menu when left
 
     def test_the_sound_question_zooms_in_like_the_pause_menu_and_takes_input_once_open(self):
