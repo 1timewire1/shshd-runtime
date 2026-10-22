@@ -13,6 +13,12 @@
     sound. The episode's music stays silent until Resume, also when the episode was left for the main menu.
   - The window shows the game's own icon, and the Windows and macOS builds use the kiwi icon instead of
     PyInstaller's default.
+- **Starting an episode shows a loading screen first**, as the original games do: the "Loading / Please wait..."
+  overlay with its running man shows over the main menu's art, which at once fades out to black under it (1 s); the
+  overlay stays on black for another second, then the story starts. The episode picker zooms out over it (0.4 s, as the pause box does), and the menu's music
+  fades out over 1 s instead of stopping at the click. This covers
+  New Game, Continue, the "Delete Saved Game?" Yes and the end menu's Replay, in SHS HD and Cause of Death. The
+  durations are estimates, not measured from the original games.
 
 ### Fixed
 

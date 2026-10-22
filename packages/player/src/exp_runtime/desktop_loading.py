@@ -40,15 +40,21 @@ class LoadingRenderer:
         return layer
 
     def draw(self, target, session):
-        self.canvas.fill((0, 0, 0, 0))
         self.pending_background = self.art.image(session.engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, session.engine)
-        self.canvas.blit(self.panel(), (0, 0))
-        icon = self.art.frame(126, session.engine.loading.animation_frame(
+        self.draw_panel(session.engine.loading.animation_frame(
             ios=getattr(self.resources.library, 'kind', 'apk') == 'ipa'))
-        self.canvas.blit(icon, icon.get_rect(center=(155, 317)))
         target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return []  # Completion comes from the active timer, never a click.
+
+    def draw_panel(self, frame):
+        """The panels with pack 126's runner `frame` (23-27) on the transparent 320 x 480 canvas (also the menus'
+        episode loading screen: application_hd.HdShell.load_episode)."""
+        self.canvas.fill((0, 0, 0, 0))
+        self.canvas.blit(self.panel(), (0, 0))
+        icon = self.art.frame(126, frame)
+        self.canvas.blit(icon, icon.get_rect(center=(155, 317)))
+        return self.canvas
 
 
 class HdLoadingRenderer:
@@ -109,9 +115,18 @@ class HdLoadingRenderer:
         return pygame.transform.smoothscale(native, (native.get_width() * self.S, native.get_height() * self.S))
 
     def draw(self, target, session):
+        self.pending_background = self.art.image(session.engine.panel.background_id)
+        # SHSEngine::initLoadingBar (HD 00022fec) gives each runner frame 0.07 s (0x23020), as both iPhone games do
+        # (exp-runtime v0.6.0, loading.LoadingScreen.animation_frame); Android's is 500 ms.
+        loading = session.engine.loading
+        self.draw_band(loading.animation_frame(ios=True) if hasattr(loading, 'animation_frame') else loading.frame)
+        return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
+
+    def draw_band(self, frame):
+        """The band with runner `frame` (23-27) on the transparent 2x canvas (also the menus' episode loading screen:
+        application_hd.HdShell.load_episode)."""
         S, canvas = self.S, self.canvas
         canvas.fill((0, 0, 0, 0))
-        self.pending_background = self.art.image(session.engine.panel.background_id)
         width = self.FRAME[0] * S
         top, bottom, thick = self.TOP_RULE * S, self.BOTTOM_RULE * S, self.RULE_THICKNESS * S
         pygame.draw.rect(canvas, (255, 255, 255, 243), (0, top, width, bottom - top + thick))
@@ -131,10 +146,6 @@ class HdLoadingRenderer:
         canvas.set_clip(clip)
         pygame.draw.circle(canvas, (255, 255, 255), (cx, cy), round(r * 0.965))
         pygame.draw.circle(canvas, (224, 224, 224), (cx, cy), round(r * 0.81))
-        # SHSEngine::initLoadingBar (HD 00022fec) gives each runner frame 0.07 s (0x23020), as both iPhone games do
-        # (exp-runtime v0.6.0, loading.LoadingScreen.animation_frame); Android's is 500 ms.
-        loading = session.engine.loading
-        frame = loading.animation_frame(ios=True) if hasattr(loading, 'animation_frame') else loading.frame
         runner = self.runner((frame - 23) % 5)
         canvas.blit(runner, runner.get_rect(center=(cx, cy)))
-        return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
+        return canvas
