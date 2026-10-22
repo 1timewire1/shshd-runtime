@@ -5,7 +5,8 @@ windows and the end-of-episode menu, driven by the app's menu engine data (resou
 episode picker, starting an episode, playing a sound, opening a link). Coordinates in and out are frame points.
 
 Stages: `loading` (the EA loading screen), `sound` (menu 7 over it), `flash` (the EA flash), `main`, `end` (the menu shown
-when an episode ends: 23 "Want More Content?" after Football Season, else 24 "Miss An Episode?"). Windows of the menu
+when an episode ends: 23 "Want More Content?" after Football Season, else 24 "Miss An Episode?"), `episode` (the loading
+overlay over the main menu's art, which fades out, before an episode starts: `load_episode`). Windows of the menu
 engine (`stack`) and the pause menu's Options / Help pages (`pause`, drawn by desktop_pause_hd.py) open over `main`.
 
 "More EA Games" (the main menu's fourth button, and the end menus' row, engine action 23) is upstream's Switch Game
@@ -41,6 +42,13 @@ PRIVACY_MENU, LEAVE_MENU, DISABLE_MENU, ENABLE_MENU = 16, 17, 19, 20
 DELETE_MENU, CONNECTION_MENU = 12, 41
 END_MENU, MISS_MENU = 23, 24
 SOUND_DELAY = 0.3                 # seconds the finished loading screen shows before the question
+# Starting an episode (owner, from the original games and a photo of SHS on an iPod touch, 2026-10-22): the story's
+# "Loading / Please wait..." overlay with its running man over the main menu's art (without its buttons); the art fades
+# out to black under it, and the story starts (its first screen, the title card, opens on black). The original's real
+# loading time is not measured; these are the owner's. The runner's frames last 0.07 s each, as `initLoadingBar` gives
+# both iOS games.
+EPISODE_FADE, EPISODE_LOAD, RUNNER_FRAME = 1.0, 1.0, 0.07         # the art fades at once; the overlay stays on black
+EPISODE_TOTAL = EPISODE_FADE + EPISODE_LOAD
 URLS = {14: 204, 15: 205, 16: 203}        # engine actions 14 / 15 / 16 -> the string holding the EULA / privacy / terms link
 SETTLE = 0.05
 
@@ -142,6 +150,87 @@ class HdShell:
         self.pressed = self.drag = None
         self.fade = ('out', -hold, then, time)
 
+    def load_episode(self, then, *, picture=None):
+        """An episode is starting: the loading overlay over the main menu's art, which at once fades out under it over
+        EPISODE_FADE seconds; the overlay stays on black for EPISODE_LOAD more, and then `then` (Application.start)
+        takes over. `picture` (the episode
+        picker's own layer) zooms out over it first, as the pause box does (`zoom_out`). Nothing takes input meanwhile."""
+        self.stack.clear()
+        self.pause_open = False
+        self.pressed = self.drag = self.focus = None
+        self.main.start(intro=False)
+        self.stage, self.episode_age, self.episode_then = 'episode', 0.0, then
+        self.leaving = None if picture is None else (
+            pygame.transform.smoothscale(picture, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+
+    def tick_episode(self, seconds):
+        self.episode_age += seconds
+        if self.leaving is not None:
+            box, ms = self.leaving
+            ms += seconds * 1000
+            self.leaving = (box, ms) if ms < PAUSE_OPEN_MS else None
+        if self.episode_age >= EPISODE_TOTAL:
+            then, self.episode_then = self.episode_then, None
+            self.stage = 'main'                 # what the menu returns to once the episode is left
+            then()
+
+    @staticmethod
+    def band_class():
+        """The episode loading screen's band: SHS HD's own (CodShell's is CoD's)."""
+        from .desktop_loading import HdLoadingRenderer
+        return HdLoadingRenderer
+
+    def band_resources(self):
+        return SimpleNamespace(library=self.library)
+
+    def loading_band(self, frame):
+        """The story's loading overlay (service 91) with runner `frame` (23-27) as a transparent 2x frame layer, or
+        None: SHS HD's band (desktop_loading.HdLoadingRenderer) where the HD chrome is, else the iPhone panels
+        (LoadingRenderer) fitted to the frame's width, as the story picks them (Desktop's 'loading')."""
+        if self.band is None:
+            from .desktop_loading import LoadingRenderer
+            menu = self.app.renderer
+            try:
+                band = self.band_class()(self.band_resources(), menu.art)
+                if not band.available():
+                    resources = SimpleNamespace(library=self.library, dialogue_layout=lambda: SimpleNamespace(bank=menu.bank))
+                    band = LoadingRenderer(resources, menu.text, menu.art)
+                self.band = band
+            except Exception:
+                self.band = False
+        if not self.band:
+            return None
+        try:
+            if hasattr(self.band, 'draw_band'):
+                return self.band.draw_band(frame)
+            panel = self.band.draw_panel(frame)
+        except Exception:               # art missing: the fade alone
+            self.band = False
+            return None
+        width = FRAME[0] * S
+        height = round(panel.get_height() * width / panel.get_width())
+        layer = pygame.Surface((width, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
+        layer.blit(pygame.transform.smoothscale(panel, (width, height)), (0, (layer.get_height() - height) // 2))
+        return layer
+
+    def draw_episode_loading(self):
+        canvas = self.episode_canvas
+        if canvas is None:
+            canvas = self.episode_canvas = pygame.Surface((FRAME[0] * S, FRAME[1] * S)).convert()
+        canvas.fill((0, 0, 0))
+        # The art fades out from the start; the overlay stays over it throughout.
+        fade = max(0.0, min(1.0, 1 - self.episode_age / EPISODE_FADE))
+        if fade > 0:
+            # By colour, not alpha: on a real display the menu's canvas can carry alpha 0 (see draw_fade).
+            canvas.blit(self.main.draw(buttons=False), (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+            keep = round(255 * fade)
+            canvas.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)
+        band = self.loading_band(23 + int(self.episode_age / RUNNER_FRAME) % 5)
+        if band is not None:
+            canvas.blit(band, (0, 0))
+        self.draw_leaving(canvas)
+        return canvas
+
     def arrive(self):
         """Arriving from another game (the frame is black): SHS HD's flash, with its jingle, into the main menu."""
         self.stack.clear()
@@ -152,6 +241,9 @@ class HdShell:
     def tick(self, seconds):
         if seconds > HITCH:
             seconds = MAX_STEP
+        if self.stage == 'episode':
+            self.tick_episode(seconds)
+            return
         if self.fade is not None:
             kind, age, then, time = self.fade
             age += seconds
@@ -262,6 +354,8 @@ class HdShell:
     def render(self, *, overlay=True, buttons=True):
         """The current screen as a 2x canvas (without the open window when `overlay` is off, and without the main
         menu's buttons when `buttons` is off)."""
+        if self.stage == 'episode':
+            return self.draw_episode_loading()
         if self.stage in ('loading', 'sound'):
             canvas = self.boot.draw_loading(min(1.0, self.age / LOADING_TIME))
         elif self.stage == 'flash':
@@ -355,6 +449,10 @@ class HdShell:
     pause_ms = PAUSE_OPEN_MS
     leaving = None
     window_ms = PAUSE_OPEN_MS
+    episode_age = 0.0
+    episode_then = None
+    episode_canvas = None
+    band = None                     # the loading overlay's renderer, once drawn (False without its art)
 
     # ------------------------------------------------------------ input (frame points)
 

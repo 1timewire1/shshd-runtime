@@ -24,6 +24,7 @@ through black to the main menu, which slowly fades in (no EA flash; timings belo
 menus') open SHS HD's pickers in CoD's dress (`desktop_cod_episodes.py`), or the plain episode browser when the
 library has no SHS HD art source. "More EA Games" (main menu, and end-menu action 30) is Switch Game, as in SHS HD.
 """
+import threading
 from types import SimpleNamespace
 
 from .application_hd import HdShell
@@ -77,6 +78,34 @@ class CodShell(HdShell):
         self.body_scroll = 0.0
         self.drag = None
         self.silent = False
+        self.art_ready = threading.Event()
+        self.warm_hd_art()
+
+    def warm_hd_art(self):
+        """Derive CoD's HD common frames (ContentLibrary.cod_hd_common, about 2 s, cached for the process) on a thread
+        while the launch screens show, so the episode loading screen's runner and the story's chrome do not hold up
+        the first frame that needs them. The bytes are read here; the thread only computes."""
+        try:
+            hd = self.library.shs_hd_resource(155) if getattr(self.library, 'shs_hd_art', None) is not None else None
+            cod = self.library.android_asset(126) if hd is not None else None
+        except Exception:
+            hd = None
+        if hd is None:
+            self.art_ready.set()            # nothing to derive
+            return
+
+        def derive():
+            try:
+                from .cod.hd_art import derived_common
+                derived_common(cod, hd)
+            except Exception:
+                pass
+            finally:
+                self.art_ready.set()
+        threading.Thread(target=derive, name='cod-hd-art', daemon=True).start()
+
+    def band_resources(self):
+        return SimpleNamespace(library=self.library, hd_ready=self.art_ready.is_set)
 
     @staticmethod
     def available(library):
@@ -102,6 +131,12 @@ class CodShell(HdShell):
 
     def replay_launch(self):
         """CoD has no EA flash to replay: only the buttons slide in again (`enter_main`)."""
+
+    @staticmethod
+    def band_class():
+        """SHS HD's loading band in CoD's dress (desktop_loading.CodLoadingBand)."""
+        from .desktop_loading import CodLoadingBand
+        return CodLoadingBand
 
     def backdrop_available(self):
         """The "SHS HD Backdrop" switch shows when the SHS HD art source can supply the collage."""

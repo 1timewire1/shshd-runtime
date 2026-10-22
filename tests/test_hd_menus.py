@@ -495,6 +495,60 @@ class ShellActionTests(unittest.TestCase):
             shell.tick(MAX_STEP)
         self.assertEqual(calls, ['black'])
 
+    def test_an_episode_starts_after_the_loading_overlay_and_the_menu_art_fading_out(self):
+        from exp_runtime.application_hd import EPISODE_FADE, EPISODE_LOAD, MAX_STEP
+        from exp_runtime.hd_ui import S
+        pygame.display.init()
+        pygame.display.set_mode((1, 1))
+        shell, started, entered = self.shell, [], []
+        shell.fade, shell.pause_open, shell.pressed, shell.drag = None, False, None, None
+        art = pygame.Surface((768 * S, 1024 * S), pygame.SRCALPHA)
+        art.fill((200, 200, 200, 0))            # a real display's menu canvas can carry alpha 0
+        shell.main = SimpleNamespace(start=lambda intro: entered.append(intro), draw=lambda buttons: art,
+                                     hits=[('rect', ('play',))], ready=True)
+        band, frames = pygame.Surface((768 * S, 1024 * S), pygame.SRCALPHA), []
+        band.fill((0, 0, 255), (384 * S - 5, 512 * S - 5, 10, 10))
+
+        def loading_band(frame):
+            frames.append(frame)
+            return band
+        shell.loading_band = loading_band
+        shell.stack.queue(17)
+        picker = pygame.Surface((768, 1024), pygame.SRCALPHA)
+        picker.fill((255, 0, 0, 255))
+        shell.leaving = None
+        shell.load_episode(lambda: started.append(shell.stage), picture=picker)
+        self.assertEqual((shell.stage, shell.stack.stack, entered, shell.hits()), ('episode', [], [False], []))
+        self.assertEqual(shell.render().get_at((10, 10))[:3], (255, 0, 0))       # the picker, about to zoom out
+        shell.tick(.2)
+        canvas = shell.render()
+        self.assertEqual(canvas.get_at((10, 10))[:3], (160, 160, 160))           # shrinking off the fading art
+        self.assertGreater(canvas.get_at((384 * S, 400 * S))[0], 240)
+        shell.tick(.2)
+        self.assertIsNone(shell.leaving)                                         # gone
+        shell.load_episode(lambda: started.append(shell.stage))
+        frames.clear()
+        canvas = shell.render()
+        self.assertEqual(canvas.get_at((384 * S, 512 * S))[:3], (0, 0, 255))     # the loading overlay
+        self.assertEqual(canvas.get_at((10, 10))[:3], (200, 200, 200))           # over the menu art at once
+        self.assertEqual(frames, [23])
+        shell.tick(MAX_STEP)
+        self.assertLess(shell.render().get_at((10, 10))[0], 200)                # fading from the first frame
+        while shell.episode_age < EPISODE_FADE / 2:
+            shell.tick(MAX_STEP)
+        canvas = shell.render()
+        self.assertTrue(0 < canvas.get_at((10, 10))[0] < 200)                    # the art fading out
+        self.assertEqual(canvas.get_at((384 * S, 512 * S))[:3], (0, 0, 255))     # under the overlay, which stays
+        while shell.episode_age < EPISODE_FADE + EPISODE_LOAD / 2:
+            shell.tick(MAX_STEP)
+        canvas = shell.render()
+        self.assertEqual(canvas.get_at((10, 10))[:3], (0, 0, 0))                 # gone; the overlay on black
+        self.assertEqual(canvas.get_at((384 * S, 512 * S))[:3], (0, 0, 255))
+        self.assertEqual(started, [])
+        while not started:
+            shell.tick(MAX_STEP)
+        self.assertEqual(started, ['main'])                                      # back to the menu when left
+
     def test_the_sound_question_zooms_in_like_the_pause_menu_and_takes_input_once_open(self):
         from exp_runtime.application_hd import LOADING_TIME, SOUND_DELAY
         from exp_runtime.desktop_pause import PAUSE_OPEN_MS
@@ -743,6 +797,14 @@ class CodShellActionTests(unittest.TestCase):
         from exp_runtime.application_cod import CodShell
         shell = object.__new__(CodShell)
         self.assertEqual((shell.fade, shell.flash_over_black, shell.fade_level()), (None, False, 0.0))
+
+    def test_the_episode_loading_band_is_shs_hds_in_cods_dress_not_the_stretched_iphone_panel(self):
+        from exp_runtime.application_cod import CodShell
+        from exp_runtime.desktop_loading import CodLoadingBand, HdLoadingRenderer
+        self.assertIs(CodShell.band_class(), CodLoadingBand)
+        self.assertIs(HdShell.band_class(), HdLoadingRenderer)
+        self.assertEqual((CodLoadingBand.RULE, HdLoadingRenderer.RULE), ((79, 81, 81), HdLoadingRenderer.BLUE))
+        self.assertEqual((CodLoadingBand.TEXT, HdLoadingRenderer.TEXT), ((0, 0, 0), HdLoadingRenderer.BLUE))
 
     def test_only_a_complete_cod_library_gets_the_shell(self):
         from exp_runtime.application_cod import CodShell

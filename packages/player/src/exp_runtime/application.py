@@ -676,7 +676,7 @@ class Application:
         if replay and self.end_record:
             self.game = None
             self.selected = self.end_record
-            self.start(resume=False)
+            self.enter_episode(resume=False)
         elif picker and self.picker_available():
             self.show('main', remember=False)
             self.open_picker(style=style)
@@ -763,7 +763,7 @@ class Application:
         self.transition_age = 0
         if screen == 'main':
             self.menu_age, self.intro = 0, False
-            if self.shell is not None and self.shell.stage not in ('loading', 'sound', 'flash'):
+            if self.shell is not None and self.shell.stage not in ('loading', 'sound', 'flash', 'episode'):
                 self.shell.enter_main()
         self.buttons = []
 
@@ -900,6 +900,24 @@ class Application:
             self.resume_paused()
         self.game._sync_music()
         self.refresh_saves()
+
+    def enter_episode(self, **options):
+        """Start the selected episode from the HD menus behind the episode loading screen (HdShell.load_episode), or
+        at once without them. `options` are start()'s. The picker, if it is showing, zooms out over the loading
+        screen, and the menu's music fades out (over FADE_MS, as the Music switch's) rather than stopping."""
+        if self.shell is None:
+            self.start(**options)
+            return
+        picture = self.picker.draw(backdrop=False).copy() if self.screen == 'picker' and self.picker else None
+        if self.menu_sound is not None and self.menu_fade is None:
+            self.menu_fade = pygame.time.get_ticks()
+        self.shell.load_episode(lambda: self._enter_loaded(options), picture=picture)
+        self.show('main', remember=False)
+
+    def _enter_loaded(self, options):
+        self._attempt(lambda: self.start(**options))
+        if self.screen == 'main':
+            self.shell.enter_main()     # it did not start (an unloadable save): the menu, with the message
 
     def resume_paused(self):
         """The original game resumes paused. The pause menu zooms open without gear sound."""
@@ -1605,7 +1623,7 @@ class Application:
                 picker.popup_focus = ('continue', command[1]) if picker.keyboard else None
             else:
                 self.selected = command[1]
-                self.start(resume=False)
+                self.enter_episode(resume=False)
         elif kind == 'new' and self.shell is not None and command[1] in self.saved:
             record = picker.model.by_id[command[1]]
             self.selected = command[1]
@@ -1614,12 +1632,12 @@ class Application:
             # it back.
             def start_over():
                 picker.popup = None
-                self.start(resume=False)
+                self.enter_episode(resume=False)
             self.shell.confirm_new_game(picker.model.label(record), start_over)
         elif kind in ('new', 'continue'):
             picker.popup = None
             self.selected = command[1]
-            self.start(resume=kind == 'continue', paused=kind == 'continue')
+            self.enter_episode(resume=kind == 'continue', paused=kind == 'continue')
 
     def _pointer_event(self, event):
         if event.type != pygame.MOUSEMOTION and event.button != 1:
