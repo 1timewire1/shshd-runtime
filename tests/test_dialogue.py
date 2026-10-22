@@ -42,6 +42,20 @@ class DialogueTests(unittest.TestCase):
             self.assertFalse(session.engine.dialogue_animation.box_grow)
             self.assertEqual(session.engine.dialogue_animation.box_rect(box, portrait), box)
 
+    def test_retained_speaker_box_resizes_from_the_previous_frame(self):
+        from exp_runtime.ui_assets import Rect
+        session = self.session()
+        answer_screen(session)
+        answer_screen(session)
+        answer_screen(session)  # same speaker: no grow track
+        motion = session.engine.dialogue_animation
+        self.assertFalse(motion.box_grow)
+        old, box = Rect(20, 290, 280, 60), Rect(20, 290, 280, 100)
+        for elapsed, height in ((0, 60), (125, 80), (250, 100), (400, 100)):
+            session.tick(elapsed - motion.elapsed_ms)
+            self.assertEqual(motion.box_rect(box, None, old), Rect(20, 290, 280, height))
+        self.assertEqual(motion.box_rect(box, None), box)
+
     def test_bubble_clock_pauses_and_restores_without_replaying_the_vm(self):
         from exp_runtime.ui_assets import Rect
         session = self.session()

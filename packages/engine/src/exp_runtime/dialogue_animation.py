@@ -16,6 +16,7 @@ NAME_FADE_MS = 300
 CONTINUE_MS = 250
 BOX_TRAVEL_MS = 120
 BOX_OPEN_MS = 200
+BOX_RESIZE_MS = 250
 EXPRESSION_MS = 1000
 EXPRESSION_END_MS = 3150
 # SHS HD and CoD request the line's expression on the dialog's first tick (issue #2): `SHSUIDialog::tick` (HD 00044654,
@@ -253,16 +254,29 @@ class DialogueAnimation:
             return angle * (1 - 2 * t / 70)
         return -angle * (1 - progress(t - 70 - pause, 70))
 
-    def box_rect(self, box, portrait):
+    def box_rect(self, box, portrait, previous=None):
         """Native iOS bubble keyframes; layout and text regions stay final-sized.
 
         setupAnimationsForTextLayer: 1x1 at the portrait, travel to a
         full-width 20px strip in 120ms, then grow to final height in 200ms.
         The nine border pieces keep their own dimensions throughout.
+
+        `previous` is the last line's final frame. A retained speaker gets no
+        grow track, but its bubble is laid out again for the new text and the
+        pieces' implicit actions carry it there from the old frame (owner's
+        report: narration to narration resizes rather than snapping). The
+        duration is Core Animation's default 0.25 s, linear, from the line's
+        start; unverified against a disassembly or a frame capture.
         """
-        if not self.box_grow or self.page_turn or self.visuals_finished:
+        if self.page_turn or self.visuals_finished:
             return box
         from .ui_assets import Rect
+        if not self.box_grow:
+            if self.changed or self.wobble_direction or previous is None or previous == box:
+                return box
+            t = progress(self.elapsed_ms, BOX_RESIZE_MS)
+            return Rect(*(round(a + (b - a) * t) for a, b in zip(
+                (previous.x, previous.y, previous.width, previous.height), (box.x, box.y, box.width, box.height))))
         elapsed = self.elapsed_ms - (self.name_delay_ms - BOX_TRAVEL_MS)
         if elapsed < BOX_TRAVEL_MS:
             x, y = portrait.center if portrait is not None else (0, 0)
