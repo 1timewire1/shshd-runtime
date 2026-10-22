@@ -2,6 +2,19 @@
 
 ## Unreleased (shshd-runtime)
 
+### Added
+
+- **Skip Upsell Intros** (SHS, Options > General on the main menu, and the older menu's Cheats page;
+  [#8](https://github.com/1timewire1/shshd-runtime/issues/8)). Thirty-three episodes open with store plugs before
+  their story: "Want to catch up? Grab the Season 1 Set...", the Story Vote Ticket and genre votes, the Season 2
+  update, the Novel Prelude pack, Holiday Short Stories, the Cause of Death plug. With the switch on, a new game
+  passes those lines and starts at the episode's title card or its own recap. The lines were chosen one by one from
+  every episode's opening (Game of Cones' and the novel's openings are story, and April Fools' joke messages stay).
+  The runtime keeps them as hashes of their text; an opening that does not match is left alone. Season sets that
+  show a plug after their chapter menu, and Cause of Death's plugs, are not covered yet.
+- The older menu's Cheats page (libraries without SHS HD) is respaced: its four switches and their notes now fit
+  inside the box instead of running under the Back button.
+
 ### Changed
 
 - **Episode picker popups, resuming and the app icon**

@@ -47,6 +47,7 @@ SIDE_PANELS_LABEL = 'Side Panels'
 CHOICE_HINTS_LABEL = 'Choice Hints'
 SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
+SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS episodes open with (upsell_intro.py)
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
@@ -57,7 +58,7 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'hd_backdrop', 'check_updates')
+GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -71,6 +72,7 @@ CYCLE_SIZE, CYCLE_POINTS = (104, 34), 18
 SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'autoplay': AUTOPLAY_LABEL,
                  'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
+                 'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
 # (rms ~2 levels): out = M . (r, g, b) + c.
@@ -411,7 +413,7 @@ class HdPauseMenu:
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'hd_backdrop'),
+        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""

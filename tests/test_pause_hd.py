@@ -72,6 +72,11 @@ class HdPauseTests(unittest.TestCase):
         self.settings.update(side_panels=False, hd_backdrop=True)
         self.assertEqual([c[1] for _, c in self.commands() if c[0] == 'pause_toggle'],
                          ['side_panels', 'skip_ad_intros', 'hd_backdrop'])
+        # Skip Upsell Intros follows Skip Ad Intros where the main menu offers it.
+        self.settings.update(skip_upsell_intros=False)
+        self.assertEqual([c[1] for _, c in self.commands() if c[0] == 'pause_toggle'],
+                         ['side_panels', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop'])
+        del self.settings['skip_upsell_intros']
         # This player's Autoplay Dialogue comes after the side panels (owner, 2026-10-21).
         self.settings.update(autoplay=False, disable_choice_timer=True)
         rows = self.menu.option_rows('general', self.settings, self.menu.strings())
@@ -336,6 +341,9 @@ class CodPauseTests(unittest.TestCase):
         self.menu.state.screen = 'options:general'
         self.settings['hd_backdrop'] = True
         self.assertIn(('pause_toggle', 'hd_backdrop'), [c[:2] for _, c in self.buttons()])
+        # CoD's store plugs are not mapped yet: Skip Upsell Intros is SHS's only.
+        self.settings['skip_upsell_intros'] = False
+        self.assertNotIn(('pause_toggle', 'skip_upsell_intros'), [c[:2] for _, c in self.buttons()])
 
     def test_cods_own_overrides_and_version_token(self):
         from exp_runtime import desktop_cod_pause, help_text_overrides

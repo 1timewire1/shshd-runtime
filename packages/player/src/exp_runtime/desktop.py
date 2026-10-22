@@ -1620,7 +1620,8 @@ class Desktop:
         self.window.blit(card, pygame.Rect((0, 0), size).move(frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
 
     def _pause_settings(self):
-        # No Skip Ad Intros here: it only acts as an episode starts, so the main menu's Options alone lists it (owner).
+        # No Skip Ad / Upsell Intros here: they only act as an episode starts, so the main menu's Options alone lists
+        # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,

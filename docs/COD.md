@@ -799,9 +799,9 @@ CoD's colours (`cod/hd_art.positional_frames`).
   not draw on the device. One is drawn as SHS HD's is.
 - **Options categories (2026-10-14, both games).** Options lists categories, laid out like Help & About's list, and
   each opens a page of its own rows (`desktop_pause_hd.OPTION_CATEGORIES`):
-  - **General:** Side Panels (in a story, SHS only), Autoplay Dialogue, Skip Ad Intros (SHS only, main menu only:
-    it acts as an episode starts), SHS HD Backdrop (both games, where a collage exists) and Check for Updates (main
-    menu).
+  - **General:** Side Panels (in a story, SHS only), Autoplay Dialogue, Skip Ad Intros and Skip Upsell Intros (SHS
+    only, main menu only: they act as an episode starts; CoD's store plugs are not mapped yet), SHS HD Backdrop (both
+    games, where a collage exists) and Check for Updates (main menu).
   - **Sound:** Game Music and Sound FX, with their sliders.
   - **Extras** (owner, 2026-10-21): the play aids, Disable Choice Timer, Choice Hints (CoD: Choice & Answer Hints)
     and Ask to Skip Mini-Games (CoD's word quizzes too).

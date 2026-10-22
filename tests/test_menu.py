@@ -294,6 +294,17 @@ class LibraryMenuTests(unittest.TestCase):
         state.path.write_text(json.dumps(data))
         self.assertIn('Invalid player preferences', MenuState(self.library).warning)
 
+    def test_skip_upsell_intros_defaults_off_and_survives_reopen(self):
+        state = MenuState(self.library)
+        self.assertFalse(state.skip_upsell_intros)
+        state.skip_upsell_intros = True
+        state.persist()
+        self.assertTrue(MenuState(self.library).skip_upsell_intros)
+        data = json.loads(state.path.read_text())
+        data['skip_upsell_intros'] = 'yes'                       # not a bool: the whole file is refused
+        state.path.write_text(json.dumps(data))
+        self.assertIn('Invalid player preferences', MenuState(self.library).warning)
+
     def test_the_vibration_switch_defaults_off_and_survives_reopen(self):
         state = MenuState(self.library)
         self.assertFalse(state.vibration)

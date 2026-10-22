@@ -1149,7 +1149,7 @@ class Application:
             elif kind == 'toggle':
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
-                               'autoplay', 'disable_choice_timer'):
+                               'skip_upsell_intros', 'autoplay', 'disable_choice_timer'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)

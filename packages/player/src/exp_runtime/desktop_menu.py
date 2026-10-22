@@ -417,19 +417,16 @@ class MenuRenderer:
                 self.button('Switch Game', (165, 436, 143, 29), ('switch_games',))
         elif screen == 'cheats':
             self.panel('Cheats')
-            self.label('Answer hints', (31, 126, 170, 30), size=20)
-            self.button('On' if app.state.choice_hints else 'Off', (213, 124, 78, 29),
-                        ('toggle', 'choice_hints'))
-            self.label('Green: gain or correct answer.\nRed: loss, wrong answer, or no gain where another answer gains.\nAmber: mixed effects.',
-                       (30, 184, 260, 120), color=GRAY)
-            self.label('Includes classroom and word quizzes, and short sequences with delayed rewards. Uncertain outcomes stay unmarked. An empty CoD answer field shows a faint answer.',
-                       (30, 284, 260, 80), color=GRAY)
-            self.label('Ask to skip mini-games', (31, 372, 170, 30), size=20)
-            self.button('On' if app.state.skip_minigames else 'Off', (213, 370, 78, 29),
-                        ('toggle', 'skip_minigames'))
-            self.label('Football and word games first ask: Win, Lose or Play.', (30, 404, 260, 24), color=GRAY)
-            self.label('Skip ad intros', (31, 430, 170, 30), size=20)
-            self.button('On' if app.state.skip_ad_intros else 'Off', (213, 428, 78, 29), ('toggle', 'skip_ad_intros'))
+            # Four switches, each with a short note, inside the box (its bottom is y 412).
+            rows = (('Answer hints', 'choice_hints', 'Green: gain or right. Red: loss or wrong. Amber: mixed effects.'),
+                    ('Skip mini-games', 'skip_minigames', 'Football and word games first ask: Win, Lose or Play.'),
+                    ('Skip ad intros', 'skip_ad_intros', 'Starts High School Story ad episodes at the story.'),
+                    ('Skip upsell intros', 'skip_upsell_intros', 'Skips the store plugs some episodes open with.'))
+            for index, (label, setting, note) in enumerate(rows):
+                y = 122 + index * 72
+                self.label(label, (31, y + 2, 178, 30), size=20)
+                self.button('On' if getattr(app.state, setting) else 'Off', (213, y, 78, 29), ('toggle', setting))
+                self.label(note, (30, y + 32, 260, 38), color=GRAY)
         elif screen == 'title_languages':
             self.panel('Episode Titles')
             self.label('Choose episode names where translations are available. Story text stays in the language of each supplied episode.',

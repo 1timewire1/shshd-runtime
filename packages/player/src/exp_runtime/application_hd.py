@@ -199,6 +199,7 @@ class HdShell:
         settings = dict(vibration=state.vibration, music=state.music, sound=state.sound, music_volume=state.music_volume / 100,
                         sound_volume=state.sound_volume / 100, choice_hints=state.choice_hints,
                         skip_minigames=state.skip_minigames, skip_ad_intros=state.skip_ad_intros,
+                        skip_upsell_intros=state.skip_upsell_intros,
                         autoplay=state.autoplay, disable_choice_timer=state.disable_choice_timer)
         if self.backdrop_available():
             settings['hd_backdrop'] = state.hd_backdrop

@@ -85,6 +85,7 @@ class MenuState:
         # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
         self.skip_minigames = False
         self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
+        self.skip_upsell_intros = False     # pass the store plugs some SHS episodes open with (upsell_intro.py)
         self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
         self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
@@ -105,6 +106,7 @@ class MenuState:
                         or type(data.get('choice_hints', False)) is not bool
                         or type(data.get('skip_minigames', False)) is not bool
                         or type(data.get('skip_ad_intros', False)) is not bool
+                        or type(data.get('skip_upsell_intros', False)) is not bool
                         or type(data.get('autoplay', False)) is not bool
                         or type(data.get('disable_choice_timer', False)) is not bool
                         or type(data.get('vibration', False)) is not bool
@@ -131,6 +133,7 @@ class MenuState:
                 self.choice_hints = data.get('choice_hints', False)
                 self.skip_minigames = data.get('skip_minigames', False)
                 self.skip_ad_intros = data.get('skip_ad_intros', False)
+                self.skip_upsell_intros = data.get('skip_upsell_intros', False)
                 self.autoplay = data.get('autoplay', False)
                 self.disable_choice_timer = data.get('disable_choice_timer', False)
                 names = data.get('names', {})
@@ -192,6 +195,7 @@ class MenuState:
                     warp_unlocked=self.warp_unlocked, hd_art=self.hd_art,
                     title_language=self.title_language, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
+                    skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, names=self.names)      # in the order written: replacement walks the table in that order
         temporary = None
@@ -215,6 +219,9 @@ class MenuState:
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)
+        if path is None and self.skip_upsell_intros:
+            from .upsell_intro import skip_upsell_intro
+            session = skip_upsell_intro(session)
         self.process.attach(session, restored=path is not None)
         self.selected = resources.record['id']
         self.persist()
