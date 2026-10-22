@@ -48,6 +48,27 @@ class HdPauseTests(unittest.TestCase):
         # 112 header + 4 rows + 86 footer, centered on y 512.
         self.assertEqual(buttons[-1][0].bottom + 86, 512 + (112 + 4 * 88 + 86) // 2)
 
+    def test_a_toggled_switch_slides_its_knob_and_keeps_the_card_animating(self):
+        menu, SWITCH_MS = self.menu, self.module.SWITCH_MS
+        menu.state.screen = 'options:extras'
+        self.commands()
+        self.assertEqual(menu.switches['choice_hints'], (0., 0., SWITCH_MS))     # first shown at rest
+        self.assertFalse(menu.animating())
+        self.settings['choice_hints'] = True
+        self.commands()
+        self.assertTrue(menu.animating())
+        menu.advance(SWITCH_MS / 2)
+        self.assertAlmostEqual(menu.switch_position('choice_hints', True), .5, places=5)
+        self.settings['choice_hints'] = False                              # back again from halfway
+        self.commands()
+        menu.advance(SWITCH_MS / 2)
+        self.assertGreater(menu.switch_position('choice_hints', False), 0.)
+        menu.advance(SWITCH_MS)
+        self.assertEqual(menu.switch_position('choice_hints', False), 0.)
+        self.assertFalse(menu.animating())
+        menu.open('options:sound')                                         # a new page's switches start at rest
+        self.assertIsNone(menu.switches)
+
     def test_host_rows_follow_the_real_ones(self):
         buttons = self.commands(host_rows=[('Save', ('save',))])
         self.assertEqual([c for _, c in buttons][-2:], [("main_menu",), ("save",)])

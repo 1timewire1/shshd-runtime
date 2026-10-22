@@ -1612,16 +1612,17 @@ class Desktop:
         message = self.message if pygame.time.get_ticks() < self.message_until else ''
         scale = pause_scale(self.pause_elapsed_ms)
         size = tuple(max(1, round(length * scale)) for length in frame.size)
-        # At rest (fully zoomed, no page sliding) the card only changes with what it shows, so the drawn and scaled
-        # card is kept until then (~15 ms a frame at 1080p).
-        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and self.pause_hd.slide is None
+        # At rest (fully zoomed, no page sliding, no switch moving) the card only changes with what it shows, so the
+        # drawn and scaled card is kept until then (~15 ms a frame at 1080p).
+        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and not self.pause_hd.animating()
         key = (repr(settings), message, astuple(self.pause_hd.state), getattr(self.pause_hd, 'pressed', None), size)
         if resting and self._pause_card is not None and self._pause_card[0] == key:
             card, self.pause_buttons = self._pause_card[1:]
         else:
             layer, self.pause_buttons = self.pause_hd.layout(settings, message=message)
             card = pygame.transform.smoothscale(layer, size)
-            self._pause_card = (key, card, self.pause_buttons) if resting else None
+            # A switch drawn with a new value has only just started moving.
+            self._pause_card = (key, card, self.pause_buttons) if resting and not self.pause_hd.animating() else None
         self.window.blit(card, pygame.Rect((0, 0), size).move(frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
 
     def _pause_settings(self):
