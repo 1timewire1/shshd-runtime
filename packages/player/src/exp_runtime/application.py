@@ -1359,6 +1359,9 @@ class Application:
             menu = self.shell.render(overlay=not under, buttons=not getattr(self.shell.main, 'left', False)).copy()
             if menu.get_size() != canvas.get_size():
                 menu = pygame.transform.smoothscale(menu, canvas.get_size())
+            # On a display with an alpha channel (macOS) the menu's canvas can carry alpha 0, and what the lists' card
+            # left uncovered while it zoomed in came out black (zazatree's report).
+            pygame.opaque(menu)
             if back:
                 if self.picker_back_layer is None:
                     self.picker_back_layer = self.shell.window_layer(self.shell.DELETE_MENU, menu.get_size())
