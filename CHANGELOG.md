@@ -17,6 +17,16 @@
 
 ### Changed
 
+- **The dialogue box, the Options switches and the pause menu's song**
+  ([#14](https://github.com/1timewire1/shshd-runtime/pull/14), thanks @zazatree):
+  - **A retained speaker's box resizes instead of snapping**, narration to narration included: from the last line's
+    box to the new one over 0.25 s, linearly. The original lets Core Animation carry its bubble there with its
+    defaults (`SHSUIDialog::animateTextLayer` sets the new frame with implicit actions enabled).
+  - **The Options switches slide** to their new side, as UIKit's switches do (0.2 s, not measured).
+  - **The Options switches click** as the menu's rows do (owner's choice: they are silent in the original). The Sound
+    switch keeps only its own sound when it is switched on.
+  - **Leaving Options > Sound fades the menu's song** that switching Music on there started, as Resume does (owner's
+    choice).
 - **Episode picker popups, resuming and the app icon**
   ([#12](https://github.com/1timewire1/shshd-runtime/pull/12), thanks @zazatree):
   - The New Game / Continue popup zooms open (an accepted difference: the original shows it at once).

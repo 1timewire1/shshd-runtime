@@ -1767,7 +1767,7 @@ class Desktop:
                 self._sync_music()
             elif command[1] == 'side_panels':
                 self.toggle_panels()
-                self._ui_sound('SOUND_ON_SOUND')
+                self._menu_sound()
                 return
             elif command[1] == 'choice_hints':
                 self.choice_hints = not self.choice_hints
@@ -1789,10 +1789,14 @@ class Desktop:
                     self._buzz()
             else:
                 self.sound_enabled = not self.sound_enabled
-            # `SHSEngine::setSoundEnabled(true, true)` plays the Sound switch's own sound, other effects stopped; the
-            # other switches are silent natively. Adaptation, owner's choice (2026-10-23): every switch plays it, while
-            # Sound is on (so switching Sound off is silent).
-            self._ui_sound('SOUND_ON_SOUND', stop_others=command[1] == 'sound')
+            if command[1] == 'sound':
+                if self.sound_enabled:
+                    # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.
+                    self._ui_sound('SOUND_ON_SOUND', stop_others=True)
+            else:
+                # The other switches are silent natively; they click as the menu's rows do (owner's choice,
+                # 2026-10-23).
+                self._menu_sound()
             if self.on_settings:
                 self.on_settings()
             return

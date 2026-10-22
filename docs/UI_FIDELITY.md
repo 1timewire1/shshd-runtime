@@ -1058,14 +1058,21 @@ not advance it. Older saves set `box_grow=false` for their current dialogue,
 retaining the already full-size box and all text/VM clocks.
 
 A retained speaker (narration to narration included) has no grow track, but
-its box no longer snaps to the new line's size: the owner reports the original
-animating it. The renderer interpolates x/y/width/height linearly from the
-previous line's final frame over 250 ms from the line's start, Core
-Animation's default implicit-action duration for the re-laid-out bubble
-pieces. **Unverified**: neither the duration, curve nor start has been read
-from a disassembly or frame capture. Shakes and page turns are unchanged, a
-tap settles the frame, and the previous frame lives only in the renderer, so
-a restored line shows its own frame.
+its box no longer snaps to the new line's size: the renderer interpolates
+x/y/width/height linearly from the previous line's final frame over 250 ms from
+the line's start. HD's `SHSUIDialog::animateTextLayer` (**00043bdc**) sets the
+persistent bubble layer's (`g_layerBubble`, an `SHSBubbleLayer`) and text
+layer's `position` and `bounds` for every line; only a changed speaker then
+adds `setupAnimationsForTextLayer`'s keyframes (`animateLayers` **00044204**
+compares +0xf4 with +0x30). Nothing disables implicit actions (no
+`CATransaction` call in `SHSUIDialog`) and `SHSBubbleLayer` overrides neither
+`actionForKey:` nor `defaultActionForKey:`, so Core Animation animates the
+change with its own defaults, 0.25 s with linear pacing; the bubble's nine
+pieces move with it (`layoutSublayers`). The text layer moves too, but its
+typing starts only after the call's delay (+0.4 s with GameModel +0x400), so
+it is empty while it does. Not frame-captured. Shakes and page turns are
+unchanged, a tap settles the frame, and the previous frame lives only in the
+renderer, so a restored line shows its own frame.
 
 SHS `animatePortraitLayer` **0007e798** and CoD **000367b4** retain the current
 portrait layer's position when hiding it for narration or a speaker without

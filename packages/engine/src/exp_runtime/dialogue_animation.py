@@ -262,11 +262,10 @@ class DialogueAnimation:
         The nine border pieces keep their own dimensions throughout.
 
         `previous` is the last line's final frame. A retained speaker gets no
-        grow track, but its bubble is laid out again for the new text and the
-        pieces' implicit actions carry it there from the old frame (owner's
-        report: narration to narration resizes rather than snapping). The
-        duration is Core Animation's default 0.25 s, linear, from the line's
-        start; unverified against a disassembly or a frame capture.
+        grow track, but `animateTextLayer` (HD 00043bdc) sets the persistent
+        bubble layer's new position and bounds with implicit actions enabled,
+        so Core Animation carries it there from the old frame with its
+        defaults: 0.25 s, linear, from the line's start (docs/UI_FIDELITY.md).
         """
         if self.page_turn or self.visuals_finished:
             return box
