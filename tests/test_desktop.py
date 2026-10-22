@@ -1310,7 +1310,7 @@ class DesktopTests(unittest.TestCase):
         ui = Desktop.__new__(Desktop)
         ui.session, ui.error, ui.menu_open, ui.active, ui.fade = Mock(), None, False, True, None
         ui.press, ui.gear_pointer_down, ui.on_settings = Mock(), False, Mock()
-        ui._sync_text_input = lambda: None
+        ui._sync_text_input = ui._ui_sound = lambda *args, **kwargs: None
         ui.choice_hints = False
         ui.command(('pause_toggle', 'choice_hints'))
         self.assertTrue(ui.choice_hints)
