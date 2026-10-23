@@ -89,8 +89,9 @@ class TitleRenderer:
 class HdTitleRenderer:
     """HD's chapter / week card (`SHSUIChapterScreen`, decompiled) in the whole 768 x 1024 frame.
 
-    The location picture is stretched over the frame under a black layer that stays opaque for 60% of
-    2.125 s and then fades out; the title ("Week 1 of 8", image font 589/590, 66 px cells) is wiped in from
+    The location picture is stretched over the frame under a black layer ("revealLocation": opacity 1, 1, 0 at
+    keyTimes 0, .6, 1 over 3.0 s, 0004bcda) that stays opaque for 1.8 s and then fades out by 3.0 s (TouchHLE
+    recordings of Cause of Death's card agree: the picture starts showing at 1.84 s); the title ("Week 1 of 8", image font 589/590, 66 px cells) is wiped in from
     its left edge over 2 s (a clip layer slides right while the text slides left inside it); the
     subtitle (font 591/592) is invisible for 1 s and fades in over the next. Both are laid out by
     `CSImageFont::drawTextInRegion` in layout 48's node rectangles: the title in (20, 68, 738 x 400) left/top
@@ -102,7 +103,7 @@ class HdTitleRenderer:
     edge_bar = 'bar'
     FRAME = (768, 1024)
     TITLE_REGION, SUBTITLE_REGION = (20, 68 + 80, 738, 400), (20, 544, 714, 360)
-    WIPE_S, BLACK_HOLD_S, BLACK_END_S, SUBTITLE_FROM_S, SUBTITLE_TO_S = 2., 1.275, 2.125, 1., 2.
+    WIPE_S, BLACK_HOLD_S, BLACK_END_S, SUBTITLE_FROM_S, SUBTITLE_TO_S = 2., 1.8, 3., 1., 2.
 
     def __init__(self, resources, art):
         self.resources, self.art = resources, art

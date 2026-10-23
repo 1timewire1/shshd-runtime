@@ -52,6 +52,12 @@
 
 ### Fixed
 
+- **Scene changes fade instead of cutting** in Cause of Death and SHS HD (@zazatree's TouchHLE recordings): a new
+  background crossfades in over 0.25 s, as the original's location layer does with Core Animation's implicit
+  actions. The chapter card's picture still appears at once. When the card closes, its framing glides into the
+  scene's as the next picture fades in.
+- **The chapter card's picture fades in later and slower**, as in the original: black for 1.8 s, clear by 3.0 s
+  (it was 1.275 s and 2.125 s). Both games' card animations hold for 60% of 3.0 s.
 - **Now Airing and Episodes On Demand no longer open over black on macOS** (zazatree's report). While their card
   zoomed in over the main menu, the menu's canvas could carry alpha 0 on a display with an alpha channel, so all but
   the card showed black until the zoom ended. The menu under the zoom is made opaque first (`graphics.opaque`).

@@ -975,6 +975,78 @@ class DesktopTests(unittest.TestCase):
                            (ui.bg_viewport.right - 1, ui.bg_viewport.bottom - 1)):
                 self.assertEqual(ui.window.get_at(corner)[:3], (40, 200, 40))
 
+    def _location_ui(self, temporary):
+        """A Desktop drawing Cause of Death's location layer on its own clock: (ui, clock, draw(art, origin))."""
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        resources = Resources(branching_program())
+        resources.library.directory = Path(temporary)
+        ui = Desktop(Session(resources), audio=False)
+        ui.render()
+        ui.dialogue_renderer.game_id = lambda: 'cod'
+        clock = [0]
+        ticks = patch('pygame.time.get_ticks', lambda: clock[0])
+        ticks.start()
+        self.addCleanup(ticks.stop)
+        ui.location_shown = ui.location_changing = None
+
+        def draw(art, origin):
+            ui.pending_background, ui.pending_background_origin, ui.pending_background_alpha = art, origin, 255
+            ui._draw_background_layer(ui.bg_viewport.size, ui.bg_viewport)
+            return tuple(ui.window.get_at(ui.bg_viewport.center))[:3]
+        return ui, clock, draw
+
+    def test_a_new_location_picture_crossfades_in_over_a_quarter_second(self):
+        # zazatree's TouchHLE recordings: scene pictures crossfade (Core Animation's implicit contents action on the
+        # location layer, ~0.25 s, the default ease); ours used to cut in one frame.
+        import pygame
+        from exp_runtime.location_pan import default_ease
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, clock, draw = self._location_ui(temporary)
+            cabin, dark = pygame.Surface((480, 720)), pygame.Surface((480, 720))
+            cabin.fill((200, 200, 200))
+            dark.fill((0, 0, 0))
+            self.assertEqual(draw(cabin, (160, 180)), (200, 200, 200))
+            clock[0] = 1000
+            self.assertEqual(draw(dark, (160, 180)), (200, 200, 200))            # starts from the old picture
+            clock[0] = 1125
+            self.assertAlmostEqual(draw(dark, (160, 180))[0], 200 * (1 - default_ease(.5)), delta=3)
+            clock[0] = 1250
+            self.assertEqual(draw(dark, (160, 180)), (0, 0, 0))
+            clock[0] = 2000
+            self.assertEqual(draw(dark, (160, 180)), (0, 0, 0))                  # the same picture: no change
+
+    def test_the_chapter_card_sets_its_picture_without_a_crossfade_and_its_exit_glides(self):
+        # SHSUIChapterScreen::animate turns the implicit actions off around its picture; its internalTransitionOff
+        # resets the layer's scale and position with them on, so the card's framing glides into the scene's.
+        import pygame
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, clock, draw = self._location_ui(temporary)
+            cabin, docks, bar = (pygame.Surface((480, 720)) for _ in range(3))
+            cabin.fill((200, 0, 0))
+            docks.fill((0, 200, 0))
+            bar.fill((0, 0, 200))
+            draw(cabin, (160, 180))
+            with patch.object(ui.session, 'pending', SimpleNamespace(name='presentation', details={})):
+                clock[0] = 1000
+                self.assertEqual(draw(docks, 'cover'), (0, 200, 0))             # no crossfade into the card
+                card = ui.location_shown[1]
+            clock[0] = 5000
+            draw(bar, (160, 180))
+            scene = ui.location_shown[1]
+            self.assertNotEqual(card, scene)
+            clock[0] = 5125
+            middle = draw(bar, (160, 180))
+            self.assertTrue(0 < middle[1] < 200 and 0 < middle[2] < 200)        # both pictures, mid-crossfade
+            self.assertEqual(ui._background_placement(bar, ui.bg_viewport.size), scene)
+            clock[0] = 5250
+            self.assertEqual(draw(bar, (160, 180)), (0, 0, 200))
+            self.assertIsNone(ui.location_changing)
+
     def test_episode_complete_freezes_on_the_last_real_background_not_a_blank_one(self):
         # engine.py's own scene teardown resets panel.background_id to -1 once the episode exits (confirmed in
         # test_episode_exit.py's test_scene_teardown_...); found live: without a fallback, the "Episode complete"

@@ -28,7 +28,7 @@ try:
     from .desktop_word_hd import HdWordRenderer
 except ImportError:
     HdFootballRenderer = HdWordRenderer = None
-from .location_pan import LocationPan
+from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import HdMessageRenderer
 from . import frame_log, scene_fade
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
@@ -342,6 +342,9 @@ class Desktop:
                                               # panel.background_id to -1, so the end-of-episode screen falls back
                                               # to this instead of showing no background at all
         self.location_pan = LocationPan()
+        # The location layer's last picture, placement and card flag, and its running implicit animation
+        # (_location_change).
+        self.location_shown = self.location_changing = None
         self.fade = None                     # the player's own fade from black (a warp; scene_fade.py)
         self.music_token = None
         self.music_stream = MusicStream()
@@ -1406,27 +1409,70 @@ class Desktop:
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
         self.window.fill((0, 0, 0), viewport)
         background = self.pending_background
-        if background is None:
-            return
+        placement = None if background is None else self._background_placement(background, target_size)
+        change = self._location_change(background, placement)
+        if placement is not None:
+            if change is not None and change['from'] is not None:
+                placement = tuple(a + (b - a) * change['p'] for a, b in zip(change['from'], placement))
+            self._blit_art(background, placement, target_size, viewport, self.pending_background_alpha)
+        if change is not None and change['old'] is not None and change['p'] < 1:
+            # The outgoing picture, in the same (animated) layer, fading out over the incoming one.
+            alpha = (self.pending_background_alpha if placement is not None else 255) * (1 - change['p'])
+            self._blit_art(change['old'], placement or change['from'], target_size, viewport, alpha, cache=False)
+
+    # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
+    # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off
+    # around its own picture (`[CATransaction begin]`, `setValue:forKey:`, `commit`), and its `internalTransitionOff`
+    # puts the layer's scale and position back implicitly, so the card's picture glides into the scene's framing as
+    # the next picture fades in (CoD 1.4.7 000408f0, SHS HD 0004b37c). Duration: Core Animation's default 0.25 s
+    # (`animateLocationLayer` returns 0.25 too); the curve is measured, not in the binaries: TouchHLE recordings of
+    # Cause of Death fit the default ease best (findings, 2026-10-23).
+    LOCATION_CHANGE_MS = 250
+
+    def _location_change(self, background, placement):
+        """The location layer's implicit animation this frame: None, or {'p': eased progress, 'old': the outgoing
+        picture or None, 'from': the outgoing placement to glide from, or None}."""
+        action = self.session.pending
+        card = action is not None and action.name == 'presentation'
+        previous, now = self.location_shown, pygame.time.get_ticks()
+        self.location_shown = (background, placement, card) if background is not None else previous
+        animated = self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'
+        if background is None or previous is None or not animated or card:
+            if card:
+                self.location_changing = None        # the card sets its picture with the actions off
+            return self._location_progress(now)
+        old, old_placement, old_card = previous
+        if old_card or old is not background:
+            self.location_changing = dict(since=now, old=None if old is background else old,
+                                          start=old_placement if old_card else None)
+        return self._location_progress(now)
+
+    def _location_progress(self, now):
+        change = self.location_changing
+        if change is None:
+            return None
+        t = (now - change['since']) / self.LOCATION_CHANGE_MS
+        if t >= 1:
+            self.location_changing = None
+            return None
+        return dict(p=default_ease(max(0., t)), old=change['old'], **{'from': change['start']})
+
+    def _background_placement(self, background, target_size):
+        """Where the whole picture lies, (x, y, width, height) in target pixels from the frame's top-left: the
+        location layer's bounds as scaled and positioned on screen."""
+        bw, bh = background.get_size()
+        tw, th = target_size
         if self.pending_background_origin == 'cover':
             # Cause of Death's chapter card: its iPhone screen shows the whole picture fitted to the 320x480 column;
             # here it is scaled evenly until it covers the 3:4 frame, centred where the column's centre is (owner:
             # no dead space, as SHS fills the frame -- without the stretch SHS HD's own card applies).
-            bw, bh = background.get_size()
             centre = 26.5 + 240                                  # the column's centre, frame units from the top
             k = min(bw / 384, bh / (2 * centre), bh / (2 * (512 - centre)))   # art pixels per frame unit
             crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(512 * k))
-            crop = crop.clip(background.get_rect())
-            key = (id(background), tuple(crop), target_size)
-            cached_key, cached_surface = self._background_layer_cache or (None, None)
-            if key != cached_key:
-                cached_surface = pygame.transform.smoothscale(background.subsurface(crop), target_size)
-                self._background_layer_cache = (key, cached_surface)
-            cached_surface = faded(cached_surface, self.pending_background_alpha)
-            self.window.blit(cached_surface, viewport)
-            return
+            sx, sy = tw / crop.width, th / crop.height
+            return (-crop.x * sx, -crop.y * sy, bw * sx, bh * sy)
         if self.pending_background_origin is None:
-            key = (id(background), None, target_size)
+            return (0., 0., float(tw), float(th))
         else:
             cx, cy = self.pending_background_origin
             # In HD's frame the art sits 48 units further right and 20.5
@@ -1435,7 +1481,6 @@ class Desktop:
             # landscape IMG_0069 both gave dx=-188, dy=80 px at 1500x2000,
             # i.e. this build's image lay that far left and down). Measured
             # for the dialogue scene; assumed constant for other screens.
-            bw, bh = background.get_size()
             bg_scale = bw / 480
             # Cause of Death draws its scenes the way SHS draws its SD backgrounds in the HD frame (owner's choice,
             # 2026-10-14): the 480x720 art panned with the speaker so the frame is always covered. Its own iPhone
@@ -1459,32 +1504,45 @@ class Desktop:
             # space, so crop exactly the frame's window out of it.
             window = pygame.Rect(round(bw / 2 + (-32 - cx) * bg_scale), round(bh / 2 + (-32 - cy) * bg_scale),
                                  round(384 * bg_scale), round(512 * bg_scale))
-            crop = window.clip(background.get_rect())
+            sx, sy = tw / window.width, th / window.height
+            return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
+
+    def _blit_art(self, background, placement, target_size, viewport, alpha, *, cache=True):
+        """Draw `background` laid over `placement` (see _background_placement), clipped to the frame. Where the
+        picture does not reach the frame's edge (Cause of Death's art is exactly its screen wide, so the frame's side
+        margins can reach past it), the art keeps its scale and the rest stays uncovered."""
+        bw, bh = background.get_size()
+        x, y, w, h = placement
+        tw, th = target_size
+        left, top, right, bottom = max(0., x), max(0., y), min(float(tw), x + w), min(float(th), y + h)
+        if right - left < 1 or bottom - top < 1:
+            return
+        if (x, y, w, h) == (0, 0, tw, th):
+            crop, area = None, viewport
+        else:
+            kx, ky = bw / w, bh / h                              # art pixels per target pixel
+            crop = pygame.Rect(round((left - x) * kx), round((top - y) * ky),
+                               round((right - left) * kx), round((bottom - top) * ky)).clip(background.get_rect())
             if crop.width <= 0 or crop.height <= 0:
                 return
-            # Where the window runs past the art's edge (Cause of Death's art is exactly its screen wide, so the
-            # frame's side margins can reach past it), the art keeps its scale and the rest stays uncovered: it
-            # used to be stretched across the whole frame.
-            sx, sy = target_size[0] / window.width, target_size[1] / window.height
-            viewport = pygame.Rect(viewport.x + round((crop.x - window.x) * sx),
-                                   viewport.y + round((crop.y - window.y) * sy),
-                                   round(crop.width * sx), round(crop.height * sy))
-            target_size = viewport.size
-            key = (id(background), tuple(crop), target_size)
-        # The location pan (above) is the only thing that can change this layer between two frames of the same
-        # scene -- and it settles after 0.25s, same as a static background the rest of the time -- so a frame
-        # whose key matches the last one reuses that scaled surface instead of smoothscaling the same pixels
-        # again. Alpha is set fresh every time regardless (never left over from a cache hit): a mid-transition
-        # frame's lowered alpha must not stick to a later, fully-opaque one reusing the same cached surface.
+            area = pygame.Rect(viewport.x + round(left), viewport.y + round(top),
+                               round(right - left), round(bottom - top))
+        key = (id(background), None if crop is None else tuple(crop), area.size)
+        # Between two frames of the same scene only the location pan and the implicit animations above change this
+        # layer -- each settles after 0.25s -- so a frame whose key matches the last one reuses that scaled surface
+        # instead of smoothscaling the same pixels again. Alpha is set fresh every time regardless (never left over
+        # from a cache hit): a mid-transition frame's lowered alpha must not stick to a later, fully-opaque one
+        # reusing the same cached surface.
         cached_key, cached_surface = self._background_layer_cache or (None, None)
-        if key == cached_key:
+        if cache and key == cached_key:
             scaled_bg = cached_surface
         else:
-            source = background if self.pending_background_origin is None else background.subsurface(crop)
-            scaled_bg = pygame.transform.smoothscale(source, target_size)
-            self._background_layer_cache = (key, scaled_bg)
-        scaled_bg = faded(scaled_bg, self.pending_background_alpha)
-        self.window.blit(scaled_bg, viewport)
+            source = background if crop is None else background.subsurface(crop)
+            scaled_bg = pygame.transform.smoothscale(source, area.size)
+            if cache:
+                self._background_layer_cache = (key, scaled_bg)
+        scaled_bg = faded(scaled_bg, round(alpha))
+        self.window.blit(scaled_bg, area)
 
     def _draw_scene_badge(self, badge, *, previous_glyph=-1):
         layer = self.dialogue_renderer.frame(204 if badge.blue else 236, 13).copy()
@@ -2359,6 +2417,7 @@ class Desktop:
         self.menu_open = False
         self.side_panels.tree_follow = True
         self.location_pan = LocationPan()
+        self.location_shown = self.location_changing = None
         now = pygame.time.get_ticks()
         self.fade = dict(kind=6, phase='in', since=now, frozen=None)
         self.warp_lockout = now + 1000
