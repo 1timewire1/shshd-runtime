@@ -48,6 +48,9 @@
 
 ### Fixed
 
+- **Now Airing and Episodes On Demand no longer open over black on macOS** (zazatree's report). While their card
+  zoomed in over the main menu, the menu's canvas could carry alpha 0 on a display with an alpha channel, so all but
+  the card showed black until the zoom ended. The menu under the zoom is made opaque first (`graphics.opaque`).
 - **Skip Ad Intros skips the High School Story ad again** (Game of Cones, The Conned Artist Parts 1 and 2). Since
   exp-runtime v0.6.1's merge a choice ignores taps for its first 250 ms, as SHS's menu does, and the skip answered
   the ad's choice at once, so it gave up and the ad played. It now waits out those 250 ms first. It also stops at
