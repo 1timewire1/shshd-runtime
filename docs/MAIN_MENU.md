@@ -460,7 +460,11 @@ assembly **00045620–00045720**, scales the menu from **0.001** to **1** about
 its center over **400 ms**, with UIKit ease-in/out (curve 0). The frontend
 uses that curve and duration, with story clocks frozen and pointer input gated
 until entry finishes. Closing an IPA pause menu scales from 1 to 0.00001 over
-400 ms before resuming the story. Subpages preserve the captured background
+400 ms before resuming the story: `notifyMenuRemoved` (SHS HD 00027b50) runs the
+menu's exit byte through `animateView`, whose kind 21 (00023a7c) sets the transform
+to 1e-05 in a 0.4 s UIKit ease-in/out with no delay. Resume takes the sepia away at
+once and only the card zooms out (the owner, on the iPad, 2026-10-23); the story
+runs on once the zoom ends (PR #15). Subpages preserve the captured background
 and use the corresponding zoom/slide direction.
 
 iOS `updatePauseLayer` (SHS **0003b9a8**, CoD **00018728**) settles the dialogue

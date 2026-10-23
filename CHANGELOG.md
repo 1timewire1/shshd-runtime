@@ -17,6 +17,10 @@
 
 ### Changed
 
+- **Resume zooms the pause menu out** before the story runs on, as the original does
+  ([#15](https://github.com/1timewire1/shshd-runtime/pull/15), thanks @zazatree): the card shrinks away over 0.4 s
+  (`animateView`'s exit zoom, to 1e-05 with ease-in/out), and the sepia goes at once (checked on the iPad). Taps and
+  keys wait until the menu has gone.
 - **The dialogue box, the Options switches and the pause menu's song**
   ([#14](https://github.com/1timewire1/shshd-runtime/pull/14), thanks @zazatree):
   - **A retained speaker's box resizes instead of snapping**, narration to narration included: from the last line's
