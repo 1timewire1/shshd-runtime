@@ -97,7 +97,9 @@ class PauseRenderer:
             self.label(label, Rect(27, y + 3, 266, 38), 'ArialRoundedMTBold14', 14)
             buttons.append((pygame.Rect(row.x, row.y, row.width, row.height), command))
         self.layout(36, Rect(9, top + header + 44 * len(entries), 302, footer), frames={74, 79})
-        if self.ios:
+        if closing:
+            pass
+        elif self.ios:
             # SHS 0003b9a8 / CoD 00018728 capture once, transform RGB with
             # these double coefficients, truncate, and clamp each channel.
             if self.background is None:

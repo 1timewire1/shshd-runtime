@@ -89,7 +89,29 @@ class PauseFeedbackTests(unittest.TestCase):
         self.pointer(ui, 'up')
         self.assertTrue(ui.menu_open)
         self.pointer(ui, 'down'); self.pointer(ui, 'up')
+        self.assertTrue(ui.menu_open)                   # Resume zooms the menu out first
+        ui.tick(400)
         self.assertFalse(ui.menu_open)
+
+    def test_resume_zooms_the_menu_out_before_the_story_runs_on(self):
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        pg = self.pygame
+        ui = self.ui()
+        self.pointer(ui, 'down'); self.pointer(ui, 'up')
+        ui.tick(PAUSE_OPEN_MS)
+        before = ui.session.snapshot()
+        ui.command(('resume',))
+        ui.tick(150)
+        self.assertTrue(ui.menu_open and ui.pause_closing)
+        self.assertEqual(ui.pause_elapsed_ms, PAUSE_OPEN_MS - 150)     # the open zoom run backwards
+        ui.buttons = [(pg.Rect(0, 0, 480, 720), ('menu',))]
+        self.pointer(ui, 'down'); self.pointer(ui, 'up')                # nothing is tappable on the way out
+        self.assertEqual(ui.pause_elapsed_ms, PAUSE_OPEN_MS - 150)
+        self.assertTrue(ui.handle_event(pg.event.Event(pg.KEYDOWN, key=pg.K_ESCAPE)))
+        self.assertTrue(ui.pause_closing)
+        self.assertEqual(ui.session.snapshot(), before)                 # the story stays held
+        ui.tick(PAUSE_OPEN_MS)
+        self.assertFalse(ui.menu_open or ui.pause_closing)
 
     def test_gear_uses_original_alternate_frame_without_rescaling_the_layout(self):
         from exp_runtime.desktop_pause import draw_pause_gear

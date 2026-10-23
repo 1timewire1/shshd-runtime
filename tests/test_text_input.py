@@ -290,6 +290,7 @@ class DesktopInputTests(unittest.TestCase):
             self.assertEqual(ui.session.vm.snapshot(), held)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             ui.command(('resume',))
+            ui.tick(400)
         ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='B'))
         ui.command(('save',))
         ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='!'))

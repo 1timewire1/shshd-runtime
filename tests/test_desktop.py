@@ -837,6 +837,7 @@ class DesktopTests(unittest.TestCase):
                 self.assertIsNone(ui.choice_focus)                  # the choice under the menu keeps its own
                 key(pygame.K_UP)
                 key(pygame.K_RETURN)
+                ui.tick(400)                                        # Resume's zoom out
                 self.assertFalse(ui.menu_open)
                 ui.command(('menu',))
                 self.assertIsNone(ui.menu_focus)                    # each opening starts without a highlight

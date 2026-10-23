@@ -569,6 +569,7 @@ class MusicPlaybackTests(unittest.TestCase):
                         ui.command(('resume',))
                     else:
                         ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
+                    ui.tick(400)                            # the menu zooms out before the story resumes
                     ui._sync_audio()
                     ui._sync_audio()
                     music.unpause.assert_not_called()
@@ -599,7 +600,7 @@ class MusicPlaybackTests(unittest.TestCase):
             music.unpause.assert_not_called()
             stored = ui.music_stream.stored
             self.assertEqual(stored, ui.music_stream.current['start'] + 1.0)    # 1 s played before the pause
-            ui.command(('resume',))
+            ui.command(('resume',)); ui.tick(400)
             ui._sync_audio()
             self.assertEqual(music.play.call_count, 2)                  # the saved cue, from where it stopped
             self.assertEqual(music.play.call_args.kwargs['start'], stored)
@@ -616,7 +617,7 @@ class MusicPlaybackTests(unittest.TestCase):
                 ui._sync_audio()
             music.play.assert_not_called()
             music.load.assert_not_called()
-            ui.command(('resume',))
+            ui.command(('resume',)); ui.tick(400)
             ui._sync_audio()
             music.play.assert_called_once()
             self.assertEqual(music.set_volume.call_args.args[0], ui.music_volume)
@@ -645,7 +646,11 @@ class MusicPlaybackTests(unittest.TestCase):
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             ui._sync_audio()
             calls = [c[0] for c in music.method_calls if c[0] in ('play', 'pause', 'unpause')]
-            self.assertEqual(calls[-1], 'unpause')
+            self.assertEqual(calls[-1], 'pause')            # back, but Resume's zoom has not run yet
+            ui.tick(400)
+            ui._sync_audio()
+            calls = [c[0] for c in music.method_calls if c[0] in ('play', 'pause', 'unpause')]
+            self.assertEqual(calls[-1], 'play')             # the held cue, from where it stopped
             self.assertEqual(music.play.call_count, 2)
 
     def test_muting_stopping_and_switching_cues_while_paused_do_not_resume_stale_music(self):
@@ -775,7 +780,7 @@ class MusicPlaybackTests(unittest.TestCase):
                     clock.return_value = 11300                  # held: now the menu's song
                     ui._sync_audio()
                     self.assertIn(f'base {menu_song}'.encode(), played())
-                    ui.command(('resume',))
+                    ui.command(('resume',)); ui.tick(400)
                     clock.return_value = 11800
                     ui._sync_audio()
                     self.assertAlmostEqual(song.set_volume.call_args.args[0], .5 * ui.music_volume)
@@ -898,7 +903,7 @@ class MusicPlaybackTests(unittest.TestCase):
             menu.pause()
             menu.unpause()
             menu.stop()
-            ui.command(('resume',))
+            ui.command(('resume',)); ui.tick(400)
             self.assertTrue(pygame.mixer.music.get_busy())
         resources.read_asset.assert_called_once_with(8201)
 
@@ -926,7 +931,7 @@ class MusicPlaybackTests(unittest.TestCase):
             self.assertFalse(pygame.mixer.music.get_busy())
             held = ui.music_stream.stored
             self.assertAlmostEqual(held, .05)
-            ui.command(('resume',))
+            ui.command(('resume',)); ui.tick(400)
             ui._sync_audio()
             self.assertTrue(pygame.mixer.music.get_busy())
             clock.return_value = 11200
@@ -936,7 +941,7 @@ class MusicPlaybackTests(unittest.TestCase):
             pygame.mixer.music.stop()  # A finished/stopped stream must not be restarted by Resume.
             ui._sync_audio()
             ui.command(('menu',))
-            ui.command(('resume',))
+            ui.command(('resume',)); ui.tick(400)
             ui._sync_audio()
             self.assertFalse(pygame.mixer.music.get_busy())
 

@@ -177,6 +177,7 @@ class Desktop:
     notice_stack = None             # the native notice/confirm windows, when an HD bundle provides them (see __init__)
     notice_shown = None             # the notice window last drawn, and ms since it opened (its zoom, `pause_scale`)
     notice_ms = PAUSE_OPEN_MS
+    pause_closing = False
 
     @property
     def session(self):
@@ -1576,7 +1577,7 @@ class Desktop:
         buttons = self.pause_renderer.draw(self.canvas, application=self.on_menu_page is not None,
                                             main_menu=self.on_main_menu is not None,
                                             pressed=self.press.pressed or self.menu_focus,
-                                            elapsed_ms=self.pause_elapsed_ms)
+                                            elapsed_ms=self.pause_elapsed_ms, closing=self.pause_closing)
         self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                         for rect, command in buttons]
         if pygame.time.get_ticks() < self.message_until:
@@ -1607,19 +1608,22 @@ class Desktop:
         area = frame.clip(self.window.get_rect())
         if area.width <= 0 or area.height <= 0:
             return
-        self._draw_tinted(area)
+        if not self.pause_closing:           # Resume takes the tint away at once; only the card zooms out
+            self._draw_tinted(area)
         settings = self._pause_settings()
         message = self.message if pygame.time.get_ticks() < self.message_until else ''
         scale = pause_scale(self.pause_elapsed_ms)
         size = tuple(max(1, round(length * scale)) for length in frame.size)
         # At rest (fully zoomed, no page sliding, no switch moving) the card only changes with what it shows, so the
         # drawn and scaled card is kept until then (~15 ms a frame at 1080p).
-        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and not self.pause_hd.animating()
+        resting = self.pause_elapsed_ms >= PAUSE_OPEN_MS and not self.pause_closing and not self.pause_hd.animating()
         key = (repr(settings), message, astuple(self.pause_hd.state), getattr(self.pause_hd, 'pressed', None), size)
         if resting and self._pause_card is not None and self._pause_card[0] == key:
             card, self.pause_buttons = self._pause_card[1:]
         else:
             layer, self.pause_buttons = self.pause_hd.layout(settings, message=message)
+            if self.pause_closing:
+                self.pause_buttons = []
             card = pygame.transform.smoothscale(layer, size)
             # A switch drawn with a new value has only just started moving.
             self._pause_card = (key, card, self.pause_buttons) if resting and not self.pause_hd.animating() else None
@@ -1723,7 +1727,7 @@ class Desktop:
         return True
 
     def open_pause(self, *, sound=True):
-        if self.menu_open:
+        if self.menu_open and not self.pause_closing:
             return
         self.pause_hd.reset()
         self.menu_focus = None
@@ -1732,7 +1736,7 @@ class Desktop:
             self.session.grid_pointer('cancel')
         self.menu_open = True
         self.session.engine.faceplace_toast = None
-        self.pause_elapsed_ms = 0
+        self.pause_elapsed_ms, self.pause_closing = 0, False
         self._sync_music()
         if sound:
             self._menu_sound(opening=True)
@@ -1805,9 +1809,11 @@ class Desktop:
         if kind == 'menu':
             self.open_pause()
         elif kind == 'resume':
-            self.menu_open = False
-            self._sync_music()
-            self._menu_sound()
+            # The menu scales from 1 to 0.00001 over 400 ms before the story resumes (`notifyNewMenu`'s zoom run
+            # backwards, docs/MAIN_MENU.md); `tick` closes it once the zoom is done.
+            if not self.pause_closing:
+                self._menu_sound()
+            self.pause_closing = self.menu_open
         elif kind == 'pause_page' and self.on_menu_page:
             self.on_menu_page(command[1])
             self._menu_sound()
@@ -1945,6 +1951,10 @@ class Desktop:
             else:
                 self._notice_pointer(event)
             return True
+        if self.pause_closing and self.menu_open and event.type in (
+                pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL,
+                pygame.TEXTINPUT):
+            return True                         # the menu is zooming out after Resume: input waits for the story
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
                 if not self.pause_hd.available() or self.pause_hd.back():
@@ -2385,7 +2395,13 @@ class Desktop:
                 value, self.link_answer = self.link_answer, None
                 self.choice_held = None
                 self._answer_now(value)
-        if self.active and self.menu_open:
+        if self.active and self.menu_open and self.pause_closing:
+            remaining, self.pause_elapsed_ms = self.pause_elapsed_ms, max(0, self.pause_elapsed_ms - elapsed_ms)
+            if not self.pause_elapsed_ms:
+                self.menu_open = self.pause_closing = False
+                self._sync_music()
+                elapsed_ms -= remaining             # the story runs on only from the moment the menu has gone
+        elif self.active and self.menu_open:
             self.pause_elapsed_ms = min(PAUSE_OPEN_MS, self.pause_elapsed_ms + elapsed_ms)
             self.pause_hd.advance(elapsed_ms)
         if self.fade:
