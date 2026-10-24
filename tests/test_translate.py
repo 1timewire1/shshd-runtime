@@ -284,31 +284,41 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertEqual(profile.TRANSLATED_FRAME_BACKDROP[self.nr.PACK_ID], self.nr.FRAME_BACKDROP)
 
     def test_backdrop_is_the_tinted_game_screen_cut_to_the_frame(self):
-        # Authored stand-ins for WinMo's packs 56/59/99 (one grey frame each), its layout bank and a 240 x 96 strip.
+        # Authored stand-ins for WinMo's packs 56/59/99 (grey frames: one each, ten 2 x 2 edge frames), its layout
+        # bank (the game screen, layout 2, holding the stripe, layout 3) and a 240 x 96 strip.
         from io import BytesIO
         from PIL import Image
         import nr_art
 
-        def pack(width, height):
-            return (struct.pack('>BhbhhhH', 0, 1, 0, 0, 0, 0, 2) + bytes(3) + b'\xff' * 3
-                    + struct.pack('>hBB', 1, width, height) + b'\x01' * (width * height))
+        def pack(width, height, count=1):
+            return (struct.pack('>BhbhhhH', 0, count, 0, 0, 0, 0, 2) + bytes(3) + b'\xff' * 3 + struct.pack('>h', count)
+                    + (struct.pack('>BB', width, height) + b'\x01' * (width * height)) * count)
 
-        def node(base, relative, flags, payload):
-            return struct.pack('>8hB', *base, *relative, flags) + struct.pack('>hh', *payload)
+        def node(base, relative, flags, payload, fmt='>hh'):
+            return struct.pack('>8hB', *base, *relative, flags) + struct.pack(fmt, *payload)
 
-        stripe = (node((24, 0, 216, 120), (2048, 0, 2048, 2048), 17, (3, 0))       # bars over the top half
-                  + node((24, 0, 44, 240), (2048, 0, 2048, 4096), 17, (1, 0)))      # the left edge, full height
-        bank = (struct.pack('>4b', 13, 2, 0, 0) + struct.pack('>h', 3) + struct.pack('>3h', 1, 1, 0) * 2
-                + struct.pack('>3h', 240, 240, 2) + stripe)
+        screen = node((20, 0, 220, 240), (2048, 0, 2048, 4096), 23, (3,), '>b')     # the stripe layout, visible
+        stripe = (node((20, 0, 220, 120), (0, 0, 4096, 2048), 17, (3, 0))         # bars over the top half
+                  + node((0, 0, 20, 240), (0, 0, 0, 4096), 17, (1, 0)))           # its own 20-pixel left edge
+        bank = (struct.pack('>4b', 13, 2, 0, 0) + struct.pack('>h', 4) + struct.pack('>3h', 1, 1, 0) * 2
+                + struct.pack('>3h', 240, 240, 1) + screen + struct.pack('>3h', 240, 240, 2) + stripe)
         strip = BytesIO()
         Image.new('RGB', (240, 96)).save(strip, format='PNG')
-        art = nr_art.Art({56: pack(8, 8), 59: pack(4, 4), 99: pack(2, 2), 2: bank, 5000: strip.getvalue()})
+        art = nr_art.Art({56: pack(8, 8), 59: pack(4, 4), 99: pack(2, 2, 10), 2: bank, 5000: strip.getvalue()})
         backdrop = art.backdrop()
         self.assertEqual(backdrop.size, (192 * 7, 256 * 7))        # the frame at 0.5 px per unit, the strip's 7x
         tinted = [tuple(255 * c // 256 for c in nr_art.rgb565(t)) for t in nr_art.BACKDROP_TINTS]
-        self.assertEqual(backdrop.getpixel((0, 0)), tinted[2])                     # the edge at the frame's edge
-        self.assertEqual(backdrop.getpixel((96 * 7, 0)), tinted[1])                # bars
-        self.assertEqual(backdrop.getpixel((96 * 7, 250 * 7)), tinted[0])          # the tile where they stop
+        # The stripe is 154 of the frame's 192 pixels (80%) from x 19: the scene frame's 2-pixel side piece at each
+        # end, the bars between them (not its own 20-pixel edge), and the pattern either side.
+        for x, colour in ((18, tinted[0]), (19, tinted[2]), (20, tinted[2]), (21, tinted[1]), (96, tinted[1]),
+                          (170, tinted[1]), (171, tinted[2]), (172, tinted[2]), (173, tinted[0])):
+            self.assertEqual(backdrop.getpixel((x * 7, 0)), colour, x)
+        self.assertEqual(backdrop.getpixel((96 * 7, 250 * 7)), tinted[0])          # the tile where the bars stop
+        # The scene frame's bars (the edge pack's frame 0, 2 x 2 here, so 14 rows) just outside the strip, shown
+        # 192 units high centred at unit 191.5, 3.5 px each: rows 334-1006, with one art pixel more underneath.
+        for row, colour in ((319, tinted[1]), (320, tinted[2]), (340, tinted[2]), (341, tinted[1]),
+                            (998, tinted[0]), (999, tinted[2]), (1019, tinted[2]), (1020, tinted[0])):
+            self.assertEqual(backdrop.getpixel((96 * 7, row)), colour, row)
         self.assertIsNone(nr_art.Art({2: bank, 5000: strip.getvalue()}).backdrop())
 
     def test_achievement_beats_become_notices(self):

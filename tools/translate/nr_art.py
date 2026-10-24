@@ -42,6 +42,14 @@ BACKDROP_PACKS = ((62, 65, 106), (56, 59, 99))
 BACKDROP_TINTS = (15154, -166, -567)    # RGB565: blue #396594, cream #FFEBD6, orange #FFBA4A
 BACKDROP_SLOTS = (5, 3, 1)
 LAYOUT_BANK, GAME_LAYOUT = 2, 2
+# The frame around New Rules' scene (h.java draws o.f, the edge pack 106 / WinMo 99 tinted orange, at the scene's
+# corner; its group 0 for the full scene): 15-pixel bars of frame 0 just above and below the picture. Its sides lie
+# past SHS's frame, which the panned strip always covers, so only the bars are drawn.
+SCENE_FRAME_BAR, SCENE_FRAME_SIDE = 0, 9
+# The stripe's share of the backdrop's width: 192 of WinMo's 240 pixels (X1i's is 290 of 480).
+STRIPE_SHARE = 192 / 240
+# Where the runtime centres a background: frame unit y = 32 + 180 + HD_BG_SHIFT[1] (player desktop.py).
+STRIP_CENTRE_UNITS = 191.5
 # SHS's frame (shshd-runtime's 384 x 512 units) and the width a background picture is shown at, in the same units.
 FRAME_UNITS, BACKGROUND_UNITS = (384, 512), 480
 
@@ -334,9 +342,11 @@ class Art:
         """New Rules' UI backdrop (BACKDROP_PACKS) cut to SHS's frame, or None where the background source lacks it.
 
         It is drawn at the backgrounds' own density and scale: a background strip is shown BACKGROUND_UNITS wide, so
-        the frame is FRAME_UNITS times (strip width / BACKGROUND_UNITS) art pixels, cut from the middle of the game
-        screen (layout 2's width) with the screen's height set to the frame's. That width is the stripe's, edges
-        included (192 of WinMo's 240 pixels, 288 of X1i's 290), so the frame shows the stripe from edge to edge."""
+        the frame is FRAME_UNITS times (strip width / BACKGROUND_UNITS) art pixels. The pattern fills it; the game
+        screen's stripe (layout 2's child) runs down its middle, STRIPE_SHARE of its width as on WinMo's screen, with
+        its bars between the scene frame's thinner side pieces (SCENE_FRAME_SIDE) instead of its own 30-pixel edges
+        (the owner's choice). The scene frame's bars (SCENE_FRAME_BAR) go just above and below where the runtime shows
+        the strip."""
         from exp_runtime.ui_assets import LayoutBank, Rect, UIAssetError
         source = self.backgrounds
         ids = next((ids for ids in BACKDROP_PACKS if all(i in source for i in ids)), None)
@@ -345,19 +355,44 @@ class Art:
         try:
             bank = LayoutBank.parse(source[LAYOUT_BANK])
             packs = [Pack(source[i], source, tint=t) for i, t in zip(ids, BACKDROP_TINTS)]
-            screen = bank.layouts[GAME_LAYOUT].width
-        except (ValueError, KeyError, IndexError, struct.error, UIAssetError):
+            stripe_id = next(node.payload[0] for node in bank.layouts[GAME_LAYOUT].nodes
+                             if node.kind == 7 and node.flags & 16)
+            stripe_layout = bank.layouts[stripe_id]
+            # where the stripe's bars start inside it, past its own edge pieces
+            inset = min(node.base[0] for node in stripe_layout.nodes
+                        if node.kind == 1 and node.payload[0] == BACKDROP_SLOTS[1])
+        except (ValueError, KeyError, IndexError, StopIteration, struct.error, UIAssetError):
             return None
         strip = Image.open(BytesIO(source[LOCATIONS[0][0]]))
         units = strip.width / BACKGROUND_UNITS
         width, height = round(FRAME_UNITS[0] * units), round(FRAME_UNITS[1] * units)
-        canvas = Image.new('RGBA', (screen, height), (0, 0, 0, 255))
-        tile(canvas, packs[0].frames[0], (0, 0, screen, height))
-        draw_layout(canvas, bank, GAME_LAYOUT, Rect(0, 0, screen, height), dict(zip(BACKDROP_SLOTS, packs)))
-        left = (screen - width) // 2
+        canvas = Image.new('RGBA', (width, height), (0, 0, 0, 255))
+        tile(canvas, packs[0].frames[0], (0, 0, width, height))
+        stripe = round(width * STRIPE_SHARE)
+        left = (width - stripe) // 2
+        frames = packs[2].frames
+        side = frames[SCENE_FRAME_SIDE] if SCENE_FRAME_SIDE < len(frames) else None
+        edge = side.width if side is not None else 0
+        draw_layout(canvas, bank, stripe_id, Rect(left + edge - inset, 0, stripe - 2 * (edge - inset), height),
+                    {BACKDROP_SLOTS[1]: packs[1]})
+        if side is not None:
+            tile(canvas, side, (left, 0, edge, height))
+            tile(canvas, side, (left + stripe - edge, 0, edge, height))
         scale = BACKGROUND_SCALE.get(strip.height, 720 // strip.height)
-        return canvas.crop((left, 0, left + width, height)).convert('RGB').resize((width * scale, height * scale),
-                                                                                  Image.NEAREST)
+        image = canvas.convert('RGB').resize((width * scale, height * scale), Image.NEAREST)
+        bar = frames[SCENE_FRAME_BAR] if SCENE_FRAME_BAR < len(frames) else None
+        if bar is not None:
+            bar = bar.resize((bar.width * scale, bar.height * scale), Image.NEAREST)
+            pixels = units * scale                                          # backdrop pixels per frame unit
+            half = strip.height * BACKGROUND_UNITS / strip.width / 2        # half the strip's height, in units
+            top = round((STRIP_CENTRE_UNITS - half) * pixels)
+            bottom = round((STRIP_CENTRE_UNITS + half) * pixels)
+            tile(image, bar, (0, top - bar.height, image.width, bar.height))
+            tile(image, bar, (0, bottom, image.width, bar.height))
+            # One art pixel more of each bar's inner edge, under the strip, so scaling never opens a seam.
+            tile(image, bar.crop((0, bar.height - scale, bar.width, bar.height)), (0, top, image.width, scale))
+            tile(image, bar.crop((0, 0, bar.width, scale)), (0, bottom - scale, image.width, scale))
+        return image
 
 
 def png(image):

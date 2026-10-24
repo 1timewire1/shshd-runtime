@@ -34,10 +34,12 @@
   answer jingles, where the smartphone versions play SHS's correct/wrong sounds, so for that pack (31300) the jingles
   count as answer feedback. In *Train That Brain!*'s quiz, the right answer shows green.
 - **Translated New Rules episodes fill the frame with New Rules' own backdrop.** Their 3:1 location strips used to
-  leave black bands above and below. The translator now stores the backdrop New Rules draws behind its scene: the
-  cream stripe between orange edges, from its own greyscale UI packs, tinted as the game tints them and drawn at the
+  leave black bands above and below. The translator now stores the backdrop New Rules draws behind its scene: its
+  blue pattern, with the cream stripe down the middle between thin orange edges, as wide a share as on New Rules'
+  WinMo screen. The art comes from its own greyscale UI packs, tinted as the game tints them and drawn at the
   strips' pixel scale. For that pack (31300) the player draws it under the strip instead of black. Other episodes
-  are unchanged.
+  are unchanged. The orange frame New Rules puts around its scene borders the strip too. Its sides fall outside the
+  view, as on New Rules' own screen, so its top and bottom bars show.
 - **The episode creator covers more of what SHS and CoD episodes use** (`shshd-runtime-creator`), toward translating
   other games' episodes:
   - Story text shows numbers: `{points}`, `{points * 2}` or `{prop(0, 400)}` are formatted by the game's own service 0.
