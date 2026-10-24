@@ -478,7 +478,7 @@ class Native:
 
 
 class Host:
-    """The host results both interpreters get: numeric properties (52/53/54, bits 50/51) are kept, so stories split into
+    """The host results both interpreters get: numeric properties (52/53, globals 54/55, bits 50/51) are kept, so stories split into
     scenes route through their stored scene selectors; a choice answers `answer`; everything else returns 0."""
     def __init__(self, answer):
         self.answer, self.numbers = answer, {}
@@ -490,6 +490,8 @@ class Host:
             self.numbers[args[0], args[1]] = args[2]
         elif service == 54:
             self.numbers[0, args[0]] = args[1]
+        elif service == 55:
+            return self.numbers.get((0, args[0]), 0)    # a global set by 54 (the Demos' choice, read in its next script)
         elif service == 53:
             return self.numbers.get((args[0], args[1]), 0)
         elif service == 50:
