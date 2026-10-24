@@ -3,6 +3,9 @@
     python tools/translate/translate.py newrules EPISODE.expd --pud RES_LARGE_PUD [--x1i X1I_JAR]
         [--soundfont SF2] [--library LIB] --out OUT_DIR
 
+EPISODE can also be `king-of-diss`, the story built into res_large.pud, or `king-of-diss-lite`, the condensed retelling
+in a Lite Java build (`--lite JAR`); `--downloads DIR` names the .expd folder to learn their capitals from.
+
 It reads the owner's own game files and writes `.exp` files to OUT_DIR. Nothing it reads or writes belongs in the repo.
 `res_large.pud` is New Rules' base pack (`RES_LA~1.005` in its .cab: `expand.exe -F:* CAB DIR`); the X1i jar, if
 given, supplies the backgrounds. With a General MIDI soundfont (Tardy-Slip's TimGM6mb.sf2) and ffmpeg on PATH, the
@@ -30,6 +33,9 @@ def main(argv=None):
                     help="an imported SHS library: restores capitals from the downloads paired with its episodes, "
                          "and a story's own smartphone version where it has one")
     nr.add_argument('--soundfont', type=Path, help='a General MIDI .sf2 bank to render the music with')
+    nr.add_argument('--downloads', type=Path,
+                    help="the folder of .expd downloads to learn capitals from, for a built-in story (with --library)")
+    nr.add_argument('--lite', type=Path, help="a Lite Java build's jar, for king-of-diss-lite")
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     portraits = nr_art.load(args.pud)
@@ -45,21 +51,32 @@ def main(argv=None):
                 rendered[index] = midi_render.mp3(midi_render.render(song, bank))
             return rendered[index]
     for path in args.episodes:
-        episode = newrules.read_expd(path.read_bytes())
+        downloads, twin = args.downloads, None
+        if str(path) == 'king-of-diss':
+            episode = newrules.read_builtin(portraits)
+        elif str(path) == 'king-of-diss-lite':
+            if not args.lite:
+                parser.error('king-of-diss-lite needs --lite, a Lite Java build')
+            episode = newrules.read_lite(nr_art.load(args.lite))
+        else:
+            episode = newrules.read_expd(path.read_bytes())
+            downloads, twin = path.parent, path.name
         dictionary = exact = None
         titles = []
         games = []
-        if args.library:
+        if args.library and downloads:
             import casing
             import pairs
-            dictionary, exact, titles = casing.learn_from_library(path.parent, args.library, twin_of=path.name)
-            games = pairs.twin_word_games(path.parent, args.library, path.name)
+            dictionary, exact, titles = casing.learn_from_library(downloads, args.library, twin_of=twin)
+            if twin is not None:
+                games = pairs.twin_word_games(downloads, args.library, twin)
         data, report = newrules.translate(episode, art, music=music, casing_dictionary=dictionary, casing_exact=exact,
                                           twin_games=games, casing_titles=titles)
         target = args.out / f'NR_{episode.download_id:02d}_{safe(episode.title)}.exp'
         target.write_bytes(data)
         print(f'{path.name}: {episode.title!r} -> {target} ({len(data) // 1024} KB, {report.looks} looks, '
-              f'{report.music} tracks, {report.notices} notices, {report.word_games} word games)')
+              f'{report.music} tracks, {report.notices} notices, {report.word_games} word games'
+              + (f', library calls {report.library_games}' if report.library_games else '') + ')')
         if report.unmapped:
             print('  unmapped services (removed):', dict(sorted(report.unmapped.items())))
         if report.unknown:

@@ -15,8 +15,9 @@ import struct
 
 WORD = re.compile(r"[A-Za-z][A-Za-z']*")
 # A word starts a sentence after . ! ? (and closing quotes) and a space, at the start of the text or of a `|`-separated
-# choice option, with only opening quotes or backticks before it ("team? `does` she").
-SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+["\'`(]*$|(^|\|)\s*["\'`(]*$|[,:]\s+["\']$')
+# choice option, with only opening quotes, backticks or a music note before it ("team? `does` she", "{ nice goatee").
+# After a comma or colon only a double quote opens one: single quotes mark terms ("when ryan calls, 'come over'").
+SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+(?:["\'`(]|\{\s*)*$|(^|\|)\s*(?:["\'`(]|\{\s*)*$|[,:]\s+"$')
 # A capitalised form wins only when the smartphone texts write the word that way almost always ("Officer Smith" must
 # not turn "parole officer" into "parole Officer").
 CAPITAL_SHARE = 0.9
@@ -36,10 +37,20 @@ PLACES = (
 MULTI_WORD = ('Little', 'Des', 'Baton', 'Saint', 'Jefferson', 'Carson', 'New', 'Santa', 'North', 'Oklahoma', 'Rhode',
               'South', 'Salt', 'West')
 # Other proper names the paired stories don't settle: the game's own ("a special episode of `surviving high school!`",
-# the end card's "surviving high school").
-PROPER_PHRASES = ('Surviving High School', 'Centerscore High')
+# the end card's "surviving high school", King of Diss's survey).
+PROPER_PHRASES = ('Surviving High School: New Rules', 'Surviving High School', 'Surviving Hollywood', 'Centerscore High')
+# Titles New Rules writes in quotes: King of Diss's soap opera, "today on 'the valley'". Only quoted, since other
+# stories have plain valleys ("stare out at the valley below them", Guys Versus Wild).
+QUOTED_TITLES = re.compile(r"(?<=')the valley(?=')", re.IGNORECASE)
+# Named things only King of Diss mentions, written as the owner reads them (lowercase -> written form).
+OWN_TITLES = {title.lower(): title for title in ("The Beatdown of '06", 'I Eat Your Brains With Salsa')}
+OWN_TITLE = re.compile('|'.join(re.escape(title) for title in OWN_TITLES), re.IGNORECASE)
 # Acronyms New Rules writes in lowercase that the smartphone stories may not teach ("djs" -> "DJs").
 COMMON_ACRONYMS = {word.lower(): word for word in ('DJ', 'TV', 'DVD', 'CD', 'MP3')}
+# Names only New Rules' own stories use, which no smartphone story teaches (King of Diss's soap opera star).
+OWN_NAMES = {word.lower(): word for word in ('Krystal',)}
+# A grade letter: before -plus/-minus ("a d-plus"), or quoted ("your 'a' game"); only a-f, so "rock 'n' roll" stays.
+GRADE = re.compile(r"\b[a-f](?=-(?:plus|minus)\b)|(?<=')[a-f](?=')", re.IGNORECASE)
 GAZETTEER = re.compile(r'\b(?:' + '|'.join(sorted(
     {p.lower() for group in PLACES.split('|')
      for p in ([group] if ' ' in group and group.split()[0] in MULTI_WORD else group.split())}
@@ -171,11 +182,11 @@ MINOR_WORDS = {'a', 'an', 'the', 'and', 'but', 'or', 'nor', 'for', 'of', 'on', '
 
 def headline_case(text):
     """A title card's title: every word capitalized but minor ones inside it ("bonus scene!" -> "Bonus Scene!").
-    Capitals already there stay."""
+    Capitals already there stay; a `$KEY` and a format's `%s` are left alone ("%s morning." -> "%s Morning.")."""
     words = list(WORD.finditer(text))
     out = list(text)
     for n, match in enumerate(words):
-        if match.start() > 0 and text[match.start() - 1] == '$':
+        if match.start() > 0 and text[match.start() - 1] in '$%':
             continue
         if match.group().lower() in MINOR_WORDS and 0 < n < len(words) - 1:
             continue
@@ -202,7 +213,7 @@ def known_form(lower, dictionary, names):
         return dictionary[lower]
     if lower in names:
         return lower[:1].upper() + lower[1:]
-    return COMMON_ACRONYMS.get(lower)
+    return COMMON_ACRONYMS.get(lower) or OWN_NAMES.get(lower)
 
 
 def apply(text, dictionary, names=(), unknown=None):
@@ -219,7 +230,7 @@ def apply(text, dictionary, names=(), unknown=None):
             continue                                        # a $KEY substitution, or a place name
         lower = word.lower()
         written = known_form(lower, dictionary, names)
-        for ending in ("'s", "s'", 's'):                    # "zoe's" as "Zoe" is written, "djs" as "DJ"
+        for ending in ("'s", "s'", "'", 's'):               # "zoe's" as "Zoe" is written, "'ryan'", "djs" as "DJ"
             if written is None and lower.endswith(ending):
                 base = known_form(lower[:-len(ending)], dictionary, names)
                 # a plural only after an acronym: "marks" isn't "Marks"
@@ -235,6 +246,12 @@ def apply(text, dictionary, names=(), unknown=None):
             out[match.start():match.end()] = written
     for match in ACRONYM.finditer(text):                    # "h.e.c.t.o.r." -> "H.E.C.T.O.R."
         out[match.start():match.end()] = match.group().upper()
+    for match in GRADE.finditer(text):                      # "a d-plus" -> "a D-plus"
+        out[match.start()] = match.group().upper()
+    for match in QUOTED_TITLES.finditer(text):              # "'the valley'" -> "'The Valley'"
+        out[match.start():match.end()] = string.capwords(match.group())
+    for match in OWN_TITLE.finditer(text):                  # "the beatdown of '06" -> "The Beatdown of '06"
+        out[match.start():match.end()] = OWN_TITLES[match.group().lower()]
     return ''.join(out)
 
 

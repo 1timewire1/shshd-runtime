@@ -178,6 +178,21 @@ class Rewriter:
             self.shims[shim_key] = shim
         self.sites[pc] = ('function', shim_key)
 
+    def replace_call(self, pc, key, argc, build):
+        """Run the shim `key` instead of the function the jump at `pc` enters (a SAVE_RETURN + JUMP call into code this
+        program doesn't hold, such as New Rules' minigame library). The shim reads the caller's `argc` arguments with
+        `arg(i)` and returns to the caller, which drops them itself, as it did for the original function."""
+        opcode, _ = self.code[pc]
+        if opcode != 0x29 or pc >= self.original:
+            raise RewriteError(f'no jump at {pc}')
+        shim_key = (key, 'call', argc)
+        if shim_key not in self.shims:
+            shim = Shim(self, argc)
+            shim.function = True
+            build(shim)
+            self.shims[shim_key] = shim
+        self.sites[pc] = ('function', shim_key)
+
     def prologue(self, build):
         """Code that runs once before the program's first instruction (built like a shim body, without arguments)."""
         self.start = Shim(self, 0)
@@ -219,7 +234,7 @@ class Rewriter:
 
 
 def _assemble(shim, start, frame=True):
-    n = shim.argc
+    n = 0 if getattr(shim, 'function', False) else shim.argc       # a function's caller drops its own arguments
     body = ([(0x48, None), (0x4a, None)] if frame else []) + shim.code
     offset = 2 if frame else 0                              # labels are indices into shim.code
     epilogue = []

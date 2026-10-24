@@ -94,6 +94,14 @@ class RewriterTests(unittest.TestCase):
         vm = KiwiVM(result)
         self.assertEqual(struct.pack('>3H', *(vm.data[address + i] for i in range(3))), b'Hello\0')
 
+    def test_a_call_into_absent_code_runs_a_shim_that_reads_its_arguments(self):
+        # A New Rules story calling its linked library: push the arguments, SAVE_RETURN, JUMP past its own code; the
+        # caller drops the arguments and reads B.
+        source = program((0x1A, 5), (0x1A, 7), 0x42, (0x29, 9999), (0x19, 2), 0x08, call(30, 1), 0x33)
+        rewriter = Rewriter(source)
+        rewriter.replace_call(3, 'library', 2, lambda s: (s.arg(2), s.arg(1), s.call(31, 2), s.push(4), s.emit(0x04)))
+        self.assertEqual(yields(rewriter.finish()), [(31, (7, 5)), (30, (4,))])
+
     def test_zero_gap_makes_unwritten_words_read_as_zero(self):
         source = program((0x40, 1), call(9, 1), 0x33, words=[0], gap=4)       # reads gap word 1
         with self.assertRaises(Exception):
@@ -129,8 +137,8 @@ class NewRulesShimTests(unittest.TestCase):
                          (0x1A, -5), (0x1A, 0), (0x1A, 3), call(40, 3),
                          (0x1A, 0), (0x1A, 3), (0x1A, 4), call(40, 3), 0x33, words=words)
         result, _ = self.translate_calls(source)
-        key = self.nr.PLAYER_KEY                                   # a thought makes its speaker the player
-        self.assertEqual(yields(result), [(74, (3,)), (54, (key, 3)), (13, (-2, 0, 3)), (13, (0, 3)), (13, (0, 3, 1))])
+        # A thought stays its thinker's: no one becomes the player (King of Diss's Mrs. Faulkner thinks too).
+        self.assertEqual(yields(result), [(13, (-2, 0, 3)), (13, (0, 3)), (13, (0, 3, 1))])
 
     def test_named_lines_speak_as_the_character_or_under_the_name(self):
         empty, crowd = 0, 1
@@ -321,6 +329,85 @@ class NewRulesShimTests(unittest.TestCase):
             self.assertEqual(backdrop.getpixel((96 * 7, row)), colour, row)
         self.assertIsNone(nr_art.Art({2: bank, 5000: strip.getvalue()}).backdrop())
 
+    def test_a_dialogue_stream_becomes_the_calls_it_stands_for(self):
+        # Text at 0, then the stream: character 5 speaks with expression 2 (box mode -1), a narration line, a thought
+        # (mode -2), several characters under a name, location 3 in mode 1, a bounce (dropped), the end.
+        words = text_words('hi.') + [2 | 1 << 4 | 5 << 7, 0, 6, 0, 0 | 2 << 4 | 5 << 7, 0,
+                                     7 | 2 << 7, 4 | 3 << 8, 0xff, 0, 0, 11 | 1 << 4 | 3 << 7, 14 | 1 << 4, 9, 15]
+        source = program((0x1A, 2), call(48, 1), call(30, 0), 0x33, words=words)
+        expanded = self.nr.expand_streams(source)
+        self.assertEqual(yields(expanded), [(40, (0, 5, 2)), (43, (0,)), (40, (-2, 0, 5, 0)),
+                                            (42, (0, 0, 4, 3, -1, 0)), (35, (1, 3)), (30, ())])
+
+    def test_choice_options_lose_their_emphasis_backticks(self):
+        words = text_words('`bear`.|chair.') + text_words('`dude`.')
+        second = len(text_words('`bear`.|chair.'))
+        source = program((0x1A, 0), (0x1A, 0), (0x1A, -1), (0x1A, -1), call(11, 4),
+                         (0x1A, second), (0x1A, 1), (0x5B), (0x5A), call(13, 4), 0x33, words=words)
+        plain = self.nr.plain_options(source)
+        self.assertEqual((self.nr.text_at(plain, 0), self.nr.text_at(plain, second)), ('bear.|chair.', 'dude.'))
+
+    def test_a_formatted_title_cards_format_is_its_headline(self):
+        # King of Diss's day cards: 5 formats "%s morning." with a day, and 30 shows the result (PUSH_R).
+        # The day comes from a table indexed by a global (16), a host call within the arguments.
+        words = text_words('%s morning.') + text_words('tuesday')
+        day = len(text_words('%s morning.'))
+        source = program((0x1A, 0), (0x1A, 1001), call(16, 1), 0x21, (0x40, day), 0x50, call(5, 2), 0x21,
+                         (0x1A, 0), (0x1A, 25), (0x1A, 0), call(30, 4), 0x33, words=words)
+        self.assertEqual(self.nr.title_card_titles(source), {0})
+        import casing
+        self.assertEqual(casing.headline_case('%s morning.'), '%s Morning.')
+
+    def test_library_reads_read_zero_once_the_library_is_gone(self):
+        source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
+        self.assertEqual(yields(self.nr.expand_streams(source, library_data=29396)), [(30, (0,))])
+
+    def test_a_speed_diss_is_timed_rhyme_choices_until_its_hits_or_misses_run_out(self):
+        # The story calls the library (SAVE_RETURN + JUMP past its code) and reads B; here it shows B with 30.
+        source = program(0x42, (0x29, 9999), 0x08, call(30, 1), 0x33)
+        rewriter = Rewriter(source)
+        rounds = [('cat', ['rat', 'cool', 'girl'], 0), ('cool', ['beat', 'fool'], 1)] * 5
+        rewriter.replace_call(1, 'diss', 0, lambda s: self.nr.speed_diss(s, rounds, player=False, music=True))
+        result = rewriter.finish()
+        # Each round: the prompt's format (a handle back), the choice (the answer), the jingle. A hit, then three
+        # misses (a wrong answer, a time out, a wrong answer) end it with one hit in B.
+        answers = [0, 0, -1, 0]                     # the rounds' rhymes are at 0, 1, 0, 1
+        events = yields(result, [r for answer in answers for r in (32757, answer, 0)], limit=60)
+        choices = [args for service, args in events if service == 1]
+        jingles = [args[0] - self.nr.MUSIC_BASE for service, args in events if service == 80]
+        self.assertEqual((len(choices), choices[0][3], choices[0][4]), (4, self.nr.SPEED_DISS_MS, -1))
+        self.assertEqual(jingles, [13, 1, 1, 1])                    # right, then wrong three times
+        self.assertEqual(events[-1], (30, (1,)))
+
+    def test_rhyme_pairs_group_into_families(self):
+        pairs = [('cat', 'fat'), ('cool', 'fool'), ('rat', 'chat'), ('school', 'tool'), ('beat', 'street'),
+                 ('elite', 'beat'), ('water', 'slaughter'), ('matter', 'chatter')]
+        self.assertEqual(self.nr.rhyme_groups(pairs), [
+            ['cat', 'fat', 'rat', 'chat'], ['cool', 'fool', 'school', 'tool'], ['beat', 'street', 'elite'],
+            ['water', 'slaughter'], ['matter', 'chatter']])
+
+    def test_a_lite_scripts_text_indices_become_addresses(self):
+        # The Lite builds address text by index into a string table (script + 50). Index 0 is a line (spoken by
+        # character 3); a PUSH2 packs a key and its value (indices 2 and 1) for 17, with a stray 0 below a title
+        # card's first word (index 1) in another. Data word 0 points to a one-record table whose word 1 holds index 2.
+        table = struct.pack('>3h', 1, 3, 0) + b'hello.\0bob\0$key\0'
+        code = program((0x1A, 0), (0x1A, 3), call(40, 2),
+                       (0x1B, 1 << 8 | 2), call(17, 2),
+                       (0x1B, 1 << 8 | 0), (0x1A, 1), (0x1A, -1), 0x5A, call(30, 4), 0x33, words=[1, 0, 2])
+        source = {25001: code.to_bytes(), 25051: table}
+        episode = self.nr.read_lite(source, tables={0: (2, 1, lambda record: (1,))})
+        lite = episode.scripts[25001]
+        text = lambda address: self.nr.text_at(lite, address)
+        (_, (line, character)), (_, (key, value)), (_, (title, subtitle, location, flag)) = yields(lite)
+        self.assertEqual((text(line), character, text(key), text(value)), ('hello.', 3, '$key', 'bob'))
+        self.assertEqual((text(title), text(subtitle), location, flag), ('bob', 'bob', -1, 0))
+        self.assertEqual(text(lite.main_words[2]), '$key')                       # the table's field
+        self.assertEqual(episode.text_addresses[25001], {line, value, key})
+        # The analyses still see the packed values as constants (pushes_block), and a choice titled with a name's
+        # key without its `$` is that character's.
+        self.assertEqual(self.nr.pushed_values(lite, 4, 2), [key, value])        # the call at 4
+        self.assertEqual(self.nr.chooser('josh.', {'$josh': {9}}, Counter()), 9)
+
     def test_achievement_beats_become_notices(self):
         notice = self.nr.NOTICE
         for text in ('good answer!', 'handle approved!', 'exhibit successful!', 'Clue Acquired!'):
@@ -364,6 +451,17 @@ class CasingTests(unittest.TestCase):
         self.assertEqual(casing.apply('professional djs and a tv.', dictionary), 'Professional DJs and a TV.')
         self.assertEqual(casing.apply('he marks it.', dictionary), 'He marks it.')     # a plural only after an acronym
         self.assertEqual(casing.apply('the team? `does` she?', dictionary), 'The team? `Does` she?')
+        self.assertEqual(casing.apply('{ nice goatee. at least... {', dictionary), '{ Nice goatee. At least... {')
+        self.assertEqual(casing.apply("today on 'the valley', krystal got a d-plus. bring your 'a' game, rock 'n' roll.",
+                                      dictionary),
+                         "Today on 'The Valley', Krystal got a D-plus. Bring your 'A' game, rock 'n' roll.")
+        self.assertEqual(casing.apply('they stare out at the valley below.', dictionary),
+                         'They stare out at the valley below.')
+        self.assertEqual(casing.apply("known as `the beatdown of '06`... i was going to watch, 'i eat your brains "
+                                      "with salsa'. when he calls, 'come over', they stay.", dictionary),
+                         "Known as `The Beatdown of '06`... I was going to watch, 'I Eat Your Brains With Salsa'. "
+                         "When he calls, 'come over', they stay.")
+        self.assertEqual(casing.apply('he said, "hi."', dictionary), 'He said, "Hi."')
         # A line found inside a twin's that has a name key there ("$ZOE") writes the name, not the key.
         source = program(0x33, words=text_words('zoe tries to catch sam, but...'))
         for twin in ('$ZOE tries to catch Sam, but...', '$SUPERZOE tries to catch Sam, but...'):

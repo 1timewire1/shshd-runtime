@@ -38,7 +38,6 @@ TITLE_SUFFIX = ' (New Rules)'           # on the library title only; the story's
 ANNOUNCEMENT = re.compile(r"\bplay(?:ing)? as (?:(?P<who>(?!her\b|him\b|them\b)[a-z.]+(?: [a-z.]+)?)|her|him)\b"
                           r"|\bin (?:his|her) shoes\b|\binto (?P<brain>[a-z.]+)'s brain\b")
 ANNOUNCEMENT_CONTEXT = 3                # narration lines before an announcement searched for its pronoun's name
-THOUGHTS_SET_PLAYER = True              # a thought line (mode -2) makes its speaker the player
 PLAYER_KEY = 31301                      # SHS global number holding the current player (74), for choices and word games
 # The smartphone versions' word games (71): 20 s with a word every 3 s in 69 of their 70, passed at a score of 6.
 WORD_GAME_MS, WORD_GAME_REFRESH_MS, WORD_GAME_PASS = 20000, 3000, 6
@@ -67,7 +66,7 @@ RENAME = {1: 22, 2: 25, 6: 27, 15: 54, 16: 55, 17: 46, 18: 47, 19: 64, 27: 6, 33
 PROPERTY = {20: 50, 21: 51, 22: 52, 23: 53}
 OWN_KEYS, PRIVATE_KEYS = range(651, 655), 31000
 # Presentation New Rules has and SHS doesn't (stage layout, UI tints, phone-keypad help, no-ops): the call is removed.
-DROPPED = {10, 29, 36, 37, 38, 39, 44, 45, 46, 58, 59, 62, 64}
+DROPPED = {10, 29, 36, 37, 38, 39, 44, 45, 46, 58, 59, 62, 64, 66}
 # New Rules' build query (32): selector -> constant.
 BUILD = {1: 1, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}     # the Java build answers 2 to selector 1 (keyboard_guards)
 KEYBOARD_WINDOW = 60                    # keyboard_guards(): how far after a selector-1 query the text entry may be
@@ -82,6 +81,9 @@ class Episode:
     download_id: int
     title: str
     scripts: dict                       # resource -> KiwiProgram
+    library: object = None              # a built-in story's minigame library (KiwiProgram), which it calls into
+    text_addresses: dict = None         # resource -> the addresses of its strings, where its data holds other words
+                                        # that could read as text (read_lite's tables of string addresses)
 
 
 def read_expd(data: bytes) -> Episode:
@@ -105,6 +107,7 @@ class Report:
     music: int = 0                                          # rendered tracks embedded
     protagonist: int = PLAYER                               # the primary speaker chosen (protagonist())
     word_games: int = 0                                     # minigame rounds played as SHS word games
+    library_games: dict = field(default_factory=dict)       # a built-in story's library calls by game (LIBRARY_ENTRIES)
 
 
 def discover(episode, steps=200000, sexes=None):
@@ -162,9 +165,34 @@ def used_scenes(episode):
 
 
 def title_card_titles(program):
-    """The addresses of the titles the program's title cards (30) and closing screen (28) show."""
-    return {pushed_values(program, i.pc, i.operand & 255)[0] for i in program.instructions
-            if i.opcode == 0x1f and i.operand >> 8 in (28, 30) and i.operand & 255 >= 1} - {None}
+    """The addresses of the titles the program's title cards (30) and closing screen (28) show: a constant, or the
+    format string of a formatted one ("%s morning.")."""
+    titles = set()
+    for i in program.instructions:
+        if i.opcode == 0x1f and i.operand >> 8 in (28, 30) and i.operand & 255 >= 1:
+            title = pushed_values(program, i.pc, i.operand & 255)[0]
+            titles.add(title if title is not None else formatted_title(program, i.pc, i.operand & 255))
+    return titles - {None}
+
+
+def plain_options(program):
+    """`program` with the emphasis backticks taken out of its choice options (11's list, 13's text): New Rules marks
+    King of Diss's rhymes that way ("`phonics`."), and SHS's menu labels show a backtick as it is. The shorter string
+    keeps its place, ended early."""
+    words = list(program.main_words)
+    for i in program.instructions:
+        if i.opcode != 0x1f or i.operand >> 8 not in (11, 13):
+            continue
+        args = pushed_values(program, i.pc, i.operand & 255)
+        address = args[1] if i.operand >> 8 == 11 and len(args) > 1 else args[0]
+        text = text_at(replace(program, main_words=tuple(words)), address) if address is not None else None
+        if not text or '`' not in text:
+            continue
+        data = text.replace('`', '').encode('latin-1') + b'\0'
+        data += b'\0' * (len(data) % 2)
+        for k in range(0, len(data), 2):
+            words[address + k // 2] = data[k] << 8 | data[k + 1]
+    return replace(program, main_words=tuple(words))
 
 
 def text_at(program, address):
@@ -224,7 +252,9 @@ def chooser(title, names, scores):
     story that switches perspective (Kim to Mallika) shows it here. None for a title that is the question itself."""
     if title is None:
         return None
-    characters = names.get(title.strip().rstrip('.!?:').strip().lower())
+    key = title.strip().rstrip('.!?:').strip().lower()
+    # King of Diss Lite titles Josh's choices "josh", whose name is the `$josh` key (set from it by service 18).
+    characters = names.get(key) or names.get('$' + key)
     return max(characters, key=lambda c: scores.get(c, 0)) if characters else None
 
 
@@ -256,12 +286,6 @@ def set_player(s, character):
     s.push(PLAYER_KEY); s.push(character); s.call(54, 2)
 
 
-def set_player_arg(s, i):
-    """set_player for the character in argument i."""
-    s.arg(i); s.call(74, 1)
-    s.push(PLAYER_KEY); s.arg(i); s.call(54, 2)
-
-
 def push_player(s):
     s.push(PLAYER_KEY); s.call(55, 1); s.push_result()
 
@@ -286,13 +310,15 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
     player = has_player(episode, names, scores)
     if casing_dictionary is not None:
         import casing
-        episode = Episode(episode.download_id, episode.title, {
+        episode = replace(episode, scripts={
             rid: replace(program, main_words=casing.recase_program(program, casing_dictionary, names,
                                                                    titles=[episode.title, *casing_titles],
                                                                    unknown=report.unknown,
                                                                    exact=casing_exact,
+                                                                   addresses=(episode.text_addresses or {}).get(rid),
                                                                    headlines=title_card_titles(program)))
             for rid, program in episode.scripts.items()})
+    episode = replace(episode, scripts={rid: plain_options(program) for rid, program in episode.scripts.items()})
     banks, bank_of = {}, {}
     for (rid, address), record in sorted(looks.items()):
         slots = record[1:]
@@ -316,6 +342,15 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         for start, game in word_games(program).items():
             rewriter.replace_function(start, ('word_game', start), lambda s, game=game: word_game(s, program, game, twin_games, player))
             report.word_games += 1
+        for pc, entry, argc in library_calls(program):
+            kind = LIBRARY_ENTRIES.get(entry)
+            if kind is None or episode.library is None:
+                raise TranslateError(f'script {rid} calls library code at {entry}, which has no translation')
+            index = report.library_games.get(kind, 0)
+            report.library_games[kind] = index + 1
+            rewriter.replace_call(pc, ('library', kind, index), argc,
+                                  lambda s, kind=kind, index=index: library_game(s, kind, index, episode.library, player,
+                                                                                 music is not None))
         last_line = rewriter.words([-1])                       # the last line shown, for a choice's description
         for pc, service, argc in rewriter.calls():
             key = (service, argc)
@@ -342,9 +377,12 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
             rewriter.prologue(lambda s: set_player(s, players['start']))
         resources[rid] = rewriter.finish().to_bytes()
     if music is not None:
-        for index in sorted(used_music(episode)):
+        tracks = used_music(episode)
+        if report.library_games.get('rhyme'):
+            tracks |= {RIGHT_TRACK, WRONG_TRACK}            # the speed disses' jingles (speed_diss)
+        for index in sorted(tracks):
             resources[MUSIC_BASE + index] = music(index)
-        report.music = len(used_music(episode))
+        report.music = len(tracks)
     # The library's picker hides a second import of a story it already lists (same title, nearly the same text), so
     # a story with a smartphone version would never show; the suffix keeps the two apart.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
@@ -360,28 +398,23 @@ def remember_line(s, i, context):
 def dialogue(rewriter, pc, argc, context):
     """40: ([mode], text, char[, expression]), the mode present when the first word is negative (f.java); -2 and -3 are
     SHS's thought and emphasis prefixes too, another box mode (-5) is dropped. Expression 0 means the character's
-    default. The scripts push the mode as a constant; a four-word call's computed mode is tested when it runs."""
+    default. The scripts push the mode as a constant; a four-word call's computed mode is tested when it runs. A thought
+    stays its thinker's: it shows on the player's side only when the player thinks it (Mrs. Faulkner's don't)."""
     mode = pushed_values(context['program'], pc, argc)[0]
     if argc == 3 and mode is not None and mode < 0:
         prefix = mode if mode in (-2, -3) else None
 
         def build_mode(s):
             remember_line(s, 2, context)
-            if prefix == -2 and THOUGHTS_SET_PLAYER:
-                set_player_arg(s, 3)
             if prefix is not None:
                 s.push(prefix)
             s.arg(2); s.arg(3); s.call(13, 2 + (prefix is not None))
         rewriter.redirect(pc, ('dialogue', 'mode', prefix), build_mode)
         return
 
-    thought = argc == 4 and mode == -2 and THOUGHTS_SET_PLAYER
-
     def build(s):
         if argc == 4:
             # SHS 13 understands the -2/-3 prefixes; another box mode is dropped.
-            if thought:
-                set_player_arg(s, 3)
             mode_kept = s.label()
             remember_line(s, 2, context)
             s.arg(1); s.push(-2); s.emit(0x0a); s.arg(1); s.push(-3); s.emit(0x0a); s.emit(0x11)
@@ -397,7 +430,7 @@ def dialogue(rewriter, pc, argc, context):
         if argc == 3:
             s.select(3, EXPRESSION, -1)
         s.call(13, argc)
-    rewriter.redirect(pc, ('dialogue', 40, thought), build)
+    rewriter.redirect(pc, ('dialogue', 40), build)
 
 
 def named_dialogue(rewriter, pc, argc, context):
@@ -552,8 +585,8 @@ def background(s, i):
 
 def scene_players(program, names, scores):
     """Who the player is in each scene: {location change (35) pc, or 'start': character}. A scene's player is the first
-    one it shows in program order, by a choice titled with a name (chooser) or a thought line (mode -2), before the
-    next location change. Switching there, as the smartphone versions do (74 at the new character's scene), rather than
+    one it shows in program order, by a choice titled with a name (chooser), before the next location change. A thought
+    line is no sign: other characters think too (King of Diss's Mrs. Faulkner). Switching there, as the smartphone versions do (74 at the new character's scene), rather than
     at that first sign, keeps the scene's earlier lines on the right side."""
     signals, scenes = [], []
     for i in program.instructions:
@@ -566,10 +599,6 @@ def scene_players(program, names, scores):
             who = chooser(constant_text(program, None, i.pc, 1, argc), names, scores)
             if who is not None:
                 signals.append((i.pc, who))
-        elif service == 40 and argc >= 3:
-            args = pushed_values(program, i.pc, argc)
-            if args[0] == -2 and args[2] is not None:
-                signals.append((i.pc, args[2]))
     found = {}
     for start, end in zip(['start'] + scenes, scenes + [len(program.instructions)]):
         first = next((who for pc, who in signals if (start == 'start' or pc > start) and pc < end), None)
@@ -874,6 +903,421 @@ def word_game(s, program, game, twin_games=(), player=True):
     s.label(done); s.emit(0x04)                         # B, which the caller reads
 
 
+# -- Built-in stories (King of Diss) ----------------------------------------------------------------------------------
+KING_OF_DISS = range(25001, 25008)      # its scripts in res_large.pud (and in the full Java builds)
+LIBRARY = 25200                         # the minigame library a built-in story calls into (linked, never translated)
+STREAM = 48                             # the compact dialogue stream (expand_streams)
+# The library's games that King of Diss calls, by entry PC (its calls pass their intro text, a target score and 40 s):
+# the Rhyme battle ("match words that rhyme, son!"), the Rhythm game ("don't hit the wrong notes..."), the team battle's
+# beat boxing, and the face picker ("select your face.").
+LIBRARY_ENTRIES = {32611: 'rhyme', 31473: 'rhythm', 28903: 'beat boxing', 28201: 'faces'}
+LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
+RHYME_PROMPT = '`%s` rhymes with...'    # the library string before its rhyme pairs' words
+RHYME_END = 'rhyming'                   # and the one after them
+# The arena games without words of their own, played as SHS word games: (banner, good words, bad words). Rhythm's
+# good and bent notes, and beat boxing's sounds, as the story's lines write them.
+WORDLESS_GAMES = {
+    'rhythm': ('Rhythm!', ('beat', 'groove', 'flow', 'bass', 'tempo', 'rhythm'),
+               ('bent note', 'off-key', 'screech', 'clunk', 'sour note', 'static')),
+    'beat boxing': ('Beat boxing!', ('ba-dum', 'wicky', 'boots', 'cats', 'boom', 'tss'),
+                    ('la la la', 'achoo', 'meow', 'hiccup', 'shh', 'moo')),
+}
+RHYME_BANNER = 'Speed diss!'
+# The speed disses play as the Lite builds' (King of Diss Lite, script 25001's loop): a timed choice per round under
+# their prompt, ten hits to finish, three misses to lose, 3 s a round padded 30% as New Rules pads its limits.
+SPEED_DISS_PROMPT = 'Flow: %d/10\nMiss: %d/3\nRhymes with { %s {'      # a menu's description shows no emphasis
+SPEED_DISS_HITS, SPEED_DISS_MISSES = 10, 3
+SPEED_DISS_ROUNDS = SPEED_DISS_HITS + SPEED_DISS_MISSES - 1
+SPEED_DISS_MS = 3900
+RIGHT_TRACK, WRONG_TRACK = 13, 1                         # FEEDBACK_TRACKS: New Rules' right and wrong jingles
+
+
+def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1):
+    """A built-in story from New Rules' res_large.pud (`source`: resources by ID, nr_art.load) as an Episode, its compact
+    dialogue streams written out (expand_streams) and the minigame library it calls kept beside it."""
+    library = decode_program(source[LIBRARY]) if LIBRARY in source else None
+    boundary = library.previous_data_count if library is not None else None
+    return Episode(download_id, title, {rid: expand_streams(decode_program(source[rid]), boundary)
+                                        for rid in scripts}, library)
+
+
+# The Lite Java builds' condensed King of Diss: one script, its text in a string table (script ID + 50) that scripts
+# address by index (r.java b(int)), the number of strings in its header. Its data keeps text indices in two tables, found
+# through pointer words: the character records (36 words, the name in word 1) and the speed-diss rounds (6 words: the
+# number of options, the target word, the options).
+LITE_SCRIPT, LITE_TEXT = 25001, 25051
+LITE_TABLES = {958: (36, 21, lambda record: (1,)),
+               961: (6, 30, lambda record: range(1, 2 + record[0]))}
+# Where each service takes text: argument positions, or a rule for a leading negative mode word (dialogue, names,
+# formats, text entry).
+TEXT_ARGUMENTS = {43: (1,), 11: (1, 2), 12: (1,), 13: (1,), 30: (1, 2), 10: (1,), 66: (1,), 17: (1, 2), 18: (1, 2),
+                  19: (2,), 28: (1, 2), 9: (1, 2), 1: (2,), 2: (1, 2), 3: (1,), 4: (1,),
+                  40: 'mode', 41: 'mode', 42: 'mode', 5: 'mode', 49: 'mode'}
+STACK_EFFECTS = {0x1a: (0, 1), 0x1b: (0, 2), 0x5a: (0, 1), 0x5b: (0, 1), 0x40: (0, 1), 0x41: (0, 1), 0x23: (0, 1),
+                 0x5f: (0, 1), 0x60: (0, 1), 0x61: (0, 1), 0x62: (0, 1), 0x21: (0, 1), 0x07: (0, 1), 0x08: (0, 1),
+                 0x3f: (1, 1), **{op: (2, 1) for op in (0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x11, 0x12,
+                                                       0x50, 0x51, 0x52, 0x53, 0x54)}}
+
+
+def read_lite(source, title='King of Diss Lite', download_id=100, tables=LITE_TABLES):
+    """The Lite builds' King of Diss (`source`: a Lite jar's resources, nr_art.load) as an Episode whose text lives in
+    its data, as New Rules' own scripts keep it: the strings are appended after the extra bank, and each index that
+    reaches a text argument becomes that string's address (constant pushes, traced through the stack, and LITE_TABLES'
+    fields). Dynamic strings (32757 and up) and -1 stay as they are."""
+    from exp_runtime.decode.bytecode import BytecodeInstruction
+    from kiwi_rewrite import word
+    program = decode_program(source[LITE_SCRIPT])
+    table = source[LITE_TEXT]
+    count = struct.unpack_from('>h', table, 2)[0]
+    strings = [s.decode('cp1252') for s in table[6:].split(b'\0')[:count]]
+    extra = list(program.extra_words)
+    base = len(program.main_words) + program.gap_count
+    address = []
+    for text in strings:
+        data = text.encode('latin-1', 'replace') + b'\0'
+        data += b'\0' * (len(data) % 2)
+        address.append(base + len(extra))
+        extra.extend(data[i] << 8 | data[i + 1] for i in range(0, len(data), 2))
+    if base + len(extra) >= 0x7bf5:
+        raise TranslateError('the Lite text reaches the VM stack')
+    code = [(i.opcode, i.operand) for i in program.instructions]
+    packed = {}                                             # a PUSH2's pc -> its two values, those that are text moved
+    for i in program.instructions:
+        if i.opcode != 0x1f or (i.operand >> 8) not in TEXT_ARGUMENTS:
+            continue
+        service, argc = i.operand >> 8, i.operand & 255
+        producers = argument_producers(program, i.pc, argc)
+        positions = TEXT_ARGUMENTS[service]
+        if positions == 'mode':
+            first = 2 if producers[0] is not None and signed(producers[0][1]) < 0 else 1
+            positions = {40: (first,), 41: (first, first + 1), 42: (first, first + 1), 5: (first,),
+                         49: (first, first + 1, first + 2)}[service]
+        for k in positions:
+            if k > argc or producers[k - 1] is None:
+                continue
+            pc, value, half = producers[k - 1]
+            if 0 <= value < count:
+                if code[pc][0] == 0x1b:
+                    # Two bytes in one word: it can't hold an address, so it becomes a jump to two full pushes.
+                    operand = program.instructions[pc].operand
+                    pair = packed.setdefault(pc, [signed(operand & 255 | (0xff00 if operand & 128 else 0)),
+                                                  signed(operand >> 8 | (0xff00 if operand & 0x8000 else 0))])
+                    pair[half] = address[value]
+                else:
+                    code[pc] = (0x1a, word(address[value]))
+    for pc, (low, high) in packed.items():
+        code[pc] = (0x29, len(code))
+        code.extend([(0x1a, word(low)), (0x1a, word(high)), (0x29, pc + 1)])
+    words = list(program.main_words)
+    for pointer, (stride, records, fields) in tables.items():
+        start = (words + [0] * program.gap_count + list(program.extra_words))[pointer]
+        for r in range(records):
+            record = words[start + r * stride:start + (r + 1) * stride]
+            for f in fields(record):
+                if 0 <= record[f] < count:
+                    words[start + r * stride + f] = address[record[f]]
+    instructions = tuple(BytecodeInstruction(pc, 0, op, operand) for pc, (op, operand) in enumerate(code))
+    # Without a gap, the extra bank follows the main one directly: as main data the strings keep their addresses and
+    # are cased with the rest (casing.recase_program reads the main bank).
+    if program.gap_count:
+        raise TranslateError('the Lite script has a gap between its data banks')
+    program = decode_program(replace(program, main_words=tuple(words + extra), extra_words=(),
+                                     instructions=instructions).to_bytes())
+    return Episode(download_id, title, {LITE_SCRIPT: program}, text_addresses={LITE_SCRIPT: set(address)})
+
+
+def signed(value):
+    return value - 0x10000 if value > 0x7fff else value
+
+
+def formatted_title(program, pc, argc):
+    """The format string's address when the call's first argument is a format's result (5 then PUSH_R, "%s morning."
+    for King of Diss's day cards), else None."""
+    producer = argument_producers(program, pc, argc, every=True)[0]
+    if producer is None or program.instructions[producer[0]].opcode != 0x21 or producer[0] == 0:
+        return None
+    call = program.instructions[producer[0] - 1]
+    if call.opcode != 0x1f or call.operand >> 8 != 5:
+        return None
+    arguments = argument_producers(program, call.pc, call.operand & 255)
+    first = arguments[0]
+    if first is not None and first[1] is not None and signed(first[1]) < 0:   # a leading dynamic slot
+        first = arguments[1] if len(arguments) > 1 else None
+    return first[1] if first is not None else None
+
+
+def argument_producers(program, pc, argc, every=False):
+    """For each argument of the call at `pc`: (instruction index, value, which byte of a PUSH2 or None) when a constant
+    push made it, else None; with `every`, (instruction index, None, None) for any other single push that made it.
+    Traced back through the stack effects of straight-line code (STACK_EFFECTS), so a constant pushed before other
+    arguments' arithmetic is still found; anything else ends the trace."""
+    pending = list(range(1, argc + 1))                      # what the stack holds, bottom to top: argument numbers
+    found = [None] * argc
+    position = pc - 1
+    while pending and position >= 0:
+        instruction = program.instructions[position]
+        effect = STACK_EFFECTS.get(instruction.opcode)
+        if instruction.opcode == 0x1f:                      # a host call takes its arguments and pushes nothing
+            effect = (instruction.operand & 255, 0)
+        if effect is None:
+            break
+        pops, pushes = effect
+        # A PUSH2 may also push a value below the arguments ("0, 40" before a title card's 40, 41, 25, 0).
+        produced = [None] * max(0, pushes - len(pending)) + pending[max(0, len(pending) - pushes):]
+        del pending[max(0, len(pending) - pushes):]
+        if instruction.opcode == 0x1a and produced[0] is not None:
+            found[produced[0] - 1] = (position, instruction.operand, None)
+        elif instruction.opcode in (0x5a, 0x5b) and produced[0] is not None:
+            found[produced[0] - 1] = (position, instruction.opcode - 0x5a, None)
+        elif instruction.opcode == 0x1b:
+            for half, (value, number) in enumerate(zip((instruction.operand & 255, instruction.operand >> 8), produced)):
+                if number is not None:
+                    found[number - 1] = (position, value - 256 if value > 127 else value, half)
+        elif every and pushes == 1 and produced[0] is not None:
+            found[produced[0] - 1] = (position, None, None)
+        pending.extend([None] * pops)
+        position -= 1
+    return found
+
+
+def expand_streams(program, library_data=None):
+    """`program` with each compact dialogue stream (48: a data address; SHS_NEW_RULES_ENGINE.md section 7.1) written
+    out as the New Rules calls it stands for, in a block after the code: the call becomes a jump there, and the block
+    drops the call's argument, makes the calls and jumps back after it. The streams are static data, so this is exact.
+    New instructions only follow the code, so no address moves. A read of the linked library's data (an address from
+    `library_data`, its first word, on: the team battle passes three of its variables to the library) reads 0."""
+    from exp_runtime.decode.bytecode import BytecodeInstruction
+    from kiwi_rewrite import word
+    code = [(0x1a, 0) if library_data is not None and i.opcode == 0x40 and i.operand >= library_data
+            else (i.opcode, i.operand) for i in program.instructions]
+    for i in program.instructions:
+        if i.opcode != 0x1f or i.operand >> 8 != STREAM:
+            continue
+        address = pushed_values(program, i.pc, 1)[0]
+        if address is None:
+            raise TranslateError(f'a dialogue stream at {i.pc} has no constant address')
+        block = [(0x15, None)] + [(op, None if operand is None else word(operand))
+                                  for op, operand in stream_calls(program.main_words, address)] + [(0x29, i.pc + 1)]
+        code[i.pc] = (0x29, len(code))
+        code.extend(block)
+    if code == [(i.opcode, i.operand) for i in program.instructions]:
+        return program
+    instructions = tuple(BytecodeInstruction(pc, 0, op, operand) for pc, (op, operand) in enumerate(code))
+    return decode_program(replace(program, instructions=instructions).to_bytes())
+
+
+def stream_calls(words, address):
+    """The New Rules calls (opcode, operand) one dialogue stream stands for (f.java a(): the commands, low nibble):
+    0-5 a character speaks with that expression (40; box mode -4 or below is narration, 43), 6 narration (43) or a
+    line under a name (41), 7 several characters under a name (42), 8 the stage (44/45), 9 a default expression (24),
+    10 character property 630 (22), 11 the location (35), 12 engine mode 11 (47), 13 music (7), 14 a character's bounce
+    (no SHS counterpart, left out), 15 the end."""
+    out = []
+
+    def push(*values):
+        out.extend((0x1a, v) for v in values)
+
+    def call(service, argc):
+        out.append((0x1f, service << 8 | argc))
+
+    def who(value):                                         # f.java b(): 0xFF is nobody
+        return -1 if value & 0xff == 0xff else value & 0xff
+
+    o = address
+    while True:
+        w = words[o]
+        o += 1
+        command = w & 15
+        if command <= 5:
+            mode, character, text = -(w >> 4 & 7), w >> 7 & 0xff, words[o]
+            o += 1
+            if mode <= -4:
+                push(text); call(43, 1)
+            elif mode in (-2, -3):
+                push(mode, text, character, command); call(40, 4)
+            else:
+                push(text, character, command); call(40, 3)
+        elif command == 6:
+            if w >> 4 & 1:
+                mode, character, name, text = -(w >> 5 & 7), who(w >> 8), words[o], words[o + 1]
+                o += 2
+                prefix = (mode,) if mode in (-2, -3) else ()
+                push(*prefix, name, text, character); call(41, len(prefix) + 3)
+            else:
+                push(words[o]); call(43, 1)
+                o += 1
+        elif command == 7:
+            count = w >> 7 & 7
+            people = words[o:o + count]
+            name, text = words[o + count], words[o + count + 1]
+            o += count + 2
+            push(name, text)
+            for person in people:
+                push(who(person), person >> 8 & 7)
+            call(42, 2 + 2 * count)
+        elif command == 8:
+            count = 3 if w >> 4 & 1 else 2
+            people = [who(part) for value in words[o:o + count] for part in (value, value >> 8)]
+            o += count
+            push(*people); call(44 if count == 2 else 45, len(people))
+        elif command == 9:
+            push(w >> 7 & 0xff, w >> 4 & 7); call(24, 2)
+        elif command == 10:
+            push(w >> 6 & 0xff, 630, w >> 4 & 3); call(22, 3)
+        elif command == 11:
+            push(w >> 4 & 7, w >> 7 & 63); call(35, 2)
+        elif command == 12:
+            push(11); call(47, 1)
+        elif command == 13:
+            push(w >> 4 & 15, 0); call(7, 2)
+        elif command == 14:
+            o += 1
+        else:
+            return out
+
+
+def rhyme_families(library):
+    """The library's rhyme pairs (its word table: pairs of string addresses from cat/fat to the RHYME_END string),
+    grouped into families that rhyme: pairs sharing a word, and words alike once their first consonants go ("chat"
+    and "rat", "school" and "tool"). Largest first, each in the table's order."""
+    import casing
+    base = library.previous_data_count
+    texts = {address + base: text for address, text in casing.strings(library)}
+    start = next(a for a, t in texts.items() if t == RHYME_PROMPT)
+    words = library.main_words
+    table = words.index(min(a for a in texts if a > start))          # the table starts with the first word's address
+    pairs = []
+    while texts.get(words[table]) != RHYME_END:
+        pairs.append((texts[words[table]], texts[words[table + 1]]))
+        table += 2
+    return rhyme_groups(pairs)
+
+
+def rhyme_groups(pairs):
+    """Rhyming pairs grouped into families: pairs sharing a word, and words alike once their first consonants go.
+    Largest first, each in the pairs' order."""
+    rhyme = lambda word: re.sub(r'^[^aeiou]*(?=[aeiouy])', '', word.split('-')[-1]) or word
+    family = {}
+    order = []
+    for pair in pairs:
+        for word in pair:
+            if word not in order:
+                order.append(word)
+    parent = {word: word for word in order}
+
+    def root(word):
+        while parent[word] != word:
+            word = parent[word]
+        return word
+    for a, b in pairs:
+        parent[root(b)] = root(a)
+    for word in order:
+        family.setdefault(rhyme(word), word)
+        parent[root(word)] = root(family[rhyme(word)])
+    groups = {}
+    for word in order:
+        groups.setdefault(root(word), []).append(word)
+    return sorted(groups.values(), key=lambda group: -len(group))
+
+
+def library_game(s, kind, index, library, player=True, music=False):
+    """The body replacing a call into the minigame library, then B = the result, as the library leaves it (a score, or
+    the face's index): the speed disses as the Lite builds play theirs (speed_diss), Rhythm and beat boxing as SHS's
+    word game (71), the face picker as SHS's portrait picker (78)."""
+    if kind == 'rhyme':
+        speed_diss(s, rhyme_rounds(library, index), player, music)
+        return
+    if kind == 'faces':
+        # (title, subtitle, prompt, count, candidate characters, flag): the candidates' looks are the faces offered.
+        # SHS's picker shows one line, so it takes the short prompt ("select your face.").
+        s.arg(3); s.arg(4); s.arg(5); s.call(78, 3)
+    else:
+        banner, good, bad = WORDLESS_GAMES[kind]
+        s.text(banner); s.arg(s.argc - 1)                   # its intro text
+        s.text('|'.join(good)); s.text('|'.join(bad)); s.push(LIBRARY_GAME_MS)
+        if player:
+            push_player(s)
+        else:
+            s.push(NARRATOR)
+        s.push(1); s.push(WORD_GAME_REFRESH_MS)
+        s.call(71, 8)
+    s.push_result(); s.emit(0x04)                           # B, which the caller reads
+
+
+def rhyme_rounds(library, index):
+    """The index-th speed diss's rounds (SPEED_DISS_ROUNDS): (target, options, the rhyme's place among them). Each
+    round is a target and one word of its rhyme family, among two or three words of other families; the pairs are
+    dealt out in a fixed shuffle, so no two speed disses share a round."""
+    import random
+    families = rhyme_families(library)
+    pairs = [(f[a], f[b]) for f in families for a in range(len(f)) for b in range(a + 1, len(f))]
+    deal = random.Random(LIBRARY)
+    deal.shuffle(pairs)
+    family_of = {word: n for n, f in enumerate(families) for word in f}
+    words = [word for f in families for word in f]
+    rounds = []
+    for target, rhyme in pairs[index * SPEED_DISS_ROUNDS:(index + 1) * SPEED_DISS_ROUNDS]:
+        others = [w for w in words if family_of[w] != family_of[target]]
+        options = deal.sample(others, 2 + len(rounds) % 2) + [rhyme]
+        deal.shuffle(options)
+        rounds.append((target, options, options.index(rhyme)))
+    return rounds
+
+
+def speed_diss(s, rounds, player=True, music=False):
+    """A speed diss as the Lite builds play theirs: timed choices, "Flow: n/10 Miss: n/3, rhymes with `cat`", each the
+    rhyme among non-rhymes, until ten hits or three misses (or the rounds run out). New Rules' right and wrong jingles
+    follow each answer when the music is rendered (the answer hints know them). B = the hits, which the story reads
+    against its own target (7). The rounds are written out one after another."""
+    hits = s.rewriter.words([0, 0])
+    misses = hits + 1
+    end = s.label()
+
+    def add(address):
+        s.push(address); s.emit(0x40, address); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+
+    for address in (hits, misses):
+        s.push(address); s.push(0); s.emit(0x3e); s.emit(0x15)
+    for target, options, answer in rounds:
+        miss, done = s.label(), s.label()
+        s.emit(0x40, hits); s.push(SPEED_DISS_HITS); s.emit(0x0d); s.jump_if_nonzero(end)
+        s.emit(0x40, misses); s.push(SPEED_DISS_MISSES); s.emit(0x0d); s.jump_if_nonzero(end)
+        s.text(SPEED_DISS_PROMPT); s.emit(0x40, hits); s.emit(0x40, misses); s.text(target.capitalize())
+        s.call(0, 4)
+        s.text(RHYME_BANNER); s.text('|'.join(option.capitalize() for option in options)); s.push_result()
+        s.push(SPEED_DISS_MS); s.push(-1)                   # time out: no answer, a miss
+        if player:
+            push_player(s)
+        else:
+            s.push(NARRATOR)
+        s.push(-1); s.push(1)
+        s.call(1, 8)
+        s.push_result(); s.push(answer); s.emit(0x0a); s.jump_if_zero(miss)
+        add(hits)
+        if music:
+            s.push(MUSIC_BASE + RIGHT_TRACK); s.push(0); s.call(80, 2)
+        s.jump(done)
+        s.label(miss)
+        add(misses)
+        if music:
+            s.push(MUSIC_BASE + WRONG_TRACK); s.push(0); s.call(80, 2)
+        s.label(done)
+    s.label(end)
+    s.emit(0x40, hits); s.emit(0x04)                        # B, which the caller reads
+
+
+def library_calls(program):
+    """[(pc, entry, argument count)] of the program's calls into the linked library: a JUMP past its own code (after a
+    SAVE_RETURN), its arguments dropped by the ADJUST_SP that follows."""
+    end = len(program.instructions)
+    out = []
+    for k, i in enumerate(program.instructions):
+        if i.opcode == 0x29 and i.operand >= end:
+            after = program.instructions[k + 1] if k + 1 < end else None
+            out.append((i.pc, i.operand, after.operand if after is not None and after.opcode == 0x19 else 0))
+    return out
+
+
 def build_query(rewriter, pc, argc, context):
     """32: (selector) -> New Rules' constants in R (R is only set by LOAD_R or a host call, so one LOAD_R each).
     Selector 1 answers 1, or 2 where it guards keyboard name entry (keyboard_guards)."""
@@ -911,7 +1355,10 @@ def pushed_values(program, pc, argc):
     values, position = [], pc - 1
     while len(values) < argc and position >= 0:
         instruction = program.instructions[position]
-        if instruction.opcode == 0x1a:
+        pushes = pushes_block(program, position) if instruction.opcode == 0x29 else None
+        if pushes is not None:                              # read_lite's two full pushes in place of a PUSH2
+            values.extend(reversed(pushes))
+        elif instruction.opcode == 0x1a:
             values.append(instruction.operand - 0x10000 if instruction.operand > 0x7fff else instruction.operand)
         elif instruction.opcode == 0x1b:
             low, high = instruction.operand & 255, instruction.operand >> 8
@@ -923,6 +1370,24 @@ def pushed_values(program, pc, argc):
         position -= 1
     values = values[:argc]
     return [None] * (argc - len(values)) + values[::-1]
+
+
+def pushes_block(program, position):
+    """The values a JUMP at `position` pushes when it enters a block of constant pushes that jumps back to the next
+    instruction (read_lite's replacement for a PUSH2 holding text), in push order; else None."""
+    instructions = program.instructions
+    target = instructions[position].operand
+    if not position < target < len(instructions):
+        return None
+    values = []
+    for instruction in instructions[target:]:
+        if instruction.opcode == 0x1a:
+            values.append(instruction.operand - 0x10000 if instruction.operand > 0x7fff else instruction.operand)
+        elif instruction.opcode == 0x29 and instruction.operand == position + 1 and values:
+            return values
+        else:
+            return None
+    return None
 
 
 def constant_text(program, rewriter, pc, index, argc):
