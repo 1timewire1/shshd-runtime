@@ -885,7 +885,9 @@ class Application:
         self.game.autoplay = self.state.autoplay
         self.game.disable_choice_timer = self.state.disable_choice_timer
         self.game.hd_backdrop = self.state.hd_backdrop
-        self.game.warp_unlocked = self.state.warp_unlocked
+        # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
+        self.game.warp_unlocked = (self.state.warp_unlocked
+                                   or self.game.session.resources.record.get('builtin') != 'football-star')
         self.game.on_settings = self.save_game_settings
         self.game.active = self.active
         self.screen, self.history, self.focus = 'game', [], None

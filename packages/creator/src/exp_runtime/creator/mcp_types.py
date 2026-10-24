@@ -6,12 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class Edit(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    op: Literal['project', 'node', 'character', 'connect', 'rename_node', 'image', 'library_image', 'asset_label', 'layout']
+    op: Literal['project', 'node', 'character', 'connect', 'rename_node', 'image', 'audio', 'library_image', 'asset_label', 'layout']
     id: str | int | None = Field(default=None, description='Node/character ID, or integer asset ID for asset_label.')
     changes: dict[str, Any] = Field(default_factory=dict, description='Fields to patch for project/node/character. Get node fields and valid examples with schema_get.')
     remove: bool = Field(default=False, description='For node/character only. Reconnect all references in the same batch.')
     new_id: str | None = Field(default=None, description='New identity for rename_node; updates edges, start and translation keys.')
-    source: str | None = Field(default=None, description='Source node for connect; workspace-relative PNG/JPEG file for image.')
+    source: str | None = Field(default=None, description='Source node for connect; workspace-relative PNG/JPEG file for image, MP3/WAV file for audio.')
     target: str | None = Field(default=None, description='Destination node for connect. May be created later in this batch.')
     field: str = Field(default='next', description='Connection field: next, otherwise or options.N.target; default next.')
     library: str | None = Field(default=None, description='Workspace-relative imported library directory for library_image.')

@@ -214,6 +214,9 @@ class Workspace:
         if path.stat().st_size > MAX_ASSET_BYTES: raise ProjectError('Image is too large')
         return self.edit(name, revision, lambda project: project.add_image(path.name, path.read_bytes()))
 
+    def import_audio(self, name, revision, source):
+        return self.batch(name, revision, [dict(op='audio', source=source)])
+
     def library_image(self, name, revision, library, resource, episode=None):
         from exp_runtime.content import ContentLibrary
         from .assets import import_library_image

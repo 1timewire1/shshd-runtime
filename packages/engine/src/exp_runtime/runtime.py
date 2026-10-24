@@ -180,14 +180,28 @@ class Session:
         version = library.hd_app_version() if hasattr(library, 'hd_app_version') else None
         self.engine.hd_version = version
 
+    @staticmethod
+    def original_tree(resources) -> bool:
+        """Whether this is Football Star, the one episode whose tree the app itself built."""
+        return (getattr(resources, 'record', None) or {}).get('builtin') == 'football-star'
+
+    @staticmethod
+    def tree_files(resources) -> tuple[Path, Path]:
+        """Where an episode's story tree and its scenes' saved games live: `(tree file, folder of <serial>.json.gz)`. Not tied
+        to any one save -- matching the real app's own tree_<serial>.sav files, which live in the app's shared cache
+        directory and persist across separate playthroughs (confirmed from a real device's own data; see
+        legacy/findings.md). The app only ever had Football Star's tree, which keeps the library's `dtview_tree.json` and
+        `dtsaves/`; any other episode that builds one (an authored episode) has its own, by its content hash, so its
+        scenes never join Football Star's."""
+        directory = resources.library.directory
+        if Session.original_tree(resources):
+            return directory / 'dtview_tree.json', directory / Session.TREE_STATE_DIRECTORY
+        key = resources.identity['episode_sha256']
+        return directory / 'dtview' / f'{key}.json', directory / Session.TREE_STATE_DIRECTORY / key
+
     @property
     def dt_view_path(self) -> Path:
-        """Library-wide, not tied to any one episode/save -- matching the
-        real app's own tree_<serial>.sav files, which live in the app's
-        shared cache directory and persist across separate playthroughs of
-        whatever content calls into the DTView cluster (confirmed from a
-        real device's own data; see legacy/findings.md)."""
-        return self.resources.library.directory / 'dtview_tree.json'
+        return self.tree_files(self.resources)[0]
 
     durable = True      # forced to disk after every write; a bulk run (tree_explorer) turns it off
 
@@ -228,13 +242,13 @@ class Session:
     WARP_KEPT_PROPERTIES = (0xbbc, 0xbbd, 0xbbe, 0xbda, 0xbdc, 0xbdf)
 
     def _tree_state_path(self, serial: int) -> Path:
-        return self.resources.library.directory / self.TREE_STATE_DIRECTORY / f'{serial}.json.gz'
+        return self.tree_files(self.resources)[1] / f'{serial}.json.gz'
 
     def tree_serials(self) -> set:
         """The tree nodes that have a saved game (the app's `tree_<serial>.sav` files): the ones that can be warped to."""
         if self._tree_serials is None:
             try:
-                names = (self.resources.library.directory / self.TREE_STATE_DIRECTORY).glob('*.json.gz')
+                names = self.tree_files(self.resources)[1].glob('*.json.gz')
                 self._tree_serials = {int(path.name.split('.')[0]) for path in names}
             except (OSError, ValueError, AttributeError):
                 self._tree_serials = set()
@@ -294,7 +308,8 @@ class Session:
         restored = Session.from_snapshot(self.resources, state)
         live, engine = self.engine, restored.engine
         view = live.dt_view
-        if view.root is not None and node.deltas is not None:
+        # `installStateData` sets Football Star's 67 tracked variables; another episode's scene save already holds its state.
+        if view.root is not None and node.deltas is not None and self.original_tree(self.resources):
             view.sweep_forward(view.root)                   # the scene's state as the story followed now leaves it
             if node.active:
                 install_state(engine, node.snapshot)       # `installStateData`: the 67 tracked variables, then what is kept below

@@ -1230,7 +1230,9 @@ dialogue layers, starts `GameModel::setDownloading` (`00011e00`), and retains
 the argument frame while waiting. URL construction reads the poll ID from
 argument 0 and the upload type from argument 1. Type 0 reads argument 2 as a
 string; type 1 reads it as a signed number; type 2 reads an array through that
-pointer, using argument 3 as its count. It also reads request words 4 and 6.
+pointer, using argument 3 as its count. It also reads request words 4 and 6: SHS HD's
+`getPollURL` (0003c984, disassembled 2026-10-23) appends them as `&resultsType=` and `&resultsSize=`, after
+word 3 as `&upSize=`. The 235 SHS calls all pass type 2, six answers, results type 2 and four results.
 Argument positions here are zero-based; the native stack-string helper uses
 one-based positions internally.
 

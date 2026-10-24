@@ -20,7 +20,7 @@ from exp_runtime.exp import ContentError
 from .assets import image_png, import_library_image, player_library
 from .compiler import compile_project, export_project, export_native_slot
 from .model import (Choice, KINDS, OPERATORS, Node, Project, ProjectError,
-                    project_from_bytes, save_project, Character, validate_structure)
+                    project_from_bytes, save_project, Character, is_image, validate_structure)
 from .features import NAMES, parameters
 from .editing import Recovery, auto_layout, copy_nodes, paste_nodes
 from .panels import DebugDialog, ListDialog, RecordDialog, TranslationsDialog
@@ -280,10 +280,11 @@ class Editor(QMainWindow):
         search.returnPressed.connect(lambda: self.search(search.text())); toolbox.addWidget(search)
         self.live = QCheckBox('Restart preview after edits'); toolbox.addWidget(self.live)
         self.preview_selected = QCheckBox('Preview from selected node'); toolbox.addWidget(self.preview_selected)
-        toolbox.addWidget(QLabel('PROJECT IMAGES'))
+        toolbox.addWidget(QLabel('PROJECT IMAGES AND AUDIO'))
         self.assets = QListWidget()
         toolbox.addWidget(self.assets, 1)
-        for label, callback in (('Add PNG / JPEG…', self.add_image), ('Use imported library…', self.choose_library),
+        for label, callback in (('Add PNG / JPEG…', self.add_image), ('Add MP3 / WAV…', self.add_audio),
+                                ('Use imported library…', self.choose_library),
                                 ('Browse library images…', self.browse_library), ('Remove image', self.remove_image)):
             button = QPushButton(label)
             button.clicked.connect(callback)
@@ -480,7 +481,9 @@ class Editor(QMainWindow):
                 speaker.textEdited.connect(lambda value: self.set_node('speaker', value))
                 speaker.setEnabled(node.kind != 'dialogue' or not node.character)
                 form.addRow('Speaker / title', speaker)
-            if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game'):
+            if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game',
+                             'set_text', 'text_default', 'character_name', 'picker', 'faceplace', 'faceplace_post',
+                             'faceplace_link', 'tree_node', 'tree_result', 'append_text'):
                 text = QTextEdit()
                 text.setPlainText(node.text)
                 text.setAcceptRichText(False)
@@ -488,10 +491,12 @@ class Editor(QMainWindow):
                 text.setMinimumHeight(120)
                 text.textChanged.connect(lambda: self.set_node('text', text.toPlainText()))
                 form.addRow('Text', text)
-            if node.kind == 'background' or node.kind == 'dialogue' and not node.character:
+            if (node.kind in ('background', 'character_art', 'faceplace_link')
+                    or node.kind == 'dialogue' and not node.character):
                 key = 'portrait' if node.kind == 'dialogue' else 'asset'
-                images = [('None', None)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets]
-                form.addRow('Portrait' if key == 'portrait' else 'Background', self.combo(
+                images = [('None', None)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
+                                             if a.data is None or is_image(a.data)]
+                form.addRow({'background': 'Background', 'faceplace_link': 'Photo'}.get(node.kind, 'Portrait'), self.combo(
                     images, getattr(node, key), lambda value: self.set_node(key, value)))
             if node.kind in ('dialogue', 'choice'):
                 color = self.combo([('Gray', 0), ('Pink', 1), ('Blue', 2), ('Gold', 3)],
@@ -548,12 +553,14 @@ class Editor(QMainWindow):
             if not self.project.native:
                 scene = QSpinBox(); scene.setRange(25001, 25999); scene.setValue(node.scene)
                 scene.valueChanged.connect(lambda value: self.set_node('scene', value)); form.addRow('Scene group', scene)
-                if node.kind in ('dialogue', 'choice', 'relationship', 'word_game'):
+                if node.kind in ('dialogue', 'choice', 'relationship', 'word_game', 'flag', 'expression_default',
+                                 'character_art', 'character_name', 'picker', 'faceplace_post'):
                     form.addRow('Character', self.combo([('Narrator / inline speaker', '')] +
                         [(c.name, c.id) for c in self.project.characters], node.character,
                         lambda value: self.set_node('character', value)))
-                if node.kind == 'dialogue':
-                    form.addRow('Expression', self.combo([(str(i), i) for i in range(5)], node.expression,
+                if node.kind in ('dialogue', 'expression_default', 'faceplace_post'):
+                    form.addRow('Expression', self.combo([('Character default', -1)] * (node.kind == 'dialogue')
+                        + [(str(i), i) for i in range(5)], node.expression,
                         lambda value: self.set_node('expression', value)))
             if parameters(node):
                 settings = QPushButton('Edit ' + ('native instructions…' if node.kind == 'native' else 'settings…'))
@@ -615,6 +622,18 @@ class Editor(QMainWindow):
                 png = image_png(Path(path).read_bytes())
                 candidate = deepcopy(self.project)
                 candidate.add_image(Path(path).name, png)
+                self.remember()
+                self.project = candidate
+                self.refresh()
+            except (ValueError, OSError) as error:
+                self.error(error)
+
+    def add_audio(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Add music or a sound effect', '', 'Audio (*.mp3 *.wav)')
+        if path:
+            try:
+                candidate = deepcopy(self.project)
+                candidate.add_audio(Path(path).name, Path(path).read_bytes())
                 self.remember()
                 self.project = candidate
                 self.refresh()
@@ -987,13 +1006,17 @@ class Editor(QMainWindow):
         from exp_runtime.content import ContentLibrary
         from exp_runtime.audio import music_cue
         import pygame
-        if not self.project.library: self.choose_library()
-        if not self.project.library: return
+        node = self.project.node(self.selected); resource = parameters(node)['resource']
+        cue = music_cue(resource, game=self.project.game)
+        embedded = next((a.data for a in self.project.assets if a.id == resource and a.data is not None), None)
+        if embedded is None and not self.project.library: self.choose_library()
+        if embedded is None and not self.project.library: return
         try:
-            node = self.project.node(self.selected); resource = parameters(node)['resource']
-            cue = music_cue(resource, game=self.project.game)
-            with ContentLibrary(Path(self.project.library)) as library:
-                data = library.read_asset(cue.asset_id if node.kind == 'music' else resource)
+            if embedded is not None:
+                data = embedded
+            else:
+                with ContentLibrary(Path(self.project.library)) as library:
+                    data = library.read_asset(cue.asset_id if node.kind == 'music' else resource)
             pygame.mixer.init()
             if node.kind == 'music':
                 pygame.mixer.music.load(BytesIO(data)); pygame.mixer.music.play(start=cue.start_ms / 1000)

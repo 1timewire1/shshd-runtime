@@ -49,18 +49,29 @@ The selected choice connects to two dialogue paths. Its inspector sets a
 
 | Node/control | Authoring behavior |
 | --- | --- |
-| Dialogue, choice | Narration, named text, portraits, expressions 0–4, native themes, timed answers and conditional options |
+| Dialogue, choice | Narration, named text, portraits, expressions 0–4 or the character default, native themes, timed answers and conditional options |
+| Player / narrator | Native primary speaker (74) and the character whose lines become narration (75); both change mid-episode |
 | Background, pan | Image selection, automatic speaker tracking or left/center/right alignment |
-| Music, sound, stop audio | Native resource IDs, looping flag, immediate runtime stop; listen using an imported library |
+| Music, sound, stop audio | Native resource IDs or embedded MP3/WAV, looping flag, immediate runtime stop; listen to a library or embedded track |
 | Relationship | Add/set character property 407, hide indicators, select romance, store the resulting number in a variable |
 | Score/property | Add/set an explicit native owner/key, optional dialogue notification, and a result variable |
-| Set variable, condition | Signed-word arithmetic, comparisons, boolean conditions and increments such as `points + 1` |
+| Set variable, condition | Signed-word arithmetic, comparisons, boolean conditions and increments such as `points + 1`; game-state reads `prop`, `bit` and `art` |
+| Property flag | Set or clear one bit of a numeric property (50); read it with `bit(owner, key, n)` |
 | Random variable | Native service 27 with an exclusive positive upper bound; save result for branches |
-| Text input, text answer condition | Native name/input panel, stored `{variable}` substitution and native string comparison |
+| Text input, text answer condition | Native name/input panel, stored `{variable}` or shared `$KEY` substitution and native string comparison |
+| Set text, text default | Store a text under `{name}` or `$KEY` (46), or only while it is empty (47), as the original stories do for `$ZOE` |
+| Default expression, character art, rename character | Mid-episode character changes: the expression used by default (5), a new portrait base (72), a new name that may contain `$KEY` (49) |
+| Choose a look | Native portrait picker (78) over 1–5 characters; the chosen look's portrait can pass to another character (73, 72) |
+| Vibrate | Native vibration request (82); the desktop plays a buzz |
+| Append text | Append to a stored text with native concatenation (47, 25, 46) through a per-script scratch text of 1023 characters |
+| Loading screen, open a link | SHS's 3 s Loading overlay (91); a link the original apps leave the game for and this runtime offers (100) |
+| Survey | SHS only. Uploads answers to a poll (9) with HD's recovered frame; offline the player gets a local receipt and the results stay 0 |
+| Faceplace, post, link / photo | SHS HD only. Enable or clear the wall, default `$USR`, name/face chosen (113, 114, 118–120); posts from a character with an expression (115); a link (116) or photo with caption (117) under the newest post |
+| Decision Tree, tree scene, tree result | SHS HD only. Enable the episode's tree, joins and accumulators (101, 112, 108); scenes by type 1202–1223 with an optional width or Football Star branch test (102, 103, 111); results with an optional exit label (106, 107) |
 | Title, message, notification, scene label | Existing title/message panels, queued dialogue notices and scene badges |
 | Emphasize, transition, close dialogue | Existing engine presentation commands; retain its documented native parity limits |
 | Timed word choices | Good/bad word lists, time limits, refresh interval, character and returned score; both games |
-| Football | Six interleaved offense/defense tables, instructions, teams, clocks, flags and returned margin; SHS only |
+| Football | Six interleaved offense/defense tables, instructions, teams, clocks, flags, returned margin and both final scores (95); SHS only |
 | Word/picture grid | Problems, alphabets, picture symbols, fixed tutorial boards, timing, tutorial branches and returned result; SHS only |
 | Scene link/group | Connect any nodes across scene groups; compiler schedules separate native scripts |
 | End episode | Native service 7 returns to the existing game menu; use its episode picker to play another installed story |
@@ -85,8 +96,19 @@ remapped without embedding their images.
 Expressions support integers, variable names, `+`, `-`, `*`, `//`, `%`,
 comparisons and `and`/`or`/`not`. Booleans short-circuit. Arithmetic follows
 native signed 16-bit wrapping and **truncation toward zero**, including `//`;
-it is not Python floor division. Calls, attribute access and evaluation of
+it is not Python floor division. Three calls read game state: `prop(owner, key)`
+(service 53), `bit(owner, key, n)` (51) and `art(character)` (73). An owner may be
+a character's ID in quotes, such as `prop('alex', 407)` for Alex's relationship.
+Owner `-30000` stays reserved. Other calls, attribute access and evaluation of
 Python code are prohibited. Unread numeric variables start at zero.
+
+Story text can show numbers. A `{expression}` placeholder whose variables are the
+story's numeric variables, or that reads game state, is formatted by native
+service 0 into a dynamic string slot: `You have {points} points` or
+`{prop(0, 400)}`. Other braces stay literal, including `{name}` of a stored text
+and Faceplace emoticons. Shared `$KEY` names, such as `$USR`, are substituted by
+the game's own name table, which carries them into later episodes. A name cannot
+be both a stored text and a number. Minigame tables keep plain text.
 
 Undo/redo covers graph, character and translation changes. Copy/paste preserves
 internal connections; duplicate, search and auto-arrange work on authored
@@ -95,7 +117,11 @@ work is dirty. On launch, the editor offers recovery; saving or intentionally
 closing/discarding removes that window's recovery document. Canceling an
 unsaved-work prompt preserves it. Project and EXP writes are atomic.
 
-## Images and imported game assets
+## Images, audio and imported game assets
+
+**Add MP3 / WAV** embeds music (MP3) or a sound effect (MP3 or WAV) at the
+next free episode ID, as the original episodes do; Music and Sound effect nodes
+then select it.
 
 **Add PNG / JPEG** embeds an image in the project. Embedded images are portable:
 moving the project or deleting the original image does not break the export.
@@ -162,6 +188,35 @@ changes. Closing the project returns MCP to the saved file; a disconnected
 desktop is reported as an error rather than silently overwritten.
 
 The conversation remains in your MCP client.
+
+## Coverage of the original episodes
+
+`exp_runtime.creator.coverage` classifies every host service that a static scan
+of SHS SD (97 episodes), SHS HD (187) and CoD (74) found: the node kinds that emit
+it, an equivalent the creator uses instead, a native no-op, or still pending.
+`tests/test_creator_coverage.py` compiles every claimed kind and fails when the
+pending set changes. Set `SHSHD_COVERAGE_LIBRARIES` to imported library folders
+(separated by the platform's path separator) to rescan local episodes for any
+unclassified service. None is pending: every service the scanned episodes call is
+emitted by a node kind or reached through an equivalent.
+
+## SHS HD side panels
+
+Faceplace and Decision Tree nodes target SHS HD and are rejected in CoD projects,
+whose game would stop on them. Android 1.0.9's dispatcher takes its default path
+for services above 100, so an export should play there without the panels; the
+other original builds are unverified.
+In this runtime a panel appears once the story enables it. Each episode other than
+Football Star has its own tree (`dtview/<episode sha256>.json` in the library),
+never locked, and every tree scene saves the game so the player can warp to it.
+
+Tree scenes and results alternate on every graph path, as `SHSDTView` expects:
+a scene of a waiting type (1209–1223) takes one Tree result, by index below its
+number of results, before the next scene or join; types 1202–1208 go straight on.
+Answer a choice into one result node per answer, and the tree labels each branch
+with the answer the player saw. A branch condition (75–104) is one of Football
+Star's native tests of its own tracked state; other episodes decide branches with
+their own conditions and results.
 
 ## Debugging
 
@@ -269,14 +324,31 @@ interpreter from each supplied reference binary:
 | SHS Android 1.0.9 (`libshs09.so`) | `00057068` | `00055ce0` | `0005e4c0` |
 | SHS iOS (`Surviving_HS`) | `00010e9c` | `00011410` | `00017334` |
 | CoD iOS (`CoD`, ARMv6 slice) | `0000d53c` | `0000cb8c` | `00007250` |
+| SHS HD 1.4.38 (`Surviving_HS`, armv7) | `0000f87c` | `0000efe4` | — |
 
 `tools/test_creator_native.py` pins the SHA-256 identities of those binaries.
-It checks 41 SHS programs per platform and 39 CoD programs, covering comparison
-operators, choices, arithmetic/boolean control flow, initialized variables and
-the newly exposed presentation, audio, input and minigame argument frames. Native yield arguments and script memory must match
+It checks 63 SHS programs per platform (124 scene scripts) and 55 CoD programs (92 scripts), covering comparison
+operators, choices, arithmetic/boolean control flow, initialized variables,
+the presentation, audio, input and minigame argument frames, and the story
+services added for translated episodes (formatting, game-state reads, speakers,
+stored texts, character changes, the portrait picker and vibration) and, for
+SHS, the Faceplace, Decision Tree, loading and survey frames. Each story-service probe also runs split into one
+scene per node, so every scene script a story reaches is checked, scene links and multi-scene variables included;
+the harness keeps the numeric properties those scripts store and read. `tests/test_creator_coverage.py` fails when
+a service the creator emits has no probe. Native yield arguments and script memory must match
 the production Python VM. The harness supplies stream I/O, allocation and
 host callback results. It does **not** run the original UI, timers, image
-decoder, catalog installation or OS integration. CSPUD compatibility is based
+decoder, catalog installation or OS integration.
+
+For SHS HD the harness also runs the build's own host dispatcher,
+`SHSScript::syscall`, on every yield's live VM and checks that it reads only words
+inside the frame the creator pushed. The code of `SHSScript`, `CSKiwiEngine` and
+the build's string classes runs, with the harness doing their C library calls, so
+formatting reads its real pattern and values. `GameModel::getTopMostUI` returns a
+zeroed stand-in panel, so the dialogue cases read their text and character. Every
+other call (UI methods, the rest of GameModel, the entity table, Objective-C)
+returns 0 at once: words a UI element reads later are not traced, and nothing is
+drawn. The report lists the words each service's case read. CSPUD compatibility is based
 on the inspected native loaders and the format's round-trip tests, not an
 emulated app launch.
 
@@ -288,7 +360,7 @@ uv run --locked --with 'unicorn>=2,<3' python tools/test_creator_native.py \
   --profile cod-ios --binary /path/to/CoD
 ```
 
-Use `shs-ios` or `shs-android` with the corresponding binary for the other
+Use `shs-hd-ios`, `shs-ios` or `shs-android` with the corresponding binary for the other
 profiles. No original code or assets are included in the tool. Original-app
 playback is still a required verification step before claiming complete native
 compatibility; a compatible installation is not currently available for it.

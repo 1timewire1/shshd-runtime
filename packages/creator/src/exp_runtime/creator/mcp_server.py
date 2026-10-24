@@ -96,6 +96,11 @@ def create_server(root):
         """Embed a local PNG/JPEG from this workspace in the project."""
         return workspace.import_image(path, revision, source)
 
+    @edit_tool(name='asset_import_audio')
+    def add_audio(path: str, revision: str, source: str) -> dict:
+        """Embed a local MP3 (music or a sound effect) or WAV (a sound effect) from this workspace in the project."""
+        return workspace.import_audio(path, revision, source)
+
     @read_tool(name='asset_list')
     def library_assets(library: str, episode: str | None = None, kind: str | None = None,
                        query: str = '', offset: int = 0, limit: int = 50) -> dict:

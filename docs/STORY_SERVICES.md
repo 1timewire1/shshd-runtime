@@ -843,7 +843,7 @@ not write VM results or advance clocks. Pausing/focus loss stops active time.
 ## Offline surveys (service 9)
 
 ```text
-arguments : poll ID:s16, upload type:s16, remaining opaque words
+arguments : poll ID, upType, upValue(s), upSize, resultsType, results buffer, resultsSize (s16 each)
 supported : upload type 2 and the verified not-uploaded response below
 questions : original service-1 choices, including the option to decline
 receipt   : Survey / Thanks for taking the survey!

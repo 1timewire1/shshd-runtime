@@ -128,6 +128,37 @@ class CreatorUITests(unittest.TestCase):
             editor.close()
 
 
+@unittest.skipUnless(HAS_QT, 'Install the creator extra to test the optional Qt editor')
+class CreatorInspectorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_every_node_kind_opens_in_the_inspector_with_its_fields(self):
+        from PySide6.QtWidgets import QTextEdit
+        from exp_runtime.creator.model import KINDS
+        from exp_runtime.creator.ui import Editor
+        editor = Editor(discover_library=False)
+        editor.show()
+        try:
+            for kind in KINDS:
+                if kind == 'native':
+                    continue
+                with self.subTest(kind=kind):
+                    editor.add_node(kind)
+                    self.app.processEvents()
+                    self.assertEqual(editor.project.node(editor.selected).kind, kind)
+                    text = editor.inspector.findChild(QTextEdit, 'story_text')
+                    wanted = kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game',
+                                      'set_text', 'text_default', 'character_name', 'picker', 'faceplace',
+                                      'faceplace_post', 'faceplace_link', 'tree_node', 'tree_result', 'append_text')
+                    self.assertEqual(text is not None, wanted)
+        finally:
+            editor.dirty = False
+            editor.close()
+
+
 if __name__ == '__main__':
     unittest.main()
 

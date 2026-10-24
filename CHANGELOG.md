@@ -12,8 +12,31 @@
   every episode's opening (Game of Cones' and the novel's openings are story, and April Fools' joke messages stay).
   The runtime keeps them as hashes of their text; an opening that does not match is left alone. Season sets that
   show a plug after their chapter menu, and Cause of Death's plugs, are not covered yet.
+- **Each episode has its own Decision Tree.** Football Star keeps the library's original tree files; any other episode
+  that builds a tree keeps its own (`dtview/` and `dtsaves/<episode>/`), is not warp-locked, and its warps restore its
+  own saved state rather than Football Star's tracked variables.
 - The older menu's Cheats page (libraries without SHS HD) is respaced: its four switches and their notes now fit
   inside the box instead of running under the Back button.
+- **The episode creator covers more of what SHS and CoD episodes use** (`shshd-runtime-creator`), toward translating
+  other games' episodes:
+  - Story text shows numbers: `{points}`, `{points * 2}` or `{prop(0, 400)}` are formatted by the game's own service 0.
+  - Expressions read game state with `prop(owner, key)`, `bit(owner, key, n)` and `art(character)`; an owner can be a
+    character, as in `prop('alex', 407)`. A **Property flag** node sets or clears a bit.
+  - **Player / narrator** chooses the game's primary speaker and the character whose lines are narration.
+  - Shared `$KEY` names (`$USR`, `$ZOE`...) for answers, plus **Set text** and **Text default** nodes; they join the
+    names table that carries into later episodes.
+  - **Default expression** (dialogue expression "Character default"), **Character art** and **Rename character**
+    change a character mid-episode; **Choose a look** is the game's portrait picker; **Vibrate**.
+  - Embedded MP3/WAV music and sound effects (**Add MP3 / WAV**, MCP `asset_import_audio`).
+  - **SHS HD's side panels**: Faceplace (enable, posts, links and photos, default name, clear) and the Decision Tree
+    (tree scenes, results, joins), with a check that scenes and results alternate on every path. SHS only.
+  - `exp_runtime.creator.coverage` lists every service the original episodes call and how the creator covers it;
+    `tests/test_creator_coverage.py` keeps that list honest; nothing is missing now.
+  - **Append text**, **Loading screen**, **Open a link**, **Survey** (with SHS HD's poll frame, recovered from its
+    binary: results type and size are words 4 and 6), `build(n)` in expressions and the football node's final scores.
+  - The native harness gains an SHS HD 1.4.38 profile, which also runs HD's own `SHSScript::syscall` on every yield to
+    check that it reads only the frame the creator pushed. The native harness (`tools/test_creator_native.py`) checks the
+    new frames in Android 1.0.9, SHS iOS and CoD iOS.
 
 ### Changed
 
