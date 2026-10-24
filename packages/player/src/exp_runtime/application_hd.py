@@ -297,6 +297,8 @@ class HdShell:
                         autoplay=state.autoplay, disable_choice_timer=state.disable_choice_timer)
         if self.backdrop_available():
             settings['hd_backdrop'] = state.hd_backdrop
+        if self.app.hires_portraits_offered():
+            settings['hires_portraits'] = state.hires_portraits
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
         settings['add_episodes'] = settings['open_library'] = True
@@ -345,6 +347,8 @@ class HdShell:
         state = self.app.state
         setattr(state, which, not getattr(state, which))
         state.persist()
+        if which == 'hires_portraits':
+            self.app.apply_hires_portraits()
         self.app.menu_music_changed(switched=which == 'music')
         if which == 'vibration' and state.vibration:
             self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on

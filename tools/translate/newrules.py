@@ -28,6 +28,9 @@ NO_BADGE = 629                          # SHS character property: 1 hides the re
 MODES = len(nr_art.SKY_MODES)           # time-of-day modes 0-5 (service 35's first argument)
 BACKGROUND_BASE = 26000                 # location L in mode M = BACKGROUND_BASE + MODES * L + M
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
+# The same looks drawn from the X1i jar's redrawn parts, HD-sized, this far above: the player shows them while its
+# "hi-res portraits" option is on (shs/profile.py TRANSLATED_PORTRAIT_ART); the original apps never ask for them.
+HIRES_PORTRAIT_OFFSET = 1000
 MUSIC_BASE = 26980                      # New Rules music index i = MUSIC_BASE + i
 # New Rules' UI backdrop (nr_art.Art.backdrop), which the runtime draws over SHS's frame under the location strip
 # instead of black for this pack (shs/profile.py TRANSLATED_FRAME_BACKDROP).
@@ -296,8 +299,9 @@ def music_resource(index):
 
 
 def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing_dictionary=None, casing_exact=None,
-              twin_games=(), casing_titles=()):
-    """The SHS `.exp` bytes for one New Rules episode. `music`: index -> rendered MP3 bytes (a callable), if any;
+              twin_games=(), casing_titles=(), hires_art=None):
+    """The SHS `.exp` bytes for one New Rules episode. `hires_art`: the X1i jar's parts, for the second, HD-sized
+    portrait set (HIRES_PORTRAIT_OFFSET), if any. `music`: index -> rendered MP3 bytes (a callable), if any;
     `casing_dictionary`: casing.learn's dictionary, which restores capitals (else the text stays lowercase);
     `casing_exact`: the paired smartphone story's strings by lowercase text, whose casing wins where they match;
     `twin_games`: its word games' (good, bad) lists (pairs.twin_word_games), whose extra words fill out the rounds."""
@@ -327,6 +331,10 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
             banks[slots] = base
             for i, picture in enumerate(art.portrait_bank(list(slots), BANK_EXPRESSIONS)):
                 resources[base + i] = nr_art.png(picture)
+            if hires_art is not None:
+                pictures = hires_art.portrait_bank(list(slots), BANK_EXPRESSIONS, nr_art.HIRES_PORTRAIT_SCALE)
+                for i, picture in enumerate(pictures):
+                    resources[base + HIRES_PORTRAIT_OFFSET + i] = nr_art.png(picture)
         bank_of[rid, address] = banks[slots]
     report.looks = len(banks)
     for location, mode in sorted(used_scenes(episode)):

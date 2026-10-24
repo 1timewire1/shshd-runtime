@@ -158,6 +158,10 @@ class Archive:
     def __init__(self, assets):
         self.assets = assets
 
+    @property
+    def entries(self):
+        return self.assets
+
     def programs(self):
         return {}
 
@@ -209,6 +213,41 @@ class ResourceTests(unittest.TestCase):
         upgraded = picture((300, 360), (5, 5, 5, 255))
         self.library.hd_asset = lambda rid: upgraded
         self.assertEqual(self.resources('standard').read_asset(1234), upgraded)
+
+
+class HiresPortraitTests(unittest.TestCase):
+    """A translated New Rules episode (pack 31300) carries the X1i's portraits 1000 above the WinMo ones
+    (shs profile TRANSLATED_PORTRAIT_ART); the "Hi-Res Portraits" switch picks between them."""
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.winmo, self.x1i = picture((100, 120)), picture((150, 180), (10, 200, 10, 255))
+        store = TwinStore(Path(self.temporary.name))
+        store.write({fingerprint(self.winmo): (self.winmo, picture((200, 240)))})
+        self.library = SimpleNamespace(game_id='shs', hires_portraits=True, hd_art_mode='fill', twin_store=lambda: store,
+                                       hd_asset=lambda rid: None, android_asset=lambda rid: b'base %d' % rid)
+
+    def resources(self, pack=31300, assets=None):
+        assets = {26200: self.winmo, 27200: self.x1i, 26999: self.winmo} if assets is None else assets
+        return EpisodeResources(self.library, dict(variant='standard', pack_id=pack), Archive(assets))
+
+    def test_the_hires_portrait_is_shown_as_it_is_without_the_twin_store(self):
+        self.assertEqual(self.resources().read_asset(26200), self.x1i)
+
+    def test_the_hires_portrait_names_the_portrait_it_stands_in_for(self):
+        self.assertEqual(self.resources().standard_portrait(26200), self.winmo)       # the player sizes it to this
+        self.assertIsNone(self.resources().standard_portrait(26999))
+        self.library.hires_portraits = False
+        self.assertIsNone(self.resources().standard_portrait(26200))
+
+    def test_with_the_switch_off_the_episodes_own_portrait_goes_through_the_twin_store(self):
+        self.library.hires_portraits = False
+        self.assertEqual(image_size(self.resources().read_asset(26200)), (200, 240))
+
+    def test_only_the_portrait_range_of_a_translated_pack_is_moved(self):
+        self.assertEqual(image_size(self.resources().read_asset(26999)), (200, 240))         # its backdrop
+        self.assertEqual(image_size(self.resources(pack=1).read_asset(26200)), (200, 240))   # another pack
+        self.assertEqual(image_size(self.resources(assets={26200: self.winmo}).read_asset(26200)), (200, 240))
 
 
 class PairingTests(unittest.TestCase):

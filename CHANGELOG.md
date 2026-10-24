@@ -48,6 +48,13 @@
   where SHS's own slots leave one side empty; other episodes keep the native slots. The orange frame New Rules puts
   around its scene borders the strip too. Its sides fall outside the
   view, as on New Rules' own screen, so its top and bottom bars show.
+- **Hi-Res Portraits** (SHS, Options > General on the main menu; on by default). Translated New Rules episodes now
+  carry two portrait sets: the WinMo busts, doubled, and the X1i build's redrawn ones, tripled to HD size. With the
+  switch on the player shows the X1i set at the height its WinMo portrait fills, so either set sits the same in the
+  ring, without the HD art fill on top; off, it shows the WinMo set as before. The switch only appears when the library holds such an episode (pack 31300). The X1i portraits had been
+  missing their torsos: the X1i copy of New Rules' clothing pack adds a group before the others, so every shirt
+  index pointed one group too early. The translator now shifts those indices, which puts back the suits, collars,
+  jackets and necklaces (49 looks use that pack).
 - **The episode creator covers more of what SHS and CoD episodes use** (`shshd-runtime-creator`), toward translating
   other games' episodes:
   - Story text shows numbers: `{points}`, `{points * 2}` or `{prop(0, 400)}` are formatted by the game's own service 0.

@@ -220,6 +220,12 @@ class DialogueRenderer:
         # is recognized as art larger than its Android original; art inside an
         # episode file has no Android copy and is judged against the mask.
         width, height = image.get_size()
+        # shshd-runtime: a translated episode's hi-res portrait (EpisodeResources.standard_portrait) fills its own
+        # portrait's height, in its own proportions, so either set sits the same in the ring.
+        standard = getattr(self.resources, 'standard_portrait', lambda _: None)(asset_id)
+        if standard is not None:
+            standard_size = self._episode_portrait_size(Raster(*_decoded_size(standard), b''))
+            return image, (width * standard_size[1] / height, standard_size[1])
         try:
             android_size = _decoded_size(self.resources.android_asset(asset_id))
             hd_art = width > android_size[0] or height > android_size[1]

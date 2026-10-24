@@ -727,6 +727,9 @@ class ContentLibrary:
         # mode a player reaches through the app itself (there is no in-game toggle for this); 'off'/'twins'
         # stay reachable only through SHS_HD_ART or a hand-edited player.json, for this project's own testing.
         self.hd_art_mode = os.environ.get('SHS_HD_ART', 'fill')
+        # shshd-runtime: translated New Rules episodes carry two portrait sets; True shows the X1i jar's redrawn,
+        # higher-resolution ones (the game profile's TRANSLATED_PORTRAIT_ART), False New Rules' WinMo ones.
+        self.hires_portraits = True
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
         self._hd_resource_cache = {}
@@ -1222,6 +1225,9 @@ class EpisodeResources:
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
+        hires = self._hires_portrait(resource_id)
+        if hires is not None:
+            return self.archive.read(hires)     # already HD-sized: no twin store fill on top
         if resource_id >= 26000:
             data = self.archive.read(resource_id)
         else:
@@ -1235,6 +1241,24 @@ class EpisodeResources:
         if mode != 'off' and self.record.get('variant') == 'standard':
             return self.library.twin_store().art(data, mode)      # the HD release's picture, or a 2x fill
         return data
+
+    def standard_portrait(self, resource_id):
+        """The episode's own portrait (raw bytes) that `read_asset`'s hi-res copy stands in for, so the player can
+        show the copy at the size the original fills; None when `read_asset` returns no hi-res copy."""
+        return None if self._hires_portrait(resource_id) is None else self.raw_asset(resource_id)
+
+    def _hires_portrait(self, resource_id):
+        """shshd-runtime: the resource holding the hi-res copy of a translated episode's portrait, when the player
+        wants them (library.hires_portraits) and the episode has one: the game profile's TRANSLATED_PORTRAIT_ART,
+        pack -> (first, end, offset), moves portraits in [first, end) by offset. Else None."""
+        if not getattr(self.library, 'hires_portraits', False):
+            return None
+        profile = GAMES.get(getattr(self.library, 'game_id', None))
+        span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(self.record.get('pack_id'))
+        if span is None or not span[0] <= resource_id < span[1]:
+            return None
+        hires = resource_id + span[2]
+        return hires if hires in self.archive.entries else None
 
     def raw_asset(self, resource_id: int) -> bytes:
         """The episode's own bytes, never substituted (what the twin store is built from). `library.read_asset`

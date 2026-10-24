@@ -4,7 +4,8 @@ Ported from the research decoders (reference/Other Games/tools: nr_decode.py, nr
 the formats are in reference/Other Games/docs/SHS_NEW_RULES_ENGINE.md sections 3 and 5.
 
 Sizes (the owner's decision 2: pixel-exact integer upscaling):
-* portraits: the WinMo busts (about 50 x 65) doubled, about the size of a smartphone SD portrait (113 x 120);
+* portraits: the WinMo busts (about 50 x 65) doubled, about the size of a smartphone SD portrait (113 x 120); and the
+  X1i jar's redrawn ones (about 1.5x) tripled (HIRES_PORTRAIT_SCALE), which the player takes as HD-sized art;
 * backgrounds: the X1i jar's 360 x 120 strips times 6 = 2160 x 720, the height of an SHS background (480 x 720), so
   the strip pans by speaker side. Without the X1i jar, the WinMo 240 x 96 strips times 7 (672 high).
 """
@@ -18,6 +19,7 @@ from PIL import Image
 from exp_runtime.exp import ExpArchive
 
 PORTRAIT_SCALE = 2
+HIRES_PORTRAIT_SCALE = 3
 BACKGROUND_SCALE = {120: 6, 96: 7}
 # o.java d[]: (PNG id, the colour behind indoor windows or -1) per location 0-28. Locations 4 and 5 are swapped.
 LOCATIONS = [(5000, 860478), (5001, 7109535), (5002, -1), (5003, 6587046), (5005, 11232097), (5004, 14406236),
@@ -253,6 +255,13 @@ def draw_layout(canvas, bank, layout_id, rect, slots):
             draw_layout(canvas, bank, node.payload[0], Rect(child.x, child.y, child.width, child.height), slots)
 
 
+# Packs whose X1i copy has groups New Rules' own lacks, inserted before them: base -> New Rules' (WinMo, 240-wide Java)
+# group count. The X1i jar's pack 1300 (collars) starts with a white collar, so the black suit collar, the necklace and
+# the fur jacket are its groups 1-3; its own King of Diss asks for -1302..-1304 where the other builds ask for
+# -1301..-1303. The downloads use New Rules' numbering, so drawing them from X1i art moves those parts up one.
+NEW_RULES_GROUPS = {1300: 3}
+
+
 def pack_of(part):
     n = -(part + 1) if part < 0 else part
     return next((base for base, count in REGISTRY if base <= n <= base + count - 1), None)
@@ -286,18 +295,22 @@ class Art:
                 variant = slots[5] if base == 3500 else slots[1] if base == 3600 else -1
             else:
                 variant = slots[T[layer]] if T[layer] != -1 else -1
-            self.pack(base, variant).draw(canvas, part + base if part < 0 else part - base, ox, oy)
+            pack = self.pack(base, variant)
+            index = part + base if part < 0 else part - base
+            if index < 0 and base in NEW_RULES_GROUPS:
+                index -= max(0, len(pack.groups) - NEW_RULES_GROUPS[base])      # NEW_RULES_GROUPS: X1i's extra ones
+            pack.draw(canvas, index, ox, oy)
         return canvas
 
-    def portrait_bank(self, slots, expressions):
+    def portrait_bank(self, slots, expressions, scale=PORTRAIT_SCALE):
         """Five pictures for SHS expression slots 0-4, each the New Rules expression `expressions[k]`, all on one
-        canvas size (the union of their drawn pixels) so the bust doesn't jump between expressions."""
+        canvas size (the union of their drawn pixels) so the bust doesn't jump between expressions; `scale` times."""
         pictures = [self.portrait(slots, e) for e in expressions]
         boxes = [p.getbbox() for p in pictures if p.getbbox()]
         if not boxes:
             return [Image.new('RGBA', (1, 1)) for _ in pictures]
         box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
-        size = ((box[2] - box[0]) * PORTRAIT_SCALE, (box[3] - box[1]) * PORTRAIT_SCALE)
+        size = ((box[2] - box[0]) * scale, (box[3] - box[1]) * scale)
         return [p.crop(box).resize(size, Image.NEAREST) for p in pictures]
 
     def clouds(self):

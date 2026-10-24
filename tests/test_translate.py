@@ -408,6 +408,26 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertEqual(self.nr.pushed_values(lite, 4, 2), [key, value])        # the call at 4
         self.assertEqual(self.nr.chooser('josh.', {'$josh': {9}}, Counter()), 9)
 
+    def test_x1i_collars_move_up_past_its_extra_group(self):
+        # The X1i jar's pack 1300 has four groups (a white collar first); New Rules' numbering knows three.
+        import nr_art
+
+        class Pack:
+            def __init__(self, groups):
+                self.groups, self.drawn = [()] * groups, []
+
+            def draw(self, canvas, index, x, y):
+                self.drawn.append(index)
+
+        slots = [-1] * 33
+        slots[17] = -1301                                           # layer 2's slot: the black suit collar
+        for groups, expected in ((3, -1), (4, -2)):
+            art = nr_art.Art({1300: b''})
+            pack = Pack(groups)
+            art.pack = lambda base, variant: pack
+            art.portrait(slots, 0)
+            self.assertEqual(pack.drawn, [expected])
+
     def test_achievement_beats_become_notices(self):
         notice = self.nr.NOTICE
         for text in ('good answer!', 'handle approved!', 'exhibit successful!', 'Clue Acquired!'):

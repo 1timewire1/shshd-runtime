@@ -305,6 +305,13 @@ class LibraryMenuTests(unittest.TestCase):
         state.path.write_text(json.dumps(data))
         self.assertIn('Invalid player preferences', MenuState(self.library).warning)
 
+    def test_hires_portraits_default_on_and_survive_reopen(self):
+        state = MenuState(self.library)
+        self.assertTrue(state.hires_portraits)
+        state.hires_portraits = False
+        state.persist()
+        self.assertFalse(MenuState(self.library).hires_portraits)
+
     def test_the_vibration_switch_defaults_off_and_survives_reopen(self):
         state = MenuState(self.library)
         self.assertFalse(state.vibration)

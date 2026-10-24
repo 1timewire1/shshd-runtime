@@ -39,7 +39,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     portraits = nr_art.load(args.pud)
-    art = nr_art.Art(portraits, nr_art.load(args.x1i) if args.x1i else None)
+    x1i = nr_art.load(args.x1i) if args.x1i else None
+    art = nr_art.Art(portraits, x1i)
+    hires_art = nr_art.Art(x1i, x1i) if x1i is not None else None      # the second, HD-sized portrait set
     music = None
     if args.soundfont:
         import midi_render
@@ -71,7 +73,7 @@ def main(argv=None):
             if twin is not None:
                 games = pairs.twin_word_games(downloads, args.library, twin)
         data, report = newrules.translate(episode, art, music=music, casing_dictionary=dictionary, casing_exact=exact,
-                                          twin_games=games, casing_titles=titles)
+                                          twin_games=games, casing_titles=titles, hires_art=hires_art)
         target = args.out / f'NR_{episode.download_id:02d}_{safe(episode.title)}.exp'
         target.write_bytes(data)
         print(f'{path.name}: {episode.title!r} -> {target} ({len(data) // 1024} KB, {report.looks} looks, '

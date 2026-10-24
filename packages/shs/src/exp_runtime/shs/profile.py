@@ -79,6 +79,11 @@ TRANSLATED_FRAME_BACKDROP = {31300: 26999}
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
 TRANSLATED_PICKER_LAYOUTS = {31300: {4: [(160, 275), (52, 241), (160, 170), (269, 241)]}}
+# shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
+# (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
+# New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at
+# 27200 on (tools/translate newrules.PORTRAIT_BASE / HIRES_PORTRAIT_OFFSET).
+TRANSLATED_PORTRAIT_ART = {31300: (26200, 26980, 1000)}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

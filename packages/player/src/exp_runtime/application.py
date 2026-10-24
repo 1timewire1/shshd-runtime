@@ -204,6 +204,18 @@ class Application:
             return True
         return (self.updates.future is not None or self.updates.available is not None) and waited < UPDATE_WAIT
 
+    def hires_portraits_offered(self):
+        """Whether the library has an episode with a second, hi-res portrait set (the game profile's
+        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        packs = getattr(GAMES.get(self.library.game_id), 'TRANSLATED_PORTRAIT_ART', {}) if self.library else {}
+        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+
+    def apply_hires_portraits(self):
+        """The "Hi-Res Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
+        self.library.hires_portraits = self.state.hires_portraits
+        if self.game:
+            self.game.images.clear()
+
     def set_update_check(self, enabled):
         """The launch update check on or off (settings.json), from the SD Options or the HD General page."""
         self.settings.set_update_check(enabled)
@@ -367,6 +379,7 @@ class Application:
         self.processes[process_key] = state.process
         if 'SHS_HD_ART' not in os.environ:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
+        library.hires_portraits = state.hires_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
         self.picker, self.shot_cache = None, {}
@@ -1169,7 +1182,7 @@ class Application:
             elif kind == 'toggle':
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
-                               'skip_upsell_intros', 'autoplay', 'disable_choice_timer'):
+                               'skip_upsell_intros', 'autoplay', 'disable_choice_timer', 'hires_portraits'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -1178,6 +1191,8 @@ class Application:
                 except OSError:
                     setattr(self.state, key, previous)
                     raise
+                if key == 'hires_portraits':
+                    self.apply_hires_portraits()
                 if self.game:
                     self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
                     self.game.vibration_enabled = self.state.vibration

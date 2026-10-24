@@ -89,6 +89,7 @@ class MenuState:
         self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
         self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
+        self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
         self.order = 'episode'
         self.title_language = 'en'
         self.selected = None
@@ -127,6 +128,8 @@ class MenuState:
                     self.vibration = data['vibration']
                 if type(data.get('hd_backdrop')) is bool:
                     self.hd_backdrop = data['hd_backdrop']
+                if type(data.get('hires_portraits')) is bool:
+                    self.hires_portraits = data['hires_portraits']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
                     self.hd_art = data['hd_art']
                 self.title_language = data.get('title_language', 'en')
@@ -197,7 +200,8 @@ class MenuState:
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    hd_backdrop=self.hd_backdrop, names=self.names)      # in the order written: replacement walks the table in that order
+                    hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
+                    names=self.names)      # in the order written: replacement walks the table in that order
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.library.directory,

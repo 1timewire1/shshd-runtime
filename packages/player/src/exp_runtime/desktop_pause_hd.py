@@ -51,6 +51,7 @@ SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS ep
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
+HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces; main menu only
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
@@ -58,7 +59,8 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'check_updates')
+GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'hires_portraits',
+                'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -73,7 +75,8 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'autoplay': AUTOPLAY_LABEL,
                  'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
-                 'hd_backdrop': HD_BACKDROP_LABEL, 'check_updates': CHECK_UPDATES_LABEL}
+                 'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
+                 'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
 # (rms ~2 levels): out = M . (r, g, b) + c.
 SEPIA = (0.779, 0.166, 0.0, 102.1,
