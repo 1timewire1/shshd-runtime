@@ -515,6 +515,19 @@ class HdTitleTests(unittest.TestCase):
                     # The second line takes the title's line offset (40 / 10 points).
                     self.assertEqual(label.layout.lines[1].x, {1: 20, 2: 5}[mode])
 
+    def test_a_word_wider_than_the_region_shrinks_to_fit_on_one_line(self):
+        # This player's addition: CSFont would break a long typed name mid-word ("StanTheDev" / "il").
+        label = self.label('A' * 25, 1)                     # 225 units in a 194-unit region
+        self.assertAlmostEqual(label.scale, 194 / 225)
+        self.assertEqual((len(label.layout.lines), label.extra, label.header.height), (1, 8, 31))
+        self.assertAlmostEqual(label.layout.width * label.scale, 194)
+        self.assertAlmostEqual(label.origin[1], 259.5 + (31 - 20 * 194 / 225) / 2 + 38 * 194 / 225)
+        # Words that fit keep the native wrap at their spaces, full size.
+        self.assertEqual(self.label(' '.join(['A' * 17] * 2), 1).scale, 1)
+        # Past half size, the name wraps after all.
+        tiny = self.label('A' * 60, 1)
+        self.assertEqual((tiny.scale, len(tiny.layout.lines)), (.5, 2))
+
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
 class HdTallNameCapacityTests(unittest.TestCase):

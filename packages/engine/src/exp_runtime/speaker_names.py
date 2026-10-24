@@ -240,6 +240,9 @@ HD_TITLE_SHORT_POINTS = 135
 HD_TITLE_SHIFT = 7.5
 HD_TITLE_GAP = 8
 HD_TITLE_INDENTS = {1: (0, 20), 2: (0, 5)}
+# This player's addition: a word wider than the title region (a long typed name, "StanTheDevil") is drawn smaller to
+# fit it, down to this share of the font's size, where CSFont would break it mid-word onto a second line.
+HD_TITLE_MIN_FIT = .5
 
 
 def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_unit=2, shift=HD_TITLE_SHIFT):
@@ -263,7 +266,11 @@ def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_
     """
     style = TextStyle(cap, HD_TITLE_GAP)
     rect = rectangle({1: 0x2e, 2: 0x4c, 3: 0x6a}[mode])
-    large = layout_text(font, text, rect.width, style).height > rect.height
+    # `fit` (HD_TITLE_MIN_FIT): the label's scale, so its widest word fits the region. The layout below is in the
+    # font's own units, `rect.width / fit` wide, and every measure of it on screen is times `fit`.
+    widest = max((layout_text(font, word, 2**31, style).width for word in text.split()), default=0)
+    fit = max(HD_TITLE_MIN_FIT, rect.width / widest) if widest > rect.width else 1
+    large = layout_text(font, text, rect.width / fit, style).height * fit > rect.height
     if large:
         rect = rectangle({1: 0x25, 2: 0x43, 3: 0x61}[mode])
     if mode == 1:
@@ -271,7 +278,7 @@ def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_
     elif mode == 2:
         rect = replace(rect, x=rect.x - 2)
     # getDisplayLength -> FPToFixed: whole points.
-    short = int(layout_text(font, text, 2**31, style).width * points_per_unit) < HD_TITLE_SHORT_POINTS
+    short = int(layout_text(font, text, 2**31, style).width * fit * points_per_unit) < HD_TITLE_SHORT_POINTS
     step = shift
     flags, shift = 0x1a, 0
     if mode == 1:
@@ -280,19 +287,20 @@ def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_
     elif mode == 2:
         flags, shift = 0x19, (step if short else 0)
     style = replace(style, indents=HD_TITLE_INDENTS.get(mode, ()))
-    layout = layout_text(font, text, rect.width, style)
+    width = rect.width / fit
+    layout = layout_text(font, text, width, style)
     alignment = {2: .5, 3: 1}.get(flags & 3, 0)
     lines, glyphs = [], []
     for index, line in enumerate(layout.lines):
         indent = style.indents[index] if index < len(style.indents) else 0
-        offset = (rect.width - abs(indent) - line.width) * alignment
+        offset = (width - abs(indent) - line.width) * alignment
         lines.append(replace(line, x=line.x + offset))
         glyphs.extend(replace(g, x=g.x + offset) for g in layout.glyphs if line.start <= g.index < line.end)
     layout = replace(layout, lines=tuple(lines), glyphs=tuple(glyphs))
-    top = rect.y + (rect.height - layout.height) / 2
+    top = rect.y + (rect.height - layout.height * fit) / 2
     # layout_text puts a baseline at line.y + height - line_height + base; CSFont puts it at line.y + cap.
-    origin = (rect.x + shift, top + font.line_height - font.base)
-    return SpeakerLabel(text, font_name, layout, origin, 1, 40 if large else 8,
+    origin = (rect.x + shift, top + (font.line_height - font.base) * fit)
+    return SpeakerLabel(text, font_name, layout, origin, fit, 40 if large else 8,
                         (rect.width, rect.height), flags, rect)
 
 

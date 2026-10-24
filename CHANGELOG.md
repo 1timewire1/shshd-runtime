@@ -96,6 +96,10 @@
 
 ### Fixed
 
+- **Long one-word names fit the HD name plate** (SHS HD and Cause of Death). A word wider than the plate, such as
+  a typed handle like "StanTheDevil", is drawn smaller so it fits on one line, down to half size. The iPad's title code
+  broke it mid-word and pushed the last letters onto the dialogue text. Names with spaces still wrap at a space onto
+  two lines, as on the iPad.
 - **A name an episode resets at its start stays reset.** With Skip Upsell Intros on, a new game ran its opening
   before joining the library's shared names, so a name the opening set lost to the last playthrough's value. Replaying
   *Hector's Guide to Girls* (New Rules) showed the last handle until the new one was typed, instead of "You".
