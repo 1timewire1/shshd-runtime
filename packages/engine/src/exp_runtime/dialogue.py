@@ -27,6 +27,29 @@ COD_TYPING_PAD = 4
 # them, in both faces: IMG_0309 (TrebuchetMS-Italic narration, lines 1-2 +2.4 / +2.5) and IMG_0310 (Arial Rounded
 # body, line bottoms +2.4 / +2.4 / +2.2). Not found in the decompile; kept as measured (cf. HD_TEXT_SHIFT).
 COD_BASELINE_DROP = 2.4
+# SHSEngine::initPermanents (HD 1.4.38, 0002bdf4, load step 8): each colored dialogue theme's body and emphasis fonts
+# draw '{' as a music note from master image 155 (`CSFont::addCharImage(master, frame, '{', (1, 2), 22)`) -- frame 34
+# (blue, theme 1), 35 (rose, 2) or 36 (gray, 3), its bottom-left 1 point right of the pen and 2 below the baseline,
+# advancing 22 points. The gold narrator fonts register none; this fork draws them the gray note in their text color
+# (page()). Songs are written this way ("{ some people say... {"), and the frames are 20x28 HD pixels; layout units
+# are half HD points.
+NOTE_CODE = 0x7B
+NOTE_FRAMES = {1: 34, 2: 35, 3: 36}
+NOTE_SIZE, NOTE_OFFSET, NOTE_ADVANCE = (10, 14), (0.5, 1), 11
+
+
+def with_note(font):
+    """`font` with '{' measured as the note image (NOTE_FRAMES); one copy per font."""
+    cached = _NOTE_FONTS.get(id(font))
+    if cached is None or cached[0] is not font:
+        from .fonts import Glyph
+        glyph = Glyph(NOTE_CODE, 0, 0, NOTE_SIZE[0], NOTE_SIZE[1], NOTE_OFFSET[0],
+                      font.base + NOTE_OFFSET[1] - NOTE_SIZE[1], NOTE_ADVANCE)
+        cached = _NOTE_FONTS[id(font)] = (font, replace(font, glyphs={**font.glyphs, NOTE_CODE: glyph}))
+    return cached[1]
+
+
+_NOTE_FONTS = {}
 
 
 def dialogue_styles(theme: int, *, narrator: bool = False, emphasis_theme: int = 1,
@@ -68,6 +91,8 @@ class DialoguePage:
     start: int
     end: int
     name_bounds: Rect | None = None
+    note_frame: int | None = None  # pack 155's frame drawn for '{' (NOTE_FRAMES), when HD's fonts give it one
+    note_tint: tuple | None = None  # the color it is drawn in instead of its own (the gold fonts' note, this fork's)
 
 
 class DialogueLayout:
@@ -149,12 +174,21 @@ class DialogueLayout:
         name_font, name_style, body_font, body_style = dialogue_styles(
             theme, narrator=mode == 4, emphasis_theme=details['emphasis_theme'],
             game=game_id(self.resources), outline=cap_height is not None)
-        switch_fonts = None
+        switch_fonts = note_frame = None
         text = details['text'][start:]
         sizing_text = details['text']  # Page turns keep the original box size.
         portrait = name_bounds = None
         body_width = body_height = None
         cod = game_id(self.resources) == 'cod'
+        note_tint = None
+        if not cod and getattr(font, 'source', None) is not None:
+            # HD's song notes (NOTE_FRAMES). This fork also gives the gold fonts (narration, and named lines without a
+            # portrait), which HD leaves with a plain '{', the gray note in the text's own color (owner's request:
+            # translated New Rules stories narrate songs), so every song line keeps its notes.
+            font = with_note(font)
+            colored = mode != 4 and theme in NOTE_FRAMES
+            note_frame = NOTE_FRAMES[theme] if colored else NOTE_FRAMES[3]
+            note_tint = None if colored else body_style.color
         if mode == 4 and cod:
             name = layout_text(self.font(name_font), '', 1, name_style)
             name_origin, name_scale = (0, 0), .9
@@ -227,6 +261,8 @@ class DialogueLayout:
                 emphasis = self.font(EMPHASIS_FONT)
                 switch_fonts = {'`': (EMPHASIS_FONT, emphasis)}
                 body_style = replace(body_style, height=max(cap_height, emphasis.cap_height), gap=10)
+            if note_frame is not None and switch_fonts:
+                switch_fonts = {key: (name, with_note(face)) for key, (name, face) in switch_fonts.items()}
             if mode in (1, 2):
                 portrait = self.bank.rectangle(17, 0x30 if mode == 1 else 0x4e)
                 # CSFont line offsets: the iPhone build's and HD's ARR_TEXT_LINE_OFFSETS_LEFT/RIGHT ({160, 140} points);
@@ -339,4 +375,4 @@ class DialogueLayout:
                 # 26-point size and region origin; this fit corrects Android labels and substitute faces.
                 name, name_origin, name_scale = fit_speaker_ink(label, name_bounds)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
-                            name, name_origin, name_scale, start, start + end, name_bounds)
+                            name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint)

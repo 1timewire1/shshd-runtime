@@ -6,7 +6,7 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .content import ContentError
-from .dialogue import BODY_FONT
+from .dialogue import BODY_FONT, NOTE_CODE
 from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE, NoticeMotion, hd_letter_state, notice_lifetime
 from .fonts import TextStyle
 from .games import GAMES
@@ -110,6 +110,17 @@ class DialogueRenderer:
         return pygame.image.frombytes(frame.pixels, (frame.width, frame.height), frame.mode).convert_alpha()
 
     @lru_cache(maxsize=64)
+    @lru_cache(maxsize=8)
+    def note_image(self, frame, tint=None):
+        """Pack 155's song note (dialogue.NOTE_FRAMES); `tint` recolors it, keeping its alpha (the gold fonts' note)."""
+        image = self.frame_native(155, frame)
+        if tint is None:
+            return image
+        image = image.copy()
+        image.fill(tuple(tint[:3]) + (0,), special_flags=pygame.BLEND_RGBA_MAX)
+        image.fill(tuple(tint[:3]) + (255,), special_flags=pygame.BLEND_RGBA_MIN)
+        return image
+
     def frame_native(self, asset_id, index):
         """The frame at whatever density read_asset() actually returned --
         including a real HD substitute (content.HD_ASSET_MAP), which for
@@ -1181,9 +1192,12 @@ class DialogueRenderer:
         self.draw_portrait(motion.previous, motion.previous_scale, 'rings', bubble)
         self.draw_portrait(motion.portrait, motion.portrait_scale, 'rings', bubble)
         self.draw_notice(session.engine)
+        # HD's song notes: '{' drawn as pack 155's note in the theme's color (dialogue.NOTE_FRAMES), at 2 px a unit.
+        notes = ({NOTE_CODE: self.note_image(page.note_frame, getattr(page, 'note_tint', None))}
+                 if getattr(page, 'note_frame', None) is not None else None)
         self.text.draw_layout(self.canvas, page.body_font, page.body,
                               page.body_origin[0] * k, page.body_origin[1] * k,
-                              scale=k, source_end=motion.revealed)
+                              scale=k, source_end=motion.revealed, inline=notes, inline_density=2)
         self.canvas.blit(faded(self.name_layer, motion.name_alpha), (0, 0))
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the

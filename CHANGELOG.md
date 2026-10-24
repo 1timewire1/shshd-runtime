@@ -17,6 +17,11 @@
   own saved state rather than Football Star's tracked variables.
 - The older menu's Cheats page (libraries without SHS HD) is respaced: its four switches and their notes now fit
   inside the box instead of running under the Back button.
+- **Song lines show SHS HD's music notes** (SHS with the HD bundle). HD's dialogue fonts draw `{` as a music note in
+  the speaker's color (blue, rose or gray; `SHSEngine::initPermanents`), so "{ Toby or not Toby... {" now opens and
+  closes on ♪ as on the iPad, spaced as HD spaces it. HD's gold fonts (narration, named lines without a portrait)
+  register no note and showed a plain brace; this player gives them the gray note in their text color, so sung
+  narration keeps its notes too.
 - **Answer hints know translated New Rules episodes' right/wrong jingles.** Those episodes keep New Rules' own
   answer jingles, where the smartphone versions play SHS's correct/wrong sounds, so for that pack (31300) the jingles
   count as answer feedback. In *Train That Brain!*'s quiz, the right answer shows green.
