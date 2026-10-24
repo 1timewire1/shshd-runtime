@@ -86,6 +86,23 @@ class PlayerFileTests(unittest.TestCase):
             self.assertEqual(again.names, {})
             self.assertIn('Invalid saved names', again.warning)
 
+    def test_a_name_the_opening_resets_wins_over_the_last_playthroughs(self):
+        # The intro skips run the opening script before the window shares the table: Hector's Guide sets "$matt" back
+        # to "you" there, and the last playthrough's handle must not come back.
+        with tempfile.TemporaryDirectory() as directory:
+            record = dict(id='a' * 64, pack_id=5, episode_id=9, titles=['t'] * 5, name='x.exp')
+            opening = episode((46, 0, 1), strings=('$matt', 'you'))
+            opening.resources.record = record
+            library = SimpleNamespace(directory=Path(directory), episodes=[record], select=lambda selector: record,
+                                      open_episode=lambda record: opening.resources)
+            state = MenuState(library)
+            state.names['$matt'] = 'StanTheDevil'
+            state.skip_upsell_intros = True
+            session = state.session(record, resume=False)
+            self.assertEqual(state.names['$matt'], 'you')
+            session.share_names(state.names)                        # what the window does next
+            self.assertEqual(session.engine.substitute('$matt'), 'you')
+
 
 class DesktopSharingTests(unittest.TestCase):
     def test_every_session_the_window_plays_uses_the_library_table(self):

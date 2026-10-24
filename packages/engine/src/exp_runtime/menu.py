@@ -216,6 +216,9 @@ class MenuState:
         resources = self.library.open_episode(episode)
         path = self.resume_path(episode) if resume else None
         session = Session.load(resources, path) if path else Session(resources)
+        # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in
+        # Hector's Guide) must reach the table, not lose to the last playthrough's value when the window shares it.
+        session.share_names(self.names)
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)

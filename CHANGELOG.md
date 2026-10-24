@@ -96,6 +96,9 @@
 
 ### Fixed
 
+- **A name an episode resets at its start stays reset.** With Skip Upsell Intros on, a new game ran its opening
+  before joining the library's shared names, so a name the opening set lost to the last playthrough's value. Replaying
+  *Hector's Guide to Girls* (New Rules) showed the last handle until the new one was typed, instead of "You".
 - **Scene changes fade instead of cutting** in Cause of Death and SHS HD (@zazatree's TouchHLE recordings): a new
   background crossfades in over 0.25 s, as the original's location layer does with Core Animation's implicit
   actions. The chapter card's picture still appears at once. When the card closes, its framing glides into the
