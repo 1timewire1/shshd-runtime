@@ -462,6 +462,12 @@ class CasingTests(unittest.TestCase):
                          "Known as `The Beatdown of '06`... I was going to watch, 'I Eat Your Brains With Salsa'. "
                          "When he calls, 'come over', they stay.")
         self.assertEqual(casing.apply('he said, "hi."', dictionary), 'He said, "Hi."')
+        self.assertEqual(casing.apply("a quiz on 'the blueberries of anger'. let's play 'happy hippo hijinks'. "
+                                      "a yeti from `nepal`.", dictionary),
+                         "A quiz on 'The Blueberries of Anger'. Let's play 'Happy Hippo Hijinks'. "
+                         "A yeti from `Nepal`.")
+        self.assertEqual(casing.apply('go to our facebook group at www.facebook.com/shs.', {'facebook': 'facebook'}),
+                         'Go to our Facebook group at www.facebook.com/shs.')
         # A line found inside a twin's that has a name key there ("$ZOE") writes the name, not the key.
         source = program(0x33, words=text_words('zoe tries to catch sam, but...'))
         for twin in ('$ZOE tries to catch Sam, but...', '$SUPERZOE tries to catch Sam, but...'):

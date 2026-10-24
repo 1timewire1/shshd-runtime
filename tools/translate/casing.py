@@ -8,6 +8,7 @@ other words. A word the dictionary hasn't seen stays lowercase and goes on the r
 Casing never changes a string's length, so it can be written back into the script's data bank in place.
 """
 from collections import Counter, defaultdict
+import functools
 from pathlib import Path
 import re
 import string
@@ -21,6 +22,8 @@ SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+(?:["\'`(]|\{\s*)*$|(^|\|)\s*(?:["\'
 # A capitalised form wins only when the smartphone texts write the word that way almost always ("Officer Smith" must
 # not turn "parole officer" into "parole Officer").
 CAPITAL_SHARE = 0.9
+# learn_from_library(): a capital the pairs saw this many times or fewer is checked against the whole library.
+THIN_CAPITAL = 2
 # Single letters joined by dots ("h.e.c.t.o.r.", "p.r.a.t.t.") are spelled-out names, written in capitals.
 # Place names the paired stories never teach: the US states and their capitals (Train That Brain!'s capitals quiz).
 PLACES = (
@@ -43,12 +46,16 @@ PROPER_PHRASES = ('Surviving High School: New Rules', 'Surviving High School', '
 # stories have plain valleys ("stare out at the valley below them", Guys Versus Wild).
 QUOTED_TITLES = re.compile(r"(?<=')the valley(?=')", re.IGNORECASE)
 # Named things only King of Diss mentions, written as the owner reads them (lowercase -> written form).
-OWN_TITLES = {title.lower(): title for title in ("The Beatdown of '06", 'I Eat Your Brains With Salsa')}
+OWN_TITLES = {title.lower(): title for title in ("The Beatdown of '06", 'I Eat Your Brains With Salsa',
+                                                 'The Blueberries of Anger', 'Happy Hippo Hijinks')}
 OWN_TITLE = re.compile('|'.join(re.escape(title) for title in OWN_TITLES), re.IGNORECASE)
 # Acronyms New Rules writes in lowercase that the smartphone stories may not teach ("djs" -> "DJs").
 COMMON_ACRONYMS = {word.lower(): word for word in ('DJ', 'TV', 'DVD', 'CD', 'MP3')}
-# Names only New Rules' own stories use, which no smartphone story teaches (King of Diss's soap opera star).
-OWN_NAMES = {word.lower(): word for word in ('Krystal',)}
+# Names only New Rules' own stories use, which no smartphone story teaches (King of Diss's soap opera star, a yeti's
+# home).
+OWN_NAMES = {word.lower(): word for word in ('Krystal', 'Nepal', 'Facebook')}
+# A web address keeps its words as written ("www.facebook.com/...").
+URL = re.compile(r"\S*\.(?:com|net|org)\b\S*", re.IGNORECASE)
 # A grade letter: before -plus/-minus ("a d-plus"), or quoted ("your 'a' game"); only a-f, so "rock 'n' roll" stays.
 GRADE = re.compile(r"\b[a-f](?=-(?:plus|minus)\b)|(?<=')[a-f](?=')", re.IGNORECASE)
 GAZETTEER = re.compile(r'\b(?:' + '|'.join(sorted(
@@ -95,12 +102,53 @@ def learn_from_library(expd_folder, library, exclude=(), twin_of=None):
                     # the twins keep some lowercase leftovers: the best-cased copy wins
                     if capitals(text) > capitals(exact.get(text.lower(), '')):
                         exact[text.lower()] = text
-    dictionary = learn(data)
+    uses = {}
+    dictionary = learn(data, uses)
+    # A capital the pairs teach from a use or two (THIN_CAPITAL: "the Leech King", "my Love Wagon") is checked against
+    # how the whole library writes the word: written lowercase more often than capitalized as a word of its own (not
+    # inside a name like "Winter Formal"), it stays lowercase ("a leech", "a station wagon", "winter"). Capitals the
+    # pairs see often (names, "I") are left alone.
+    everywhere = library_word_forms(Path(library))
+    for word, written in dictionary.items():
+        if written != word and uses.get(word, 0) <= THIN_CAPITAL and word in everywhere:
+            lower, alone, exact_form = everywhere[word]
+            if lower > (exact_form.get(written, 0) if written.isupper() else alone):
+                dictionary[word] = word
     # Words of this story that the other stories never teach ("samantha"): written as the related episodes write them
     # inside a sentence, capitalized only when they almost always are.
     for word, written in story_words(related).items():
         dictionary.setdefault(word, written)
     return dictionary, exact, titles
+
+
+@functools.lru_cache(maxsize=2)
+def library_word_forms(library):
+    """{lowercase word: (lowercase uses, capitalized uses standing alone, Counter of every written form)} off sentence
+    starts, over every string of every episode in the library (translations left out, pairs.library_episodes). A
+    capital next to another capitalized word belongs to a name ("Winter Formal", "Auto Shop") and is not counted
+    alone; all-caps shouting is not a capital either."""
+    import pairs as pairing
+    lower, alone, forms = Counter(), Counter(), defaultdict(Counter)
+    for _, programs in pairing.library_episodes(Path(library)):
+        for program in programs:
+            for _, text in strings(program):
+                starts = sentence_starts(text)
+                words = list(WORD.finditer(text))
+                for n, match in enumerate(words):
+                    word = match.group()
+                    if match.start() in starts or (match.start() and text[match.start() - 1] == '$'):
+                        continue
+                    key = word.lower()
+                    forms[key][word] += 1
+                    if word == key:
+                        lower[key] += 1
+                    elif word[0].isupper() and not word.isupper():
+                        before = words[n - 1] if n and not text[words[n - 1].end():match.start()].strip(' -') else None
+                        after = (words[n + 1] if n + 1 < len(words)
+                                 and not text[match.end():words[n + 1].start()].strip(' -') else None)
+                        if not any(other is not None and other.group()[0].isupper() for other in (before, after)):
+                            alone[key] += 1
+    return {key: (lower[key], alone[key], forms[key]) for key in forms}
 
 
 def story_words(texts):
@@ -147,8 +195,9 @@ def sentence_starts(text):
     return starts
 
 
-def learn(pairs):
-    """`pairs`: (New Rules strings, smartphone strings) per story. Returns {lowercase word: written form}."""
+def learn(pairs, uses=None):
+    """`pairs`: (New Rules strings, smartphone strings) per story. Returns {lowercase word: written form}; `uses`, a
+    dict, gets how many times each word was seen written that way."""
     forms = defaultdict(Counter)
     for ours, theirs in pairs:
         cased = {}
@@ -172,6 +221,8 @@ def learn(pairs):
         if written != word and count < CAPITAL_SHARE * sum(counts.values()) and word in counts:
             written = word
         dictionary[word] = written
+        if uses is not None:
+            uses[word] = counts[written]
     return dictionary
 
 
@@ -208,12 +259,15 @@ def title_case(text):
 
 
 def known_form(lower, dictionary, names):
-    """How a lowercase word is written: the dictionary's form, a name capitalized, a common acronym, or None."""
+    """How a lowercase word is written: one of New Rules' own names, the dictionary's form, a name capitalized, a common
+    acronym, or None."""
+    if lower in OWN_NAMES:
+        return OWN_NAMES[lower]
     if lower in dictionary:
         return dictionary[lower]
     if lower in names:
         return lower[:1].upper() + lower[1:]
-    return COMMON_ACRONYMS.get(lower) or OWN_NAMES.get(lower)
+    return COMMON_ACRONYMS.get(lower)
 
 
 def apply(text, dictionary, names=(), unknown=None):
@@ -223,6 +277,8 @@ def apply(text, dictionary, names=(), unknown=None):
     places = set()
     for match in GAZETTEER.finditer(text):                  # "baton rouge" -> "Baton Rouge"
         out[match.start():match.end()] = string.capwords(match.group())
+        places.update(range(match.start(), match.end()))
+    for match in URL.finditer(text):                        # "www.facebook.com/..." stays as written
         places.update(range(match.start(), match.end()))
     for match in WORD.finditer(text):
         word = match.group()
