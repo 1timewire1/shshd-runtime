@@ -33,20 +33,39 @@ def library_episodes(library):
         yield record, programs
 
 
+RELATED_SHARE = 0.1                     # related(): the least share of a download's lines a related episode tells
+
+
+@functools.lru_cache(maxsize=2)
+def library_lines(library):
+    """[(record, its normalised lines)] for every episode in the library (cached)."""
+    return [(record, lines_of(programs)) for record, programs in library_episodes(Path(library))]
+
+
 @functools.lru_cache(maxsize=4)
 def pair(expd_folder, library):
     """[{expd, title, twin, file, share, paired}] for every download in the folder (cached: the translator asks twice)."""
     expd_folder, library = Path(expd_folder), Path(library)
-    library_lines = [(record, lines_of(programs)) for record, programs in library_episodes(library)]
+    library_lines_ = library_lines(library)
     result = []
     for path in sorted(expd_folder.glob('*.expd'), key=lambda p: int(p.stem) if p.stem.isdigit() else 0):
         episode = newrules.read_expd(path.read_bytes())
         ours = lines_of(episode.scripts.values())
-        best = max(library_lines, key=lambda item: len(ours & item[1]))
+        best = max(library_lines_, key=lambda item: len(ours & item[1]))
         share = len(ours & best[1]) / max(1, len(ours))
         result.append(dict(expd=path.name, title=episode.title, twin=best[0]['name'], file=best[0]['file'],
                            share=round(share, 3), paired=share >= 0.5))
     return result
+
+
+def related(expd_folder, library, expd_name, min_share=RELATED_SHARE):
+    """The library episodes that tell part of a download's story: [{record}], each sharing at least `min_share` of
+    its lines, most first. A paired story's twin leads; the SHS 11 Demos relate to both stories they excerpt."""
+    episode = newrules.read_expd((Path(expd_folder) / expd_name).read_bytes())
+    ours = lines_of(episode.scripts.values())
+    found = sorted(((len(ours & lines) / max(1, len(ours)), record) for record, lines in library_lines(Path(library))),
+                   key=lambda item: -item[0])
+    return [record for share, record in found if share >= min_share]
 
 
 def twin_word_games(expd_folder, library, expd_name):

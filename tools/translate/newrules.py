@@ -272,7 +272,7 @@ def music_resource(index):
 
 
 def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing_dictionary=None, casing_exact=None,
-              twin_games=()):
+              twin_games=(), casing_titles=()):
     """The SHS `.exp` bytes for one New Rules episode. `music`: index -> rendered MP3 bytes (a callable), if any;
     `casing_dictionary`: casing.learn's dictionary, which restores capitals (else the text stays lowercase);
     `casing_exact`: the paired smartphone story's strings by lowercase text, whose casing wins where they match;
@@ -288,7 +288,8 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         import casing
         episode = Episode(episode.download_id, episode.title, {
             rid: replace(program, main_words=casing.recase_program(program, casing_dictionary, names,
-                                                                   titles=[episode.title], unknown=report.unknown,
+                                                                   titles=[episode.title, *casing_titles],
+                                                                   unknown=report.unknown,
                                                                    exact=casing_exact,
                                                                    headlines=title_card_titles(program)))
             for rid, program in episode.scripts.items()})

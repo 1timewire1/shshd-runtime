@@ -47,14 +47,15 @@ def main(argv=None):
     for path in args.episodes:
         episode = newrules.read_expd(path.read_bytes())
         dictionary = exact = None
+        titles = []
         games = []
         if args.library:
             import casing
             import pairs
-            dictionary, exact = casing.learn_from_library(path.parent, args.library, twin_of=path.name)
+            dictionary, exact, titles = casing.learn_from_library(path.parent, args.library, twin_of=path.name)
             games = pairs.twin_word_games(path.parent, args.library, path.name)
         data, report = newrules.translate(episode, art, music=music, casing_dictionary=dictionary, casing_exact=exact,
-                                          twin_games=games)
+                                          twin_games=games, casing_titles=titles)
         target = args.out / f'NR_{episode.download_id:02d}_{safe(episode.title)}.exp'
         target.write_bytes(data)
         print(f'{path.name}: {episode.title!r} -> {target} ({len(data) // 1024} KB, {report.looks} looks, '

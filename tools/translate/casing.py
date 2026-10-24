@@ -15,8 +15,8 @@ import struct
 
 WORD = re.compile(r"[A-Za-z][A-Za-z']*")
 # A word starts a sentence after . ! ? (and closing quotes) and a space, at the start of the text or of a `|`-separated
-# choice option, with only opening quotes or backticks before it.
-SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+$|(^|\|)\s*["\'`(]*$|[,:]\s+["\']$')
+# choice option, with only opening quotes or backticks before it ("team? `does` she").
+SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+["\'`(]*$|(^|\|)\s*["\'`(]*$|[,:]\s+["\']$')
 # A capitalised form wins only when the smartphone texts write the word that way almost always ("Officer Smith" must
 # not turn "parole officer" into "parole Officer").
 CAPITAL_SHARE = 0.9
@@ -37,7 +37,9 @@ MULTI_WORD = ('Little', 'Des', 'Baton', 'Saint', 'Jefferson', 'Carson', 'New', '
               'South', 'Salt', 'West')
 # Other proper names the paired stories don't settle: the game's own ("a special episode of `surviving high school!`",
 # the end card's "surviving high school").
-PROPER_PHRASES = ('Surviving High School',)
+PROPER_PHRASES = ('Surviving High School', 'Centerscore High')
+# Acronyms New Rules writes in lowercase that the smartphone stories may not teach ("djs" -> "DJs").
+COMMON_ACRONYMS = {word.lower(): word for word in ('DJ', 'TV', 'DVD', 'CD', 'MP3')}
 GAZETTEER = re.compile(r'\b(?:' + '|'.join(sorted(
     {p.lower() for group in PLACES.split('|')
      for p in ([group] if ' ' in group and group.split()[0] in MULTI_WORD else group.split())}
@@ -53,8 +55,9 @@ ABBREVIATION = re.compile(r"(?:\b(?:mr|mrs|ms|dr|vs|jr|sr|st)\.|(?<![A-Za-z.])(?
 
 def learn_from_library(expd_folder, library, exclude=(), twin_of=None):
     """The dictionary learned from every New Rules download paired with a library episode (pairs.py), and, for the
-    download named `twin_of`, its twin's strings by lowercase text (`exact`, for recase_program): (dictionary, exact).
-    `exclude` leaves stories out of the dictionary (casing_eval measures it that way)."""
+    download named `twin_of`, the strings of the episodes telling its story (`pairs.related`: its twin, or both
+    stories the SHS 11 Demos excerpt) by lowercase text (`exact`, for recase_program), and their titles:
+    (dictionary, exact, titles). `exclude` leaves stories out of the dictionary (casing_eval measures it that way)."""
     from exp_runtime.decode.bytecode import decode_program
     from exp_runtime.exp import ExpArchive
     import newrules
@@ -68,11 +71,40 @@ def learn_from_library(expd_folder, library, exclude=(), twin_of=None):
         theirs = [t for r in archive.entries if archive.read(r)[:4] == b'kiwi'
                   for _, t in strings(decode_program(archive.read(r)))]
         data.append(([t for p in episode.scripts.values() for _, t in strings(p)], theirs))
-        if pair['expd'] == twin_of:
-            for text in theirs:                 # the twins keep some lowercase leftovers: the best-cased copy wins
-                if capitals(text) > capitals(exact.get(text.lower(), '')):
-                    exact[text.lower()] = text
-    return learn(data), exact
+    titles, related = [], []
+    if twin_of is not None:
+        for record in pairing.related(Path(expd_folder), Path(library), twin_of):
+            archive = ExpArchive((Path(library) / record['file']).read_bytes())
+            titles.append(record['titles'][0])
+            for r in archive.entries:
+                if archive.read(r)[:4] != b'kiwi':
+                    continue
+                for _, text in strings(decode_program(archive.read(r))):
+                    related.append(text)
+                    # the twins keep some lowercase leftovers: the best-cased copy wins
+                    if capitals(text) > capitals(exact.get(text.lower(), '')):
+                        exact[text.lower()] = text
+    dictionary = learn(data)
+    # Words of this story that the other stories never teach ("samantha"): written as the related episodes write them
+    # inside a sentence, capitalized only when they almost always are.
+    for word, written in story_words(related).items():
+        dictionary.setdefault(word, written)
+    return dictionary, exact, titles
+
+
+def story_words(texts):
+    """{lowercase word: its written form} from mixed-case texts, by how each word is written off a sentence start."""
+    forms = defaultdict(Counter)
+    for text in texts:
+        starts = sentence_starts(text)
+        for match in WORD.finditer(text):
+            if match.start() not in starts and not (match.start() and text[match.start() - 1] == '$'):
+                forms[match.group().lower()][match.group()] += 1
+    result = {}
+    for word, counts in forms.items():
+        written, count = counts.most_common(1)[0]
+        result[word] = written if written == word or count >= CAPITAL_SHARE * sum(counts.values()) else word
+    return result
 
 
 def strings(program):
@@ -164,6 +196,15 @@ def title_case(text):
     return ''.join(out)
 
 
+def known_form(lower, dictionary, names):
+    """How a lowercase word is written: the dictionary's form, a name capitalized, a common acronym, or None."""
+    if lower in dictionary:
+        return dictionary[lower]
+    if lower in names:
+        return lower[:1].upper() + lower[1:]
+    return COMMON_ACRONYMS.get(lower)
+
+
 def apply(text, dictionary, names=(), unknown=None):
     """`text` with sentence case and the dictionary's forms; `names` are written with capitals. Same length."""
     out = list(text)
@@ -177,9 +218,13 @@ def apply(text, dictionary, names=(), unknown=None):
         if match.start() > 0 and text[match.start() - 1] == '$' or match.start() in places:
             continue                                        # a $KEY substitution, or a place name
         lower = word.lower()
-        written = dictionary.get(lower)
-        if written is None and lower in names:
-            written = lower[:1].upper() + lower[1:]
+        written = known_form(lower, dictionary, names)
+        for ending in ("'s", "s'", 's'):                    # "zoe's" as "Zoe" is written, "djs" as "DJ"
+            if written is None and lower.endswith(ending):
+                base = known_form(lower[:-len(ending)], dictionary, names)
+                # a plural only after an acronym: "marks" isn't "Marks"
+                if base is not None and base != lower[:-len(ending)] and (ending != 's' or base.isupper()):
+                    written = base + word[-len(ending):]
         if written is None:
             written = lower
             if unknown is not None and lower not in ('a',):
@@ -214,7 +259,14 @@ def recase_program(program, dictionary, names=(), titles=(), addresses=None, unk
         if len(text) >= SUBSTRING_MIN and text == text.lower():
             start = twin_lower.find(text)
             while start >= 0 and len(found) < 20:
-                piece = twin[start:start + len(text)]
+                if start > 0 and twin[start - 1].isalnum() and text[0].isalnum():
+                    start = twin_lower.find(text, start + 1)     # inside a word or key ("$SUPERZOE tries...")
+                    continue
+                piece = list(twin[start:start + len(text)])
+                for match in WORD.finditer(text):           # "$ZOE tries…" is a name key there: "Zoe tries…" here
+                    if start + match.start() > 0 and twin[start + match.start() - 1] == '$':
+                        piece[match.start():match.end()] = title_case(match.group())
+                piece = ''.join(piece)
                 found.append(piece[:1].upper() + piece[1:])
                 start = twin_lower.find(text, start + 1)
         candidates = ([known[text]] if text in known else []) + found
@@ -224,8 +276,8 @@ def recase_program(program, dictionary, names=(), titles=(), addresses=None, unk
             cased = title_case(text)
         else:
             cased = apply(text, dictionary, {w for name in names for w in WORD.findall(name)}, unknown)
-        for title in titles:                                 # the story's own title inside a line
-            core = title.rstrip('!?.').strip()
+        for title in titles:                                 # the story's own title (and related ones) inside a line
+            core = re.sub(r'^\d+:\s*', '', title).rstrip('!?.').strip()
             if core and ' ' in core:
                 cased = re.sub(r'\b' + re.escape(core) + r'\b', lambda m: core, cased, flags=re.IGNORECASE)
         if address in headlines:

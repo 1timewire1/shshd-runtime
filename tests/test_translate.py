@@ -1,6 +1,7 @@
 """tools/translate: the KiWi call-site rewriter and the New Rules shims, on authored programs (no original content)."""
 import importlib.util
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 import struct
 import sys
@@ -345,6 +346,19 @@ class CasingTests(unittest.TestCase):
                          'An episode of `Surviving High School!`')
         self.assertEqual(casing.headline_case('the prince plot, part one'), 'The Prince Plot, Part One')
         self.assertEqual(casing.headline_case('a night at the opera'), 'A Night at the Opera')
+
+    def test_names_acronyms_and_marked_sentence_starts(self):
+        import casing
+        dictionary = casing.learn([(['i met mark at the mall.'], ['I met Mark at the mall.'])])
+        self.assertEqual(casing.apply("for zoe's first meal", dictionary, {'zoe'}), "For Zoe's first meal")
+        self.assertEqual(casing.apply('professional djs and a tv.', dictionary), 'Professional DJs and a TV.')
+        self.assertEqual(casing.apply('he marks it.', dictionary), 'He marks it.')     # a plural only after an acronym
+        self.assertEqual(casing.apply('the team? `does` she?', dictionary), 'The team? `Does` she?')
+        # A line found inside a twin's that has a name key there ("$ZOE") writes the name, not the key.
+        source = program(0x33, words=text_words('zoe tries to catch sam, but...'))
+        for twin in ('$ZOE tries to catch Sam, but...', '$SUPERZOE tries to catch Sam, but...'):
+            cased = casing.recase_program(source, dictionary, names=('zoe', 'sam'), exact={'x': twin})
+            self.assertEqual(casing.strings(replace(source, main_words=cased))[0][1], 'Zoe tries to catch Sam, but...')
 
 
 @unittest.skipUnless(HAS_NUMPY, 'tools/translate/midi_render.py needs numpy')
