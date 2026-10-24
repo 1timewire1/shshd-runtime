@@ -2504,7 +2504,10 @@ class Desktop:
             elif self.choice_held is not None:
                 self._release_choice()          # the prompt has closed (this runs only without one)
             elif ask is not None:
-                pass                            # the mini-game has not started: its clocks wait for the skip prompt
+                # The mini-game has not started: its clocks wait for the skip prompt. A scene transition still runs to
+                # its end (fade-in included), the game held, or the prompt would wait under a black screen.
+                if self.session.transitioning:
+                    self._attempt(lambda: self.session.tick(elapsed_ms, pause_minigame=True))
             elif (pending is not None and pending.name in ('choice', 'word_game') and remaining is not None
                   and (pending.name == 'word_game' or self.session.choice_timer)
                   and remaining < elapsed_ms and self._hd_choice_drawn()):     # exactly 0 is still selectable

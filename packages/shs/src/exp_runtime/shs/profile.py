@@ -75,6 +75,10 @@ TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}}
 # where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
 # above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
 TRANSLATED_FRAME_BACKDROP = {31300: 26999}
+# shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
+# place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
+# faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
+TRANSLATED_PICKER_LAYOUTS = {31300: {4: [(160, 275), (52, 241), (160, 170), (269, 241)]}}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

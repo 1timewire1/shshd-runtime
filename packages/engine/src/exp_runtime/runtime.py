@@ -17,6 +17,7 @@ from .engine import POLL_WAIT_MS, EngineAction, EngineState
 from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
                                  ExpressionTransition, EXPRESSION_MS, IOS_EXPRESSION_MS)
 from .background import BackgroundPan
+from .character_picker import CharacterPicker, POSITIONS
 from .fade_transition import FadeTransition
 from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_lifetime, notice_limit
 from .dt_state import install_state
@@ -539,6 +540,8 @@ class Session:
                     if current is not None and self.engine.dt_view.awaiting_result:
                         current.choice_labels = dict(zip(action.details['values'], action.details['options']))
                     self.engine.choice_ms = 0
+                if action.name == 'character_picker':
+                    self._place_picker()
                 self.pending = action
                 if action.name == 'dialogue':
                     self._prepare_dialogue(new_name=True, update_text=True)
@@ -732,6 +735,16 @@ class Session:
         self._prepare_dialogue(new_name=True)
         self._complete_panel()
         self.engine.message_panel = None
+
+    def _place_picker(self):
+        """shshd-runtime: a translated pack's own layout for a new portrait picker (the game profile's
+        TRANSLATED_PICKER_LAYOUTS, by portrait count); every other episode keeps the native slots."""
+        picker = self.engine.character_picker
+        record = getattr(self.resources, 'record', None) or {}
+        layouts = getattr(GAMES[game_id(self.resources)], 'TRANSLATED_PICKER_LAYOUTS', {})
+        positions = layouts.get(record.get('pack_id'), {}).get(len(picker.characters))
+        if positions is not None:
+            self.engine.character_picker = CharacterPicker.start(picker.characters, positions)
 
     def _complete_panel(self):
         # 000ab8b8 / 0007efe8, shared by title, message and dialogue panels; a queued transition holds the callback
@@ -969,7 +982,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=28,
+        return dict(format='shs-runtime-save', version=29,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1010,8 +1023,13 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 29):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 30):
                 raise SaveError('Unsupported save format or version')
+            # Version 29 stores an open portrait picker's slot positions (a translated pack may place them its own
+            # way); an older one used the native slots.
+            if state['version'] < 29 and (state.get('engine') or {}).get('character_picker') is not None:
+                state = deepcopy(state)
+                state['engine']['character_picker']['positions'] = [list(p) for p in POSITIONS]
             # Version 27 adds exp-runtime v0.6.1's state (its own versions 22-24, numbered independently of this
             # fork's): the choice entrance clock, Android's bitmap text history, the music/sound playback records,
             # the minigames' new effects and the expression decorations. Every field is filled with setdefault, so

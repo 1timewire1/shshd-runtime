@@ -142,7 +142,7 @@ class OutlineDialogueTests(unittest.TestCase):
             self.assertEqual(page.body_font, BODY_FONT)
             self.assertEqual([line.y for line in page.body.lines], [0, 23, 46, 69])
             current = restored.snapshot()
-            self.assertEqual(current['version'], 28)
+            self.assertEqual(current['version'], 29)
             self.assertEqual(Session.from_snapshot(resources, current).snapshot(), current)
             current['pending']['details']['page_end'] -= 1
             with self.assertRaisesRegex(SaveError, 'page does not match'):

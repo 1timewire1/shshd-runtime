@@ -22,14 +22,20 @@
   *Surviving High School: New Rules* downloads: their bytecode is rewritten to call SHS's services, the paper-doll
   characters become portrait banks, the MIDI music is rendered to MP3 through a General MIDI soundfont, and the
   all-lowercase text gets capitals back. Each minigame round is played as SHS's word game, as the smartphone
-  versions play it, from the arena-free version of the round that every New Rules download carries.
+  versions play it, from the arena-free version of the round that every New Rules download carries. It also
+  translates *King of Diss*, the story built into New Rules, in two versions: the full story with its compact dialogue
+  streams written out, its speed disses played as the Lite builds play theirs (timed rhyme choices, from the
+  minigame library's own rhyme pairs), its rhythm and beat-boxing games as word games and its face picker as SHS's
+  portrait picker; and the Lite Java builds' condensed retelling, whose text table becomes data, with its own
+  speed-diss choices.
   `tools/test_creator_native.py --exp FILE` runs any `.exp` in the original interpreters; the iOS builds' integer
   division helper is now stood in for.
 - **Song lines show SHS HD's music notes** (SHS with the HD bundle). HD's dialogue fonts draw `{` as a music note in
   the speaker's color (blue, rose or gray; `SHSEngine::initPermanents`), so "{ Toby or not Toby... {" now opens and
   closes on ♪ as on the iPad, spaced as HD spaces it. HD's gold fonts (narration, named lines without a portrait)
   register no note and showed a plain brace; this player gives them the gray note in their text color, so sung
-  narration keeps its notes too.
+  narration keeps its notes too. The choice menu's description and options use the same face, so sung choices show their
+  notes there as well.
 - **Answer hints know translated New Rules episodes' right/wrong jingles.** Those episodes keep New Rules' own
   answer jingles, where the smartphone versions play SHS's correct/wrong sounds, so for that pack (31300) the jingles
   count as answer feedback. In *Train That Brain!*'s quiz, the right answer shows green.
@@ -38,7 +44,9 @@
   blue pattern, with the cream stripe down the middle between thin orange edges, as wide a share as on New Rules'
   WinMo screen. The art comes from its own greyscale UI packs, tinted as the game tints them and drawn at the
   strips' pixel scale. For that pack (31300) the player draws it under the strip instead of black. Other episodes
-  are unchanged. The orange frame New Rules puts around its scene borders the strip too. Its sides fall outside the
+  are unchanged. Their portrait picker places four portraits evenly (one above the chosen face, one either side),
+  where SHS's own slots leave one side empty; other episodes keep the native slots. The orange frame New Rules puts
+  around its scene borders the strip too. Its sides fall outside the
   view, as on New Rules' own screen, so its top and bottom bars show.
 - **The episode creator covers more of what SHS and CoD episodes use** (`shshd-runtime-creator`), toward translating
   other games' episodes:
@@ -98,6 +106,9 @@
 
 ### Fixed
 
+- **A fade into a mini-game no longer stays black under the skip prompt.** With Skip mini-games on, the player held
+  every clock while it asked, including a scene transition still fading in, so the prompt waited under a black
+  screen (King of Diss's "practice dissing" fades straight into a word game). The fade now finishes; the game waits.
 - **Long one-word names fit the HD name plate** (SHS HD and Cause of Death). A word wider than the plate, such as
   a typed handle like "StanTheDevil", is drawn smaller so it fits on one line, down to half size. The iPad's title code
   broke it mid-word and pushed the last letters onto the dialogue text. Names with spaces still wrap at a space onto

@@ -150,6 +150,23 @@ class DesktopOptionTests(unittest.TestCase):
         prompt['resolve'](1)                                      # Lose: the quiz scores nothing
         self.assertNotEqual(getattr(ui.session.pending, 'name', None), 'word_game')
 
+    def test_a_fade_in_finishes_under_the_skip_prompt_while_the_quiz_waits(self):
+        # King of Diss (New Rules) fades to black right before a word game: the prompt must not wait under the black.
+        from exp_runtime.fade_transition import FadeTransition
+        words, refs = text_words('Title', 'Pick', 'yes|right', 'no|wrong|bad')
+        ui = self.ui(Resources(program(*host_call(71, *refs, 20000, -1, 1, 3000), 0x33, words=words)))
+        ui.skip_minigames = True
+        fade = ui.session.engine.scene_transition = FadeTransition()
+        fade.start(1, 0)
+        fade.reveal()
+        game = ui.session.engine.word_game
+        clock = game.remaining_ms
+        for _ in range(200):
+            ui.tick(16)
+        self.assertFalse(ui.session.transitioning)
+        self.assertIsNotNone(ui._host_prompt())
+        self.assertEqual((ui.session.pending.name, game.remaining_ms), ('word_game', clock))
+
 
 if __name__ == '__main__':
     unittest.main()
