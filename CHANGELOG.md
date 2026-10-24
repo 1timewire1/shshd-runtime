@@ -17,6 +17,14 @@
   own saved state rather than Football Star's tracked variables.
 - The older menu's Cheats page (libraries without SHS HD) is respaced: its four switches and their notes now fit
   inside the box instead of running under the Back button.
+- **`tools/translate/`: a research tool that translates other SHS games' episodes into `.exp` files** (not part of any
+  wheel or app). It reads your own copy of a game and writes the translation to a folder you choose. It starts with
+  *Surviving High School: New Rules* downloads: their bytecode is rewritten to call SHS's services, the paper-doll
+  characters become portrait banks, the MIDI music is rendered to MP3 through a General MIDI soundfont, and the
+  all-lowercase text gets capitals back. Each minigame round is played as SHS's word game, as the smartphone
+  versions play it, from the arena-free version of the round that every New Rules download carries.
+  `tools/test_creator_native.py --exp FILE` runs any `.exp` in the original interpreters; the iOS builds' integer
+  division helper is now stood in for.
 - **Song lines show SHS HD's music notes** (SHS with the HD bundle). HD's dialogue fonts draw `{` as a music note in
   the speaker's color (blue, rose or gray; `SHSEngine::initPermanents`), so "{ Toby or not Toby... {" now opens and
   closes on ♪ as on the iPad, spaced as HD spaces it. HD's gold fonts (narration, named lines without a portrait)
