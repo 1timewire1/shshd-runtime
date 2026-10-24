@@ -214,11 +214,12 @@ class HdPauseMenu:
     # -- state ----------------------------------------------------------
     slide = None
     shown = None
+    drawn = None
     switches = None                 # key -> (from, to, elapsed ms): each drawn switch's knob, 0 off .. 1 on
 
     def reset(self):
         self.state = PauseState()
-        self.slide = self.shown = self.switches = None
+        self.slide = self.shown = self.drawn = self.switches = None
 
     def open(self, screen):
         """A row's page, pushed in from the right."""
@@ -230,10 +231,16 @@ class HdPauseMenu:
         state = self.state
         if state.screen == 'pause':
             return True
+        leaving = state.screen
         state.screen = ('help' if state.screen in PAGES else 'options' if state.screen.startswith('options:')
                         else 'pause')
         if self.main_menu and state.screen == 'pause':
             return True
+        if self.shown is not None and self.drawn is not None:
+            screen, state.screen = state.screen, leaving
+            pressed, self.pressed = self.pressed, ('pause_back',)
+            self.shown = self.screen_layout(*self.drawn[0], **self.drawn[1])[0]
+            state.screen, self.pressed = screen, pressed
         state.scroll, state.drag = 0., None
         self.start_slide(-1)
         return False
@@ -320,6 +327,7 @@ class HdPauseMenu:
         return top + header
 
     def back_button(self, layer, bottom, *, lit=False):
+        lit = lit or self.pressed == ('pause_back',)        # held or just clicked, the blue turns darker
         left, lift = PANEL_X + BACK[0], BACK[1]
         top = bottom - lift - 58
 
@@ -447,7 +455,7 @@ class HdPauseMenu:
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""
         layer, buttons = self.screen_layout(settings, host_rows, message=message)
-        self.shown = layer
+        self.shown, self.drawn = layer, ((settings, host_rows), {'message': message})
         if self.slide is None:
             return layer, buttons
         direction, previous, elapsed = self.slide
