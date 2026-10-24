@@ -66,6 +66,11 @@ MUSIC_SLIDER_SOUND = 8009
 # feedback (Football Star's shared classroom routine also covers finals).
 # They are fixed SHS base-bank IDs, not episode counters or text heuristics.
 CHOICE_FEEDBACK_SOUNDS = {8007: 1, 8003: -1}
+# shshd-runtime: episodes translated from SHS: New Rules (tools/translate, pack 31300) keep New Rules' own right/wrong
+# jingles, its music tracks 13 and 1, which the smartphone versions replaced with 8007/8003 at the same beats (~590
+# each across the 45 paired stories). They play as episode music (service 80) at the translator's MUSIC_BASE (26980)
+# + track, so for that pack those requests are answer feedback too. Pack -> {music ID: feedback}.
+TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

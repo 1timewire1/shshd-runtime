@@ -34,8 +34,15 @@ def observe_effects(session, preview, action, effects):
     if action.name == 'set_next_dialogue_notice' and action.details['text'] in SCORE_NOTICE_VALUES:
         # This fork also counts "Score Way Up!" and CoD's "Detective Score Down!" (-1).
         effects['score_notice'] = effects.get('score_notice', 0) + SCORE_NOTICE_VALUES[action.details['text']]
-    elif action.name == 'request_audio' and action.request.yield_id == 79:
-        feedback = GAMES[session.engine.game_key].CHOICE_FEEDBACK_SOUNDS.get(action.details['asset_id'], 0)
+    elif action.name == 'request_audio' and action.request.yield_id in (79, 80):
+        profile = GAMES[session.engine.game_key]
+        if action.request.yield_id == 79:
+            feedback = profile.CHOICE_FEEDBACK_SOUNDS.get(action.details['asset_id'], 0)
+        else:
+            # shshd-runtime: a translated New Rules episode's right/wrong jingles (shs/profile.py).
+            record = getattr(getattr(session, 'resources', None), 'record', None) or {}
+            cues = getattr(profile, 'TRANSLATED_FEEDBACK_MUSIC', {}).get(record.get('pack_id'), {})
+            feedback = cues.get(action.details['asset_id'], 0)
         if feedback:
             # Opposite cues must not cancel each other.
             key = 'correct_feedback' if feedback > 0 else 'incorrect_feedback'

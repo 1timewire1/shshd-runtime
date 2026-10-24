@@ -17,6 +17,9 @@
   own saved state rather than Football Star's tracked variables.
 - The older menu's Cheats page (libraries without SHS HD) is respaced: its four switches and their notes now fit
   inside the box instead of running under the Back button.
+- **Answer hints know translated New Rules episodes' right/wrong jingles.** Those episodes keep New Rules' own
+  answer jingles, where the smartphone versions play SHS's correct/wrong sounds, so for that pack (31300) the jingles
+  count as answer feedback. In *Train That Brain!*'s quiz, the right answer shows green.
 - **The episode creator covers more of what SHS and CoD episodes use** (`shshd-runtime-creator`), toward translating
   other games' episodes:
   - Story text shows numbers: `{points}`, `{points * 2}` or `{prop(0, 400)}` are formatted by the game's own service 0.

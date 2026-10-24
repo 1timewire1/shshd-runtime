@@ -600,6 +600,9 @@ See [the skip contract](MINIGAMES.md#optional-minigame-skips) for callback value
 authored, opt-in per-game preference, off by default. Green marks recognized
 gains/correct answers, red recognized losses/wrong answers or a
 no-gain alternative when another option has a known gain, amber mixed effects.
+Episodes translated from SHS: New Rules (`tools/translate`, pack 31300) also count New Rules' own right/wrong answer
+jingles, which they play as episode music where the smartphone versions play SHS's correct/wrong sounds
+(`shs/profile.py` `TRANSLATED_FEEDBACK_MUSIC`).
 Unresolved choices retain their original styling. It applies to ordinary
 choices, including their actual randomized/custom return values. Service 71
 word quizzes use the current deal's explicit good/bad weights, including bad
