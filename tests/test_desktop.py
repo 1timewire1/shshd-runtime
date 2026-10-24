@@ -975,6 +975,41 @@ class DesktopTests(unittest.TestCase):
                            (ui.bg_viewport.right - 1, ui.bg_viewport.bottom - 1)):
                 self.assertEqual(ui.window.get_at(corner)[:3], (40, 200, 40))
 
+    def test_a_translated_episode_shows_its_own_backdrop_where_the_art_leaves_the_frame_black(self):
+        # Translated New Rules episodes (pack 31300) carry New Rules' UI backdrop (shs/profile.py
+        # TRANSLATED_FRAME_BACKDROP); their 3:1 strips leave bands above and below. Other episodes keep black.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.shs.profile import TRANSLATED_FRAME_BACKDROP
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        (pack_id, asset_id), = TRANSLATED_FRAME_BACKDROP.items()
+        with tempfile.TemporaryDirectory() as temporary:
+            for translated in (True, False):
+                resources = Resources(branching_program())
+                resources.library.directory = Path(temporary)
+                ui = Desktop(Session(resources), audio=False)
+                ui.render()
+                backdrop = pygame.Surface((384, 512))
+                backdrop.fill((30, 60, 150))
+                path = Path(temporary) / 'backdrop.png'
+                pygame.image.save(backdrop, str(path))
+                resources.record = dict(resources.record, pack_id=pack_id if translated else 1)
+                resources.exists = lambda rid: rid == asset_id
+                resources.read_asset = lambda rid, data=path.read_bytes(): data
+                strip = pygame.Surface((480, 160))
+                strip.fill((200, 40, 40))
+                ui.window.fill((0, 0, 0))
+                ui.pending_background, ui.pending_background_origin = strip, (240, 180)
+                ui._background_layer_cache = None
+                ui._draw_background_layer(ui.bg_viewport.size, ui.bg_viewport)
+                band = (30, 60, 150) if translated else (0, 0, 0)
+                for y in (ui.bg_viewport.y + 1, ui.bg_viewport.bottom - 2):
+                    self.assertEqual(ui.window.get_at((ui.bg_viewport.centerx, y))[:3], band)
+                self.assertEqual(ui.window.get_at(ui.bg_viewport.center)[:3], (200, 40, 40))
+
     def _location_ui(self, temporary):
         """A Desktop drawing Cause of Death's location layer on its own clock: (ui, clock, draw(art, origin))."""
         os.environ['SDL_VIDEODRIVER'] = 'dummy'

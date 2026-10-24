@@ -34,6 +34,17 @@ SKY_MODES = ((0x99CCFF, 0x5EAEFE, 0x74726F), (0x29479F, 0x041138, 0x5D5B58), (0x
              (0xB38DCE, 0xFCFCB4, 0x655F64), (0xD53813, 0xF5B056, 0x7D674B), (0xEEEFF0, 0xC9C9CA, 0x8B7B77))
 CLOUDS, CLOUD_WIDTH = 4, 357
 
+# The UI backdrop New Rules draws behind its scene (h.java a(v, short) then the game-screen layout 2, h.c(v)): image
+# pack 62 tiled over the screen, then the layout's stripe, pack 65's bars between pack 106's edge frames 10-12. The
+# packs are greyscale, tinted by o.java's default colours (service 38 sets others; no download calls it). The X1i jar's
+# IDs, then WinMo's (role table, SHS_NEW_RULES_ENGINE.md section 2.2). Layout image slots: 5 tile, 3 bars, 1 edges.
+BACKDROP_PACKS = ((62, 65, 106), (56, 59, 99))
+BACKDROP_TINTS = (15154, -166, -567)    # RGB565: blue #396594, cream #FFEBD6, orange #FFBA4A
+BACKDROP_SLOTS = (5, 3, 1)
+LAYOUT_BANK, GAME_LAYOUT = 2, 2
+# SHS's frame (shshd-runtime's 384 x 512 units) and the width a background picture is shown at, in the same units.
+FRAME_UNITS, BACKGROUND_UNITS = (384, 512), 480
+
 MASK_BASE = 8126705 | 14
 MASK_EXPR = (8448, 8448, 16896, 67584, 33792, 135168)
 S = (11, 15, 17, 18, 12, 13, 16, 14, 24, 25, 26, 27, 28, 19, 20, 21, 22, 23, 29, 30, 10, 31, 32)
@@ -111,7 +122,8 @@ def palette_set(data, variant=0):
 class Pack:
     """A paletted image pack: frames (atlas cut, transformed copies) and groups."""
 
-    def __init__(self, data, resources, variant=-1):
+    def __init__(self, data, resources, variant=-1, tint=None):
+        """`tint`: an RGB565 colour every palette entry is multiplied by (the greyscale UI packs; q.a(stream, tint))."""
         r = Reader(data)
         flags, nframes = r.u8(), r.s16()
         atlas = None
@@ -150,6 +162,9 @@ class Pack:
                 raise ValueError(f'palette kind {kind}')
         else:
             palette = r.take(r.s16() * 3)
+        if tint is not None:
+            factors = rgb565(tint)
+            palette = bytes(c * factors[i % 3] // 256 for i, c in enumerate(palette))
         images = []
         for _ in range(r.s16()):
             width = r.s16() if flags & 32 else r.u8()
@@ -187,6 +202,47 @@ class Pack:
                 self.draw(canvas, frame, x + dx, y + dy, depth + 1)
         elif index < len(self.frames) and self.frames[index] is not None:
             canvas.paste(self.frames[index], (x, y), self.frames[index])
+
+
+def rgb565(colour):
+    """o.java a(short): an RGB565 colour (a signed short) as 8-bit channels, low bits copied from the high ones."""
+    colour &= 0xFFFF
+    red, green, blue = colour >> 8 & 248, colour >> 3 & 252, colour << 3 & 248
+    return red | red >> 5, green | green >> 6, blue | blue >> 5
+
+
+def tile(canvas, image, rect, from_right=False, from_bottom=False):
+    """q.a(v, frame, x, y, w, h, top, left): `image` repeated over `rect`, clipped to it, starting at its top-left
+    corner, or its right / bottom edge."""
+    x, y, w, h = rect
+    if w <= 0 or h <= 0 or image is None:
+        return
+    fw, fh = image.size
+    layer = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    for tx in range(w - fw, -fw, -fw) if from_right else range(0, w, fw):
+        for ty in range(h - fh, -fh, -fh) if from_bottom else range(0, h, fh):
+            layer.paste(image, (tx, ty), image)
+    canvas.paste(layer, (x, y), layer)
+
+
+def draw_layout(canvas, bank, layout_id, rect, slots):
+    """w.java a(v, ...): a layout's visible nodes (flag 0x10) into `rect`: image nodes (kind 1: slot, frame) tiled over
+    their rectangles, from the right with flag 0x40 and from the bottom with 0x80, and layout references (kind 7)
+    drawn into theirs. Other kinds (colour fills, text areas) are skipped; the backdrop layouts have none visible."""
+    from exp_runtime.ui_assets import Rect
+    layout = bank.layouts[layout_id]
+    for node in layout.nodes:
+        if not node.flags & 16:
+            continue
+        child = node.rectangle(rect, (layout.width, layout.height))
+        if node.kind == 1 and node.payload[0] in slots:
+            frames = slots[node.payload[0]].frames
+            frame = node.payload[1]
+            if 0 <= frame < len(frames):
+                tile(canvas, frames[frame], (child.x, child.y, child.width, child.height),
+                     bool(node.flags & 64), bool(node.flags & 128))
+        elif node.kind == 7:
+            draw_layout(canvas, bank, node.payload[0], Rect(child.x, child.y, child.width, child.height), slots)
 
 
 def pack_of(part):
@@ -273,6 +329,35 @@ class Art:
         fill.paste(image, (0, 0), mask)
         scale = BACKGROUND_SCALE.get(height, 720 // height)
         return fill.convert('RGB').resize((width * scale, height * scale), Image.NEAREST)
+
+    def backdrop(self):
+        """New Rules' UI backdrop (BACKDROP_PACKS) cut to SHS's frame, or None where the background source lacks it.
+
+        It is drawn at the backgrounds' own density and scale: a background strip is shown BACKGROUND_UNITS wide, so
+        the frame is FRAME_UNITS times (strip width / BACKGROUND_UNITS) art pixels, cut from the middle of the game
+        screen (layout 2's width) with the screen's height set to the frame's. That width is the stripe's, edges
+        included (192 of WinMo's 240 pixels, 288 of X1i's 290), so the frame shows the stripe from edge to edge."""
+        from exp_runtime.ui_assets import LayoutBank, Rect, UIAssetError
+        source = self.backgrounds
+        ids = next((ids for ids in BACKDROP_PACKS if all(i in source for i in ids)), None)
+        if ids is None or LAYOUT_BANK not in source:
+            return None
+        try:
+            bank = LayoutBank.parse(source[LAYOUT_BANK])
+            packs = [Pack(source[i], source, tint=t) for i, t in zip(ids, BACKDROP_TINTS)]
+            screen = bank.layouts[GAME_LAYOUT].width
+        except (ValueError, KeyError, IndexError, struct.error, UIAssetError):
+            return None
+        strip = Image.open(BytesIO(source[LOCATIONS[0][0]]))
+        units = strip.width / BACKGROUND_UNITS
+        width, height = round(FRAME_UNITS[0] * units), round(FRAME_UNITS[1] * units)
+        canvas = Image.new('RGBA', (screen, height), (0, 0, 0, 255))
+        tile(canvas, packs[0].frames[0], (0, 0, screen, height))
+        draw_layout(canvas, bank, GAME_LAYOUT, Rect(0, 0, screen, height), dict(zip(BACKDROP_SLOTS, packs)))
+        left = (screen - width) // 2
+        scale = BACKGROUND_SCALE.get(strip.height, 720 // strip.height)
+        return canvas.crop((left, 0, left + width, height)).convert('RGB').resize((width * scale, height * scale),
+                                                                                  Image.NEAREST)
 
 
 def png(image):

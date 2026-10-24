@@ -278,6 +278,38 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertEqual(profile.TRANSLATED_FEEDBACK_MUSIC[nr.PACK_ID],
                          {nr.MUSIC_BASE + track: feedback for track, feedback in nr.FEEDBACK_TRACKS.items()})
 
+    def test_the_runtime_draws_the_translated_backdrop(self):
+        from exp_runtime.shs import profile
+        self.assertEqual(profile.TRANSLATED_FRAME_BACKDROP[self.nr.PACK_ID], self.nr.FRAME_BACKDROP)
+
+    def test_backdrop_is_the_tinted_game_screen_cut_to_the_frame(self):
+        # Authored stand-ins for WinMo's packs 56/59/99 (one grey frame each), its layout bank and a 240 x 96 strip.
+        from io import BytesIO
+        from PIL import Image
+        import nr_art
+
+        def pack(width, height):
+            return (struct.pack('>BhbhhhH', 0, 1, 0, 0, 0, 0, 2) + bytes(3) + b'\xff' * 3
+                    + struct.pack('>hBB', 1, width, height) + b'\x01' * (width * height))
+
+        def node(base, relative, flags, payload):
+            return struct.pack('>8hB', *base, *relative, flags) + struct.pack('>hh', *payload)
+
+        stripe = (node((24, 0, 216, 120), (2048, 0, 2048, 2048), 17, (3, 0))       # bars over the top half
+                  + node((24, 0, 44, 240), (2048, 0, 2048, 4096), 17, (1, 0)))      # the left edge, full height
+        bank = (struct.pack('>4b', 13, 2, 0, 0) + struct.pack('>h', 3) + struct.pack('>3h', 1, 1, 0) * 2
+                + struct.pack('>3h', 240, 240, 2) + stripe)
+        strip = BytesIO()
+        Image.new('RGB', (240, 96)).save(strip, format='PNG')
+        art = nr_art.Art({56: pack(8, 8), 59: pack(4, 4), 99: pack(2, 2), 2: bank, 5000: strip.getvalue()})
+        backdrop = art.backdrop()
+        self.assertEqual(backdrop.size, (192 * 7, 256 * 7))        # the frame at 0.5 px per unit, the strip's 7x
+        tinted = [tuple(255 * c // 256 for c in nr_art.rgb565(t)) for t in nr_art.BACKDROP_TINTS]
+        self.assertEqual(backdrop.getpixel((0, 0)), tinted[2])                     # the edge at the frame's edge
+        self.assertEqual(backdrop.getpixel((96 * 7, 0)), tinted[1])                # bars
+        self.assertEqual(backdrop.getpixel((96 * 7, 250 * 7)), tinted[0])          # the tile where they stop
+        self.assertIsNone(nr_art.Art({2: bank, 5000: strip.getvalue()}).backdrop())
+
     def test_achievement_beats_become_notices(self):
         notice = self.nr.NOTICE
         for text in ('good answer!', 'handle approved!', 'exhibit successful!', 'Clue Acquired!'):

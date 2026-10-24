@@ -29,6 +29,9 @@ MODES = len(nr_art.SKY_MODES)           # time-of-day modes 0-5 (service 35's fi
 BACKGROUND_BASE = 26000                 # location L in mode M = BACKGROUND_BASE + MODES * L + M
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
 MUSIC_BASE = 26980                      # New Rules music index i = MUSIC_BASE + i
+# New Rules' UI backdrop (nr_art.Art.backdrop), which the runtime draws over SHS's frame under the location strip
+# instead of black for this pack (shs/profile.py TRANSLATED_FRAME_BACKDROP).
+FRAME_BACKDROP = 26999
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
 TITLE_SUFFIX = ' (New Rules)'           # on the library title only; the story's own title card is unchanged
 # The narrator handing over the player (announcements()); `who` is a name, or empty for a pronoun.
@@ -301,6 +304,9 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
     report.looks = len(banks)
     for location, mode in sorted(used_scenes(episode)):
         resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
+    backdrop = art.backdrop()
+    if backdrop is not None:
+        resources[FRAME_BACKDROP] = nr_art.png(backdrop)
     for rid, program in sorted(episode.scripts.items()):
         rewriter = Rewriter(program, zero_gap=True)
         guards = keyboard_guards(program)

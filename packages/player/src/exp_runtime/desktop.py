@@ -329,6 +329,7 @@ class Desktop:
         self.press = ButtonPress()
         self.images = OrderedDict()
         self._background_layer_cache = None   # (key, scaled surface) from the last _draw_background_layer call
+        self._frame_backdrop_cache = (None, None)   # (key, scaled surface or None), see _frame_backdrop
         self.buttons = []
         self.scroll = self.max_scroll = 0
         self.screen_token = None
@@ -1408,6 +1409,10 @@ class Desktop:
         # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
         self.window.fill((0, 0, 0), viewport)
+        # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
+        frame_backdrop = self._frame_backdrop(viewport.size)
+        if frame_backdrop is not None:
+            self.window.blit(frame_backdrop, viewport)
         background = self.pending_background
         placement = None if background is None else self._background_placement(background, target_size)
         change = self._location_change(background, placement)
@@ -1419,6 +1424,24 @@ class Desktop:
             # The outgoing picture, in the same (animated) layer, fading out over the incoming one.
             alpha = (self.pending_background_alpha if placement is not None else 255) * (1 - change['p'])
             self._blit_art(change['old'], placement or change['from'], target_size, viewport, alpha, cache=False)
+
+    def _frame_backdrop(self, size):
+        """The playing episode's picture for the whole frame, scaled to `size`, or None for black: the resource its
+        pack names in the game profile's TRANSLATED_FRAME_BACKDROP (New Rules' UI backdrop for its translations,
+        whose 3:1 location strips leave bands above and below), when the episode carries it."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        backdrops = getattr(GAMES.get(self.session.engine.game_key), 'TRANSLATED_FRAME_BACKDROP', {})
+        asset_id = backdrops.get(record.get('pack_id'))
+        exists = getattr(resources, 'exists', None)
+        if asset_id is None or exists is None or not exists(asset_id):
+            return None
+        key = (id(resources), asset_id, size)
+        if self._frame_backdrop_cache[0] != key:
+            image = self._image(asset_id)
+            scaled = None if image is None else pygame.transform.smoothscale(image, size)
+            self._frame_backdrop_cache = (key, scaled)
+        return self._frame_backdrop_cache[1]
 
     # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
     # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off
