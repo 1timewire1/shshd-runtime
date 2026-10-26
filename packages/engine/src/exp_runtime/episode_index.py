@@ -331,7 +331,8 @@ def format_airdate(iso_date):
 
 
 def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vote_packages=(),
-                             bundles_label='Season Bundles', vote_label='Vote Packages', unknown_label='Date Unknown'):
+                             bundles_label='Season Bundles', vote_label='Vote Packages', unknown_label='Date Unknown',
+                             legacy_label='Legacy Game Episodes'):
     """Rows for a "Now Airing" list grouped by release year (earliest first) instead of by category.
 
     `release_dates` maps an episode's own title (`record['titles'][0]`) to an ISO date string, external
@@ -339,11 +340,15 @@ def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vo
     `vote_packages` name titles to pull into their own trailing rows instead of the year they released in:
     a season sold again as one bundle after already airing week by week, or a bonus purchase that isn't a
     narrative episode in its own right. A title in neither set, whatever it is, sorts into its own real year.
+    shshd-runtime: an episode translated from another SHS game (tagged on import, content.legacy_fields) is listed
+    under `legacy_label`, after the bundles: it shares its smartphone twin's title, not its airdate.
     """
-    years, vote, bundles, unknown = {}, [], [], []
+    years, vote, bundles, legacy, unknown = {}, [], [], [], []
     for record in records:
         title = record['titles'][0]
-        if title in vote_packages:
+        if record.get('legacy'):
+            legacy.append(record)
+        elif title in vote_packages:
             vote.append(record)
         elif title in redundant_bundles:
             bundles.append(record)
@@ -362,6 +367,8 @@ def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vo
         result.append(PickerRow('extra:vote', vote_label, tuple(sorted(vote, key=sort_key))))
     if bundles:
         result.append(PickerRow('extra:bundles', bundles_label, tuple(sorted(bundles, key=sort_key))))
+    if legacy:
+        result.append(PickerRow('extra:legacy', legacy_label, tuple(sorted(legacy, key=sort_key))))
     if unknown:
         result.append(PickerRow('extra:unknown', unknown_label, tuple(sorted(unknown, key=sort_key))))
     return result

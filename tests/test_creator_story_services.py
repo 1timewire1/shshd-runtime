@@ -243,7 +243,11 @@ class CharacterChangeTests(unittest.TestCase):
         s.advance()
         self.assertEqual((s.engine.music_id, s.engine.sound_id), (song.id, effect.id))
         self.assertEqual([a.data for a in import_exp(data).assets], [mp3, wav])
-        for node, params, message in ((0, {'resource': effect.id}, 'embedded MP3'),
+        # shshd-runtime: embedded music may be a WAV too (the X360 prototype's own tracks); one not embedded may not.
+        wav_music = sequence(Node('a', 'music', params={'resource': effect.id, 'loop': True}))
+        wav_music.assets = list(p.assets)
+        compile_project(wav_music)
+        for node, params, message in ((0, {'resource': 26999}, 'embedded MP3 or WAV'),
                                       (1, {'resource': 26999}, 'Embed the sound effect')):
             broken = sequence(Node('a', p.nodes[0].kind if node == 0 else 'sound', params=params))
             broken.assets = list(p.assets)

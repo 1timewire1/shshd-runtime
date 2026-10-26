@@ -155,8 +155,8 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError('Audio resource IDs must be nonnegative')
     music = range(8201, 8210 if project.game == 'cod' else 8233)
     embedded = assets[p['resource']].data if node.kind in ('music', 'sound') and p['resource'] in assets else None
-    if node.kind == 'music' and p['resource'] not in music and not (embedded and is_mp3(embedded)):
-        raise ProjectError('Choose a native music ID for the selected game, or an embedded MP3')
+    if node.kind == 'music' and p['resource'] not in music and not (embedded and is_audio(embedded)):
+        raise ProjectError('Choose a native music ID for the selected game, or an embedded MP3 or WAV')
     if node.kind == 'sound' and p['resource'] in music:
         raise ProjectError('This ID selects music; use a Music node')
     if node.kind == 'sound' and p['resource'] >= 25000 and not (embedded and is_audio(embedded)):

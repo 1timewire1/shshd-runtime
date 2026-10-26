@@ -16,7 +16,14 @@
   "... (SHSNR)" (a New Rules translation) imports without the tag in its title, files itself under New Rules, and
   shows an "NR" tag in both episode pickers: New Rules' blue in the list view, blue text on the usual dark plate in
   the grid. It is never hidden as a copy of its smartphone version. The list view's "SD" tag is now gray. Dancing
-  Queen, New Rules' other built-in story, is listed right after King of Diss (shs profile `LEGACY_GAMES` order).
+  Queen, New Rules' other built-in story, is listed right after King of Diss (shs profile `LEGACY_GAMES` order). Now
+  Airing lists them under their own "Legacy Game Episodes" row after Season Bundles, without airdates (they share
+  their smartphone versions' titles, which had given two of them those versions' dates).
+- **Music that runs from an intro into a loop.** A translated pack can name a track as an intro that continues into
+  a loop (shs profile `TRANSLATED_MUSIC_LOOPS`): the intro plays once and the loop repeats after it without a gap,
+  and the pause menu resumes in whichever is playing. The X360 prototype's Day of Diss uses it for its own
+  "dont_trust_me" theme (`translate.py x360 --music-file`), levelled so the cutscene's loud opening matches the
+  rest. Episode music may be a WAV as well as an MP3, in the creator too.
 - **Translated New Rules episodes, owner's review of 2026-10-25** (`tools/translate`): title cards show SHS's own
   location pictures (with their HD copies) instead of New Rules' stretched strips, chosen card by card; a character
   telling a story off stage (King of Diss's Ryan and Nicole) is a named line in their own colour instead of over

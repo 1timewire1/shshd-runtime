@@ -36,6 +36,9 @@ BACKGROUND_BASE = 26000                 # five IDs apart, as the creator allocat
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
 HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rules translation stores it
 FRAME_BACKDROP = 26999                  # New Rules' UI backdrop under the strips (shs/profile.py TRANSLATED_FRAME_BACKDROP)
+# The prototype's own music, when the translation is given its files (music_assets): an intro and the loop it runs
+# into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
+MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26902
 EXPRESSIONS = (1, 4, 2, 3, 5)           # New Rules faces in SHS slots 0-4: neutral, angry, happy, sad, surprised
 # X360 emotion names (game._SetCharacterEmotion) -> SHS expression slot.
 EMOTION = {'neutral': 0, 'happy': 2, 'sad': 3, 'angry': 1, 'brag': 2, 'exited': 4, 'excited': 4, 'question': 4,
@@ -243,8 +246,9 @@ class Builder:
     """Walks the scripts in order, appending graph nodes. `pending` holds the open exits, (node id, slot): 'next',
     'otherwise' or ('option', i); the next node created takes them all."""
 
-    def __init__(self, proto: Prototype, story: Story, music=None):
+    def __init__(self, proto: Prototype, story: Story, music=None, chained=()):
         self.proto, self.story, self.music = proto, story, music or {}
+        self.chained = set(chained)         # loop cues an intro already runs into (MUSIC_INTRO / MUSIC_LOOP)
         self.nodes, self.pending, self.count = [], [], 0
         self.speaker = None
         self.emotions = {}
@@ -304,6 +308,8 @@ class Builder:
         if name == 'scene.level.Resources.0' or target[0] == 'index' and lua_subset.dotted(target[1]) == \
                 'scene.level.Resources':
             cue = value[1] if value[0] == 'str' else ''
+            if cue.startswith('SNFX:music/') and cue[11:] in self.chained:
+                return                      # the runtime runs the intro into this loop by itself
             if cue.startswith('SNFX:music/') and cue[11:] in self.music:
                 self.add('music', params={'resource': self.music[cue[11:]], 'loop': True})
             return
@@ -469,11 +475,84 @@ class Builder:
         self.block(script)
 
 
-def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, looks=None, music=None) -> Project:
+def even_level(intro, loop, window_s=2.0, settle_s=4.0, peak=0.89):
+    """(intro, loop) 16-bit WAV bytes at one level (owner, 2026-10-26: Day of Diss's dont_trust_me opens loud, scoring
+    the prototype's cutscene, then settles at the loop's level). The intro is turned down, never up, wherever its
+    loudness over `window_s` passes the loop's, through a gain smoothed over the same window; over its last
+    `settle_s` the gain eases to 1, so the intro still meets the loop exactly. Then both take one shared gain that puts
+    the louder peak at `peak` (as midi_render's renders)."""
+    import io
+    import wave
+    import numpy as np
+
+    def read(data):
+        with wave.open(io.BytesIO(data)) as clip:
+            params = clip.getparams()
+            samples = np.frombuffer(clip.readframes(params.nframes), '<i2').astype(np.float64) / 32768
+        return samples.reshape(-1, params.nchannels), params
+
+    def average(values, n):
+        sums = np.concatenate(([0.0], np.cumsum(values)))
+        low = np.clip(np.arange(len(values)) - n // 2, 0, len(values))
+        high = np.clip(np.arange(len(values)) + n // 2 + 1, 0, len(values))
+        return (sums[high] - sums[low]) / (high - low)
+
+    def write(samples, params):
+        out = io.BytesIO()
+        with wave.open(out, 'wb') as clip:
+            clip.setparams(params)
+            clip.writeframes((np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes())
+        return out.getvalue()
+
+    a, a_params = read(intro)
+    b, b_params = read(loop)
+    target = np.sqrt((b ** 2).mean())
+    n = max(1, int(window_s * a_params.framerate))
+    loudness = np.sqrt(average((a ** 2).mean(axis=1), n))
+    gain = average(np.minimum(1.0, target / np.maximum(loudness, 1e-9)), n)
+    tail = min(len(gain), int(settle_s * a_params.framerate))
+    if tail:
+        gain[-tail:] = gain[-tail:] + (1.0 - gain[-tail:]) * np.linspace(0, 1, tail)
+    a = a * gain[:, None]
+    shared = peak / max(np.abs(a).max(), np.abs(b).max())
+    return write(a * shared, a_params), write(b * shared, b_params)
+
+
+def music_assets(files, music):
+    """Assets for the prototype's own music (cue -> bytes), each cue mapped in `music` to its resource. A cue with a
+    `<cue>_loop` file is an intro the runtime runs into that loop without a gap (MUSIC_INTRO into MUSIC_LOOP, shs
+    profile TRANSLATED_MUSIC_LOOPS): only the intro is started, and the prototype's later switch to the loop cue is
+    left to the runtime (the returned `chained` cues). A WAV pair is brought to one level first (even_level). Any other
+    cue takes the next ID from MUSIC_OTHER."""
+    assets, chained, other = [], set(), MUSIC_OTHER
+    for cue, data in sorted(files.items()):
+        if cue.endswith('_loop') and cue[:-5] in files:
+            continue
+        if cue + '_loop' in files:
+            if chained:
+                raise TranslateError('only one intro and loop pair has IDs of its own (MUSIC_INTRO, MUSIC_LOOP)')
+            loop = files[cue + '_loop']
+            if data[:4] == b'RIFF' and loop[:4] == b'RIFF':
+                data, loop = even_level(data, loop)            # the WAVs, at one level
+            assets += [Asset(MUSIC_INTRO, f'music {cue}', data), Asset(MUSIC_LOOP, f'music {cue}_loop', loop)]
+            music[cue] = MUSIC_INTRO
+            chained.add(cue + '_loop')
+        else:
+            assets.append(Asset(other, f'music {cue}', data))
+            music[cue], other = other, other + 1
+    return assets, chained
+
+
+def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, looks=None, music=None,
+              music_files=None) -> Project:
     """One story as a creator Project. `art`/`hires_art`: nr_art.Art over res_large.pud / the X1i jar; `looks`:
-    nr_looks.json's records; `music`: X360 cue name -> SHS resource ID."""
-    builder = Builder(proto, story, music)
+    nr_looks.json's records; `music`: X360 cue name -> SHS resource ID; `music_files`: X360 cue name -> the
+    prototype's own audio (WAV or MP3 bytes), embedded in the episode (music_assets)."""
+    music = dict(music or {})
+    assets, chained = music_assets(music_files or {}, music)
+    builder = Builder(proto, story, music, chained)
     project = Project(title=story.title, game='shs', pack_id=PACK_ID, episode_id=story.episode_id, nodes=[])
+    project.assets.extend(assets)
     for k, location in enumerate(sorted(set(story.locations.values()))):
         asset_id = BACKGROUND_BASE + 5 * k
         project.assets.append(Asset(asset_id, f'location {location}', nr_art.jpeg(art.background(location, 0))))

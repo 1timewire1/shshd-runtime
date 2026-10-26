@@ -371,6 +371,7 @@ class Desktop:
         self.fade = None                     # the player's own fade from black (a warp; scene_fade.py)
         self.music_token = None
         self.music_stream = MusicStream()
+        self.music_stream.chain = self._music_loop
         self.music_was_enabled = True
         # The menu's song in the pause menu (see `_sync_pause_song`): its Sound, the ticks its fade-out began, and
         # whether the Music switch has asked for it (SHSEngine +0xb22c), and the pause page that switch was on.
@@ -608,6 +609,20 @@ class Desktop:
         """A music request's MP3 and where it starts (s): SHS's segment cues name a place in another track."""
         cue = music_cue(music_id, game=game_id(self.session.resources))
         return self.session.resources.read_asset(cue.asset_id), cue.start_ms / 1000
+
+    def _music_loop(self, music_id):
+        """shshd-runtime: the loop a translated pack's intro cue runs into (the game profile's TRANSLATED_MUSIC_LOOPS),
+        as bytes, or None (music_stream.MusicStream.chain)."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        loops = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_MUSIC_LOOPS', {}).get(record.get('pack_id'), {})
+        if music_id not in loops:
+            return None
+        try:
+            return resources.read_asset(loops[music_id])
+        except ContentError as error:
+            logging.warning('Music loop %s cannot be read: %s', loops[music_id], error)
+            return None
 
     def _sync_audio(self):
         if not self.audio:

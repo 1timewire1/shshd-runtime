@@ -236,6 +236,22 @@ class ChronologicalRowTests(unittest.TestCase):
         rows = ei.build_chronological_rows(records, dates, redundant_bundles={'A Bundle'}, vote_packages={'A Vote Pack'})
         self.assertEqual([r.title for r in rows], ['2010', '2013', 'Vote Packages', 'Season Bundles'])
 
+    def test_translated_episodes_list_after_the_bundles_whatever_their_twins_aired(self):
+        # shshd-runtime: "Making Some Dough" translated from New Rules shares its smartphone twin's title, not its
+        # airdate; it lists under Legacy Game Episodes, after Season Bundles and before Date Unknown.
+        twin = record(1, 101, 1, 'Making Some Dough', variant='hd')
+        translated = [dict(record(n, 31300, episode, title), legacy='SHSNR', category='New Rules', **extra)
+                      for n, episode, title, extra in ((2, 2, 'Making Some Dough', {}), (3, 1, 'King of Diss', {}),
+                                                       (4, 101, 'Dancing Queen', {'order': 1.5}))]
+        undated = record(5, 31400, 1, 'Day of Diss')
+        bundle = record(6, 1401, 1, 'A Bundle', variant='hd')
+        dates = {'Making Some Dough': '2010-01-01', 'A Bundle': '2012-09-07'}
+        rows = ei.build_chronological_rows([twin, *translated, undated, bundle], dates, redundant_bundles={'A Bundle'})
+        self.assertEqual([(r.title, [e['titles'][0] for e in r.episodes]) for r in rows],
+                         [('2010', ['Making Some Dough']), ('Season Bundles', ['A Bundle']),
+                          ('Legacy Game Episodes', ['King of Diss', 'Dancing Queen', 'Making Some Dough']),
+                          ('Date Unknown', ['Day of Diss'])])
+
     def test_a_year_sorts_its_own_episodes_by_date_not_by_pack_id(self):
         records = [record(1, 201, 1, 'Second', variant='hd'), record(2, 101, 1, 'First', variant='hd')]
         dates = {'Second': '2010-02-01', 'First': '2010-01-01'}

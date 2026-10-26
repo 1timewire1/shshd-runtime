@@ -112,7 +112,9 @@ class PickerModel:
         grouped by category, so each one names its own), or just the airdate for Episodes On Demand (its own
         header already names the category). The date itself is external research with no native source --
         see `episode_dates.py` -- and is left out for a title that research hasn't dated (none currently)."""
-        date = (self.cod.RELEASE_DATES if self.cod else RELEASE_DATES).get(record['titles'][0])
+        # A translated episode shares its smartphone twin's title, not its airdate (shshd-runtime).
+        date = None if record.get('legacy') else (self.cod.RELEASE_DATES if self.cod else RELEASE_DATES).get(
+            record['titles'][0])
         airdate = f'Airdate: {format_airdate(date)}' if date else None
         if not self.chronological:
             return airdate

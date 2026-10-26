@@ -3,7 +3,7 @@
     python tools/translate/translate.py newrules EPISODE.expd --pud RES_LARGE_PUD [--x1i X1I_JAR]
         [--synth java|sf2|none] [--soundfont SF2] [--library LIB] --out OUT_DIR
     python tools/translate/translate.py x360 DATA_PAK --pud RES_LARGE_PUD [--x1i X1I_JAR] --looks NR_LOOKS_JSON
-        [--story day-of-diss|puzzle-test|all] [--music CUE=RESOURCE ...] --out OUT_DIR
+        [--story day-of-diss|puzzle-test|all] [--music CUE=RESOURCE ...] [--music-file CUE=PATH ...] --out OUT_DIR
 
 The x360 command reads the cancelled Xbox 360 prototype's (MS4) data.pak and writes its two new stories as creator
 projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catalog's, for the cast's looks.
@@ -55,6 +55,9 @@ def main(argv=None):
                     help='nr_looks.json from the New Rules portrait catalog (the cast\'s looks)')
     xb.add_argument('--music', action='append', default=[], metavar='CUE=RESOURCE',
                     help="play an SHS music resource where the prototype starts a cue (dont_trust_me, chilled...)")
+    xb.add_argument('--music-file', action='append', default=[], metavar='CUE=PATH',
+                    help="embed the prototype's own audio for a cue (a WAV or MP3); a cue with a CUE_loop file plays "
+                         "once and runs into that loop (dont_trust_me + dont_trust_me_loop)")
     xb.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -131,10 +134,14 @@ def translate_x360(args):
     for item in args.music:
         cue, _, resource = item.partition('=')
         music[cue] = int(resource)
+    music_files = {}
+    for item in args.music_file:
+        cue, _, path = item.partition('=')
+        music_files[cue] = Path(path).read_bytes()
     names = list(x360.STORIES) if args.story == 'all' else [args.story]
     for name in names:
         story = x360.STORIES[name]
-        project = x360.translate(proto, story, art, hires_art, looks, music)
+        project = x360.translate(proto, story, art, hires_art, looks, music, music_files)
         stem = args.out / f'X360_{story.episode_id:02d}_{safe(story.title)}'
         save_project(project, stem.with_suffix('.expproj'))
         export_project(project, stem.with_suffix('.exp'))

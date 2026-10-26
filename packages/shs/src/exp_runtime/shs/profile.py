@@ -101,6 +101,11 @@ TRANSLATED_DUETS = {31300: (31310, 31311)}
 # object or unseen voice ("TV", "Radio") in a gray bubble and an off-stage character in their own colour (owner,
 # 2026-10-25); without this entry they keep the yellow named-line box.
 TRANSLATED_NARRATION_THEMES = {31300: 31312}
+# shshd-runtime: a translated pack's music that is an intro running into a loop (music_stream.MusicStream.chain):
+# pack -> {intro resource: loop resource}. The intro plays once, then the loop repeats without a gap. The X360
+# prototype's Day of Diss plays `dont_trust_me` into `dont_trust_me_loop` (tools/translate/x360.py MUSIC_INTRO /
+# MUSIC_LOOP; owner, 2026-10-26).
+TRANSLATED_MUSIC_LOOPS = {31400: {26900: 26901}}
 # shshd-runtime: episodes translated from other SHS games, recognised on import by their title's tag (content.py
 # legacy_fields: "Lovers' Lane (SHSNR)" imports as "Lovers' Lane"): tag -> the picker's badge, its colour in the list
 # view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`

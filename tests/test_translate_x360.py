@@ -143,6 +143,39 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
         self.assertEqual(lines(play(data, [2])), lines(first))     # "Secret" is locked: the first answer plays
         self.assertEqual(lines(play(data, [1])), ['Hi Andy!', 'Oh well...', 'The end'])
 
+    def test_an_intro_and_its_loop_are_embedded_and_only_the_intro_is_started(self):
+        # The prototype's own music (--music-file): dont_trust_me runs into dont_trust_me_loop by itself in the runtime
+        # (shs profile TRANSLATED_MUSIC_LOOPS), so the story's later switch to the loop cue is not a second request.
+        import x360
+        from exp_runtime.shs.profile import TRANSLATED_MUSIC_LOOPS
+        self.assertEqual(TRANSLATED_MUSIC_LOOPS[x360.PACK_ID], {x360.MUSIC_INTRO: x360.MUSIC_LOOP})
+        music = {}
+        assets, chained = x360.music_assets({'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop',
+                                             'chilled': b'chill'}, music)
+        self.assertEqual({a.id: a.data for a in assets}, {x360.MUSIC_INTRO: b'intro', x360.MUSIC_LOOP: b'loop',
+                                                          x360.MUSIC_OTHER: b'chill'})
+        self.assertEqual((music, chained), ({'dont_trust_me': x360.MUSIC_INTRO, 'chilled': x360.MUSIC_OTHER},
+                                            {'dont_trust_me_loop'}))
+        self.EVENTS = self.EVENTS.replace('OpenDialog("a",0)', 'scene.level.Resources[0] = "SNFX:music/dont_trust_me"\n'
+                                          'OpenDialog("a",0)', 1).replace(
+            'game.RunEvent("t/two")', 'scene.level.Resources[0] = "SNFX:music/dont_trust_me_loop"\n'
+            'game.RunEvent("t/two")', 1)
+
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        project = x360.translate(self.prototype(), story, Art(),
+                                 music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
+        self.assertEqual([n.params for n in project.nodes if n.kind == 'music'],
+                         [{'resource': x360.MUSIC_INTRO, 'loop': True}])
+        self.assertEqual({a.id for a in project.assets} >= {x360.MUSIC_INTRO, x360.MUSIC_LOOP}, True)
+
 
 if __name__ == '__main__':
     unittest.main()
