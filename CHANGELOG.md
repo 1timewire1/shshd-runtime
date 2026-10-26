@@ -179,6 +179,10 @@
 
 ### Fixed
 
+- **A translated episode's end card keeps its frame.** The sepia scene behind "Miss An Episode?" now shows a New
+  Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
+  of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a
+  location crossfade, which had let the screen before it (King of Diss's closing download notice) cover it.
 - **A two-speaker line's portraits leave together.** Past a translated line with a portrait on each side, both
   portraits now shrink away at their two-speaker size; before, the partner vanished and the speaker jumped back to full
   size first. A speaker who goes on alone stays, and only the partner leaves.

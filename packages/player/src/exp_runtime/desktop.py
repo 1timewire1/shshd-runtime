@@ -1170,6 +1170,15 @@ class Desktop:
                 background_id = self.last_background_id
             self.pending_background = self._image(background_id)
             self.pending_background_origin = None
+            if self._frame_backdrop(getattr(self, 'bg_viewport', self.window.get_rect()).size) is not None:
+                # shshd-runtime: a translated pack's strip stays where the episode showed it, over its frame
+                # backdrop (owner: New Rules' end card keeps the frame under the sepia), not stretched over both.
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background,
+                                                                                          self.session.engine)
+            # Settled, not mid-crossfade: this snapshot follows the last screen at once, so a picture of that screen's
+            # own (New Rules' King of Diss ends on a download notice over a full-frame SHS lot) would otherwise still
+            # cover the scene at full strength, the 0.25 s location change not yet begun.
+            self.location_shown = self.location_changing = None
             self._present()
             return
         if action and action.name == 'presentation':

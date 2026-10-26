@@ -1165,6 +1165,56 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNotNone(ui.pending_background)
             self.assertEqual(ui.pending_background.get_size(), (64, 64))
 
+    def test_a_translated_episodes_end_card_keeps_its_frame_backdrop_under_the_last_scene(self):
+        # The end-of-episode card's sepia backdrop (Desktop.snapshot) stretches an ordinary episode's last scene over
+        # the frame; a translated pack's 3:1 strip stays where the episode showed it, over its TRANSLATED_FRAME_BACKDROP
+        # (owner: New Rules' end card keeps the frame under the sepia).
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from io import BytesIO
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.engine import EngineAction, PanelState
+        from exp_runtime.shs.profile import TRANSLATED_FRAME_BACKDROP
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        pack_id = 31300
+        backdrop_id = TRANSLATED_FRAME_BACKDROP[pack_id]
+
+        def png(size, color):
+            surface = pygame.Surface(size)
+            surface.fill(color)
+            stream = BytesIO()
+            pygame.image.save(surface, stream, 'x.png')
+            return stream.getvalue()
+
+        assets = {42: png((480, 160), (200, 40, 40)), backdrop_id: png((384, 512), (30, 60, 150))}
+
+        def read_asset(resource_id):
+            if resource_id in assets:
+                return assets[resource_id]
+            raise OSError(f'no such test asset {resource_id}')
+
+        with tempfile.TemporaryDirectory() as temporary:
+            for translated in (True, False):
+                resources = Resources(branching_program())
+                resources.library.directory = Path(temporary)
+                resources.read_asset = read_asset
+                ui = Desktop(Session(resources), audio=False)
+                resources.record = dict(resources.record, pack_id=pack_id if translated else 1)
+                resources.exists = lambda rid: rid in assets
+                ui.session.engine.panel.background_id = 42
+                ui.render()
+                ui.session.engine.panel = PanelState()
+                ui.session.pending = EngineAction('episode_exit', ui.session.pending.request, False)
+                ui._background_layer_cache = None
+                ui.error = None                     # the fixture has no choice skin, which the first render reported
+                ui.render()
+                self.assertEqual(ui.pending_background_origin is None, not translated)
+                band = (30, 60, 150) if translated else (200, 40, 40)
+                self.assertEqual(ui.window.get_at((ui.bg_viewport.centerx, ui.bg_viewport.y + 1))[:3], band)
+                self.assertEqual(ui.window.get_at(ui.bg_viewport.center)[:3], (200, 40, 40))
+
     def test_chrome_image_normalizes_an_oversized_hd_icon_back_to_android_size(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
