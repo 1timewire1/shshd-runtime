@@ -9,6 +9,7 @@ Casing never changes a string's length, so it can be written back into the scrip
 """
 from collections import Counter, defaultdict
 import functools
+import json
 from pathlib import Path
 import re
 import string
@@ -18,7 +19,7 @@ WORD = re.compile(r"[A-Za-z][A-Za-z']*")
 # A word starts a sentence after . ! ? (and closing quotes) and a space, at the start of the text or of a `|`-separated
 # choice option, with only opening quotes, backticks or a music note before it ("team? `does` she", "{ nice goatee").
 # After a comma or colon only a double quote opens one: single quotes mark terms ("when ryan calls, 'come over'").
-SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+(?:["\'`(]|\{\s*)*$|(^|\|)\s*(?:["\'`(]|\{\s*)*$|[,:]\s+"$')
+SENTENCE_END = re.compile(r'[.!?]["\'`)]*\s+(?:["\'`(]|\{\s*)*$|(^|\||\n\s*\n)\s*(?:["\'`(]|\{\s*)*$|[,:]\s+"$')
 # A capitalised form wins only when the smartphone texts write the word that way almost always ("Officer Smith" must
 # not turn "parole officer" into "parole Officer").
 CAPITAL_SHARE = 0.9
@@ -41,19 +42,31 @@ MULTI_WORD = ('Little', 'Des', 'Baton', 'Saint', 'Jefferson', 'Carson', 'New', '
               'South', 'Salt', 'West')
 # Other proper names the paired stories don't settle: the game's own ("a special episode of `surviving high school!`",
 # the end card's "surviving high school", King of Diss's survey).
-PROPER_PHRASES = ('Surviving High School: New Rules', 'Surviving High School', 'Surviving Hollywood', 'Centerscore High')
+PROPER_PHRASES = ('Surviving High School: New Rules', 'Surviving High School', 'Surviving Hollywood', 'Centerscore High',
+                  'Winter Queen')
 # Titles New Rules writes in quotes: King of Diss's soap opera, "today on 'the valley'". Only quoted, since other
 # stories have plain valleys ("stare out at the valley below them", Guys Versus Wild).
 QUOTED_TITLES = re.compile(r"(?<=')the valley(?=')", re.IGNORECASE)
-# Named things only King of Diss mentions, written as the owner reads them (lowercase -> written form).
-OWN_TITLES = {title.lower(): title for title in ("The Beatdown of '06", 'I Eat Your Brains With Salsa',
-                                                 'The Blueberries of Anger', 'Happy Hippo Hijinks')}
-OWN_TITLE = re.compile('|'.join(re.escape(title) for title in OWN_TITLES), re.IGNORECASE)
+# Named things only King of Diss mentions, written as the owner reads them (lowercase -> written form), or as the
+# Xbox 360 prototype's King of Diss writes them (owner's pick of its differences, 2026-10-26): the battle's epithets,
+# and, only where the prototype capitalizes them, the announcer's "Team Battle" and the earned "Yo' Mama" (its other
+# team battles and yo' mamas are lowercase, as ours). They match across New Rules' emphasis marks ("the beatdown of
+# `'06`", "next round... `team battle`"), which stay where they are.
+OWN_TITLES = {title.lower(): title for title in (
+    "The Beatdown of '06", 'I Eat Your Brains With Salsa', 'The Blueberries of Anger', 'Happy Hippo Hijinks',
+    'DJ Fever', 'Fever Man', 'The Duke of Dissing', 'The Regal Rhymer', 'The King of Comedic Insults',
+    'The Jack of All Jokes', 'The Baron of Battling', 'The Chief of Cheekiness', 'next round... Team Battle',
+    "earned the mega-diss Yo' Mama")}
+OWN_TITLE = re.compile('|'.join('`?'.join(re.escape(c) for c in title)
+                                for title in sorted(OWN_TITLES, key=len, reverse=True)), re.IGNORECASE)
 # Acronyms New Rules writes in lowercase that the smartphone stories may not teach ("djs" -> "DJs").
 COMMON_ACRONYMS = {word.lower(): word for word in ('DJ', 'TV', 'DVD', 'CD', 'MP3')}
 # Names only New Rules' own stories use, which no smartphone story teaches (King of Diss's soap opera star, a yeti's
-# home).
-OWN_NAMES = {word.lower(): word for word in ('Krystal', 'Nepal', 'Facebook')}
+# home, Dancing Queen's Greggy, whom Paula calls "greggy-kins" and "greggers", and its Rob; New Rules only ever
+# writes "robbed" for the verb). "Alaskan" too, and "winter" pinned lowercase, which the paired stories teach as
+# "Winter" from their Winter Queen (King of Diss: "it feels like winter lasted forever"; owner, 2026-10-26).
+OWN_NAMES = {word.lower(): word for word in ('Krystal', 'Nepal', 'Facebook', 'Greggy', 'Greggers', 'Rob', 'Alaskan',
+                                             'winter')}
 # A web address keeps its words as written ("www.facebook.com/...").
 URL = re.compile(r"\S*\.(?:com|net|org)\b\S*", re.IGNORECASE)
 # A grade letter: before -plus/-minus ("a d-plus"), or quoted ("your 'a' game"); only a-f, so "rock 'n' roll" stays.
@@ -71,11 +84,12 @@ ABBREVIATION = re.compile(r"(?:\b(?:mr|mrs|ms|dr|vs|jr|sr|st)\.|(?<![A-Za-z.])(?
                           re.IGNORECASE)
 
 
-def learn_from_library(expd_folder, library, exclude=(), twin_of=None):
+def learn_from_library(expd_folder, library, exclude=(), twin_of=None, twin_files=()):
     """The dictionary learned from every New Rules download paired with a library episode (pairs.py), and, for the
     download named `twin_of`, the strings of the episodes telling its story (`pairs.related`: its twin, or both
     stories the SHS 11 Demos excerpt) by lowercase text (`exact`, for recase_program), and their titles:
-    (dictionary, exact, titles). `exclude` leaves stories out of the dictionary (casing_eval measures it that way)."""
+    (dictionary, exact, titles). A built-in story names its twin's library file instead (`twin_files`: Dancing Queen's
+    Homecoming Queen). `exclude` leaves stories out of the dictionary (casing_eval measures it that way)."""
     from exp_runtime.decode.bytecode import decode_program
     from exp_runtime.exp import ExpArchive
     import newrules
@@ -90,8 +104,12 @@ def learn_from_library(expd_folder, library, exclude=(), twin_of=None):
                   for _, t in strings(decode_program(archive.read(r)))]
         data.append(([t for p in episode.scripts.values() for _, t in strings(p)], theirs))
     titles, related = [], []
-    if twin_of is not None:
-        for record in pairing.related(Path(expd_folder), Path(library), twin_of):
+    records = list(pairing.related(Path(expd_folder), Path(library), twin_of)) if twin_of is not None else []
+    if twin_files:
+        manifest = json.loads((Path(library) / 'library.json').read_text(encoding='utf-8'))
+        records += [record for record in manifest['episodes'] if record.get('name') in twin_files and 'file' in record]
+    if records:
+        for record in records:
             archive = ExpArchive((Path(library) / record['file']).read_bytes())
             titles.append(record['titles'][0])
             for r in archive.entries:
@@ -306,9 +324,40 @@ def apply(text, dictionary, names=(), unknown=None):
         out[match.start()] = match.group().upper()
     for match in QUOTED_TITLES.finditer(text):              # "'the valley'" -> "'The Valley'"
         out[match.start():match.end()] = string.capwords(match.group())
-    for match in OWN_TITLE.finditer(text):                  # "the beatdown of '06" -> "The Beatdown of '06"
-        out[match.start():match.end()] = OWN_TITLES[match.group().lower()]
+    for match in OWN_TITLE.finditer(text):                  # "the beatdown of `'06`" -> "The Beatdown of `'06`"
+        written = iter(OWN_TITLES[match.group().replace('`', '').lower()])
+        out[match.start():match.end()] = [c if c == '`' else next(written) for c in match.group()]
     return ''.join(out)
+
+
+KEY = re.compile(r'\$[A-Za-z]\w*')
+
+
+def unify_keys(programs, addresses=None):
+    """{resource: main words} with every `$KEY` written the way the story writes it most often with capitals. The keys
+    are registered from strings the twin cased ("$kenji" -> "$Kenji"), while a string with no twin match leaves its
+    `$kenji` alone, and SHS substitutes keys case-sensitively (Dancing Queen's survey showed "$kenji"). `addresses`:
+    resource -> the string addresses to touch, where its data holds other words (recase_program's)."""
+    forms = defaultdict(Counter)
+    for rid, program in programs.items():
+        for address, text in strings(program):
+            if addresses and rid in addresses and address not in addresses[rid]:
+                continue
+            for match in KEY.finditer(text):
+                if match.group() != match.group().lower():
+                    forms[match.group().lower()][match.group()] += 1
+    written = {key: counts.most_common(1)[0][0] for key, counts in forms.items()}
+    out = {}
+    for rid, program in programs.items():
+        data = bytearray(struct.pack(f'>{len(program.main_words)}H', *program.main_words))
+        for address, text in strings(program):
+            if addresses and rid in addresses and address not in addresses[rid]:
+                continue
+            fixed = KEY.sub(lambda m: written.get(m.group().lower(), m.group()), text)
+            if fixed != text:
+                data[address * 2:address * 2 + len(fixed)] = fixed.encode('latin-1')
+        out[rid] = tuple(struct.unpack(f'>{len(program.main_words)}H', bytes(data)))
+    return out
 
 
 def recase_program(program, dictionary, names=(), titles=(), addresses=None, unknown=None, exact=None,

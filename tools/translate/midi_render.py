@@ -1,11 +1,13 @@
 """Render the legacy games' MIDI music to audio offline through a SoundFont 2 bank (the owner's decision 4).
 
-    python tools/translate/midi_render.py SONG.mid BANK.sf2 OUT.mp3 [--once]
+    python tools/translate/midi_render.py SONG.mid BANK.sf2|java OUT.mp3 [--once]
 
 The bank and generator logic follow Tardy-Slip's Web Audio player (player/src/audio/sf2.js and web/synth.js), which
 plays BREW and New Rules MIDI through TimGM6mb; here every voice is mixed into a numpy buffer instead of being scheduled.
 `render` returns float stereo samples; `mp3` encodes them with ffmpeg (on PATH). A looping song's release tails are
 wrapped to its start so the loop has no gap in the music itself. The lowpass filter needs scipy and is skipped without it.
+`render_java` plays the song through Java's built-in synthesizer instead (JavaMidi.java), as the J2ME emulator does: it
+has reverb and chorus, which this mixer lacks (owner, 2026-10-25: ours sounded flat beside FreeJ2ME's).
 Nothing this reads or writes belongs in the repo.
 """
 from dataclasses import dataclass
@@ -385,6 +387,13 @@ def render(song: Song, bank: SoundFont, loop=False):
         angle = (pan + 1) * np.pi / 4
         mix[start:start + n, 0] += wave * np.cos(angle)
         mix[start:start + n, 1] += wave * np.sin(angle)
+    return finish(mix, length, loop)
+
+
+def finish(mix, length, loop):
+    """A rendered mix (song of `length` samples plus its tail) as `render` returns it: a looping song's tails wrapped
+    to its start, otherwise the trailing silence cut; peak-normalised."""
+    total = len(mix)
     if loop and length:
         out = mix[:length].copy()
         for k in range(length, total, length):
@@ -395,6 +404,23 @@ def render(song: Song, bank: SoundFont, loop=False):
         out = mix[:max(length, int(audible[-1]) + 1 if len(audible) else 0)]
     peak = float(np.abs(out).max()) if len(out) else 0
     return out * (0.89 / peak) if peak > 0 else out
+
+
+JAVA_MIDI = Path(__file__).resolve().parent / 'JavaMidi.java'
+JAVA_TAIL = 3.0                         # seconds rendered past the last event, for releases and reverb (cut after)
+
+
+def render_java(data: bytes, loop=False, java=None):
+    """Stereo float samples (n, 2) for MIDI `data` through Java's built-in synthesizer (JavaMidi.java), as FreeJ2ME's
+    "Default" soundfont plays the Java builds' music: Gervill's generated bank with its reverb and chorus. Trimmed,
+    wrapped and normalised as `render`'s are. Needs a JDK 11+ `java` (on PATH unless given)."""
+    java = java or shutil.which('java')
+    if java is None:
+        raise RuntimeError('java is needed on PATH to render through the Java synthesizer')
+    result = subprocess.run([java, '--add-exports', 'java.desktop/com.sun.media.sound=ALL-UNNAMED', str(JAVA_MIDI),
+                             str(JAVA_TAIL)], input=data, capture_output=True, check=True)
+    mix = np.frombuffer(result.stdout, '<i2').reshape(-1, 2).astype(np.float32) / 32768
+    return finish(mix, int(round(parse_midi(data).duration * RATE)), loop)
 
 
 def lowpass(hz, q_db):
@@ -424,9 +450,13 @@ def mp3(samples, bitrate='128k'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('song', type=Path)
-    parser.add_argument('bank', type=Path)
+    parser.add_argument('bank', help='an .sf2 bank, or `java` for Java\'s built-in synthesizer (render_java)')
     parser.add_argument('out', type=Path)
     parser.add_argument('--once', action='store_true', help="keep the release tail instead of wrapping it for a loop")
     args = parser.parse_args()
-    audio = render(parse_midi(args.song.read_bytes()), SoundFont(args.bank.read_bytes()), loop=not args.once)
+    data = args.song.read_bytes()
+    if args.bank == 'java':
+        audio = render_java(data, loop=not args.once)
+    else:
+        audio = render(parse_midi(data), SoundFont(Path(args.bank).read_bytes()), loop=not args.once)
     args.out.write_bytes(mp3(audio))

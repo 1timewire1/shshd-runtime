@@ -6,6 +6,7 @@ can be recomputed from the next speaker's name. See docs/UI_FIDELITY.md.
 """
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+import re
 
 from .fonts import BitmapFont, TextLayout, TextStyle, layout_label, layout_text
 from .ui_assets import LayoutBank, Rect
@@ -243,9 +244,11 @@ HD_TITLE_INDENTS = {1: (0, 20), 2: (0, 5)}
 # This player's addition: a word wider than the title region (a long typed name, "StanTheDevil") is drawn smaller to
 # fit it, down to this share of the font's size, where CSFont would break it mid-word onto a second line.
 HD_TITLE_MIN_FIT = .5
+CAMEL_BREAK = re.compile(r'(?<=[a-z])(?=[A-Z])')       # a joined name's inner capitals ("GangstaBot")
 
 
-def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_unit=2, shift=HD_TITLE_SHIFT):
+def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_unit=2, shift=HD_TITLE_SHIFT,
+                     max_lines=None):
     """The HD build's own speaker title, which replaces Android's label history and per-name cases.
 
     `updateTitleBounds` (000432f8): the title region is layout 17's node 0x2e / 0x4c / 0x6a (speaker type 1 / 2 /
@@ -266,10 +269,20 @@ def hd_speaker_label(text, mode, font_name, rectangle, font, cap, *, points_per_
     """
     style = TextStyle(cap, HD_TITLE_GAP)
     rect = rectangle({1: 0x2e, 2: 0x4c, 3: 0x6a}[mode])
+    if max_lines:
+        # shshd-runtime (a two-speaker line's narrow title): a joined name too wide for it breaks at its inner
+        # capital ("GangstaBot" -> "Gangsta" / "Bot") rather than shrinking to one small line.
+        text = ' '.join(CAMEL_BREAK.sub('\n', word) if layout_text(font, word, 2**31, style).width > rect.width
+                        else word for word in text.split(' '))
     # `fit` (HD_TITLE_MIN_FIT): the label's scale, so its widest word fits the region. The layout below is in the
     # font's own units, `rect.width / fit` wide, and every measure of it on screen is times `fit`.
     widest = max((layout_text(font, word, 2**31, style).width for word in text.split()), default=0)
     fit = max(HD_TITLE_MIN_FIT, rect.width / widest) if widest > rect.width else 1
+    if max_lines:
+        # shshd-runtime (a two-speaker line's narrow title): smaller still, until it wraps to at most `max_lines`
+        # ("Kay and / Kel", not "Kay / and / Kel"), down to HD_TITLE_MIN_FIT.
+        while fit > HD_TITLE_MIN_FIT and len(layout_text(font, text, rect.width / fit, style).lines) > max_lines:
+            fit = max(HD_TITLE_MIN_FIT, fit - .01)
     large = layout_text(font, text, rect.width / fit, style).height * fit > rect.height
     if large:
         rect = rectangle({1: 0x25, 2: 0x43, 3: 0x61}[mode])

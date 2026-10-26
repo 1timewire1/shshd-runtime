@@ -50,6 +50,7 @@ PANEL_RADIUS = 22
 PANEL_BORDER = 5
 PANEL_FILL = (255, 255, 255)
 PANEL_BORDER_COLOR = (41, 104, 221)
+STANDARD_MARK_COLOR = (128, 132, 140)   # the SD tag's gray (owner, 2026-10-25: blue is New Rules' "NR")
 # `MenuRenderer.panel()` draws this exact card as `art.box(canvas, rect, 1, alpha=248)` -- one 248/255 layer, not
 # fully opaque. A row or header bar paints a second, fully-opaque layer over it and so looks solid; the bare card
 # behind the title (nothing drawn over it there) shows a faint bleed of whatever is behind the screen, same as
@@ -214,14 +215,17 @@ class HdEpisodeList(HdEpisodePicker):
             pygame.draw.polygon(surface, (*self.PLAY_COLOR, self.PLAY_ALPHA), points)
         layer.blit(surface, (round(cx * S - size / 2), round(cy * S - size / 2)))
 
-    def draw_standard_mark(self, layer, x, y):
+    def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
         """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition,
-        restyled from the tile grid's dark plate to sit on this screen's white rows."""
+        restyled from the tile grid's dark plate to sit on this screen's white rows. Gray, so that blue is New
+        Rules' own: an episode translated from another SHS game shows its game's tag ("NR") in its game's colour
+        (owner, 2026-10-25)."""
         width, height = 32, 18
+        color = STANDARD_MARK_COLOR if color is None else color
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
-        pygame.draw.rect(plate, (*PANEL_BORDER_COLOR, 30), plate.get_rect(), border_radius=6 * S)
-        pygame.draw.rect(plate, (*PANEL_BORDER_COLOR, 200), plate.get_rect(), max(1, S), border_radius=6 * S)
-        text = self.font(11).render('SD', True, PANEL_BORDER_COLOR)
+        pygame.draw.rect(plate, (*color, 30), plate.get_rect(), border_radius=6 * S)
+        pygame.draw.rect(plate, (*color, 200), plate.get_rect(), max(1, S), border_radius=6 * S)
+        text = self.font(11).render(mark, True, color)
         plate.blit(text, text.get_rect(center=plate.get_rect().center))
         layer.blit(plate, (x * S, y * S))
 
@@ -262,9 +266,10 @@ class HdEpisodeList(HdEpisodePicker):
             info.center = (round(right - ICON_SIZE / 2), rect.centery)
             self.draw_info_icon(layer, right - ICON_SIZE / 2, rect.centery, ICON_SIZE)
             right -= ICON_SIZE + 10
-        if self.model.is_standard(record):
+        mark = self.model.mark(record)
+        if mark is not None:
             right -= 32
-            self.draw_standard_mark(layer, right, rect.y + (rect.height - 18) / 2)
+            self.draw_standard_mark(layer, right, rect.y + (rect.height - 18) / 2, mark, self.model.mark_color(record))
             right -= 8
         text_width = right - rect.x - 18
         title = self.wrap(self.model.label(record), TITLE_SIZE, text_width, 1)[0]

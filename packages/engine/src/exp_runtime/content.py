@@ -124,6 +124,24 @@ def _with_episode_alias(record, name):
     return dict(record, aliases=[*record.get('aliases', []), name])
 
 
+def legacy_fields(titles, game, episode_id=None):
+    """shshd-runtime: an episode translated from another SHS game is recognised by its title's tag (the game profile's
+    LEGACY_GAMES: " (SHSNR)" for New Rules). The tag is dropped from every title and recorded with the category the
+    episode is filed under, so the picker can badge it and never takes it for its smartphone twin, and with its place
+    in that category where the game gives one. Returns {titles, legacy, category[, order]}, or {} for any other
+    episode."""
+    profile = GAMES.get(game)
+    for tag, info in getattr(profile, 'LEGACY_GAMES', {}).items():
+        suffix = f' ({tag})'
+        if titles and titles[0].endswith(suffix):
+            fields = dict(titles=[t[:-len(suffix)] if t.endswith(suffix) else t for t in titles], legacy=tag,
+                          category=info['category'])
+            if episode_id in info.get('order', {}):
+                fields['order'] = info['order'][episode_id]
+            return fields
+    return {}
+
+
 def file_digest(path: Path) -> str:
     with path.open('rb') as stream:
         result = hashlib.sha256()
@@ -533,6 +551,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
                                     pack_id=meta.pack_id, episode_id=meta.episode_id,
                                     titles=list(meta.titles), scripts=sorted(programs), **location,
                                     **episode_index_fields(archive, programs))
+                records[sha].update(legacy_fields(records[sha]['titles'], source_game, meta.episode_id))
             else:
                 records[sha] = _with_episode_alias(records[sha], name)
             return sha
@@ -652,6 +671,8 @@ class ContentLibrary:
                     or sum(key in record for key in ('file', 'apk_member', 'ipa_member')) != 1
                     or ('ipa_member' if self.kind == 'apk' else 'apk_member') in record
                     or ('builtin' in record and (record['builtin'] != GAMES[self.game_id].BUILTIN or 'file' not in record))
+                    or not isinstance(record.get('legacy', ''), str) or not isinstance(record.get('category', ''), str)
+                    or type(record.get('order', 0)) not in (int, float)
                     or not isinstance(record.get('aliases', []), list)
                     or not all(isinstance(alias, str) for alias in record.get('aliases', []))
                     or (member_key in record and not isinstance(record[member_key], str))):
@@ -1147,6 +1168,7 @@ class ContentLibrary:
                               episode_id=meta.episode_id, titles=list(meta.titles),
                               scripts=sorted(programs), file=f'content/{sha}.exp', **source,
                               **episode_index_fields(archive, programs))
+                record.update(legacy_fields(record['titles'], self.game_id, meta.episode_id))
                 (stage / (sha + '.exp')).write_bytes(data)
                 records[sha] = record
                 additions.append(record)

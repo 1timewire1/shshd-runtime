@@ -36,7 +36,34 @@ MUSIC_BASE = 26980                      # New Rules music index i = MUSIC_BASE +
 # instead of black for this pack (shs/profile.py TRANSLATED_FRAME_BACKDROP).
 FRAME_BACKDROP = 26999
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
-TITLE_SUFFIX = ' (New Rules)'           # on the library title only; the story's own title card is unchanged
+# The SHS picture each title card (30) shows instead of its stretched New Rules strip, by (download id, script, PC of
+# the call): a shared-bank background, which SHS HD replaces with its own HD copy (owner's picks, 2026-10-25, from the
+# numbered export in reference/screenshots/verify/nr_title_cards_all; TRANSLATOR_PLAN.md lists them by frame). A card
+# whose picture depends on the time of day maps mode -> picture, read from MODE_KEY when it is shown.
+TITLE_CARD_BACKGROUNDS = {
+    (1, 25003, 12): 1090, (1, 25004, 20): 1108, (2, 25001, 176): 1093, (3, 25001, 1639): 1108, (3, 25002, 30): 1021,
+    (3, 25002, 328): 1036, (3, 25002, 921): 1111, (3, 25002, 1363): 1111, (3, 25003, 1808): 1120,
+    (3, 25003, 2217): 1020, (3, 25003, 2523): 1108, (3, 25004, 21): 1036, (4, 25001, 1636): 1057,
+    (5, 25001, 145): 1057, (6, 25001, 1640): 1108, (7, 25001, 142): 1108, (8, 25001, 1975): 1108,
+    (9, 25001, 142): 1057, (10, 25001, 1636): 1108, (11, 25001, 144): 1108, (12, 25001, 1873): 1090,
+    (13, 25001, 1931): 1114, (14, 25001, 989): 1108, (15, 25001, 1695): 1108, (16, 25001, 148): 1057,
+    (17, 25001, 1974): 1108, (18, 25001, 142): 1108, (19, 25001, 1640): 1093, (20, 25001, 1640): 1048,
+    (21, 25001, 1874): 1057, (22, 25001, 1632): 1057, (23, 25001, 1935): 1108, (23, 25001, 2169): 1120,
+    (24, 25001, 1872): 1057, (25, 25001, 149): 1057, (26, 25001, 1987): 1108, (27, 25001, 1874): 1054,
+    (28, 25001, 144): 1108, (29, 25001, 1636): 1078, (30, 25001, 142): 1078, (31, 25001, 1556): 1057,
+    (32, 25001, 1632): 1108, (33, 25001, 1870): 1060, (34, 25001, 1869): 1060, (35, 25001, 142): 1078,
+    (36, 25001, 181): 1078, (37, 25001, 2015): 1078, (38, 25001, 1884): 1012, (39, 25001, 1874): 1108,
+    (40, 25001, 154): 1108, (41, 25001, 149): 1078, (42, 25001, 153): 1036, (43, 25001, 153): 1078,
+    (44, 25001, 163): 1078, (45, 25001, 144): 1057, (46, 25001, 167): 1108, (47, 25001, 1585): 1108,
+    (47, 25001, 2159): 1057, (47, 25002, 1745): {0: 1051, 1: 1052, 4: 1053}, (47, 25003, 37): 1108,
+    (48, 25002, 178): 1036, (48, 25003, 74): 1057, (100, 25001, 290): 1108, (100, 25001, 335): 1108,
+    (100, 25001, 460): 1090, (100, 25001, 535): 1090, (100, 25001, 961): 1015, (100, 25001, 1158): 1057,
+    (100, 25001, 1528): 1057, (100, 25001, 1909): 1108, (100, 25001, 2077): 1108, (100, 25001, 2260): 1090,
+    (100, 25001, 3072): 1090, (101, 25102, 162): 1108,
+}
+# On the library title only; the story's own title card is unchanged. The importer recognises the tag (shs profile
+# LEGACY_GAMES), drops it from the title, files the episode under New Rules and badges it "NR".
+TITLE_SUFFIX = ' (SHSNR)'
 # The narrator handing over the player (announcements()); `who` is a name, or empty for a pronoun.
 ANNOUNCEMENT = re.compile(r"\bplay(?:ing)? as (?:(?P<who>(?!her\b|him\b|them\b)[a-z.]+(?: [a-z.]+)?)|her|him)\b"
                           r"|\bin (?:his|her) shoes\b|\binto (?P<brain>[a-z.]+)'s brain\b")
@@ -45,12 +72,20 @@ PLAYER_KEY = 31301                      # SHS global number holding the current 
 # The smartphone versions' word games (71): 20 s with a word every 3 s in 69 of their 70, passed at a score of 6.
 WORD_GAME_MS, WORD_GAME_REFRESH_MS, WORD_GAME_PASS = 20000, 3000, 6
 WORD_GAME_GOOD, WORD_GAME_BAD = 2, 3          # the fewest entries SHS 71 can deal
-# Music index -> the Java builds' track ID (o.g[]); res_large.pud stores track J as resource 283 + J - 8001.
+# Music index -> the Java builds' track ID (o.g[]). res_large.pud stores the same 15 tracks in index order instead,
+# as resources 283 + index (music_resource): their MIDI data match Java's 8004, 8002, 8005... one for one. Until
+# 2026-10-25 the translator read them in Java's order, which gave indices 0 and 2-8 another cue (owner: King of
+# Diss's "a few hours later..." played the wrong music).
 MUSIC_TRACKS = (8004, 8002, 8005, 8006, 8007, 8003, 8008, 8009, 8001, 8010, 8011, 8012, 8013, 8014, 8015)
+MUSIC_RESOURCE = 283
 MUSIC_PRELOAD = 1                       # service 7 mode that only loads the track (Player.realize/prefetch)
 # New Rules' right/wrong answer jingles (music index -> feedback). The smartphone versions play SHS's 8007/8003 there;
 # the runtime's choice hints read these as feedback in this pack (shs/profile.py TRANSLATED_FEEDBACK_MUSIC).
 FEEDBACK_TRACKS = {13: 1, 1: -1}
+# The music indices the smartphone versions play as sound effects (SHS 79) at the same lines: 8003, 8004, 8007, 8006,
+# 8012 and 8007, found at 2,222 cue spots on the 45 paired stories (2026-10-25); the other nine are music (80) there.
+# They play through 79 with New Rules' own rendered cue (owner: keep the original sounds, only reclassify them).
+SOUND_TRACKS = frozenset({1, 2, 5, 6, 11, 13})
 # New Rules expression (0 = the character's default) -> SHS expression slot; the banks hold New Rules expressions
 # (1, 4, 2, 3, 5) in SHS slots 0-4: neutral, angry, happy, sad, surprised. Found on the paired stories.
 EXPRESSION = {0: -1, 1: 0, 2: 2, 3: 3, 4: 1, 5: 4}
@@ -62,6 +97,7 @@ TIMEOUT_OPTION = 0                      # a timed choice's answer when time runs
 # paired twins has this shape ("good answer!", "handle approved!", "exhibit successful!"), and no line does.
 NOTICE = re.compile(r"^\s*(good [a-z]+|[a-z]+ [a-z]+(ed|ful))!\s*$", re.IGNORECASE)
 # Same arguments, same order (New Rules service -> SHS service).
+SCRIPT_JUMP = 34                        # (script, entry): SHS 10
 RENAME = {1: 22, 2: 25, 6: 27, 15: 54, 16: 55, 17: 46, 18: 47, 19: 64, 27: 6, 33: 9, 34: 10, 65: 10}
 # Owned numbers and bits (owner, key, ...): the same calls as SHS's, but New Rules keeps data of its own in character
 # keys 651-654 (h.java reads 651 as a text reference), which SHS reads as the dialogue theme (651). Those keys move up
@@ -85,6 +121,8 @@ class Episode:
     title: str
     scripts: dict                       # resource -> KiwiProgram
     library: object = None              # a built-in story's minigame library (KiwiProgram), which it calls into
+    library_entries: dict = None        # its library games by entry PC (LIBRARY_ENTRIES, DANCING_QUEEN_ENTRIES)
+    script_offset: int = 0              # how far its scripts sit above SHS's first, 25001 (Dancing Queen's: 100)
     text_addresses: dict = None         # resource -> the addresses of its strings, where its data holds other words
                                         # that could read as text (read_lite's tables of string addresses)
 
@@ -143,14 +181,17 @@ def discover(episode, steps=200000, sexes=None):
     return looks, names
 
 
-def used_scenes(episode):
+def used_scenes(episode, shown_elsewhere=()):
     """The (location, mode) pictures an episode can show. A location change (35) names both; a title card (30) shows
-    its location in the current mode, any mode the episode sets. A value computed at run time stands for all."""
+    its location in the current mode, any mode the episode sets, unless it is one of `shown_elsewhere` ((script, PC):
+    the cards TITLE_CARD_BACKGROUNDS gives an SHS picture). A value computed at run time stands for all."""
     locations, modes = range(len(nr_art.LOCATIONS)), range(MODES)
     changes, cards = set(), set()
-    for program in episode.scripts.values():
+    for rid, program in episode.scripts.items():
         for instruction in program.instructions:
             if instruction.opcode != 0x1f or (instruction.operand >> 8) not in (30, 35):
+                continue
+            if (rid, instruction.pc) in shown_elsewhere:
                 continue
             service, argc = instruction.operand >> 8, instruction.operand & 255
             if argc < (3 if service == 30 else 2):
@@ -295,7 +336,7 @@ def push_player(s):
 
 def music_resource(index):
     """The res_large.pud resource holding music index `index`'s MIDI."""
-    return 283 + MUSIC_TRACKS[index] - 8001
+    return MUSIC_RESOURCE + index
 
 
 def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing_dictionary=None, casing_exact=None,
@@ -322,6 +363,9 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                                                                    addresses=(episode.text_addresses or {}).get(rid),
                                                                    headlines=title_card_titles(program)))
             for rid, program in episode.scripts.items()})
+        keys = casing.unify_keys(episode.scripts, episode.text_addresses)
+        episode = replace(episode, scripts={rid: replace(program, main_words=keys[rid])
+                                            for rid, program in episode.scripts.items()})
     episode = replace(episode, scripts={rid: plain_options(program) for rid, program in episode.scripts.items()})
     banks, bank_of = {}, {}
     for (rid, address), record in sorted(looks.items()):
@@ -337,7 +381,8 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                     resources[base + HIRES_PORTRAIT_OFFSET + i] = nr_art.png(picture)
         bank_of[rid, address] = banks[slots]
     report.looks = len(banks)
-    for location, mode in sorted(used_scenes(episode)):
+    shown_elsewhere = {(rid, pc) for (number, rid, pc) in TITLE_CARD_BACKGROUNDS if number == episode.download_id}
+    for location, mode in sorted(used_scenes(episode, shown_elsewhere)):
         resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
     backdrop = art.backdrop()
     if backdrop is not None:
@@ -347,11 +392,14 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         guards = keyboard_guards(program)
         players = scene_players(program, names, scores)
         handovers = announcements(program, names, scores, sexes)
-        for start, game in word_games(program).items():
+        # Arena rounds are the downloads'; a built-in story's timed menus are its own (Dancing Queen's "choose a move!").
+        rounds = word_games(program) if episode.library is None else {}
+        quiet = game_transitions(program, set(rounds), {pc for pc, _, _ in library_calls(program)})
+        for start, game in rounds.items():
             rewriter.replace_function(start, ('word_game', start), lambda s, game=game: word_game(s, program, game, twin_games, player))
             report.word_games += 1
         for pc, entry, argc in library_calls(program):
-            kind = LIBRARY_ENTRIES.get(entry)
+            kind = (episode.library_entries or LIBRARY_ENTRIES).get(entry)
             if kind is None or episode.library is None:
                 raise TranslateError(f'script {rid} calls library code at {entry}, which has no translation')
             index = report.library_games.get(kind, 0)
@@ -364,7 +412,9 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
             key = (service, argc)
             report.calls[key] = report.calls.get(key, 0) + 1
             handler = HANDLERS.get(service)
-            if service in RENAME:
+            if service == SCRIPT_JUMP and episode.script_offset:
+                script_jump(rewriter, pc, episode.script_offset)
+            elif service in RENAME:
                 rewriter.rename(pc, RENAME[service])
             elif service in DROPPED:
                 rewriter.redirect(pc, 'drop', lambda s: s.result(0))
@@ -373,26 +423,26 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                                                  program=program, music=music, names=names, primary=primary,
                                                  service=service, keyboard_guards=guards, scores=scores,
                                                  scene_players=players, announcements=handovers,
-                                                 player=player))
+                                                 player=player, episode_id=episode.download_id, sexes=sexes,
+                                                 quiet_transitions=quiet))
             else:
                 report.unmapped[key] = report.unmapped.get(key, 0) + 1
                 rewriter.redirect(pc, ('unmapped', service), lambda s: s.result(0))
-        if rid == 25001:
+        if rid - episode.script_offset == 25001:
             rewriter.prologue(lambda s: (s.push(NARRATOR), s.call(75, 1), set_player(s, players.get('start', primary)),
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
                                          s.push(NARRATOR), s.push(-1), s.call(72, 2)))
         elif 'start' in players:
             rewriter.prologue(lambda s: set_player(s, players['start']))
-        resources[rid] = rewriter.finish().to_bytes()
+        resources[rid - episode.script_offset] = rewriter.finish().to_bytes()
     if music is not None:
-        tracks = used_music(episode)
-        if report.library_games.get('rhyme'):
-            tracks |= {RIGHT_TRACK, WRONG_TRACK}            # the speed disses' jingles (speed_diss)
+        # with New Rules' right and wrong jingles always: the speed disses (speed_diss) and the word games (71, shs
+        # profile TRANSLATED_WORD_GAME_SOUNDS) play them
+        tracks = used_music(episode) | {RIGHT_TRACK, WRONG_TRACK}
         for index in sorted(tracks):
             resources[MUSIC_BASE + index] = music(index)
         report.music = len(tracks)
-    # The library's picker hides a second import of a story it already lists (same title, nearly the same text), so
-    # a story with a smartphone version would never show; the suffix keeps the two apart.
+    # The tag tells the importer this is a New Rules story, which the picker never hides as its smartphone version.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources), report
 
@@ -441,33 +491,119 @@ def dialogue(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('dialogue', 40), build)
 
 
+# A line two characters (or more) say together ("both", "andy and laura"): the second's ID + 1 and expression go in
+# these SHS global numbers for the line, and the runtime shows the gray box with a portrait on each side and the name
+# centered (shs/profile.py TRANSLATED_DUETS, owner 2026-10-24). An app without it shows the first speaker alone.
+DUET_KEYS = (31310, 31311)
+# A named line without a portrait (SHS 15) takes the colour New Rules gives its bubble: the SHS global number the
+# translator sets around the line (1 blue, 2 pink, 3 gray), read by the runtime (shs/profile.py
+# TRANSLATED_NARRATION_THEMES, owner 2026-10-25). An app without it shows the yellow named-line box.
+NARRATION_KEY = 31312
+NAME_WORDS = 32                        # named_dialogue: a character's own name kept while another is shown (63 bytes)
+# Names a line is spoken under that are no one on stage: objects, sounds, unseen voices and anonymous crowds. New Rules'
+# 42 lists who is on stage, not who speaks, so "radio" lists Spike, standing by it, and "boom box" Taylor; these stay
+# named lines without a portrait (SHS 15), as the smartphone versions show their loudspeaker, voice, crowd and engine
+# lines. Every other name (149 across the set: "girl", "boy", "announcer", "kay and kel") is a person, animal or
+# group on stage. Owner, 2026-10-24.
+UNSEEN_SPEAKERS = frozenset((
+    'arcade game', 'arcade machine', 'bike', 'boom box', 'doorbell', 'engine', 'horn', 'inexplicable noise!', 'loudspeaker',
+    'music', 'mysterious noise', 'pants', 'phone', 'radio', 'snow machine', 'speaker', 'stereo', 'telephone', 'tv',
+    'voicemail', 'wind', 'wipers', 'voice', 'mysterious voice', 'muffled voice', 'newswoman', 'crowd', 'audience',
+    'all the guys in the crowd', 'centerscore high students', 'race groupies'))
+
+
 def named_dialogue(rewriter, pc, argc, context):
     """41: ([mode], name, text, char[, expression]) and 42: ([mode], name, text, char, expression, ...): a line under
     a given name with the listed characters' portraits (f.java a(boolean, byte, int, boolean)). An empty name, or one
-    character's own name, is that character speaking: SHS 13 with the portrait. Any other name ("kay and kel",
-    "crowd") is SHS 15, named and without a portrait, as the smartphone versions show crowd lines."""
+    character's own name, is that character speaking: SHS 13 with the portrait. Any other name ("girl", "boy",
+    "announcer", "kay and kel") is shown on the plate over the first listed character's portrait and bubble (owner,
+    2026-10-24; the smartphone versions give 165 of the 182 such lines a portrait): the character's name is kept (61),
+    set to the line's (64) for SHS 13, then put back. A second listed character is the line's partner (DUET_KEYS);
+    a third makes it a group, shown named without portraits. A line with no character, or spoken by no one on stage
+    (UNSEEN_SPEAKERS: "radio", "crowd"), is SHS 15, named and without a portrait, in the colour New Rules gives its
+    bubble (bubble_theme). So is a known character speaking off stage over whoever is listed (King of Diss's "ryan"
+    telling his story over Chris), in that character's own colour (owner, 2026-10-25). Two speakers sit in the order
+    the name gives them ("andy and laura": Andy on the left): the left one is SHS's primary speaker (74) for the line."""
     program = context['program']
     args = pushed_values(program, pc, argc)
     first = 2 if args[0] is not None and args[0] < 0 else 1
     name = constant_text(program, rewriter, pc, first, argc)
     character = args[first + 1] if argc > first + 1 else None
     words = argc - first - 1                                 # character (and expression) words after the text
+    names, sexes = context['names'], context.get('sexes', {})
     own = words in (1, 2) and character is not None and (
-        name == '' or name is not None and character in context['names'].get(name.lower(), ()))
+        name == '' or name is not None and character in names.get(name.lower(), ()))
     prefix = args[0] if first == 2 and args[0] in (-2, -3) else None
+    listed = [args[first + 1 + 2 * k] for k in range(max(1, words // 2))] if words >= 1 else []
+    # Three or more listed speakers ("kim, linda, and dinah", "all") are a named line without portraits too (owner,
+    # 2026-10-25: two portraits would pick two of them).
+    unseen = words < 1 or words >= 6 or name is not None and name.lower() in UNSEEN_SPEAKERS
+    off_stage = (not unseen and not own and words in (1, 2) and character is not None and bool(name)
+                 and name.lower() in names)
+    theme = (bubble_theme(sorted(names[name.lower()]), sexes, every=False) if off_stage
+             else bubble_theme(listed, sexes) if unseen else 0)
+    partner_left = words in (4, 5) and name_order(name, args[first + 1], args[first + 3], names)
 
     def build(s):
         remember_line(s, first + 1, context)
-        if not own:
+        if unseen or off_stage:
+            if theme:
+                s.push(NARRATION_KEY); s.push(theme); s.call(54, 2)
             s.arg(first); s.arg(first + 1); s.call(15, 2)
+            if theme:
+                s.push(NARRATION_KEY); s.push(0); s.call(54, 2)
             return
+        if words >= 4:                                      # the first-named speaker on the left
+            s.arg(first + 4 if partner_left else first + 2); s.call(74, 1)
+        if not own:
+            kept = s.rewriter.words([0] * NAME_WORDS)
+            s.arg(first + 2); s.push(kept); s.call(61, 2)
+            s.arg(first + 2); s.arg(first); s.call(64, 2)
+        if words >= 4:                                      # a second speaker: DUET_KEYS, read by the runtime
+            s.push(DUET_KEYS[0]); s.arg(first + 4); s.push(1); s.emit(0x50); s.call(54, 2)
+            s.push(DUET_KEYS[1]); s.select(first + 5, EXPRESSION, 0); s.call(54, 2)
         if prefix is not None:
             s.push(prefix)
         s.arg(first + 1); s.arg(first + 2)
-        if words == 2:
+        if words >= 2:
             s.select(first + 3, EXPRESSION, -1)
-        s.call(13, (prefix is not None) + 1 + words)
-    rewriter.redirect(pc, ('named', own, prefix, first, words), build)
+        s.call(13, (prefix is not None) + 1 + min(words, 2))
+        if words >= 4:
+            s.push(DUET_KEYS[0]); s.push(0); s.call(54, 2)
+            push_player(s); s.call(74, 1)                   # the player is the primary speaker again
+        if not own:
+            s.arg(first + 2); s.push(kept); s.call(64, 2)
+    rewriter.redirect(pc, ('named', own, unseen or off_stage, theme, partner_left, prefix, first,
+                           min(words, 2) if own else words), build)
+
+
+def bubble_theme(characters, sexes, every=True):
+    """The SHS theme for New Rules' bubble colour (h.java d): one listed character's own colour, or the colour all the
+    listed ones share; with none listed, or different colours, New Rules shows its default yellow banner, SHS's own
+    named-line box (0; owner, 2026-10-26: King of Diss's "Crowd: Ouch!" is yellow). A character's colour (New Rules'
+    651) follows its look's sex word: 1 blue, 0 pink, and the offscreen group (-1) gray, the TV's and phone's. With
+    `every` false, the colour any of `characters` has (one person under several IDs). 0 when a character is unknown."""
+    themes = {({1: 1, 0: 2, -1: 3}.get(sexes.get(c)) if c is not None else None) for c in characters}
+    if not characters or None in themes:
+        return 0
+    if not every:
+        return min(themes)
+    return themes.pop() if len(themes) == 1 else 0
+
+
+def name_order(name, main, partner, names):
+    """Whether a two-speaker line's name gives `partner` before `main` ("andy and laura" with Laura listed first),
+    by where each one's names appear in it; False when the name does not tell."""
+    if not name or main is None or partner is None:
+        return False
+    title = name.lower()
+
+    def place(character):
+        found = [title.find(alias) for alias, ids in names.items() if character in ids and alias and alias in title]
+        return min(found) if found else None
+
+    first, second = place(main), place(partner)
+    return first is not None and second is not None and second < first
 
 
 def narration(rewriter, pc, argc, context):
@@ -572,12 +708,28 @@ def text_entry(rewriter, pc, argc, context):
 
 
 def title_card(rewriter, pc, argc, context):
-    """30: (title, subtitle, location, flag) -> SHS 8 with the location's picture (-1 = none)."""
+    """30: (title, subtitle, location, flag) -> SHS 8 with the SHS picture chosen for this card
+    (TITLE_CARD_BACKGROUNDS), else the location's own picture (-1 = none)."""
+    picture = TITLE_CARD_BACKGROUNDS.get((context['episode_id'], context['rid'], pc))
+
     def build(s):
         s.arg(1); s.arg(2)
-        background(s, 3)
+        if isinstance(picture, int):
+            s.push(picture)
+        elif picture is not None:                           # by the time of day; another mode takes the first
+            s.push(MODE_KEY); s.call(55, 1)
+            done = s.label()
+            for mode, chosen in picture.items():
+                other = s.label()
+                s.push_result(); s.push(mode); s.emit(0x0a); s.jump_if_zero(other)
+                s.push(chosen); s.jump(done)
+                s.label(other)
+            s.push(next(iter(picture.values())))
+            s.label(done)
+        else:
+            background(s, 3)
         s.arg(4); s.call(8, 4)
-    rewriter.redirect(pc, 'title_card', build)
+    rewriter.redirect(pc, ('title_card', repr(picture)), build)
 
 
 def background(s, i):
@@ -696,9 +848,10 @@ def location(rewriter, pc, argc, context):
 
 
 def music(rewriter, pc, argc, context):
-    """7: (index, mode) -> SHS 80 (MUSIC_BASE + index, no repeat). New Rules plays every track once: the Java player
-    never changes MIDP's loop count of 1 (j.c). Mode 1 only preloads the track; modes 0 and 2 play it when the scene is
-    next drawn (h.java). Without rendered music (decision 4), the call only returns."""
+    """7: (index, mode) -> SHS 80 (MUSIC_BASE + index, no repeat), or SHS 79 (a sound effect) for SOUND_TRACKS. New
+    Rules plays every track once: the Java player never changes MIDP's loop count of 1 (j.c). Mode 1 only preloads the
+    track; modes 0 and 2 play it when the scene is next drawn (h.java). Without rendered music (decision 4), the call
+    only returns."""
     if context['music'] is None:
         rewriter.redirect(pc, 'drop', lambda s: s.result(0))
         return
@@ -707,8 +860,15 @@ def music(rewriter, pc, argc, context):
         done = s.label()
         s.result(0)
         s.arg(2); s.push(MUSIC_PRELOAD); s.emit(0x0a); s.jump_if_nonzero(done)
+        sound = s.label()
+        for track in sorted(SOUND_TRACKS):
+            s.arg(1); s.push(track); s.emit(0x0a); s.jump_if_nonzero(sound)
         s.arg(1); s.push(MUSIC_BASE); s.emit(0x50); s.push(0)
         s.call(80, 2)
+        s.jump(done)
+        s.label(sound)
+        s.arg(1); s.push(MUSIC_BASE); s.emit(0x50)
+        s.call(79, 1)
         s.label(done)
     rewriter.redirect(pc, 'music', build)
 
@@ -841,8 +1001,8 @@ def word_games(program):
             continue
         options = first[1]
         results = {value: _play_round(program, start, halts[0], value) for _, value in options}
-        if any(r is None for r in results.values()):
-            continue
+        if any(r is None or r[0] is None for r in results.values()):
+            continue                                    # (a menu that leaves no score is not a round: Dancing Queen's)
         count = max(r[0] for r in results.values())
         if count <= 0 or any(r[0] not in (0, count) for r in results.values()):
             continue
@@ -894,7 +1054,8 @@ def word_lists(program, game, twin_games=()):
 def word_game(s, program, game, twin_games=(), player=True):
     """The body replacing a round function: SHS 71 (title, description, good words, bad words, duration, character,
     portrait mode, refresh) as the smartphone versions call it, then B = good answers: all `rounds` at the twins' pass
-    score, else in proportion, so a story's tiers still read the result."""
+    score, else in proportion, so a story's tiers still read the result. New Rules' own rounds are four or five picks
+    of 3 s each; the owner kept SHS's 20 s quiz for consistency (2026-10-26, after trying New Rules' timing)."""
     full, done = s.label(), s.label()
     good, bad = word_lists(program, game, twin_games)
     s.text(CHOICE_TITLE); s.push(game.title); s.text('|'.join(good)); s.text('|'.join(bad))
@@ -919,18 +1080,39 @@ STREAM = 48                             # the compact dialogue stream (expand_st
 # the Rhyme battle ("match words that rhyme, son!"), the Rhythm game ("don't hit the wrong notes..."), the team battle's
 # beat boxing, and the face picker ("select your face.").
 LIBRARY_ENTRIES = {32611: 'rhyme', 31473: 'rhythm', 28903: 'beat boxing', 28201: 'faces'}
+# Dancing Queen, the other built-in story (the smartphone Homecoming Queen), calls the same library: its rhyming and
+# Rhythm, the face picker, the sequences game King of Diss beat-boxes to as "dance steps!!!", and DJ Fever ("keep the
+# music flowing and don't stop!"), which King of Diss never plays. They are played as King of Diss's are (owner,
+# 2026-10-24: one adaptation across New Rules, not Homecoming Queen's word grids). The story passes its target in and
+# reads the score against it: 5 for the steps, 6 for Rhythm, 7 for rhyming, and for DJ Fever the larger of 3 and the
+# dancer level + 2 in practice, 7 - the level at the dance-off.
+DANCING_QUEEN = range(25101, 25107)
+DANCING_QUEEN_ENTRIES = {**LIBRARY_ENTRIES, 28903: 'dance steps', 30244: 'dj fever'}
 LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
 RHYME_PROMPT = '`%s` rhymes with...'    # the library string before its rhyme pairs' words
 RHYME_END = 'rhyming'                   # and the one after them
 # The arena games without words of their own, played as SHS word games: (banner, good words, bad words). Rhythm's
 # good and bent notes, and beat boxing's sounds, as the story's lines write them.
+# The library's sequences game (beat boxing, dance steps) is called with a banner and numbers, no intro text, so its
+# word game shows a description of its own (owner's, 2026-10-25); the others show the intro text their call passes.
+GAME_DESCRIPTIONS = {
+    'beat boxing': "Lay down a beat! Don't break your flow with the wrong sounds...",
+    'dance steps': "Bust out the right moves! Don't trip over your own feet...",
+}
 WORDLESS_GAMES = {
     'rhythm': ('Rhythm!', ('beat', 'groove', 'flow', 'bass', 'tempo', 'rhythm'),
                ('bent note', 'off-key', 'screech', 'clunk', 'sour note', 'static')),
     'beat boxing': ('Beat boxing!', ('ba-dum', 'wicky', 'boots', 'cats', 'boom', 'tss'),
                     ('la la la', 'achoo', 'meow', 'hiccup', 'shh', 'moo')),
+    # Dancing Queen's: the moves the story teaches, and the stumbles it writes; DJ Fever's flowing music and its stops.
+    'dance steps': ('Dance steps!', ('two-step', 'funky chicken', 'moonwalk', 'the twist', 'spin', 'shimmy'),
+                    ('stumble', 'trip', 'faceplant', 'flail', 'stomp', 'freeze')),
+    'dj fever': ('DJ Fever!', ('groove', 'beat', 'bass', 'remix', 'spin', 'fever'),
+                 ('record scratch', 'silence', 'skip', 'static', 'feedback', 'unplug')),
 }
 RHYME_BANNER = 'Speed diss!'
+# Rhyme words left out of the speed disses: Arial Rounded's capital I reads as an l ("Ill"; owner, 2026-10-25).
+UNREADABLE_RHYMES = {'ill'}
 # The speed disses play as the Lite builds' (King of Diss Lite, script 25001's loop): a timed choice per round under
 # their prompt, ten hits to finish, three misses to lose, 3 s a round padded 30% as New Rules pads its limits.
 SPEED_DISS_PROMPT = 'Flow: %d/10\nMiss: %d/3\nRhymes with { %s {'      # a menu's description shows no emphasis
@@ -940,13 +1122,22 @@ SPEED_DISS_MS = 3900
 RIGHT_TRACK, WRONG_TRACK = 13, 1                         # FEEDBACK_TRACKS: New Rules' right and wrong jingles
 
 
-def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1):
+def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1, entries=LIBRARY_ENTRIES):
     """A built-in story from New Rules' res_large.pud (`source`: resources by ID, nr_art.load) as an Episode, its compact
-    dialogue streams written out (expand_streams) and the minigame library it calls kept beside it."""
+    dialogue streams written out (expand_streams) and the minigame library it calls kept beside it, with its games by
+    entry (`entries`)."""
     library = decode_program(source[LIBRARY]) if LIBRARY in source else None
     boundary = library.previous_data_count if library is not None else None
     return Episode(download_id, title, {rid: expand_streams(decode_program(source[rid]), boundary)
-                                        for rid in scripts}, library)
+                                        for rid in scripts}, library, entries)
+
+
+def read_dancing_queen(source):
+    """Dancing Queen, built into res_large.pud beside King of Diss: episode 101 of the translated pack (the downloads
+    are 2-48, King of Diss 1, its Lite version 100)."""
+    episode = read_builtin(source, DANCING_QUEEN, 'Dancing Queen', 101, DANCING_QUEEN_ENTRIES)
+    episode.script_offset = DANCING_QUEEN[0] - 25001
+    return episode
 
 
 # The Lite Java builds' condensed King of Diss: one script, its text in a string table (script ID + 50) that scripts
@@ -1198,7 +1389,13 @@ def rhyme_families(library):
     while texts.get(words[table]) != RHYME_END:
         pairs.append((texts[words[table]], texts[words[table + 1]]))
         table += 2
-    return rhyme_groups(pairs)
+    return readable_families(rhyme_groups(pairs))
+
+
+def readable_families(families):
+    """The rhyme families without UNREADABLE_RHYMES' words, and without a family left with fewer than two."""
+    families = [[w for w in family if w not in UNREADABLE_RHYMES] for family in families]
+    return [family for family in families if len(family) >= 2]
 
 
 def rhyme_groups(pairs):
@@ -1241,7 +1438,11 @@ def library_game(s, kind, index, library, player=True, music=False):
         s.arg(3); s.arg(4); s.arg(5); s.call(78, 3)
     else:
         banner, good, bad = WORDLESS_GAMES[kind]
-        s.text(banner); s.arg(s.argc - 1)                   # its intro text
+        s.text(banner)
+        if kind in GAME_DESCRIPTIONS:
+            s.text(GAME_DESCRIPTIONS[kind])
+        else:
+            s.arg(s.argc - 1)                               # its intro text
         s.text('|'.join(good)); s.text('|'.join(bad)); s.push(LIBRARY_GAME_MS)
         if player:
             push_player(s)
@@ -1303,12 +1504,12 @@ def speed_diss(s, rounds, player=True, music=False):
         s.push_result(); s.push(answer); s.emit(0x0a); s.jump_if_zero(miss)
         add(hits)
         if music:
-            s.push(MUSIC_BASE + RIGHT_TRACK); s.push(0); s.call(80, 2)
+            s.push(MUSIC_BASE + RIGHT_TRACK); s.call(79, 1)    # SOUND_TRACKS
         s.jump(done)
         s.label(miss)
         add(misses)
         if music:
-            s.push(MUSIC_BASE + WRONG_TRACK); s.push(0); s.call(80, 2)
+            s.push(MUSIC_BASE + WRONG_TRACK); s.call(79, 1)
         s.label(done)
     s.label(end)
     s.emit(0x40, hits); s.emit(0x04)                        # B, which the caller reads
@@ -1343,13 +1544,60 @@ def build_query(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('build_query', answers[1]), build)
 
 
+def script_jump(rewriter, pc, offset):
+    """34: (script, flag) -> SHS 10 for a story whose scripts sit `offset` above 25001, where SHS starts an episode:
+    the scripts move down, and so does every script a jump names (constants, and Dancing Queen's table of 52 in
+    25101's data, which only ever reach this call)."""
+    rewriter.redirect(pc, ('script_jump', offset), lambda s: (
+        s.arg(1), s.push(offset), s.emit(0x51), s.arg(2), s.call(RENAME[SCRIPT_JUMP], 2)))
+
+
 def end_episode(rewriter, pc, argc, context):
     """28: (title, text, flag): New Rules' closing screen and end -> SHS's message panel, then the episode exit."""
     rewriter.redirect(pc, 'end', lambda s: (s.arg(1), s.arg(2), s.push(0), s.call(33, 3), s.call(7, 0)))
 
 
+PANELS = {40, 41, 42, 43, 30, 11, 14, 49, 28}             # New Rules calls that put up a panel the player answers
+
+
+def game_transitions(program, rounds, library):
+    """The engine-mode-11 calls (47(11), SHS transition 20) whose transition would fall just before a game. SHS 16
+    queues the transition for the end of the next panel, so it shows between the panel after the call and what comes
+    next; where that is a word-game round (`rounds`: function starts) or a call into the linked library (`library`:
+    call PCs, its games and face picker), the call is dropped (owner, 2026-10-25: no transition into a picker or a
+    game). Followed along straight-line code and unconditional jumps; location changes show nothing of their own."""
+    instructions = program.instructions
+    index = {i.pc: k for k, i in enumerate(instructions)}
+    found = set()
+    for k, i in enumerate(instructions):
+        if not (i.opcode == 0x1f and i.operand >> 8 == 47 and pushed_values(program, i.pc, i.operand & 255)[:1] == [11]):
+            continue
+        j, seen, panels = k + 1, set(), 0
+        while j < len(instructions) and j not in seen:
+            seen.add(j)
+            x = instructions[j]
+            if x.pc in library or (x.opcode == 0x29 and x.operand in rounds):
+                if panels == 1:
+                    found.add(i.pc)
+                break
+            if x.opcode == 0x29 and x.operand in index:
+                j = index[x.operand]
+                continue
+            if x.opcode == 0x33 or (x.opcode == 0x1f and x.operand >> 8 in PANELS and panels == 1):
+                break
+            if x.opcode == 0x1f and x.operand >> 8 in PANELS:
+                panels += 1
+            j += 1
+    return found
+
+
 def transition(rewriter, pc, argc, context):
-    """47: (engine mode). The paired stories show SHS's transition 20 where New Rules sets mode 11."""
+    """47: (engine mode). The paired stories show SHS's transition 20 where New Rules sets mode 11, except where it
+    would fall just before a game or the face picker (game_transitions)."""
+    if pc in context['quiet_transitions']:
+        rewriter.redirect(pc, 'drop', lambda s: s.result(0))
+        return
+
     def build(s):
         other = s.label()
         s.arg(1); s.push(11); s.emit(0x0b); s.jump_if_nonzero(other)

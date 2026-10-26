@@ -214,10 +214,13 @@ class Rewriter:
                 code[pc] = (0x29, starts[site[1]])
         if self.start is not None:
             # Instruction 0 moves to the end of the prologue block and becomes a jump to it. A relative jump there
-            # becomes an absolute one; other relative branches at 0 are not supported.
+            # becomes an absolute one, and a SAVE_RETURN pushes the address it saved at 0 (Dancing Queen's 25106
+            # opens by calling its main function); other relative branches at 0 are not supported.
             first, operand = code[0]
             if first == 0x28:
                 first, operand = 0x29, operand & 0xffff
+            elif first == 0x42:
+                first, operand = 0x1a, 1
             elif first in (0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x5c):
                 raise RewriteError('a conditional branch at instruction 0 cannot take a prologue')
             block = len(code)

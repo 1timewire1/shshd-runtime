@@ -394,6 +394,20 @@ class Session:
             game.home, game.away = (winner, loser) if success else (loser, winner)
         return self._complete_minigame()
 
+    @_sound_batch
+    def skip_word_game(self, score: int):
+        """shshd-runtime: finish the pending word quiz with `score`, the skip prompt's outcome
+        (choice_hints.word_game_outcomes: a quiz may have more than winning and losing)."""
+        if type(score) is not int or not 0 <= score <= 32767:
+            raise ValueError('A word quiz score is a word from 0 to 32767')
+        if not self.pending or self.pending.name != 'word_game' or self.transitioning:
+            raise ValueError('There is no skippable word quiz')
+        self.start_minigame()
+        game = self.engine.word_game
+        game.score = score
+        game.round = max(game.round, score + 1)
+        return self._complete_minigame()
+
     def _complete_minigame(self, *, result=None):
         kind = self.pending.name
         game = getattr(self.engine, kind)
@@ -413,8 +427,52 @@ class Session:
         action = self.pending
         if not action or action.name != 'dialogue' or not hasattr(self.resources, 'dialogue_layout'):
             return None
+        duet = self.dialogue_duet()
+        partner = (self.engine.substitute(self.engine.character_names.get(duet.character_id, ''))
+                   if duet is not None else None)
         return self.resources.dialogue_layout().page(action.details, action.details.get('page_start', 0),
-                                                    names=self.engine.speaker_names, text_history=self.bitmap_history)
+                                                    names=self.engine.speaker_names, text_history=self.bitmap_history,
+                                                    duet=duet, partner_name=partner,
+                                                    narration_theme=self.narration_theme())
+
+    def narration_theme(self):
+        """shshd-runtime: a translated pack's colour for a named line without a portrait (panel mode 3), or None. The
+        game profile's TRANSLATED_NARRATION_THEMES names a global number the translator sets around such a line:
+        1 blue, 2 pink, 3 gray, 0 the line's own. New Rules gives an object or unseen voice (a TV, a radio) its gray
+        bubble and an off-stage character its own colour; SHS shows both as named lines (15) without a portrait."""
+        action = self.pending
+        if not action or action.name != 'dialogue' or action.details.get('presentation_mode') != 3:
+            return None
+        record = getattr(self.resources, 'record', None) or {}
+        key = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_NARRATION_THEMES', {}).get(record.get('pack_id'))
+        if key is None:
+            return None
+        theme = self.engine.numbers.get(self.engine.number_key(0, key), 0)
+        return theme if theme in (1, 2, 3) else None
+
+    def dialogue_duet(self):
+        """shshd-runtime: the second speaker of a translated pack's two-speaker line, as a DialoguePortrait on the
+        other side from the first, or None. The game profile's TRANSLATED_DUETS names the global numbers the
+        translator sets around the line (pack -> (partner key, expression key), the partner as its ID + 1); they are
+        part of the saved state, so a restored line finds its partner again."""
+        action = self.pending
+        if not action or action.name != 'dialogue' or action.details.get('presentation_mode') not in (1, 2):
+            return None
+        record = getattr(self.resources, 'record', None) or {}
+        keys = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_DUETS', {}).get(record.get('pack_id'))
+        if keys is None:
+            return None
+        engine = self.engine
+        partner = engine.numbers.get(engine.number_key(0, keys[0]), 0) - 1
+        variants = engine.character_art_variants.get(partner, ())
+        if partner < 0 or partner == action.details['visible_character_id'] or not variants:
+            return None
+        expression = max(0, engine.numbers.get(engine.number_key(0, keys[1]), 0))
+        art = variants[expression % len(variants)]
+        if art < 0:
+            return None
+        return DialoguePortrait(partner, art, 3 - action.details['presentation_mode'],
+                                engine.numbers.get(engine.number_key(partner, 651), 0), expression)
 
     @property
     def bitmap_history(self):
@@ -646,7 +704,7 @@ class Session:
                 labels = story_labels(self)
                 if labels is not None:
                     labels.word_round(previous_options)
-                right, wrong = GAMES[self.engine.game_key].WORD_GAME_SOUNDS
+                right, wrong = self._word_game_sounds()
                 if game.last_delta:
                     self.engine.request_sound(right if game.last_delta > 0 else wrong)
             return action
@@ -735,6 +793,18 @@ class Session:
         self._prepare_dialogue(new_name=True)
         self._complete_panel()
         self.engine.message_panel = None
+
+    def _word_game_sounds(self):
+        """Service 71's right/wrong answer sounds: the game profile's WORD_GAME_SOUNDS, or a translated pack's own
+        (shshd-runtime: TRANSLATED_WORD_GAME_SOUNDS, pack -> (right, wrong) episode resources) when the episode
+        carries both."""
+        profile = GAMES[self.engine.game_key]
+        record = getattr(self.resources, 'record', None) or {}
+        sounds = getattr(profile, 'TRANSLATED_WORD_GAME_SOUNDS', {}).get(record.get('pack_id'))
+        exists = getattr(self.resources, 'exists', None)
+        if sounds is not None and exists is not None and all(exists(sound) for sound in sounds):
+            return sounds
+        return profile.WORD_GAME_SOUNDS
 
     def _place_picker(self):
         """shshd-runtime: a translated pack's own layout for a new portrait picker (the game profile's
@@ -927,7 +997,7 @@ class Session:
             game = self.engine.word_game
             finished = game.tick(elapsed_ms, self.engine.random48)
             if game.scored:
-                right, wrong = GAMES[self.engine.game_key].WORD_GAME_SOUNDS
+                right, wrong = self._word_game_sounds()
                 self.engine.request_sound(right if game.scored > 0 else wrong)
                 game.scored = 0
             if finished:

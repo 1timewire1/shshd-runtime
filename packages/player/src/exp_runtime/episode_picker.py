@@ -11,6 +11,7 @@ import pygame
 from . import episode_thumbnails
 from .content import ContentError, is_bundled
 from .episode_dates import RELEASE_DATES, REDUNDANT_BUNDLES, VOTE_PACKAGES
+from .games import GAMES, game_id
 from .episode_index import (HD, PickerRow, STANDARD, build_chronological_rows, build_rows, category_labels,
                             duplicates, episode_label, format_airdate, resolve_variants)
 
@@ -70,6 +71,19 @@ class PickerModel:
         self._has_info = {}
         # The standard-edition marker only says something when HD episodes sit beside them.
         self.mixed = self.prefer == HD and any(self.variants[r['id']] == HD for r in self.records)
+
+    def mark(self, record):
+        """The tile's or row's tag, or None: an episode translated from another SHS game's (the game profile's
+        LEGACY_GAMES badge, "NR"), else the standard-edition "SD" (is_standard)."""
+        legacy = getattr(GAMES.get(game_id(self.library)), 'LEGACY_GAMES', {}).get(record.get('legacy'))
+        if legacy is not None:
+            return legacy['badge']
+        return 'SD' if self.is_standard(record) else None
+
+    def mark_color(self, record):
+        """A legacy game's own colour for its tag (LEGACY_GAMES), else None."""
+        legacy = getattr(GAMES.get(game_id(self.library)), 'LEGACY_GAMES', {}).get(record.get('legacy'))
+        return None if legacy is None else legacy['color']
 
     def is_standard(self, record):
         """Whether the tile gets the standard-edition marker."""

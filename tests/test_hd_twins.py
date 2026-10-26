@@ -244,6 +244,33 @@ class HiresPortraitTests(unittest.TestCase):
         self.library.hires_portraits = False
         self.assertEqual(image_size(self.resources().read_asset(26200)), (200, 240))
 
+    def test_a_save_loads_with_whichever_portrait_set_is_current(self):
+        # A save names the portrait the story set (26200), never the hi-res copy (+1000) the switch reads, and the
+        # switch is not part of the save's content identity: a save made with either set opens under the other, and
+        # its portrait comes from the set chosen now.
+        import json
+        from exp_runtime.dialogue_animation import DialoguePortrait
+        from exp_runtime.runtime import Session
+        from test_runtime import Resources, host_call, text_words
+        from test_vm import program
+        words, (line,) = text_words('Hello there.')
+        story = Resources(program(*host_call(72, 3, 26200), *host_call(13, line, 3, 2), 0x33, words=words))
+        session = Session(story)
+        session.advance()
+        saved = json.dumps(session.snapshot())
+        self.assertIn('26200', saved)
+        self.assertNotIn('27200', saved)
+        restored = Session.from_snapshot(story, json.loads(saved))
+        portrait = DialoguePortrait.from_details(restored.pending.details, restored.engine.character_art_variants)
+        self.assertEqual(portrait.asset_id, 26200)
+        self.library.profile, self.library.kind, self.library.manifest = 'test', 'apk', {'apk': {'sha256': 'a' * 64}}
+        episode = self.resources()
+        episode.record['sha256'] = 'b' * 64
+        for enabled, expected in ((True, (150, 180)), (False, (200, 240)), (True, (150, 180))):
+            self.library.hires_portraits = enabled
+            self.assertEqual(episode.identity, dict(profile='test', episode_sha256='b' * 64, apk_sha256='a' * 64))
+            self.assertEqual(image_size(episode.read_asset(portrait.asset_id)), expected)
+
     def test_only_the_portrait_range_of_a_translated_pack_is_moved(self):
         self.assertEqual(image_size(self.resources().read_asset(26999)), (200, 240))         # its backdrop
         self.assertEqual(image_size(self.resources(pack=1).read_asset(26200)), (200, 240))   # another pack

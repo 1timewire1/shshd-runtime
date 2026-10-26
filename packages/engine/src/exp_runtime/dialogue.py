@@ -38,6 +38,59 @@ NOTE_FRAMES = {1: 34, 2: 35, 3: 36}
 NOTE_SIZE, NOTE_OFFSET, NOTE_ADVANCE = (10, 14), (0.5, 1), 11
 
 
+# A two-speaker line's portraits are drawn at this scale about their housings' centres, so the title between them
+# has room for a name like "Gangsta Bot" on one line (owner, 2026-10-24).
+DUET_RING_SCALE = .8
+DUET_NAME_MARGIN = 2                    # a two-speaker title's room either side, inside the gap between the rings
+# Its most lines: smaller until it wraps to two (owner: three-line names do not look good). Every name a two-speaker
+# line has fits at 57% or more between 80% rings.
+DUET_TITLE_LINES = 2
+
+
+TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
+
+
+def _speaker_colors(layout, partner_name, first_font, second_font):
+    """A two-speaker title with each speaker's name in that speaker's title font (colour): words in `partner_name`
+    take `second_font`, the other names `first_font`, joins keep the gray. A title naming neither ("Both") stays
+    gray."""
+    runs, current = [], []
+    for g in sorted(layout.glyphs, key=lambda g: g.index):
+        if current and (g.index != current[-1].index + 1 or chr(g.glyph.code) in ' \n'):
+            runs.append(current)
+            current = []
+        if chr(g.glyph.code) not in ' \n':
+            current.append(g)
+    if current:
+        runs.append(current)
+    partner = partner_name.lower()
+
+    def theirs(word):
+        return len(word) >= 3 and (word in partner.split() or word in partner.replace(' ', ''))
+    words = [(run, ''.join(chr(g.glyph.code) for g in run).lower().strip(',.!?')) for run in runs]
+    if not any(theirs(word) for _, word in words):
+        return layout
+    fonts = {}
+    for run, word in words:
+        if word and word not in TITLE_JOINS:
+            for g in run:
+                fonts[g.index] = second_font if theirs(word) else first_font
+    return replace(layout, glyphs=tuple(replace(g, font=fonts[g.index]) if g.index in fonts else g
+                                        for g in layout.glyphs))
+
+
+def _shift_lines(layout, shifts):
+    """`layout` with line i (and its glyphs) moved `shifts[i]` units across; lines past the list stay."""
+    moves = {index: shifts[index] for index in range(min(len(shifts), len(layout.lines))) if shifts[index]}
+    if not moves:
+        return layout
+    lines = tuple(replace(line, x=line.x + moves.get(index, 0)) for index, line in enumerate(layout.lines))
+    owner = [(line.start, line.end, moves.get(index, 0)) for index, line in enumerate(layout.lines)]
+    glyphs = tuple(replace(g, x=g.x + next((move for start, end, move in owner if start <= g.index < end), 0))
+                   for g in layout.glyphs)
+    return replace(layout, lines=lines, glyphs=glyphs)
+
+
 def with_note(font):
     """`font` with '{' measured as the note image (NOTE_FRAMES); one copy per font."""
     cached = _NOTE_FONTS.get(id(font))
@@ -93,6 +146,7 @@ class DialoguePage:
     name_bounds: Rect | None = None
     note_frame: int | None = None  # pack 155's frame drawn for '{' (NOTE_FRAMES), when HD's fonts give it one
     note_tint: tuple | None = None  # the color it is drawn in instead of its own (the gold fonts' note, this fork's)
+    theme: int | None = None        # the box's theme when it is not the line's own (a two-speaker line's)
 
 
 class DialogueLayout:
@@ -124,9 +178,11 @@ class DialogueLayout:
         x, y, width, height = rect
         return Rect(x + FRAME_TO_COLUMN[0], y + FRAME_TO_COLUMN[1], width, height)
 
-    def hd_label(self, details):
+    def hd_label(self, details, *, between_rings=False):
         """SHSUIDialog's own title (speaker_names.hd_speaker_label) when the name is drawn in HD's vector Pajama Hip
-        and the HD layout bank is present; else None."""
+        and the HD layout bank is present; else None. `between_rings` (a two-speaker line, shshd-runtime): the
+        portrait-less title regions narrowed to the gap between the two portrait housings, so the title wraps and
+        shrinks there as a long name does in its own region."""
         from .vector_text import cap_height
         mode = details['presentation_mode']
         if mode not in (1, 2, 3):
@@ -143,7 +199,17 @@ class DialogueLayout:
                                     font, cap, points_per_unit=1, shift=15)
         if cap is None or self.hd_rectangle(0x2e) is None:
             return None
-        return hd_speaker_label(details['speaker'], mode, font_name, self.hd_rectangle, font, cap)
+        rectangle = self.hd_rectangle
+        if between_rings:
+            left, right = self.bank.rectangle(17, 0x30), self.bank.rectangle(17, 0x4e)
+            x0 = left.x + left.width / 2 * (1 + DUET_RING_SCALE) + DUET_NAME_MARGIN
+            x1 = right.x + right.width / 2 * (1 - DUET_RING_SCALE) - DUET_NAME_MARGIN
+
+            def rectangle(node):
+                rect = self.hd_rectangle(node)
+                return None if rect is None else replace(rect, x=x0, width=x1 - x0)
+        return hd_speaker_label(details['speaker'], mode, font_name, rectangle, font, cap,
+                                max_lines=DUET_TITLE_LINES if between_rings else None)
 
     @lru_cache(maxsize=4)
     def border_widths(self, theme):
@@ -167,7 +233,27 @@ class DialogueLayout:
             text_history.update('dialogue_name', self.font(label.font), label.text, label.layout)
         return label.text
 
-    def page(self, details, start=0, *, names: SpeakerNames | None = None, text_history=None):
+    def page(self, details, start=0, *, names: SpeakerNames | None = None, text_history=None, duet=None,
+             partner_name=None, narration_theme=None):
+        """`duet` (shshd-runtime, Session.dialogue_duet): a second speaker's portrait, `partner_name` its name. The
+        line is then laid out with a portrait on each side, its name centered between them and its first lines clear
+        of both rings. Two speakers of one color (both blue, both pink) take that color for the box, the name and
+        the text; otherwise the box is gray and each speaker's name in the title takes its own color (owner,
+        2026-10-25). `narration_theme` (shshd-runtime, Session.narration_theme): a named line without a portrait
+        (mode 3) drawn in that theme's box, name and text (1 blue, 2 pink, 3 gray) instead of its own."""
+        colors = None
+        if narration_theme in (1, 2, 3) and duet is None and details['presentation_mode'] == 3:
+            details = dict(details, theme=narration_theme)
+        else:
+            narration_theme = None
+        if duet is not None and details['presentation_mode'] in (1, 2):
+            first, second = details['theme'], duet.theme
+            shared = first if first == second and first in (1, 2) else None
+            if shared is None:
+                colors = (NAME_FONTS.get(first, 'PajamaHip26'), NAME_FONTS.get(second, 'PajamaHip26'))
+            details = dict(details, presentation_mode=3, theme=shared or 3)
+        else:
+            duet = None
         mode, theme = details['presentation_mode'], details['theme']
         font = self.font(NARRATOR_FONT if mode == 4 else BODY_FONT)
         cap_height = getattr(font, 'cap_height', None)
@@ -235,7 +321,7 @@ class DialogueLayout:
                 box = Rect(-6, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
                 origin = (0, HD_NARRATOR_TOP)
         else:
-            hd_label = self.hd_label(details)
+            hd_label = self.hd_label(details, between_rings=duet is not None)
             label = hd_label or preview_speaker(
                 details, self.bank, self.font, names,
                 previous_glyph=text_history.initial('dialogue_name') if text_history else -1)
@@ -270,6 +356,15 @@ class DialogueLayout:
                 vector = getattr(font, 'source', None) is not None
                 insets = (80, 70, 0, 0) if cap_height is not None or vector else (85, 75, 0, 0)
                 body_style = replace(body_style, indents=insets if mode == 1 else tuple(-n for n in insets))
+            elif duet is not None:
+                # Both sides' insets: one indent narrows the line by both (fonts.layout_text takes one side), and the
+                # lines move back by the right one once laid out (_shift_lines).
+                vector = getattr(font, 'source', None) is not None
+                insets = (80, 70, 0, 0) if cap_height is not None or vector else (85, 75, 0, 0)
+                # The smaller rings (DUET_RING_SCALE) give back their lost radius on each side.
+                gained = self.bank.rectangle(17, 0x30).width / 2 * (1 - DUET_RING_SCALE)
+                insets = tuple(max(0, n - gained) if n else 0 for n in insets)
+                body_style = replace(body_style, indents=tuple(2 * n for n in insets))
             measured = layout_text(font, sizing_text, rect.width, body_style, switch_fonts=switch_fonts)
             capacity = int((rect.height + body_style.gap) / (body_style.height + body_style.gap))
             count = min(capacity, max(3, len(measured.lines)))
@@ -346,6 +441,8 @@ class DialogueLayout:
         body = layout_text(font, text[:end], body_width, drawn_style,
                            previous_glyph=text_history.initial('dialogue_body') if text_history else -1,
                            switch_fonts=switch_fonts)
+        if duet is not None:
+            body = _shift_lines(body, [-n / 2 for n in body_style.indents])
         if mode != 4:
             # Allow for any glyph becoming the first line on a later page.
             # The whole dialogue supplies one stable name position; neither
@@ -374,5 +471,15 @@ class DialogueLayout:
                 # HD's title is drawn exactly where SHSUIDialog puts it, and native outline titles keep their
                 # 26-point size and region origin; this fit corrects Android labels and substitute faces.
                 name, name_origin, name_scale = fit_speaker_ink(label, name_bounds)
+            if duet is not None and name.lines:
+                # Centered between the two rings, at the height SHSUIDialog gives a portrait-less title.
+                inner_left = self.bank.rectangle(17, 0x30)
+                inner_right = self.bank.rectangle(17, 0x4e)
+                middle = (inner_left.x + inner_left.width + inner_right.x) / 2
+                ink = (min(line.x for line in name.lines), max(line.x + line.width for line in name.lines))
+                name_origin = (middle - (ink[0] + ink[1]) / 2 * name_scale, name_origin[1])
+                if colors is not None:
+                    name = _speaker_colors(name, partner_name or '', *colors)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
-                            name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint)
+                            name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
+                            theme=details['theme'] if duet is not None or narration_theme else None)

@@ -3,6 +3,7 @@ import importlib.util
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+import shutil
 import struct
 import sys
 import unittest
@@ -84,6 +85,13 @@ class RewriterTests(unittest.TestCase):
         rewriter.prologue(lambda s: (s.push(199), s.call(75, 1)))
         self.assertEqual(yields(rewriter.finish()), [(75, (199,)), (30, (2,))])
 
+    def test_a_prologue_keeps_a_save_return_at_instruction_0(self):
+        # Dancing Queen's 25106 opens by calling its main function: SAVE_RETURN, JUMP; the return lands on its HALT.
+        source = program(0x42, (0x29, 3), 0x33, (0x1A, 2), call(30, 1), 0x43)
+        rewriter = Rewriter(source)
+        rewriter.prologue(lambda s: (s.push(199), s.call(75, 1)))
+        self.assertEqual(yields(rewriter.finish()), [(75, (199,)), (30, (2,))])
+
     def test_appended_text_is_addressable(self):
         source = program(call(8, 0), 0x33)
         rewriter = Rewriter(source)
@@ -115,7 +123,7 @@ class NewRulesShimTests(unittest.TestCase):
         import newrules
         self.nr = newrules
 
-    def translate_calls(self, source, names=None, music=True, primary=1):
+    def translate_calls(self, source, names=None, music=True, primary=1, sexes=None, episode_id=0, quiet=()):
         nr = self.nr
         rewriter = Rewriter(source, zero_gap=True)
         last_line = rewriter.words([-1])
@@ -128,7 +136,8 @@ class NewRulesShimTests(unittest.TestCase):
                 last_line=last_line, rid=25001, bank_of={}, report=report, program=source,
                 music={} if music else None, names=names or {}, primary=primary, service=service,
                 keyboard_guards=nr.keyboard_guards(source), scores=Counter(),
-                scene_players=nr.scene_players(source, names or {}, Counter())))
+                scene_players=nr.scene_players(source, names or {}, Counter()), sexes=sexes or {},
+                episode_id=episode_id, quiet_transitions=set(quiet)))
         return rewriter.finish(), report
 
     def test_mode_lines_keep_the_thought_prefix_and_drop_other_box_modes(self):
@@ -141,14 +150,165 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertEqual(yields(result), [(13, (-2, 0, 3)), (13, (0, 3)), (13, (0, 3, 1))])
 
     def test_named_lines_speak_as_the_character_or_under_the_name(self):
+        # An empty name is the character speaking; another name ("girl", "kay and kel") is shown over the first
+        # listed character's portrait, its own name kept and put back; a line without a character has no portrait.
         empty, crowd = 0, 1
-        words = [0] + text_words('crowd') + text_words('hey!')
-        line = 1 + len(text_words('crowd'))
+        words = [0] + text_words('kay and kel') + text_words('hey!')
+        line = 1 + len(text_words('kay and kel'))
         source = program((0x1A, empty), (0x1A, line), (0x1A, 6), call(41, 3),
                          (0x1A, crowd), (0x1A, line), (0x1A, 6), (0x1A, 2), (0x1A, 7), (0x1A, 2), call(42, 6),
-                         0x33, words=words)
+                         (0x1A, crowd), (0x1A, line), call(41, 2), 0x33, words=words)
         result, _ = self.translate_calls(source)
-        self.assertEqual(yields(result), [(13, (line, 6)), (15, (crowd, line))])
+        events = yields(result)
+        kept = events[2][1][1]
+        partner, expression = self.nr.DUET_KEYS
+        nr = self.nr
+        # A two-speaker line makes its first-named speaker (here the first listed: the name names neither) SHS's
+        # primary speaker (74) for the line, then the player again (PLAYER_KEY). A line without a character is
+        # New Rules' default yellow banner: SHS's own named line, no colour key.
+        self.assertEqual(events, [(13, (line, 6)), (74, (6,)), (61, (6, kept)), (64, (6, crowd)),
+                                  (54, (partner, 7 + 1)), (54, (expression, 2)), (13, (line, 6, 2)),
+                                  (54, (partner, 0)), (55, (nr.PLAYER_KEY,)), (74, (0,)), (64, (6, kept)),
+                                  (15, (crowd, line))])
+
+    def test_named_lines_without_a_portrait_take_new_rules_bubble_colour(self):
+        # h.java d: one listed character's colour, the colour several share, else New Rules' default yellow banner
+        # (SHS's own box: no key). A known character speaking over someone else (King of Diss's Ryan over Chris) is a
+        # named line in the speaker's own colour.
+        nr = self.nr
+        words = text_words('crowd') + text_words('ryan') + text_words('hey!')
+        crowd, ryan, line = 0, len(text_words('crowd')), len(text_words('crowd') + text_words('ryan'))
+        source = program((0x1A, crowd), (0x1A, line), (0x1A, 5), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
+                         (0x1A, crowd), (0x1A, line), (0x1A, 6), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
+                         (0x1A, ryan), (0x1A, line), (0x1A, 6), call(41, 3),
+                         (0x1A, ryan), (0x1A, line), (0x1A, 17), call(41, 3), 0x33, words=words)
+        sexes = {5: 0, 6: 1, 9: 1, 17: 1}
+        result, _ = self.translate_calls(source, names={'ryan': {17}}, sexes=sexes)
+        themes = [args[1] for service, args in yields(result) if service == 54 and args[0] == nr.NARRATION_KEY]
+        self.assertEqual(themes, [1, 0, 1, 0])              # mixed crowd: yellow (no key); two boys: blue; Ryan: blue
+        self.assertEqual([args for service, args in yields(result) if service in (13, 15)][-1], (line, 17))
+        self.assertEqual(nr.bubble_theme([37], {37: -1}), 3)          # the offscreen group (King of Diss's TV): gray
+        self.assertEqual(nr.bubble_theme([], {}), 0)                  # no one listed: yellow
+        self.assertEqual(nr.bubble_theme([12], {}), 0)                # unknown: yellow
+
+    def test_a_title_card_shows_its_chosen_shs_picture(self):
+        # TITLE_CARD_BACKGROUNDS: (download id, script, PC) -> a shared-bank picture, or one per time of day (MODE_KEY).
+        from unittest.mock import patch
+        nr = self.nr
+        words = text_words('Title') + text_words('Sub')
+        title, sub = 0, len(text_words('Title'))
+        source = program((0x1A, title), (0x1A, sub), (0x1A, 3), (0x1A, 0), call(30, 4), 0x33, words=words)
+        pc = next(i.pc for i in source.instructions if i.opcode == 0x1f)
+        with patch.dict(nr.TITLE_CARD_BACKGROUNDS, {(9, 25001, pc): 1108}):
+            result, _ = self.translate_calls(source, episode_id=9)
+        self.assertEqual(yields(result), [(8, (title, sub, 1108, 0))])
+        with patch.dict(nr.TITLE_CARD_BACKGROUNDS, {(9, 25001, pc): {0: 1051, 4: 1053}}):
+            result, _ = self.translate_calls(source, episode_id=9)
+        self.assertEqual(yields(result, [4])[-1], (8, (title, sub, 1053, 0)))
+        self.assertEqual(yields(result, [2])[-1], (8, (title, sub, 1051, 0)))      # another mode: the first
+        result, _ = self.translate_calls(source, episode_id=10)                     # not listed: its own strip
+        self.assertEqual(yields(result, [1])[-1], (8, (title, sub, nr.BACKGROUND_BASE + nr.MODES * 3 + 1, 0)))
+        episode = nr.Episode(9, 'Test', {25001: source})
+        self.assertEqual(nr.used_scenes(episode, {(25001, pc)}), set())         # a listed card needs no strip
+
+    def test_no_transition_falls_just_before_a_game(self):
+        # SHS 16 shows its transition when the next panel ends: one queued just before a panel that a game follows
+        # would fall between them, so that engine-mode-11 call is dropped.
+        nr = self.nr
+        source = program((0x1A, 11), call(47, 1), (0x1A, 0), (0x1A, 6), call(40, 2), (0x1A, 0), (0x1A, 6),
+                         call(40, 2), 0x33, words=text_words('line'))
+        mode, then, after = [i.pc for i in source.instructions if i.opcode == 0x1f][0], \
+            source.instructions[5].pc, source.instructions[-1].pc
+        self.assertEqual(nr.game_transitions(source, set(), {then}), {mode})       # line, then the game
+        self.assertEqual(nr.game_transitions(source, set(), {after}), set())       # two lines first
+        kept, _ = self.translate_calls(source)
+        dropped, _ = self.translate_calls(source, quiet={mode})
+        self.assertIn((16, (20,)), yields(kept))
+        self.assertNotIn((16, (20,)), yields(dropped))
+
+    def test_the_sequence_games_show_their_own_description(self):
+        nr = self.nr
+        source = program(0x42, (0x29, 9999), 0x08, 0x33)
+        rewriter = Rewriter(source)
+        rewriter.replace_call(1, 'beat', 0, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
+        result = rewriter.finish()
+        game = next(args for service, args in yields(result) if service == 71)
+        self.assertEqual(game[1], rewriter.strings[nr.GAME_DESCRIPTIONS['beat boxing']])   # not the call's argument
+        self.assertEqual(nr.readable_families([['ill', 'chill', 'skill'], ['ill', 'pill'], ['cat', 'fat']]),
+                         [['chill', 'skill'], ['cat', 'fat']])                   # "Ill" reads as "lll"
+
+    def test_a_two_speaker_line_puts_the_first_named_speaker_on_the_left(self):
+        nr = self.nr
+        words = text_words('andy and laura') + text_words('hey!')
+        name, line = 0, len(text_words('andy and laura'))
+        source = program((0x1A, name), (0x1A, line), (0x1A, 26), (0x1A, 0), (0x1A, 27), (0x1A, 0), call(42, 6),
+                         0x33, words=words)
+        result, _ = self.translate_calls(source, names={'andy': {27}, 'laura': {26}})
+        self.assertEqual([args for service, args in yields(result) if service == 74][0], (27,))   # Andy
+        self.assertTrue(nr.name_order('andy and laura', 26, 27, {'andy': {27}, 'laura': {26}}))
+        self.assertFalse(nr.name_order('laura and andy', 26, 27, {'andy': {27}, 'laura': {26}}))
+        self.assertFalse(nr.name_order('both', 26, 27, {'andy': {27}, 'laura': {26}}))
+
+    def test_the_runtime_reads_the_duet_keys_the_translator_sets(self):
+        from types import SimpleNamespace
+        from exp_runtime.engine import EngineState
+        from exp_runtime.runtime import Session
+        from exp_runtime.shs import profile
+        self.assertEqual(profile.TRANSLATED_DUETS[self.nr.PACK_ID], self.nr.DUET_KEYS)
+        # The partner (Jacob, 12) goes on the other side from the first speaker, with its own art and expression.
+        engine = SimpleNamespace(numbers={}, character_art_variants={12: [500, 501, 502]}, number_key=EngineState.number_key)
+        line = SimpleNamespace(name='dialogue', details=dict(presentation_mode=1, visible_character_id=0))
+        session = SimpleNamespace(pending=line, engine=engine, resources=SimpleNamespace(
+            record=dict(pack_id=self.nr.PACK_ID), library=SimpleNamespace(game_id='shs')))
+        self.assertIsNone(Session.dialogue_duet(session))
+        partner, expression = self.nr.DUET_KEYS
+        engine.numbers[EngineState.number_key(0, partner)] = 12 + 1
+        engine.numbers[EngineState.number_key(0, expression)] = 2
+        duet = Session.dialogue_duet(session)
+        self.assertEqual((duet.character_id, duet.asset_id, duet.mode), (12, 502, 2))
+        session.resources.record = dict(pack_id=5)                  # a smartphone episode: never
+        self.assertIsNone(Session.dialogue_duet(session))
+
+    def test_the_runtime_reads_a_named_lines_colour_from_its_key(self):
+        # shs profile TRANSLATED_NARRATION_THEMES: a named line without a portrait (mode 3) takes the theme in the
+        # pack's global number (1 blue, 2 pink, 3 gray); 0, another mode or another pack keeps the line's own.
+        from types import SimpleNamespace
+        from exp_runtime.engine import EngineState
+        from exp_runtime.runtime import Session
+        from exp_runtime.shs import profile
+        key = profile.TRANSLATED_NARRATION_THEMES[self.nr.PACK_ID]
+        engine = SimpleNamespace(numbers={}, number_key=EngineState.number_key)
+        line = SimpleNamespace(name='dialogue', details=dict(presentation_mode=3))
+        session = SimpleNamespace(pending=line, engine=engine, resources=SimpleNamespace(
+            record=dict(pack_id=self.nr.PACK_ID), library=SimpleNamespace(game_id='shs')))
+        self.assertIsNone(Session.narration_theme(session))
+        for theme in (1, 2, 3):
+            engine.numbers[EngineState.number_key(0, key)] = theme
+            self.assertEqual(Session.narration_theme(session), theme)
+        engine.numbers[EngineState.number_key(0, key)] = 7
+        self.assertIsNone(Session.narration_theme(session))
+        engine.numbers[EngineState.number_key(0, key)] = 3
+        line.details = dict(presentation_mode=4)                    # the narrator keeps its gold box
+        self.assertIsNone(Session.narration_theme(session))
+        line.details = dict(presentation_mode=3)
+        session.resources.record = dict(pack_id=5)
+        self.assertIsNone(Session.narration_theme(session))
+
+    def test_a_line_three_speakers_say_is_named_without_portraits(self):
+        words = text_words('All') + text_words('Yup.')
+        line = len(text_words('All'))
+        source = program((0x1A, 0), (0x1A, line), (0x1A, 4), (0x1A, 0), (0x1A, 5), (0x1A, 0), (0x1A, 6), (0x1A, 0),
+                         call(42, 8), 0x33, words=words)
+        result, _ = self.translate_calls(source)
+        self.assertEqual(yields(result), [(15, (0, line))])
+
+    def test_a_line_spoken_by_no_one_on_stage_has_no_portrait(self):
+        # Dancing Queen's radio plays while Spike (17) stands by it: 42 lists him, but the radio speaks.
+        words = text_words('Radio') + text_words('{')
+        line = len(text_words('Radio'))
+        source = program((0x1A, 0), (0x1A, line), (0x1A, 17), (0x1A, 0), call(42, 4), 0x33, words=words)
+        result, _ = self.translate_calls(source)
+        self.assertEqual(yields(result), [(15, (0, line))])
 
     def test_named_line_with_the_characters_own_name_keeps_its_portrait(self):
         words = text_words('kel') + text_words('yo.')
@@ -157,12 +317,21 @@ class NewRulesShimTests(unittest.TestCase):
         result, _ = self.translate_calls(source, names={'kel': {6}})
         self.assertEqual(yields(result), [(13, (line, 6, 2))])
 
+    def test_music_indices_read_res_large_in_index_order(self):
+        # res_large.pud keeps the tracks as 283 + index (index 0 is the Java builds' 8004, which sits first there).
+        self.assertEqual([self.nr.music_resource(i) for i in (0, 1, 8, 14)], [283, 284, 291, 297])
+
     def test_music_plays_once_and_preload_mode_does_nothing(self):
         source = program((0x1A, 3), (0x1A, 1), call(7, 2), (0x1A, 3), (0x1A, 0), call(7, 2),
                          (0x1A, 4), (0x1A, 2), call(7, 2), 0x33)
         result, _ = self.translate_calls(source)
         base = self.nr.MUSIC_BASE
         self.assertEqual(yields(result), [(80, (base + 3, 0)), (80, (base + 4, 0))])
+        # the cues the smartphone versions play as sound effects go to 79, still New Rules' own rendered cue
+        source = program((0x1A, 6), (0x1A, 0), call(7, 2), (0x1A, 13), (0x1A, 2), call(7, 2),
+                         (0x1A, 12), (0x1A, 0), call(7, 2), 0x33)
+        result, _ = self.translate_calls(source)
+        self.assertEqual(yields(result), [(79, (base + 6,)), (79, (base + 13,)), (80, (base + 12, 0))])
         result, _ = self.translate_calls(source, music=False)
         self.assertEqual(yields(result), [])
 
@@ -358,6 +527,27 @@ class NewRulesShimTests(unittest.TestCase):
         import casing
         self.assertEqual(casing.headline_case('%s morning.'), '%s Morning.')
 
+    def test_a_moved_storys_script_jumps_move_with_it(self):
+        # Dancing Queen's scripts are 25101-25106; SHS starts at 25001, so a jump to 25102 goes to 25002.
+        source = program((0x1A, 25102), (0x1A, 0), call(34, 2), 0x33)
+        rewriter = Rewriter(source)
+        self.nr.script_jump(rewriter, rewriter.calls()[0][0], 100)
+        self.assertEqual(yields(rewriter.finish()), [(10, (25002, 0))])
+
+    def test_a_menu_that_leaves_no_score_is_not_an_arena_round(self):
+        # A timed choice (12 with an interval) whose function never sets B: Dancing Queen's "choose a move!".
+        source = program(0x33, 0x48, 0x4A, (0x1A, 0), (0x1A, 500), (0x1A, 0), call(12, 3), (0x1A, 0), (0x1A, 1),
+                         call(13, 2), call(14, 0), 0x22, 0x43, words=text_words('move'))
+        self.assertEqual(self.nr.word_games(source), {})
+
+    def test_dancing_queens_games_play_as_king_of_disss(self):
+        nr = self.nr
+        entries = nr.DANCING_QUEEN_ENTRIES
+        self.assertEqual({entries[e] for e in (32611, 31473, 28201)}, {'rhyme', 'rhythm', 'faces'})
+        for entry in (28903, 30244):                    # dance steps and DJ Fever: word games of their own words
+            banner, good, bad = nr.WORDLESS_GAMES[entries[entry]]
+            self.assertGreaterEqual((len(good), len(bad)), (2, 3))
+
     def test_library_reads_read_zero_once_the_library_is_gone(self):
         source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
         self.assertEqual(yields(self.nr.expand_streams(source, library_data=29396)), [(30, (0,))])
@@ -374,7 +564,7 @@ class NewRulesShimTests(unittest.TestCase):
         answers = [0, 0, -1, 0]                     # the rounds' rhymes are at 0, 1, 0, 1
         events = yields(result, [r for answer in answers for r in (32757, answer, 0)], limit=60)
         choices = [args for service, args in events if service == 1]
-        jingles = [args[0] - self.nr.MUSIC_BASE for service, args in events if service == 80]
+        jingles = [args[0] - self.nr.MUSIC_BASE for service, args in events if service == 79]
         self.assertEqual((len(choices), choices[0][3], choices[0][4]), (4, self.nr.SPEED_DISS_MS, -1))
         self.assertEqual(jingles, [13, 1, 1, 1])                    # right, then wrong three times
         self.assertEqual(events[-1], (30, (1,)))
@@ -488,6 +678,29 @@ class CasingTests(unittest.TestCase):
                          "A yeti from `Nepal`.")
         self.assertEqual(casing.apply('go to our facebook group at www.facebook.com/shs.', {'facebook': 'facebook'}),
                          'Go to our Facebook group at www.facebook.com/shs.')
+        # Dancing Queen: a banner's text after a blank line starts a sentence; its Rob is a name.
+        self.assertEqual(casing.apply("`dj fever`\n\nkeep the `music` flowing! get fever man for double points!",
+                                      dictionary),
+                         "`DJ Fever`\n\nKeep the `music` flowing! Get Fever Man for double points!")
+        self.assertEqual(casing.apply('a deal with rob.', {'rob': 'rob'}), 'A deal with Rob.')
+        # The Xbox 360 prototype's King of Diss casing (owner's picks): titles across emphasis marks, which stay.
+        self.assertEqual(casing.apply("back from the beatdown of `'06`. the duke of dissing, the regal rhymer... "
+                                      "our next round... `team battle`! you just earned the mega-diss `yo' mama`!",
+                                      dictionary),
+                         "Back from The Beatdown of `'06`. The Duke of Dissing, The Regal Rhymer... "
+                         "Our next round... `Team Battle`! You just earned the mega-diss `Yo' Mama`!")
+        # Only where the prototype capitalizes them: its other team battles and yo' mamas stay lowercase.
+        self.assertEqual(casing.apply("let the `team battle` begin! great yo' mama jokes!", dictionary),
+                         "Let the `team battle` begin! Great yo' mama jokes!")
+        winter = {'winter': 'Winter'}                         # as the paired stories teach it
+        self.assertEqual(casing.apply('it feels like winter lasted forever. vote for winter queen! alaskan woods.',
+                                      winter),
+                         'It feels like winter lasted forever. Vote for Winter Queen! Alaskan woods.')
+        # A `$KEY` takes the spelling the story registers it with everywhere (SHS substitutes case-sensitively).
+        names = program(0x33, words=text_words('$Kenji'))
+        survey = program(0x33, words=text_words('$kenji |Paula'))
+        keys = casing.unify_keys({25001: names, 25002: survey})
+        self.assertEqual([t for _, t in casing.strings(replace(survey, main_words=keys[25002]))], ['$Kenji |Paula'])
         # A line found inside a twin's that has a name key there ("$ZOE") writes the name, not the key.
         source = program(0x33, words=text_words('zoe tries to catch sam, but...'))
         for twin in ('$ZOE tries to catch Sam, but...', '$SUPERZOE tries to catch Sam, but...'):
@@ -507,6 +720,18 @@ class MidiTests(unittest.TestCase):
         self.assertEqual(song.notes, [(0.0, 0.5, 0, 60, 100)])
         self.assertEqual(song.controls, [(0.0, 0, 'program', 5)])
         self.assertAlmostEqual(song.duration, 0.5)
+
+    @unittest.skipUnless(shutil.which('java'), 'render_java needs a JDK on PATH')
+    def test_java_synthesizer_renders_trims_and_normalises(self):
+        import numpy as np
+        import midi_render
+        track = bytes([0x00, 0xC0, 0x05, 0x00, 0x90, 60, 100, 0x60, 0x80, 60, 0, 0x00, 0xFF, 0x2F, 0x00])
+        data = (b'MThd' + struct.pack('>IHHH', 6, 0, 1, 96) + b'MTrk' + struct.pack('>I', len(track)) + track)
+        once = midi_render.render_java(data)
+        self.assertGreater(len(once), midi_render.RATE // 2)                 # the note, then its release and reverb
+        self.assertLess(len(once), int((0.5 + midi_render.JAVA_TAIL) * midi_render.RATE))   # silence cut
+        self.assertAlmostEqual(float(np.abs(once).max()), 0.89, places=4)
+        self.assertEqual(len(midi_render.render_java(data, loop=True)), midi_render.RATE // 2)
 
 
 if __name__ == '__main__':

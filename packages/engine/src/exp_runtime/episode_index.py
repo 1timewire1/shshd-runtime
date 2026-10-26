@@ -103,8 +103,8 @@ def same_story(a, b):
     "Getting Over Howard" (standard); MTX_The_Storm_Part_2.exp's "...Part Two" versus "...Part 2"; MTX_SNG_The_
     Floating_Isle.exp's "The Super New Girl 2" versus "The Floating Isle" -- all three shown as duplicate rows
     before this checked the filename)."""
-    if a['id'] == b['id']:
-        return False
+    if a['id'] == b['id'] or a.get('legacy') != b.get('legacy'):
+        return False            # shshd-runtime: a translation from another game is never its smartphone twin
     same_slot = (a['pack_id'], a['episode_id']) == (b['pack_id'], b['episode_id'])
     if same_slot and a['name'].casefold() == b['name'].casefold():
         return True
@@ -247,9 +247,10 @@ def _range(records):
 
 
 def sort_key(record):
-    """Season packs first in numeric order; specials and one-off packs (ids below 100) after them."""
+    """Season packs first in numeric order; specials and one-off packs (ids below 100) after them. A translated
+    episode's `order` (content.legacy_fields) stands in for its id."""
     pack = record['pack_id']
-    return (pack if pack >= 100 else 10 ** 6 + pack, record['episode_id'], record['id'])
+    return (pack if pack >= 100 else 10 ** 6 + pack, record.get('order', record['episode_id']), record['id'])
 
 
 def episode_category(record, variant, catalog, *, mega_label, novel_label, bundled):
@@ -259,6 +260,8 @@ def episode_category(record, variant, catalog, *, mega_label, novel_label, bundl
     Season 3 episodes under "Season 1"; a "Season N" that disagrees with the pack's own season is not trusted.
     """
     from .episode_catalog import basename
+    if record.get('category'):
+        return record['category']        # shshd-runtime: set on import (content.legacy_fields)
     other = STANDARD if variant == HD else HD
     pack_season = season_label(record)
     for source in (variant, other):

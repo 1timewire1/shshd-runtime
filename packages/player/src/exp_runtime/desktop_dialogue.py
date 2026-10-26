@@ -6,7 +6,7 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .content import ContentError
-from .dialogue import BODY_FONT, NOTE_CODE
+from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE
 from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE, NoticeMotion, hd_letter_state, notice_lifetime
 from .fonts import TextStyle
 from .games import GAMES
@@ -35,6 +35,10 @@ ANDROID_MASK_SIZE = (128, 150)
 
 
 class DialogueRenderer:
+    portrait_factor = 1             # every portrait's scale on this line (a two-speaker line's: DUET_RING_SCALE)
+    # shshd-runtime: (animation, partner, portrait factor) of the line last drawn, and of the one before it, whose
+    # portraits zoom out at their own size under the next line (a two-speaker line's partner with its speaker).
+    _line = _leaving = None
     gear_pressed = False    # set by Desktop while the pause gear is held
     def __init__(self, resources, text_renderer, image_loader, scale=1):
         self.resources = resources
@@ -729,11 +733,13 @@ class DialogueRenderer:
         self.text.draw_layout(self.canvas, self.FOOTER_FONT, layout, (63 + (252 - layout.width) / 2) * k,
                               460 * k, scale=k)
 
-    def draw_portrait(self, portrait, scale, part='all', clip=None, alpha=255):
+    def draw_portrait(self, portrait, scale, part='all', clip=None, alpha=255, factor=None):
         """`part` is 'rings', 'art' or both ('all'). `clip` is a polygon in
-        layout units that the HD ring is not drawn inside (the bubble)."""
+        layout units that the HD ring is not drawn inside (the bubble). `factor`: the portrait's size on its line
+        (shshd-runtime: a leaving two-speaker line's), else this line's."""
         if portrait is None or scale <= 0:
             return
+        scale *= self.portrait_factor if factor is None else factor
         rect = self._portrait_rect(portrait.mode)
         cx, cy = rect.center
         cy -= 5  # FUN_000aaa40 uses 485-y when converting to GL.
@@ -1148,6 +1154,25 @@ class DialogueRenderer:
         page = self.cached_page
         if page is None:
             raise ContentError('Dialogue requires the imported APK layout and fonts')
+        # shshd-runtime: a translated pack's two-speaker line (Session.dialogue_duet): the box the page chose (gray, or
+        # the speakers' shared colour), the partner's portrait on the other side.
+        duet = session.dialogue_duet() if hasattr(session, 'dialogue_duet') else None
+        theme = page.theme if page.theme is not None else details['theme']
+        self.portrait_factor = DUET_RING_SCALE if duet is not None else 1
+        motion = session.engine.dialogue_animation
+        if self._line is None or self._line[0] is not motion:
+            self._leaving = self._line
+        self._line = (motion, duet, self.portrait_factor)
+        # The last line's portraits leave at the size they had there: its speaker (motion.previous) and, from a
+        # two-speaker line, its partner too, unless this line keeps that partner. A speaker who goes on alone stays;
+        # only the partner zooms out.
+        leaving_factor, leaving = self.portrait_factor, None
+        if self._leaving is not None and not motion.page_turn:
+            leaving_factor = self._leaving[2]
+            partner = self._leaving[1]
+            if (partner is not None and (motion.previous is not None or not motion.changed)
+                    and (duet is None or duet.character_id != partner.character_id)):
+                leaving = partner
         self.wide.fill((0, 0, 0, 0))
         background = self.image(session.engine.panel.background_id)
         self.pending_background = background
@@ -1177,7 +1202,7 @@ class DialogueRenderer:
         elif angle or zoom != 1:
             box = page.box
             layer = pygame.Surface(((box.width + 20) * k, (box.height + 20) * k), pygame.SRCALPHA).convert_alpha()
-            self.box(layer, Rect(10, 10, box.width, box.height), details['theme'], alpha=self.box_alpha(), scale=k)
+            self.box(layer, Rect(10, 10, box.width, box.height), theme, alpha=self.box_alpha(), scale=k)
             layer = pygame.transform.rotozoom(layer, -angle, zoom)
             self.canvas.blit(layer, layer.get_rect(center=(box.center[0] * k, box.center[1] * k)))
         else:
@@ -1188,15 +1213,17 @@ class DialogueRenderer:
             box = motion.box_rect(page.box, self._portrait_rect(mode) if mode else None, previous)
             m = self.margin / k
             self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
-                     details['theme'], alpha=self.box_alpha(), scale=k)
+                     theme, alpha=self.box_alpha(), scale=k)
         # HD draws the portrait's rings under the body text: the third line's
         # top edge crosses the ring's bottom arc (white on the white box, so
         # invisible there), and drawing the ring over it clipped the glyphs.
         # The ring is clipped once the box has finished its entrance (`dialog-bubble-grow` completing calls
         # clipPortraitHousingAgainstBubble; for a shake, when its rotation ends): `housing_clipped`.
         bubble = self.housing_polygon(page.box) if motion.housing_clipped else None
-        self.draw_portrait(motion.previous, motion.previous_scale, 'rings', bubble)
+        self.draw_portrait(motion.previous, motion.previous_scale, 'rings', bubble, factor=leaving_factor)
+        self.draw_portrait(leaving, motion.previous_scale, 'rings', bubble, factor=leaving_factor)
         self.draw_portrait(motion.portrait, motion.portrait_scale, 'rings', bubble)
+        self.draw_portrait(duet, motion.portrait_scale, 'rings', bubble)
         self.draw_notice(session.engine)
         # HD's song notes: '{' drawn as pack 155's note in the theme's color (dialogue.NOTE_FRAMES), at 2 px a unit.
         notes = ({NOTE_CODE: self.note_image(page.note_frame, getattr(page, 'note_tint', None))}
@@ -1214,12 +1241,14 @@ class DialogueRenderer:
         hd = self.hd_chrome()
         if not hd:
             self.draw_relationship(motion)
-        self.draw_portrait(motion.previous, motion.previous_scale, 'art')
+        self.draw_portrait(motion.previous, motion.previous_scale, 'art', factor=leaving_factor)
+        self.draw_portrait(leaving, motion.previous_scale, 'art', factor=leaving_factor)
         self.draw_emotion(motion)
         self.draw_expression_art(motion)
+        self.draw_portrait(duet, motion.portrait_scale, 'art')
         if hd:
             self.draw_relationship(motion)
-        self.draw_continue(session, page, details['theme'])
+        self.draw_continue(session, page, theme)
         # Layout 18's footer. Runtime save/load affordances remain host UI
         # until the original menu callbacks are implemented.
         # The bar, gear and hint (HD shows string 36, `IMG_0069`) are drawn by

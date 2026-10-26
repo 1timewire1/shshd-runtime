@@ -4,6 +4,38 @@
 
 ### Added
 
+- **`tools/translate x360`: the cancelled Xbox 360 prototype's two new stories as creator projects.** It reads the
+  May 2009 prototype's `data.pak` and walks its Lua scripts (`lua_subset.py`). *Day of Diss* is the King of Diss
+  prequel: a hub to talk to Kim, Hector, Ryan or Nicole, then Hector's diss battle intro. The *Puzzle Test* is two
+  short scenes. Lines, choices with their enable conditions, story variables, objectives (as notices) and the hub's
+  gating carry over; the 3D staging doesn't. The cast wears its New Rules looks, as the King of Diss translation does.
+  Each story is written as an editable `.expproj` and an `.exp` (pack 31400), and `x360_check.py` plays one down many
+  random answer paths. The shs profile gives pack 31400 the New Rules translations' hi-res portrait set and frame
+  backdrop.
+- **Episodes translated from other SHS games get their own tag and category.** An episode titled
+  "... (SHSNR)" (a New Rules translation) imports without the tag in its title, files itself under New Rules, and
+  shows an "NR" tag in both episode pickers: New Rules' blue in the list view, blue text on the usual dark plate in
+  the grid. It is never hidden as a copy of its smartphone version. The list view's "SD" tag is now gray. Dancing
+  Queen, New Rules' other built-in story, is listed right after King of Diss (shs profile `LEGACY_GAMES` order).
+- **Translated New Rules episodes, owner's review of 2026-10-25** (`tools/translate`): title cards show SHS's own
+  location pictures (with their HD copies) instead of New Rules' stretched strips, chosen card by card; a character
+  telling a story off stage (King of Diss's Ryan and Nicole) is a named line in their own colour instead of over
+  someone else's portrait; lines from a TV or a doorbell take the colour New Rules gives their bubble (gray), and a
+  crowd of mixed voices keeps the yellow box, as New Rules' banner is; a
+  two-speaker line puts the first-named speaker on the left; no transition falls just before a game or the face
+  picker; beat boxing and the dance steps describe themselves instead of repeating the story's first line; "Ill"
+  leaves the speed disses. King of Diss takes seven capitals from the Xbox 360 prototype's copy of the story (its
+  epithets, "Team Battle", "The Beatdown of '06", "Yo' Mama", "Alaskan", and a lowercase "winter").
+- **The skip prompt offers each outcome a word quiz has.** A quiz whose story goes more than two ways by score (Football
+  Star's movie date: 0-3, 4-5, 6 or more; Local Ghosts, Spud the Stud, Battle of the Schools: Guy, Best Party Ever)
+  offers each range, best first, and finishes the quiz with that score. The ranges are found when the prompt opens,
+  by playing the quiz's next few scenes on throwaway copies for each score. A quiz whose score changes nothing offers
+  Skip; the rest keep Win and Lose. In the HD player, the "NR" tag also marks the Hi-Res Portraits switch.
+- **A short buffer against double clicks.** A tap or click in a dialogue line's (or page's) first quarter second is
+  ignored, so the second click of a double click no longer finishes or skips the next line.
+- **Named lines without a portrait can take a colour in translated episodes.** The translator can mark such a line
+  blue, pink or gray (shs profile `TRANSLATED_NARRATION_THEMES`), as New Rules shows an off-stage character in their
+  own colour and a TV or radio in gray; unmarked lines keep the yellow box.
 - **Skip Upsell Intros** (SHS, Options > General on the main menu, and the older menu's Cheats page;
   [#8](https://github.com/1timewire1/shshd-runtime/issues/8)). Thirty-three episodes open with store plugs before
   their story: "Want to catch up? Grab the Season 1 Set...", the Story Vote Ticket and genre votes, the Season 2
@@ -27,7 +59,31 @@
   streams written out, its speed disses played as the Lite builds play theirs (timed rhyme choices, from the
   minigame library's own rhyme pairs), its rhythm and beat-boxing games as word games and its face picker as SHS's
   portrait picker; and the Lite Java builds' condensed retelling, whose text table becomes data, with its own
-  speed-diss choices.
+  speed-diss choices. *Dancing Queen*, New Rules' other built-in story, translates too (`dancing-queen`). Its
+  minigames play as King of Diss's do, with DJ Fever and its dance steps as word games, so every New Rules
+  translation plays its games the same way. Its scripts move to where SHS starts an episode, and so do the scripts
+  its jumps name. The whole New Rules set (50 stories) now translates and plays to its end. A line New Rules
+  shows under another name ("Girl", "Boy", "Announcer") now keeps that name over the character's portrait and
+  bubble, where it used to show no portrait. Objects, sounds, unseen voices and crowds ("Radio", "Boom box",
+  "Crowd") stay named lines without a portrait.
+- **Two-speaker lines in translated New Rules episodes** ("Both", "Andy and Laura", "Dexter and Spud"). They show
+  the gray dialogue box with a portrait on each side at 80% size, the player's on the left when they are one of the
+  pair, and the name centered between them, shrunk if needed to fit two lines at most. Two speakers of one
+  colour give the box and title that colour; otherwise each name in the title takes its speaker's colour. Lines
+  with three or more speakers stay named lines without portraits. The translator records the second speaker in two
+  global numbers around the line, and the player reads them for that pack only (shs profile `TRANSLATED_DUETS`), so
+  an app without this shows the first speaker alone.
+- **Translated New Rules cues sound as the game wrote them.** Music cues 0 and 2–8 now render the right MIDI: New
+  Rules' own pack keeps its tracks in cue order, not the Java builds' track order the translator assumed. The six
+  short cues the smartphone versions play as sound effects (the right/wrong jingles and four stings) now play as
+  sound effects too, over the music and at the sound volume, still with New Rules' own sounds. The answer hints
+  read the jingles either way. The translator now renders the MIDI through Java's built-in synthesizer, as the J2ME
+  emulator plays the Java builds, with its reverb and chorus (`--synth java`, the default); the SF2 mixer stays as
+  `--synth sf2`. The timed word game plays New Rules' own right/wrong jingles in these episodes instead of SHS's
+  (shs profile `TRANSLATED_WORD_GAME_SOUNDS`; an episode without them keeps SHS's).
+- **Each translated game keeps its own names.** A name typed in a translated New Rules story (`$Emily`, `$Date`...)
+  goes in that game's own table (player.json `name_sets`, shs profile `TRANSLATED_NAME_SETS`), not the one the
+  smartphone stories share, where Homecoming Queen writes the same keys.
   `tools/test_creator_native.py --exp FILE` runs any `.exp` in the original interpreters; the iOS builds' integer
   division helper is now stood in for.
 - **Song lines show SHS HD's music notes** (SHS with the HD bundle). HD's dialogue fonts draw `{` as a music note in
@@ -48,10 +104,13 @@
   where SHS's own slots leave one side empty; other episodes keep the native slots. The orange frame New Rules puts
   around its scene borders the strip too. Its sides fall outside the
   view, as on New Rules' own screen, so its top and bottom bars show.
-- **Hi-Res Portraits** (SHS, Options > General on the main menu; on by default). Translated New Rules episodes now
+- **Hi-Res Portraits** (SHS, Options > General on the main menu, and on the in-episode menu's General page in a
+  translated New Rules episode; on by default). Translated New Rules episodes now
   carry two portrait sets: the WinMo busts, doubled, and the X1i build's redrawn ones, tripled to HD size. With the
   switch on the player shows the X1i set at the height its WinMo portrait fills, so either set sits the same in the
-  ring, without the HD art fill on top; off, it shows the WinMo set as before. The switch only appears when the library holds such an episode (pack 31300). The X1i portraits had been
+  ring, without the HD art fill on top; off, it shows the WinMo set as before. Flipping it mid-episode swaps the
+  portraits on screen at once, and a save always loads with the current set (saves name only the story's own
+  portraits). The switch only appears when the library holds such an episode (pack 31300). The X1i portraits had been
   missing their torsos: the X1i copy of New Rules' clothing pack adds a group before the others, so every shirt
   index pointed one group too early. The translator now shifts those indices, which puts back the suits, collars,
   jackets and necklaces (49 looks use that pack).
@@ -113,6 +172,9 @@
 
 ### Fixed
 
+- **A two-speaker line's portraits leave together.** Past a translated line with a portrait on each side, both
+  portraits now shrink away at their two-speaker size; before, the partner vanished and the speaker jumped back to full
+  size first. A speaker who goes on alone stays, and only the partner leaves.
 - **A fade into a mini-game no longer stays black under the skip prompt.** With Skip mini-games on, the player held
   every clock while it asked, including a scene transition still fading in, so the prompt waited under a black
   screen (King of Diss's "practice dissing" fades straight into a word game). The fade now finishes; the game waits.

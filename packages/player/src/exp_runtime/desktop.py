@@ -50,6 +50,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
+from .choice_hints import word_game_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -84,10 +85,30 @@ INK = (245, 241, 233)
 MUTED = (183, 187, 198)
 ACCENT = (247, 190, 94)
 PANEL = (23, 29, 45)
+# shshd-runtime: a tap on a dialogue line or page in its first CONTINUE_GUARD_MS is ignored, so a double click or tap
+# that advanced the last line does not also finish (or skip) the next one (owner, 2026-10-25; this player's own).
+CONTINUE_GUARD_MS = 250
 
 
 # Links a browser can open (an App Store link's itms:// becomes its web page in _offer_link).
 WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
+
+
+def word_game_options(outcomes):
+    """(option labels, the score each finishes the quiz with) for the skip prompt, best first, then "Play" (labels
+    only): Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, the score ranges for more
+    ("Score 6 or more", "Score 4 to 5", "Score 0 to 3"). The best outcome scores the most a quiz can, as Win always did;
+    any other its lowest score."""
+    if outcomes is None or len(outcomes) == 2:
+        return ('Win', 'Lose', 'Play'), (32767, 0)
+    if len(outcomes) == 1:
+        return ('Skip', 'Play'), (32767,)
+    labels, scores = [], []
+    for index, (low, high) in enumerate(reversed(outcomes)):
+        labels.append(f'Score {low} or more' if high is None else f'Score {low}' if low == high
+                      else f'Score {low} to {high}')
+        scores.append(32767 if index == 0 else low)
+    return (*labels, 'Play'), tuple(scores)
 
 
 class _PromptEngine:
@@ -152,6 +173,7 @@ class Desktop:
     _disable_choice_timer = False
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
+    hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     host_prompt = None
     minigame_played = None
     ad_asked = None
@@ -737,8 +759,16 @@ class Desktop:
         if (prompt is None and self.skip_minigames and action is not None
                 and action.name in ('football', 'word_grid', 'word_game')
                 and self.minigame_played is not action and not self.error):
-            prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action), self.SKIP_OPTIONS,
-                                       lambda index: self._resolve_minigame(action, index))
+            if action.name == 'word_game':
+                # shshd-runtime: a quiz offers each outcome its story has (choice_hints.word_game_outcomes): most have
+                # two, some three (Football Star's movie date: 0-3, 4-5, 6 or more), a vote package's one.
+                outcomes = word_game_outcomes(self.session)
+                options, scores = word_game_options(outcomes)
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, outcomes),
+                                           options, lambda index: self._resolve_word_game(action, scores, index))
+            else:
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
+                                           self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
         return prompt
 
     def _open_prompt(self, action, title, text, options, resolve):
@@ -776,9 +806,9 @@ class Desktop:
         if self.session.pending is action:
             self._answer(index)
 
-    def _minigame_summary(self, action):
-        """What the game about to start holds, for the skip prompt: football's half and starting score, the grid's
-        target and its puzzles' words."""
+    def _minigame_summary(self, action, outcomes=None):
+        """What the game about to start holds, for the skip prompt: football's half and starting score, the quiz's
+        outcomes (word_game_outcomes), the grid's target and its puzzles' words."""
         engine = self.session.engine
         if action.name == 'football':
             game = engine.football
@@ -794,8 +824,13 @@ class Desktop:
         if action.name == 'word_game':
             game = engine.word_game
             seconds = round(game.duration_ms / 1000)
-            return (f'Word quiz. Pick the right word, again and again, for {seconds} seconds. Win scores the most a '
-                    f'quiz can; Lose scores nothing.')
+            quiz = f'Word quiz. Pick the right word, again and again, for {seconds} seconds.'
+            if outcomes is None or len(outcomes) == 2:
+                passed = f' (a score of {outcomes[1][0]} or more)' if outcomes else ''
+                return f'{quiz} Win passes it{passed}; Lose scores nothing.'
+            if len(outcomes) == 1:
+                return f'{quiz} Its score changes nothing that follows.'
+            return f'{quiz} Its story goes {len(outcomes)} ways, by score.'
         game = engine.word_grid
         words = []
         for problem in game.problems:
@@ -805,6 +840,15 @@ class Desktop:
         shown = ', '.join(words[:8]) + (' ...' if len(words) > 8 else '')
         seconds = round(game.remaining_ms / 1000)
         return f'Word game. Score {game.target} in {seconds} seconds. Words: {shown}.'
+
+    def _resolve_word_game(self, action, scores, index):
+        """The quiz's skip prompt: an outcome finishes it with that score (word_game_options), Play starts it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(scores):
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_word_game(scores[index]))
 
     def _resolve_minigame(self, action, index):
         """The skip prompt's answer: Win / Lose finish the game with that result, Play starts it."""
@@ -1254,6 +1298,31 @@ class Desktop:
     def backdrop_switch(self):
         """Whether the "SHS HD Backdrop" switch has a collage to show."""
         return self.backdrop_collage() is not None
+
+    def hires_switch(self):
+        """shshd-runtime: whether this episode has a second, hi-res portrait set (the game profile's
+        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        packs = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_PORTRAIT_ART', {})
+        return record.get('pack_id') in packs
+
+    def set_hires_portraits(self, enabled):
+        """shshd-runtime: the "Hi-Res Portraits" switch, from either Options page. The library reads the other set
+        from the next portrait drawn (EpisodeResources._hires_portrait), and every cached portrait is dropped, so the
+        story shows it at once: both sets fill the ring alike, so nothing else moves. Saves name the standard
+        portraits, so a story always loads with the current set."""
+        self.hires_portraits = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.hires_portraits = enabled
+        self.images.clear()
+        cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
+                  CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
+        if HdWordRenderer is not None:
+            cached.append(HdWordRenderer.portrait_image)
+        for method in cached:
+            method.cache_clear()
 
     def _present(self):
         engine = self.session.engine
@@ -1718,7 +1787,8 @@ class Desktop:
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}))
+                    **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
+                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}))
 
     def pause_box(self):
         if self.pause_hd.available() and not self.error:
@@ -1866,6 +1936,8 @@ class Desktop:
                 self.disable_choice_timer = not self.disable_choice_timer
             elif command[1] == 'hd_backdrop':
                 self.hd_backdrop = not self.hd_backdrop
+            elif command[1] == 'hires_portraits':
+                self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
                 if self.vibration_enabled and pygame.supports_vibration():
@@ -1959,11 +2031,16 @@ class Desktop:
                 self._answer(command[1])
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
                                                                      'survey_confirmation'):
-                if not self.autoplay:           # Autoplay advances these itself (`_tick_autoplay`)
+                if not self.autoplay and not self._continue_guarded(action):   # Autoplay: `_tick_autoplay`
                     self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
         self._sync_text_input()
+
+    def _continue_guarded(self, action):
+        """Whether a continue tap lands in a dialogue line's or page's first CONTINUE_GUARD_MS (ignored)."""
+        motion = self.session.engine.dialogue_animation if action.name == 'dialogue' else None
+        return motion is not None and motion.elapsed_ms < CONTINUE_GUARD_MS
 
     def _choice_busy(self, action):
         """Whether `action`'s choice is closing after a pick, or held faded out behind a link's prompt."""

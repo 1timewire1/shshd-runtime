@@ -214,7 +214,7 @@ class Application:
         """The "Hi-Res Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
         self.library.hires_portraits = self.state.hires_portraits
         if self.game:
-            self.game.images.clear()
+            self.game.set_hires_portraits(self.state.hires_portraits)
 
     def set_update_check(self, enabled):
         """The launch update check on or off (settings.json), from the SD Options or the HD General page."""
@@ -884,7 +884,8 @@ class Application:
             # A fresh renderer per episode prevents local image IDs from
             # accidentally reusing the previous episode's cached artwork.
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
-                                names=self.state.names, vibration_enabled=self.state.vibration,
+                                names=self.state.names_for(session.resources.record),
+                                vibration_enabled=self.state.vibration,
                                 episode_title=self.state.title(session.resources.record), on_menu_page=self.show)
         self.stop_menu_music()
         self.game.episode_title = self.state.title(self.game.session.resources.record)
@@ -898,6 +899,7 @@ class Application:
         self.game.autoplay = self.state.autoplay
         self.game.disable_choice_timer = self.state.disable_choice_timer
         self.game.hd_backdrop = self.state.hd_backdrop
+        self.game.hires_portraits = self.state.hires_portraits
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
         self.game.warp_unlocked = (self.state.warp_unlocked
                                    or self.game.session.resources.record.get('builtin') != 'football-star')
@@ -990,6 +992,7 @@ class Application:
         self.state.autoplay = self.game.autoplay
         self.state.disable_choice_timer = self.game.disable_choice_timer
         self.state.hd_backdrop = self.game.hd_backdrop
+        self.state.hires_portraits = self.game.hires_portraits
         self.state.music_volume = round(self.game.music_volume * 100)
         self.state.sound_volume = round(self.game.sound_volume * 100)
         self.state.persist()

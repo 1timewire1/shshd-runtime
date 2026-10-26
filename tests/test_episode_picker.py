@@ -86,6 +86,21 @@ class ModelTests(unittest.TestCase):
         self.assertTrue(model.is_standard(lone))
         self.assertEqual(model.position[lone['id']], (0, 1))
 
+    def test_a_translated_episode_shows_its_games_tag_beside_its_twin(self):
+        # shs profile LEGACY_GAMES: a New Rules translation (tagged on import) shows "NR" in New Rules' blue in place
+        # of "SD", under its own category, and beside its smartphone twin rather than hidden as its copy.
+        from exp_runtime.shs.profile import LEGACY_GAMES
+        hd = record(1, 101, 1, 'Making Some Dough', variant='hd')
+        lone = record(3, 101, 2, 'Only Standard', variant='standard')
+        translated = dict(record(4, 31300, 2, 'Making Some Dough', variant='standard'), legacy='SHSNR',
+                          category='New Rules')
+        catalog = EpisodeCatalog([CatalogEntry(101, 1, 'Making Some Dough', 'SEASON 1', '', 'hd')])
+        model = PickerModel(library_with(self.root, [hd, lone, translated], catalog, previews={}))
+        self.assertIn(translated['id'], {r['id'] for r in model.records})
+        self.assertEqual([model.mark(r) for r in (hd, lone, translated)], [None, 'SD', 'NR'])
+        self.assertEqual([model.mark_color(r) for r in (lone, translated)], [None, LEGACY_GAMES['SHSNR']['color']])
+        self.assertIn('New Rules', [row.title for row in model.rows])
+
     def test_chronological_mode_groups_by_year_instead_of_category(self):
         early = record(1, 101, 1, 'Early One', variant='hd')
         later = record(2, 201, 1, 'Later One', variant='hd')

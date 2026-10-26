@@ -36,10 +36,12 @@ def observe_effects(session, preview, action, effects):
         effects['score_notice'] = effects.get('score_notice', 0) + SCORE_NOTICE_VALUES[action.details['text']]
     elif action.name == 'request_audio' and action.request.yield_id in (79, 80):
         profile = GAMES[session.engine.game_key]
+        feedback = 0
         if action.request.yield_id == 79:
             feedback = profile.CHOICE_FEEDBACK_SOUNDS.get(action.details['asset_id'], 0)
-        else:
-            # shshd-runtime: a translated New Rules episode's right/wrong jingles (shs/profile.py).
+        if not feedback:
+            # shshd-runtime: a translated New Rules episode's right/wrong jingles (shs/profile.py), sound effects
+            # (79) since 2026-10-25 and music (80) in earlier translations.
             record = getattr(getattr(session, 'resources', None), 'record', None) or {}
             cues = getattr(profile, 'TRANSLATED_FEEDBACK_MUSIC', {}).get(record.get('pack_id'), {})
             feedback = cues.get(action.details['asset_id'], 0)
@@ -181,6 +183,68 @@ def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
     has_gain = any(hint.kind == 'gain' for hint in hints)
     return tuple(ChoiceHint('unknown') if hint.kind == 'no_gain' and not has_gain else hint
                  for hint in hints)
+
+
+WORD_GAME_SCORES = 16           # word_game_outcomes tries scores 0..15: a 20 s quiz deals about seven words
+
+
+def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
+    """shshd-runtime: the pending word quiz's outcomes, as [(lowest score, highest score or None for "or more")] in
+    score order, or None when the previews cannot tell. Each score from 0 to WORD_GAME_SCORES - 1 finishes the quiz
+    on an isolated runtime copy, which plays on through its next panels to its next decision; neighbouring scores
+    whose stories are the same are one outcome. Most quizzes have two (passed at 6), some three (Football Star's
+    movie date: 0-3, 4-5, 6 or more), the vote packages one. For the skip prompt (desktop.Desktop._host_prompt)."""
+    if not session.pending or session.pending.name != 'word_game' or session.engine.word_game is None:
+        return None
+
+    def story(score):
+        preview = deepcopy(session, {id(session.resources): session.resources,
+                                     id(session.vm.program): session.vm.program})
+        preview.ephemeral = True
+        deadline = preview.vm.steps_executed + max_steps
+        game = preview.engine.word_game
+        game.score = score                                  # as Session.skip_minigame finishes it
+        game.round = max(game.round, score + 1)
+        shown = []
+        try:
+            preview._complete_choice(game.score)            # a queued transition finishes in the loop below
+            preview.engine.word_game = None
+            for _ in range(max_panels + 1):
+                if preview.transitioning and preview.engine.scene_transition.phase == 4:
+                    preview._finish_transition(advance=False)
+                action = preview.advance(max_steps=deadline - preview.vm.steps_executed, max_events=2000)
+                if preview.transitioning and preview.engine.scene_transition.phase == 3:
+                    preview.engine.scene_transition.clear()
+                details = action.details or {}
+                shown.append((action.name, preview.scene, str(details.get('text') or details.get('title') or '')))
+                if action.name in DECISIONS or action.name not in PANELS:
+                    break
+                if action.name == 'vm_pause':
+                    preview.vm.continue_after_pause()
+                    preview.pending = None
+                elif action.name == 'loading':
+                    if preview.engine.loading.blocking:
+                        preview.vm.resume(0)
+                    preview.engine.loading = preview.pending = None
+                elif action.name == 'survey_confirmation':
+                    preview._complete_survey(action)
+                else:
+                    preview._complete_panel()
+                    preview.engine.title_screen = preview.engine.message_panel = None
+        except (ContentError, VMError, OSError, ValueError, AttributeError):
+            return None
+        return tuple(shown)
+
+    groups = []
+    for score in range(WORD_GAME_SCORES):
+        seen = story(score)
+        if seen is None:
+            return None
+        if groups and groups[-1][2] == seen:
+            groups[-1][1] = score
+        else:
+            groups.append([score, score, seen])
+    return [(low, None if index == len(groups) - 1 else high) for index, (low, high, _) in enumerate(groups)]
 
 
 def _kind(effects):

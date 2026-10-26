@@ -86,6 +86,22 @@ class PlayerFileTests(unittest.TestCase):
             self.assertEqual(again.names, {})
             self.assertIn('Invalid saved names', again.warning)
 
+    def test_a_translated_games_names_are_its_own_and_persist(self):
+        # New Rules' Dancing Queen and the smartphone Homecoming Queen both write `$Emily`: each game keeps its own.
+        with tempfile.TemporaryDirectory() as directory:
+            smartphone = dict(id='a' * 64, pack_id=5, episode_id=10, titles=['t'] * 5, name='x.exp')
+            translated = dict(id='b' * 64, pack_id=31300, episode_id=101, titles=['t'] * 5, name='y.exp')
+            library = SimpleNamespace(directory=Path(directory), episodes=[smartphone, translated], game_id='shs',
+                                      select=lambda selector: smartphone, open_episode=None)
+            state = MenuState(library)
+            self.assertIs(state.names_for(smartphone), state.names)
+            state.names_for(translated)['$Emily'] = 'Nova'
+            state.names['$Emily'] = 'Emily'
+            state.persist()
+            again = MenuState(library)
+            self.assertEqual(again.names_for(smartphone), {'$Emily': 'Emily'})
+            self.assertEqual(again.names_for(translated), {'$Emily': 'Nova'})
+
     def test_a_name_the_opening_resets_wins_over_the_last_playthroughs(self):
         # The intro skips run the opening script before the window shares the table: Hector's Guide sets "$matt" back
         # to "you" there, and the last playthrough's handle must not come back.
