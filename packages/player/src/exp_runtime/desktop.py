@@ -274,7 +274,8 @@ class Desktop:
         self.picker_cod = CodCharacterPickerRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.loading_renderer = LoadingRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.loading_hd = HdLoadingRenderer(session.resources, self.dialogue_renderer)
-        self.message_renderer = MessageRenderer(session.resources, self.story_text, self.dialogue_renderer)
+        self.message_renderer = MessageRenderer(session.resources, self.story_text, self.dialogue_renderer,
+                                                scale=STORY_SCALE)
         self.message_hd = HdMessageRenderer(session.resources, self.dialogue_renderer)
         self.title_renderer = TitleRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.title_hd = HdTitleRenderer(session.resources, self.dialogue_renderer)
@@ -345,6 +346,8 @@ class Desktop:
         # The location layer's last picture, placement and card flag, and its running implicit animation
         # (_location_change).
         self.location_shown = self.location_changing = None
+        # The last dialogue frame's UI layers, and CoD's message panel fading them out over itself (_panel_handover).
+        self.ui_layers, self.ui_handover = None, None
         self.fade = None                     # the player's own fade from black (a warp; scene_fade.py)
         self.music_token = None
         self.music_stream = MusicStream()
@@ -1316,6 +1319,7 @@ class Desktop:
             else:
                 self.window.fill((8, 12, 20))
             self._draw_background_layer(bg_size, self.bg_viewport)
+        ui_layers = []
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
@@ -1332,14 +1336,17 @@ class Desktop:
             if alpha is not None and alpha < 1:
                 layer = faded(layer, round(255 * alpha))
             self.window.blit(layer, area)
+            ui_layers.append((layer, area))
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
             edge_height = round(self.viewport.height * 72 / 480)
             self.window.blit(pygame.transform.smoothscale(self.edge_layer, (self.bg_viewport.width, edge_height)),
                              (self.bg_viewport.x, self.bg_viewport.bottom - edge_height))
         self.window.blit(scaled, self.viewport)
+        ui_layers.append((scaled, self.viewport))
         if overlay is not None:
             self.window.blit(pygame.transform.smoothscale(overlay, target_size), self.viewport)
+        self._panel_handover(ui_layers)
         if hd_alert is not None:
             # HD's alert is a strip of the frame, cut by the frame's own edge.
             self.window.blit(pygame.transform.smoothscale(hd_alert, frame.size), frame)
@@ -1437,6 +1444,14 @@ class Desktop:
         previous, now = self.location_shown, pygame.time.get_ticks()
         self.location_shown = (background, placement, card) if background is not None else previous
         animated = self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'
+        if (background is None and previous is not None and previous[0] is not None and animated
+                and action is not None and action.name == 'message_panel'):
+            # CoD's message panel stands on black: the owner's recording (60 fps) shows the scene picture fading out
+            # in about 0.2 s as the panel appears, read here as the same implicit animation clearing the layer.
+            # Whether a picture after the panel fades back in is unrecorded; it cuts in.
+            self.location_changing = dict(since=now, old=previous[0], start=previous[1])
+            self.location_shown = None
+            return self._location_progress(now)
         if background is None or previous is None or not animated or card:
             if card:
                 self.location_changing = None        # the card sets its picture with the actions off
@@ -1446,6 +1461,34 @@ class Desktop:
             self.location_changing = dict(since=now, old=None if old is background else old,
                                           start=old_placement if old_card else None)
         return self._location_progress(now)
+
+    # CoD's message panel replaces a dialogue panel at once, while the dialogue's name, text, portrait and button fade
+    # out over it (owner's recording, 60 fps: the panel's body is opaque in the first changed frame; the old lines
+    # are gone within about 0.2 s). Timed like the location layer's fade. Unmodelled: the panel's title fading in.
+    HANDOVER_MS = LOCATION_CHANGE_MS
+
+    def _panel_handover(self, layers):
+        """Remember a dialogue frame's UI layers; over CoD's message panel that follows one, draw them fading out."""
+        action, now = self.session.pending, pygame.time.get_ticks()
+        name = action.name if action is not None else None
+        if name == 'dialogue':
+            self.ui_layers, self.ui_handover = (action, layers), None
+            return
+        previous, self.ui_layers = self.ui_layers, None
+        if (name == 'message_panel' and previous is not None and previous[0] is not action
+                and self.dialogue_renderer.game_id() == 'cod'):
+            self.ui_handover = dict(since=now, action=action, layers=previous[1])
+        handover = self.ui_handover
+        if handover is None or handover['action'] is not action:
+            self.ui_handover = None
+            return
+        t = (now - handover['since']) / self.HANDOVER_MS
+        if t >= 1:
+            self.ui_handover = None
+            return
+        alpha = round(255 * (1 - default_ease(max(0., t))))
+        for layer, area in handover['layers']:
+            self.window.blit(faded(layer, alpha), area)
 
     def _location_progress(self, now):
         change = self.location_changing
@@ -1937,6 +1980,10 @@ class Desktop:
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
                                                                      'survey_confirmation'):
                 if not self.autoplay:           # Autoplay advances these itself (`_tick_autoplay`)
+                    if (action.name == 'message_panel' and self.dialogue_renderer.game_id() == 'cod'
+                            and self.session.engine.message_panel is not None
+                            and self.session.engine.message_panel.ready):
+                        self._menu_sound()      # owner: CoD clicks when its panel's Continue is tapped
                     self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
@@ -2418,6 +2465,7 @@ class Desktop:
         self.side_panels.tree_follow = True
         self.location_pan = LocationPan()
         self.location_shown = self.location_changing = None
+        self.ui_layers = self.ui_handover = None
         now = pygame.time.get_ticks()
         self.fade = dict(kind=6, phase='in', since=now, frozen=None)
         self.warp_lockout = now + 1000

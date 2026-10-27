@@ -1020,6 +1020,69 @@ class DesktopTests(unittest.TestCase):
             clock[0] = 2000
             self.assertEqual(draw(dark, (160, 180)), (0, 0, 0))                  # the same picture: no change
 
+    def test_cod_message_panel_fades_the_picture_to_black_and_the_dialogue_out_over_itself(self):
+        import pygame
+        from exp_runtime.location_pan import default_ease
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, clock, draw = self._location_ui(temporary)
+            room = pygame.Surface((480, 720))
+            room.fill((200, 200, 200))
+            dialogue = SimpleNamespace(name='dialogue', details={})
+            panel = SimpleNamespace(name='message_panel', details={})
+            line = pygame.Surface((10, 10), pygame.SRCALPHA)
+            line.fill((255, 0, 0, 255))
+            spot = pygame.Rect(ui.bg_viewport.x, ui.bg_viewport.y, 10, 10)
+            with patch.object(ui.session, 'pending', dialogue):
+                draw(room, (160, 180))
+                ui._panel_handover([(line, spot)])
+            with patch.object(ui.session, 'pending', panel):
+                clock[0] = 1000
+                self.assertEqual(draw(None, (160, 240)), (200, 200, 200))    # starts from the picture
+                ui._panel_handover([])
+                self.assertEqual(tuple(ui.window.get_at(spot.topleft))[:3], (255, 0, 0))
+                clock[0] = 1125
+                self.assertAlmostEqual(draw(None, (160, 240))[0], 200 * (1 - default_ease(.5)), delta=3)
+                ui.window.fill((0, 0, 0), spot)
+                ui._panel_handover([])
+                self.assertAlmostEqual(ui.window.get_at(spot.topleft)[0], 255 * (1 - default_ease(.5)), delta=3)
+                clock[0] = 1250
+                self.assertEqual(draw(None, (160, 240)), (0, 0, 0))
+                ui.window.fill((0, 0, 0), spot)
+                ui._panel_handover([])
+                self.assertEqual(tuple(ui.window.get_at(spot.topleft))[:3], (0, 0, 0))
+                self.assertIsNone(ui.ui_handover)
+
+    def test_cod_message_panel_clicks_when_continue_is_tapped_after_its_wait(self):
+        from exp_runtime.message_panel import MessagePanel
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, clock, draw = self._location_ui(temporary)
+            ui.session.engine.message_panel = MessagePanel('Cause of Death', 'Thanks for playing!', 4000)
+            action = SimpleNamespace(name='message_panel', details={})
+            with patch.object(ui.session, 'pending', action), patch.object(ui, '_answer') as answer, \
+                    patch.object(ui, '_menu_sound') as sound:
+                ui.command(('continue',))                 # still "Wait (1)": no click
+                sound.assert_not_called()
+                ui.session.engine.message_panel.tick(1000)
+                ui.command(('continue',))
+                sound.assert_called_once_with()
+                self.assertEqual(answer.call_count, 2)
+
+    def test_shs_message_panel_keeps_its_background_and_no_handover(self):
+        import pygame
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, clock, draw = self._location_ui(temporary)
+            ui.dialogue_renderer.game_id = lambda: 'shs'
+            ui.dialogue_renderer.has_hd_bundle = lambda: False
+            room = pygame.Surface((480, 720))
+            room.fill((200, 200, 200))
+            with patch.object(ui.session, 'pending', SimpleNamespace(name='dialogue', details={})):
+                ui._panel_handover([(pygame.Surface((10, 10)), pygame.Rect(0, 0, 10, 10))])
+            with patch.object(ui.session, 'pending', SimpleNamespace(name='message_panel', details={})):
+                clock[0] = 1000
+                self.assertEqual(draw(room, (160, 240)), (200, 200, 200))
+                ui._panel_handover([])
+                self.assertIsNone(ui.ui_handover)
+
     def test_the_chapter_card_sets_its_picture_without_a_crossfade_and_its_exit_glides(self):
         # SHSUIChapterScreen::animate turns the implicit actions off around its picture; its internalTransitionOff
         # resets the layer's scale and position with them on, so the card's framing glides into the scene's.

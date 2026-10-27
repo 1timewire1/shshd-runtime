@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from exp_runtime.content import ContentLibrary, digest, import_game
 from exp_runtime.engine import EngineAction, PanelState
@@ -306,6 +306,30 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertEqual(app.screen, 'main')
         self.assertIsNone(app.game)
         self.assertFalse(app.can_resume())
+
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_exit_keeps_the_click_of_the_tap_that_ended_the_episode(self):
+        # Owner's report: CoD's message-panel Continue click was cut off by the exit's own sound stop.
+        from types import SimpleNamespace
+        app = self.make_app()
+        app.start(resume=False)
+        game = app.game
+        game.session.answer()
+        app.audio = True
+        click, story = object(), object()
+        busy = SimpleNamespace(get_busy=lambda: True, get_sound=lambda: click)
+        game.ui_sounds.channels = [busy]
+        channels = [SimpleNamespace(get_sound=lambda: click, stop=Mock()),
+                    SimpleNamespace(get_sound=lambda: story, stop=Mock())]
+        with patch.object(game, 'render'), patch.object(app.renderer, 'draw', return_value=app.renderer.canvas), \
+                patch('pygame.mixer.music'), patch('pygame.mixer.stop') as everything, \
+                patch('pygame.mixer.get_num_channels', return_value=2), \
+                patch('pygame.mixer.Channel', side_effect=lambda index: channels[index]):
+            app.render()
+            everything.assert_not_called()
+        channels[0].stop.assert_not_called()
+        channels[1].stop.assert_called_once_with()
+        self.assertEqual(app.screen, 'main')
 
     @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
     def test_failed_completion_checkpoint_keeps_terminal_session_for_retry(self):

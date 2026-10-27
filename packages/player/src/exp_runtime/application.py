@@ -601,12 +601,12 @@ class Application:
             self.menu_sound = None
 
     @staticmethod
-    def _stop_sounds_but(kept):
-        """Stop every effect channel except the one playing `kept`."""
+    def _stop_sounds_but(*kept):
+        """Stop every effect channel except those playing one of `kept`."""
         try:
             for index in range(pygame.mixer.get_num_channels()):
                 channel = pygame.mixer.Channel(index)
-                if channel.get_sound() is not kept:
+                if not any(channel.get_sound() is sound for sound in kept):
                     channel.stop()
         except (AttributeError, pygame.error):
             pass
@@ -1005,10 +1005,17 @@ class Application:
         if not self.game.session.episode_ended:
             self.game._sync_music()
         if self.audio:
-            if kept is None:
-                pygame.mixer.stop()
-            else:
+            sounds = self.game.ui_sounds
+            clicks = ([channel.get_sound() for channel in sounds.channels]
+                      if self.game.session.episode_ended and sounds.playing() else [])
+            if kept is not None:
                 self._stop_sounds_but(kept)
+            elif clicks:
+                # The tap that ended the episode (CoD's message panel Continue) keeps its click; the story's own
+                # effects stop.
+                self._stop_sounds_but(*clicks)
+            else:
+                pygame.mixer.stop()
         self.game.menu_open = False
         if self.game.session.episode_ended:
             # Completed sessions cannot resume. The terminal automatic save

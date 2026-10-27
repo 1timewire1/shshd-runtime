@@ -240,6 +240,21 @@ marks both callback and removal flags; virtual callback `000a6448` calls
 The panel hides dialogue art, preserving the underlying logical dialogue and
 background state. There is no score, audio request or result-cell mutation.
 
+The title and message are blue in SHS. CoD draws them black, matching the
+owner's iOS screenshot of its end-of-episode "Thanks for playing!" panel
+(`desktop_message.INK`). The owner's 60 fps recording of that panel also
+shows how CoD opens it: the panel and its control appear at full size at
+once, on black, while the scene picture and the previous dialogue's lines fade
+out over it in about 0.2 s. The player reuses the location layer's 0.25 s
+default-ease fade for both (`Desktop._location_change`, `_panel_handover`)
+and skips SHS's 250 ms control growth. Tapping Continue once the wait is over
+plays CoD's click (8005, owner's report); the episode exit that follows
+stops the story's effects but lets that click finish. The panel is drawn at story
+density and resampled once, like the dialogue, so its outline text is as
+sharp; CoD's hint is the dialogue bar's own. Still open: the panel's title fades
+in natively; its height (Android's header and footer layouts 15/25 against
+layout 24's shorter variants) and its darker border shade.
+
 The shared callback wrapper `000ab8b8` first consumes a queued service-16
 screen-transition selector. `0007f1a4` maps selector 20 to 1/2 using exactly
 one `lrand48()` call (`1 + (value & 1)`); other nonzero selectors do not draw.
