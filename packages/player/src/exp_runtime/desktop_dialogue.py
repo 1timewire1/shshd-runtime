@@ -7,6 +7,7 @@ from . import graphics as pygame
 
 from .content import ContentError
 from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE
+from .dialogue_animation import BOX_TRAVEL_MS
 from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE, NoticeMotion, hd_letter_state, notice_lifetime
 from .fonts import TextStyle
 from .games import GAMES
@@ -1210,10 +1211,21 @@ class DialogueRenderer:
             # left of the column's edge. The entrance starts at the portrait housing (the retained one for a
             # speaker without art), the same origin draw_portrait uses.
             mode = motion.portrait.mode if motion.portrait is not None else motion.anchor_mode
-            box = motion.box_rect(page.box, self._portrait_rect(mode) if mode else None, previous)
+            origin = self._portrait_rect(mode) if mode else None
+            # shshd-runtime: a two-speaker line's box grows from between its two portraits, and around one (into it,
+            # or out of it) the box is not drawn until it sets off: its 1x1 start would otherwise sit alone where the
+            # last portrait was while the pair waits to come in.
+            if duet is not None:
+                (lx, ly), (rx, ry) = self._portrait_rect(1).center, self._portrait_rect(2).center
+                origin = Rect((lx + rx) // 2, (ly + ry) // 2, 0, 0)
+            pair = duet is not None or (self._leaving is not None and self._leaving[1] is not None)
+            waiting = (pair and motion.box_grow and not motion.page_turn and not motion.visuals_finished
+                       and motion.elapsed_ms < motion.name_delay_ms - BOX_TRAVEL_MS)
+            box = motion.box_rect(page.box, origin, previous)
             m = self.margin / k
-            self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
-                     theme, alpha=self.box_alpha(), scale=k)
+            if not waiting:
+                self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
+                         theme, alpha=self.box_alpha(), scale=k)
         # HD draws the portrait's rings under the body text: the third line's
         # top edge crosses the ring's bottom arc (white on the white box, so
         # invisible there), and drawing the ring over it clipped the glyphs.

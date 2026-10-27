@@ -82,7 +82,7 @@ def main(argv=None):
                 rendered[index] = midi_render.mp3(samples)
             return rendered[index]
     for path in args.episodes:
-        downloads, twin, twin_files = args.downloads, None, ()
+        downloads, twin, twin_files, full = args.downloads, None, (), None
         if str(path) == 'king-of-diss':
             episode = newrules.read_builtin(portraits)
         elif str(path) == 'dancing-queen':
@@ -92,6 +92,7 @@ def main(argv=None):
             if not args.lite:
                 parser.error('king-of-diss-lite needs --lite, a Lite Java build')
             episode = newrules.read_lite(nr_art.load(args.lite))
+            full = newrules.read_builtin(portraits)         # whose expressions and voice colours it borrows
         else:
             episode = newrules.read_expd(path.read_bytes())
             downloads, twin = path.parent, path.name
@@ -106,12 +107,14 @@ def main(argv=None):
             if twin is not None:
                 games = pairs.twin_word_games(downloads, args.library, twin)
         data, report = newrules.translate(episode, art, music=music, casing_dictionary=dictionary, casing_exact=exact,
-                                          twin_games=games, casing_titles=titles, hires_art=hires_art)
+                                          twin_games=games, casing_titles=titles, hires_art=hires_art,
+                                          borrow_from=full)
         target = args.out / f'NR_{episode.download_id:02d}_{safe(episode.title)}.exp'
         target.write_bytes(data)
         print(f'{path.name}: {episode.title!r} -> {target} ({len(data) // 1024} KB, {report.looks} looks, '
               f'{report.music} tracks, {report.notices} notices, {report.word_games} word games'
-              + (f', library calls {report.library_games}' if report.library_games else '') + ')')
+              + (f', library calls {report.library_games}' if report.library_games else '')
+              + (f', {report.borrowed} expressions from {full.title}' if full is not None else '') + ')')
         if report.unmapped:
             print('  unmapped services (removed):', dict(sorted(report.unmapped.items())))
         if report.unknown:

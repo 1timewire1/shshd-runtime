@@ -149,6 +149,7 @@ class Report:
     protagonist: int = PLAYER                               # the primary speaker chosen (protagonist())
     word_games: int = 0                                     # minigame rounds played as SHS word games
     library_games: dict = field(default_factory=dict)       # a built-in story's library calls by game (LIBRARY_ENTRIES)
+    borrowed: int = 0                                       # lines given their full story's expression (King of Diss Lite)
 
 
 def discover(episode, steps=200000, sexes=None):
@@ -340,16 +341,20 @@ def music_resource(index):
 
 
 def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing_dictionary=None, casing_exact=None,
-              twin_games=(), casing_titles=(), hires_art=None):
+              twin_games=(), casing_titles=(), hires_art=None, borrow_from=None):
     """The SHS `.exp` bytes for one New Rules episode. `hires_art`: the X1i jar's parts, for the second, HD-sized
     portrait set (HIRES_PORTRAIT_OFFSET), if any. `music`: index -> rendered MP3 bytes (a callable), if any;
     `casing_dictionary`: casing.learn's dictionary, which restores capitals (else the text stays lowercase);
     `casing_exact`: the paired smartphone story's strings by lowercase text, whose casing wins where they match;
-    `twin_games`: its word games' (good, bad) lists (pairs.twin_word_games), whose extra words fill out the rounds."""
+    `twin_games`: its word games' (good, bad) lists (pairs.twin_word_games), whose extra words fill out the rounds;
+    `borrow_from`: the full story a retelling (King of Diss Lite) takes its lines' expressions and its voices' colours
+    from (borrowed_presentation)."""
     report = report or Report()
     resources = {}
     sexes = {}
     looks, names = discover(episode, sexes=sexes)
+    borrowed, borrowed_themes = borrowed_presentation(episode, borrow_from) if borrow_from is not None else ({}, {})
+    report.borrowed = len(borrowed)
     primary = report.protagonist = protagonist(episode)
     scores = speaker_scores(episode)
     player = has_player(episode, names, scores)
@@ -424,7 +429,8 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                                                  service=service, keyboard_guards=guards, scores=scores,
                                                  scene_players=players, announcements=handovers,
                                                  player=player, episode_id=episode.download_id, sexes=sexes,
-                                                 quiet_transitions=quiet))
+                                                 quiet_transitions=quiet, borrowed=borrowed,
+                                                 borrowed_themes=borrowed_themes))
             else:
                 report.unmapped[key] = report.unmapped.get(key, 0) + 1
                 rewriter.redirect(pc, ('unmapped', service), lambda s: s.result(0))
@@ -448,6 +454,13 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
 
 
 # -- shims ---------------------------------------------------------------------------------------------------------
+def borrowed_expression(context, pc):
+    """The SHS expression for the line at `pc` that its full story gives it (context 'borrowed', see
+    borrowed_presentation), or None."""
+    value = context.get('borrowed', {}).get((context.get('rid'), pc))
+    return None if value is None else EXPRESSION.get(value, -1)
+
+
 def remember_line(s, i, context):
     """Store argument i (a text reference) as the last line shown."""
     s.push(context['last_line']); s.arg(i); s.emit(0x3e); s.emit(0x15)
@@ -457,8 +470,10 @@ def dialogue(rewriter, pc, argc, context):
     """40: ([mode], text, char[, expression]), the mode present when the first word is negative (f.java); -2 and -3 are
     SHS's thought and emphasis prefixes too, another box mode (-5) is dropped. Expression 0 means the character's
     default. The scripts push the mode as a constant; a four-word call's computed mode is tested when it runs. A thought
-    stays its thinker's: it shows on the player's side only when the player thinks it (Mrs. Faulkner's don't)."""
+    stays its thinker's: it shows on the player's side only when the player thinks it (Mrs. Faulkner's don't). A line
+    without an expression word takes one borrowed from its full story (borrowed_presentation), if any."""
     mode = pushed_values(context['program'], pc, argc)[0]
+    borrowed = borrowed_expression(context, pc)
     if argc == 3 and mode is not None and mode < 0:
         prefix = mode if mode in (-2, -3) else None
 
@@ -466,8 +481,17 @@ def dialogue(rewriter, pc, argc, context):
             remember_line(s, 2, context)
             if prefix is not None:
                 s.push(prefix)
-            s.arg(2); s.arg(3); s.call(13, 2 + (prefix is not None))
-        rewriter.redirect(pc, ('dialogue', 'mode', prefix), build_mode)
+            s.arg(2); s.arg(3)
+            if borrowed is not None:
+                s.push(borrowed)
+            s.call(13, 2 + (prefix is not None) + (borrowed is not None))
+        rewriter.redirect(pc, ('dialogue', 'mode', prefix, borrowed), build_mode)
+        return
+    if argc == 2 and borrowed is not None:
+        def build_borrowed(s):
+            remember_line(s, 1, context)
+            s.arg(1); s.arg(2); s.push(borrowed); s.call(13, 3)
+        rewriter.redirect(pc, ('dialogue', 40, borrowed), build_borrowed)
         return
 
     def build(s):
@@ -542,6 +566,9 @@ def named_dialogue(rewriter, pc, argc, context):
                  and name.lower() in names)
     theme = (bubble_theme(sorted(names[name.lower()]), sexes, every=False) if off_stage
              else bubble_theme(listed, sexes) if unseen else 0)
+    if unseen and (context.get('rid'), pc) in context.get('borrowed_themes', {}):
+        theme = context['borrowed_themes'][context['rid'], pc]      # King of Diss Lite: the full story's colour
+    borrowed = borrowed_expression(context, pc) if words in (1, 2) else None
     partner_left = words in (4, 5) and name_order(name, args[first + 1], args[first + 3], names)
 
     def build(s):
@@ -565,16 +592,18 @@ def named_dialogue(rewriter, pc, argc, context):
         if prefix is not None:
             s.push(prefix)
         s.arg(first + 1); s.arg(first + 2)
-        if words >= 2:
+        if borrowed is not None:
+            s.push(borrowed)
+        elif words >= 2:
             s.select(first + 3, EXPRESSION, -1)
-        s.call(13, (prefix is not None) + 1 + min(words, 2))
+        s.call(13, (prefix is not None) + 1 + max(min(words, 2), 2 if borrowed is not None else 0))
         if words >= 4:
             s.push(DUET_KEYS[0]); s.push(0); s.call(54, 2)
             push_player(s); s.call(74, 1)                   # the player is the primary speaker again
         if not own:
             s.arg(first + 2); s.push(kept); s.call(64, 2)
     rewriter.redirect(pc, ('named', own, unseen or off_stage, theme, partner_left, prefix, first,
-                           min(words, 2) if own else words), build)
+                           min(words, 2) if own else words, borrowed), build)
 
 
 def bubble_theme(characters, sexes, every=True):
@@ -1223,6 +1252,114 @@ def read_lite(source, title='King of Diss Lite', download_id=100, tables=LITE_TA
     program = decode_program(replace(program, main_words=tuple(words + extra), extra_words=(),
                                      instructions=instructions).to_bytes())
     return Episode(download_id, title, {LITE_SCRIPT: program}, text_addresses={LITE_SCRIPT: set(address)})
+
+
+# King of Diss Lite retells the built-in story with its lines' expressions left out (40 takes no expression word) and
+# its crowds and voices listed as the offscreen group, which colours them gray. Its lines that the full story also has
+# borrow the full story's expressions, and its named voices the colour the full story gives that name (owner,
+# 2026-10-26). Lite has no Kim: Hector says her lines.
+LITE_STAND_INS = {'hector': {'kim'}}
+LITE_CLOSE_MATCH = .85                 # how alike two lines must read to pair up where the stories differ
+
+
+def spoken_lines(episode):
+    """[(rid, pc, name or None, text, [(character, expression or None)])] for the episode's 40/41/42 lines whose text is a
+    constant, in script order."""
+    lines = []
+    for rid, program in sorted(episode.scripts.items()):
+        for i in program.instructions:
+            if i.opcode != 0x1f or i.operand >> 8 not in (40, 41, 42):
+                continue
+            service, argc = i.operand >> 8, i.operand & 255
+            args = pushed_values(program, i.pc, argc)
+            first = 2 if args[0] is not None and args[0] < 0 else 1
+            if service == 40:
+                name, text = None, constant_text(program, None, i.pc, first, argc)
+                listed = [(args[first], args[first + 1] if argc > first + 1 else None)] if argc > first else []
+            else:
+                name, text = constant_text(program, None, i.pc, first, argc), constant_text(program, None, i.pc, first + 1, argc)
+                rest = args[first + 1:]
+                listed = [(rest[k], rest[k + 1] if k + 1 < len(rest) else None) for k in range(0, len(rest), 2)]
+            if text is not None and any(c.isalpha() for c in text):
+                lines.append((rid, i.pc, name, text, listed))
+    return lines
+
+
+def borrowed_presentation(lite, full):
+    """What King of Diss Lite (`lite`) takes from the full King of Diss (`full`): ({(rid, pc): the full story's
+    expression for that Lite line's speaker}, {(rid, pc): the theme of a Lite voice's line (UNSEEN_SPEAKERS) in the full
+    story}). Lines pair up
+    in story order (difflib over their text), then by the same text anywhere, a pair only when the speakers are the same
+    person by name (LITE_STAND_INS)."""
+    import difflib
+    lite_sexes, full_sexes = {}, {}
+    _, lite_names = discover(lite, sexes=lite_sexes)
+    _, full_names = discover(full, sexes=full_sexes)
+
+    def names_of(names, character):
+        return {alias for alias, ids in names.items() if character in ids}
+
+    def key(text):
+        return re.sub(r'[^a-z0-9]+', ' ', text.lower()).strip()
+
+    mine, theirs = spoken_lines(lite), spoken_lines(full)
+    lite_keys, full_keys = [key(line[3]) for line in mine], [key(line[3]) for line in theirs]
+
+    def expression(i, j):
+        """The full line j's expression for the Lite line i's speaker, or None when j is someone else's line."""
+        speaker = mine[i][4][0][0] if mine[i][4] else None
+        if speaker is None:
+            return None
+        wanted = set(names_of(lite_names, speaker))
+        for alias in list(wanted):
+            wanted |= LITE_STAND_INS.get(alias, set())
+        for character, value in theirs[j][4]:
+            if character is not None and wanted & names_of(full_names, character):
+                return value
+        return None
+
+    def voice(lines, i):
+        name = lines[i][2]
+        return name.lower() if name and name.lower() in UNSEEN_SPEAKERS else None
+
+    def same(i, j):
+        """Whether the Lite line i and the full line j are one speaker's: the same person, or the same voice."""
+        return expression(i, j) is not None or voice(mine, i) is not None and voice(mine, i) == voice(theirs, j)
+
+    pairs = {}
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, lite_keys, full_keys, autojunk=False).get_opcodes():
+        if op == 'equal':
+            pairs.update((i1 + k, j1 + k) for k in range(i2 - i1) if same(i1 + k, j1 + k))
+        elif op == 'replace':
+            j = j1
+            for i in range(i1, i2):
+                scored = [(difflib.SequenceMatcher(None, lite_keys[i], full_keys[jj]).ratio(), jj) for jj in range(j, j2)]
+                score, best = max(scored, default=(0, None))
+                if score >= LITE_CLOSE_MATCH and same(i, best):
+                    pairs[i] = best
+                    j = best + 1
+    found = {i: expression(i, j) for i, j in pairs.items()}
+    by_text = {}
+    for j, text in enumerate(full_keys):
+        by_text.setdefault(text, []).append(j)
+    for i, text in enumerate(lite_keys):
+        if found.get(i) is None:
+            values = {expression(i, j) for j in by_text.get(text, ())} - {None}
+            if len(values) == 1:
+                found[i] = values.pop()
+    expressions = {(mine[i][0], mine[i][1]): value for i, value in found.items() if value is not None}
+    # A voice's colour: its full line's, else the one the full story gives that name most.
+    usual = {}
+    for j in range(len(theirs)):
+        if voice(theirs, j):
+            usual.setdefault(voice(theirs, j), Counter())[bubble_theme([c for c, _ in theirs[j][4]], full_sexes)] += 1
+    themes = {}
+    for i in range(len(mine)):
+        name = voice(mine, i)
+        if name is not None and (i in pairs or name in usual):
+            themes[mine[i][0], mine[i][1]] = (bubble_theme([c for c, _ in theirs[pairs[i]][4]], full_sexes)
+                                              if i in pairs else usual[name].most_common(1)[0][0])
+    return expressions, themes
 
 
 def signed(value):

@@ -123,7 +123,8 @@ class NewRulesShimTests(unittest.TestCase):
         import newrules
         self.nr = newrules
 
-    def translate_calls(self, source, names=None, music=True, primary=1, sexes=None, episode_id=0, quiet=()):
+    def translate_calls(self, source, names=None, music=True, primary=1, sexes=None, episode_id=0, quiet=(),
+                        borrowed=None, borrowed_themes=None):
         nr = self.nr
         rewriter = Rewriter(source, zero_gap=True)
         last_line = rewriter.words([-1])
@@ -137,8 +138,44 @@ class NewRulesShimTests(unittest.TestCase):
                 music={} if music else None, names=names or {}, primary=primary, service=service,
                 keyboard_guards=nr.keyboard_guards(source), scores=Counter(),
                 scene_players=nr.scene_players(source, names or {}, Counter()), sexes=sexes or {},
-                episode_id=episode_id, quiet_transitions=set(quiet)))
+                episode_id=episode_id, quiet_transitions=set(quiet), borrowed=borrowed or {},
+                borrowed_themes=borrowed_themes or {}))
         return rewriter.finish(), report
+
+    def test_king_of_diss_lite_borrows_the_full_storys_expressions_and_crowd_colour(self):
+        # Lite's 40 has no expression word and its crowd lists the offscreen group (gray); a line the full story also
+        # has takes its expression (Hector standing in for Kim, whom Lite leaves out), and its crowd the full colour.
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        nr = self.nr
+        crowd = 0
+        words = text_words('crowd') + text_words('Go, Josh!') + text_words('Welcome back!') + text_words('Lite only.')
+        cheer, welcome, own = (len(text_words('crowd')), len(text_words('crowd') + text_words('Go, Josh!')),
+                               len(text_words('crowd') + text_words('Go, Josh!') + text_words('Welcome back!')))
+        lite = program((0x1A, welcome), (0x1A, 19), call(40, 2), (0x1A, own), (0x1A, 19), call(40, 2),
+                       (0x1A, crowd), (0x1A, cheer), (0x1A, 20), (0x1A, 0), call(42, 4), 0x33, words=words)
+        full = program((0x1A, welcome), (0x1A, 20), (0x1A, 2), call(40, 3),
+                       (0x1A, crowd), (0x1A, cheer), (0x1A, 5), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
+                       0x33, words=words)
+        names = {id(lite): ({'hector': {19}, 'offscreen group': {20}}, {19: 1, 20: -1}),
+                 id(full): ({'kim': {20}, 'megan': {5}, 'bob': {9}, 'offscreen group': {37}}, {20: 0, 5: 0, 9: 1})}
+
+        def discover(episode, sexes=None):
+            found, found_sexes = names[id(episode.scripts[25001])]
+            sexes.update(found_sexes)
+            return {}, found
+        with patch.object(nr, 'discover', discover):
+            expressions, themes = nr.borrowed_presentation(SimpleNamespace(scripts={25001: lite}),
+                                                           SimpleNamespace(scripts={25001: full}))
+        calls = [i.pc for i in lite.instructions if i.opcode == 0x1f]
+        self.assertEqual(expressions, {(25001, calls[0]): 2})          # "Lite only." has nothing to borrow
+        self.assertEqual(themes, {(25001, calls[2]): 0})                # Megan and Bob: New Rules' yellow banner
+        result, _ = self.translate_calls(lite, sexes={19: 1, 20: -1},
+                                         borrowed=expressions, borrowed_themes=themes)
+        self.assertEqual(yields(result)[:2], [(13, (welcome, 19, nr.EXPRESSION[2])), (13, (own, 19))])
+        self.assertNotIn(54, [service for service, _ in yields(result)])        # no gray narration key for the crowd
+        result, _ = self.translate_calls(lite, sexes={19: 1, 20: -1})
+        self.assertIn((54, (nr.NARRATION_KEY, 3)), yields(result))              # without them: gray, as before
 
     def test_mode_lines_keep_the_thought_prefix_and_drop_other_box_modes(self):
         words = text_words('hm.')

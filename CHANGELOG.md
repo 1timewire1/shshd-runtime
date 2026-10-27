@@ -33,6 +33,10 @@
   picker; beat boxing and the dance steps describe themselves instead of repeating the story's first line; "Ill"
   leaves the speed disses. King of Diss takes seven capitals from the Xbox 360 prototype's copy of the story (its
   epithets, "Team Battle", "The Beatdown of '06", "Yo' Mama", "Alaskan", and a lowercase "winter").
+- **King of Diss Lite borrows the full story's expressions and crowd colour** (`tools/translate`). Lite's lines carry
+  no expressions and list its crowd as the offscreen group (gray). Its lines that the full King of Diss also has
+  (375 of 488 with a portrait, matched in story order, Hector taking Kim's lines as Lite has no Kim) now show the full
+  story's expression, and its crowd lines the full story's colour (yellow), the TV's staying gray.
 - **The skip prompt offers each outcome a word quiz has.** A quiz whose story goes more than two ways by score (Football
   Star's movie date: 0-3, 4-5, 6 or more; Local Ghosts, Spud the Stud, Battle of the Schools: Guy, Best Party Ever)
   offers each range, best first, and finishes the quiz with that score. The ranges are found when the prompt opens,
@@ -183,6 +187,11 @@
   Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
   of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a
   location crossfade, which had let the screen before it (King of Diss's closing download notice) cover it.
+- **A speaker joined by a partner comes back in as a pair.** When a translated two-speaker line's first speaker
+  also said the line before, that portrait now zooms out and the pair zooms in, as for a new speaker; before, it
+  jumped to its two-speaker size and place with the partner already there. A pair that carries on together is
+  unchanged. A two-speaker line's box now grows from between its two portraits, and into or out of one, the box
+  stays hidden until it sets off (its starting point had shown as a small ring where the last portrait was).
 - **A two-speaker line's portraits leave together.** Past a translated line with a portrait on each side, both
   portraits now shrink away at their two-speaker size; before, the partner vanished and the speaker jumped back to full
   size first. A speaker who goes on alone stays, and only the partner leaves.

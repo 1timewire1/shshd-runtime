@@ -145,6 +145,9 @@ class Session:
     # Whether a timed choice's clock runs. The desktop's Disable Choice Timer (this player's option, not native) holds
     # it; `expire_choice` then lets it run out on request. Not saved: the remaining time is kept as it was.
     choice_timer = True
+    # shshd-runtime: (the dialogue motion, its two-speaker line's partner ID or -1), so the next line knows whether its
+    # partner is new. Not saved: a restore takes it from the restored line.
+    _duet_line = None
 
     def __init__(self, resources: EpisodeResources, *, start_script: int = 25001, ephemeral: bool = False):
         GAMES[game_id(resources)]  # Fail before executing with a missing adapter.
@@ -474,6 +477,10 @@ class Session:
         return DialoguePortrait(partner, art, 3 - action.details['presentation_mode'],
                                 engine.numbers.get(engine.number_key(partner, 651), 0), expression)
 
+    def _duet_partner(self):
+        duet = self.dialogue_duet()
+        return duet.character_id if duet is not None else -1
+
     @property
     def bitmap_history(self):
         # CSFont does not use Android's global previous-byte variable.
@@ -603,13 +610,19 @@ class Session:
                 self.pending = action
                 if action.name == 'dialogue':
                     self._prepare_dialogue(new_name=True, update_text=True)
+                    # shshd-runtime: a speaker joined by a new partner (Session.dialogue_duet) changes size, so their
+                    # portrait leaves and the pair comes in, as for a new speaker, instead of snapping.
+                    previous, partner = self.engine.dialogue_animation, self._duet_partner()
+                    held = self._duet_line[1] if self._duet_line is not None and self._duet_line[0] is previous else -1
                     self.engine.dialogue_animation = DialogueAnimation.start(
-                        action.details, self.engine.character_art_variants, self.engine.dialogue_animation,
+                        action.details, self.engine.character_art_variants, previous,
                         self.engine.dialogue_history,
                         retain_suppressed=self.engine.game_key == 'shs'
                         and getattr(self.resources.library, 'kind', 'apk') == 'apk',
                         length=self._typed_length(action.details),
-                        expression_ms=IOS_EXPRESSION_MS if self._ios_dialogue() else EXPRESSION_MS)
+                        expression_ms=IOS_EXPRESSION_MS if self._ios_dialogue() else EXPRESSION_MS,
+                        restage=partner >= 0 and partner != held)
+                    self._duet_line = (self.engine.dialogue_animation, partner)
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
                         # HD's letters wait for the portrait (dialogue_notice.hd_letter_start_ms).
@@ -1761,6 +1774,8 @@ class Session:
                         engine.dialogue_history.expressions[portrait.character_id] = byte - 256 if byte > 127 else byte
                 session.pending = None
                 session.advance()
+            if session._duet_line is None:
+                session._duet_line = (engine.dialogue_animation, session._duet_partner())
             return session
         except (KeyError, TypeError, ValueError, AttributeError) as error:
             if isinstance(error, SaveError):
