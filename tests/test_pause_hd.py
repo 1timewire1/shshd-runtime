@@ -98,6 +98,17 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual([c[1] for _, c in self.commands() if c[0] == 'pause_toggle'],
                          ['side_panels', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop'])
         del self.settings['skip_upsell_intros']
+        # Hi-Res Portraits, offered with New Rules translations, carries New Rules' "NR" tag before its label.
+        from unittest.mock import patch
+        from exp_runtime.desktop_pause_hd import switch_badge
+        from exp_runtime.shs.profile import LEGACY_GAMES
+        self.assertEqual(switch_badge('hires_portraits'), ('NR', LEGACY_GAMES['SHSNR']['color']))
+        self.assertIsNone(switch_badge('hd_backdrop'))
+        self.settings.update(hires_portraits=True)
+        with patch.object(type(self.menu), 'badge', autospec=True, return_value=30) as badge:
+            self.assertIn('hires_portraits', [c[1] for _, c in self.commands() if c[0] == 'pause_toggle'])
+        self.assertEqual([call.args[4:] for call in badge.call_args_list], [('NR', LEGACY_GAMES['SHSNR']['color'])])
+        del self.settings['hires_portraits']
         # This player's Autoplay Dialogue comes after the side panels (owner, 2026-10-21).
         self.settings.update(autoplay=False, disable_choice_timer=True)
         rows = self.menu.option_rows('general', self.settings, self.menu.strings())

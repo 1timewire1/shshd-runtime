@@ -503,6 +503,29 @@ class HdTitleTests(unittest.TestCase):
                                 **cod)
         self.assertEqual(long.origin[0], rect.x + 1)
 
+    def test_a_two_speaker_title_shrinks_to_two_lines_and_breaks_a_joined_name(self):
+        # shshd-runtime: the narrow gap between a two-speaker line's rings (60 units here; 9-unit letters, 5-unit
+        # spaces). "Andy and Laura" would wrap to three lines; "GangstaBot" (90) cannot wrap at a space.
+        narrow = {0x6a: Rect(100, 259.5, 60, 31), 0x61: Rect(100, 227.5, 60, 63)}
+        font = authored_font(38, 24, 0)
+        plain = hd_speaker_label('Andy and Laura', 3, 'PajamaHip26', narrow.__getitem__, font, 20)
+        self.assertEqual((len(plain.layout.lines), plain.scale), (3, 1))
+        two = hd_speaker_label('Andy and Laura', 3, 'PajamaHip26', narrow.__getitem__, font, 20, max_lines=2)
+        self.assertEqual(len(two.layout.lines), 2)
+        self.assertTrue(.5 <= two.scale < 1)
+        joined = hd_speaker_label('GangstaBot', 3, 'PajamaHip26', narrow.__getitem__, font, 20, max_lines=2)
+        self.assertEqual([round(line.width) for line in joined.layout.lines], [63, 27])     # "Gangsta" / "Bot"
+
+    def test_a_two_speaker_title_colours_each_name_by_its_speaker(self):
+        from exp_runtime.dialogue import _speaker_colors
+        font = authored_font(38, 24, 0)
+        title = layout_text(font, 'Andy and Laura', 2**31, TextStyle(20, 0))
+        coloured = _speaker_colors(title, 'Laura', 'PajamaHip266', 'PajamaHip26')
+        fonts = {g.index: g.font for g in coloured.glyphs}
+        self.assertEqual([fonts[i] for i in (0, 5, 9)], ['PajamaHip266', None, 'PajamaHip26'])   # Andy, and, Laura
+        both = layout_text(font, 'Both', 2**31, TextStyle(20, 0))
+        self.assertIs(_speaker_colors(both, 'Laura', 'PajamaHip266', 'PajamaHip26'), both)       # names no one
+
     def test_a_name_too_tall_for_the_normal_region_takes_the_tall_one_unshifted(self):
         name = ' '.join(['A' * 17] * 2)                     # 311 units: 2 lines in every region; 20 + 8 + 20 > 31
         for mode, tall, flags in ((1, 0x25, 0x19), (2, 0x43, 0x19), (3, 0x61, 0x1a)):
@@ -514,6 +537,19 @@ class HdTitleTests(unittest.TestCase):
                 if mode in (1, 2):
                     # The second line takes the title's line offset (40 / 10 points).
                     self.assertEqual(label.layout.lines[1].x, {1: 20, 2: 5}[mode])
+
+    def test_a_word_wider_than_the_region_shrinks_to_fit_on_one_line(self):
+        # This player's addition: CSFont would break a long typed name mid-word ("StanTheDev" / "il").
+        label = self.label('A' * 25, 1)                     # 225 units in a 194-unit region
+        self.assertAlmostEqual(label.scale, 194 / 225)
+        self.assertEqual((len(label.layout.lines), label.extra, label.header.height), (1, 8, 31))
+        self.assertAlmostEqual(label.layout.width * label.scale, 194)
+        self.assertAlmostEqual(label.origin[1], 259.5 + (31 - 20 * 194 / 225) / 2 + 38 * 194 / 225)
+        # Words that fit keep the native wrap at their spaces, full size.
+        self.assertEqual(self.label(' '.join(['A' * 17] * 2), 1).scale, 1)
+        # Past half size, the name wraps after all.
+        tiny = self.label('A' * 60, 1)
+        self.assertEqual((tiny.scale, len(tiny.layout.lines)), (.5, 2))
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')

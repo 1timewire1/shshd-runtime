@@ -51,6 +51,19 @@ SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS ep
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
+HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
+# A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
+# 2026-10-26): key -> the tag in the SHS profile's LEGACY_GAMES. The switch itself is offered only when such episodes
+# are there (application.hires_portraits_offered, Desktop.hires_switch).
+SWITCH_BADGES = {'hires_portraits': 'SHSNR'}
+BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
+
+
+def switch_badge(key):
+    """(text, colour) of the switch's game tag, or None."""
+    from .games import GAMES
+    legacy = getattr(GAMES.get('shs'), 'LEGACY_GAMES', {}).get(SWITCH_BADGES.get(key))
+    return None if legacy is None else (legacy['badge'], legacy['color'])
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
@@ -58,7 +71,8 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'check_updates')
+GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'hires_portraits',
+                'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -73,7 +87,8 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'autoplay': AUTOPLAY_LABEL,
                  'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
-                 'hd_backdrop': HD_BACKDROP_LABEL, 'check_updates': CHECK_UPDATES_LABEL}
+                 'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
+                 'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
 # (rms ~2 levels): out = M . (r, g, b) + c.
 SEPIA = (0.779, 0.166, 0.0, 102.1,
@@ -429,9 +444,13 @@ class HdPauseMenu:
     def row_color(self, index):
         return self.ROW_COLORS[index % 2]
 
-    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False):
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None):
+        """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style."""
         color = color or self.LABEL_COLOR
         self.rows_body(layer, top, height, background, lit=lit)
+        x = PANEL_X + 31
+        if badge is not None:
+            x += self.badge(layer, x, top + ROW / 2, *badge) + BADGE_GAP
         font, lines, current = self.font(ROW_PX), [], ''
         for word in label.split(' '):
             trial = f'{current} {word}' if current else word
@@ -444,13 +463,26 @@ class HdPauseMenu:
         pitch = 26.6
         for index, line in enumerate(lines):
             middle = top + ROW / 2 + (index - (len(lines) - 1) / 2) * pitch
-            self.text(layer, line, PANEL_X + 31, middle - self.cap_offset(ROW_PX), ROW_PX, color)
+            self.text(layer, line, x, middle - self.cap_offset(ROW_PX), ROW_PX, color)
+
+    def badge(self, layer, x, middle, text, color):
+        """A game's tag at (x, vertical middle), as the episode list draws it (desktop_episode_list_hd
+        draw_standard_mark): a light plate in the colour, its border and its text. Returns its width."""
+        S = self.scale
+        label = self.font(BADGE_PX).render(text, True, color)
+        width, height = label.get_width() / S + 2 * BADGE_PAD, BADGE_HEIGHT
+        plate = pygame.Surface((round(width * S), round(height * S)), pygame.SRCALPHA)
+        pygame.draw.rect(plate, (*color, 30), plate.get_rect(), border_radius=round(8 * S))
+        pygame.draw.rect(plate, (*color, 200), plate.get_rect(), max(1, round(2 * S)), border_radius=round(8 * S))
+        plate.blit(label, label.get_rect(center=plate.get_rect().center))
+        layer.blit(plate, (round(x * S), round((middle - height / 2) * S)))
+        return width
 
     # -- screens ---------------------------------------------------------
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'),
+        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""
@@ -520,7 +552,8 @@ class HdPauseMenu:
                     y += SLIDER_ROW
                     continue
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
-                self.row(layer, y, label, background=self.row_color(index), lit=focus == command)
+                self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
+                         badge=switch_badge(key))
                 if kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
                                 self.switch_position(key, settings.get(key, False)))

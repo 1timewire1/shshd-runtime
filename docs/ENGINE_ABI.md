@@ -44,7 +44,7 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 | 6 (`06`) | a1, a2 destination | Gets the named character string via `FUN_00096c64`; writes to VM address a2 or, for negative a2, dynamic slot `~a2`. | address / handle | X |
 | 7 (`07`) | none read; all supplied words ignored | Ends the episode through `0007e614`: dispose panels, reset hosts/numeric state, cancel scheduled scripts and retire native resume progress. [Contract](STORY_SERVICES.md#episode-exit-services-7-and-63). | terminal scene exit | P (terminal) |
 | 8 (`08`) | a1 title ref, T(2), a3, a4 | Episode/week title card, UI type 16; negative a1 means empty title, a3 is the background asset, a4 a retained flag. Original fonts, layout, entrance and input gate; Android promotional branches remain unmodeled. See [TITLE_SCREENS.md](TITLE_SCREENS.md). | 0 on acknowledgement | P |
-| 9 (`09`) | a1 poll ID, a2 upload type; remaining words opaque | Android: `0009f0cc` builds then discards the poll parameters, returns `EMPTY`; sender `0007b448` is empty in Android 1.0.9. HD: poll download (`getPollURL`, `pollID=&upType=&upValue(s)=`), the "Loading / Please wait..." bar, waits for the request; on failure `finishPollDownload(false)` returns 0. Type 2 with a verified script continuation completes offline with a local receipt ([contract](STORY_SERVICES.md#offline-surveys-service-9), `survey_confirmation`); any other call shows the bar for `POLL_WAIT_MS` (1 s) and returns 0 (`download_poll`). | native waits; offline R=0 | P (offline) |
+| 9 (`09`) | poll ID, upload type (0 text, 1 number, 2 array), upload value or array address, upload count, results type, results buffer address, results count (HD `getPollURL` 0003c984 appends words 0-4 and 6 to the URL as pollID, upType, upValue(s), upSize, resultsType, resultsSize; `finishPollDownload` writes the results through word 5) | Android: `0009f0cc` builds then discards the poll parameters, returns `EMPTY`; sender `0007b448` is empty in Android 1.0.9. HD: poll download (`getPollURL`, `pollID=&upType=&upValue(s)=`), the "Loading / Please wait..." bar, waits for the request; on failure `finishPollDownload(false)` returns 0. Type 2 with a verified script continuation completes offline with a local receipt ([contract](STORY_SERVICES.md#offline-surveys-service-9), `survey_confirmation`); any other call shows the bar for `POLL_WAIT_MS` (1 s) and returns 0 (`download_poll`). | native waits; offline R=0 | P (offline) |
 | 10 (`0a`) | a1, bool(a2) | Schedules script resource a1 and its flag through `FUN_0007b44c`; LIFO consumption after HALT. | 0 | C |
 | 11 (`0b`) | a1, a2 | Sets panel background base a2, variant a1 through `FUN_000a92f4`, then requests speaker-side alignment. | 0 | C (background and pan) |
 | 12 (`0c`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
@@ -420,6 +420,12 @@ The scheduler policy and remaining timing paths are specified in
 [UI_FIDELITY.md](UI_FIDELITY.md#dialogue-transitions-and-reveal-scheduler).
 See [UI_FIDELITY.md](UI_FIDELITY.md#dialogue-typography-and-layout-contract)
 for the text schema, algorithms, colors, and evidence addresses.
+
+shshd-runtime adds no service for its two-speaker lines, named-line colours,
+emoticons or intro-into-loop music. An episode declares the global numbers it
+sets around such a line (service 54) in resource 3, and the runtime reads them
+while the line is up; see
+[SCHEMA.md](SCHEMA.md#presentation-extension-shshd-runtime).
 
 ### 4.3 Services 17/40 and 78: UI-owned data
 

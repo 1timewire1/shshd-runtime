@@ -108,6 +108,28 @@ class EpisodeZipTests(unittest.TestCase):
                 with ContentLibrary(directory) as reopened:
                     self.assertEqual(Session.load(reopened.open_episode('alias.exp'), saved).snapshot(), snapshot)
 
+    def test_a_legacy_games_tag_is_dropped_from_the_title_and_files_the_episode(self):
+        # shshd-runtime: a New Rules translation is titled "... (SHSNR)" (shs profile LEGACY_GAMES); on import, in the
+        # first library or added later, the tag leaves every title and the episode is tagged and filed under New Rules.
+        tagged = archive({1: metadata('ZIP story (SHSNR)'), 25001: program(0x33).to_bytes(), 26000: b'art'})
+        for initial in (True, False):
+            with self.subTest(initial=initial):
+                directory = self.root / f'legacy-{initial}'
+                story = self.root / 'story.exp'
+                story.write_bytes(tagged)
+                import_game(self.sources[0][1], [story] if initial else [], directory)
+                with ContentLibrary(directory) as library:
+                    if not initial:
+                        self.assertEqual(library.add_episodes([story]), 1)
+                    record = library.select(digest(tagged))
+                    self.assertEqual(record['titles'][0], 'ZIP story')
+                    self.assertEqual((record['legacy'], record['category']), ('SHSNR', 'New Rules'))
+                    plain = library.select('Bundled story')
+                    self.assertNotIn('legacy', plain)
+                    self.assertNotIn('order', record)                   # only LEGACY_GAMES' listed episodes
+                with ContentLibrary(directory) as reopened:            # the manifest accepts the new fields
+                    self.assertEqual(reopened.select(digest(tagged))['legacy'], 'SHSNR')
+
     def test_same_basename_and_metadata_do_not_merge_different_editions(self):
         directory = self.root / 'library'
         import_game(self.sources[0][1], [], directory)

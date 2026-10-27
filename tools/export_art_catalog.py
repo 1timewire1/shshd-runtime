@@ -1,6 +1,6 @@
 """Catalogue every character portrait and background in a library as Markdown documents with full-resolution exports.
 
-    python tools/export_art_catalog.py LIBRARY OUT [--only portraits|backgrounds]
+    python tools/export_art_catalog.py LIBRARY OUT [--only portraits|backgrounds|bank]
 
 Every episode is opened and its scripts walked briefly (`tree_explorer`): each episode registers its whole cast at
 its first step (`set_character_art_base`, five expression slots from a base id, and `set_character_name`), and the
@@ -23,6 +23,8 @@ registers are listed at the end of each document without names.
 Backgrounds need no walk: every opaque, screen-sized local picture of every episode file is listed
 (hd_backgrounds.md, sd_backgrounds_without_hd.md, bg-hd/, bg-sd/), linked through the twin store, with leads for the
 unmatched standard ones (the same id in the same story's HD release, and the best-correlating unlinked HD picture).
+The shared bank's backgrounds are listed by id, each standard picture beside the HD bundle's replacement
+(bank_backgrounds.md, bank-sd/, bank-hd/).
 """
 import argparse
 import io
@@ -449,8 +451,8 @@ def write_backgrounds(library, out, entries, records):
     lines = ['# HD backgrounds', '',
              f'{len(hd)} HD backgrounds (opaque pictures 700 px wide or more) in the library\'s episode files, each once however '
              'many episodes reuse it. "Linked" means a standard background already resolves to it in play (the twin store); '
-             f'{len(hd) - len(unlinked_hd)} are linked, {len(unlinked_hd)} are not. The app\'s shared bank is not listed: its '
-             'standard pictures are replaced by id from the HD app bundle.', '',
+             f'{len(hd) - len(unlinked_hd)} are linked, {len(unlinked_hd)} are not. The app\'s shared bank is listed '
+             'separately (bank_backgrounds.md): its standard pictures are replaced by id from the HD app bundle.', '',
              '| Picture | # | Size | Linked | In (episode #resource) |', '|---|---|---|---|---|']
     for entry in hd:
         found = linked_from.get(fingerprint(entry.data), [])
@@ -487,16 +489,94 @@ def write_backgrounds(library, out, entries, records):
     return len(hd), len(unlinked_hd), len(sd), len(unresolved)
 
 
+def collect_bank_backgrounds(library):
+    """[(resource id, standard image or None, HD image or None)] for every background in the app's shared bank: the
+    base package's picture and the HD app bundle's replacement at the same id (`ContentLibrary.hd_asset`), plus HD
+    bundle backgrounds in the shared range with no base-package id. Interface art below the range (id 6's wood, the
+    menus' backdrops) is left out."""
+    from exp_runtime.content import HD_SHARED_CONTENT_RANGE
+    rows, seen = [], set()
+    for resource_id in sorted(library.base_members):
+        if resource_id not in HD_SHARED_CONTENT_RANGE:
+            continue
+        try:
+            sd = picture(library.android_asset(resource_id))
+        except Exception:
+            sd = None
+        if sd is not None and not background(sd):
+            sd = None
+        hd_data = library.hd_asset(resource_id)
+        hd = picture(hd_data) if hd_data is not None else None
+        if hd is not None and not background(hd):
+            hd = None
+        seen.add(resource_id)
+        if sd is not None or hd is not None:
+            rows.append((resource_id, sd, hd))
+    for resource_id in sorted(getattr(library, 'hd_members', ())):
+        if resource_id in seen or resource_id not in HD_SHARED_CONTENT_RANGE:
+            continue
+        hd = picture(library.hd_raw_resource(resource_id))
+        if hd is not None and background(hd):
+            rows.append((resource_id, None, hd))
+    return rows
+
+
+def write_bank_backgrounds(out, rows):
+    """bank_backgrounds.md, bank-sd/ and bank-hd/: one row (and number) per shared-bank id, the standard picture beside
+    the HD one that replaces it. A picture already shown at an earlier id is pointed back to instead of repeated."""
+    for folder in ('bank-sd', 'bank-hd'):
+        clear(out / folder)
+    first = {}                                  # (side, picture bytes) -> the serial that shows it
+    lines = []
+    counts = dict(pairs=0, sd_only=0, hd_only=0)
+    for number, (resource_id, sd, hd) in enumerate(rows, 1):
+        serial = f'{number:04d}'
+        cells = []
+        for side, image in (('sd', sd), ('hd', hd)):
+            if image is None:
+                cells += ['-', '-']
+                continue
+            key = (side, image.size, image.tobytes())
+            if key in first:
+                cells += [f'same as {first[key]}', f'{image.width}x{image.height}']
+                continue
+            first[key] = serial
+            image.save(out / f'bank-{side}' / f'{serial}.png')
+            cells += [f'<img src="bank-{side}/{serial}.png" width="96">', f'{image.width}x{image.height}']
+        counts['pairs' if sd is not None and hd is not None else 'sd_only' if sd is not None else 'hd_only'] += 1
+        lines.append(f'| {serial} | {resource_id} | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} |')
+    header = ['# Shared-bank backgrounds', '',
+              f'{len(rows)} backgrounds in the app\'s shared bank (resource ids 1000 to 24999: the scene pictures any '
+              'episode can show by id; interface art below 1000 is left out), each with its HD replacement. The HD app bundle replaces a standard picture by its id, natively, so these '
+              'pairs need no twin store; hd_backgrounds.md and sd_backgrounds_without_hd.md list the episode files\' own '
+              f'backgrounds instead. {counts["pairs"]} ids have both pictures'
+              + (f', {counts["sd_only"]} only the standard one (no HD replacement: these play as the standard picture)'
+                 if counts['sd_only'] else '')
+              + (f', {counts["hd_only"]} only an HD one (in the bundle\'s shared range with no standard id)'
+                 if counts['hd_only'] else '')
+              + '. A row and its two pictures share one number (bank-sd/, bank-hd/)'
+              + ('; "same as" points to an earlier row showing the identical picture.'
+                 if any('same as' in line for line in lines) else '.'), '',
+              '| # | Id | Standard | Size | HD | Size |', '|---|---|---|---|---|---|']
+    (out / 'bank_backgrounds.md').write_text('\n'.join(header + lines) + '\n', encoding='utf-8')
+    return len(rows), counts['pairs'], counts['sd_only'], counts['hd_only']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('library', type=Path)
     parser.add_argument('out', type=Path)
     parser.add_argument('--steps', type=int, default=400)
     parser.add_argument('--seconds', type=float, default=15)
-    parser.add_argument('--only', choices=('portraits', 'backgrounds'))
+    parser.add_argument('--only', choices=('portraits', 'backgrounds', 'bank'))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(message)s')
     with ContentLibrary(args.library) as library:
+        if args.only in (None, 'bank'):
+            counts = write_bank_backgrounds(args.out, collect_bank_backgrounds(library))
+            print('shared-bank backgrounds: %d ids (%d pairs, %d standard only, %d HD only)' % counts)
+        if args.only == 'bank':
+            return
         if args.only != 'backgrounds':
             entries, unregistered, base_links = collect(library, args.steps, args.seconds)
             resolved = links(library, {**entries, **unregistered}, base_links)

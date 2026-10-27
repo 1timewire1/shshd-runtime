@@ -34,6 +34,36 @@ class MinigameSkipTests(unittest.TestCase):
                     self.assertIsNone(session.engine.word_game)
                     self.assertEqual((session.engine.random, session.engine.random48), random)
 
+    def test_a_quiz_with_three_outcomes_offers_each_and_finishes_with_its_score(self):
+        # shshd-runtime: Football Star's movie date reads the score three ways (6 or more, 4-5, 0-3); the skip prompt
+        # finds them on preview copies (choice_hints.word_game_outcomes) and offers each, best first.
+        from exp_runtime.choice_hints import word_game_outcomes
+        from exp_runtime.desktop import word_game_options
+        words, refs = text_words('Snacks!', 'Pick the right word', 'yes|right', 'no|wrong|bad',
+                                 'Great movie.', 'Fine movie.', 'Bad movie.')
+        title, text, good, bad, high, mid, low = refs
+        source = program(*host_call(71, title, text, good, bad, 20000, -1, 1, 3000),
+                         0x21, (0x1a, 6), 0x0d, (0x2b, 5),       # 9-12: score >= 6, else to 17
+                         *host_call(13, high, 0), (0x29, 28),
+                         0x21, (0x1a, 4), 0x0d, (0x2b, 5),       # 17-20: score >= 4, else to 25
+                         *host_call(13, mid, 0), (0x29, 28),
+                         *host_call(13, low, 0), 0x33, words=words)
+        session = Session(Resources(source))
+        session.advance()
+        before = session.snapshot()
+        outcomes = word_game_outcomes(session)
+        self.assertEqual(outcomes, [(0, 3), (4, 5), (6, None)])
+        self.assertEqual(session.snapshot(), before)                # previews leave the session alone
+        self.assertEqual(word_game_options(outcomes),
+                         (('Score 6 or more', 'Score 4 to 5', 'Score 0 to 3', 'Play'), (32767, 4, 0)))
+        self.assertEqual(word_game_options([(0, 5), (6, None)]), (('Win', 'Lose', 'Play'), (32767, 0)))
+        self.assertEqual(word_game_options(None), (('Win', 'Lose', 'Play'), (32767, 0)))
+        self.assertEqual(word_game_options([(0, None)]), (('Skip', 'Play'), (32767,)))
+        action = session.skip_word_game(4)
+        self.assertEqual((action.name, action.details['text']), ('dialogue', 'Fine movie.'))
+        with self.assertRaises(ValueError):
+            session.skip_word_game(4)                               # no quiz is pending now
+
     def test_football_winner_matches_both_score_queries_without_overflow(self):
         for home, away in ((0, 0), (5, 3), (21, 28), (32767, 32767)):
             for success in (False, True):

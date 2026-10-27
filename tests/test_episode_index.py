@@ -177,6 +177,27 @@ class RowTests(unittest.TestCase):
         titles = [r.title for r in self.rows(records, EpisodeCatalog())]
         self.assertEqual(titles, ['Season 7', 'Premium Content'])
 
+    def test_a_translation_from_another_game_keeps_its_own_category_and_is_never_its_twin(self):
+        # shshd-runtime: content.legacy_fields tags "Making Some Dough (SHSNR)" on import and files it under its
+        # game's category; it shows beside the smartphone "Making Some Dough" rather than being hidden as a copy.
+        text = ei.script_signature(programs(*STORY))
+        twin = record(1, 101, 1, 'Making Some Dough', variant='standard', signature=text)
+        translated = dict(record(2, 31300, 2, 'Making Some Dough', variant='standard', signature=text),
+                          legacy='SHSNR', category='New Rules')
+        self.assertFalse(ei.same_story(twin, translated))
+        self.assertEqual(ei.duplicates([twin, translated], ei.HD), set())
+        catalog = EpisodeCatalog([entry(101, 1, 'Making Some Dough', 'SEASON 1', 'standard')])
+        rows = self.rows([twin, translated], catalog)
+        self.assertEqual({r.title: len(r.episodes) for r in rows}, {'Season 1': 1, 'New Rules': 1})
+        # `order` places an episode by another position than its id: Dancing Queen (101) after King of Diss (1).
+        built_in = [dict(record(n, 31300, episode, title), legacy='SHSNR', category='New Rules', **extra)
+                    for n, episode, title, extra in ((3, 1, 'King of Diss', {}), (4, 2, 'Making Some Dough', {}),
+                                                     (5, 100, 'King of Diss Lite', {}),
+                                                     (6, 101, 'Dancing Queen', {'order': 1.5}))]
+        row, = self.rows(built_in, EpisodeCatalog())
+        self.assertEqual([r['titles'][0] for r in row.episodes],
+                         ['King of Diss', 'Dancing Queen', 'Making Some Dough', 'King of Diss Lite'])
+
     def test_bundled_episodes_are_mega_packs_and_first(self):
         records = [record(1, 101, 1, 'A', variant='hd'), record(2, 5, 9, 'Football', variant='hd')]
         rows = self.rows(records, EpisodeCatalog(), bundled=lambda r: r['pack_id'] == 5)
@@ -214,6 +235,22 @@ class ChronologicalRowTests(unittest.TestCase):
         dates = {'Later': '2013-06-01', 'Earlier': '2010-01-01', 'A Vote Pack': '2011-09-02', 'A Bundle': '2012-09-07'}
         rows = ei.build_chronological_rows(records, dates, redundant_bundles={'A Bundle'}, vote_packages={'A Vote Pack'})
         self.assertEqual([r.title for r in rows], ['2010', '2013', 'Vote Packages', 'Season Bundles'])
+
+    def test_translated_episodes_list_after_the_bundles_whatever_their_twins_aired(self):
+        # shshd-runtime: "Making Some Dough" translated from New Rules shares its smartphone twin's title, not its
+        # airdate; it lists under Legacy Game Episodes, after Season Bundles and before Date Unknown.
+        twin = record(1, 101, 1, 'Making Some Dough', variant='hd')
+        translated = [dict(record(n, 31300, episode, title), legacy='SHSNR', category='New Rules', **extra)
+                      for n, episode, title, extra in ((2, 2, 'Making Some Dough', {}), (3, 1, 'King of Diss', {}),
+                                                       (4, 101, 'Dancing Queen', {'order': 1.5}))]
+        undated = record(5, 31400, 1, 'Day of Diss')
+        bundle = record(6, 1401, 1, 'A Bundle', variant='hd')
+        dates = {'Making Some Dough': '2010-01-01', 'A Bundle': '2012-09-07'}
+        rows = ei.build_chronological_rows([twin, *translated, undated, bundle], dates, redundant_bundles={'A Bundle'})
+        self.assertEqual([(r.title, [e['titles'][0] for e in r.episodes]) for r in rows],
+                         [('2010', ['Making Some Dough']), ('Season Bundles', ['A Bundle']),
+                          ('Legacy Game Episodes', ['King of Diss', 'Dancing Queen', 'Making Some Dough']),
+                          ('Date Unknown', ['Day of Diss'])])
 
     def test_a_year_sorts_its_own_episodes_by_date_not_by_pack_id(self):
         records = [record(1, 201, 1, 'Second', variant='hd'), record(2, 101, 1, 'First', variant='hd')]

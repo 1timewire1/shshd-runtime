@@ -15,15 +15,32 @@
 
 Fades are linear in time (`-[SHSSound getFadeLevel]`). The mixer is pygame's music stream. Whatever a host's mixer lacks
 (the iOS host has no volume or busy state) is skipped.
+
+shshd-runtime: a translated pack can make a cue an intro that runs into a loop (`chain`, the game profile's
+TRANSLATED_MUSIC_LOOPS: the X360 prototype's `dont_trust_me` and `dont_trust_me_loop`). The intro plays once with the
+loop queued behind it, looping (pygame hands over at the end of the intro); its position counts across both, so the
+pause menu resumes in the right one. A host mixer that cannot queue plays the intro alone.
 """
 from io import BytesIO
 import logging
+import wave
 
 from . import graphics as pygame
 from .audio import mp3_length_ms
 from .content import ContentError
 
 FADE_MS = 1000
+
+
+def audio_length_ms(data):
+    """A cue's length (ms): an MP3's, or a WAV's from its header; None if neither tells."""
+    if data[:4] == b'RIFF' and data[8:12] == b'WAVE':
+        try:
+            with wave.open(BytesIO(data)) as clip:
+                return clip.getnframes() * 1000 / clip.getframerate()
+        except (wave.Error, EOFError):
+            return None
+    return mp3_length_ms(data)
 
 
 def stop_fade_ms(argument):
@@ -41,6 +58,7 @@ class MusicStream:
         self.volume = 1.0
         self.paused = False      # the stream is paused (the window lost focus, service 83, or a stored cue)
         self.clock = None        # ticks when the played time was last counted
+        self.chain = None        # music_id -> the loop's bytes when the cue is an intro, else None (the host's)
 
     @property
     def loaded(self):
@@ -148,10 +166,14 @@ class MusicStream:
     # ------------------------------------------------------------------ position
 
     def position(self):
-        """Where the loaded cue is in its file (s): it starts at `start` and a looping cue restarts at 0."""
+        """Where the loaded cue is in its file (s): it starts at `start` and a looping cue restarts at 0. An intro with
+        a loop counts on into the loop: intro length + the loop's position."""
         current = self.current
         at = current['start'] + current['played'] / 1000
         length = current['length']
+        loop = current.get('loop')
+        if loop is not None and length and loop['length'] and at >= length:
+            return length + (at - length) % loop['length']
         if current['flag'] and length and at >= length:
             at = (at - length) % length
         return at
@@ -166,26 +188,52 @@ class MusicStream:
     def _start(self, music_id, flag, opener, now):
         try:
             data, start = opener(music_id)
+            loop_data = self.chain(music_id) if self.chain is not None else None
             music = pygame.mixer.music
             music.stop()
-            music.load(BytesIO(data))
+            length = audio_length_ms(data)
+            loop = None
+            if loop_data is not None:
+                loop_length = audio_length_ms(loop_data)
+                loop = dict(data=loop_data, length=None if loop_length is None else loop_length / 1000)
             self._set_volume(self.volume)
-            music.play(loops=-1 if flag else 0, start=start)
+            self._play(data, loop, None if length is None else length / 1000, flag, start)
         except (ContentError, pygame.error, OSError, ValueError) as error:     # the cue is skipped
             logging.warning('Music %s cannot be played: %s', music_id, error)
             self.current = None
             return
-        length = mp3_length_ms(data)
-        self.current = dict(id=music_id, flag=flag, start=start, played=0,
-                            length=None if length is None else length / 1000)
+        self.current = dict(id=music_id, flag=flag or loop is not None, start=start, played=0,
+                            length=None if length is None else length / 1000, data=data, loop=loop)
         self.fade, self.paused, self.clock = None, False, now
+
+    @staticmethod
+    def _play(data, loop, length, flag, start):
+        """Load and play a cue from `start` (s). With a `loop` (an intro's), the intro plays once with the loop
+        queued to repeat behind it, or, from a position past the intro, the loop alone from there."""
+        music = pygame.mixer.music
+        if loop is None:
+            music.load(BytesIO(data))
+            music.play(loops=-1 if flag else 0, start=start)
+            return
+        if length is not None and start >= length:
+            music.load(BytesIO(loop['data']))
+            music.play(loops=-1, start=start - length)
+            return
+        music.load(BytesIO(data))
+        music.play(loops=0, start=start)
+        queue = getattr(music, 'queue', None)
+        if queue is not None:
+            queue(BytesIO(loop['data']), loops=-1)
 
     def _replay(self, position, now):
         current = self.current
         try:
             music = pygame.mixer.music
             self._set_volume(self.volume)
-            music.play(loops=-1 if current['flag'] else 0, start=position)
+            if current.get('loop') is not None:
+                self._play(current['data'], current['loop'], current['length'], True, position)
+            else:
+                music.play(loops=-1 if current['flag'] else 0, start=position)
         except (pygame.error, OSError, ValueError) as error:
             logging.warning('Music %s cannot resume: %s', current['id'], error)
             self._unload()

@@ -112,6 +112,24 @@ class ChoiceHintTests(unittest.TestCase):
             s.answer(s.pending.details['values'].index(correct))
             self.assertEqual(s.engine.sound_id, 8007)
 
+    def test_translated_new_rules_jingles_are_answer_feedback_only_in_that_pack(self):
+        # tools/translate plays New Rules' right/wrong jingles (tracks 13 and 1) as episode audio 26980 + track.
+        right, wrong = 26980 + 13, 26980 + 1
+        s = choice_session(lambda refs: host_call(80, right, 0) + host_call(13, refs[3], 0),
+                           lambda refs: host_call(80, wrong, 0) + host_call(13, refs[3], 0))
+        self.assertEqual(kinds(s), ['unknown', 'unknown'])           # an ordinary episode's music says nothing
+        s.resources.record['pack_id'] = 31300
+        self.assertEqual(kinds(s), ['gain', 'loss'])
+        other = choice_session(lambda _: host_call(80, 26980 + 6, 0), lambda _: host_call(80, wrong, 0))
+        other.resources.record['pack_id'] = 31300
+        self.assertEqual(kinds(other), ['unknown', 'loss'])           # another track is no feedback
+        # translations since 2026-10-25 play the jingles as sound effects (79)
+        sounds = choice_session(lambda refs: host_call(79, right) + host_call(13, refs[3], 0),
+                                lambda refs: host_call(79, wrong) + host_call(13, refs[3], 0))
+        self.assertEqual(kinds(sounds), ['unknown', 'unknown'])
+        sounds.resources.record['pack_id'] = 31300
+        self.assertEqual(kinds(sounds), ['gain', 'loss'])
+
     def test_quiz_feedback_respects_game_service_and_preview_boundaries(self):
         s = choice_session(lambda _: host_call(79, 8007), lambda _: host_call(79, 8003))
         s.engine.game_key = 'cod'

@@ -357,3 +357,36 @@ the creator converts old `episode_link` nodes into native Message/End nodes,
 preserving closing text and translations. Arbitrary original imports retain
 their native resource payloads and expose native blocks instead of adding
 inferred story metadata.
+
+## Presentation extension (shshd-runtime)
+
+An episode may contain resource **3** beginning with `SHSHD-PRESENTATION\0`,
+followed by UTF-8 JSON with `format: "shshd-presentation"` and `version: 1`.
+This is SHSHD Runtime metadata, not a recovered native format: it opts the
+episode in to four presentation features this fork added for its translated
+games (`presentation.py`). No original archive uses an ID below 25000 other
+than 1, and creator exports use 2, so native players and upstream
+exp-runtime never read 3. Every member is optional:
+
+| Member | Value | Shown |
+| --- | --- | --- |
+| `duet` | `[partner key, expression key]` | A two-speaker line: the gray box, a portrait each side, the name centered |
+| `narration_theme` | key | A named line without a portrait (mode 3) in blue (1), pink (2) or gray (3) |
+| `portrait_effects` | `{key, images}` | An emoticon over the speaker: effect 1–6 (lightning, sweat, anger, heart, exclamation, question), `images` its six episode images or `null` |
+| `music_loops` | `{"intro": loop}` | An intro music resource running into its loop without a gap |
+
+Keys are SHS global numbers (owner 0, service 54) that the script sets around
+the line and clears after it: the duet partner as its character ID + 1 (0
+none) and its expression, the theme, the effect (0 none). They are ordinary
+saved state, so a restored line shows the same presentation. The intro is
+started by service 80 as usual; an app with the feature queues the loop
+behind it.
+
+The runtime honours the record in the SHS profile (`PRESENTATION_RECORD`;
+`content.presentation_feature`). Episodes translated by `tools/translate`
+(packs 31300 and 31400) keep their settings in the profile's `TRANSLATED_*`
+tables, which take precedence. A malformed record is set aside with a warning
+and the episode plays without it. An app without the feature shows the first
+speaker alone, the yellow named-line box, no emoticon, and the intro with its
+own repeat flag. The episode creator writes the record when a project uses
+these options ([CREATOR.md](CREATOR.md)).

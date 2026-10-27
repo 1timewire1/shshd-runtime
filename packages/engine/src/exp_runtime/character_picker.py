@@ -1,5 +1,5 @@
 """Service 78's five-position portrait selector (native UI type 5)."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 
 
@@ -26,17 +26,21 @@ class CharacterPicker:
     characters: list[int]
     order: list[int]
     portraits: list[PortraitMotion]
+    # Where each slot is: the native table, or a translated pack's own (shs/profile.py TRANSLATED_PICKER_LAYOUTS).
+    positions: list[tuple[int, int]] = field(default_factory=lambda: list(POSITIONS))
 
     @classmethod
-    def start(cls, characters):
+    def start(cls, characters, positions=POSITIONS):
         if not 1 <= len(characters) <= 5:
             raise ValueError('Character selection requires 1 to 5 character IDs')
+        if len(positions) < len(characters):
+            raise ValueError('A picker layout needs a position for every character')
         portraits = []
         for slot in range(len(characters)):
-            x, y = POSITIONS[slot]
+            x, y = positions[slot]
             pose = (float(x), float(y), 1.0 if slot == 0 else 0.6)
             portraits.append(PortraitMotion(pose, pose, opacity=255 if slot == 0 else 91))
-        return cls(list(characters), list(range(len(characters))), portraits)
+        return cls(list(characters), list(range(len(characters))), portraits, [tuple(p) for p in positions])
 
     @property
     def selected(self):
@@ -77,7 +81,7 @@ class CharacterPicker:
         """Native fixed circular hit regions, independent of animated widgets."""
         x, y = point
         for slot, original in enumerate(self.order):
-            cx, cy = POSITIONS[slot]
+            cx, cy = self.positions[slot]
             radius = 61 * (1 if slot == 0 else 0.6)
             if (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2:
                 return original
@@ -87,7 +91,9 @@ class CharacterPicker:
         count = len(self.characters)
         if (not 1 <= count <= 5 or sorted(self.order) != list(range(count))
                 or len(self.portraits) != count
-                or any(not -32768 <= c <= 32767 for c in self.characters)):
+                or any(not -32768 <= c <= 32767 for c in self.characters)
+                or len(self.positions) < count
+                or any(not (52 <= x <= 269 and 170 <= y <= 275) for x, y in self.positions)):
             raise ValueError('Invalid character selection state')
         for portrait in self.portraits:
             if not 0 <= portrait.elapsed_ms <= SWAP_MS or portrait.opacity not in (91, 255):

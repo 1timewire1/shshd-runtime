@@ -975,6 +975,81 @@ class DesktopTests(unittest.TestCase):
                            (ui.bg_viewport.right - 1, ui.bg_viewport.bottom - 1)):
                 self.assertEqual(ui.window.get_at(corner)[:3], (40, 200, 40))
 
+    def test_the_hires_portraits_switch_shows_in_a_translated_episode_and_swaps_at_once(self):
+        # Translated New Rules episodes (shs profile TRANSLATED_PORTRAIT_ART) offer "Hi-Res Portraits" on the pause
+        # menu's General page too; flipping it reaches the library and drops every cached portrait, so the story
+        # draws the other set on its next frame.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import contextlib
+        from unittest import mock
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_dialogue import DialogueRenderer
+        from exp_runtime.desktop_picker import CharacterPickerRenderer, HdCharacterPickerRenderer
+        from exp_runtime.shs.profile import TRANSLATED_PORTRAIT_ART
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        pack_id = 31300                                 # New Rules (the X360 translations, 31400, work the same)
+        self.assertIn(pack_id, TRANSLATED_PORTRAIT_ART)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            resources.library.hires_portraits = True
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('hires_portraits', ui._pause_settings())          # an ordinary episode: no switch
+            resources.record = dict(resources.record, pack_id=pack_id)
+            self.assertIs(ui._pause_settings()['hires_portraits'], True)
+            saved = []
+            ui.on_settings = lambda: saved.append(ui.hires_portraits)
+            ui.images[26200] = None
+            caches = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
+                      CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
+            with contextlib.ExitStack() as stack:
+                cleared = [stack.enter_context(mock.patch.object(cache, 'cache_clear')) for cache in caches]
+                ui.command(('pause_toggle', 'hires_portraits'))
+            self.assertEqual((ui.hires_portraits, resources.library.hires_portraits, saved), (False, False, [False]))
+            self.assertEqual(len(ui.images), 0)
+            self.assertTrue(all(clear.called for clear in cleared))
+            ui.command(('pause_toggle', 'hires_portraits'))
+            self.assertEqual((ui.hires_portraits, resources.library.hires_portraits), (True, True))
+
+    def test_a_translated_episode_shows_its_own_backdrop_where_the_art_leaves_the_frame_black(self):
+        # Translated New Rules episodes (pack 31300) carry New Rules' UI backdrop (shs/profile.py
+        # TRANSLATED_FRAME_BACKDROP); their 3:1 strips leave bands above and below. Other episodes keep black.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.shs.profile import TRANSLATED_FRAME_BACKDROP
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        pack_id = 31300                                 # New Rules (the X360 translations, 31400, work the same)
+        asset_id = TRANSLATED_FRAME_BACKDROP[pack_id]
+        with tempfile.TemporaryDirectory() as temporary:
+            for translated in (True, False):
+                resources = Resources(branching_program())
+                resources.library.directory = Path(temporary)
+                ui = Desktop(Session(resources), audio=False)
+                ui.render()
+                backdrop = pygame.Surface((384, 512))
+                backdrop.fill((30, 60, 150))
+                path = Path(temporary) / 'backdrop.png'
+                pygame.image.save(backdrop, str(path))
+                resources.record = dict(resources.record, pack_id=pack_id if translated else 1)
+                resources.exists = lambda rid: rid == asset_id
+                resources.read_asset = lambda rid, data=path.read_bytes(): data
+                strip = pygame.Surface((480, 160))
+                strip.fill((200, 40, 40))
+                ui.window.fill((0, 0, 0))
+                ui.pending_background, ui.pending_background_origin = strip, (240, 180)
+                ui._background_layer_cache = None
+                ui._draw_background_layer(ui.bg_viewport.size, ui.bg_viewport)
+                band = (30, 60, 150) if translated else (0, 0, 0)
+                for y in (ui.bg_viewport.y + 1, ui.bg_viewport.bottom - 2):
+                    self.assertEqual(ui.window.get_at((ui.bg_viewport.centerx, y))[:3], band)
+                self.assertEqual(ui.window.get_at(ui.bg_viewport.center)[:3], (200, 40, 40))
+
     def _location_ui(self, temporary):
         """A Desktop drawing Cause of Death's location layer on its own clock: (ui, clock, draw(art, origin))."""
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
@@ -1153,6 +1228,56 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNotNone(ui.pending_background)
             self.assertEqual(ui.pending_background.get_size(), (64, 64))
 
+    def test_a_translated_episodes_end_card_keeps_its_frame_backdrop_under_the_last_scene(self):
+        # The end-of-episode card's sepia backdrop (Desktop.snapshot) stretches an ordinary episode's last scene over
+        # the frame; a translated pack's 3:1 strip stays where the episode showed it, over its TRANSLATED_FRAME_BACKDROP
+        # (owner: New Rules' end card keeps the frame under the sepia).
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from io import BytesIO
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.engine import EngineAction, PanelState
+        from exp_runtime.shs.profile import TRANSLATED_FRAME_BACKDROP
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        pack_id = 31300
+        backdrop_id = TRANSLATED_FRAME_BACKDROP[pack_id]
+
+        def png(size, color):
+            surface = pygame.Surface(size)
+            surface.fill(color)
+            stream = BytesIO()
+            pygame.image.save(surface, stream, 'x.png')
+            return stream.getvalue()
+
+        assets = {42: png((480, 160), (200, 40, 40)), backdrop_id: png((384, 512), (30, 60, 150))}
+
+        def read_asset(resource_id):
+            if resource_id in assets:
+                return assets[resource_id]
+            raise OSError(f'no such test asset {resource_id}')
+
+        with tempfile.TemporaryDirectory() as temporary:
+            for translated in (True, False):
+                resources = Resources(branching_program())
+                resources.library.directory = Path(temporary)
+                resources.read_asset = read_asset
+                ui = Desktop(Session(resources), audio=False)
+                resources.record = dict(resources.record, pack_id=pack_id if translated else 1)
+                resources.exists = lambda rid: rid in assets
+                ui.session.engine.panel.background_id = 42
+                ui.render()
+                ui.session.engine.panel = PanelState()
+                ui.session.pending = EngineAction('episode_exit', ui.session.pending.request, False)
+                ui._background_layer_cache = None
+                ui.error = None                     # the fixture has no choice skin, which the first render reported
+                ui.render()
+                self.assertEqual(ui.pending_background_origin is None, not translated)
+                band = (30, 60, 150) if translated else (200, 40, 40)
+                self.assertEqual(ui.window.get_at((ui.bg_viewport.centerx, ui.bg_viewport.y + 1))[:3], band)
+                self.assertEqual(ui.window.get_at(ui.bg_viewport.center)[:3], (200, 40, 40))
+
     def test_chrome_image_normalizes_an_oversized_hd_icon_back_to_android_size(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
@@ -1213,6 +1338,34 @@ class DesktopTests(unittest.TestCase):
                 for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
                     ui.handle_event(pygame.event.Event(kind, button=1, pos=(frame.x + x * unit, frame.y + y * unit)))
                 self.assertFalse(ui.menu_open, (x, y))
+
+    def test_a_tap_in_a_lines_first_moments_is_ignored(self):
+        # shshd-runtime: CONTINUE_GUARD_MS keeps a double click that advanced one line from also finishing or
+        # skipping the next.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import CONTINUE_GUARD_MS, Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            words, (name, first, second) = text_words('Kim', 'The first line.', 'The second line.')
+            resources = Resources(vm_program(*host_call(15, name, first), *host_call(15, name, second), 0x33,
+                                             words=words))
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            ui.session.tick(5000)                                   # the first line, fully shown
+            line = ui.session.pending
+            ui.command(('continue',))
+            self.assertIsNot(ui.session.pending, line)              # advanced to the second line
+            second_line = ui.session.pending
+            before = ui.session.snapshot()
+            ui.command(('continue',))                               # the double click's second tap
+            self.assertEqual(ui.session.snapshot(), before)
+            ui.session.tick(CONTINUE_GUARD_MS)
+            ui.command(('continue',))                               # a deliberate tap after it
+            self.assertTrue(ui.session.engine.dialogue_animation.finish_requested
+                            or ui.session.pending is not second_line)
 
     def test_a_queued_transition_runs_blinds_around_the_answer(self):
         # SHS HD's GameModel (fade_transition.py): the panel stays under the closing blinds with the script held, the

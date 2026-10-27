@@ -103,8 +103,8 @@ def same_story(a, b):
     "Getting Over Howard" (standard); MTX_The_Storm_Part_2.exp's "...Part Two" versus "...Part 2"; MTX_SNG_The_
     Floating_Isle.exp's "The Super New Girl 2" versus "The Floating Isle" -- all three shown as duplicate rows
     before this checked the filename)."""
-    if a['id'] == b['id']:
-        return False
+    if a['id'] == b['id'] or a.get('legacy') != b.get('legacy'):
+        return False            # shshd-runtime: a translation from another game is never its smartphone twin
     same_slot = (a['pack_id'], a['episode_id']) == (b['pack_id'], b['episode_id'])
     if same_slot and a['name'].casefold() == b['name'].casefold():
         return True
@@ -247,9 +247,10 @@ def _range(records):
 
 
 def sort_key(record):
-    """Season packs first in numeric order; specials and one-off packs (ids below 100) after them."""
+    """Season packs first in numeric order; specials and one-off packs (ids below 100) after them. A translated
+    episode's `order` (content.legacy_fields) stands in for its id."""
     pack = record['pack_id']
-    return (pack if pack >= 100 else 10 ** 6 + pack, record['episode_id'], record['id'])
+    return (pack if pack >= 100 else 10 ** 6 + pack, record.get('order', record['episode_id']), record['id'])
 
 
 def episode_category(record, variant, catalog, *, mega_label, novel_label, bundled):
@@ -259,6 +260,8 @@ def episode_category(record, variant, catalog, *, mega_label, novel_label, bundl
     Season 3 episodes under "Season 1"; a "Season N" that disagrees with the pack's own season is not trusted.
     """
     from .episode_catalog import basename
+    if record.get('category'):
+        return record['category']        # shshd-runtime: set on import (content.legacy_fields)
     other = STANDARD if variant == HD else HD
     pack_season = season_label(record)
     for source in (variant, other):
@@ -328,7 +331,8 @@ def format_airdate(iso_date):
 
 
 def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vote_packages=(),
-                             bundles_label='Season Bundles', vote_label='Vote Packages', unknown_label='Date Unknown'):
+                             bundles_label='Season Bundles', vote_label='Vote Packages', unknown_label='Date Unknown',
+                             legacy_label='Legacy Game Episodes'):
     """Rows for a "Now Airing" list grouped by release year (earliest first) instead of by category.
 
     `release_dates` maps an episode's own title (`record['titles'][0]`) to an ISO date string, external
@@ -336,11 +340,15 @@ def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vo
     `vote_packages` name titles to pull into their own trailing rows instead of the year they released in:
     a season sold again as one bundle after already airing week by week, or a bonus purchase that isn't a
     narrative episode in its own right. A title in neither set, whatever it is, sorts into its own real year.
+    shshd-runtime: an episode translated from another SHS game (tagged on import, content.legacy_fields) is listed
+    under `legacy_label`, after the bundles: it shares its smartphone twin's title, not its airdate.
     """
-    years, vote, bundles, unknown = {}, [], [], []
+    years, vote, bundles, legacy, unknown = {}, [], [], [], []
     for record in records:
         title = record['titles'][0]
-        if title in vote_packages:
+        if record.get('legacy'):
+            legacy.append(record)
+        elif title in vote_packages:
             vote.append(record)
         elif title in redundant_bundles:
             bundles.append(record)
@@ -359,6 +367,8 @@ def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vo
         result.append(PickerRow('extra:vote', vote_label, tuple(sorted(vote, key=sort_key))))
     if bundles:
         result.append(PickerRow('extra:bundles', bundles_label, tuple(sorted(bundles, key=sort_key))))
+    if legacy:
+        result.append(PickerRow('extra:legacy', legacy_label, tuple(sorted(legacy, key=sort_key))))
     if unknown:
         result.append(PickerRow('extra:unknown', unknown_label, tuple(sorted(unknown, key=sort_key))))
     return result

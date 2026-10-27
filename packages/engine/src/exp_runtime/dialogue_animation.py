@@ -148,15 +148,16 @@ class DialogueAnimation:
 
     @classmethod
     def start(cls, details, variants, previous=None, history=None, *, retain_suppressed=False, length=None,
-              expression_ms=EXPRESSION_MS):
+              expression_ms=EXPRESSION_MS, restage=False):
         """`length`: the source indices the reveal runs over (Session._typed_length), by default the whole remaining
-        text, as Android's cursor scans it."""
+        text, as Android's cursor scans it. `restage` (shshd-runtime: a translated two-speaker line with a new partner)
+        plays the line as a change of speaker even when its speaker is the last line's."""
         if history is not None:
             history.remember(previous)
         portrait = DialoguePortrait.from_details(details, variants)
         old = previous.displayed_portrait if previous else None
         changed = previous is None or ((old.character_id if old else -1) !=
-                                       (portrait.character_id if portrait else -1))
+                                       (portrait.character_id if portrait else -1)) or bool(restage and old)
         motion = cls(len(details['text']) - details['page_start'] if length is None else length, portrait,
                    old if changed else None, changed,
                    wobble_direction=(20 if details['presentation_mode'] == 2 else -20)

@@ -98,7 +98,34 @@ def dialogue_story(directory):
     resources = Resources(program(*ADD_NODE, *host_call(13, refs[0], 0), *ADD_NODE, *host_call(13, refs[1], 0),
                                   *ADD_NODE, *host_call(13, refs[2], 0), 0x33, words=words))
     resources.library.directory = Path(directory)
+    resources.record = dict(resources.record, builtin='football-star')      # the original app's one story tree
     return resources
+
+
+class EpisodeTreeTests(unittest.TestCase):
+    """Only Football Star adds to the library's original tree; any other episode keeps a tree of its own."""
+
+    def test_another_episodes_tree_and_saved_scenes_are_its_own(self):
+        with tempfile.TemporaryDirectory() as directory:
+            football = Session(dialogue_story(directory))
+            football.advance()
+            other = dialogue_story(directory)
+            other.record = dict(titles=['Authored story'])
+            other.identity = dict(other.identity, episode_sha256='c' * 64)
+            session = Session(other)
+            self.assertIsNone(session.engine.dt_view.root)              # Football Star's tree is not loaded
+            session.advance()
+            answer_screen(session)
+            library = Path(directory)
+            self.assertEqual(session.dt_view_path, library / 'dtview' / ('c' * 64 + '.json'))
+            self.assertEqual(sorted(path.name for path in (library / 'dtsaves' / ('c' * 64)).iterdir()),
+                             ['1.json.gz', '2.json.gz'])
+            self.assertEqual(sorted(path.name for path in (library / 'dtsaves').glob('*.json.gz')), ['1.json.gz'])
+            self.assertEqual(len(list(Session(dialogue_story(directory)).engine.dt_view.nodes())), 1)
+            again = Session(other)
+            self.assertEqual((len(list(again.engine.dt_view.nodes())), again.tree_serials()), (2, {1, 2}))
+            restored = again.warp(again.engine.dt_view.by_serial(2))
+            self.assertIn('Second scene', restored.pending.details['text'])
 
 
 class WarpTests(unittest.TestCase):

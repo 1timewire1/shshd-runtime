@@ -66,9 +66,68 @@ MUSIC_SLIDER_SOUND = 8009
 # feedback (Football Star's shared classroom routine also covers finals).
 # They are fixed SHS base-bank IDs, not episode counters or text heuristics.
 CHOICE_FEEDBACK_SOUNDS = {8007: 1, 8003: -1}
+# shshd-runtime: episodes translated from SHS: New Rules (tools/translate, pack 31300) keep New Rules' own right/wrong
+# jingles, its music tracks 13 and 1, which the smartphone versions replaced with 8007/8003 at the same beats (~590
+# each across the 45 paired stories). They play as episode sound effects (service 79; music, 80, in translations made
+# before 2026-10-25) at the translator's MUSIC_BASE (26980) + track, so for that pack those requests are answer
+# feedback too. Pack -> {resource ID: feedback}.
+TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}}
+# shshd-runtime: a translated episode's own picture for the whole 384x512-unit frame, drawn under the location art
+# where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
+# above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
+# The X360 prototype's translations (31400) show the same strips, so they carry the same backdrop.
+TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999}
+# shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
+# place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
+# faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
+TRANSLATED_PICKER_LAYOUTS = {31300: {4: [(160, 275), (52, 241), (160, 170), (269, 241)]}}
+# shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
+# (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
+# New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at
+# 27200 on (tools/translate newrules.PORTRAIT_BASE / HIRES_PORTRAIT_OFFSET).
+# The cancelled Xbox 360 prototype's translations (pack 31400, tools/translate x360.py) store theirs the same way.
+TRANSLATED_PORTRAIT_ART = {31300: (26200, 26980, 1000), 31400: (26200, 26980, 1000)}
+# shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
+# player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
+# `$Date` are in both Dancing Queen and Homecoming Queen).
+TRANSLATED_NAME_SETS = {31300: 'new_rules'}
+# shshd-runtime: two-speaker lines in a translated pack (Session.dialogue_duet): pack -> (partner key, expression
+# key), global numbers the translator sets around a line two characters say together ("Both", "Andy and Laura"),
+# the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
+# centered (owner, 2026-10-24). An app without this entry shows the first speaker alone, as SHS 13 does.
+TRANSLATED_DUETS = {31300: (31310, 31311)}
+# shshd-runtime: emoticons over a translated speaker's portrait (Session.portrait_effect, emoticon_effects): pack ->
+# (key, first image), the global number the translator sets around the line (an emoticon_effects effect, 1-6; 0 none)
+# and the episode image of effect 1, the other five following it. The cancelled X360 prototype's translations (31400,
+# tools/translate x360.py) carry its emoticon sheet's six cells at 26990-26995.
+TRANSLATED_PORTRAIT_EFFECTS = {31400: (31410, 26990)}
+# shshd-runtime: a translated pack's colour for a named line without a portrait (Session.narration_theme): pack -> the
+# global number the translator sets around the line (1 blue, 2 pink, 3 gray; 0 keeps SHS's own). New Rules shows an
+# object or unseen voice ("TV", "Radio") in a gray bubble and an off-stage character in their own colour (owner,
+# 2026-10-25); without this entry they keep the yellow named-line box.
+TRANSLATED_NARRATION_THEMES = {31300: 31312}
+# shshd-runtime: a translated pack's music that is an intro running into a loop (music_stream.MusicStream.chain):
+# pack -> {intro resource: loop resource}. The intro plays once, then the loop repeats without a gap. The X360
+# prototype's Day of Diss plays `dont_trust_me` into `dont_trust_me_loop` (tools/translate/x360.py MUSIC_INTRO /
+# MUSIC_LOOP; owner, 2026-10-26).
+TRANSLATED_MUSIC_LOOPS = {31400: {26900: 26901}}
+# shshd-runtime: any other episode may declare the four features above for itself (presentation.py, resource 3: the
+# episode creator writes it) and the runtime honours it (content.presentation_feature); the tables above win for
+# their packs. An app without them shows one speaker, the yellow named-line box, no emoticon, and the intro alone.
+PRESENTATION_RECORD = True
+# shshd-runtime: episodes translated from other SHS games, recognised on import by their title's tag (content.py
+# legacy_fields: "Lovers' Lane (SHSNR)" imports as "Lovers' Lane"): tag -> the picker's badge, its colour in the list
+# view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`
+# places an episode by another position than its id: New Rules' second built-in story, Dancing Queen (101), follows
+# King of Diss (1), ahead of the downloads (2-48); King of Diss Lite (100) stays last, as the alternative version.
+LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5})}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)
+# shshd-runtime: a translated pack's own right/wrong sounds for service 71's quiz, pack -> (right, wrong) episode
+# resources. Translated New Rules episodes play its own jingles (tracks 13 and 1, at the translator's MUSIC_BASE
+# 26980 + track) there instead of SHS's (owner, 2026-10-25). An episode without both keeps WORD_GAME_SOUNDS.
+TRANSLATED_WORD_GAME_SOUNDS = {31300: (26980 + 13, 26980 + 1)}
 # Service 78's portrait selector: swapping a portrait to the front, then confirming (Android FUN_000d1b48).
 PICKER_SOUNDS = (8013, 8010)
 # Curly single quotes truncated to one byte by the authoring tool, as in Cause of Death (cod/profile.py): U+2019 as

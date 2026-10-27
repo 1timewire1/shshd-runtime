@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import plistlib
@@ -23,7 +24,8 @@ from zlib import error as ZlibError
 
 from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
-from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS
+from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS, game_id
+from .presentation import EFFECTS, presentation_record
 
 
 PROFILE = SHS_ANDROID
@@ -122,6 +124,24 @@ def _with_episode_alias(record, name):
     if name.casefold() in {n.casefold() for n in (record['name'], *record.get('aliases', []))}:
         return record
     return dict(record, aliases=[*record.get('aliases', []), name])
+
+
+def legacy_fields(titles, game, episode_id=None):
+    """shshd-runtime: an episode translated from another SHS game is recognised by its title's tag (the game profile's
+    LEGACY_GAMES: " (SHSNR)" for New Rules). The tag is dropped from every title and recorded with the category the
+    episode is filed under, so the picker can badge it and never takes it for its smartphone twin, and with its place
+    in that category where the game gives one. Returns {titles, legacy, category[, order]}, or {} for any other
+    episode."""
+    profile = GAMES.get(game)
+    for tag, info in getattr(profile, 'LEGACY_GAMES', {}).items():
+        suffix = f' ({tag})'
+        if titles and titles[0].endswith(suffix):
+            fields = dict(titles=[t[:-len(suffix)] if t.endswith(suffix) else t for t in titles], legacy=tag,
+                          category=info['category'])
+            if episode_id in info.get('order', {}):
+                fields['order'] = info['order'][episode_id]
+            return fields
+    return {}
 
 
 def file_digest(path: Path) -> str:
@@ -533,6 +553,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
                                     pack_id=meta.pack_id, episode_id=meta.episode_id,
                                     titles=list(meta.titles), scripts=sorted(programs), **location,
                                     **episode_index_fields(archive, programs))
+                records[sha].update(legacy_fields(records[sha]['titles'], source_game, meta.episode_id))
             else:
                 records[sha] = _with_episode_alias(records[sha], name)
             return sha
@@ -652,6 +673,8 @@ class ContentLibrary:
                     or sum(key in record for key in ('file', 'apk_member', 'ipa_member')) != 1
                     or ('ipa_member' if self.kind == 'apk' else 'apk_member') in record
                     or ('builtin' in record and (record['builtin'] != GAMES[self.game_id].BUILTIN or 'file' not in record))
+                    or not isinstance(record.get('legacy', ''), str) or not isinstance(record.get('category', ''), str)
+                    or type(record.get('order', 0)) not in (int, float)
                     or not isinstance(record.get('aliases', []), list)
                     or not all(isinstance(alias, str) for alias in record.get('aliases', []))
                     or (member_key in record and not isinstance(record[member_key], str))):
@@ -727,6 +750,9 @@ class ContentLibrary:
         # mode a player reaches through the app itself (there is no in-game toggle for this); 'off'/'twins'
         # stay reachable only through SHS_HD_ART or a hand-edited player.json, for this project's own testing.
         self.hd_art_mode = os.environ.get('SHS_HD_ART', 'fill')
+        # shshd-runtime: translated New Rules episodes carry two portrait sets; True shows the X1i jar's redrawn,
+        # higher-resolution ones (the game profile's TRANSLATED_PORTRAIT_ART), False New Rules' WinMo ones.
+        self.hires_portraits = True
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
         self._hd_resource_cache = {}
@@ -1144,6 +1170,7 @@ class ContentLibrary:
                               episode_id=meta.episode_id, titles=list(meta.titles),
                               scripts=sorted(programs), file=f'content/{sha}.exp', **source,
                               **episode_index_fields(archive, programs))
+                record.update(legacy_fields(record['titles'], self.game_id, meta.episode_id))
                 (stage / (sha + '.exp')).write_bytes(data)
                 records[sha] = record
                 additions.append(record)
@@ -1190,10 +1217,47 @@ class ContentLibrary:
         self.close()
 
 
+# shshd-runtime: the game profile's table holding each presentation feature for the translated packs, and how its
+# entry becomes the episode record's form (presentation.normalize). Portrait effects there name the first image.
+PRESENTATION_TABLES = dict(duet=('TRANSLATED_DUETS', tuple), narration_theme=('TRANSLATED_NARRATION_THEMES', int),
+                           portrait_effects=('TRANSLATED_PORTRAIT_EFFECTS',
+                                             lambda spec: (spec[0], tuple(range(spec[1], spec[1] + EFFECTS)))),
+                           music_loops=('TRANSLATED_MUSIC_LOOPS', dict))
+
+
+def presentation_feature(resources, name):
+    """shshd-runtime: an episode's setting for a presentation feature (presentation.MEMBERS), in the record's form, or
+    None. The game profile's table for the episode's pack comes first (the translations: New Rules 31300, the X360
+    prototype 31400); any other episode uses its own declaration (resource 3) where the profile accepts one
+    (PRESENTATION_RECORD)."""
+    record = getattr(resources, 'record', None) or {}
+    profile = GAMES.get(game_id(resources))
+    table, convert = PRESENTATION_TABLES[name]
+    value = getattr(profile, table, {}).get(record.get('pack_id'))
+    if value is not None:
+        return convert(value)
+    if not getattr(profile, 'PRESENTATION_RECORD', False):
+        return None
+    return (getattr(resources, 'presentation', None) or {}).get(name)
+
+
 class EpisodeResources:
     def __init__(self, library: ContentLibrary, record: dict, archive: ExpArchive):
         self.library, self.record, self.archive = library, record, archive
         self.programs = archive.programs()
+        self._presentation = False
+
+    @property
+    def presentation(self):
+        """shshd-runtime: the episode's declared presentation features (resource 3, presentation.normalize), {} for
+        none. A malformed record is set aside with a warning: the episode plays as SHS shows it."""
+        if self._presentation is False:
+            try:
+                self._presentation = presentation_record(self.archive) or {}
+            except ContentError as error:
+                logging.warning('%s: %s', self.record.get('name', 'episode'), error)
+                self._presentation = {}
+        return self._presentation
 
     @property
     def identity(self):
@@ -1222,6 +1286,9 @@ class EpisodeResources:
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
+        hires = self._hires_portrait(resource_id)
+        if hires is not None:
+            return self.archive.read(hires)     # already HD-sized: no twin store fill on top
         if resource_id >= 26000:
             data = self.archive.read(resource_id)
         else:
@@ -1235,6 +1302,24 @@ class EpisodeResources:
         if mode != 'off' and self.record.get('variant') == 'standard':
             return self.library.twin_store().art(data, mode)      # the HD release's picture, or a 2x fill
         return data
+
+    def standard_portrait(self, resource_id):
+        """The episode's own portrait (raw bytes) that `read_asset`'s hi-res copy stands in for, so the player can
+        show the copy at the size the original fills; None when `read_asset` returns no hi-res copy."""
+        return None if self._hires_portrait(resource_id) is None else self.raw_asset(resource_id)
+
+    def _hires_portrait(self, resource_id):
+        """shshd-runtime: the resource holding the hi-res copy of a translated episode's portrait, when the player
+        wants them (library.hires_portraits) and the episode has one: the game profile's TRANSLATED_PORTRAIT_ART,
+        pack -> (first, end, offset), moves portraits in [first, end) by offset. Else None."""
+        if not getattr(self.library, 'hires_portraits', False):
+            return None
+        profile = GAMES.get(getattr(self.library, 'game_id', None))
+        span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(self.record.get('pack_id'))
+        if span is None or not span[0] <= resource_id < span[1]:
+            return None
+        hires = resource_id + span[2]
+        return hires if hires in self.archive.entries else None
 
     def raw_asset(self, resource_id: int) -> bytes:
         """The episode's own bytes, never substituted (what the twin store is built from). `library.read_asset`

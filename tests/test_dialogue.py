@@ -194,6 +194,25 @@ class DialogueTests(unittest.TestCase):
         self.assertNotEqual(session.vm.snapshot(), before)
         self.assertEqual(session.engine.dialogue_animation.revealed, 0)
 
+    def test_a_repeated_speaker_joined_by_a_new_partner_leaves_and_comes_back_as_a_pair(self):
+        # shshd-runtime: a translated two-speaker line (Session.dialogue_duet) draws its speaker smaller, so a speaker
+        # joined by a partner plays as a change of speaker: the last line's portrait zooms out, then the pair zooms
+        # in. A pair that carries on together is unchanged. The fixture's third and fourth lines share a speaker.
+        from unittest.mock import patch
+        from exp_runtime.runtime import Session
+        for third, fourth, restaged in ((-1, 12, True), (12, 12, False), (12, 7, True), (-1, -1, False)):
+            partners = iter((-1, -1, third, fourth))
+            with patch.object(Session, '_duet_partner', lambda session: next(partners, -1)):
+                session = self.session()
+                answer_screen(session)
+                answer_screen(session)
+                answer_screen(session)
+            motion = session.engine.dialogue_animation
+            self.assertEqual(motion.changed, restaged)
+            self.assertEqual(motion.previous, motion.portrait if restaged else None)
+            self.assertEqual(motion.portrait_scale, 0 if restaged else 1)
+            motion.validate()
+
     def test_speaker_tweens_same_side_swap_and_repeated_speaker(self):
         session = self.session()
         motion = session.engine.dialogue_animation
@@ -331,7 +350,7 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(restored.vm.snapshot(), original.vm.snapshot())
         self.assertEqual(restored.pending.details['speaker'], '')
         self.assertEqual(restored.pending.details['presentation_mode'], 4)
-        self.assertEqual(restored.snapshot()['version'], 28)
+        self.assertEqual(restored.snapshot()['version'], 29)
         self.assertEqual(restored.answer().name, 'finished')
 
 

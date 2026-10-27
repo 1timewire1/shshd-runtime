@@ -14,7 +14,7 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .app_icon import set_window_icon
-from .content import ContentError
+from .content import ContentError, presentation_feature
 from .audio import music_cue
 from .games import GAMES, game_id
 from .desktop_text import BitmapTextRenderer
@@ -50,6 +50,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
+from .choice_hints import word_game_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -84,10 +85,30 @@ INK = (245, 241, 233)
 MUTED = (183, 187, 198)
 ACCENT = (247, 190, 94)
 PANEL = (23, 29, 45)
+# shshd-runtime: a tap on a dialogue line or page in its first CONTINUE_GUARD_MS is ignored, so a double click or tap
+# that advanced the last line does not also finish (or skip) the next one (owner, 2026-10-25; this player's own).
+CONTINUE_GUARD_MS = 250
 
 
 # Links a browser can open (an App Store link's itms:// becomes its web page in _offer_link).
 WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
+
+
+def word_game_options(outcomes):
+    """(option labels, the score each finishes the quiz with) for the skip prompt, best first, then "Play" (labels
+    only): Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, the score ranges for more
+    ("Score 6 or more", "Score 4 to 5", "Score 0 to 3"). The best outcome scores the most a quiz can, as Win always did;
+    any other its lowest score."""
+    if outcomes is None or len(outcomes) == 2:
+        return ('Win', 'Lose', 'Play'), (32767, 0)
+    if len(outcomes) == 1:
+        return ('Skip', 'Play'), (32767,)
+    labels, scores = [], []
+    for index, (low, high) in enumerate(reversed(outcomes)):
+        labels.append(f'Score {low} or more' if high is None else f'Score {low}' if low == high
+                      else f'Score {low} to {high}')
+        scores.append(32767 if index == 0 else low)
+    return (*labels, 'Play'), tuple(scores)
 
 
 class _PromptEngine:
@@ -152,6 +173,7 @@ class Desktop:
     _disable_choice_timer = False
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
+    hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     host_prompt = None
     minigame_played = None
     ad_asked = None
@@ -330,6 +352,7 @@ class Desktop:
         self.press = ButtonPress()
         self.images = OrderedDict()
         self._background_layer_cache = None   # (key, scaled surface) from the last _draw_background_layer call
+        self._frame_backdrop_cache = (None, None)   # (key, scaled surface or None), see _frame_backdrop
         self.buttons = []
         self.scroll = self.max_scroll = 0
         self.screen_token = None
@@ -351,6 +374,7 @@ class Desktop:
         self.fade = None                     # the player's own fade from black (a warp; scene_fade.py)
         self.music_token = None
         self.music_stream = MusicStream()
+        self.music_stream.chain = self._music_loop
         self.music_was_enabled = True
         # The menu's song in the pause menu (see `_sync_pause_song`): its Sound, the ticks its fade-out began, and
         # whether the Music switch has asked for it (SHSEngine +0xb22c), and the pause page that switch was on.
@@ -589,6 +613,19 @@ class Desktop:
         cue = music_cue(music_id, game=game_id(self.session.resources))
         return self.session.resources.read_asset(cue.asset_id), cue.start_ms / 1000
 
+    def _music_loop(self, music_id):
+        """shshd-runtime: the loop a translated pack's intro cue runs into (the game profile's TRANSLATED_MUSIC_LOOPS,
+        or the episode's own declaration: content.presentation_feature), as bytes, or None (MusicStream.chain)."""
+        resources = self.session.resources
+        loops = presentation_feature(resources, 'music_loops') or {}
+        if music_id not in loops:
+            return None
+        try:
+            return resources.read_asset(loops[music_id])
+        except ContentError as error:
+            logging.warning('Music loop %s cannot be read: %s', loops[music_id], error)
+            return None
+
     def _sync_audio(self):
         if not self.audio:
             return
@@ -739,8 +776,16 @@ class Desktop:
         if (prompt is None and self.skip_minigames and action is not None
                 and action.name in ('football', 'word_grid', 'word_game')
                 and self.minigame_played is not action and not self.error):
-            prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action), self.SKIP_OPTIONS,
-                                       lambda index: self._resolve_minigame(action, index))
+            if action.name == 'word_game':
+                # shshd-runtime: a quiz offers each outcome its story has (choice_hints.word_game_outcomes): most have
+                # two, some three (Football Star's movie date: 0-3, 4-5, 6 or more), a vote package's one.
+                outcomes = word_game_outcomes(self.session)
+                options, scores = word_game_options(outcomes)
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, outcomes),
+                                           options, lambda index: self._resolve_word_game(action, scores, index))
+            else:
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
+                                           self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
         return prompt
 
     def _open_prompt(self, action, title, text, options, resolve):
@@ -778,9 +823,9 @@ class Desktop:
         if self.session.pending is action:
             self._answer(index)
 
-    def _minigame_summary(self, action):
-        """What the game about to start holds, for the skip prompt: football's half and starting score, the grid's
-        target and its puzzles' words."""
+    def _minigame_summary(self, action, outcomes=None):
+        """What the game about to start holds, for the skip prompt: football's half and starting score, the quiz's
+        outcomes (word_game_outcomes), the grid's target and its puzzles' words."""
         engine = self.session.engine
         if action.name == 'football':
             game = engine.football
@@ -796,8 +841,13 @@ class Desktop:
         if action.name == 'word_game':
             game = engine.word_game
             seconds = round(game.duration_ms / 1000)
-            return (f'Word quiz. Pick the right word, again and again, for {seconds} seconds. Win scores the most a '
-                    f'quiz can; Lose scores nothing.')
+            quiz = f'Word quiz. Pick the right word, again and again, for {seconds} seconds.'
+            if outcomes is None or len(outcomes) == 2:
+                passed = f' (a score of {outcomes[1][0]} or more)' if outcomes else ''
+                return f'{quiz} Win passes it{passed}; Lose scores nothing.'
+            if len(outcomes) == 1:
+                return f'{quiz} Its score changes nothing that follows.'
+            return f'{quiz} Its story goes {len(outcomes)} ways, by score.'
         game = engine.word_grid
         words = []
         for problem in game.problems:
@@ -807,6 +857,15 @@ class Desktop:
         shown = ', '.join(words[:8]) + (' ...' if len(words) > 8 else '')
         seconds = round(game.remaining_ms / 1000)
         return f'Word game. Score {game.target} in {seconds} seconds. Words: {shown}.'
+
+    def _resolve_word_game(self, action, scores, index):
+        """The quiz's skip prompt: an outcome finishes it with that score (word_game_options), Play starts it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(scores):
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_word_game(scores[index]))
 
     def _resolve_minigame(self, action, index):
         """The skip prompt's answer: Win / Lose finish the game with that result, Play starts it."""
@@ -1113,6 +1172,15 @@ class Desktop:
                 background_id = self.last_background_id
             self.pending_background = self._image(background_id)
             self.pending_background_origin = None
+            if self._frame_backdrop(getattr(self, 'bg_viewport', self.window.get_rect()).size) is not None:
+                # shshd-runtime: a translated pack's strip stays where the episode showed it, over its frame
+                # backdrop (owner: New Rules' end card keeps the frame under the sepia), not stretched over both.
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background,
+                                                                                          self.session.engine)
+            # Settled, not mid-crossfade: this snapshot follows the last screen at once, so a picture of that screen's
+            # own (New Rules' King of Diss ends on a download notice over a full-frame SHS lot) would otherwise still
+            # cover the scene at full strength, the 0.25 s location change not yet begun.
+            self.location_shown = self.location_changing = None
             self._present()
             return
         if action and action.name == 'presentation':
@@ -1256,6 +1324,31 @@ class Desktop:
     def backdrop_switch(self):
         """Whether the "SHS HD Backdrop" switch has a collage to show."""
         return self.backdrop_collage() is not None
+
+    def hires_switch(self):
+        """shshd-runtime: whether this episode has a second, hi-res portrait set (the game profile's
+        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        packs = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_PORTRAIT_ART', {})
+        return record.get('pack_id') in packs
+
+    def set_hires_portraits(self, enabled):
+        """shshd-runtime: the "Hi-Res Portraits" switch, from either Options page. The library reads the other set
+        from the next portrait drawn (EpisodeResources._hires_portrait), and every cached portrait is dropped, so the
+        story shows it at once: both sets fill the ring alike, so nothing else moves. Saves name the standard
+        portraits, so a story always loads with the current set."""
+        self.hires_portraits = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.hires_portraits = enabled
+        self.images.clear()
+        cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
+                  CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
+        if HdWordRenderer is not None:
+            cached.append(HdWordRenderer.portrait_image)
+        for method in cached:
+            method.cache_clear()
 
     def _present(self):
         engine = self.session.engine
@@ -1415,6 +1508,10 @@ class Desktop:
         # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
         self.window.fill((0, 0, 0), viewport)
+        # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
+        frame_backdrop = self._frame_backdrop(viewport.size)
+        if frame_backdrop is not None:
+            self.window.blit(frame_backdrop, viewport)
         background = self.pending_background
         placement = None if background is None else self._background_placement(background, target_size)
         change = self._location_change(background, placement)
@@ -1426,6 +1523,24 @@ class Desktop:
             # The outgoing picture, in the same (animated) layer, fading out over the incoming one.
             alpha = (self.pending_background_alpha if placement is not None else 255) * (1 - change['p'])
             self._blit_art(change['old'], placement or change['from'], target_size, viewport, alpha, cache=False)
+
+    def _frame_backdrop(self, size):
+        """The playing episode's picture for the whole frame, scaled to `size`, or None for black: the resource its
+        pack names in the game profile's TRANSLATED_FRAME_BACKDROP (New Rules' UI backdrop for its translations,
+        whose 3:1 location strips leave bands above and below), when the episode carries it."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        backdrops = getattr(GAMES.get(self.session.engine.game_key), 'TRANSLATED_FRAME_BACKDROP', {})
+        asset_id = backdrops.get(record.get('pack_id'))
+        exists = getattr(resources, 'exists', None)
+        if asset_id is None or exists is None or not exists(asset_id):
+            return None
+        key = (id(resources), asset_id, size)
+        if self._frame_backdrop_cache[0] != key:
+            image = self._image(asset_id)
+            scaled = None if image is None else pygame.transform.smoothscale(image, size)
+            self._frame_backdrop_cache = (key, scaled)
+        return self._frame_backdrop_cache[1]
 
     # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
     # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off
@@ -1738,7 +1853,8 @@ class Desktop:
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}))
+                    **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
+                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}))
 
     def pause_box(self):
         if self.pause_hd.available() and not self.error:
@@ -1886,6 +2002,8 @@ class Desktop:
                 self.disable_choice_timer = not self.disable_choice_timer
             elif command[1] == 'hd_backdrop':
                 self.hd_backdrop = not self.hd_backdrop
+            elif command[1] == 'hires_portraits':
+                self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
                 if self.vibration_enabled and pygame.supports_vibration():
@@ -1979,7 +2097,7 @@ class Desktop:
                 self._answer(command[1])
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
                                                                      'survey_confirmation'):
-                if not self.autoplay:           # Autoplay advances these itself (`_tick_autoplay`)
+                if not self.autoplay and not self._continue_guarded(action):   # Autoplay: `_tick_autoplay`
                     if (action.name == 'message_panel' and self.dialogue_renderer.game_id() == 'cod'
                             and self.session.engine.message_panel is not None
                             and self.session.engine.message_panel.ready):
@@ -1988,6 +2106,11 @@ class Desktop:
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
         self._sync_text_input()
+
+    def _continue_guarded(self, action):
+        """Whether a continue tap lands in a dialogue line's or page's first CONTINUE_GUARD_MS (ignored)."""
+        motion = self.session.engine.dialogue_animation if action.name == 'dialogue' else None
+        return motion is not None and motion.elapsed_ms < CONTINUE_GUARD_MS
 
     def _choice_busy(self, action):
         """Whether `action`'s choice is closing after a pick, or held faded out behind a link's prompt."""
@@ -2529,7 +2652,10 @@ class Desktop:
             elif self.choice_held is not None:
                 self._release_choice()          # the prompt has closed (this runs only without one)
             elif ask is not None:
-                pass                            # the mini-game has not started: its clocks wait for the skip prompt
+                # The mini-game has not started: its clocks wait for the skip prompt. A scene transition still runs to
+                # its end (fade-in included), the game held, or the prompt would wait under a black screen.
+                if self.session.transitioning:
+                    self._attempt(lambda: self.session.tick(elapsed_ms, pause_minigame=True))
             elif (pending is not None and pending.name in ('choice', 'word_game') and remaining is not None
                   and (pending.name == 'word_game' or self.session.choice_timer)
                   and remaining < elapsed_ms and self._hd_choice_drawn()):     # exactly 0 is still selectable

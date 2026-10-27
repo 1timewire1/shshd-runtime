@@ -147,8 +147,43 @@ class DesktopOptionTests(unittest.TestCase):
         self.assertIn('Word quiz', prompt['session'].pending.details['text'])
         self.assertIsNone(prompt['session'].engine.word_game)     # drawn as an ordinary choice
         self.assertIsNotNone(ui.session.engine.word_game)
-        prompt['resolve'](1)                                      # Lose: the quiz scores nothing
+        # Nothing follows this quiz, so its score changes nothing: one outcome, Skip, then Play.
+        self.assertEqual(prompt['options'], ('Skip', 'Play'))
+        prompt['resolve'](0)
         self.assertNotEqual(getattr(ui.session.pending, 'name', None), 'word_game')
+
+    def test_the_skip_prompt_offers_each_outcome_a_quiz_has(self):
+        # shshd-runtime: a quiz whose story reads its score three ways (as Football Star's movie date does) offers
+        # each, best first; picking one finishes the quiz with that outcome's score.
+        words, refs = text_words('Snacks!', 'Pick', 'yes|right', 'no|wrong|bad', 'Great.', 'Fine.', 'Bad.')
+        title, text, good, bad, high, mid, low = refs
+        ui = self.ui(Resources(program(*host_call(71, title, text, good, bad, 20000, -1, 1, 3000),
+                                       0x21, (0x1a, 6), 0x0d, (0x2b, 5), *host_call(13, high, 0), (0x29, 28),
+                                       0x21, (0x1a, 4), 0x0d, (0x2b, 5), *host_call(13, mid, 0), (0x29, 28),
+                                       *host_call(13, low, 0), 0x33, words=words)))
+        ui.skip_minigames = True
+        prompt = ui._host_prompt()
+        self.assertEqual(prompt['options'], ('Score 6 or more', 'Score 4 to 5', 'Score 0 to 3', 'Play'))
+        self.assertIn('3 ways', prompt['session'].pending.details['text'])
+        prompt['resolve'](1)
+        self.assertEqual(ui.session.pending.details['text'], 'Fine.')
+
+    def test_a_fade_in_finishes_under_the_skip_prompt_while_the_quiz_waits(self):
+        # King of Diss (New Rules) fades to black right before a word game: the prompt must not wait under the black.
+        from exp_runtime.fade_transition import FadeTransition
+        words, refs = text_words('Title', 'Pick', 'yes|right', 'no|wrong|bad')
+        ui = self.ui(Resources(program(*host_call(71, *refs, 20000, -1, 1, 3000), 0x33, words=words)))
+        ui.skip_minigames = True
+        fade = ui.session.engine.scene_transition = FadeTransition()
+        fade.start(1, 0)
+        fade.reveal()
+        game = ui.session.engine.word_game
+        clock = game.remaining_ms
+        for _ in range(200):
+            ui.tick(16)
+        self.assertFalse(ui.session.transitioning)
+        self.assertIsNotNone(ui._host_prompt())
+        self.assertEqual((ui.session.pending.name, game.remaining_ms), ('word_game', clock))
 
 
 if __name__ == '__main__':

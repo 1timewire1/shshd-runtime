@@ -11,12 +11,13 @@ import tempfile
 from types import UnionType
 from typing import get_args, get_origin, get_type_hints
 
-from .content import EpisodeResources, digest
+from .content import EpisodeResources, digest, presentation_feature
 from .games import GAMES, game_id
 from .engine import POLL_WAIT_MS, EngineAction, EngineState
 from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
                                  ExpressionTransition, EXPRESSION_MS, IOS_EXPRESSION_MS)
 from .background import BackgroundPan
+from .character_picker import CharacterPicker, POSITIONS
 from .fade_transition import FadeTransition
 from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_lifetime, notice_limit
 from .dt_state import install_state
@@ -144,6 +145,9 @@ class Session:
     # Whether a timed choice's clock runs. The desktop's Disable Choice Timer (this player's option, not native) holds
     # it; `expire_choice` then lets it run out on request. Not saved: the remaining time is kept as it was.
     choice_timer = True
+    # shshd-runtime: (the dialogue motion, its two-speaker line's partner ID or -1), so the next line knows whether its
+    # partner is new. Not saved: a restore takes it from the restored line.
+    _duet_line = None
 
     def __init__(self, resources: EpisodeResources, *, start_script: int = 25001, ephemeral: bool = False):
         GAMES[game_id(resources)]  # Fail before executing with a missing adapter.
@@ -180,14 +184,28 @@ class Session:
         version = library.hd_app_version() if hasattr(library, 'hd_app_version') else None
         self.engine.hd_version = version
 
+    @staticmethod
+    def original_tree(resources) -> bool:
+        """Whether this is Football Star, the one episode whose tree the app itself built."""
+        return (getattr(resources, 'record', None) or {}).get('builtin') == 'football-star'
+
+    @staticmethod
+    def tree_files(resources) -> tuple[Path, Path]:
+        """Where an episode's story tree and its scenes' saved games live: `(tree file, folder of <serial>.json.gz)`. Not tied
+        to any one save -- matching the real app's own tree_<serial>.sav files, which live in the app's shared cache
+        directory and persist across separate playthroughs (confirmed from a real device's own data; see
+        legacy/findings.md). The app only ever had Football Star's tree, which keeps the library's `dtview_tree.json` and
+        `dtsaves/`; any other episode that builds one (an authored episode) has its own, by its content hash, so its
+        scenes never join Football Star's."""
+        directory = resources.library.directory
+        if Session.original_tree(resources):
+            return directory / 'dtview_tree.json', directory / Session.TREE_STATE_DIRECTORY
+        key = resources.identity['episode_sha256']
+        return directory / 'dtview' / f'{key}.json', directory / Session.TREE_STATE_DIRECTORY / key
+
     @property
     def dt_view_path(self) -> Path:
-        """Library-wide, not tied to any one episode/save -- matching the
-        real app's own tree_<serial>.sav files, which live in the app's
-        shared cache directory and persist across separate playthroughs of
-        whatever content calls into the DTView cluster (confirmed from a
-        real device's own data; see legacy/findings.md)."""
-        return self.resources.library.directory / 'dtview_tree.json'
+        return self.tree_files(self.resources)[0]
 
     durable = True      # forced to disk after every write; a bulk run (tree_explorer) turns it off
 
@@ -228,13 +246,13 @@ class Session:
     WARP_KEPT_PROPERTIES = (0xbbc, 0xbbd, 0xbbe, 0xbda, 0xbdc, 0xbdf)
 
     def _tree_state_path(self, serial: int) -> Path:
-        return self.resources.library.directory / self.TREE_STATE_DIRECTORY / f'{serial}.json.gz'
+        return self.tree_files(self.resources)[1] / f'{serial}.json.gz'
 
     def tree_serials(self) -> set:
         """The tree nodes that have a saved game (the app's `tree_<serial>.sav` files): the ones that can be warped to."""
         if self._tree_serials is None:
             try:
-                names = (self.resources.library.directory / self.TREE_STATE_DIRECTORY).glob('*.json.gz')
+                names = self.tree_files(self.resources)[1].glob('*.json.gz')
                 self._tree_serials = {int(path.name.split('.')[0]) for path in names}
             except (OSError, ValueError, AttributeError):
                 self._tree_serials = set()
@@ -294,7 +312,8 @@ class Session:
         restored = Session.from_snapshot(self.resources, state)
         live, engine = self.engine, restored.engine
         view = live.dt_view
-        if view.root is not None and node.deltas is not None:
+        # `installStateData` sets Football Star's 67 tracked variables; another episode's scene save already holds its state.
+        if view.root is not None and node.deltas is not None and self.original_tree(self.resources):
             view.sweep_forward(view.root)                   # the scene's state as the story followed now leaves it
             if node.active:
                 install_state(engine, node.snapshot)       # `installStateData`: the 67 tracked variables, then what is kept below
@@ -388,6 +407,20 @@ class Session:
             game.home, game.away = (winner, loser) if success else (loser, winner)
         return self._complete_minigame()
 
+    @_sound_batch
+    def skip_word_game(self, score: int):
+        """shshd-runtime: finish the pending word quiz with `score`, the skip prompt's outcome
+        (choice_hints.word_game_outcomes: a quiz may have more than winning and losing)."""
+        if type(score) is not int or not 0 <= score <= 32767:
+            raise ValueError('A word quiz score is a word from 0 to 32767')
+        if not self.pending or self.pending.name != 'word_game' or self.transitioning:
+            raise ValueError('There is no skippable word quiz')
+        self.start_minigame()
+        game = self.engine.word_game
+        game.score = score
+        game.round = max(game.round, score + 1)
+        return self._complete_minigame()
+
     def _complete_minigame(self, *, result=None):
         kind = self.pending.name
         game = getattr(self.engine, kind)
@@ -407,8 +440,73 @@ class Session:
         action = self.pending
         if not action or action.name != 'dialogue' or not hasattr(self.resources, 'dialogue_layout'):
             return None
+        duet = self.dialogue_duet()
+        partner = (self.engine.substitute(self.engine.character_names.get(duet.character_id, ''))
+                   if duet is not None else None)
         return self.resources.dialogue_layout().page(action.details, action.details.get('page_start', 0),
-                                                    names=self.engine.speaker_names, text_history=self.bitmap_history)
+                                                    names=self.engine.speaker_names, text_history=self.bitmap_history,
+                                                    duet=duet, partner_name=partner,
+                                                    narration_theme=self.narration_theme())
+
+    def narration_theme(self):
+        """shshd-runtime: a translated pack's colour for a named line without a portrait (panel mode 3), or None. The
+        game profile's TRANSLATED_NARRATION_THEMES names a global number the translator sets around such a line:
+        1 blue, 2 pink, 3 gray, 0 the line's own. New Rules gives an object or unseen voice (a TV, a radio) its gray
+        bubble and an off-stage character its own colour; SHS shows both as named lines (15) without a portrait.
+        Any other episode can declare its own number (presentation_feature, resource 3)."""
+        action = self.pending
+        if not action or action.name != 'dialogue' or action.details.get('presentation_mode') != 3:
+            return None
+        key = presentation_feature(self.resources, 'narration_theme')
+        if key is None:
+            return None
+        theme = self.engine.numbers.get(self.engine.number_key(0, key), 0)
+        return theme if theme in (1, 2, 3) else None
+
+    def portrait_effect(self):
+        """shshd-runtime: the emoticon over a translated pack's speaker on this line, as (effect, image ID), or None.
+        The game profile's TRANSLATED_PORTRAIT_EFFECTS names the global number the translator sets around the line (an
+        emoticon_effects effect, 1-6) and the pack's first effect image; a line with a portrait shows it. The number is
+        part of the saved state, so a restored line shows its effect again. Any other episode can declare its own
+        number and an image per effect (presentation_feature, resource 3); an effect without an image shows none."""
+        action = self.pending
+        if not action or action.name != 'dialogue' or action.details.get('presentation_mode') not in (1, 2):
+            return None
+        spec = presentation_feature(self.resources, 'portrait_effects')
+        if spec is None:
+            return None
+        from .emoticon_effects import EFFECTS
+        effect = self.engine.numbers.get(self.engine.number_key(0, spec[0]), 0)
+        image = spec[1][effect - 1] if effect in EFFECTS else None
+        return (effect, image) if image is not None else None
+
+    def dialogue_duet(self):
+        """shshd-runtime: the second speaker of a translated pack's two-speaker line, as a DialoguePortrait on the
+        other side from the first, or None. The game profile's TRANSLATED_DUETS names the global numbers the
+        translator sets around the line (pack -> (partner key, expression key), the partner as its ID + 1); they are
+        part of the saved state, so a restored line finds its partner again. Any other episode can declare its own
+        numbers (presentation_feature, resource 3)."""
+        action = self.pending
+        if not action or action.name != 'dialogue' or action.details.get('presentation_mode') not in (1, 2):
+            return None
+        keys = presentation_feature(self.resources, 'duet')
+        if keys is None:
+            return None
+        engine = self.engine
+        partner = engine.numbers.get(engine.number_key(0, keys[0]), 0) - 1
+        variants = engine.character_art_variants.get(partner, ())
+        if partner < 0 or partner == action.details['visible_character_id'] or not variants:
+            return None
+        expression = max(0, engine.numbers.get(engine.number_key(0, keys[1]), 0))
+        art = variants[expression % len(variants)]
+        if art < 0:
+            return None
+        return DialoguePortrait(partner, art, 3 - action.details['presentation_mode'],
+                                engine.numbers.get(engine.number_key(partner, 651), 0), expression)
+
+    def _duet_partner(self):
+        duet = self.dialogue_duet()
+        return duet.character_id if duet is not None else -1
 
     @property
     def bitmap_history(self):
@@ -534,16 +632,24 @@ class Session:
                     if current is not None and self.engine.dt_view.awaiting_result:
                         current.choice_labels = dict(zip(action.details['values'], action.details['options']))
                     self.engine.choice_ms = 0
+                if action.name == 'character_picker':
+                    self._place_picker()
                 self.pending = action
                 if action.name == 'dialogue':
                     self._prepare_dialogue(new_name=True, update_text=True)
+                    # shshd-runtime: a speaker joined by a new partner (Session.dialogue_duet) changes size, so their
+                    # portrait leaves and the pair comes in, as for a new speaker, instead of snapping.
+                    previous, partner = self.engine.dialogue_animation, self._duet_partner()
+                    held = self._duet_line[1] if self._duet_line is not None and self._duet_line[0] is previous else -1
                     self.engine.dialogue_animation = DialogueAnimation.start(
-                        action.details, self.engine.character_art_variants, self.engine.dialogue_animation,
+                        action.details, self.engine.character_art_variants, previous,
                         self.engine.dialogue_history,
                         retain_suppressed=self.engine.game_key == 'shs'
                         and getattr(self.resources.library, 'kind', 'apk') == 'apk',
                         length=self._typed_length(action.details),
-                        expression_ms=IOS_EXPRESSION_MS if self._ios_dialogue() else EXPRESSION_MS)
+                        expression_ms=IOS_EXPRESSION_MS if self._ios_dialogue() else EXPRESSION_MS,
+                        restage=partner >= 0 and partner != held)
+                    self._duet_line = (self.engine.dialogue_animation, partner)
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
                         # HD's letters wait for the portrait (dialogue_notice.hd_letter_start_ms).
@@ -638,7 +744,7 @@ class Session:
                 labels = story_labels(self)
                 if labels is not None:
                     labels.word_round(previous_options)
-                right, wrong = GAMES[self.engine.game_key].WORD_GAME_SOUNDS
+                right, wrong = self._word_game_sounds()
                 if game.last_delta:
                     self.engine.request_sound(right if game.last_delta > 0 else wrong)
             return action
@@ -727,6 +833,28 @@ class Session:
         self._prepare_dialogue(new_name=True)
         self._complete_panel()
         self.engine.message_panel = None
+
+    def _word_game_sounds(self):
+        """Service 71's right/wrong answer sounds: the game profile's WORD_GAME_SOUNDS, or a translated pack's own
+        (shshd-runtime: TRANSLATED_WORD_GAME_SOUNDS, pack -> (right, wrong) episode resources) when the episode
+        carries both."""
+        profile = GAMES[self.engine.game_key]
+        record = getattr(self.resources, 'record', None) or {}
+        sounds = getattr(profile, 'TRANSLATED_WORD_GAME_SOUNDS', {}).get(record.get('pack_id'))
+        exists = getattr(self.resources, 'exists', None)
+        if sounds is not None and exists is not None and all(exists(sound) for sound in sounds):
+            return sounds
+        return profile.WORD_GAME_SOUNDS
+
+    def _place_picker(self):
+        """shshd-runtime: a translated pack's own layout for a new portrait picker (the game profile's
+        TRANSLATED_PICKER_LAYOUTS, by portrait count); every other episode keeps the native slots."""
+        picker = self.engine.character_picker
+        record = getattr(self.resources, 'record', None) or {}
+        layouts = getattr(GAMES[game_id(self.resources)], 'TRANSLATED_PICKER_LAYOUTS', {})
+        positions = layouts.get(record.get('pack_id'), {}).get(len(picker.characters))
+        if positions is not None:
+            self.engine.character_picker = CharacterPicker.start(picker.characters, positions)
 
     def _complete_panel(self):
         # 000ab8b8 / 0007efe8, shared by title, message and dialogue panels; a queued transition holds the callback
@@ -909,7 +1037,7 @@ class Session:
             game = self.engine.word_game
             finished = game.tick(elapsed_ms, self.engine.random48)
             if game.scored:
-                right, wrong = GAMES[self.engine.game_key].WORD_GAME_SOUNDS
+                right, wrong = self._word_game_sounds()
                 self.engine.request_sound(right if game.scored > 0 else wrong)
                 game.scored = 0
             if finished:
@@ -964,7 +1092,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=28,
+        return dict(format='shs-runtime-save', version=29,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1005,8 +1133,13 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 29):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 30):
                 raise SaveError('Unsupported save format or version')
+            # Version 29 stores an open portrait picker's slot positions (a translated pack may place them its own
+            # way); an older one used the native slots.
+            if state['version'] < 29 and (state.get('engine') or {}).get('character_picker') is not None:
+                state = deepcopy(state)
+                state['engine']['character_picker']['positions'] = [list(p) for p in POSITIONS]
             # Version 27 adds exp-runtime v0.6.1's state (its own versions 22-24, numbered independently of this
             # fork's): the choice entrance clock, Android's bitmap text history, the music/sound playback records,
             # the minigames' new effects and the expression decorations. Every field is filled with setdefault, so
@@ -1668,6 +1801,8 @@ class Session:
                         engine.dialogue_history.expressions[portrait.character_id] = byte - 256 if byte > 127 else byte
                 session.pending = None
                 session.advance()
+            if session._duet_line is None:
+                session._duet_line = (engine.dialogue_animation, session._duet_partner())
             return session
         except (KeyError, TypeError, ValueError, AttributeError) as error:
             if isinstance(error, SaveError):

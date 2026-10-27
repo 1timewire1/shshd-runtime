@@ -129,6 +129,11 @@ class ChoiceRenderer:
         if option is None or None in (cap_height(title), cap_height(body), cap_height(option), descent(title)):
             return None
         self.text.register(self.OPTION_FONT, option)
+        if not self.cod():
+            # The menu's description and options are HD's dialogue body face, whose '{' is a song note (dialogue.py
+            # NOTE_FRAMES): King of Diss's sung choices ("{ It looks like his father was a grizzly... {").
+            from .dialogue import with_note
+            body, option = with_note(body), with_note(option)
         color = {1: (1, 76, 215), 2: (166, 45, 45), 3: (108, 108, 108)}.get(theme, (223, 163, 52))
         # The option font is the theme color itself (SHSEngine::initFonts); the two half-alpha labels make it
         # lighter (draw_hd), so the photo-fitted OPTION_COLORS do not apply here.
@@ -434,7 +439,8 @@ class ChoiceRenderer:
         # On the frame-wide layer: a title's stroke and italic overhang may pass the column's edge.
         self.text.draw_layout(self.wide, page.title_font, page.title, x * k + self.margin, y * k, scale=k)
         x, y = page.description_origin
-        self.text.draw_layout(self.canvas, page.description_font, page.description, x * k, y * k, scale=k)
+        self.text.draw_layout(self.canvas, page.description_font, page.description, x * k, y * k, scale=k,
+                              inline=self.hd_notes(theme), inline_density=2)
         self.hd_widget(page.footer_widget, x0, page.footer_top, width, page.footer_height, theme,
                        hidden=(SCORE_CAPSULE,) if page.timer_center and not page.scored else (), geometry=g)
         strip = self.hd_piece(2, 3, theme, g.density == 1)
@@ -471,7 +477,7 @@ class ChoiceRenderer:
             self.canvas.blit(band, area.topleft)
             rule = max(1, round(k / g.density))
             self.canvas.fill(ROW_SEPARATOR, (area.x, area.bottom - rule, area.width, rule))
-            self.draw_hd_label(row, rect, scroll, self.label_home(row, game), g)
+            self.draw_hd_label(row, rect, scroll, self.label_home(row, game), g, theme)
             if hit.height > 0:
                 buttons.append((hit, ('choose', row.index)))
         self.canvas.set_clip(None)
@@ -512,19 +518,30 @@ class ChoiceRenderer:
             return 0.
         return fly_on(row.position, game.shown_ms / 1000, QUIZ_FLY_ON_SECONDS)
 
-    def draw_hd_label(self, row, rect, scroll, home, geometry=None):
+    def hd_notes(self, theme):
+        """The inline images for '{' in the HD menu's text: the theme's song note, or the gray one in the gold text
+        color for the narrator's menu (as dialogue.py gives the gold fonts)."""
+        from .dialogue import NOTE_CODE, NOTE_FRAMES
+        if self.cod():
+            return None
+        if theme in NOTE_FRAMES:
+            return {NOTE_CODE: self.art.note_image(NOTE_FRAMES[theme])}
+        return {NOTE_CODE: self.art.note_image(NOTE_FRAMES[3], (223, 163, 52))}
+
+    def draw_hd_label(self, row, rect, scroll, home, geometry=None, theme=1):
         """The cell's two SHSLabels (alpha 0.5 each) at their flight offsets (points)."""
         from .hd_choice import label_offsets
         k = self.scale
         width, height = round(rect.width * k), round(rect.height * k)
-        key = (row.text, width, height)
+        key = (row.text, width, height, theme)
         cache = self.__dict__.setdefault('_labels', {})
         if key not in cache:
             if len(cache) > 32:
                 cache.clear()
             label = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
             x, y = row.origin
-            self.text.draw_layout(label, self.OPTION_FONT, row.text, (x - rect.x) * k, (y - row.rect.y) * k, scale=k)
+            self.text.draw_layout(label, self.OPTION_FONT, row.text, (x - rect.x) * k, (y - row.rect.y) * k, scale=k,
+                                  inline=self.hd_notes(theme), inline_density=2)
             label = faded(label, 128)
             cache[key] = label
         density = geometry.density if geometry is not None else 2
