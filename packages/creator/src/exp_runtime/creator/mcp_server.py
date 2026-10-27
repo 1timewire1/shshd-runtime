@@ -72,7 +72,8 @@ def create_server(root):
 
     @edit_tool(name='project_update')
     def update_project(path: str, revision: str, changes: dict) -> dict:
-        """Change title/game/IDs/start/language/locales/library. Use project_get's revision."""
+        """Change title/game/IDs/start/language/locales/library/emoticons (six image asset IDs or null, the
+        dialogue params.emoticon images). Use project_get's revision."""
         return workspace.update(path, revision, changes)
 
     @edit_tool(name='graph_edit_node')

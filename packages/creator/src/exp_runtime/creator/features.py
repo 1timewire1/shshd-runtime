@@ -23,9 +23,13 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              end='End episode', native='Native bytecode block')
 
 DEFAULTS = {
-    'dialogue': {}, 'choice': {'shuffle': False}, 'background': {'variant': 0},
+    # shshd-runtime presentation (SHS only; the episode declares them in resource 3, SCHEMA.md "Presentation
+    # extension"): a second speaker and their expression, a named line's bubble colour (0 its own, 1 blue, 2 pink,
+    # 3 gray), an emoticon over the speaker (model.EMOTICONS, 0 none), and music's loop after its intro (-1 none).
+    'dialogue': {'partner': '', 'partner_expression': 0, 'bubble': 0, 'emoticon': 0},
+    'choice': {'shuffle': False}, 'background': {'variant': 0},
     'set': {'expression': ''}, 'branch': {'expression': ''},
-    'music': {'resource': 8201, 'loop': True}, 'sound': {'resource': 8001},
+    'music': {'resource': 8201, 'loop': True, 'then_loop': -1}, 'sound': {'resource': 8001},
     'stop_audio': {'channel': 0},
     'relationship': {'operation': 'add', 'value': 1, 'romantic': False, 'hide': False, 'result': 'relationship'},
     'score': {'owner': 0, 'key': 400, 'operation': 'add', 'value': 1, 'notification': '', 'result': 'score'},

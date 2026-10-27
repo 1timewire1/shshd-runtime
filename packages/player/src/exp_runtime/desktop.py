@@ -14,7 +14,7 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .app_icon import set_window_icon
-from .content import ContentError
+from .content import ContentError, presentation_feature
 from .audio import music_cue
 from .games import GAMES, game_id
 from .desktop_text import BitmapTextRenderer
@@ -611,11 +611,10 @@ class Desktop:
         return self.session.resources.read_asset(cue.asset_id), cue.start_ms / 1000
 
     def _music_loop(self, music_id):
-        """shshd-runtime: the loop a translated pack's intro cue runs into (the game profile's TRANSLATED_MUSIC_LOOPS),
-        as bytes, or None (music_stream.MusicStream.chain)."""
+        """shshd-runtime: the loop a translated pack's intro cue runs into (the game profile's TRANSLATED_MUSIC_LOOPS,
+        or the episode's own declaration: content.presentation_feature), as bytes, or None (MusicStream.chain)."""
         resources = self.session.resources
-        record = getattr(resources, 'record', None) or {}
-        loops = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_MUSIC_LOOPS', {}).get(record.get('pack_id'), {})
+        loops = presentation_feature(resources, 'music_loops') or {}
         if music_id not in loops:
             return None
         try:

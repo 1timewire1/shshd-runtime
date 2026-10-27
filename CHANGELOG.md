@@ -4,6 +4,19 @@
 
 ### Added
 
+- **Creator episodes can use the translated games' presentation.** Two-speaker lines, coloured named lines,
+  emoticons over the speaker and intros that run into a loop are no longer tied to the New Rules and X360
+  translations' pack IDs. An episode declares them in a small record of its own (resource 3, `presentation.py`,
+  SCHEMA.md "Presentation extension"), which the runtime reads when the shs profile has no table for its pack
+  (`content.presentation_feature`). Packs 31300 and 31400 keep their tables. Native SHS and other apps ignore the
+  record and show the line as SHS does.
+  - In the creator (SHS projects): a dialogue line's **Second speaker** and **Their expression**, a named line's
+    **Bubble color** (blue, pink or gray), a line's **Emoticon** with the project's own **Emoticon images…**, and a
+    Music node's **Then loop** track. They are in the inspector, the node schema and the MCP tools
+    (`project_update` takes `emoticons`). Projects move to format version 3; older ones upgrade on opening.
+  - A line sets SHS global numbers 31310–31312 / 31410 while it is up. A score or property-flag node may not use
+    one of those owner-0 keys in an episode whose lines use the matching option.
+  - The iOS app does not yet run an intro into its loop.
 - **`tools/translate x360`: the cancelled Xbox 360 prototype's two new stories as creator projects.** It reads the
   May 2009 prototype's `data.pak` and walks its Lua scripts (`lua_subset.py`). *Day of Diss* is the King of Diss
   prequel: a hub to talk to Kim, Hector, Ryan or Nicole, then Hector's diss battle intro. The *Puzzle Test* is two

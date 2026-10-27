@@ -34,7 +34,8 @@ def apply(workspace, project, operation):
         if 'game' in changes and changes['game'] != project.game and (project.assets or project.native or project.library):
             raise ProjectError('Create a new project to change the game after importing resources')
         if changes.get('library'): changes['library'] = str(workspace.path(changes['library']))
-        patch_record(project, changes, {'title', 'game', 'pack_id', 'episode_id', 'start', 'language', 'locales', 'library'})
+        patch_record(project, changes, {'title', 'game', 'pack_id', 'episode_id', 'start', 'language', 'locales', 'library',
+                                        'emoticons'})
     elif op in ('node', 'character'):
         key = operation['id']
         if not isinstance(key, str) or not key: raise ProjectError('An edit needs a nonempty ID')
@@ -84,7 +85,8 @@ def check_removals(before, after):
         raise ProjectError('Removed node is still referenced; reconnect its incoming edges and project start in the same batch')
     removed_characters = {c.id for c in before.characters} - {c.id for c in after.characters}
     def referenced(node):
-        keys = [node.character, *(node.params.get(key) for key in ('left_character', 'right_character', 'player', 'narrator'))]
+        keys = [node.character, *(node.params.get(key) for key in ('left_character', 'right_character', 'player', 'narrator',
+                                                                    'partner'))]
         looks = node.params.get('characters')
         keys += looks if isinstance(looks, list) else []
         return {key for key in keys if isinstance(key, str) and key}

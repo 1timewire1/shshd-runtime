@@ -11,7 +11,10 @@ import tempfile
 from exp_runtime.exp import ContentError
 
 FORMAT = 'exp-runtime-project'
-VERSION = 2
+VERSION = 3
+# shshd-runtime: the emoticons a dialogue line can show over its speaker (params.emoticon, emoticon_effects), in effect
+# order; the project picks an image for each (Project.emoticons).
+EMOTICONS = ('Lightning', 'Sweat', 'Anger', 'Heart', 'Exclamation', 'Question')
 MAX_PROJECT_BYTES = 96 * 1024 * 1024
 MAX_ASSET_BYTES = 64 * 1024 * 1024
 KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 'stop_audio',
@@ -130,6 +133,8 @@ class Project:
     locales: dict[str, dict[str, str]] = field(default_factory=dict)
     language: str = 'en'
     native: dict = field(default_factory=dict)
+    # shshd-runtime: the image of each emoticon (EMOTICONS), None for one the project doesn't use (version 3).
+    emoticons: list[int | None] = field(default_factory=lambda: [None] * len(EMOTICONS))
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -258,6 +263,11 @@ def validate_structure(project: Project):
             _string(value, 'translated text')
     if not isinstance(project.native, dict):
         raise ProjectError('Invalid native archive data')
+    if not isinstance(project.emoticons, list) or len(project.emoticons) != len(EMOTICONS):
+        raise ProjectError(f'Emoticon images need exactly {len(EMOTICONS)} slots')
+    for resource in project.emoticons:
+        if resource is not None:
+            _integer(resource, 0, 32767, 'Emoticon image')
     if not isinstance(project.assets, list) or len(project.assets) > 2000:
         raise ProjectError('Too many image assets')
     ids, size = set(), 0
@@ -355,7 +365,7 @@ def project_from_record(data):
     data = deepcopy(data)
     try:
         if (not isinstance(data, dict) or data.pop('format', None) != FORMAT
-                or type(data.get('version')) is not int or data['version'] not in (1, VERSION)):
+                or type(data.get('version')) is not int or data['version'] not in (1, 2, VERSION)):
             raise ProjectError('Unsupported episode project format or version')
         version = data.pop('version')
         if version == 1:
@@ -364,6 +374,8 @@ def project_from_record(data):
                 node.update(scene=25001, character='', expression=0, params={})
                 for option in node['options']:
                     option['condition'] = ''
+        if version < 3:
+            data['emoticons'] = [None] * len(EMOTICONS)
         nodes = []
         for record in data['nodes']:
             node = _construct(Node, record)

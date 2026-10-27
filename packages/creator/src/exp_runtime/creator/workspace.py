@@ -50,6 +50,7 @@ class Workspace:
                 'title': project.title, 'game': project.game,
                 'pack_id': project.pack_id, 'episode_id': project.episode_id, 'start': project.start,
                 'language': project.language, 'locales': project.locales, 'library': project.library,
+                'emoticons': project.emoticons,
                 'native': bool(project.native), 'node_count': len(project.nodes),
                 'nodes': [asdict(n) for n in project.nodes[offset:offset + limit]],
                 'characters': [asdict(c) for c in project.characters],

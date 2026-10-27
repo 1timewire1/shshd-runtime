@@ -111,6 +111,10 @@ TRANSLATED_NARRATION_THEMES = {31300: 31312}
 # prototype's Day of Diss plays `dont_trust_me` into `dont_trust_me_loop` (tools/translate/x360.py MUSIC_INTRO /
 # MUSIC_LOOP; owner, 2026-10-26).
 TRANSLATED_MUSIC_LOOPS = {31400: {26900: 26901}}
+# shshd-runtime: any other episode may declare the four features above for itself (presentation.py, resource 3: the
+# episode creator writes it) and the runtime honours it (content.presentation_feature); the tables above win for
+# their packs. An app without them shows one speaker, the yellow named-line box, no emoticon, and the intro alone.
+PRESENTATION_RECORD = True
 # shshd-runtime: episodes translated from other SHS games, recognised on import by their title's tag (content.py
 # legacy_fields: "Lovers' Lane (SHSNR)" imports as "Lovers' Lane"): tag -> the picker's badge, its colour in the list
 # view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`

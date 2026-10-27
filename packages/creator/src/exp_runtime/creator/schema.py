@@ -3,7 +3,7 @@ from copy import deepcopy
 from dataclasses import asdict
 
 from .features import DEFAULTS, NAMES
-from .model import Node, ProjectError
+from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
                       'tree_result', 'loading', 'survey'))
@@ -32,7 +32,13 @@ TEXT_NOTE = (' Text may format numbers with {expression} placeholders, such as {
              'stored texts as {name} or $KEY.')
 NOTES = {
     'dialogue': 'Use character for a reusable speaker, or speaker/portrait for an inline speaker. Text must be nonempty. '
-                'Expression -1 uses the character default (Default expression node).' + TEXT_NOTE,
+                'Expression -1 uses the character default (Default expression node).' + TEXT_NOTE +
+                ' SHS only, SHSHD Runtime presentation (other apps show the line as SHS does): params.partner, a '
+                'reusable character with a portrait, joins a portrait line as a second speaker with '
+                'params.partner_expression (0-4); params.bubble colours a named line without a portrait (1 blue, '
+                '2 pink, 3 gray; 0 the game\'s own); params.emoticon shows over the speaker\'s portrait (' +
+                ', '.join(f'{i} {name.lower()}' for i, name in enumerate(EMOTICONS, 1)) + '; 0 none) using the '
+                'image set in the project\'s emoticons (project_update changes.emoticons: six asset IDs or null).',
     'choice': 'Provide 2–8 nonempty answers. Conditions enable answers; timeout_option is a zero-based visible row; native shuffling moves labels/return values, while enabled flags remain on rows.',
     'background': 'asset must reference an imported image in this project.',
     'set': 'variable is required; a nonempty params.expression overrides value.',
@@ -76,7 +82,9 @@ NOTES = {
               'receipt, the results stay 0 and the story continues.',
     'random': 'bound must be positive. Stores an actual native random draw in result.',
     'music': 'Music IDs are 8201–8232 in SHS and 8201–8209 in CoD, or an embedded MP3 (asset_import_audio). '
-             'Some SHS IDs select offsets in another audio asset.',
+             'Some SHS IDs select offsets in another audio asset. SHS only: params.then_loop names an embedded MP3/WAV '
+             'the track runs into without a gap after playing once (-1 none); other apps play the track alone, '
+             'repeating by params.loop. An intro always runs into the same loop.',
     'sound': 'A game sound ID, or an embedded MP3/WAV (asset_import_audio).',
     'word_game': 'good needs at least 2 words; bad at least 3. Duration 1–32767 ms. Words cannot contain pipes.',
     'football': 'Six interleaved offense/defense tables, each 1–10 rows of [code, yards, variation, weight]. See defaults for a valid example.',
@@ -128,6 +136,11 @@ def node_schema(kind=None):
         properties['timeout_option'].update(minimum=0, maximum=7)
     properties['params'] = dict(type='object', additionalProperties=False,
         properties={key: value_schema(value) for key, value in DEFAULTS[kind].items()}, default=deepcopy(DEFAULTS[kind]))
+    params = properties['params']['properties']
+    for name, (low, high) in dict(partner_expression=(0, 4), bubble=(0, 3), emoticon=(0, len(EMOTICONS)),
+                                  then_loop=(-1, 32767)).items():
+        if name in params: params[name].update(minimum=low, maximum=high)
+    if 'partner' in params: params['partner']['description'] = 'A reusable character ID, or empty for none.'
     if kind == 'native':
         properties['params'] = dict(type='object', description='Use native_get_data and graph_get_subgraph to inspect the imported block before editing.')
     example = dict(id='example', kind=kind, params=deepcopy(DEFAULTS[kind]))

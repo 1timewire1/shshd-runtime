@@ -421,6 +421,12 @@ The scheduler policy and remaining timing paths are specified in
 See [UI_FIDELITY.md](UI_FIDELITY.md#dialogue-typography-and-layout-contract)
 for the text schema, algorithms, colors, and evidence addresses.
 
+shshd-runtime adds no service for its two-speaker lines, named-line colours,
+emoticons or intro-into-loop music. An episode declares the global numbers it
+sets around such a line (service 54) in resource 3, and the runtime reads them
+while the line is up; see
+[SCHEMA.md](SCHEMA.md#presentation-extension-shshd-runtime).
+
 ### 4.3 Services 17/40 and 78: UI-owned data
 
 Services 17 and 40 select UI type 15 and pass substituted title, prompt, and initial text to `FUN_000d4440`, with an additional constant 20 at the caller. Callback `FUN_000d3f5c` copies the entered string (panel +0x9c) to dynamic slot 0, resumes with handle `0x7ff5`, and copies it into host last-input storage +0x54. Typing actually permits at most **16 ASCII alphanumeric characters**, with uppercase characters after the first converted to lowercase. Before each append, the existing name width plus cursor width must be below 240 logical pixels. Empty Return does not submit. Native layouts, fonts, error alert, validation, and the callback are implemented; the desktop uses SDL keyboard input. See the [name-entry contract](NAME_INPUT.md) for evidence, geometry, save handling, and remaining fidelity limits.

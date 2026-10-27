@@ -52,7 +52,7 @@ The selected choice connects to two dialogue paths. Its inspector sets a
 | Dialogue, choice | Narration, named text, portraits, expressions 0–4 or the character default, native themes, timed answers and conditional options |
 | Player / narrator | Native primary speaker (74) and the character whose lines become narration (75); both change mid-episode |
 | Background, pan | Image selection, automatic speaker tracking or left/center/right alignment |
-| Music, sound, stop audio | Native resource IDs or embedded MP3/WAV, looping flag, immediate runtime stop; listen to a library or embedded track |
+| Music, sound, stop audio | Native resource IDs or embedded MP3/WAV, looping flag, immediate runtime stop; listen to a library or embedded track. SHS: a "then loop" track the music runs into (see below) |
 | Relationship | Add/set character property 407, hide indicators, select romance, store the resulting number in a variable |
 | Score/property | Add/set an explicit native owner/key, optional dialogue notification, and a result variable |
 | Set variable, condition | Signed-word arithmetic, comparisons, boolean conditions and increments such as `points + 1`; game-state reads `prop`, `bit` and `art` |
@@ -199,6 +199,27 @@ pending set changes. Set `SHSHD_COVERAGE_LIBRARIES` to imported library folders
 (separated by the platform's path separator) to rescan local episodes for any
 unclassified service. None is pending: every service the scanned episodes call is
 emitted by a node kind or reached through an equivalent.
+
+## SHSHD Runtime presentation
+
+SHS projects can use four presentation features this runtime added for its
+translated games. They are not native: the export declares them in resource 3
+([SCHEMA.md](SCHEMA.md#presentation-extension-shshd-runtime)), and an app
+without them shows the episode as SHS does. CoD projects reject them.
+
+| Option | Where | This runtime | Other apps |
+| --- | --- | --- | --- |
+| Second speaker, their expression | A dialogue line with a portrait; the second speaker is a reusable character with a portrait | A portrait on each side and the speaker's name centered between them; the box is gray unless both share a blue or pink colour. For a title such as "Allison and Paige", rename the first speaker around the line | The first speaker alone |
+| Bubble color | A named line without a portrait (a speaker name only) | Blue, pink or gray | The yellow named-line box |
+| Emoticon | A dialogue line with a portrait; images from **Emoticon images…** | Lightning, sweat, anger, heart, exclamation or question over the speaker | Nothing |
+| Then loop | A Music node; an embedded MP3/WAV | The track plays once, then the loop repeats without a gap | The track alone, repeating by its looping flag |
+
+A line sets SHS global numbers 31310–31312 and 31410 (service 54) while it is
+up and clears them after it, so score and property-flag nodes cannot use those
+owner-0 keys in an episode that uses the matching option. An intro always runs
+into the same loop. The emoticon images are part of the project (format
+version 3; older projects upgrade on opening). Bring your own images: the
+creator ships none. The iOS app does not yet run an intro into its loop.
 
 ## SHS HD side panels
 

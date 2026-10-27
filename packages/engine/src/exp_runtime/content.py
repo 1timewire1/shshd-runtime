@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import plistlib
@@ -23,7 +24,8 @@ from zlib import error as ZlibError
 
 from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
-from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS
+from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS, game_id
+from .presentation import EFFECTS, presentation_record
 
 
 PROFILE = SHS_ANDROID
@@ -1215,10 +1217,47 @@ class ContentLibrary:
         self.close()
 
 
+# shshd-runtime: the game profile's table holding each presentation feature for the translated packs, and how its
+# entry becomes the episode record's form (presentation.normalize). Portrait effects there name the first image.
+PRESENTATION_TABLES = dict(duet=('TRANSLATED_DUETS', tuple), narration_theme=('TRANSLATED_NARRATION_THEMES', int),
+                           portrait_effects=('TRANSLATED_PORTRAIT_EFFECTS',
+                                             lambda spec: (spec[0], tuple(range(spec[1], spec[1] + EFFECTS)))),
+                           music_loops=('TRANSLATED_MUSIC_LOOPS', dict))
+
+
+def presentation_feature(resources, name):
+    """shshd-runtime: an episode's setting for a presentation feature (presentation.MEMBERS), in the record's form, or
+    None. The game profile's table for the episode's pack comes first (the translations: New Rules 31300, the X360
+    prototype 31400); any other episode uses its own declaration (resource 3) where the profile accepts one
+    (PRESENTATION_RECORD)."""
+    record = getattr(resources, 'record', None) or {}
+    profile = GAMES.get(game_id(resources))
+    table, convert = PRESENTATION_TABLES[name]
+    value = getattr(profile, table, {}).get(record.get('pack_id'))
+    if value is not None:
+        return convert(value)
+    if not getattr(profile, 'PRESENTATION_RECORD', False):
+        return None
+    return (getattr(resources, 'presentation', None) or {}).get(name)
+
+
 class EpisodeResources:
     def __init__(self, library: ContentLibrary, record: dict, archive: ExpArchive):
         self.library, self.record, self.archive = library, record, archive
         self.programs = archive.programs()
+        self._presentation = False
+
+    @property
+    def presentation(self):
+        """shshd-runtime: the episode's declared presentation features (resource 3, presentation.normalize), {} for
+        none. A malformed record is set aside with a warning: the episode plays as SHS shows it."""
+        if self._presentation is False:
+            try:
+                self._presentation = presentation_record(self.archive) or {}
+            except ContentError as error:
+                logging.warning('%s: %s', self.record.get('name', 'episode'), error)
+                self._presentation = {}
+        return self._presentation
 
     @property
     def identity(self):

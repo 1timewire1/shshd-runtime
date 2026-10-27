@@ -11,7 +11,7 @@ import tempfile
 from types import UnionType
 from typing import get_args, get_origin, get_type_hints
 
-from .content import EpisodeResources, digest
+from .content import EpisodeResources, digest, presentation_feature
 from .games import GAMES, game_id
 from .engine import POLL_WAIT_MS, EngineAction, EngineState
 from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
@@ -442,12 +442,12 @@ class Session:
         """shshd-runtime: a translated pack's colour for a named line without a portrait (panel mode 3), or None. The
         game profile's TRANSLATED_NARRATION_THEMES names a global number the translator sets around such a line:
         1 blue, 2 pink, 3 gray, 0 the line's own. New Rules gives an object or unseen voice (a TV, a radio) its gray
-        bubble and an off-stage character its own colour; SHS shows both as named lines (15) without a portrait."""
+        bubble and an off-stage character its own colour; SHS shows both as named lines (15) without a portrait.
+        Any other episode can declare its own number (presentation_feature, resource 3)."""
         action = self.pending
         if not action or action.name != 'dialogue' or action.details.get('presentation_mode') != 3:
             return None
-        record = getattr(self.resources, 'record', None) or {}
-        key = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_NARRATION_THEMES', {}).get(record.get('pack_id'))
+        key = presentation_feature(self.resources, 'narration_theme')
         if key is None:
             return None
         theme = self.engine.numbers.get(self.engine.number_key(0, key), 0)
@@ -457,28 +457,29 @@ class Session:
         """shshd-runtime: the emoticon over a translated pack's speaker on this line, as (effect, image ID), or None.
         The game profile's TRANSLATED_PORTRAIT_EFFECTS names the global number the translator sets around the line (an
         emoticon_effects effect, 1-6) and the pack's first effect image; a line with a portrait shows it. The number is
-        part of the saved state, so a restored line shows its effect again."""
+        part of the saved state, so a restored line shows its effect again. Any other episode can declare its own
+        number and an image per effect (presentation_feature, resource 3); an effect without an image shows none."""
         action = self.pending
         if not action or action.name != 'dialogue' or action.details.get('presentation_mode') not in (1, 2):
             return None
-        record = getattr(self.resources, 'record', None) or {}
-        spec = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_PORTRAIT_EFFECTS', {}).get(record.get('pack_id'))
+        spec = presentation_feature(self.resources, 'portrait_effects')
         if spec is None:
             return None
         from .emoticon_effects import EFFECTS
         effect = self.engine.numbers.get(self.engine.number_key(0, spec[0]), 0)
-        return (effect, spec[1] + effect - 1) if effect in EFFECTS else None
+        image = spec[1][effect - 1] if effect in EFFECTS else None
+        return (effect, image) if image is not None else None
 
     def dialogue_duet(self):
         """shshd-runtime: the second speaker of a translated pack's two-speaker line, as a DialoguePortrait on the
         other side from the first, or None. The game profile's TRANSLATED_DUETS names the global numbers the
         translator sets around the line (pack -> (partner key, expression key), the partner as its ID + 1); they are
-        part of the saved state, so a restored line finds its partner again."""
+        part of the saved state, so a restored line finds its partner again. Any other episode can declare its own
+        numbers (presentation_feature, resource 3)."""
         action = self.pending
         if not action or action.name != 'dialogue' or action.details.get('presentation_mode') not in (1, 2):
             return None
-        record = getattr(self.resources, 'record', None) or {}
-        keys = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_DUETS', {}).get(record.get('pack_id'))
+        keys = presentation_feature(self.resources, 'duet')
         if keys is None:
             return None
         engine = self.engine

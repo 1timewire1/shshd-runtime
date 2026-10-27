@@ -10,7 +10,9 @@ import struct
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
-from .model import Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record, validate_structure
+from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
+from .model import (EMOTICONS, Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record,
+                    validate_structure)
 from .features import DEFAULTS, INPUT_GATES, parameters, translated
 from . import expressions, minigames
 
@@ -45,6 +47,13 @@ TREE_EXITS = {1202: 0, 1203: 1, 1204: 1, 1205: 1, 1206: 1, 1207: 1, 1208: 1, 120
 TREE_AWAITING = range(1209, 1224)
 # `addBranchNode`'s conditions are `DTNode::autobranch` tests of Football Star's tracked state (exp_runtime.dt_state).
 TREE_CONDITIONS = range(0x4b, 0x69)
+# shshd-runtime presentation (SCHEMA.md "Presentation extension"): the SHS global numbers (service 54) a dialogue line
+# sets for its second speaker (ID + 1) and their expression, a named line's bubble colour and the emoticon over its
+# speaker, cleared after the line. They are the numbers tools/translate uses for New Rules and the X360 prototype; the
+# episode names them in resource 3. Score and flag nodes may not use one on owner 0 while a line's option does.
+DUET_KEYS = (31310, 31311)
+BUBBLE_KEY = 31312
+EMOTICON_KEY = 31410
 
 
 def _node_expression(node):
@@ -143,6 +152,16 @@ def validate_node(project, node, nodes, assets, characters):
             raise ProjectError(f'{label}: invalid text in {key}')
     if node.kind == 'score' and p['owner'] == VARIABLE_OWNER:
         raise ProjectError('Owner -30000 is reserved for multi-scene authoring state')
+    if node.kind == 'dialogue':
+        validate_presentation(project, node, p, label, characters)
+    if node.kind == 'music' and p['then_loop'] != -1:
+        if project.game != 'shs':
+            raise ProjectError(f'{label}: an intro running into a loop is SHS presentation; CoD has none')
+        loop = assets.get(p['then_loop'])
+        if loop is None or loop.data is None or not is_audio(loop.data):
+            raise ProjectError(f'{label}: the loop after the intro must be an embedded MP3 or WAV')
+        if p['then_loop'] == p['resource']:
+            raise ProjectError(f'{label}: the loop must be another track than the intro')
     if node.kind in ('relationship', 'score') and p['operation'] not in ('set', 'add'):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
@@ -225,6 +244,69 @@ def validate_node(project, node, nodes, assets, characters):
                 raise ProjectError(f'{label}: unknown grid character')
 
 
+def validate_presentation(project, node, p, label, characters):
+    """A dialogue line's shshd-runtime presentation: a second speaker, a named line's bubble colour, an emoticon."""
+    if not (p['partner'] or p['bubble'] or p['emoticon']):
+        return
+    if project.game != 'shs':
+        raise ProjectError(f'{label}: second speakers, bubble colours and emoticons are SHS presentation; CoD has none')
+    portrait = bool(node.character) or node.portrait is not None
+    if p['partner']:
+        partner = characters.get(p['partner'])
+        if partner is None:
+            raise ProjectError(f'{label}: unknown second speaker {p["partner"]}')
+        if not portrait:
+            raise ProjectError(f'{label}: a second speaker joins a line with a portrait')
+        if p['partner'] == node.character:
+            raise ProjectError(f'{label}: the second speaker must be another character')
+        if partner.portrait is None and not (partner.expressions and None not in partner.expressions):
+            raise ProjectError(f'{label}: the second speaker needs a portrait')
+        if not 0 <= p['partner_expression'] <= 4:
+            raise ProjectError(f'{label}: choose the second speaker\'s expression 0 to 4')
+    if p['bubble']:
+        if not 1 <= p['bubble'] <= 3:
+            raise ProjectError(f'{label}: a bubble colour is 1 (blue), 2 (pink) or 3 (gray)')
+        if portrait or not node.speaker.strip():
+            raise ProjectError(f'{label}: a bubble colour is for a named line without a portrait')
+    if p['emoticon']:
+        if not 1 <= p['emoticon'] <= len(EMOTICONS):
+            raise ProjectError(f'{label}: an emoticon is 1 to {len(EMOTICONS)}')
+        if not portrait:
+            raise ProjectError(f'{label}: an emoticon shows over a speaker\'s portrait')
+        if project.emoticons[p['emoticon'] - 1] is None:
+            raise ProjectError(f'{label}: choose an image for the {EMOTICONS[p["emoticon"] - 1]} emoticon '
+                               '(Emoticon images)')
+
+
+def presentation_marks(p, characters):
+    """The global numbers a dialogue line sets for its presentation, as (key, value); each is cleared after it."""
+    marks = []
+    if p['partner']:
+        marks += [(DUET_KEYS[0], characters[p['partner']] + 1), (DUET_KEYS[1], p['partner_expression'])]
+    if p['bubble']:
+        marks.append((BUBBLE_KEY, p['bubble']))
+    if p['emoticon']:
+        marks.append((EMOTICON_KEY, p['emoticon']))
+    return marks
+
+
+def presentation_record(project):
+    """Resource 3's members for the presentation the project uses (exp_runtime.presentation), {} for none."""
+    dialogue = [parameters(n) for n in project.nodes if n.kind == 'dialogue']
+    record = {}
+    if any(p['partner'] for p in dialogue):
+        record['duet'] = list(DUET_KEYS)
+    if any(p['bubble'] for p in dialogue):
+        record['narration_theme'] = BUBBLE_KEY
+    if any(p['emoticon'] for p in dialogue):
+        record['portrait_effects'] = dict(key=EMOTICON_KEY, images=list(project.emoticons))
+    loops = {str(p['resource']): p['then_loop'] for p in (parameters(n) for n in project.nodes if n.kind == 'music')
+             if p['then_loop'] != -1}
+    if loops:
+        record['music_loops'] = loops
+    return record
+
+
 def validate_hd_node(project, node, p, label, assets):
     if project.game != 'shs':
         raise ProjectError(f'{label}: Faceplace and the Decision Tree are SHS HD features; CoD has neither')
@@ -305,8 +387,26 @@ def validate(project: Project):
         for resource in (c.portrait, *c.expressions):
             if resource is not None and resource not in assets:
                 raise ProjectError(f'{c.name}: select an imported character image')
+    for name, resource in zip(EMOTICONS, project.emoticons):
+        if resource is not None and (resource not in assets or assets[resource].data is not None
+                                     and not is_image(assets[resource].data)):
+            raise ProjectError(f'The {name} emoticon needs an imported image')
     for node in project.nodes:
         validate_node(project, node, nodes, assets, characters)
+    record = presentation_record(project)
+    owned = set(record.get('duet', ())) | {record.get('narration_theme')} | {record.get('portrait_effects', {}).get('key')}
+    for node in project.nodes:
+        p = parameters(node)
+        if (node.kind == 'score' or node.kind == 'flag' and not node.character) and p['owner'] == 0 \
+                and p['key'] in owned:
+            # A translation (tools/translate x360.py) may set these numbers itself, when no line's option does.
+            raise ProjectError(f'{node.label or node.id}: owner 0 key {p["key"]} holds a line\'s second speaker, '
+                               'bubble colour or emoticon in this episode; use another key')
+    loops = {}
+    for p in (parameters(n) for n in project.nodes if n.kind == 'music'):
+        if loops.setdefault(p['resource'], p['then_loop']) != p['then_loop']:
+            raise ProjectError(f'Music {p["resource"]} runs into a loop in one node but not the same way in another; '
+                               'an intro always runs into one loop')
     validate_tree_pairing(project, nodes)
     both = text_keys(project) & set(variable_names(project))  # Also validates all expression syntax before writing.
     if both:
@@ -547,6 +647,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 return characters[key] if key else 0
             kind = node.kind
             if kind == 'dialogue':
+                marks = presentation_marks(p, characters)
+                for key, value in marks: asm.call(54, key, value)
                 if node.character or node.portrait is not None:
                     who = character() if node.character else characters[node.speaker, node.portrait, node.theme]
                     asm.call(13, text('text'), who, node.expression)
@@ -557,6 +659,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                     asm.emit(0x1a, narration); read_variable(NARRATOR); asm.emit(0x1a, 0); asm.emit(0x1f, 13 << 8 | 3)
                 else:
                     asm.call(13, text('text'), 0, 0)
+                for key, _ in marks: asm.call(54, key, 0)
             elif kind == 'choice':
                 asm.call(52, 0, 651, node.theme)
                 asm.call(2, text('speaker'), text('text'), node.timeout_ms, node.timeout_option, character(), 0)
@@ -720,6 +823,9 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
         locations=locations, variables=variables, shared_variables=shared,
         characters={key: value for key, value in characters.items() if isinstance(key, str)}),
         ensure_ascii=True, separators=(',', ':')).encode()
+    presentation = presentation_record(project)
+    if presentation:
+        resources[PRESENTATION_RESOURCE] = presentation_bytes(presentation)
     return Compilation(encode_exp(resources), locations, variables, shared,
                        {key: value for key, value in characters.items() if isinstance(key, str)})
 
