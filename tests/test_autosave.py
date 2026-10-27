@@ -14,7 +14,7 @@ class AutosaveTests(unittest.TestCase):
         from exp_runtime import application
         self.pygame, self.module = pygame, application
         self.addCleanup(pygame.quit)
-        session = SimpleNamespace(episode_exited=False, pending=SimpleNamespace(name='dialogue'))
+        session = SimpleNamespace(episode_exited=False, episode_ended=False, pending=SimpleNamespace(name='dialogue'))
         game = SimpleNamespace(session=session, handle_event=Mock(return_value=True), tick=Mock())
         self.app = SimpleNamespace(
             game=game, screen='game', active=True, pressed=None, busy=False, message='', job=None, autosave_age=0,
@@ -49,7 +49,7 @@ class AutosaveTests(unittest.TestCase):
         self.app.game.session.pending = None
         self.assertIsNone(self.module.Application.autosave(self.app))
         self.app.game.session.pending = SimpleNamespace(name='dialogue')
-        self.app.game.session.episode_exited = True
+        self.app.game.session.episode_exited = self.app.game.session.episode_ended = True
         self.assertIsNone(self.module.Application.autosave(self.app))
         self.app.state.checkpoint.assert_not_called()
 
@@ -68,7 +68,7 @@ class AutosaveTests(unittest.TestCase):
         unlock = lambda: self.module.Application.unlock_warp_if_football_finished(app)
         unlock()
         self.assertFalse(app.state.warp_unlocked)                     # still playing
-        app.game.session.episode_exited = True
+        app.game.session.episode_exited = app.game.session.episode_ended = True
         unlock()
         self.assertTrue(app.state.warp_unlocked)
         app.state.persist.assert_called_once()

@@ -425,7 +425,7 @@ class Application:
 
     def refresh_saves(self):
         self.saved = {e['id'] for e in self.library.episodes if self.state.resume_path(e['id'])}
-        if self.game and not self.game.session.episode_exited:
+        if self.game and not self.game.session.episode_ended:
             self.saved.add(self.game.session.resources.record['id'])
 
     def can_resume(self, episode=None):
@@ -521,7 +521,7 @@ class Application:
         try:
             record = self.game.session.resources.record
             path = self.state.shot_path(record['id'])
-            if self.game.session.episode_exited:
+            if self.game.session.episode_ended:
                 path.unlink(missing_ok=True)
             else:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -661,7 +661,7 @@ class Application:
 
     def end_menu_backdrop(self):
         # When an episode has ended: (the last frame dimmed sepia, whether it was Football Season), else None.
-        if self.shell is None or not self.game.session.episode_exited:
+        if self.shell is None or not self.game.session.episode_ended:
             return None
         record = self.game.session.resources.record
         self.end_record = record['id']
@@ -892,7 +892,7 @@ class Application:
         self.autosave_age, self.unsaved_entry = 0, True                      # setAppMode(playing)
         self.game.screen_token = None
         pygame.key.stop_text_input()
-        if self.game.session.episode_exited:
+        if self.game.session.episode_ended:
             self.return_to_menu()
             return
         self._sync_menu_music()
@@ -938,7 +938,7 @@ class Application:
                 return None
             self.unsaved_entry = False
         session = self.game.session if self.game else None
-        if session is None or session.episode_exited or session.pending is None:
+        if session is None or session.episode_ended or session.pending is None:
             return None
         try:
             path = self.state.checkpoint(session)
@@ -991,7 +991,7 @@ class Application:
         # The menu's song the pause menu was playing carries on in the main menu (Desktop.take_pause_song). It is taken
         # first: anything that renders the game now (the screenshot, the music sync) would start fading it, since the
         # pause menu has closed.
-        kept = self.game.take_pause_song() if self.audio and not self.game.session.episode_exited else None
+        kept = self.game.take_pause_song() if self.audio and not self.game.session.episode_ended else None
         self.unlock_warp_if_football_finished()
         # Keep the live session even if a filesystem error prevents a checkpoint.
         if self.game.session.engine.word_grid:
@@ -1002,7 +1002,7 @@ class Application:
         # A live session retains its mixer stream and playhead through menu
         # navigation. A fresh Desktop or explicit save load selects a new cue.
         self.game.active = False
-        if not self.game.session.episode_exited:
+        if not self.game.session.episode_ended:
             self.game._sync_music()
         if self.audio:
             if kept is None:
@@ -1010,7 +1010,7 @@ class Application:
             else:
                 self._stop_sounds_but(kept)
         self.game.menu_open = False
-        if self.game.session.episode_exited:
+        if self.game.session.episode_ended:
             # Completed sessions cannot resume. The terminal automatic save
             # masks older progress without deleting the player's manual slot.
             if self.audio:
@@ -1298,7 +1298,7 @@ class Application:
             self.autosave_age += elapsed
             if self.autosave_age > AUTOSAVE_MS:                            # SHSEngine::onTick, in the playing mode
                 self.autosave()
-            if self.game.session.episode_exited:
+            if self.game.session.episode_ended:
                 self.return_to_menu()
         else:
             if self.main_exit_ms is not None:
@@ -1385,7 +1385,7 @@ class Application:
         self._sync_menu_music()
         self._fade_menu_music()
         if self.screen == 'game':
-            if self.game.session.episode_exited:
+            if self.game.session.episode_ended:
                 self.return_to_menu()
             else:
                 self.game.render()

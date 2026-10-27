@@ -250,7 +250,7 @@ class ApplicationUpdateTests(unittest.TestCase):
         self.assertIsNone(app.update_prompt)
         app.job = None
         app.screen = 'game'
-        app.game = SimpleNamespace(tick=Mock(), session=SimpleNamespace(episode_exited=False))
+        app.game = SimpleNamespace(tick=Mock(), session=SimpleNamespace(episode_exited=False, episode_ended=False))
         app.tick(50)
         app.game.tick.assert_called_once_with(50)
         self.assertIsNone(app.update_prompt)

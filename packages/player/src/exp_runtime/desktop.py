@@ -1098,7 +1098,7 @@ class Desktop:
                 logging.error('Dialogue rendering stopped: %s', error)
         if action and action.name in ('finished', 'episode_exit') and not self.error:
             # Live gameplay never actually renders this state (application.py's `render()` calls
-            # `return_to_menu()` the moment `episode_exited` is set, instead of `Desktop.render()`), so the only
+            # `return_to_menu()` the moment `episode_ended` is set, instead of `Desktop.render()`), so the only
             # real caller is `snapshot()` building the end-of-episode card's sepia backdrop. That backdrop should
             # read as a frozen scene photo, the same as pausing mid-dialogue already does (a clean early return,
             # no bar drawn over it) -- not this class's own placeholder "Episode complete" bar, title strip and

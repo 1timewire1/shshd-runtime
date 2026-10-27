@@ -161,6 +161,9 @@ class EpisodeExitTests(unittest.TestCase):
 
 
 class EpisodeExitMenuTests(unittest.TestCase):
+    ENDING = (0x32, *host_call(7, 12, 13, 1), 0x33)
+    SCHEDULED = {}
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -169,7 +172,8 @@ class EpisodeExitMenuTests(unittest.TestCase):
         profile.start()
         self.addCleanup(profile.stop)
         apk = self.root / 'authored.apk'
-        make_apk(apk, archive({1: metadata(), 25001: program(0x32, *host_call(7, 12, 13, 1), 0x33).to_bytes()}))
+        make_apk(apk, archive({1: metadata(), 25001: program(*self.ENDING).to_bytes(),
+                                **{key: program(*code).to_bytes() for key, code in self.SCHEDULED.items()}}))
         import_game(apk, [], self.root / 'library')
         self.library = ContentLibrary(self.root / 'library')
         self.addCleanup(self.library.close)
@@ -313,7 +317,7 @@ class EpisodeExitMenuTests(unittest.TestCase):
             app.tick(16)
         self.assertEqual(app.screen, 'main')
         self.assertIs(app.game, game)
-        self.assertTrue(game.session.episode_exited)
+        self.assertTrue(game.session.episode_ended)
         self.assertIn('Authored write failure', app.message)
         held = game.session.snapshot()
         app.message = ''
@@ -322,6 +326,30 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertEqual(app.screen, 'main')
         self.assertIsNone(app.game)
         self.assertFalse(app.can_resume())
+
+
+class HaltEndingMenuTests(EpisodeExitMenuTests):
+    """A branch that returns to its script's top-level HALT with nothing scheduled (CoD's "Your Case: The Missing
+    Child" "Try again" ending) ends the episode like service 7, rather than leaving a blank scene with music playing."""
+    ENDING = (0x32, *host_call(10, 25002, 0), 0x33)
+    SCHEDULED = {25002: (0x33,)}
+    # Service 7's own save validation and old-save upgrade; a HALT has neither.
+    test_corrupt_completion_marker_stays_visible_and_reports_load_error = None
+    test_loading_old_unsupported_exit_returns_to_menu_before_rendering = None
+
+    def test_halt_is_an_ended_episode_but_not_a_service_exit(self):
+        s = MenuState(self.library).session(self.library.episodes[0]['id'])
+        s.advance()
+        self.assertFalse(s.episode_ended)
+        self.assertEqual(s.answer().name, 'finished')
+        self.assertEqual((s.scene, s.scene_loads), (25002, 1))
+        self.assertTrue(s.episode_ended)
+        self.assertFalse(s.episode_exited)
+
+    def test_a_first_script_that_halts_stays_resumable(self):
+        s = Session(Resources(program(0x33)))
+        self.assertEqual(s.advance().name, 'finished')
+        self.assertFalse(s.episode_ended)
 
 
 if __name__ == '__main__':

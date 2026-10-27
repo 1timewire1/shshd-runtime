@@ -176,11 +176,11 @@ class MenuState:
                     return path  # Session.load reports the existing size limit.
                 saved = json.loads(path.read_text(encoding='utf-8'))
                 pending = saved.get('pending') if isinstance(saved, dict) else None
-                if isinstance(pending, dict) and pending.get('name') == 'episode_exit':
+                if isinstance(pending, dict) and pending.get('name') in ('episode_exit', 'finished'):
                     # A validated terminal checkpoint masks older progress.
                     # Keep the manual slot available for an explicit load.
                     session = Session.from_snapshot(self.library.open_episode(episode), saved)
-                    if session.episode_exited:
+                    if session.episode_ended:
                         return None
             except (SaveError, OSError, ValueError, AttributeError):
                 # Invalid saves remain resumable so loading reports the error;

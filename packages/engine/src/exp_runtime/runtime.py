@@ -322,6 +322,16 @@ class Session:
         return self.pending is not None and self.pending.name == 'episode_exit'
 
     @property
+    def episode_ended(self) -> bool:
+        """Service 7/63's exit, or a HALT in a scheduled (later) scene with no script left to load. CoD's "Your Case:
+        The Missing Child" "Try again" branch ends that way instead of calling scene 25003's exit routine, leaving a
+        blank scene with its music playing. What the native scene shows after such a HALT is unverified; the player
+        hands it back to the menu like an exit. A first script that halts keeps its ordinary resumable state."""
+        if self.pending is None:
+            return False
+        return self.pending.name == 'episode_exit' or (self.pending.name == 'finished' and self.scene_loads > 0)
+
+    @property
     def transitioning(self) -> bool:
         transition = self.engine.scene_transition
         return transition is not None and transition.active
