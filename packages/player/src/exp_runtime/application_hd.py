@@ -130,6 +130,7 @@ class HdShell:
         self.end_backdrop = pygame.transform.smoothscale(backdrop, (FRAME[0] * S, FRAME[1] * S))
         self.stack.clear()
         self.stack.queue(self.END_MENU if football else self.MISS_MENU)
+        self.window_ms = 0                                  # it pops up (zooms in) like the other windows
 
     @property
     def overlay_active(self):
