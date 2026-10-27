@@ -240,20 +240,28 @@ marks both callback and removal flags; virtual callback `000a6448` calls
 The panel hides dialogue art, preserving the underlying logical dialogue and
 background state. There is no score, audio request or result-cell mutation.
 
-The title and message are blue in SHS. CoD draws them black, matching the
-owner's iOS screenshot of its end-of-episode "Thanks for playing!" panel
-(`desktop_message.INK`). The owner's 60 fps recording of that panel also
-shows how CoD opens it: the panel and its control appear at full size at
-once, on black, while the scene picture and the previous dialogue's lines fade
-out over it in about 0.2 s. The player reuses the location layer's 0.25 s
-default-ease fade for both (`Desktop._location_change`, `_panel_handover`)
-and skips SHS's 250 ms control growth. Tapping Continue once the wait is over
-plays CoD's click (8005, owner's report); the episode exit that follows
-stops the story's effects but lets that click finish. The panel is drawn at story
-density and resampled once, like the dialogue, so its outline text is as
-sharp; CoD's hint is the dialogue bar's own. Still open: the panel's title fades
-in natively; its height (Android's header and footer layouts 15/25 against
-layout 24's shorter variants) and its darker border shade.
+On iOS the panel is `SHSUIForm` (`desktop_message_hd`): the dialogue's bubble, the form's body rows, the
+dialogue's title layer and its continue pill. SHS HD draws it from HD's bank; Cause of Death runs the same code
+(1.4.7 `SHSUIForm::initForm` 0004f054 matches HD's instruction for instruction) on its own bank, whose layouts
+24 / 25 / 27 / 3 are HD's at exactly half size (`CodMessageRenderer`). CoD's art is its own: the gray box, pack
+126's rows and gray pill (frame 5). Its title and message are black, as in the owner's photo of the "Thanks for
+playing!" panel, where SHS HD's are blue.
+
+zazatree's lighttouch recording of an episode's end shows how CoD opens it, and the player follows:
+- The panel stands on black at once. The scene picture fades out under it, and the last dialogue (name, text,
+  portrait) fades out over it, in about 0.25 s: the location layer's default-ease fade (`Desktop._location_change`,
+  `_panel_handover`). Natively the form leaves the location layer visible (`setLocationHidden(false)`); what
+  clears it is not decoded.
+- The pill grows in over 0.25 s (`GameModel::expandContinue`, as in SHS HD).
+- The title fades in over 0.25 s. Natively it is the dialogue's title layer, given new text and moved from the last
+  speaker's name plate with implicit actions on, so it also glides there; the glide is not modelled.
+- The dialogue's bubble is reused and resized natively. The player fades the last dialogue's whole box out over the
+  panel instead, which shows the old box over the panel for about 0.1 s.
+
+Tapping Continue once the wait is over plays CoD's click (8005, owner's report); the episode exit that follows
+stops the story's effects but lets that click finish. Without CoD's layout bank the player falls back to the
+Android panel (`desktop_message.MessageRenderer`), drawn at story density with CoD's black ink. The photo reads about
+8 levels darker than the game's art throughout (fill 230 against 238); taken as the capture's.
 
 The shared callback wrapper `000ab8b8` first consumes a queued service-16
 screen-transition selector. `0007f1a4` maps selector 20 to 1/2 using exactly

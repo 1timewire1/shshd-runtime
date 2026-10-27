@@ -90,9 +90,9 @@ class HdTitleRenderer:
     """HD's chapter / week card (`SHSUIChapterScreen`, decompiled) in the whole 768 x 1024 frame.
 
     The location picture is stretched over the frame under a black layer ("revealLocation": opacity 1, 1, 0 at
-    keyTimes 0, .6, 1 over 3.0 s, 0004bcda) that stays opaque for 1.8 s and then fades out by 3.0 s (TouchHLE
-    recordings of Cause of Death's card agree: the picture starts showing at 1.84 s); the title ("Week 1 of 8", image font 589/590, 66 px cells) is wiped in from
-    its left edge over 2 s (a clip layer slides right while the text slides left inside it); the
+    keyTimes 0, .6, 1 over 3.0 s, 0004bcda) that stays opaque for 1.8 s and then fades out by 3.0 s (lighttouch
+    recordings of Cause of Death's card agree: the picture starts showing at 1.84 s); the title ("Week 1 of 8",
+    image font 589/590, 66 px cells) is wiped in from its left edge over 2 s (a clip layer slides right while the text slides left inside it); the
     subtitle (font 591/592) is invisible for 1 s and fades in over the next. Both are laid out by
     `CSImageFont::drawTextInRegion` in layout 48's node rectangles: the title in (20, 68, 738 x 400) left/top
     (flags 0x15), the subtitle in (20, 544, 714 x 360) right/bottom (0x1f). The title's top is pushed

@@ -171,6 +171,16 @@
 
 ### Changed
 
+- **Cause of Death's end of episode** ([#16](https://github.com/1timewire1/shshd-runtime/pull/16), thanks
+  @zazatree):
+  - **"Thanks for playing!" is CoD's own panel**, the iOS form SHS HD's panel already used, on CoD's layout bank
+    (HD's at half size): the gray box, one even gray body with thin dividers, black title and text, the gray pill
+    across the bottom edge. It opens on black as the scene and the last line fade out (0.25 s); the pill grows in and
+    the title fades in. Its Continue clicks. Checked against the owner's photo and zazatree's recording.
+  - **The "Miss An Episode?" window zooms in**, as the original's (entrance 20).
+  - **An episode whose later scene stops with nothing left to load returns to the menu** ("Your Case: The Missing
+    Child", "Try again") instead of sitting on a blank scene. What the original shows there is unverified.
+  - The Options pages' Back button stays dark while its page slides away.
 - **Resume zooms the pause menu out** before the story runs on, as the original does
   ([#15](https://github.com/1timewire1/shshd-runtime/pull/15), thanks @zazatree): the card shrinks away over 0.4 s
   (`animateView`'s exit zoom, to 1e-05 with ease-in/out), and the sepia goes at once (checked on the iPad). Taps and
@@ -228,7 +238,7 @@
 - **A name an episode resets at its start stays reset.** With Skip Upsell Intros on, a new game ran its opening
   before joining the library's shared names, so a name the opening set lost to the last playthrough's value. Replaying
   *Hector's Guide to Girls* (New Rules) showed the last handle until the new one was typed, instead of "You".
-- **Scene changes fade instead of cutting** in Cause of Death and SHS HD (@zazatree's TouchHLE recordings): a new
+- **Scene changes fade instead of cutting** in Cause of Death and SHS HD (@zazatree's lighttouch recordings): a new
   background crossfades in over 0.25 s, as the original's location layer does with Core Animation's implicit
   actions. The chapter card's picture still appears at once. When the card closes, its framing glides into the
   scene's as the next picture fades in.

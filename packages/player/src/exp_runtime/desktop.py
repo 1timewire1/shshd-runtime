@@ -29,7 +29,7 @@ try:
 except ImportError:
     HdFootballRenderer = HdWordRenderer = None
 from .location_pan import LocationPan, default_ease
-from .desktop_message_hd import HdMessageRenderer
+from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from . import frame_log, scene_fade
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -299,6 +299,7 @@ class Desktop:
         self.message_renderer = MessageRenderer(session.resources, self.story_text, self.dialogue_renderer,
                                                 scale=STORY_SCALE)
         self.message_hd = HdMessageRenderer(session.resources, self.dialogue_renderer)
+        self.message_cod = CodMessageRenderer(session.resources, self.dialogue_renderer)
         self.title_renderer = TitleRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.title_hd = HdTitleRenderer(session.resources, self.dialogue_renderer)
         self.title_cod = None
@@ -1030,7 +1031,8 @@ class Desktop:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
                 # reads and (pre-caching) re-decompressed an HD resource -- for the one the dict ends up
                 # indexing out; a dict of zero-argument callables evaluates only the selected action's own.
-                message = lambda: self.message_hd if self.message_hd.available() else self.message_renderer
+                message = lambda: (self.message_hd if self.message_hd.available()
+                                   else self.message_cod if self.message_cod.available() else self.message_renderer)
                 selectors = {
                     'word_grid': self._word_grid, 'football': self._football, 'character_picker': self._picker,
                     'loading': lambda: self.loading_hd if self.loading_hd.available() else self.loading_renderer,
@@ -1547,7 +1549,7 @@ class Desktop:
     # around its own picture (`[CATransaction begin]`, `setValue:forKey:`, `commit`), and its `internalTransitionOff`
     # puts the layer's scale and position back implicitly, so the card's picture glides into the scene's framing as
     # the next picture fades in (CoD 1.4.7 000408f0, SHS HD 0004b37c). Duration: Core Animation's default 0.25 s
-    # (`animateLocationLayer` returns 0.25 too); the curve is measured, not in the binaries: TouchHLE recordings of
+    # (`animateLocationLayer` returns 0.25 too); the curve is measured, not in the binaries: lighttouch recordings of
     # Cause of Death fit the default ease best (findings, 2026-10-23).
     LOCATION_CHANGE_MS = 250
 

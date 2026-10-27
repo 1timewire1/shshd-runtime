@@ -605,11 +605,11 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
 - **The card's exit glides.** Its `internalTransitionOff` (000408f0; SHS HD 0004b37c) puts the layer's scale back to
   1 and its position to (160, 180) with the actions on. So the card's framing glides into the scene's as the next
   picture fades in.
-- **Not in the binaries: the curve.** zazatree's TouchHLE recordings of Volume One (2026-10-23) fit
+- **Not in the binaries: the curve.** zazatree's lighttouch recordings of Volume One (2026-10-23) fit
   kCAMediaTimingFunctionDefault best (rms .02-.04 against linear's .07-.10). `Desktop._location_change` uses it,
   with the frame's placements (`'cover'` to the panned window) standing in for the iPhone's.
 - **The card's black layer ("revealLocation")** is opacity (1, 1, 0) at keyTimes (0, .6, 1) over 3.0 s in both
-  games. TouchHLE shows the picture starting at 1.84 s. The runtime used 2.125 s before 2026-10-23.
+  games. lighttouch shows the picture starting at 1.84 s. The runtime used 2.125 s before 2026-10-23.
 - **Not modelled: the Prologue's opening.** The recording shows its first narration ("You wake up somewhere cold
   and dark...") over black, with the room appearing only at Sophie's next line. Chapter One, whose script has the
   same shape, shows its bar under the first narration. Not explained yet: the runtime shows the room from the

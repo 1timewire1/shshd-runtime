@@ -1076,7 +1076,7 @@ class DesktopTests(unittest.TestCase):
         return ui, clock, draw
 
     def test_a_new_location_picture_crossfades_in_over_a_quarter_second(self):
-        # zazatree's TouchHLE recordings: scene pictures crossfade (Core Animation's implicit contents action on the
+        # zazatree's lighttouch recordings: scene pictures crossfade (Core Animation's implicit contents action on the
         # location layer, ~0.25 s, the default ease); ours used to cut in one frame.
         import pygame
         from exp_runtime.location_pan import default_ease

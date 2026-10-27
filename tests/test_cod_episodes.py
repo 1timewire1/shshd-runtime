@@ -128,7 +128,7 @@ class CodTitleCardFrameTests(unittest.TestCase):
         self.assertEqual((clip.x, clip.width, clip.height), (64 + 20, 200, 1024))
 
     def test_the_black_layer_holds_for_1_8_s_and_clears_by_3_s(self):
-        # "revealLocation": opacity (1, 1, 0) at keyTimes (0, .6, 1) over 3.0 s in both CoD 1.4.7 and SHS HD; TouchHLE
+        # "revealLocation": opacity (1, 1, 0) at keyTimes (0, .6, 1) over 3.0 s in both CoD 1.4.7 and SHS HD; lighttouch
         # shows CoD's picture starting at 1.84 s. Ours used 2.125 s (black until 1.275 s).
         from exp_runtime.desktop_title import CodTitleRenderer, HdTitleRenderer
         for card in (HdTitleRenderer, CodTitleRenderer):
