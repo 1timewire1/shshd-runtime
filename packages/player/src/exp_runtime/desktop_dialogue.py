@@ -13,6 +13,7 @@ from .fonts import TextStyle
 from .games import GAMES
 from .menu import MenuStrings
 from .portrait_effects import BALL_FRAMES, BALL_UNITS, STARBURST_FRAME, ball_alpha, starburst
+from . import emoticon_effects
 from .ui_assets import ImagePack, Raster, Rect, UIAssetError, read_ui
 
 
@@ -33,6 +34,9 @@ def _decoded_size(data: bytes) -> tuple[int, int]:
 # loaded. See legacy/findings.md, "HD chrome assets may be directly usable
 # after all".
 ANDROID_MASK_SIZE = (128, 150)
+# shshd-runtime: where a translated speaker's emoticon (draw_portrait_effect) is anchored, as fractions of the portrait
+# housing's width (toward the box) and height (up) from its center: the ring's upper corner on the box's side.
+EFFECT_ANCHOR = (0.30, 0.30)
 
 
 class DialogueRenderer:
@@ -860,6 +864,34 @@ class DialogueRenderer:
         return [(bank.rectangle(17, node).center[0] - center[0], bank.rectangle(17, node).center[1] - center[1])
                 for node in nodes]
 
+    def draw_portrait_effect(self, session, motion):
+        """shshd-runtime: a translated pack's emoticon over the speaker (Session.portrait_effect, emoticon_effects),
+        anchored at the portrait ring's upper corner on the box's side and drawn over the art, in layout units like the
+        portrait itself. Nothing before the portrait has come in, or without the pack's image."""
+        effect = session.portrait_effect() if hasattr(session, 'portrait_effect') else None
+        if effect is None or motion.portrait is None:
+            return
+        number, asset_id = effect
+        image = self.image(asset_id)
+        if image is None:
+            return
+        rect = self._portrait_rect(motion.portrait.mode)
+        side = 1 if motion.portrait.mode == 1 else -1      # a left portrait's box is to its right
+        k = self.scale * self.portrait_factor
+        ax = rect.center[0] + side * rect.width * EFFECT_ANCHOR[0]
+        ay = rect.center[1] - 5 - rect.height * EFFECT_ANCHOR[1]
+        for sprite in emoticon_effects.sprites(number, motion.age_ms - emoticon_effects.start_ms(motion)):
+            size = max(1, round(emoticon_effects.SIZE * sprite.scale * k))
+            if size < 2 or sprite.alpha <= 0:
+                continue
+            icon = pygame.transform.smoothscale(image, (size, size))
+            if sprite.rotation:
+                icon = pygame.transform.rotate(icon, -sprite.rotation * side)
+            if sprite.alpha < 1:
+                icon = faded(icon, round(255 * sprite.alpha))
+            center = (round((ax + side * sprite.x) * self.scale) + self.margin, round((ay + sprite.y) * self.scale))
+            self.wide.blit(icon, icon.get_rect(center=center))
+
     def draw_relationship(self, motion):
         if motion.relationship is None or motion.portrait is None:
             return
@@ -1260,6 +1292,7 @@ class DialogueRenderer:
         self.draw_portrait(duet, motion.portrait_scale, 'art')
         if hd:
             self.draw_relationship(motion)
+        self.draw_portrait_effect(session, motion)
         self.draw_continue(session, page, theme)
         # Layout 18's footer. Runtime save/load affordances remain host UI
         # until the original menu callbacks are implemented.

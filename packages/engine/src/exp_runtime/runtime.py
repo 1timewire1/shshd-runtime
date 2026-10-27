@@ -453,6 +453,22 @@ class Session:
         theme = self.engine.numbers.get(self.engine.number_key(0, key), 0)
         return theme if theme in (1, 2, 3) else None
 
+    def portrait_effect(self):
+        """shshd-runtime: the emoticon over a translated pack's speaker on this line, as (effect, image ID), or None.
+        The game profile's TRANSLATED_PORTRAIT_EFFECTS names the global number the translator sets around the line (an
+        emoticon_effects effect, 1-6) and the pack's first effect image; a line with a portrait shows it. The number is
+        part of the saved state, so a restored line shows its effect again."""
+        action = self.pending
+        if not action or action.name != 'dialogue' or action.details.get('presentation_mode') not in (1, 2):
+            return None
+        record = getattr(self.resources, 'record', None) or {}
+        spec = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_PORTRAIT_EFFECTS', {}).get(record.get('pack_id'))
+        if spec is None:
+            return None
+        from .emoticon_effects import EFFECTS
+        effect = self.engine.numbers.get(self.engine.number_key(0, spec[0]), 0)
+        return (effect, spec[1] + effect - 1) if effect in EFFECTS else None
+
     def dialogue_duet(self):
         """shshd-runtime: the second speaker of a translated pack's two-speaker line, as a DialoguePortrait on the
         other side from the first, or None. The game profile's TRANSLATED_DUETS names the global numbers the

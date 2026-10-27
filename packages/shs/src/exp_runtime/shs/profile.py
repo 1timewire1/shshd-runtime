@@ -96,6 +96,11 @@ TRANSLATED_NAME_SETS = {31300: 'new_rules'}
 # the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
 # centered (owner, 2026-10-24). An app without this entry shows the first speaker alone, as SHS 13 does.
 TRANSLATED_DUETS = {31300: (31310, 31311)}
+# shshd-runtime: emoticons over a translated speaker's portrait (Session.portrait_effect, emoticon_effects): pack ->
+# (key, first image), the global number the translator sets around the line (an emoticon_effects effect, 1-6; 0 none)
+# and the episode image of effect 1, the other five following it. The cancelled X360 prototype's translations (31400,
+# tools/translate x360.py) carry its emoticon sheet's six cells at 26990-26995.
+TRANSLATED_PORTRAIT_EFFECTS = {31400: (31410, 26990)}
 # shshd-runtime: a translated pack's colour for a named line without a portrait (Session.narration_theme): pack -> the
 # global number the translator sets around the line (1 blue, 2 pink, 3 gray; 0 keeps SHS's own). New Rules shows an
 # object or unseen voice ("TV", "Radio") in a gray bubble and an off-stage character in their own colour (owner,

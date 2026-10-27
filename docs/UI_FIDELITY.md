@@ -1571,6 +1571,25 @@ ring pair. Both iOS `updateButtonLayer` paths (SHS **0009f57c**, CoD
 tracking now applies that artwork and cancels a confirmation dragged outside;
 the APK retains its original frame 41.
 
+## Translated emoticons (shshd-runtime, not native)
+
+The cancelled Xbox 360 SHS prototype puts an "emoticon" over a character's head before some lines. Its translations
+(pack 31400, `tools/translate/x360.py`) carry the six cells of its sheet as episode images 26990–26995. They set the
+global number named by the shs profile's `TRANSLATED_PORTRAIT_EFFECTS` just before a line and clear it after.
+
+**Data:**
+- `Session.portrait_effect()` returns the effect for a dialogue with a portrait (modes 1 and 2).
+- The number is saved state, so a restored line shows its effect again.
+
+**Drawing:** `DialogueRenderer.draw_portrait_effect` draws the effect over the art and the relationship icons.
+- It is anchored at `EFFECT_ANCHOR` (30% of the housing's width toward the box, 30% of its height up from its center): the ring's upper corner on the box's side, mirrored for a right-side portrait.
+- It starts once a new speaker's portrait has come in (`portrait_delay_ms + PORTRAIT_MS`), at once for the same speaker, on `DialogueAnimation.age_ms`.
+
+**Animation:** `emoticon_effects` is pure and headless.
+- Each effect has an entrance (pop, spring or burst), then a quiet loop for as long as the line is up.
+- Hearts rise in a burst of four, then one every 0.9 s.
+- The X360's particles aren't reproduced; this is a presentation of this fork's own, as the original apps have no such feature.
+
 ## NPC relationship indicators
 
 The original game does display relationship emotes around NPC portraits. This

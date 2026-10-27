@@ -7,11 +7,21 @@
 - **`tools/translate x360`: the cancelled Xbox 360 prototype's two new stories as creator projects.** It reads the
   May 2009 prototype's `data.pak` and walks its Lua scripts (`lua_subset.py`). *Day of Diss* is the King of Diss
   prequel: a hub to talk to Kim, Hector, Ryan or Nicole, then Hector's diss battle intro. The *Puzzle Test* is two
-  short scenes. Lines, choices with their enable conditions, story variables, objectives (as notices) and the hub's
-  gating carry over; the 3D staging doesn't. The cast wears its New Rules looks, as the King of Diss translation does.
+  short scenes. Lines, choices with their enable conditions, story variables, objectives (as "Objective Complete"
+  notices with the X360's success sound, shown on the talk's last line) and the hub's gating carry over, with a
+  scene transition into Hector's diss battle intro and a closing tally of the objectives completed; the 3D staging doesn't. Names the X360 colours are drawn in SHS's emphasis
+  colour, and its spaced ellipses (". . .") are joined. The cast wears its New Rules looks, as the King of Diss translation does.
   Each story is written as an editable `.expproj` and an `.exp` (pack 31400), and `x360_check.py` plays one down many
   random answer paths. The shs profile gives pack 31400 the New Rules translations' hi-res portrait set and frame
   backdrop.
+- **Emoticons over a translated speaker's portrait** (the X360 prototype's line effects). Hearts, lightning bolts, a
+  sweat drop, an anger mark, an exclamation mark or a question mark appear at the portrait ring's corner on the box's
+  side, once the portrait is in. Each has its own animation, then a quiet loop for the rest of the line
+  (`emoticon_effects`, `Session.portrait_effect`, shs profile `TRANSLATED_PORTRAIT_EFFECTS`).
+  - `tools/translate x360` now carries the X360's emoticon cells and effect sounds, and sets the effect around each
+    line the scripts decorate; the three effects the X360 left empty are shown too.
+  - Sung lines get SHS's `{` music notes.
+  - The X360 translations hide SHS's relationship badges.
 - **Episodes translated from other SHS games get their own tag and category.** An episode titled
   "... (SHSNR)" (a New Rules translation) imports without the tag in its title, files itself under New Rules, and
   shows an "NR" tag in both episode pickers: New Rules' blue in the list view, blue text on the usual dark plate in

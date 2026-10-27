@@ -26,6 +26,7 @@ import re
 import struct
 
 from exp_runtime.creator.model import Asset, Character, Choice, Node, Project
+from exp_runtime.emoticon_effects import HEART, LIGHTNING, SWEAT, X360_EFFECTS
 
 import lua_subset
 import nr_art
@@ -36,6 +37,15 @@ BACKGROUND_BASE = 26000                 # five IDs apart, as the creator allocat
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
 HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rules translation stores it
 FRAME_BACKDROP = 26999                  # New Rules' UI backdrop under the strips (shs/profile.py TRANSLATED_FRAME_BACKDROP)
+# Line emoticons (shs/profile.py TRANSLATED_PORTRAIT_EFFECTS, emoticon_effects): the global number set around a line,
+# the six cells of the X360's 4x4 emoticon sheet (effect n = cell n - 1), and the sounds its effects play.
+EFFECT_KEY, EFFECT_IMAGE_BASE = 31410, 26990
+EFFECT_SHEET, EFFECT_CELLS, EFFECT_GRID = 'data/art/hud/emoticons.png', 6, 4
+EFFECT_SOUNDS = {HEART: ('data/sound/fx/chimes2.wav', 26985), LIGHTNING: ('data/sound/fx/angry_spark.wav', 26986),
+                 SWEAT: ('data/sound/fx/sweat1.wav', 26987)}
+# `camera.CreateFx("sound/success")`, played as an objective is checked off (fx.wxr: SNFX:fx/success)
+OBJECTIVE_SOUND = ('data/sound/fx/success.wav', 26988)
+SING_TYPE, SING_MARK = 6, '{'           # OpenDialog type 6 is the X360's sing bubble; '{' is SHS's music note
 # The prototype's own music, when the translation is given its files (music_assets): an intro and the loop it runs
 # into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
 MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26902
@@ -51,6 +61,14 @@ HUB = (('Kim', 'kim'), ('Hector', 'hector'), ('Ryan', 'ryan'), ('Nicole', 'nicol
 # The objectives post-it (guilabel menus/objectives/objective_00N), checked by gameStats.checkN.
 OBJECTIVE_LABELS = ('menus/objectives/objective_001', 'menus/objectives/objective_002',
                     'menus/objectives/objective_003')
+# Owner's additions (2026-10-26), not the X360's: before the end card, a tally of the objectives checked off
+# (`checkN`), then one of these.
+TALLY_TEXT = 'You completed {} out of {} objectives.'
+TALLY_ALL, TALLY_SOME = 'Congratulations, you are the King of Diss!', 'Try again to complete them all.'
+# ...and a scene transition into these events (SHS's location-change selector, 20: one of its two blinds). The X360
+# cuts there; the condition is the one its scripts run the event under after a talk's last line.
+TRANSITION_EVENTS = {'kingofdiss/diss_battle': '(conversations >= 5)'}
+SCENE_TRANSITION = 20
 # Script state that only drives the 3D/GUI presentation.
 GUI_STATE = {'cam', 'firstChoice', 'scrolling', 'choiceStarted', 'optionSelected', 'objectives', 'newObj', 'tod'}
 IGNORED_CALLS = re.compile(r'^(Wait|WaitFrames|Log|CreateCharacter|scene\..*|game\._.*|camera\..*|gui\..*|me\..*'
@@ -155,15 +173,71 @@ class Prototype:
 
     def text(self, key, depth=0):
         """A unistring with its `[:id]` includes and `<:str,id>` names resolved (a name is the speaker's name-plate
-        string, "<:color,...><:font,1>Josh<:color,...><:font,0>", without its codes); other codes kept."""
+        string, "<:color,...><:font,1>Josh<:color,...><:font,0>", without its codes and in backticks: the X360 draws
+        an inserted name in its plate colour, SHS draws backticked text in the emphasis colour); other codes kept."""
         if key not in self.strings:
             raise TranslateError(f'no unistring {key!r}')
         value = self.strings[key]
         if depth < 8:
             value = re.sub(r'\[:([^\]]+)\]', lambda m: self.text(m.group(1), depth + 1), value)
-            value = re.sub(r'<:str,([^>]+)>', lambda m: re.sub(r'<:[^>]*>', '', self.text(m.group(1), depth + 1)),
-                           value)
+            value = re.sub(r'<:str,([^>]+)>',
+                           lambda m: '`' + re.sub(r'<:[^>]*>', '', self.text(m.group(1), depth + 1)) + '`', value)
         return value
+
+
+IMA_STEPS = (7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88,
+             97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658,
+             724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660,
+             4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818,
+             18500, 20350, 22385, 24623, 27086, 29794, 32767)
+IMA_INDEX = (-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8)
+
+
+def pcm_wav(data):
+    """A RIFF WAVE as 16-bit PCM: the X360's effect sounds are mono IMA ADPCM (format 0x11), decoded here so the
+    player needs no ADPCM codec; PCM passes through."""
+    pos, fmt, body = 12, None, None
+    while pos + 8 <= len(data):
+        tag, size = data[pos:pos + 4], struct.unpack_from('<I', data, pos + 4)[0]
+        if tag == b'fmt ':
+            fmt = struct.unpack_from('<HHIIHH', data, pos + 8) + (data[pos + 8 + 16:pos + 8 + size],)
+        elif tag == b'data':
+            body = data[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size & 1)
+    code, channels, rate, _, block, _, _ = fmt
+    if code == 1:
+        return data
+    if code != 0x11 or channels != 1:
+        raise TranslateError(f'unsupported WAV format {code:#x}, {channels} channels')
+    out = bytearray()
+    for start in range(0, len(body) - 3, block):
+        chunk = body[start:start + block]
+        sample, index = struct.unpack_from('<hB', chunk)
+        out += struct.pack('<h', sample)
+        for byte in chunk[4:]:
+            for nibble in (byte & 15, byte >> 4):
+                step = IMA_STEPS[index]
+                diff = step >> 3
+                if nibble & 1: diff += step >> 2                    # noqa: E701
+                if nibble & 2: diff += step >> 1                    # noqa: E701
+                if nibble & 4: diff += step                         # noqa: E701
+                sample = max(-32768, min(32767, sample - diff if nibble & 8 else sample + diff))
+                index = max(0, min(88, index + IMA_INDEX[nibble]))
+                out += struct.pack('<h', sample)
+    header = struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 36 + len(out), b'WAVE', b'fmt ', 16, 1, 1, rate, rate * 2, 2, 16,
+                         b'data', len(out))
+    return header + bytes(out)
+
+
+def emoticon_cells(png):
+    """The first EFFECT_CELLS cells of the X360's square emoticon sheet (EFFECT_GRID x EFFECT_GRID), as PNG bytes."""
+    from io import BytesIO
+    from PIL import Image
+    sheet = Image.open(BytesIO(png)).convert('RGBA')
+    cell = sheet.width // EFFECT_GRID
+    return [nr_art.png(sheet.crop(((i % EFFECT_GRID) * cell, (i // EFFECT_GRID) * cell,
+                                   (i % EFFECT_GRID + 1) * cell, (i // EFFECT_GRID + 1) * cell)))
+            for i in range(EFFECT_CELLS)]
 
 
 PLAIN = str.maketrans({'’': "'", '‘': "'", '“': '"', '”': '"', '…': '...', '–': '-',
@@ -173,10 +247,13 @@ PLAIN = str.maketrans({'’': "'", '‘': "'", '“': '"', '”': '"', '…': '.
 def story_text(value, *, label=False):
     """The X360's formatting taken out: colour (`&:R G B;`, `<:color,..>`), size (`!:N;`), font (`<:font,N>`) and
     inline images (`{:...}`); line breaks
-    become spaces. Backticks (King of Diss's rhyme emphasis) stay in dialogue, where SHS shows them as emphasis, and
-    leave menu labels, where SHS would print them. Latin-1, as the creator compiles story text."""
+    become spaces, and a spaced ellipsis (". . .") is joined into "..." (onto the word it ends or starts a line
+    with). Backticks (King of Diss's rhyme emphasis, inserted names) stay in dialogue, where SHS shows them as
+    emphasis, and leave menu labels, where SHS would print them. Latin-1, as the creator compiles story text."""
     value = re.sub(r'&:\d+ \d+ \d+;|!:\d+;|\{:[^}]*\}|<:[^>]*>', '', value).replace('\r', '').replace('\n', ' ')
-    value = re.sub(r' {2,}', ' ', value.translate(PLAIN)).strip()
+    value = re.sub(r'\.(?: *\.){2,}', '...', value.translate(PLAIN))
+    value = re.sub(r' {2,}', ' ', value).strip()
+    value = re.sub(r' +\.\.\.$', '...', re.sub(r'^\.\.\. +', '...', value))
     if label:
         value = value.replace('`', '')
     try:
@@ -258,6 +335,14 @@ class Builder:
         self.event_starts = {}
         self.hub = None
         self.gameover = False
+        self.bubble = 0                 # the open dialogue's OpenDialog type (SING_TYPE: the sing bubble)
+        self.effects = []               # (character, emoticon effect) waiting for the next line
+        self.effects_skipped = 0
+        self.sounds = {}                # effect -> its embedded sound's ID (translate() fills it)
+        self.objective_sound = None     # OBJECTIVE_SOUND's ID, when embedded
+        self.line_start = None          # the first node of the latest line (its effect's score node, or the line)
+        self.line_exit = None           # `pending` as that line left it
+        self.transitions = 0            # lines given a transition (transition_into)
         self.cast = {c.id: c for c in story.cast}
         self.backgrounds = {}
 
@@ -281,6 +366,25 @@ class Builder:
             else:
                 node.options[slot[1]].target = target
         self.pending = []
+
+    def insert_before(self, target, kind, **fields):
+        """A node spliced in ahead of an already-linked one: everything that led to `target` leads to it instead."""
+        self.count += 1
+        node = Node(f'n{self.count}', kind, **fields)
+        for other in self.nodes:
+            if other.next == target:
+                other.next = node.id
+            if other.otherwise == target:
+                other.otherwise = node.id
+            for option in other.options or ():
+                if option.target == target:
+                    option.target = node.id
+        for name, start in self.event_starts.items():
+            if start == target:
+                self.event_starts[name] = node.id
+        node.next = target
+        self.nodes.append(node)
+        return node
 
     # statements
     def block(self, statements):
@@ -316,17 +420,93 @@ class Builder:
         if name.endswith('.gameovertext.Text') and self.gameover:
             key = string_arg([value], 0)
             text = self.proto.text(key[2:-1]) if key and key.startswith('[:') else key
+            if self.hub is not None:            # a story with objectives (the hub lists them)
+                self.objective_tally()
             self.add('message', text=story_text(text), params={'title': '', 'flag': 0})
             self.add('end')
             return
         var = variable(name)
         if var is None or value[0] == 'table' or var in GUI_STATE:
             return
+        follows_line = self.line_start is not None and self.pending == self.line_exit
         self.add('set', variable=var, params={'expression': expression(value)})
         m = re.fullmatch(r'check([123])', var)
         if m and value == ('bool', True):
-            label = story_text(self.proto.labels[OBJECTIVE_LABELS[int(m.group(1)) - 1]])
-            self.add('notice', text=f'Objective complete: {label}')
+            # SHS shows a notice with the next line, and each conversation goes straight back to the hub's choice,
+            # which would hold it to the next talk: when the objective comes straight after a line, it goes ahead
+            # of that line instead. With the X360's success sound.
+            put = (lambda kind, **f: self.insert_before(self.line_start, kind, **f)) if follows_line else self.add
+            notice = put('notice', text='Objective Complete')
+            if self.objective_sound is not None:
+                put('sound', params={'resource': self.objective_sound})
+            if follows_line:
+                self.line_start = notice.id
+
+    def objective_tally(self):
+        """Narration: how many objectives were checked off, then TALLY_ALL or TALLY_SOME."""
+        total = len(OBJECTIVE_LABELS)
+        count = ' + '.join(f'check{i}' for i in range(1, total + 1))
+        self.add('set', variable='objectives_done', params={'expression': f'({count})'})
+        ends = []
+        for n in range(total, -1, -1):
+            if n:
+                node = self.add('branch', params={'expression': f'(objectives_done == {n})'})
+                self.pending = [(node.id, 'next')]
+            self.add('dialogue', text=TALLY_TEXT.format(n, total))
+            self.add('dialogue', text=TALLY_ALL if n == total else TALLY_SOME)
+            ends += self.pending
+            if n:
+                self.pending = [(node.id, 'otherwise')]
+        self.pending = ends
+
+    def transition_into(self, condition):
+        """SHS plays a queued transition when the next panel is dismissed, so the transition into an event goes ahead
+        of each line that can be the last before it (under the condition the event runs on): that line leaves through
+        it, and the event's first line comes in through it."""
+        by_id = {n.id: n for n in self.nodes}
+        leads = {}
+        for node in self.nodes:
+            for target in [node.next, node.otherwise] + [o.target for o in node.options or ()]:
+                if target:
+                    leads.setdefault(target, []).append(node.id)
+        lines, seen, todo = [], set(), [node_id for node_id, _ in self.pending]
+        while todo:
+            node_id = todo.pop()
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            node = by_id[node_id]
+            if node.kind == 'dialogue':
+                lines.append(node_id)
+            elif node.kind == 'choice':
+                # Only through an answer test's fall-through (`if choice == 0 ... elseif choice == 1 ... end`), which
+                # no answer takes; x360_check confirms every played path's transition.
+                continue
+            elif node.kind in ('message', 'end'):
+                raise TranslateError(f'{node.kind} {node_id} comes between a transition and its last line')
+            else:
+                todo += leads.get(node_id, [])
+        def last(line):                         # no line can follow it before the event (or the hub's choice)
+            todo, walked = [by_id[line].next], set()
+            while todo:
+                node_id = todo.pop()
+                if not node_id or node_id in walked:
+                    continue
+                walked.add(node_id)
+                node = by_id[node_id]
+                if node.kind == 'dialogue':
+                    return False
+                if node.kind != 'choice':
+                    todo += [node.next, node.otherwise] + [o.target for o in node.options or ()]
+            return True
+        # A line that another can follow was only reached back through a fall-through no value takes (Kim's
+        # `kim >= 5` / `kim <= -5` / in between): it is never the last.
+        lines = [line for line in lines if last(line)]
+        for line in sorted(lines, key=lambda node_id: int(node_id[1:])):
+            fade = self.insert_before(line, 'transition', params={'selector': SCENE_TRANSITION})
+            test = self.insert_before(fade.id, 'branch', params={'expression': condition})
+            test.otherwise = line
+        return lines
 
     def branch(self, arms, otherwise):
         # `if gameStats == nil then gameStats = {} end` and the like only set up tables.
@@ -371,15 +551,23 @@ class Builder:
         if expr[0] == 'method':
             return
         name, args = call_name(expr), expr[2]
+        effect = re.fullmatch(r'scene\.(\w+)\.CreateFx', name or '')
+        if effect:                              # an emoticon over a character, shown with their next line
+            fx = (string_arg(args, 0) or '').rpartition('hud/emoticon/')[2]
+            if fx in X360_EFFECTS:
+                self.effects.append((effect.group(1), X360_EFFECTS[fx]))
+            return
         if name is None or IGNORED_CALLS.match(name):
             return
         if name == 'OpenDialog':
             self.speaker = string_arg(args, 0)
+            self.bubble = int(args[1][1]) if len(args) > 1 and args[1][0] == 'num' else 0
         elif name == 'CloseDialog':
             self.speaker = None
         elif name == 'DialogText':
             self.line(self.speaker, string_arg(args, 0))
         elif name == 'Dialog':
+            self.bubble = 0                     # the older call names its bubble group; no sing type
             self.line(string_arg(args, 0), string_arg(args, 3))
         elif name == 'gameSHS.SetCharacterEmotion':
             self.emotions[string_arg(args, 0)] = string_arg(args, 1)
@@ -401,21 +589,42 @@ class Builder:
             elif group == 'GGRP:hud/gameover/main':
                 self.gameover = True
         elif name == 'game.RunEvent':
-            self.run_event(string_arg(args, 0))
+            event = string_arg(args, 0)
+            if event in TRANSITION_EVENTS:
+                self.transitions += len(self.transition_into(TRANSITION_EVENTS[event]))
+            self.run_event(event)
         else:
             raise TranslateError(f'call {name}')
 
     def line(self, who, key):
         text = story_text(self.proto.text(key))
+        if self.bubble == SING_TYPE:            # the sing bubble: SHS frames a song line in its music notes
+            text = f'{SING_MARK} {text} {SING_MARK}'
+        effects, self.effects = self.effects, []
+        self.line_start = f'n{self.count + 1}'
         if not who:
             self.add('dialogue', text=text)
+            self.line_exit = self.pending
             return
         if who not in self.cast:
             raise TranslateError(f'speaker {who!r} has no cast entry')
         emotion = self.emotions.get(who, 'neutral')
         if emotion not in EMOTION:
             raise TranslateError(f'emotion {emotion!r}')
+        # Only the speaker's portrait is on screen: an emoticon on anyone else is left out (counted).
+        mine = [number for target, number in effects if target == who]
+        self.effects_skipped += len(effects) - len(mine)
+        if mine:
+            number = mine[-1]
+            self.add('score', params={'owner': 0, 'key': EFFECT_KEY, 'operation': 'set', 'value': number,
+                                      'notification': '', 'result': 'effect'})
+            if number in self.sounds:
+                self.add('sound', params={'resource': self.sounds[number]})
         self.add('dialogue', text=text, character=who, expression=EMOTION[emotion])
+        if mine:
+            self.add('score', params={'owner': 0, 'key': EFFECT_KEY, 'operation': 'set', 'value': 0,
+                                      'notification': '', 'result': 'effect'})
+        self.line_exit = self.pending
 
     def choice(self):
         options = self.choices
@@ -560,6 +769,15 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     backdrop = art.backdrop()
     if backdrop is not None:
         project.assets.append(Asset(FRAME_BACKDROP, 'frame backdrop', nr_art.png(backdrop)))
+    if EFFECT_SHEET in proto.files:
+        for i, cell in enumerate(emoticon_cells(proto.files[EFFECT_SHEET])):
+            project.assets.append(Asset(EFFECT_IMAGE_BASE + i, f'emoticon {i + 1}', cell))
+    for number, (path, asset_id) in sorted(EFFECT_SOUNDS.items()):
+        if path in proto.files:
+            project.assets.append(Asset(asset_id, f'emoticon {number} sound', pcm_wav(proto.files[path])))
+            builder.sounds[number] = asset_id
+    if OBJECTIVE_SOUND[0] in proto.files:
+        builder.objective_sound = OBJECTIVE_SOUND[1]        # embedded below if an objective is checked off
     for k, cast in enumerate(story.cast):
         if cast.bank is not None:
             base = cast.bank
@@ -577,10 +795,17 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
                                                 nr_art.png(picture)))
         project.characters.append(Character(cast.id, cast.name, base, cast.theme, [base + i for i in range(5)]))
     builder.add('speakers', params={'player': story.player, 'narrator': ''})
+    # No SHS relationship badges (the owner's call, 2026-10-26): the X360 shows none, and its own emoticons take the
+    # portrait's corner. Property 629 = 1 hides a character's badge; the relationship (407) is left as it is.
+    for cast in story.cast:
+        builder.add('relationship', character=cast.id, params={'operation': 'add', 'value': 0, 'romantic': False,
+                                                                'hide': True, 'result': f'badge_{cast.id}'})
     for name in story.events:
         builder.run_event(name)
     if builder.pending:
         builder.add('end')
+    if any(n.kind == 'notice' for n in builder.nodes) and builder.objective_sound is not None:
+        project.assets.append(Asset(OBJECTIVE_SOUND[1], 'objective sound', pcm_wav(proto.files[OBJECTIVE_SOUND[0]])))
     project.nodes = builder.nodes
     project.start = builder.nodes[0].id
     for i, node in enumerate(project.nodes):
