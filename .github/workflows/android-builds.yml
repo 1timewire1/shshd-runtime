@@ -3,7 +3,7 @@ name: Android APK
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/android-port']
+    branches: ['android-port']
     paths:
       - 'android/**'
       - 'packages/**'

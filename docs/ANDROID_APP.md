@@ -1,12 +1,17 @@
 # Android app (experimental)
 
 This port packages the existing Python engine and pygame-ce renderer in an
-SDL2 Android activity. It targets ARM64 devices running Android 7.0/API 24
-or newer. The first development APK built successfully in
-[GitHub Actions run 39041119010](https://github.com/andymenard/shshd-runtime/actions/runs/39041119010)
-from commit `741e156`. Its APK v2 signature and 114 ARM64 native libraries and
-extensions were verified. Physical-device gameplay verification is still pending;
-desktop gameplay tests do not establish Android compatibility.
+SDL2 Android activity (python-for-android): the desktop drawing path runs as it
+is, with an Android host (`platforms/android.py`) for files, fonts, links,
+lifecycle and orientation. It targets Android 7.0/API 24 or newer, as one APK
+for ARM64 devices and the x86-64 emulator.
+
+It began in [@andymenard's fork](https://github.com/andymenard/shshd-runtime),
+whose Android commits were cherry-picked onto this repository's `android-port`
+branch with their authorship (their first APK built in
+[GitHub Actions run 39041119010](https://github.com/andymenard/shshd-runtime/actions/runs/39041119010)).
+Since then it imports, opens both games' HD menus and pickers and plays
+episodes on an Android 15 emulator; physical-device checks are pending.
 
 ## Build with GitHub Actions
 
@@ -16,7 +21,7 @@ or other secrets are required. A debug APK is signed with the runner's
 development key; it is intended for sideloading, not Play Store publication.
 
 1. Push the changes to a repository you control. The workflow runs on pushes
-   to `codex/android-port`. Forks may need Actions enabled first.
+   to `android-port`. Forks may need Actions enabled first.
 2. Open **Actions → Android APK** and select the latest run. Once the workflow
    exists on the repository's default branch it can also be run manually.
 3. Download **shshd-runtime-android-arm64-debug** from the completed run's
@@ -35,12 +40,13 @@ read-only repository permissions and does not publish releases.
 
 ## Local build
 
-Use x86-64 Linux (or Windows with an x86-64 WSL2 Linux environment), Python
-3.12 and Java 17. Install the native build tools listed in the workflow,
-Android command-line tools, platform/build-tools 35 and NDK 28c
-(`28.2.13676358`). Google's Linux NDK host tools cannot run natively on this
-workspace's ARM64 Linux host. An Apple Silicon Mac can trigger the cloud
-workflow from its browser; no local SDK installation is needed for that.
+Use x86-64 Linux, or Windows with WSL2 (Ubuntu 24.04: Python 3.12 and, from
+apt, Java 17 and the native build tools the workflow installs). Install the
+Android command-line tools, platform and build-tools 35 and NDK 28c
+(`28.2.13676358`) in the Linux home folder: the Windows SDK's tools do not run
+there. Build from a copy of the checkout in the Linux file system, not
+`/mnt/c` (much slower). Google's Linux NDK host tools cannot run on an ARM64
+Linux host; an Apple Silicon Mac can use the cloud workflow instead.
 
 ```sh
 python3 -m venv .android-env
@@ -48,13 +54,17 @@ python3 -m venv .android-env
 python -m pip install -r android/build-requirements.txt
 export ANDROID_HOME=/path/to/android-sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
-python tools/build_android.py --build
+python tools/build_android.py --build                 # arm64-v8a and x86_64
+python tools/build_android.py --build --arch x86_64   # the emulator only
 ```
 
-Run `python tools/build_android.py` without `--build` to inspect the staged
+The first build compiles Python, SDL, Pillow and pygame-ce for each ABI (about
+15 minutes for one on an x86-64 desktop); later builds reuse them. Run
+`python tools/build_android.py` without `--build` to inspect the staged
 source tree and its SHA-256 manifest without installing the Android SDK.
-The builder includes only component Python sources, the authored icon and
-licenses. It does not package the checkout, local game libraries or saves.
+The builder includes only component Python sources, the authored icon (rendered
+into the launcher icon and loading splash) and licenses. It does not package
+the checkout, local game libraries or saves.
 
 ## Import and controls
 
@@ -76,18 +86,32 @@ access supports the existing optional update check.
 Touch uses SDL's primary-finger mouse mapping, including drags and scrolling.
 Android Back follows the existing Escape/menu behavior. Backgrounding pauses
 the story and audio and checkpoints progress; the first resumed frame excludes
-the time spent asleep. System fonts substitute for unavailable original faces,
-so IPA/HD typography needs visual comparison on a device.
+the time spent asleep.
+
+## Fonts
+
+Android ships none of the faces the HD and Cause of Death screens draw with:
+Arial, Arial Bold, Arial Rounded MT Bold, Trebuchet MS Bold and Trebuchet MS
+Italic. Put your own copies in the bulk import's ZIP beside the game files
+(a Windows PC has them as `arial.ttf`, `arialbd.ttf`, `trebucbd.ttf`,
+`trebucit.ttf` and Office's `ARLRDBD.TTF`); the import copies them into each
+library's `fonts/` folder, where the Android host finds them by face and style.
+A face that is missing is drawn in Android's Roboto instead.
+
+## Side panels
+
+The story tree and Faceplace panels need the screen's width, so turning them on
+in portrait turns the app to landscape (`OrientationBridge`), without locking
+it: once the phone is held sideways, rotation is the user's again, and turning
+back to portrait switches the panels off (as on iPad). The app otherwise
+follows the phone's rotation.
 
 ## CoD colors
 
-Ported the notice-palette correction from upstream exp-runtime
-[`v0.6.1`](https://github.com/joshrmcdaniel/exp-runtime/releases/tag/v0.6.1),
-commit `10e9839bd3419d9acaaa2cc52f1e4a40e230ba45`: normal notices use
-`(240, 81, 60)`, rose notices `(180, 78, 78)`, and default/gray notices
-neutral black lettering. The fork already had black narration with gold
-backtick emphasis, which is retained. HD notice fonts now cache per theme.
-SHS's palette is unchanged. The complete upstream release was not merged.
+The fork also ported upstream exp-runtime
+[`v0.6.1`](https://github.com/joshrmcdaniel/exp-runtime/releases/tag/v0.6.1)'s
+notice palette. This repository had already merged v0.6.1, so those hunks were
+not taken; the HD letter effect keeps theme 1's red (docs/COD.md).
 
 ## Acceptance checks on Android
 
