@@ -70,6 +70,9 @@ class MenuState:
         self.library = library
         self.process = process or RuntimeProcess()
         self.path = library.directory / 'player.json'
+        # resume_path's answer for a save whose checkpoint is an ending, by (path, mtime, size): checking it opens the
+        # whole episode, and the menus ask for every episode each time they refresh (seconds once many are finished).
+        self.ended_saves = {}
         self.music = self.sound = True
         self.vibration = False         # Options' Vibration switch: service 82's buzz (vibration.py); off by default
         # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
@@ -192,16 +195,22 @@ class MenuState:
         path = max((p for p in paths if p.is_file()), key=lambda p: p.stat().st_mtime_ns, default=None)
         if path is not None:
             try:
-                if path.stat().st_size > 8 * 1024 * 1024:
+                stat = path.stat()
+                if stat.st_size > 8 * 1024 * 1024:
                     return path  # Session.load reports the existing size limit.
+                key = (path, stat.st_mtime_ns, stat.st_size)
+                if key in self.ended_saves:
+                    return None if self.ended_saves[key] else path
                 saved = json.loads(path.read_text(encoding='utf-8'))
                 pending = saved.get('pending') if isinstance(saved, dict) else None
+                ended = False
                 if isinstance(pending, dict) and pending.get('name') in ('episode_exit', 'finished'):
                     # A validated terminal checkpoint masks older progress.
                     # Keep the manual slot available for an explicit load.
-                    session = Session.from_snapshot(self.library.open_episode(episode), saved)
-                    if session.episode_ended:
-                        return None
+                    ended = Session.from_snapshot(self.library.open_episode(episode), saved).episode_ended
+                self.ended_saves[key] = ended
+                if ended:
+                    return None
             except (SaveError, OSError, ValueError, AttributeError):
                 # Invalid saves remain resumable so loading reports the error;
                 # a malformed completion marker must not discard progress.

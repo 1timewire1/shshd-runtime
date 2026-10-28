@@ -214,6 +214,22 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertEqual(reopened.session(state.selected).snapshot(), fresh.snapshot())
         self.assertEqual(manual.read_bytes(), before)
 
+    def test_a_finished_saves_check_is_kept_until_the_file_changes(self):
+        """Whether a save is an ending opens its episode; the menus ask for every episode at each refresh, so the
+        answer is kept per file (path, time, size) and found again only once the save is rewritten."""
+        state = MenuState(self.library)
+        s = state.session(state.selected)
+        s.advance()
+        s.answer()
+        path = state.checkpoint(s)
+        self.assertIsNone(state.resume_path(state.selected))
+        with patch.object(self.library, 'open_episode', side_effect=AssertionError('opened again')):
+            self.assertIsNone(state.resume_path(state.selected))
+        fresh = state.session(state.selected, resume=False)
+        fresh.advance()
+        state.checkpoint(fresh)
+        self.assertEqual(state.resume_path(state.selected), path)
+
     def test_corrupt_completion_marker_stays_visible_and_reports_load_error(self):
         state = MenuState(self.library)
         s = state.session(state.selected)

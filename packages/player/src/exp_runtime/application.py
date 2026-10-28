@@ -932,6 +932,7 @@ class Application:
         pygame.display.set_caption(self.game_title + ' — ' + self.game.episode_title)
         self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
         self.game.vibration_enabled = self.state.vibration
+        self.game.url_opener = self.url_opener
         self.game.music_volume, self.game.sound_volume = self.state.music_volume / 100, self.state.sound_volume / 100
         self.game.choice_hints = self.state.choice_hints
         self.game.skip_minigames = self.state.skip_minigames
@@ -981,6 +982,7 @@ class Application:
         self.game.open_pause(sound=False)
         self.skip_elapsed = True
 
+    url_opener = None           # the host's own link opener (a mobile host's), or None for webbrowser
     skip_elapsed = False        # the next frame's time is not counted (see picker_command's Continue)
     autosave_age = 0            # ms of play since the game was last saved (`SHSEngine +0x649d0`)
     unsaved_entry = False       # the game has not been saved since it was entered (`SHSEngine +0x649ce`)
