@@ -83,7 +83,20 @@ def stage(destination):
 ARCHES = ('arm64-v8a', 'x86_64')     # phones, and the x86-64 emulator images
 
 
-def build_command(source, sdk, ndk, arches=ARCHES):
+SPLASH_COLOR = '#080c14'                 # the app's own backdrop (application.py's fill)
+
+
+def render_icon(destination):
+    """The launcher icon and loading splash: the authored kiwi.svg, as the desktop builds render it (not
+    python-for-android's own Kivy logo)."""
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from build_desktop import build_icon
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    build_icon(ROOT / 'packages/player/src/exp_runtime/assets/kiwi.svg', destination)
+    return destination
+
+
+def build_command(source, sdk, ndk, arches=ARCHES, icon=None):
     return [sys.executable, '-m', 'pythonforandroid.toolchain', 'apk',
             '--bootstrap=sdl2', '--dist-name=shshd', *(f'--arch={arch}' for arch in arches),
             '--requirements=python3,pygame_ce,pillow,pyjnius,android,libbz2,liblzma',
@@ -92,7 +105,8 @@ def build_command(source, sdk, ndk, arches=ARCHES):
             f'--sdk-dir={sdk}', f'--ndk-dir={ndk}', '--android-api=35', '--ndk-api=24',
             '--package=org.shshd.runtime', '--name=SHSHD Runtime', '--version=1.0.1',
             '--numeric-version=1000101', '--orientation=portrait',
-            f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--debug']
+            f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--debug',
+            *((f'--icon={icon}', f'--presplash={icon}', f'--presplash-color={SPLASH_COLOR}') if icon else ())]
 
 
 def main(argv=None):
@@ -114,7 +128,8 @@ def main(argv=None):
     prepare_recipe_cache(ROOT / 'build/android/p4a')
     output = ROOT / 'dist/android'
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES)), cwd=output, check=True)
+    icon = render_icon(ROOT / 'build/android/icon.png')
+    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES), icon), cwd=output, check=True)
     apks = sorted(output.glob('*.apk'))
     if not apks:
         raise RuntimeError('Android toolchain finished without an APK')
