@@ -51,6 +51,11 @@ def run(data, rng, limit=20000, taken=None):
                 taken.add((details.get('text'), details['options'][pick]))
             events.append(('answer', details['options'][pick]))
             action = s.answer(pick)
+        elif kind == 'word_game':
+            # Dating Beth's minigames: finish them at a random score (0-6), so every branch they decide is reached
+            score = rng.randrange(7)
+            events.append(('word_game', score))
+            action = s.skip_word_game(score)
         elif kind == 'message_panel':
             panel = s.engine.message_panel
             events.append(('message', panel.text))
