@@ -15,6 +15,45 @@ from .drawing import Backend, FrameEncoder
 
 _host = None
 _verifying = False
+LOG_NAME = 'shshd-runtime.log'
+LOG_LIMIT = 2 * 1024 * 1024
+
+
+def install_log(directory):
+    """The runtime's log in the app's Documents (UIFileSharingEnabled: the Files app shows it under On My iPad), so a
+    tester can send what went wrong. One file, started afresh once it passes LOG_LIMIT; warnings and errors only."""
+    import logging
+
+    class LogFile(logging.Handler):
+        """Appends each record and closes the file again: warnings are rare, and nothing stays open."""
+        def __init__(self, path):
+            super().__init__(logging.WARNING)
+            self.path = path
+            self.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+
+        def emit(self, record):
+            try:
+                with open(self.path, 'a', encoding='utf-8') as stream:
+                    stream.write(self.format(record) + '\n')
+            except OSError:
+                pass
+
+    path = Path(directory) / LOG_NAME
+    try:
+        if path.is_file() and path.stat().st_size > LOG_LIMIT:
+            path.replace(path.with_suffix('.log.old'))
+    except OSError:
+        pass
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if getattr(handler, 'ios_runtime_log', False):          # one log at a time: the newest host's
+            root.removeHandler(handler)
+    handler = LogFile(path)
+    handler.ios_runtime_log = True
+    root.addHandler(handler)
+    if root.level > logging.WARNING or root.level == logging.NOTSET:
+        root.setLevel(logging.WARNING)
+    return path
 
 
 class Host:
@@ -30,6 +69,7 @@ class Host:
         # Import after installing the backend: pygame is not bundled on iOS.
         from ..application import Application
         self.directory = Path(directory)
+        install_log(self.directory)
         self.update_future = None
         self.update_request = None
         settings = (Path(library_root).parent if library_root is not None else self.directory / APP_NAME) / 'settings.json'
@@ -76,6 +116,12 @@ class Host:
 
     def pick(self, kind):
         self.picker = kind
+
+    def _end_copying(self):
+        """The copy of picked files is over (import_copying): the app is free again for the import itself."""
+        if self.app.job_kind == 'copying':
+            self.app.job = self.app.job_kind = None
+            self.app.progress_text = ''
 
     def open_url(self, url):
         self.url = url
@@ -152,7 +198,15 @@ class Host:
                 import traceback
                 raise RuntimeError(''.join(traceback.format_exception(error))) from error
             message = dict(message, elapsed=50)
+        elif operation == 'import_copying':
+            # Swift is copying the picked files into the app (a 1 GB zip takes a while): the busy screen says so,
+            # and nothing else can start meanwhile. 'import' or 'message' ends it.
+            names = [str(name) for name in message.get('names', ())]
+            self.app.job, self.app.job_kind = Future(), 'copying'
+            self.app.progress_text = f'Copying {names[0]} into the app...' if len(names) == 1 else (
+                f'Copying {len(names)} files into the app...')
         elif operation == 'import':
+            self._end_copying()
             kind = message['kind']
             paths = [Path(path) for path in message['paths']]
             if kind == 'library':
@@ -163,6 +217,9 @@ class Host:
                 self.app._attempt(lambda: self.app.import_paths(paths))
                 self.staging.extend(paths)
         elif operation == 'message':
+            self._end_copying()
+            import logging
+            logging.warning('iOS host: %s', message['text'])
             self.app.message = message['text']
         elif operation == 'update_result':
             if self.update_future is not None and not self.update_future.done():

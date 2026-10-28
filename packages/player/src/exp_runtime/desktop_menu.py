@@ -491,6 +491,8 @@ class MenuRenderer:
         if app.busy:
             if app.job_kind == 'previews':
                 self.overlay('Preparing episodes', app.progress_text)
+            elif app.job_kind == 'copying':             # iOS: the picked files are being copied into the app
+                self.overlay('Importing content', app.progress_text)
             else:
                 self.overlay('Importing content', 'Checking and copying your files...')
             self.buttons = []

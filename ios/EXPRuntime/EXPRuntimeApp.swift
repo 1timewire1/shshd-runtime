@@ -252,6 +252,8 @@ enum NativeVibration {
 final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private let canvas = GameCanvasView()
     private let engineQueue = DispatchQueue(label: "org.expruntime.engine", qos: .userInitiated)
+    // Picked files are copied here, off the engine's queue, so frames (and the busy screen) keep running meanwhile.
+    private let copyQueue = DispatchQueue(label: "org.expruntime.import-copy", qos: .userInitiated)
     private let renderer = NativeCanvas()
     private let audio = NativeAudio()
     private let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -491,7 +493,11 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         guard let kind = pickerKind else { return }
         let documents = self.documents
         let scopes = urls.map { $0.startAccessingSecurityScopedResource() }
-        engineQueue.async {
+        // The app shows "Copying ..." until the copy below ends in an import or a message (a 1 GB zip takes a while;
+        // the screen used to stay frozen on the page the picker was opened from).
+        requests.append(["operation": "import_copying", "kind": kind, "names": urls.map { $0.lastPathComponent }])
+        frame()
+        copyQueue.async {
             let result: Result<[String], Error>
             do {
                 let parent = documents.appendingPathComponent(kind == "library" ? "SHSHD Runtime/libraries/imported" : "Imports")

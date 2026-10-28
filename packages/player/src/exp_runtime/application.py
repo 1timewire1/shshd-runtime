@@ -751,7 +751,8 @@ class Application:
         canvas = self.shell.render()
         if self.busy:
             self.shell.main.draw_busy(canvas, 'Preparing episodes' if self.job_kind == 'previews' else 'Importing content',
-                                      self.progress_text if self.job_kind == 'previews' else 'Checking and copying your files...')
+                                      self.progress_text if self.job_kind in ('previews', 'copying')
+                                      else 'Checking and copying your files...')
         elif self.message:
             self.shell.main.draw_busy(canvas, self.game_title, self.message)
         elif self.update_prompt is not None:
@@ -1344,6 +1345,7 @@ class Application:
                     self.prepare_previews()
             except ERRORS as error:
                 self.message = str(error)
+                logging.warning('%s job: %s', kind, error)
         self.flush_drops()
         if self.settings.check_for_updates:
             available = self.updates.poll()
