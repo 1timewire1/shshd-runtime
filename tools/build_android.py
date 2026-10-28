@@ -69,6 +69,12 @@ def stage(destination):
                 raise ValueError(f'Duplicate namespace owner: {target}')
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
+    # Embedded Python does not run pip for the runtime: the same distribution record build_ios writes, so
+    # app_info.runtime_version (the About page, the update check) knows this build's version.
+    version = project_version()
+    record = destination / f'shshd_runtime-{version}.dist-info'
+    record.mkdir()
+    (record / 'METADATA').write_text(f'Metadata-Version: 2.1\nName: shshd-runtime\nVersion: {version}\n')
     licenses = destination / 'licenses'
     licenses.mkdir()
     shutil.copy2(ROOT / 'LICENSE', licenses / 'runtime-MIT.txt')
@@ -83,32 +89,54 @@ def stage(destination):
 ARCHES = ('arm64-v8a', 'x86_64')     # phones, and the x86-64 emulator images
 
 
-SPLASH_COLOR = '#080c14'                 # the app's own backdrop (application.py's fill)
+# The iOS app's icon background (build_ios.icons) and its plain launch screen.
+ICON_BACKGROUND = (243, 244, 247)
+SAFE_ZONE = 66 / 108                    # an adaptive icon's foreground keeps its art in the middle 66 of 108 dp
 
 
-def render_icon(destination):
-    """The launcher icon and loading splash: the authored kiwi.svg, as the desktop builds render it (not
-    python-for-android's own Kivy logo)."""
+def project_version():
     sys.path.insert(0, str(ROOT / 'tools'))
-    from build_desktop import build_icon
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    build_icon(ROOT / 'packages/player/src/exp_runtime/assets/kiwi.svg', destination)
-    return destination
+    from components import check_versions
+    return check_versions(ROOT)
 
 
-def build_command(source, sdk, ndk, arches=ARCHES, icon=None):
+def render_icons(directory):
+    """The launcher icon as the iOS app's (build_ios.icons): the authored kiwi.svg on its light background, as a
+    square icon and as an adaptive icon's two layers (the kiwi inside the safe zone, over that background); and the
+    plain launch screen. Never a player's artwork, nor python-for-android's own Kivy logo."""
+    os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
+    import pygame
+    directory.mkdir(parents=True, exist_ok=True)
+    source = str(ROOT / 'packages/player/src/exp_runtime/assets/kiwi.svg')
+    square = pygame.Surface((1024, 1024))
+    square.fill(ICON_BACKGROUND)
+    square.blit(pygame.image.load_sized_svg(source, (1024, 1024)), (0, 0))
+    pygame.image.save(square, str(directory / 'icon.png'))
+    foreground = pygame.Surface((1024, 1024), pygame.SRCALPHA)
+    side = round(1024 * SAFE_ZONE)
+    foreground.blit(pygame.image.load_sized_svg(source, (side, side)), ((1024 - side) // 2,) * 2)
+    pygame.image.save(foreground, str(directory / 'icon_foreground.png'))
+    background = pygame.Surface((1024, 1024))
+    background.fill(ICON_BACKGROUND)
+    pygame.image.save(background, str(directory / 'icon_background.png'))
+    return directory
+
+
+def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None):
     return [sys.executable, '-m', 'pythonforandroid.toolchain', 'apk',
             '--bootstrap=sdl2', '--dist-name=shshd', *(f'--arch={arch}' for arch in arches),
             '--requirements=python3,pygame_ce,pillow,pyjnius,android,libbz2,liblzma',
             f'--local-recipes={ROOT / "android/recipes"}',
             f'--private={source}', f'--storage-dir={ROOT / "build/android/p4a"}',
             f'--sdk-dir={sdk}', f'--ndk-dir={ndk}', '--android-api=35', '--ndk-api=24',
-            '--package=org.shshd.runtime', '--name=SHSHD Runtime', '--version=1.0.1',
-            '--numeric-version=1000101',
+            # The iOS app's name and identifier; the project's version (Android's versionCode follows from it).
+            '--package=org.shshd.runtime', '--name=SHSHD Runtime', f'--version={version or project_version()}',
             # Portrait first; landscape for the side panels (platforms/android.py, OrientationBridge).
             '--orientation=portrait', '--orientation=landscape', '--orientation=landscape-reverse',
             f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--debug',
-            *((f'--icon={icon}', f'--presplash={icon}', f'--presplash-color={SPLASH_COLOR}') if icon else ())]
+            *((f'--icon={icons / "icon.png"}', f'--icon-fg={icons / "icon_foreground.png"}',
+               f'--icon-bg={icons / "icon_background.png"}', f'--presplash={icons / "icon_background.png"}',
+               '--presplash-color=#{:02x}{:02x}{:02x}'.format(*ICON_BACKGROUND)) if icons else ())]
 
 
 def main(argv=None):
@@ -130,8 +158,8 @@ def main(argv=None):
     prepare_recipe_cache(ROOT / 'build/android/p4a')
     output = ROOT / 'dist/android'
     output.mkdir(parents=True, exist_ok=True)
-    icon = render_icon(ROOT / 'build/android/icon.png')
-    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES), icon), cwd=output, check=True)
+    icons = render_icons(ROOT / 'build/android/icons')
+    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES), icons), cwd=output, check=True)
     apks = sorted(output.glob('*.apk'))
     if not apks:
         raise RuntimeError('Android toolchain finished without an APK')

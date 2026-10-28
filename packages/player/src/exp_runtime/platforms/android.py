@@ -227,30 +227,40 @@ class Host:
 
     def run(self):
         import pygame
+        from .. import frame_log
         clock = pygame.time.Clock()
         running = True
         try:
             while running:
                 elapsed = clock.tick(60)
+                if self.app.skip_elapsed:           # Application.run's: the picker's Continue, a long load
+                    elapsed, self.app.skip_elapsed = 0, False
                 self.poll()
                 was_active = self.app.active
                 token = self.app.input_token()
-                for event in pygame.event.get():
-                    running = self.event(event) and not self.app.quit_requested
-                    if not running or self.app.input_token() != token:
-                        break
-                    if (self.app.screen == 'game'
-                            and self.app.game.screen_token != self.app.game._screen_token()):
-                        break
+                with frame_log.section('events'):
+                    for event in pygame.event.get():
+                        running = self.event(event) and not self.app.quit_requested
+                        if not running or self.app.input_token() != token:
+                            break
+                        if (self.app.screen == 'game'
+                                and self.app.game.screen_token != self.app.game._screen_token()):
+                            break
                 if running:
                     # A resumed frame must not advance timers by the sleep duration.
-                    self.app.tick(elapsed if was_active and self.app.active else 0)
+                    with frame_log.section('tick'):
+                        self.app.tick(elapsed if was_active and self.app.active else 0)
                     self.panels_orientation(elapsed if self.app.active else 0)
                     if self.app.active:
-                        self.app.render()
+                        with frame_log.section('render'):
+                            self.app.render()
                     else:
                         time.sleep(.05)
+                if frame_log.LOG is not None:
+                    frame_log.LOG.frame(elapsed, *self.app._frame_log_place())
         finally:
+            if frame_log.LOG is not None:
+                frame_log.LOG.close()
             self.closed = True
             self.activity_api.unbind(on_activity_result=self.on_result)
             self.copier.shutdown(wait=True)
