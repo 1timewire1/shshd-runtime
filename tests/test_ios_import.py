@@ -45,8 +45,9 @@ class IosImportTests(unittest.TestCase):
         self.assertTrue(host.app.busy)
         self.assertEqual(host.app.job_kind, 'copying')
         self.assertIn('import.zip', host.app.progress_text)
-        host.request(dict(operation='frame', elapsed=16))
+        reply = host.request(dict(operation='frame', elapsed=16))
         self.assertTrue(host.app.busy)                          # nothing else starts during the copy
+        self.assertTrue(reply['busy'])                          # the host keeps the iPad from auto-locking
         notes = root / 'notes.txt'
         notes.write_text('not a game', encoding='utf-8')
         host.request(dict(operation='import', kind='bulk', paths=[str(notes)]))
@@ -58,8 +59,9 @@ class IosImportTests(unittest.TestCase):
         host = self.host(root)
         host.request(dict(operation='import_copying', kind='bulk', names=['a.zip', 'b.zip']))
         self.assertIn('2 files', host.app.progress_text)
-        host.request(dict(operation='message', text='There is not enough space on the device.'))
+        reply = host.request(dict(operation='message', text='There is not enough space on the device.'))
         self.assertFalse(host.app.busy)
+        self.assertFalse(reply['busy'])                         # auto-lock is allowed again
         self.assertEqual(host.app.message, 'There is not enough space on the device.')
         self.assertIn('not enough space', (root / 'shshd-runtime.log').read_text(encoding='utf-8'))
 

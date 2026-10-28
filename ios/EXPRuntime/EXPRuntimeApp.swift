@@ -382,6 +382,12 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                         if let track = result["verify_effect_audio"] as? String { try self.audio.verifyEffectPlaying(track) }
                     }
                     catch { self.showError("Audio: \(error.localizedDescription)", fatal: false); return }
+                    // Copying, importing or preparing episodes (the app's busy screen): the iPad must not auto-lock
+                    // and suspend the work. Auto-lock comes back once the app is idle (the main menu, ready).
+                    let keepAwake = result["busy"] as? Bool == true
+                    if UIApplication.shared.isIdleTimerDisabled != keepAwake {
+                        UIApplication.shared.isIdleTimerDisabled = keepAwake
+                    }
                     if let picker = result["picker"] as? String { self.pick(picker) }
                     if let link = result["open_url"] as? String, let url = URL(string: link) {
                         UIApplication.shared.open(url)
@@ -465,6 +471,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
 
     private func showError(_ message: String, fatal: Bool) {
         if fatal || verifying { failed = true; finishBackgroundTask() }
+        if fatal { UIApplication.shared.isIdleTimerDisabled = false }     // a stopped runtime is never busy
         guard presentedViewController == nil else { return }
         if !fatal && !verifying { suspend() }
         let alert = UIAlertController(title: fatal ? "Runtime stopped" : "Audio unavailable", message: message, preferredStyle: .alert)
