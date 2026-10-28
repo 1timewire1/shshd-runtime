@@ -2716,14 +2716,16 @@ class Desktop:
         self.window = pygame.display.set_mode((needed, height), pygame.RESIZABLE)
 
     def run(self):
+        from .gamepad import Gamepads
         clock = pygame.time.Clock()
         running = True
+        gamepads = Gamepads.start()
         try:
             while running:
                 elapsed = clock.tick(60)
                 # Draw before hit-testing to keep button positions in sync after a load.
                 self.render()
-                for event in pygame.event.get():
+                for event in gamepads.events() if gamepads else pygame.event.get():
                     running = self.handle_event(event)
                     if not running:
                         break
@@ -2734,6 +2736,8 @@ class Desktop:
                 if running:
                     self.tick(elapsed)
         finally:
+            if gamepads:
+                gamepads.stop()
             pygame.quit()
 
 

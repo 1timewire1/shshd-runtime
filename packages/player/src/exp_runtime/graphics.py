@@ -4,15 +4,24 @@ Desktop uses pygame directly. A mobile host installs its backend before it
 imports the application; menus, panel geometry and event handling stay shared.
 """
 _backend = None
+_gamepads = None        # the desktop's connected controllers (gamepad.py), which rumble for a device's vibrator
 
 
 def supports_vibration():
-    return bool(getattr(_backend, 'vibration_available', False))
+    return bool(getattr(_backend, 'vibration_available', False)) or bool(_gamepads and _gamepads.vibration_available)
 
 
 def vibrate():
-    if supports_vibration():
+    if getattr(_backend, 'vibration_available', False):
         _backend.vibrate()
+    elif _gamepads and _gamepads.vibration_available:
+        _gamepads.vibrate()
+
+
+def install_gamepads(gamepads):
+    global _gamepads
+    previous, _gamepads = _gamepads, gamepads
+    return previous
 
 
 class _MenuMusic:
