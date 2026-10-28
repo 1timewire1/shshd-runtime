@@ -7,6 +7,7 @@ frame at twice the tile's size. Episodes that open without a title card keep `mi
 """
 import logging
 from pathlib import Path
+import sys
 import tempfile
 
 import pygame
@@ -136,6 +137,22 @@ def capture_title_card(library, record):
     return pygame.transform.smoothscale(window, SIZE)
 
 
+def release_episode_caches():
+    """Empty the instance methods' lru caches of this package's classes. Each preview runs a whole episode view
+    (Desktop, its renderers, the episode's archive), and a class-level method cache keeps every one it saw, with the
+    episode's decoded art: ~40 MB an episode, until Android stopped a first-time picker setup (~3 GB). Module
+    functions' and static methods' caches keep nothing per episode and stay."""
+    for name, module in list(sys.modules.items()):
+        if module is None or not (name == 'exp_runtime' or name.startswith('exp_runtime.')):
+            continue
+        for value in list(vars(module).values()):
+            if not isinstance(value, type) or value.__module__ != name:
+                continue
+            for attribute in vars(value).values():
+                if callable(getattr(attribute, 'cache_clear', None)) and not isinstance(attribute, staticmethod):
+                    attribute.cache_clear()
+
+
 def generate(library, record):
     """Render and cache one episode's preview; True when a file was written."""
     path = thumbnail_path(library, record)
@@ -179,7 +196,9 @@ def ensure(library, records, progress=None):
     for index, record in enumerate(todo):
         if progress:
             progress(index, len(todo), record['titles'][0])
-        if generate(library, record):
+        made_one = generate(library, record)
+        release_episode_caches()
+        if made_one:
             made += 1
         else:
             marker = thumbnail_path(library, record).with_suffix('.none')
