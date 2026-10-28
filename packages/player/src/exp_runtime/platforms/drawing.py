@@ -768,11 +768,21 @@ class Fonts:
                 source = self.register(stream.read())
         return PlatformFont(self.bridge, source, size)
 
+    FALLBACK_FACE = 'Helvetica'
+
     def register(self, data):
+        """The PostScript name the host registered a font file's bytes under. A file the host cannot take is logged
+        and drawn in a system face instead (FALLBACK_FACE): a supplied font must never stop the runtime."""
         key = sha256(data).hexdigest()
         if key not in self.registered:
-            result = self.bridge(dict(operation='register', data=base64.b64encode(data).decode('ascii')))
-            self.registered[key] = result['face']
+            try:
+                result = self.bridge(dict(operation='register', data=base64.b64encode(data).decode('ascii')))
+                self.registered[key] = result['face'] or self.FALLBACK_FACE
+            except Exception as error:
+                import logging
+                logging.warning('A supplied font could not be registered (%s); drawing it in %s',
+                                error, self.FALLBACK_FACE)
+                self.registered[key] = self.FALLBACK_FACE
         return self.registered[key]
 
 

@@ -86,12 +86,16 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
         }
         CFErrorRef failure = NULL;
         if (!CTFontManagerRegisterGraphicsFont(graphics, &failure) && failure) {
-            BOOL already = CFErrorGetCode(failure) == kCTFontManagerErrorAlreadyRegistered;
+            CFIndex code = CFErrorGetCode(failure);
             CFRelease(failure);
-            if (!already) {
+            // Registered by this process already, or a face of the same PostScript name is installed (iOS ships
+            // Arial Rounded MT Bold, which a library's fonts/ folder also supplies): either way the name resolves.
+            if (code != kCTFontManagerErrorAlreadyRegistered && code != kCTFontManagerErrorDuplicatedName) {
                 CGFontRelease(graphics);
+                NSString *message = [NSString stringWithFormat:@"Cannot register supplied font (Core Text error %ld)",
+                                     (long)code];
                 if (error) *error = [NSError errorWithDomain:@"org.expruntime.font" code:3
-                                                  userInfo:@{NSLocalizedDescriptionKey: @"Cannot register supplied font"}];
+                                                  userInfo:@{NSLocalizedDescriptionKey: message}];
                 return nil;
             }
         }
