@@ -183,6 +183,7 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | Wheel, arrow keys, Page Up/Down | Scroll long option lists and other non-dialogue screens |
 | Escape | Open/close the pause menu during play; go back within application menus |
 | Main Menu / Close window | Save a separate automatic checkpoint and return to the menu / exit |
+| Controller (Xbox / PlayStation style) | Read as keys (`gamepad.py`): A/Cross = Enter; B/Circle and Start/Options = Escape; X/Square = Backspace; Y/Triangle = I; Back/View/Share = Tab; D-pad or left stick = arrows (held, they repeat); LB/RB = Page Up/Down. Names are still typed on the keyboard |
 | (nothing to press) | The automatic checkpoint is also written every 60 s of play and once when the window loses focus, as the app's `SHSEngine::onTick` / `onExit` do |
 
 ## Content library contract

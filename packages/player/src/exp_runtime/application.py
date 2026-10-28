@@ -1830,8 +1830,10 @@ class Application:
         pygame.quit()
 
     def run(self):
+        from .gamepad import Gamepads
         clock = pygame.time.Clock()
         running = True
+        gamepads = Gamepads.start()
         try:
             while running:
                 elapsed = clock.tick(60)
@@ -1841,7 +1843,7 @@ class Application:
                     self.render()
                 token = self.input_token()
                 with frame_log.section('events'):
-                    for event in pygame.event.get():
+                    for event in gamepads.events() if gamepads else pygame.event.get():
                         running = self.handle_event(event) and not self.quit_requested
                         # Do not deliver a queued click to a newly opened screen.
                         if not running or self.input_token() != token:
@@ -1854,6 +1856,8 @@ class Application:
                 if frame_log.LOG is not None:
                     frame_log.LOG.frame(elapsed, *self._frame_log_place())
         finally:
+            if gamepads:
+                gamepads.stop()
             if frame_log.LOG is not None:
                 frame_log.LOG.close()
             self.close()

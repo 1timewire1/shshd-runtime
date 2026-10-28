@@ -6,6 +6,7 @@ imports the application; menus, panel geometry and event handling stay shared.
 _backend = None
 # A host's own vibrator, when its backend has none (Android's, platforms/android.py): called with a duration in ms.
 _vibrator = None
+_gamepads = None        # the desktop's connected controllers (gamepad.py): they rumble as the device's vibrator
 
 
 def set_vibrator(vibrator):
@@ -15,15 +16,25 @@ def set_vibrator(vibrator):
 
 
 def supports_vibration():
-    return _vibrator is not None or bool(getattr(_backend, 'vibration_available', False))
+    return (_vibrator is not None or bool(getattr(_backend, 'vibration_available', False))
+            or bool(_gamepads and _gamepads.vibration_available))
 
 
 def vibrate(duration_ms=1000):
-    """The device vibrates (service 82 asks Android's vibrator for 1000 ms; the iPhone plays its system alert)."""
+    """The device vibrates (service 82 asks Android's vibrator for 1000 ms; the iPhone plays its system alert); on the
+    desktop, the connected controllers rumble."""
     if _vibrator is not None:
         _vibrator(duration_ms)
-    elif supports_vibration():
+    elif getattr(_backend, 'vibration_available', False):
         _backend.vibrate()
+    elif _gamepads and _gamepads.vibration_available:
+        _gamepads.vibrate()
+
+
+def install_gamepads(gamepads):
+    global _gamepads
+    previous, _gamepads = _gamepads, gamepads
+    return previous
 
 
 class _MenuMusic:
