@@ -48,7 +48,7 @@ def main(argv=None):
     nr.add_argument('--lite', type=Path, help="a Lite Java build's jar, for king-of-diss-lite")
     xb = sub.add_parser('x360', help="the cancelled Xbox 360 prototype's new stories (creator projects)")
     xb.add_argument('pak', type=Path, help="the MS4 prototype's data.pak")
-    xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'all'), default='all')
+    xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'dating-beth', 'all'), default='all')
     xb.add_argument('--pud', type=Path, required=True)
     xb.add_argument('--x1i', type=Path)
     xb.add_argument('--looks', type=Path, required=True,
@@ -58,6 +58,12 @@ def main(argv=None):
     xb.add_argument('--music-file', action='append', default=[], metavar='CUE=PATH',
                     help="embed the prototype's own audio for a cue (a WAV or MP3); a cue with a CUE_loop file plays "
                          "once and runs into that loop (dont_trust_me + dont_trust_me_loop)")
+    xb.add_argument('--portraits', type=Path,
+                    help="a folder of the prototype's characters rendered as SHS HD busts (x360_portrait.py: "
+                         "<id>_<emotion>.png); those cast members use them instead of their New Rules looks")
+    xb.add_argument('--backgrounds', type=Path,
+                    help="a folder of the prototype's own backgrounds (x360_bgshots.py cuts: <location>.jpg, "
+                         "<location>_<who>.jpg for a talk); those locations use them instead of New Rules art")
     xb.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -144,7 +150,13 @@ def translate_x360(args):
     names = list(x360.STORIES) if args.story == 'all' else [args.story]
     for name in names:
         story = x360.STORIES[name]
-        project = x360.translate(proto, story, art, hires_art, looks, music, music_files)
+        rendered = x360.rendered_portraits(args.portraits, story) if args.portraits else {}
+        backgrounds = x360.scene_backgrounds(args.backgrounds, story) if args.backgrounds else {}
+        project = x360.translate(proto, story, art, hires_art, looks, music, music_files, rendered, backgrounds)
+        if rendered:
+            print(f'{name}: rendered portraits for {", ".join(sorted(rendered))}')
+        if backgrounds:
+            print(f'{name}: own backgrounds {", ".join(sorted(backgrounds))}')
         stem = args.out / f'X360_{story.episode_id:02d}_{safe(story.title)}'
         save_project(project, stem.with_suffix('.expproj'))
         export_project(project, stem.with_suffix('.exp'))

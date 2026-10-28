@@ -1,6 +1,7 @@
 """tools/translate x360.py and lua_subset.py on authored data (no prototype content): the pak and string encodings,
 the Lua subset, and a small story played through the production Session."""
 import importlib.util
+import io
 import lzma
 from pathlib import Path
 import struct
@@ -265,6 +266,133 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
         self.assertEqual([(n.kind, n.params['expression'], n.otherwise) for n in test],
                          [('branch', '(score >= 2)', line.id)])
         record = play(compile_project(project), [0])
+        self.assertEqual(record[-1]['kind'], 'exit')
+
+    def test_rendered_portraits_replace_a_cast_members_art_for_sd_and_hd(self):
+        # x360_portrait.py's busts (HD-sized, <id>/<id>_<emotion>.png as the catalogue lays them out) take a cast
+        # member's five slots, even one drawn from an SHS bank: as they are at the HD offset, halved for SD.
+        import tempfile
+        import x360
+        from PIL import Image
+
+        class Art:
+            def background(self, location, mode):
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'a').mkdir()
+            for i, emotion in enumerate(x360.RENDERED_EMOTIONS):
+                Image.new('RGBA', (226, 256), (i * 40, 0, 0, 255)).save(Path(folder) / 'a' / f'a_{emotion}.png')
+            rendered = x360.rendered_portraits(folder, story)
+        self.assertEqual(list(rendered), ['a'])
+        project = x360.translate(self.prototype(), story, Art(), rendered=rendered)
+        andy = next(c for c in project.characters if c.id == 'a')
+        self.assertEqual(andy.expressions, [x360.PORTRAIT_BASE + i for i in range(5)])    # not the SHS bank
+        assets = {a.id: a for a in project.assets}
+        sd = Image.open(io.BytesIO(assets[x360.PORTRAIT_BASE + 2].data))
+        hd = Image.open(io.BytesIO(assets[x360.PORTRAIT_BASE + x360.HIRES_PORTRAIT_OFFSET + 2].data))
+        self.assertEqual((sd.size, hd.size), ((113, 128), (226, 256)))
+        self.assertEqual(hd.getpixel((5, 5))[:3], (80, 0, 0))                              # happy, slot 2
+
+    def test_the_prototypes_own_background_replaces_the_new_rules_one(self):
+        # scene_backgrounds: <location>.jpg (and <location>_<who>.jpg for a talk); a covered location gets no New
+        # Rules picture, and its event opens on the prototype's own.
+        import tempfile
+        import x360
+        from PIL import Image
+
+        class Art:
+            def background(self, location, mode):
+                raise AssertionError('no New Rules background wanted')
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        with tempfile.TemporaryDirectory() as folder:
+            Image.new('RGB', (960, 1440), (1, 2, 3)).save(Path(folder) / 'lot.jpg')
+            Image.new('RGB', (960, 1440), (4, 5, 6)).save(Path(folder) / 'lot_a.jpg')
+            Image.new('RGB', (960, 1440), (7, 8, 9)).save(Path(folder) / 'elsewhere.jpg')
+            backgrounds = x360.scene_backgrounds(folder, story)
+        self.assertEqual(sorted(backgrounds), ['lot', 'lot_a'])
+        project = x360.translate(self.prototype(), story, Art(), backgrounds=backgrounds)
+        first = next(n for n in project.nodes if n.kind == 'background')
+        self.assertEqual(first.asset, x360.SCENE_BACKGROUND_BASE)                          # 'lot', sorted first
+        sizes = {a.id: Image.open(io.BytesIO(a.data)).size for a in project.assets if a.id in (first.asset,)}
+        self.assertEqual(sizes, {first.asset: (960, 1440)})
+        self.assertFalse(any(x360.BACKGROUND_BASE <= a.id < x360.SCENE_BACKGROUND_BASE for a in project.assets))
+
+    def test_dating_beths_older_scripts_choices_and_minigames(self):
+        # MS3's calls (gameSHS.OpenDialog/SetDialogText/CloseDialog, three-argument AddChoices with "A. " labels and
+        # -1), a think bubble in parentheses, an off-screen line given to the cast member whose colour it has, the
+        # leash minigame as a word game deciding choice, and QuitGame.
+        import x360
+        from exp_runtime.creator import compile_project
+        from playthrough import play
+        self.EVENTS = '''<Tongas project="t">
+    <object key="_a" type="EVENTCONFIGMASTER" name="t/one" version="1"><properties key="_a">
+    <p k="_a" n="LocationName">lot</p><p k="_a" n="Script" l="lua"><![CDATA[
+gameStats = {}
+if gameStats ~= nil then
+    gameStats.choice = 0
+else
+    gameStats = {}
+    gameStats.choice = 0
+end
+gameSHS.OpenDialog("a","bubbles/think/left","bubbles/enter_from_left", false)
+gameSHS.SetDialogText("t/glad",20)
+gameSHS.CloseDialog("bubbles/exit_from_left")
+gameSHS.OpenDialog("","bubbles/telephone/left","bubbles/enter_from_left")
+gameSHS.SetDialogText("t/pink",20)
+gameSHS.CloseDialog("bubbles/exit_fade")
+gameSHS.ClearChoices()
+gameSHS.AddChoices(ToUniString("[:t/yes]"),"GGRP:bubbles/choice/choice","me.RunCmd(0) gameStats.choice = -1")
+gameSHS.AddChoices(ToUniString("[:t/no]"),"GGRP:bubbles/choice/choice","me.RunCmd(0) gameStats.choice = 1")
+gameSHS.OpenChoice("bubbles/choice/main","choice/enter_from_bottom",0)
+gameSHS.CloseChoice("choice/exit_fade")
+gameSHS.ClearButtonSmashOptions()
+gameSHS.AddButtonSmashOption("hud/x","LeftRight")
+gameSHS.RunSmashButtonMinigame("hud/minigame/power_bar/main", 50, 7, 12, math.random(2,5), 13, "w", "l", "i", "d")
+if gameStats.choice == 1 then
+    gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+    gameSHS.SetDialogText("t/won",20)
+    gameSHS.CloseDialog("bubbles/exit_from_left")
+end
+QuitGame()
+]]></p></properties></object></Tongas>'''
+        self.STRINGS = dict(self.STRINGS, **{'t/yes': 'A. Say yes', 't/no': 'B. Say no',
+                                             't/pink': '&:250 140 200;Hi from the phone'})
+
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a',
+                           voices={'250 140 200': 'a'})
+        project = x360.translate(self.prototype(), story, Art())
+        choice = next(n for n in project.nodes if n.kind == 'choice')
+        self.assertEqual([o.text for o in choice.options], ['Say yes', 'Say no'])
+        games = [n for n in project.nodes if n.kind == 'word_game']
+        self.assertEqual([g.params['result'] for g in games], ['leash'])
+        lines = [(n.character, n.text) for n in project.nodes if n.kind == 'dialogue']
+        self.assertEqual(lines[:2], [('a', '(Glad you said yes.)'), ('a', 'Hi from the phone')])
+        # the slot machine's word game score maps onto the script's points: 5+ -> 3, 3-4 -> 2, less -> 0
+        builder = x360.Builder(self.prototype(), story)
+        builder.minigame('gameSHS.RunSlotMachineMinigame')
+        self.assertEqual([n.params['expression'] for n in builder.nodes if n.kind == 'branch'],
+                         ['(idea >= 5)', '(idea >= 3)'])
+        self.assertEqual([n.params['expression'] for n in builder.nodes if n.kind == 'set'], ['3', '2', '0'])
+        record = play(compile_project(project), [1])              # the word game runs out at 0: the leash is lost
+        self.assertEqual([e['text'] for e in record if e['kind'] == 'line'],
+                         ['(Glad you said yes.)', 'Hi from the phone'])
         self.assertEqual(record[-1]['kind'], 'exit')
 
     def test_the_objective_tally_names_the_count_then_the_verdict(self):

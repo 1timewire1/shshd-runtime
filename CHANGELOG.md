@@ -32,7 +32,10 @@
   scene transition into Hector's diss battle intro and a closing tally of the objectives completed; the 3D staging doesn't. Names the X360 colours are drawn in SHS's emphasis
   colour, and its spaced ellipses (". . .") are joined. The cast wears its New Rules looks, as the King of Diss translation does.
   Each story is written as an editable `.expproj` and an `.exp` (pack 31400), and `x360_check.py` plays one down many
-  random answer paths. The shs profile gives pack 31400 the New Rules translations' hi-res portrait set and frame
+  random answer paths. *Dating Beth*, the prototype's retelling of BREW's "Dogged Pursuit", is translated too
+  (`--story dating-beth`): its slot-machine and leash minigames become word games with BREW's own words for them.
+  `--portraits` and `--backgrounds` put the prototype's own characters (rendered from its models) and locations
+  (captured in Xenia) in place of the New Rules art, with a background per talk in Day of Diss. The shs profile gives pack 31400 the New Rules translations' hi-res portrait set and frame
   backdrop.
 - **Emoticons over a translated speaker's portrait** (the X360 prototype's line effects). Hearts, lightning bolts, a
   sweat drop, an anger mark, an exclamation mark or a question mark appear at the portrait ring's corner on the box's

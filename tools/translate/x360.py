@@ -22,6 +22,7 @@ the puzzle test's Beth is the SHS shared-bank Beth. Backgrounds are New Rules' l
 """
 from dataclasses import dataclass, field
 import lzma
+from pathlib import Path
 import re
 import struct
 
@@ -34,6 +35,7 @@ import nr_art
 PAK_MAGIC = b'tongas_pack_v20000'
 PACK_ID = 31400                         # shs/profile.py: TRANSLATED_PORTRAIT_ART
 BACKGROUND_BASE = 26000                 # five IDs apart, as the creator allocates
+SCENE_BACKGROUND_BASE = 26100           # the prototype's own backgrounds (scene_backgrounds), one ID each
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
 HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rules translation stores it
 FRAME_BACKDROP = 26999                  # New Rules' UI backdrop under the strips (shs/profile.py TRANSLATED_FRAME_BACKDROP)
@@ -50,10 +52,12 @@ SING_TYPE, SING_MARK = 6, '{'           # OpenDialog type 6 is the X360's sing b
 # into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
 MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26902
 EXPRESSIONS = (1, 4, 2, 3, 5)           # New Rules faces in SHS slots 0-4: neutral, angry, happy, sad, surprised
+# The prototype's own emotions rendered for those slots (reference/Other Games/tools/x360_portrait.py)
+RENDERED_EMOTIONS = ('neutral', 'angry', 'happy', 'sad', 'excited')
 # X360 emotion names (game._SetCharacterEmotion) -> SHS expression slot.
 EMOTION = {'neutral': 0, 'happy': 2, 'sad': 3, 'angry': 1, 'brag': 2, 'exited': 4, 'excited': 4, 'question': 4,
            'rap': 0, 'rap_angry': 1, 'cruel': 1, 'concerned': 3, 'boxsearch': 0, 'walk': 0, 'shy': 3,
-           'surprised': 4}
+           'surprised': 4, 'phone': 0, 'pickup_phone': 0, 'bored': 3, 'dissing': 2, 'dance_001': 2}
 CHOICE_TITLE = 'Make your choice!'      # as the New Rules translation titles its choices
 HUB_TITLE = 'Who do you want to talk to?'
 # The selection hub (guigroup hud/selection/main): gameStats.cam 1-4 within [minSel, maxSel], A runs the dialog.
@@ -73,8 +77,12 @@ SCENE_TRANSITION = 20
 GUI_STATE = {'cam', 'firstChoice', 'scrolling', 'choiceStarted', 'optionSelected', 'objectives', 'newObj', 'tod'}
 IGNORED_CALLS = re.compile(r'^(Wait|WaitFrames|Log|CreateCharacter|scene\..*|game\._.*|camera\..*|gui\..*|me\..*'
                            r'|guiscreen\..*|GuiScreen\.CloseControl|gameSHS\.(CameraPanTo|CameraPathLookAt|AddCharacter|'
-                           r'SetCharacterPosition|PlayCharacterEmotion|MoveCharacter|PlayBlockingAnim|CloseChoice)'
+                           r'SetCharacterPosition|PlayCharacterEmotion|MoveCharacter|PlayBlockingAnim|CloseChoice|'
+                           r'ClearSlotMachineOptions|AddSlotMachineOption|SetDefaultSlotMachineOption|'
+                           r'EndSlotMachineMinigame|ClearButtonSmashOptions|AddButtonSmashOption)'
                            r'|DissComment|rotateToAndBack.*|dissTutorial)$')
+# The minigames Builder.minigame turns into word games (their set-up calls above only configure them)
+MINIGAME_CALLS = ('gameSHS.RunSlotMachineMinigame', 'gameSHS.RunSmashButtonMinigame')
 
 
 @dataclass
@@ -94,6 +102,10 @@ class Story:
     cast: list
     locations: dict                     # X360 LocationName -> New Rules location number
     player: str = ''
+    renders: dict = field(default_factory=dict)     # cast id -> the x360_portrait.py render it wears, if not its own
+    # An off-screen line (no speaker: a phone call, a voice from outside) in a cast member's text colour
+    # ("R G B" of its leading &:R G B;) is theirs: SHS has no off-screen bubble, so it shows them speaking.
+    voices: dict = field(default_factory=dict)
 
 
 # The New Rules looks King of Diss gives these characters (nr_looks.json; its $josh's first look).
@@ -101,11 +113,33 @@ DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
     Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
     Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016')],
     {'parking_lot': 23, 'diss_battle': 23}, player='josh')
-# The test's hero is the zach model, called Josh in its text; Moondog's look is Dancing Queen's.
+# The test's hero is the zach model, called Josh in its text, so he wears Josh's render (owner, 2026-10-27: MS3's
+# Josh stood in with Zack's model, and the test was never updated); Moondog's look is Dancing Queen's.
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [
     Cast('zach', 'Josh', 1, '0020'), Cast('moondog', 'Moondog', 1, '0214'), Cast('beth', 'Beth', 2, bank=2050)],
-    {'zachs_room': 5, 'beths_room': 4}, player='zach')
-STORIES = {'day-of-diss': DAY_OF_DISS, 'puzzle-test': PUZZLE_TEST}
+    {'zachs_room': 5, 'beths_room': 4}, player='zach', renders={'zach': 'josh'})
+# BREW '08 "Dogged Pursuit" as the X360 retold it (episode1, titled "Dating Beth" in MS3's textbank): here the zach
+# model is Zack. The house and the pound have no New Rules picture of their own (the prototype's own backgrounds
+# are used: --backgrounds); the lot stands in.
+DATING_BETH = Story('Dating Beth', 3, ['episode1/event1'], [
+    Cast('zach', 'Zack', 1, '0020'), Cast('beth', 'Beth', 2, bank=2050), Cast('moondog', 'Moondog', 1, '0214')],
+    {'zachs_room': 5, 'beths_room': 4, 'beths_house_out': 23, 'dogpound': 23}, player='zach',
+    renders={'zach': 'zack'}, voices={'250 140 200': 'beth'})      # Beth's pink; Zack's dad (uncoloured) has no model
+STORIES = {'day-of-diss': DAY_OF_DISS, 'puzzle-test': PUZZLE_TEST, 'dating-beth': DATING_BETH}
+# Dating Beth's two minigames as the SHS word game, with BREW Dogged Pursuit's own words for them (its catch
+# minigames "Think!" and "Catch Rex"). The slot machine (bulbs +1, crosses -1, 15 s) and the leash's power bar
+# (won: choice 1, lost: 0) become word games whose score decides the same branches. SHS's word game needs three bad
+# words and BREW's have two: Think! adds "???" (the slot machine's question-mark icon, which scored 0 there; tapped
+# here it costs a point), Catch Rex adds "(SNAP!)" from the episode's third catch game, "Get the Collar".
+SLOT_MACHINE = {'good': ['Bingo!', 'Eureka!'], 'bad': ['Durr...', 'Um...', '???'], 'duration_ms': 15000,
+                'refresh_ms': 1400, 'result': 'idea'}
+BUTTON_SMASH = {'good': ['(Got it.)', '(Nice grip, dude!)'], 'bad': ['(Ow my fingers!)', '(Whoa, slippy!)', '(SNAP!)'],
+                'duration_ms': 15000, 'refresh_ms': 1400, 'result': 'leash'}
+# The word game in 15 s makes the X360's scores too easy (owner, 2026-10-27), so its score is mapped onto the
+# script's: 5 or better is the slot machine's best (choice 3: the pound), 3-4 its middle (2: the river), less fails
+# (0); the leash is held at 5 or better.
+SLOT_MACHINE_LEVELS = ((5, 3), (3, 2))  # (word game score at least, the script's choice points)
+BUTTON_SMASH_WIN = 5                    # the leash held: this score or better
 
 
 class TranslateError(ValueError):
@@ -336,6 +370,7 @@ class Builder:
         self.hub = None
         self.gameover = False
         self.bubble = 0                 # the open dialogue's OpenDialog type (SING_TYPE: the sing bubble)
+        self.thought = False            # the open dialogue is a think bubble
         self.effects = []               # (character, emoticon effect) waiting for the next line
         self.effects_skipped = 0
         self.sounds = {}                # effect -> its embedded sound's ID (translate() fills it)
@@ -344,7 +379,9 @@ class Builder:
         self.line_exit = None           # `pending` as that line left it
         self.transitions = 0            # lines given a transition (transition_into)
         self.cast = {c.id: c for c in story.cast}
-        self.backgrounds = {}
+        self.backgrounds = {}           # New Rules location -> its background's asset ID
+        self.scene_backgrounds = {}     # the prototype's own: location or location_<who> -> asset ID
+        self.location = None
 
     # graph plumbing
     def add(self, kind, **fields):
@@ -513,6 +550,12 @@ class Builder:
         if len(arms) == 1 and otherwise is None and arms[0][0][0] == 'binop' and arms[0][0][3] == ('nil',):
             if lua_subset.dotted(arms[0][0][2]) in ('gameStats', 'gameStats.tod'):
                 return
+        # Dating Beth's events open `if gameStats ~= nil then ... else gameStats = {} ... end`: the table always
+        # exists by then (the first event makes it), so the first arm is the one that runs.
+        if len(arms) == 1 and arms[0][0][0] == 'binop' and arms[0][0][1] == '~=' and arms[0][0][3] == ('nil',) \
+                and lua_subset.dotted(arms[0][0][2]) == 'gameStats':
+            self.block(arms[0][1])
+            return
         (cond, body), rest = arms[0], arms[1:]
         if self.collecting and all(
                 st[0] == 'call' and call_name(st[1]) == 'gameSHS.AddChoices' for st in body) and not rest \
@@ -568,14 +611,28 @@ class Builder:
             self.line(self.speaker, string_arg(args, 0))
         elif name == 'Dialog':
             self.bubble = 0                     # the older call names its bubble group; no sing type
+            self.thought = '/think/' in (string_arg(args, 1) or '')
             self.line(string_arg(args, 0), string_arg(args, 3))
+            self.thought = False
+        elif name == 'gameSHS.OpenDialog':      # MS3's form (Dating Beth): (who, bubble group, entrance[, ...])
+            self.speaker, self.bubble = string_arg(args, 0), 0
+            self.thought = '/think/' in (string_arg(args, 1) or '')
+        elif name == 'gameSHS.CloseDialog':
+            self.speaker, self.thought = None, False
+        elif name == 'gameSHS.SetDialogText':
+            self.line(self.speaker, string_arg(args, 0))
+        elif name in MINIGAME_CALLS:
+            self.minigame(name)
+        elif name == 'QuitGame':
+            self.add('end')
         elif name == 'gameSHS.SetCharacterEmotion':
             self.emotions[string_arg(args, 0)] = string_arg(args, 1)
         elif name == 'gameSHS.ClearChoices':
             self.choices, self.collecting = [], True
         elif name == 'gameSHS.AddChoices':
-            self.choices.append((string_arg(args, 0), string_arg(args, 2) or '', string_arg(args, 3) or '',
-                                 ' and '.join(self.conditions)))
+            # MS4: (text, gui, preview script, action); MS3 (Dating Beth): (text, choice GUI group, action)
+            preview, action = (string_arg(args, 2), string_arg(args, 3)) if len(args) >= 4 else ('', string_arg(args, 2))
+            self.choices.append((string_arg(args, 0), preview or '', action or '', ' and '.join(self.conditions)))
         elif name == 'gameSHS.OpenChoice':
             self.choice()
         elif name == 'RunScript':
@@ -596,10 +653,35 @@ class Builder:
         else:
             raise TranslateError(f'call {name}')
 
+    def minigame(self, name):
+        """Dating Beth's slot machine and leash power bar, as SHS word games (SLOT_MACHINE, BUTTON_SMASH), whose
+        score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS, the leash won (1) at
+        BUTTON_SMASH_WIN or better."""
+        if name == 'gameSHS.RunSlotMachineMinigame':
+            game, levels, below = SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0
+        else:
+            game, levels, below = BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0
+        self.add('word_game', params=dict(game))
+        ends = []
+        for least, points in levels:            # the first level the score reaches
+            test = self.add('branch', params={'expression': f"({game['result']} >= {least})"})
+            self.pending = [(test.id, 'next')]
+            self.add('set', variable='choice', params={'expression': str(points)})
+            ends += self.pending
+            self.pending = [(test.id, 'otherwise')]
+        self.add('set', variable='choice', params={'expression': str(below)})
+        self.pending += ends
+
     def line(self, who, key):
-        text = story_text(self.proto.text(key))
+        raw = self.proto.text(key)
+        colour = re.match(r'&:(\d+ \d+ \d+);', raw)
+        if not who and colour and colour.group(1) in self.story.voices:
+            who = self.story.voices[colour.group(1)]
+        text = story_text(raw)
         if self.bubble == SING_TYPE:            # the sing bubble: SHS frames a song line in its music notes
             text = f'{SING_MARK} {text} {SING_MARK}'
+        if self.thought:                        # a think bubble: in parentheses, as SHS (and BREW's original) write thoughts
+            text = f'({text})'
         effects, self.effects = self.effects, []
         self.line_start = f'n{self.count + 1}'
         if not who:
@@ -631,9 +713,11 @@ class Builder:
         self.collecting = False
         if not 2 <= len(options) <= 8:
             raise TranslateError(f'{len(options)} choice options')
+        # Dating Beth's options are BREW's menu split into buttons, "A. ...", "B. ...": SHS lists them unlettered.
         node = self.add('choice', text=CHOICE_TITLE, character=self.story.player, theme=1,
-                        options=[Choice(story_text(self.proto.text(t[2:-1]) if t.startswith('[:') else t,
-                                                   label=True), '', cond) for t, _, _, cond in options])
+                        options=[Choice(re.sub(r'^[A-H]\.\s+', '', story_text(
+                            self.proto.text(t[2:-1]) if t.startswith('[:') else t, label=True)), '', cond)
+                            for t, _, _, cond in options])
         ends, self.choice_emotions = [], {}
         for i, (_, preview, real, _) in enumerate(options):
             self.pending = [(node.id, ('option', i))]
@@ -644,7 +728,9 @@ class Builder:
             value = None
             for statement in lua_subset.parse(real):
                 if statement[0] == 'assign' and lua_subset.dotted(statement[1][0]) == 'gameStats.choice':
-                    value = int(statement[2][0][1])
+                    v = statement[2][0]                         # a number, or minus one (Dating Beth: -1)
+                    value = int(v[1]) if v[0] == 'num' else -int(v[2][1]) if v[0] == 'unop' and v[2][0] == 'num' \
+                        else None
                 self.statement(statement)
             if value is not None:
                 self.choice_emotions[value] = {k: v for k, v in self.emotions.items() if before.get(k) != v}
@@ -660,17 +746,28 @@ class Builder:
         labels = [story_text(self.proto.labels[key]) for key in OBJECTIVE_LABELS]
         self.add('message', text='\n'.join(f'- {label}' for label in labels), params={'title': 'Objectives',
                                                                                     'flag': 0})
+        # With the prototype's own backgrounds (scene_backgrounds), the hub shows the location's overview, and every
+        # return from a talk passes through it, so the talk's background crossfades back.
+        location = self.location        # a talk can run the next event (changing self.location) before the others
+        entry = self.scene_background(location)
         hub = self.add('choice', text=HUB_TITLE, character=self.story.player, theme=1,
                        options=[Choice(name, '', f'(minSel <= {i}) and ({i} <= maxSel)')
                                 for i, (name, _) in enumerate(HUB, 1)])
-        self.hub = hub.id
+        self.hub = entry.id if entry is not None else hub.id
         ends = []
         for i, (_, who) in enumerate(HUB):
             self.pending = [(hub.id, ('option', i))]
             self.emotions, self.speaker = dict(self.emotions), None
+            self.scene_background(f'{location}_{who}')              # the shot behind whoever Josh talks to
             self.block(self.proto.script(f'dialogs/{who}/dialog_001'))
             ends += self.pending
         self.pending = ends
+
+    def scene_background(self, key):
+        """A background node for one of the prototype's own backgrounds, if the translation has that one."""
+        if key not in self.scene_backgrounds:
+            return None
+        return self.add('background', asset=self.scene_backgrounds[key], params={'variant': 0})
 
     def run_event(self, name):
         if name in self.event_starts:
@@ -679,7 +776,9 @@ class Builder:
         location, script = self.proto.event(name)
         if location not in self.story.locations:
             raise TranslateError(f'{name}: location {location!r} has no background')
-        node = self.add('background', asset=self.backgrounds[self.story.locations[location]], params={'variant': 0})
+        self.location = location
+        node = self.scene_background(location) or self.add(
+            'background', asset=self.backgrounds[self.story.locations[location]], params={'variant': 0})
         self.event_starts[name] = node.id
         self.block(script)
 
@@ -752,20 +851,63 @@ def music_assets(files, music):
     return assets, chained
 
 
+def rendered_portraits(folder, story):
+    """cast id -> its five portraits from a folder of x360_portrait.py renders (<id>_<emotion>.png, SHS HD-sized; or
+    the catalogue's layout, <id>/<id>_<emotion>.png), in SHS's slot order (RENDERED_EMOTIONS); cast members without
+    all five are left out."""
+    from PIL import Image
+    folder, out = Path(folder), {}
+    for cast in story.cast:
+        name = story.renders.get(cast.id, cast.id)
+        for where in (folder, folder / name):
+            paths = [where / f'{name}_{emotion}.png' for emotion in RENDERED_EMOTIONS]
+            if all(p.exists() for p in paths):
+                out[cast.id] = [Image.open(p).convert('RGBA') for p in paths]
+                break
+    return out
+
+
+def scene_backgrounds(folder, story):
+    """The prototype's own backgrounds for a story from a folder of captures (Additional Resources/x360-backgrounds:
+    960 x 1440 JPEGs or PNGs cut by x360_bgshots.py): <location>.jpg for a location (and its hub), and
+    <location>_<who>.jpg for a talk with <who> there. Those the story has no use for are left out."""
+    from PIL import Image
+    out = {}
+    for path in sorted(Path(folder).iterdir()):
+        if path.suffix.lower() not in ('.jpg', '.png'):
+            continue
+        location = next((loc for loc in story.locations if path.stem == loc or path.stem.startswith(loc + '_')), None)
+        if location is not None:
+            out[path.stem] = Image.open(path).convert('RGB')
+    return out
+
+
 def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, looks=None, music=None,
-              music_files=None) -> Project:
+              music_files=None, rendered=None, backgrounds=None) -> Project:
     """One story as a creator Project. `art`/`hires_art`: nr_art.Art over res_large.pud / the X1i jar; `looks`:
     nr_looks.json's records; `music`: X360 cue name -> SHS resource ID; `music_files`: X360 cue name -> the
-    prototype's own audio (WAV or MP3 bytes), embedded in the episode (music_assets)."""
+    prototype's own audio (WAV or MP3 bytes), embedded in the episode (music_assets); `rendered`: cast id -> the
+    prototype's own characters drawn as SHS HD busts (rendered_portraits), used instead of their New Rules looks: as
+    they are for HD, halved for SD; `backgrounds`: the prototype's own backgrounds (scene_backgrounds), HD-sized, used
+    instead of the New Rules ones, with a background per talk where there is one (the runtime crossfades between
+    them)."""
+    rendered = rendered or {}
+    backgrounds = backgrounds or {}
     music = dict(music or {})
     assets, chained = music_assets(music_files or {}, music)
     builder = Builder(proto, story, music, chained)
     project = Project(title=story.title, game='shs', pack_id=PACK_ID, episode_id=story.episode_id, nodes=[])
     project.assets.extend(assets)
-    for k, location in enumerate(sorted(set(story.locations.values()))):
+    # New Rules backgrounds only for the locations the prototype's own don't cover
+    uncovered = sorted({number for name, number in story.locations.items() if name not in backgrounds})
+    for k, location in enumerate(uncovered):
         asset_id = BACKGROUND_BASE + 5 * k
         project.assets.append(Asset(asset_id, f'location {location}', nr_art.jpeg(art.background(location, 0))))
         builder.backgrounds[location] = asset_id
+    for k, (key, picture) in enumerate(sorted(backgrounds.items())):
+        asset_id = SCENE_BACKGROUND_BASE + k
+        project.assets.append(Asset(asset_id, f'scene {key}', nr_art.jpeg(picture)))
+        builder.scene_backgrounds[key] = asset_id
     backdrop = art.backdrop()
     if backdrop is not None:
         project.assets.append(Asset(FRAME_BACKDROP, 'frame backdrop', nr_art.png(backdrop)))
@@ -779,7 +921,15 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     if OBJECTIVE_SOUND[0] in proto.files:
         builder.objective_sound = OBJECTIVE_SOUND[1]        # embedded below if an objective is checked off
     for k, cast in enumerate(story.cast):
-        if cast.bank is not None:
+        if cast.id in rendered:                 # before the SHS bank too: Beth's renders replace SHS's own Beth
+            from PIL import Image
+            base = PORTRAIT_BASE + 5 * k
+            for i, picture in enumerate(rendered[cast.id]):
+                sd = picture.resize((picture.width // 2, picture.height // 2), Image.LANCZOS)
+                project.assets.append(Asset(base + i, f'{cast.name} {i}', nr_art.png(sd)))
+                project.assets.append(Asset(base + HIRES_PORTRAIT_OFFSET + i, f'{cast.name} HD {i}',
+                                            nr_art.png(picture)))
+        elif cast.bank is not None:
             base = cast.bank
             for i in range(5):
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', None))
