@@ -615,6 +615,40 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
   same shape, shows its bar under the first narration. Not explained yet: the runtime shows the room from the
   narration.
 
+## HD backgrounds from SHS HD (this fork)
+
+Many CoD locations are SHS HD backgrounds at half size. The owner reviewed every CoD/SHS HD pair (the catalogue
+`cod-portrait-catalog/shs_hd_backgrounds.md`, made from the player's files and kept outside the project). The reviewed
+pairs ship as `cod/hd_twin_map.py`, exported by `tools/export_cod_twin_map.py`. It holds fingerprints, sizes and where
+to look, never a picture: 75 entries for 64 pairs, counting CoD 1.3.4's re-saved bundle backgrounds as well as 1.4.7's.
+
+**Building.** During first-time preparation (the app's preview job), `cod/hd_twins.build` fills the CoD library's
+twin store (`hd_twins/`, the same store SHS uses).
+- **Sources:** the player's own files only. These are the SHS library Switch Game leads to (its HD episodes, read
+  without becoming the app's library) and the SHS HD bundle linked to the CoD library.
+- **Lookup:** each SHS HD picture is read where the map says. If that episode is not the player's, the build scans the
+  rest of the SHS library for the same fingerprint. About 17 s for the 64 pictures.
+- **Rebuilds:** when the map version changes, or when a build that missed pictures sees the SHS library's HD episode
+  count change (the SHS library newly found, or more episodes imported).
+
+**What each picture gets.** The changes are fitted to the player's own CoD picture and applied to the HD picture,
+Pillow only:
+- **As it is (24 pairs):** the 21 same pictures, plus the owner's three close enough as they are (0015, 0046, 0304).
+- **Levels (36):** a per-channel gain and offset. CoD's copies are mostly brighter than SHS HD's.
+- **Blur (1):** a Gaussian blur, radius 9 px at CoD's size (18 at HD's), then levels (CoD 0425).
+- **Local levels transfer (3):** CoD 0429's sunlight, 0444's haze, and 0431's desaturation (saturation 30% first). A
+  gain and offset per channel is fitted over cells 4% of the picture wide and smoothed once, so the glow or haze carries
+  over and the HD detail stays. Mean difference from CoD's picture at its size: 5.7, 2.3 and 6.5 levels, against
+  33.6, 40.7 and 19.8 with a plain levels fit. One flaw: in 0429 the chair top under the window leaves a faint orange
+  smudge where CoD's glow is white.
+
+**Playing.** `EpisodeResources.read_asset` serves a CoD picture's twin in its place, unless HD art is off. It never
+applies the 2x fill that SHS's standard episodes get. The background window takes the art's own density
+(`bg_scale = width / 480`), so a 960-wide twin keeps CoD's framing.
+
+Not covered: CoD's night, tinted and composited versions of SHS scenes (18 edited pairs and 9 car shots in the
+catalogue). Episode backgrounds of CoD 1.3.4's own episode set are covered only where their bytes match 1.4.7's.
+
 ## The portrait picker
 
 Service 78 draws CoD's `SHSUIPortraitSelect`: SHS HD's at iPhone size, without the frame offset

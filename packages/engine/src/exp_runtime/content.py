@@ -1301,6 +1301,11 @@ class EpisodeResources:
         mode = self.library.hd_art_mode
         if mode != 'off' and self.record.get('variant') == 'standard':
             return self.library.twin_store().art(data, mode)      # the HD release's picture, or a 2x fill
+        if mode != 'off' and getattr(self.library, 'game_id', None) == 'cod':
+            # Cause of Death: the SHS HD picture a background is (cod/hd_twins.py), never a 2x fill.
+            twin = self.library.twin_store().twin(data)
+            if twin is not None:
+                return twin
         return data
 
     def standard_portrait(self, resource_id):

@@ -560,10 +560,26 @@ class Application:
         loader = getattr(GAMES.get(self.library.game_id), 'twin_map', None) if self.library else None
         return loader() if loader else None
 
+    def cod_twin_map(self):
+        """Cause of Death's shipped map of backgrounds that are SHS HD pictures, or None (not a CoD library)."""
+        loader = getattr(GAMES.get(self.library.game_id), 'background_twin_map', None) if self.library else None
+        return loader() if loader else None
+
+    def shs_library_path(self):
+        """The SHS library a CoD library takes its HD backgrounds from (the one Switch Game leads to), or None."""
+        path = self.library_path('shs')
+        return path if path is not None and (Path(path) / 'library.json').is_file() else None
+
     def hd_art_due(self):
         """Whether the library's twin store still has to be built (or rebuilt) from the shipped twin map: an SHS
         library with HD episodes whose store did not come from this map version. A v1.0.0 library (no store) gets
-        it on its next open; no re-import is needed (the HD episodes it holds are the source)."""
+        it on its next open; no re-import is needed (the HD episodes it holds are the source). Cause of Death's
+        (cod/hd_twins.py): a new map, or a build that missed pictures while the SHS library has changed since."""
+        cod_map = self.cod_twin_map()
+        if cod_map is not None:
+            from .cod.hd_twins import due, shs_hd_episodes_listed
+            shs = self.shs_library_path()
+            return due(self.library, shs_hd_episodes_listed(shs) if shs is not None else 0, cod_map)
         twin_map = self.twin_map()
         if twin_map is None or not any(r.get('variant') == 'hd' for r in self.library.episodes):
             return False
@@ -571,7 +587,9 @@ class Application:
 
     def _prepare_previews(self, library):
         library.index_missing()
-        if self.hd_art_due():
+        if self.hd_art_due() and self.cod_twin_map() is not None:
+            self._build_cod_twins(library)
+        elif self.hd_art_due():
             from .hd_twins import build_from_map
 
             def found(done, total):
@@ -582,6 +600,25 @@ class Application:
         def progress(done, total, title):
             self.progress_text = f'{done + 1} of {total}: {title}'[:44]
         return episode_thumbnails.ensure(library, model.records, progress)
+
+    def _build_cod_twins(self, library):
+        """Cause of Death's HD backgrounds from the player's own SHS HD files (cod/hd_twins.py): the paired SHS
+        library's HD episodes, read here without becoming the app's library, and the linked SHS HD bundle."""
+        from .cod.hd_twins import build
+
+        def found(done, total):
+            self.progress_text = f'HD backgrounds: {done + 1} of {total}'[:44]
+        shs_path, shs = self.shs_library_path(), None
+        try:
+            if shs_path is not None:
+                try:
+                    shs = ContentLibrary(shs_path)
+                except (ContentError, OSError) as error:
+                    logging.warning('CoD HD art: the SHS library could not be read: %s', error)
+            build(library, shs, self.cod_twin_map(), found)
+        finally:
+            if shs is not None:
+                shs.close()
 
     # -- the HD shell's hooks ------------------------------------------------------------------------------
     def external_music(self):
