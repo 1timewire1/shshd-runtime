@@ -228,6 +228,39 @@ class FakeSession:
             self.advance()
 
 
+class PreviewMemoryTests(unittest.TestCase):
+    def test_each_preview_leaves_the_renderers_method_caches(self):
+        """A preview runs a whole episode view; a class-level method cache keeps every renderer it saw with that
+        episode's art (~40 MB an episode, until Android stopped the first-time setup at ~3 GB). Their instance
+        methods' caches empty after each preview; a static method's or a module function's stay."""
+        import functools
+        import sys
+        import types
+        module = types.ModuleType('exp_runtime.preview_memory_probe')
+
+        class Renderer:
+            @functools.lru_cache(maxsize=None)
+            def art(self, key):
+                return bytearray(16)
+
+            @staticmethod
+            @functools.lru_cache(maxsize=None)
+            def font(size):
+                return size
+
+        Renderer.__module__ = module.__name__
+        module.Renderer = Renderer
+        module.table = functools.lru_cache(maxsize=None)(lambda key: key)
+        sys.modules[module.__name__] = module
+        self.addCleanup(sys.modules.pop, module.__name__)
+        Renderer().art(1)
+        Renderer.font(12)
+        module.table(3)
+        episode_thumbnails.release_episode_caches()
+        self.assertEqual(Renderer.art.cache_info().currsize, 0)
+        self.assertEqual((Renderer.font.cache_info().currsize, module.table.cache_info().currsize), (1, 1))
+
+
 class TitleCardRunTests(unittest.TestCase):
     def test_answers_what_an_episode_asks_before_its_title_card(self):
         session = FakeSession('dialogue', 'choice', 'character_picker', 'text_input', 'loading', 'presentation')

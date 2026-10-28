@@ -920,7 +920,9 @@ class Application:
                     self.discard_unloadable_save(path)
                     return
             # A fresh renderer per episode prevents local image IDs from
-            # accidentally reusing the previous episode's cached artwork.
+            # accidentally reusing the previous episode's cached artwork; the last episode's view and art leave the
+            # renderers' method caches with it (episode_thumbnails.release_episode_caches).
+            episode_thumbnails.release_episode_caches()
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
                                 names=self.state.names_for(session.resources.record),
                                 vibration_enabled=self.state.vibration,
