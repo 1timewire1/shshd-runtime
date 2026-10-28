@@ -175,6 +175,9 @@ class Node:
     pixels: Image.Image | None = None
     identifier: int = field(default_factory=lambda: next(_ids))
     encoded: str | None = None
+    # Pieces of these pixels read through a subsurface, by box: one node (one PNG for the host) each, however often
+    # it is read (a font sheet's glyphs, every frame of a title card).
+    crops: dict = field(default_factory=dict, repr=False)
 
     def record(self):
         record = dict(id=self.identifier, size=self.size)
@@ -272,6 +275,15 @@ class Surface:
                 # An opaque surface's darkening (the HD menus' fades, every frame over the whole canvas): drawn by the
                 # host with its multiply blend, as SDL's RGB multiply leaves opaque pixels opaque.
                 self._append(dict(kind='fill', color=rgba(color)[:3] + (255,), rect=tuple(region), blend='multiply'))
+                return region
+            if special_flags == BLEND_RGBA_MULT and rgba(color)[:3] == (255, 255, 255) and region == self.get_rect():
+                # graphics.faded's whole-surface fade (the HD screens' text and buttons, each frame of a fade): SDL's
+                # multiply by white keeps the colour and scales the alpha, so the host's own alpha on a blit of what
+                # is there draws it, not a Python multiply.
+                node, alpha = self.snapshot(), rgba(color)[3]
+                self._ops, self._node = [], None
+                self._append(dict(kind='blit', source=node, at=(0, 0), alpha=alpha))
+                self.opaque = self.opaque and alpha == 255
                 return region
             solid = Image.new('RGBA', region.size, rgba(color))
             self._blend_into(solid, region.topleft, special_flags, 'fill')
@@ -385,7 +397,10 @@ class SurfaceView(Surface):
         node = self._parent.snapshot()
         (x, y), (w, h) = self._offset, self._size
         if node.pixels is not None:
-            return Node(self._size, pixels=node.pixels.crop((x, y, x + w, y + h)))
+            box = (x, y, x + w, y + h)
+            if box not in node.crops:
+                node.crops[box] = Node(self._size, pixels=node.pixels.crop(box))
+            return node.crops[box]
         return Node(self._size, (dict(kind='blit', source=node, at=(-x, -y), alpha=255, clip=(0, 0, w, h)),))
 
     def copy(self):
@@ -809,6 +824,11 @@ class Music:
         self.paused = False
         self.owner.playing[self.channel] = True
         self.owner.positions[self.channel] = int(start * 1000)
+
+    def queue(self, stream, loops=0):
+        """pygame's queue: `stream` plays, repeating `loops` times, when the playing music ends (a translated pack's
+        intro running into its loop, MusicStream); the host swaps it in."""
+        self.command('queue', data=base64.b64encode(stream.read()).decode('ascii'), loops=loops)
 
     def set_loops(self, loops):
         self.command('loops', loops=loops)

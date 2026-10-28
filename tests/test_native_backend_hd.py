@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -164,6 +166,20 @@ class SoundTests(unittest.TestCase):
         self.assertEqual(kinds, [('music_load', None), ('music_volume', .5), ('music_play', None)])
         sound.stop()
         self.assertEqual((sound.get_num_channels(), mixer.get_num_channels()), (0, 0))
+
+    def test_an_intro_queues_its_loop_for_the_host(self):
+        """MusicStream's intro into its loop uses pygame's music.queue; the iOS host swaps the loop in when the intro
+        ends (NativeAudio, `music_queue`), where before an intro played alone."""
+        import base64
+        from exp_runtime.music_stream import MusicStream
+        mixer = drawing.Mixer()
+        with patch('exp_runtime.music_stream.pygame', SimpleNamespace(mixer=mixer, error=RuntimeError)):
+            MusicStream._play(b'intro', dict(data=b'loop', length=4.0), 2.0, True, 0)
+        kinds = [command['kind'] for command in mixer.commands]
+        self.assertEqual(kinds, ['music_load', 'music_play', 'music_queue'])
+        queued = mixer.commands[-1]
+        self.assertEqual((base64.b64decode(queued['data']), queued['loops']), (b'loop', -1))
+        self.assertEqual(mixer.commands[1]['loops'], 0)
 
 
 if __name__ == '__main__':

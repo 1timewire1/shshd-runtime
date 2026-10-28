@@ -283,6 +283,19 @@ class ScreenTests(unittest.TestCase):
         self.picker = HdEpisodePicker(library, self.model, lambda r: None)
         self.first = self.model.rows[0].episodes[0]['id']
 
+    def test_a_saved_tiles_face_is_composed_once_while_its_images_stay(self):
+        """The zigzag masks are multiply blends, which the iOS host draws in Python: a third of a second a frame on
+        an iPad for two saved tiles when the face was composed every frame."""
+        picker, record = self.picker, self.model.rows[0].episodes[0]
+        masks = {14: pygame.Surface((432, 320), pygame.SRCALPHA), 13: pygame.Surface((432, 272), pygame.SRCALPHA)}
+        picker.mask = masks.__getitem__
+        shot = pygame.Surface((432, 580))
+        picker.shots, picker.saved = (lambda r: shot), {record['id']}
+        face = picker.tile_image(record)
+        self.assertIs(picker.tile_image(record), face)
+        shot = pygame.Surface((432, 580))                       # saved again: a new screenshot
+        self.assertIsNot(picker.tile_image(record), face)
+
     def test_keys_move_between_tiles_and_rows_and_enter_opens(self):
         picker = self.picker
         self.assertIsNone(picker.key(pygame.K_RIGHT))          # the first key press only shows the focus

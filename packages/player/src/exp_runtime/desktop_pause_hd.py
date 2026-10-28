@@ -363,10 +363,14 @@ class HdPauseMenu:
         return pygame.Rect(left, top, 156, 58)
 
     def gradient_pill(self, box, stops):
-        """A pill whose color runs down through `stops` [(t, (r, g, b))], at the layer's density."""
-        x, y, w, h = box
+        """A pill whose color runs down through `stops` [(t, (r, g, b))], at the layer's density (shared: draw it,
+        copy it to change it)."""
         S = self.scale
-        width, height = round(w * S), round(h * S)
+        return self._pill(round(box[2] * S), round(box[3] * S), tuple(stops))
+
+    # Kept, as the pill's mask is a blend the iOS host draws in Python (the Options page's switches, every frame).
+    @lru_cache(maxsize=32)
+    def _pill(self, width, height, stops):
         surface = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
         for row in range(height):
             t = row / max(1, height - 1)
@@ -390,12 +394,26 @@ class HdPauseMenu:
         left, top = right - width, middle - height / 2
         rim = self.gradient_pill((left, top, width, height), [(0, (110, 110, 112)), (1, (150, 150, 152))])
         layer.blit(rim, (round(left * S), round(top * S)))
-        box = (left + .5, top + .5, width - 1, height - 1)
+        layer.blit(self.switch_track(on), (round((left + .5) * S), round((top + .5) * S)))
+        kx = left + float(on) * (width - knob)
+        shade = self.gradient_pill((kx, top, knob, knob), [(0, (120, 120, 122)), (1, (140, 140, 142))])
+        layer.blit(shade, (round(kx * S), round(top * S)))
+        face = self.gradient_pill((kx + .6, top + .6, knob - 1.2, knob - 1.2),
+                                  [(0, (205, 205, 205)), (.5, (232, 232, 232)), (1, (252, 252, 252))])
+        layer.blit(face, (round((kx + .6) * S), round((top + .6) * S)))
+
+    @lru_cache(maxsize=4)
+    def switch_track(self, on):
+        """The switch's track (inset half a point in its rim) with the knob at `on`, cut to its pill; it does not
+        depend on where the switch sits, so a still switch is drawn once (its mask is a Python blend on iOS)."""
+        width, height, knob = 79, 27, 27
+        S = self.scale
+        box = (.5, .5, width - 1, height - 1)
         track = self.gradient_pill(box, [(0, (15, 98, 163)), (.08, (0, 123, 227)), (.5, (2, 126, 232)),
-                                         (.55, (30, 143, 238)), (1, (107, 178, 243))])
+                                         (.55, (30, 143, 238)), (1, (107, 178, 243))]).copy()
         off = self.gradient_pill(box, [(0, (170, 170, 172)), (.12, (215, 215, 217)), (.55, (240, 240, 242)),
                                        (1, (252, 252, 253))])
-        kx = left + float(on) * (width - knob)
+        kx = float(on) * (width - knob)
         split = round((kx + knob / 2 - box[0]) * S)
         track.fill((0, 0, 0, 0), (split, 0, track.get_width() - split, track.get_height()))
         track.blit(off, (split, 0), (split, 0, off.get_width() - split, off.get_height()))
@@ -407,12 +425,7 @@ class HdPauseMenu:
         mask = pygame.Surface(track.get_size(), pygame.SRCALPHA)
         pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=track.get_height() // 2)
         track.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-        layer.blit(track, (round(box[0] * S), round(box[1] * S)))
-        shade = self.gradient_pill((kx, top, knob, knob), [(0, (120, 120, 122)), (1, (140, 140, 142))])
-        layer.blit(shade, (round(kx * S), round(top * S)))
-        face = self.gradient_pill((kx + .6, top + .6, knob - 1.2, knob - 1.2),
-                                  [(0, (205, 205, 205)), (.5, (232, 232, 232)), (1, (252, 252, 252))])
-        layer.blit(face, (round((kx + .6) * S), round((top + .6) * S)))
+        return track
 
     def slider(self, layer, top, value):
         """A UISlider row's control line (track between the two speaker icons)."""

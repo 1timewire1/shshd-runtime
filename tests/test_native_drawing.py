@@ -132,6 +132,38 @@ class NativeDrawingTests(unittest.TestCase):
         mobile.blit(mask, (0, 0), special_flags=d.BLEND_RGBA_MULT)
         self.assertEqual(d.raster(mobile.snapshot()).getpixel((0, 15)), (0, 0, 0, 0))
 
+    def test_whole_surface_fade_is_a_host_alpha_blit(self):
+        """graphics.faded's multiply by white over a whole surface: the host's alpha on a blit, not a Python raster
+        (every glyph and button of an HD fade, every frame), within SDL's rounding of pygame's bytes."""
+        pixels = bytes(range(256)) * 4
+        desktop = pygame.image.frombytes(pixels, (16, 16), 'RGBA')
+        mobile = d.ImageAPI.frombytes(pixels, (16, 16), 'RGBA')
+        pg, own = desktop.copy(), mobile.copy()
+        pg.fill((255, 255, 255, 128), special_flags=pygame.BLEND_RGBA_MULT)
+        with patch.object(d.Surface, '_blend_into', side_effect=AssertionError('rasterised in Python')):
+            own.fill((255, 255, 255, 128), special_flags=d.BLEND_RGBA_MULT)
+        self.assertEqual([(op['kind'], op['alpha']) for op in own.snapshot().ops], [('blit', 128)])
+        self.assertEqual(d.ImageAPI.tobytes(mobile, 'RGBA'), pixels)          # the source keeps its pixels
+        got, want = d.ImageAPI.tobytes(own, 'RGBA'), pygame.image.tobytes(pg, 'RGBA')
+        for index in range(0, len(got), 4):
+            self.assertLessEqual(abs(got[index + 3] - want[index + 3]), 1)
+            if got[index + 3] and want[index + 3]:
+                self.assertEqual(got[index:index + 3], want[index:index + 3])
+
+    def test_subsurface_reads_of_an_image_reuse_one_node(self):
+        """A font sheet's glyph read through a subsurface every frame is one node (one PNG for the host)."""
+        sheet = d.Surface.from_pixels(Image.new('RGBA', (8, 8), (1, 2, 3, 255)))
+        glyph = sheet.subsurface((2, 2, 3, 3)).snapshot()
+        self.assertIs(sheet.subsurface((2, 2, 3, 3)).snapshot(), glyph)
+        self.assertIsNot(sheet.subsurface((2, 2, 3, 4)).snapshot(), glyph)
+        encoder, canvas = d.FrameEncoder(), d.Surface((16, 16))
+        sent = []
+        for _ in range(3):
+            canvas.fill((0, 0, 0))
+            canvas.blit(sheet.subsurface((2, 2, 3, 3)), (4, 4))
+            sent.append([node for node in encoder.encode(canvas)['nodes'] if 'png' in node])
+        self.assertEqual([len(nodes) for nodes in sent], [1, 0, 0])
+
     def test_frame_graph_releases_transients_and_reuses_cached_images(self):
         encoder = d.FrameEncoder()
         canvas = d.Surface((320, 480))

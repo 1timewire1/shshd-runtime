@@ -30,12 +30,25 @@ final class GameCanvasView: UIView, UIKeyInput {
     var autocapitalizationType: UITextAutocapitalizationType = .none
     var returnKeyType: UIReturnKeyType = .done
 
+    // The app's window in pixels: the frame Python draws. Normally the view's own pixel size (`pixelSize`), so the
+    // frame fills the view one pixel per pixel; the simulator check keeps the app's default window.
+    private var frameSize: CGSize { image.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 540, height: 720) }
+
+    var pixelSize: CGSize {
+        CGSize(width: (bounds.width * contentScaleFactor).rounded(), height: (bounds.height * contentScaleFactor).rounded())
+    }
+
     private var viewport: CGRect {
-        let scale = min(bounds.width / 480, bounds.height / 720)
-        let size = CGSize(width: 480 * scale, height: 720 * scale)
+        let frame = frameSize
+        let scale = min(bounds.width / frame.width, bounds.height / frame.height)
+        let size = CGSize(width: frame.width * scale, height: frame.height * scale)
         return CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
                       width: size.width, height: size.height)
     }
+
+    // Gestures are judged in the phone layout's 480 x 720 units, whatever the frame's size: the drag threshold and the
+    // scroll step feel the same on every screen.
+    private func units(_ distance: CGFloat) -> CGFloat { distance * 720 / max(1, viewport.height) }
 
     override func draw(_ rect: CGRect) {
         UIColor.black.setFill()
@@ -44,9 +57,10 @@ final class GameCanvasView: UIView, UIKeyInput {
         UIImage(cgImage: image).draw(in: viewport)
     }
 
+    // A touch in the frame's pixels (the app's window coordinates; the shared app maps them to its own canvases).
     private func point(_ touch: UITouch) -> CGPoint {
-        let p = touch.location(in: self), v = viewport
-        return CGPoint(x: (p.x - v.minX) * 480 / v.width, y: (p.y - v.minY) * 720 / v.height)
+        let p = touch.location(in: self), v = viewport, frame = frameSize
+        return CGPoint(x: (p.x - v.minX) * frame.width / v.width, y: (p.y - v.minY) * frame.height / v.height)
     }
 
     private func pointer(_ kind: String, _ p: CGPoint) { send?(["kind": kind, "point": [p.x, p.y], "generation": touchGeneration]) }
@@ -61,8 +75,11 @@ final class GameCanvasView: UIView, UIKeyInput {
         guard let touch = touches.first, let first = start, let last = previous else { return }
         let p = point(touch)
         if scrollable {
-            if abs(p.y - first.y) > 8 { dragging = true }
-            if dragging { send?(["kind": "scroll", "delta": (p.y - last.y) / 52.5, "generation": touchGeneration]) }
+            let scale = frameSize.height / max(1, viewport.height)      // frame pixels per view point
+            if units(abs(p.y - first.y) / scale) > 8 { dragging = true }
+            if dragging {
+                send?(["kind": "scroll", "delta": units((p.y - last.y) / scale) / 52.5, "generation": touchGeneration])
+            }
         } else { pointer("move", p) }
         previous = p
     }
@@ -87,13 +104,15 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
     private var tracks: [String: AVAudioPlayer] = [:]
     private var pausedTracks: Set<String> = []
     private var sounds: [AVAudioPlayer] = []
+    // pygame's music queue: a track's next cue (an intro's loop), started when the playing one ends.
+    private var queued: [String: (player: AVAudioPlayer, loops: Int)] = [:]
     func perform(_ commands: [[String: Any]]) throws {
         for command in commands {
             guard let kind = command["kind"] as? String else { throw CanvasError(message: "Missing audio command") }
             let track = command["track"] as? String ?? (kind.hasPrefix("menu_") ? "menu" : "music")
             let action = kind.hasPrefix("menu_") ? "music_" + kind.dropFirst(5) : kind
             switch action {
-            case "music_load", "sound":
+            case "music_load", "music_queue", "sound":
                 guard let encoded = command["data"] as? String, let data = Data(base64Encoded: encoded) else {
                     throw CanvasError(message: "Invalid audio data")
                 }
@@ -102,8 +121,11 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
                 let player = try AVAudioPlayer(data: data)
                 player.delegate = self
                 guard player.prepareToPlay() else { throw CanvasError(message: "Could not prepare audio playback") }
-                if action == "music_load" { tracks[track] = player; pausedTracks.remove(track) }
-                else {
+                if action == "music_load" {
+                    tracks[track] = player; pausedTracks.remove(track); queued.removeValue(forKey: track)
+                } else if action == "music_queue" {
+                    queued[track] = (player, (command["loops"] as? NSNumber)?.intValue ?? 0)
+                } else {
                     guard player.play() else { throw CanvasError(message: "Could not start sound playback") }
                     sounds.append(player)
                 }
@@ -124,6 +146,7 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
                 }
             case "music_stop":
                 tracks[track]?.stop(); tracks.removeValue(forKey: track); pausedTracks.remove(track)
+                queued.removeValue(forKey: track)
             case "music_volume":
                 tracks[track]?.volume = (command["volume"] as? NSNumber)?.floatValue ?? 1
             case "music_loops":
@@ -135,6 +158,14 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
     }
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         sounds.removeAll { $0 === player }
+        for (key, value) in tracks where value === player {
+            // The intro has ended: its queued loop takes over the track, at the intro's volume.
+            guard let next = queued.removeValue(forKey: key) else { continue }
+            next.player.numberOfLoops = next.loops
+            next.player.volume = player.volume
+            tracks[key] = next.player
+            next.player.play()
+        }
         for (key, value) in tracks where key.hasPrefix("effect:") && value === player {
             tracks.removeValue(forKey: key)
             pausedTracks.remove(key)
@@ -222,6 +253,21 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
         }
         try audio.perform([["kind": "music_stop", "track": "effect:1"]])
         guard audio.tracks["effect:1"] == nil else { throw CanvasError(message: "Stopped sound effect was retained") }
+        // An intro runs into its queued loop when it ends (pygame's music.queue), which then repeats.
+        try audio.perform([["kind": "music_play", "start": story.duration - 0.15, "loops": 0],
+                           ["kind": "music_queue", "data": encoded, "loops": -1]])
+        let handover = Date().addingTimeInterval(2)
+        while audio.tracks["music"] === story && Date() < handover {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        guard let loop = audio.tracks["music"], loop !== story, loop.isPlaying, loop.numberOfLoops == -1,
+              audio.queued["music"] == nil else {
+            throw CanvasError(message: "An intro did not run into its queued loop")
+        }
+        try audio.perform([["kind": "music_queue", "data": encoded, "loops": -1], ["kind": "music_stop"]])
+        guard audio.tracks["music"] == nil, audio.queued["music"] == nil else {
+            throw CanvasError(message: "Stopping the music kept its queued loop")
+        }
     }
 }
 
@@ -336,8 +382,15 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             lastFrame += Double(elapsed) / 1000
         }
         if operation["operation"] as? String != "frame" { lastFrame = now }
-        let request = operation.merging(["audio_playing": audio.playing, "audio_positions": audio.positions,
-                                         "vibration_available": NativeVibration.available]) { _, value in value }
+        var body = operation.merging(["audio_playing": audio.playing, "audio_positions": audio.positions,
+                                      "vibration_available": NativeVibration.available]) { _, value in value }
+        // The app draws at the view's own pixel size (the iPad mini's 1536 x 2048), not a stretched 540 x 720 frame.
+        // The simulator check keeps the app's default window: its taps are placed for that size.
+        let pixels = canvas.pixelSize
+        if !verifying && pixels.width >= 320 && pixels.height >= 320 {
+            body["size"] = [Int(pixels.width), Int(pixels.height)]
+        }
+        let request = body
         let directory = documents.path
         let renderer = self.renderer
         let feedbackGeneration = activityGeneration
@@ -374,7 +427,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                         }
                         if let fixture = result["audio_test"] as? String {
                             try NativeAudio.verify(fixture)
-                            self.verificationChecks.append("Native audio looping, one-shot completion, in-place repeat/volume changes, playback positions, independent menu stream, pause and resume")
+                            self.verificationChecks.append("Native audio looping, one-shot completion, in-place repeat/volume changes, playback positions, independent menu stream, pause and resume, an intro into its queued loop")
                         }
                         try self.audio.perform(result["audio"] as? [[String: Any]] ?? [])
                         if result["verify_menu_audio"] as? Bool == true { try self.audio.verifyMenuPlaying() }

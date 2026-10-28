@@ -304,7 +304,6 @@ def _authored_stat_sound(cue):
 def stat_sound_steps(host):
     """Exercise the script-to-native effect path with the supplied sound bank."""
     from exp_runtime.desktop import Desktop
-    from exp_runtime.games import GAMES
     app, original = host.app, host.app.game
     cue = 8007 if app.library.game_id == 'shs' else 8002
     resources = app.library.open_episode(app.selected)
@@ -317,13 +316,11 @@ def stat_sound_steps(host):
         ui.render()
         assert ui.error is None, ui.error
         assert ui.session.engine.notice == 'Stat Up'
-        assert ui.session.engine.sound_ids == [GAMES[app.library.game_id].CLICK_SOUND, cue]
-        assert [asset for asset, _ in ui.sound_players] == ui.session.engine.sound_ids
+        assert ui.session.engine.sound_ids == [cue]      # this fork's choice click is the menu sound (_menu_sound)
         # The host checks that the last effect really started in AVAudioPlayer,
         # after decoding these original bytes, rather than only inspecting JSON.
         yield f'{app.library.game_id}: choice click and scripted stat-increase sound'
     finally:
-        ui._stop_sounds()
         app.game = original
         original.music_token = None
 
@@ -353,7 +350,8 @@ def loading_steps(host):
             assert ui.error is None, ui.error
             assert ui.session.snapshot() == saved
             assert ui.session.vm.snapshot() == frozen
-            frames.append(raster(ui.loading_renderer.canvas.snapshot()).tobytes())
+            drawn = ui.loading_hd if ui.loading_hd.available() else ui.loading_renderer   # the HD band with HD art
+            frames.append(raster(drawn.canvas.snapshot()).tobytes())
         assert len(set(frames[:5])) == 5 and frames[5] == frames[0]
         ui.tick(3000 - ui.session.engine.loading.elapsed_ms)
         assert ui.session.pending.name == 'loading' and ui.session.vm.snapshot() == frozen
@@ -528,11 +526,11 @@ def _authored_word_game(grid=False):
 
 
 def minigame_skip_steps(host):
-    """Authored calls through the shared prompt, UIKit input and native skin."""
-    from exp_runtime.desktop import Desktop, MINIGAME_OPTIONS
-    from exp_runtime.menu import MenuState
+    """Authored calls through this fork's skip prompt (desktop._host_prompt: a narrator choice, best outcome first,
+    Play last), UIKit input and native skin."""
+    from exp_runtime.desktop import Desktop
+    from exp_runtime.hd_choice import SELECT_MS, TRANSITION_MS
     app, original = host.app, host.app.game
-    assert app.state.minigame_skips and MenuState(app.library).minigame_skips
     games = [('word_game', _authored_word_game)]
     if app.library.game_id == 'shs':
         games += [('word_grid', lambda: _authored_word_game(True)), ('football', _authored_football)]
@@ -541,45 +539,40 @@ def minigame_skip_steps(host):
             resources = app.library.open_episode(app.selected)
             resources.programs[25001] = factory()
             for success in (False, True, None):
-                app.game = Desktop(Session(resources), audio=False, window=app.window, minigame_skips=True)
+                app.game = Desktop(Session(resources), audio=False, window=app.window)
                 ui, session = app.game, app.game.session
-                assert ui.minigame_prompt and session.pending.name == kind
+                ui.skip_minigames = True
+                ask = ui._host_prompt()
+                assert ask is not None and session.pending.name == kind
+                options = ask['options']
+                if success is False and len(options) < 3:
+                    continue                    # a quiz whose score changes nothing offers Skip and Play only
                 frozen = session.snapshot()
                 ui.tick(30000)
                 assert session.snapshot() == frozen
                 ui.render()
                 assert ui.error is None, ui.error
-                assert [command for _, command in ui.buttons] == [command for _, command in MINIGAME_OPTIONS] + [('menu',)]
-                regions = [rect for rect, _ in ui.buttons]
-                assert all(not a.colliderect(b) for i, a in enumerate(regions) for b in regions[i + 1:])
-                command = ('minigame_play',) if success is None else ('minigame_skip', success)
-                rect = next(rect for rect, item in ui.buttons if item == command)
+                commands = [command for _, command in ui.buttons]
+                assert all(('choose', index) in commands for index in range(len(options))), commands
+                index = len(options) - 1 if success is None else 0 if success else len(options) - 2
+                rect = next(rect for rect, item in ui.buttons if item == ('choose', index))
                 stamp = host._input_stamp()
                 host._event(dict(kind='down', point=rect.center))
-                ui.render()
-                assert ui.press.pressed == command and session.snapshot() == frozen
-                if success is None:
-                    yield f'{app.library.game_id}: {kind} three-option entry prompt, held row and frozen timer'
                 host._event(dict(kind='up', point=rect.center))
-                assert not ui.minigame_prompt and host._input_stamp() != stamp
+                ui.tick(SELECT_MS + TRANSITION_MS + 1)
+                assert ui.host_prompt is None and host._input_stamp() != stamp
                 if success is None:
-                    ui.session = session = Session.from_snapshot(resources, session.snapshot())
-                    assert not ui.minigame_prompt
+                    yield f'{app.library.game_id}: {kind} Win/Lose/Play prompt by touch and frozen timer'
+                    assert ui.minigame_played is session.pending and ui._host_prompt() is None
                     ui.tick(10)
                     assert getattr(session.engine, kind) is not None
-                    ui.command(('menu',)); ui.tick(400); ui.render()
-                    assert ui.error is None, ui.error
-                    assert all(option in [cmd for _, cmd in ui.buttons] for _, option in MINIGAME_OPTIONS[:2])
-                    rect = next(rect for rect, item in ui.buttons if item == ('minigame_skip', False))
-                    host._event(dict(kind='down', point=rect.center))
-                    host._event(dict(kind='up', point=rect.center))
-                    assert not ui.menu_open
+                    session.skip_word_game(0) if kind == 'word_game' else session.skip_minigame(False)
                 assert session.pending.name == 'finished'
                 assert (session.vm.result > 0) == bool(success)
                 if kind == 'football':
                     assert session.vm.result == session.engine.football_scores[0] - session.engine.football_scores[1]
             app.game = original
-            yield f'{app.library.game_id}: {kind} success/failure callbacks, saved Play choice and later pause-menu skip'
+            yield f'{app.library.game_id}: {kind} success/failure callbacks and the played game'
     finally:
         app.game = original
 
@@ -824,11 +817,12 @@ def presentation_steps(host):
                 yield f"{item['game']}: vibration preference, native requests independent of audio, and no save replay"
             app.command(('cheats',)); app.command(('toggle', 'choice_hints'))
             assert app.game.choice_hints
-            app.command(('toggle', 'minigame_skips'))
-            assert app.game.minigame_skips
+            skipping = app.game.skip_minigames
+            app.command(('toggle', 'skip_minigames'))
+            assert app.game.skip_minigames is not skipping
             app.tick(2000)
             app.render()
-            assert ('toggle', 'minigame_skips') in [command for _, command in app.buttons]
+            assert ('toggle', 'skip_minigames') in [command for _, command in app.buttons]
             assert app.game.session.snapshot() == frozen
             app.back()
             app.command(('save',))
@@ -843,8 +837,9 @@ def presentation_steps(host):
             yield from portrait_expression_steps(host)
             yield from dialogue_typography_steps(host)
             yield from minigame_skip_steps(host)
-            app.command(('toggle', 'minigame_skips'))
-            assert not app.game.minigame_skips
+            skipping = app.game.skip_minigames
+            app.command(('toggle', 'skip_minigames'))
+            assert app.game.skip_minigames is not skipping
             if item['game'] == 'cod':
                 from exp_runtime.desktop import Desktop
                 original = app.game

@@ -109,6 +109,7 @@ class HdEpisodePicker(HdUi):
         self.hits = []
         self.pressed = None
         self.saved = set()
+        self.faces = {}              # record id -> (preview, shot, face): tile_image's composite while both stay
         self.drag = None
         self.show_restore = True     # only the Play/Resume picker has the Restore button
 
@@ -346,6 +347,11 @@ class HdEpisodePicker(HdUi):
         shot = self.shots(record) if record['id'] in self.saved else None
         if shot is None:
             return preview
+        # Kept while the preview and the screenshot are the same (both cached): the masks are multiply blends, which
+        # the iOS host draws in Python (a third of a second a frame for two saved tiles on an iPad).
+        cached = self.faces.get(record['id'])
+        if cached is not None and cached[0] is preview and cached[1] is shot:
+            return cached[2]
         face = pygame.Surface((TILE[0] * S, TILE[1] * S), pygame.SRCALPHA)
         face.fill((0, 0, 0, 255))
         top = preview.subsurface((0, 0, TILE[0] * S, self.mask(TOP_MASK).get_height())).convert_alpha()
@@ -355,6 +361,7 @@ class HdEpisodePicker(HdUi):
         window = shot_window(shot, BOTTOM_MASK_TOP - SHOT_OFFSET, bottom_mask.get_height() // S)
         window.blit(bottom_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         face.blit(window, (0, BOTTOM_MASK_TOP * S))
+        self.faces[record['id']] = (preview, shot, face)
         return face
 
     def draw_tile(self, layer, record, x, y):

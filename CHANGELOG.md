@@ -23,7 +23,6 @@
     (`project_update` takes `emoticons`). Projects move to format version 3; older ones upgrade on opening.
   - A line sets SHS global numbers 31310–31312 / 31410 while it is up. A score or property-flag node may not use
     one of those owner-0 keys in an episode whose lines use the matching option.
-  - The iOS app does not yet run an intro into its loop.
 - **`tools/translate x360`: the cancelled Xbox 360 prototype's two new stories as creator projects.** It reads the
   May 2009 prototype's `data.pak` and walks its Lua scripts (`lua_subset.py`). *Day of Diss* is the King of Diss
   prequel: a hub to talk to Kim, Hector, Ryan or Nicole, then Hector's diss battle intro. The *Puzzle Test* is two

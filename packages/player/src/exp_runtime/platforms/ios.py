@@ -93,7 +93,7 @@ class Host:
         return (self.app.input_token(), id(game.session) if game else None, game.menu_open if game else False,
                 id(action), action.details.get('page_start') if action else None,
                 (session.scene, session.vm.steps_executed) if session else None,
-                game.minigame_prompt if game else False)
+                game.host_prompt is not None if game else False)
 
     def handle_events(self, events):
         screen = self.app.screen
@@ -116,6 +116,18 @@ class Host:
 
     def pick(self, kind):
         self.picker = kind
+
+    def resize(self, size):
+        """The app's window at the view's pixel size (Swift sends it with each frame), as a desktop window resized
+        by the player: the shared app fits its frames to whatever window it has, so the iPad gets the HD frame at
+        its own resolution. The running game shares the window."""
+        width, height = (max(320, min(4096, int(value))) for value in size)
+        if self.app.window is not None and self.app.window.get_size() == (width, height):
+            return
+        window = self.backend.display.set_mode((width, height))
+        self.app.window = window
+        if self.app.game is not None:
+            self.app.game.window = window
 
     def _end_copying(self):
         """The copy of picked files is over (import_copying): the app is free again for the import itself."""
@@ -141,10 +153,12 @@ class Host:
         if kind in ('down', 'up', 'move'):
             position = tuple(event['point'])
             b.pointer = position if kind != 'up' else (-1, -1)
+            # pygame's mouse events also carry `buttons` (held during a drag: the HD picker's rows scroll by it).
             event = SimpleNamespace(type={'down': b.MOUSEBUTTONDOWN, 'up': b.MOUSEBUTTONUP,
-                                          'move': b.MOUSEMOTION}[kind], pos=position, button=1)
+                                          'move': b.MOUSEMOTION}[kind], pos=position, button=1,
+                                    buttons=(0, 0, 0) if kind == 'up' else (1, 0, 0))
         elif kind == 'scroll':
-            event = SimpleNamespace(type=b.MOUSEWHEEL, y=event['delta'])
+            event = SimpleNamespace(type=b.MOUSEWHEEL, x=0, y=event['delta'])
         elif kind == 'text':
             event = SimpleNamespace(type=b.TEXTINPUT, text=event['text'])
         elif kind == 'key':
@@ -174,6 +188,8 @@ class Host:
 
     def request(self, message):
         operation = message.get('operation', 'frame')
+        if message.get('size'):
+            self.resize(message['size'])
         if 'vibration_available' in message:
             self.backend.vibration_available = message['vibration_available'] is True
         if 'audio_playing' in message:
