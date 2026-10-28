@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Cause of Death shows 64 of its backgrounds in HD** when you also have SHS HD. Many CoD locations are SHS HD
+  backgrounds at half size. On its first preparation, a CoD library copies them from your own SHS library's HD
+  episodes and the linked SHS HD bundle, in about 17 seconds. Where CoD changed a picture, the HD copy gets the
+  same change: brighter or darker levels, a blur, a sunlit glow, a haze or less colour. The pairs were checked one by
+  one; the app ships only their fingerprints (`cod/hd_twin_map.py`), never a picture. The store rebuilds when a new
+  map ships, or when pictures were missing and your SHS library has gained HD episodes since. Both CoD 1.3.4's and
+  1.4.7's bundle backgrounds are recognised. With HD art off, CoD shows its own pictures.
 - **Creator episodes can use the translated games' presentation.** Two-speaker lines, coloured named lines,
   emoticons over the speaker and intros that run into a loop are no longer tied to the New Rules and X360
   translations' pack IDs. An episode declares them in a small record of its own (resource 3, `presentation.py`,

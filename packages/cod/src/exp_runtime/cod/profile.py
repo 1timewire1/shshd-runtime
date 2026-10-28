@@ -21,6 +21,13 @@ KEY = 'cod'
 TITLE = 'Cause of Death'
 SOURCES = 'Cause of Death IPA'
 CATALOG_FILENAME = 'cod_options.sav'
+
+
+def background_twin_map():
+    """This fork's shipped map of CoD backgrounds that are SHS HD pictures (`hd_twin_map.py`, fingerprints only),
+    which `hd_twins.build` turns into the CoD library's twin store from the player's own SHS HD files."""
+    from . import hd_twin_map
+    return hd_twin_map
 # This fork: 1.4.7's store listing (Documents/mtxprods), imported beside the episodes for the episode info card.
 STORE_FILENAME = 'mtxprods'
 
