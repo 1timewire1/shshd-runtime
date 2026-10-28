@@ -226,6 +226,11 @@
 
 ### Fixed
 
+- **The episode explorer plays through scene fades.** When a tap on a dialogue line started a queued fade, the
+  explorer (`tree_explorer.py`, `tools/explore_tree.py`) kept tapping the line, which ignores taps until the fade
+  ends, so a run stopped there at its 30000-screen limit. It now lets the fade run. This happened in almost every
+  Cause of Death episode: a walk taking the first option on every screen now gets 5-10 times further, and
+  MTX_Secret_Files_02's exit plays to the end of the episode.
 - **A translated episode's end card keeps its frame.** The sepia scene behind "Miss An Episode?" now shows a New
   Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
   of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a
