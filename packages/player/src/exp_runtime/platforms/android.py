@@ -1,5 +1,5 @@
 """Android SDL host. Picker callbacks hand results back to the game thread."""
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 import logging
 import os
 from pathlib import Path
@@ -121,6 +121,7 @@ class Host:
             clips = data.getClipData()
             uris = ([str(clips.getItemAt(i).getUri().toString()) for i in range(clips.getItemCount())]
                     if clips is not None else [str(data.getData().toString())])
+            self.results.put(('copying', None))
             self.copier.submit(self.copy_documents, uris)
         except Exception as error:
             self.results.put(('error', str(error)))
@@ -145,12 +146,19 @@ class Host:
         if self.imported and not self.app.busy:
             self.remove_staged(self.imported)
             self.imported = []
-        if self.app.busy:
+        if self.app.busy and self.app.job_kind != 'copying':
             return
         try:
             kind, value = self.results.get_nowait()
         except Empty:
             return
+        if kind == 'copying':
+            # The picked files are being copied into the app (a 1 GB zip takes a while): the busy screen shows, and
+            # nothing else can start meanwhile. The copy's result ends it.
+            self.app.job, self.app.job_kind = Future(), 'copying'
+            return
+        if self.app.job_kind == 'copying':
+            self.app.job = self.app.job_kind = None
         self.pending = False
         if kind == 'error':
             self.app.message = f'Could not read selected files: {value}'

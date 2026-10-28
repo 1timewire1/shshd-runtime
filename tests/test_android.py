@@ -17,7 +17,7 @@ class ImportTests(unittest.TestCase):
         host.closed = False
         host.results = Queue()
         host.imported = []
-        host.app = SimpleNamespace(busy=False, message='', import_paths=Mock())
+        host.app = SimpleNamespace(busy=False, message='', import_paths=Mock(), job=None, job_kind=None)
         host.app._attempt = lambda operation: operation()
         return host
 
@@ -27,6 +27,19 @@ class ImportTests(unittest.TestCase):
         host.poll()
         self.assertFalse(host.pending)
         host.app.import_paths.assert_not_called()
+
+    def test_the_busy_screen_shows_while_picked_files_copy(self):
+        """A 1 GB zip takes a while to copy into the app: the busy screen shows from the pick until the copy's result,
+        which then starts the import."""
+        host = self.host()
+        host.results.put(('copying', None))
+        host.poll()
+        self.assertEqual(host.app.job_kind, 'copying')
+        host.app.busy = True                                # Application.busy: a job is set
+        host.results.put(('paths', [Path('picked.zip')]))
+        host.poll()
+        self.assertEqual((host.app.job, host.app.job_kind), (None, None))
+        host.app.import_paths.assert_called_once_with([Path('picked.zip')])
 
     def test_unrelated_activity_result_is_ignored(self):
         host = self.host()
