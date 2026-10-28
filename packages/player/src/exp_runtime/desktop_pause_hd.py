@@ -51,6 +51,19 @@ SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS ep
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
+HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
+# A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
+# 2026-10-26): key -> the tag in the SHS profile's LEGACY_GAMES. The switch itself is offered only when such episodes
+# are there (application.hires_portraits_offered, Desktop.hires_switch).
+SWITCH_BADGES = {'hires_portraits': 'SHSNR'}
+BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
+
+
+def switch_badge(key):
+    """(text, colour) of the switch's game tag, or None."""
+    from .games import GAMES
+    legacy = getattr(GAMES.get('shs'), 'LEGACY_GAMES', {}).get(SWITCH_BADGES.get(key))
+    return None if legacy is None else (legacy['badge'], legacy['color'])
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
@@ -58,7 +71,8 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'check_updates')
+GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'hires_portraits',
+                'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -73,7 +87,8 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'autoplay': AUTOPLAY_LABEL,
                  'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
-                 'hd_backdrop': HD_BACKDROP_LABEL, 'check_updates': CHECK_UPDATES_LABEL}
+                 'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
+                 'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
 # (rms ~2 levels): out = M . (r, g, b) + c.
 SEPIA = (0.779, 0.166, 0.0, 102.1,
@@ -122,6 +137,9 @@ MAIN_HELP_ORDER = ('intro', 'controls', 'airing', 'demand', 'network', 'push', '
 # (SHS HD 00027f1a) starts the new menu one width to the right and moves it, and the old one a width to the left, in a
 # 0.4 s UIKit ease-in-out (curve 0) with no delay (0.4 s only under a loading screen).
 SLIDE_MS = 400
+# A switch's knob slides to its new side, carrying the track (the blue ON half and the white OFF half) with it, as the
+# classic UISwitch's does. The duration and the ease-in-out are not measured from the device.
+SWITCH_MS = 200
 # Keyboard navigation (not native): arrows highlight a row, Enter or Space taps it, Left / Right move a slider.
 FOCUS_SHADE, VOLUME_STEP = .85, .1
 KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
@@ -211,10 +229,12 @@ class HdPauseMenu:
     # -- state ----------------------------------------------------------
     slide = None
     shown = None
+    drawn = None
+    switches = None                 # key -> (from, to, elapsed ms): each drawn switch's knob, 0 off .. 1 on
 
     def reset(self):
         self.state = PauseState()
-        self.slide = self.shown = None
+        self.slide = self.shown = self.drawn = self.switches = None
 
     def open(self, screen):
         """A row's page, pushed in from the right."""
@@ -226,21 +246,46 @@ class HdPauseMenu:
         state = self.state
         if state.screen == 'pause':
             return True
+        leaving = state.screen
         state.screen = ('help' if state.screen in PAGES else 'options' if state.screen.startswith('options:')
                         else 'pause')
         if self.main_menu and state.screen == 'pause':
             return True
+        if self.shown is not None and self.drawn is not None:
+            screen, state.screen = state.screen, leaving
+            pressed, self.pressed = self.pressed, ('pause_back',)
+            self.shown = self.screen_layout(*self.drawn[0], **self.drawn[1])[0]
+            state.screen, self.pressed = screen, pressed
         state.scroll, state.drag = 0., None
         self.start_slide(-1)
         return False
 
     def start_slide(self, direction):
         self.slide = (direction, self.shown, 0.) if self.shown is not None else None
+        self.switches = None        # a page's switches first show at rest
 
     def advance(self, ms):
         if self.slide is not None:
             direction, previous, elapsed = self.slide
             self.slide = (direction, previous, elapsed + ms) if elapsed + ms < SLIDE_MS else None
+        if self.switches:
+            self.switches = {key: (start, end, min(SWITCH_MS, elapsed + ms))
+                             for key, (start, end, elapsed) in self.switches.items()}
+
+    def animating(self):
+        """Whether a page is sliding or a switch's knob is moving."""
+        return self.slide is not None or any(elapsed < SWITCH_MS for _, _, elapsed in (self.switches or {}).values())
+
+    def switch_position(self, key, on):
+        """Where switch `key`'s knob is drawn (0 off .. 1 on). A value unlike the last one drawn starts it moving, from
+        wherever it is."""
+        if self.switches is None:
+            self.switches = {}
+        target = 1. if on else 0.
+        start, end, elapsed = self.switches.get(key, (target, target, SWITCH_MS))
+        position = start + (end - start) * ease_in_out(elapsed / SWITCH_MS)
+        self.switches[key] = (position, target, 0.) if end != target else (start, end, elapsed)
+        return position
 
     # -- drawing helpers (points; S scales to the layer) -----------------
     @staticmethod
@@ -297,6 +342,7 @@ class HdPauseMenu:
         return top + header
 
     def back_button(self, layer, bottom, *, lit=False):
+        lit = lit or self.pressed == ('pause_back',)        # held or just clicked, the blue turns darker
         left, lift = PANEL_X + BACK[0], BACK[1]
         top = bottom - lift - 58
 
@@ -337,30 +383,36 @@ class HdPauseMenu:
     def switch(self, layer, right, middle, on):
         """A classic UISwitch (light mode, from the owner's photo): 79 x 27 points. ON is a blue
         glossy track with a white label and the knob on the right; OFF a white track with a gray
-        label and the knob on the left."""
+        label and the knob on the left. `on` may be a knob position between them (`switch_position`): the track
+        moves with the knob, the blue side and its label to its left, the white side and its label to its right."""
         width, height, knob = 79, 27, 27
         S = self.scale
         left, top = right - width, middle - height / 2
         rim = self.gradient_pill((left, top, width, height), [(0, (110, 110, 112)), (1, (150, 150, 152))])
         layer.blit(rim, (round(left * S), round(top * S)))
-        if on:
-            stops = [(0, (15, 98, 163)), (.08, (0, 123, 227)), (.5, (2, 126, 232)), (.55, (30, 143, 238)),
-                     (1, (107, 178, 243))]
-        else:
-            stops = [(0, (170, 170, 172)), (.12, (215, 215, 217)), (.55, (240, 240, 242)), (1, (252, 252, 253))]
-        inner = self.gradient_pill((left + .5, top + .5, width - 1, height - 1), stops)
-        layer.blit(inner, (round((left + .5) * S), round((top + .5) * S)))
-        kx = right - knob if on else left
+        box = (left + .5, top + .5, width - 1, height - 1)
+        track = self.gradient_pill(box, [(0, (15, 98, 163)), (.08, (0, 123, 227)), (.5, (2, 126, 232)),
+                                         (.55, (30, 143, 238)), (1, (107, 178, 243))])
+        off = self.gradient_pill(box, [(0, (170, 170, 172)), (.12, (215, 215, 217)), (.55, (240, 240, 242)),
+                                       (1, (252, 252, 253))])
+        kx = left + float(on) * (width - knob)
+        split = round((kx + knob / 2 - box[0]) * S)
+        track.fill((0, 0, 0, 0), (split, 0, track.get_width() - split, track.get_height()))
+        track.blit(off, (split, 0), (split, 0, off.get_width() - split, off.get_height()))
+        # The labels ride on the track, cut off by the pill: ON 27 points left of the knob, OFF 52 points right.
+        control = self.control_font(15)
+        y = height / 2 - self.cap_offset(15, control) - .5
+        for label, x, color in (('ON', kx - 27, (255, 255, 255)), ('OFF', kx + 52, (128, 128, 128))):
+            self.text(track, label, x - box[0], y, 15, color, center=True, font=control)
+        mask = pygame.Surface(track.get_size(), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=track.get_height() // 2)
+        track.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        layer.blit(track, (round(box[0] * S), round(box[1] * S)))
         shade = self.gradient_pill((kx, top, knob, knob), [(0, (120, 120, 122)), (1, (140, 140, 142))])
         layer.blit(shade, (round(kx * S), round(top * S)))
         face = self.gradient_pill((kx + .6, top + .6, knob - 1.2, knob - 1.2),
                                   [(0, (205, 205, 205)), (.5, (232, 232, 232)), (1, (252, 252, 252))])
         layer.blit(face, (round((kx + .6) * S), round((top + .6) * S)))
-        label = 'ON' if on else 'OFF'
-        color = (255, 255, 255) if on else (128, 128, 128)
-        x = left + (25 if on else 52)
-        control = self.control_font(15)
-        self.text(layer, label, x, top + height / 2 - self.cap_offset(15, control), 15, color, center=True, font=control)
 
     def slider(self, layer, top, value):
         """A UISlider row's control line (track between the two speaker icons)."""
@@ -392,9 +444,13 @@ class HdPauseMenu:
     def row_color(self, index):
         return self.ROW_COLORS[index % 2]
 
-    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False):
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None):
+        """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style."""
         color = color or self.LABEL_COLOR
         self.rows_body(layer, top, height, background, lit=lit)
+        x = PANEL_X + 31
+        if badge is not None:
+            x += self.badge(layer, x, top + ROW / 2, *badge) + BADGE_GAP
         font, lines, current = self.font(ROW_PX), [], ''
         for word in label.split(' '):
             trial = f'{current} {word}' if current else word
@@ -407,18 +463,31 @@ class HdPauseMenu:
         pitch = 26.6
         for index, line in enumerate(lines):
             middle = top + ROW / 2 + (index - (len(lines) - 1) / 2) * pitch
-            self.text(layer, line, PANEL_X + 31, middle - self.cap_offset(ROW_PX), ROW_PX, color)
+            self.text(layer, line, x, middle - self.cap_offset(ROW_PX), ROW_PX, color)
+
+    def badge(self, layer, x, middle, text, color):
+        """A game's tag at (x, vertical middle), as the episode list draws it (desktop_episode_list_hd
+        draw_standard_mark): a light plate in the colour, its border and its text. Returns its width."""
+        S = self.scale
+        label = self.font(BADGE_PX).render(text, True, color)
+        width, height = label.get_width() / S + 2 * BADGE_PAD, BADGE_HEIGHT
+        plate = pygame.Surface((round(width * S), round(height * S)), pygame.SRCALPHA)
+        pygame.draw.rect(plate, (*color, 30), plate.get_rect(), border_radius=round(8 * S))
+        pygame.draw.rect(plate, (*color, 200), plate.get_rect(), max(1, round(2 * S)), border_radius=round(8 * S))
+        plate.blit(label, label.get_rect(center=plate.get_rect().center))
+        layer.blit(plate, (round(x * S), round((middle - height / 2) * S)))
+        return width
 
     # -- screens ---------------------------------------------------------
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'),
+        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""
         layer, buttons = self.screen_layout(settings, host_rows, message=message)
-        self.shown = layer
+        self.shown, self.drawn = layer, ((settings, host_rows), {'message': message})
         if self.slide is None:
             return layer, buttons
         direction, previous, elapsed = self.slide
@@ -483,9 +552,11 @@ class HdPauseMenu:
                     y += SLIDER_ROW
                     continue
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
-                self.row(layer, y, label, background=self.row_color(index), lit=focus == command)
+                self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
+                         badge=switch_badge(key))
                 if kind == 'switch':
-                    self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2, settings.get(key, False))
+                    self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
+                                self.switch_position(key, settings.get(key, False)))
                     buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
                 elif kind == 'cycle':
                     box = pygame.Rect(PANEL_X + PANEL_W - CONTROL_RIGHT - CYCLE_SIZE[0],

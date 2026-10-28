@@ -460,7 +460,11 @@ assembly **00045620–00045720**, scales the menu from **0.001** to **1** about
 its center over **400 ms**, with UIKit ease-in/out (curve 0). The frontend
 uses that curve and duration, with story clocks frozen and pointer input gated
 until entry finishes. Closing an IPA pause menu scales from 1 to 0.00001 over
-400 ms before resuming the story. Subpages preserve the captured background
+400 ms before resuming the story: `notifyMenuRemoved` (SHS HD 00027b50) runs the
+menu's exit byte through `animateView`, whose kind 21 (00023a7c) sets the transform
+to 1e-05 in a 0.4 s UIKit ease-in/out with no delay. Resume takes the sepia away at
+once and only the card zooms out (the owner, on the iPad, 2026-10-23); the story
+runs on once the zoom ends (PR #15). Subpages preserve the captured background
 and use the corresponding zoom/slide direction.
 
 iOS `updatePauseLayer` (SHS **0003b9a8**, CoD **00018728**) settles the dialogue
@@ -545,7 +549,7 @@ SHS HD's own bundle holds byte-identical copies of 8004, 8007, 8009, 8010 and
 | Choice timing out | none | none | `SHSUIMenu::tick` `00046814` / `0003d298` calls `finishUI` directly |
 | Menu row (pause and Options rows, Resume, Main Menu) | 8010 | 8005 | `SHSWidgetMenu::itemSelected` `0004f028` / `000436e8` |
 | Menu button (back, tags 1-4) | 8010 | 8005 | `SHSWidgetMenu::buttonPressed` `0004f288` / `00043944` |
-| Switches (tags 10-12) | none | none | `buttonPressed` |
+| Switches (tags 10-12) | none (ours: 8010, owner's choice) | none (ours: 8005) | `buttonPressed`; this fork clicks every switch but Sound as a row does, while Sound is on; the Sound switch keeps its own cue (next row) |
 | Sound switched on | 8004 | 8005 | `SHSEngine::setSoundEnabled(true, true)` `00022280` / `0001f4e4` |
 | Sound FX slider | 8007 | 8005 | `sliderChanged` `0004f1cc` / `00043888`, `getToggleSoundID` |
 | Music slider, while Music is on | 8009 | 8005 | `sliderChanged` |
@@ -596,6 +600,9 @@ See [the skip contract](MINIGAMES.md#optional-minigame-skips) for callback value
 authored, opt-in per-game preference, off by default. Green marks recognized
 gains/correct answers, red recognized losses/wrong answers or a
 no-gain alternative when another option has a known gain, amber mixed effects.
+Episodes translated from SHS: New Rules (`tools/translate`, pack 31300) also count New Rules' own right/wrong answer
+jingles, which they play as episode music where the smartphone versions play SHS's correct/wrong sounds
+(`shs/profile.py` `TRANSLATED_FEEDBACK_MUSIC`).
 Unresolved choices retain their original styling. It applies to ordinary
 choices, including their actual randomized/custom return values. Service 71
 word quizzes use the current deal's explicit good/bad weights, including bad

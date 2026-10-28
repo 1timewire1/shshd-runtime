@@ -472,6 +472,20 @@ class ShellActionTests(unittest.TestCase):
         self.assertEqual(shell.app.left, [dict(picker=True, style='airing'), dict(picker=True, style='list'),
                                           {}, dict(replay=True)])
 
+    def test_the_end_menu_pops_up_and_takes_input_once_open(self):
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        shell = self.shell
+        shell.age, shell.pause_open = 0.0, False
+        shell.window_ms = PAUSE_OPEN_MS                              # left over from an earlier window
+        shell.show_end_menu(pygame.Surface((768, 1024)), False)
+        self.assertEqual((shell.stage, shell.stack.stack, shell.window_ms), ('end', [MISS_MENU], 0))
+        shell.windows.hits = [('rect', ('menu', 24))]
+        self.assertEqual(shell.hits(), [])                           # still zooming in
+        for _ in range(25):
+            shell.tick(.02)
+        self.assertEqual(shell.window_ms, PAUSE_OPEN_MS)
+        self.assertEqual(shell.hits(), [('rect', ('menu', 24))])
+
     def test_a_pause_link_reuses_the_same_exit_game_confirmation_as_the_legal_rows(self):
         shell = self.shell
         shell.activate(('pause_link', 'https://discord.gg/example'))

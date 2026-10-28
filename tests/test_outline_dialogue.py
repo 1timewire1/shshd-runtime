@@ -21,6 +21,21 @@ def font(advance=8, cap=12):
         for code in range(32, 127)}, {}, cap, 4)
 
 
+class SongNoteTests(unittest.TestCase):
+    def test_hd_fonts_measure_a_brace_as_the_themes_music_note(self):
+        # SHSEngine::initPermanents: addCharImage(master 155, frame, '{', (1, 2), 22) on the colored themes' fonts.
+        from exp_runtime.dialogue import NOTE_ADVANCE, NOTE_CODE, NOTE_FRAMES, NOTE_SIZE, with_note
+        face = replace(font(), base=12)
+        noted = with_note(face)
+        self.assertIs(with_note(face), noted)                    # one copy per font
+        glyph = noted.glyphs[NOTE_CODE]
+        self.assertEqual((glyph.width, glyph.height, glyph.advance), (*NOTE_SIZE, NOTE_ADVANCE))
+        self.assertEqual(glyph.yoffset + glyph.height, face.base + 1)     # its bottom 2 points below the baseline
+        self.assertEqual(NOTE_FRAMES, {1: 34, 2: 35, 3: 36})
+        line = layout_text(noted, '{ la {', 200, TextStyle(13, 10))
+        self.assertEqual(line.width, 2 * NOTE_ADVANCE + 4 + 2 * 8 + 4)
+
+
 class OutlineDialogueTests(unittest.TestCase):
     def test_switch_faces_wrap_with_their_own_advances_on_one_baseline(self):
         base, italic = font(), font(6, 13)
@@ -127,7 +142,7 @@ class OutlineDialogueTests(unittest.TestCase):
             self.assertEqual(page.body_font, BODY_FONT)
             self.assertEqual([line.y for line in page.body.lines], [0, 23, 46, 69])
             current = restored.snapshot()
-            self.assertEqual(current['version'], 28)
+            self.assertEqual(current['version'], 29)
             self.assertEqual(Session.from_snapshot(resources, current).snapshot(), current)
             current['pending']['details']['page_end'] -= 1
             with self.assertRaisesRegex(SaveError, 'page does not match'):

@@ -111,6 +111,17 @@ def faded(surface, alpha):
     return result
 
 
+def opaque(surface):
+    """`surface` with every pixel's alpha at 255, in place, when its pixel format has an alpha channel. A display that
+    has one (macOS) gives `convert()`ed canvases one, and a canvas built there can carry alpha 0 where its colour is
+    right; anything later composed on it shows that alpha. Surfaces without per-pixel alpha (and the native
+    backend's) are left as they are."""
+    get_masks = getattr(surface, 'get_masks', None)
+    if get_masks is not None and get_masks()[3]:
+        surface.fill((0, 0, 0, 255), special_flags=__getattr__('BLEND_RGBA_MAX'))
+    return surface
+
+
 def color_matrix(surface, matrix):
     native = getattr(__getattr__('transform'), 'color_matrix', None)
     if native is not None:

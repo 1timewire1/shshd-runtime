@@ -207,7 +207,9 @@ class DebugDialog(QDialog):
     def submit(self):
         action = self.debug.state()['action']
         value = self.answer.text()
-        if action in ('choice', 'word_game', 'football'):
+        if action == 'character_picker' and not value.strip():
+            value = None  # Confirms the selected look.
+        elif action in ('choice', 'word_game', 'football', 'character_picker'):
             try: value = int(value)
             except ValueError:
                 QMessageBox.warning(self, 'Choose an answer', 'Enter a zero-based answer index.'); return

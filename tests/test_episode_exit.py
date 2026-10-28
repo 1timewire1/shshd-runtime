@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from exp_runtime.content import ContentLibrary, digest, import_game
 from exp_runtime.engine import EngineAction, PanelState
@@ -161,6 +161,9 @@ class EpisodeExitTests(unittest.TestCase):
 
 
 class EpisodeExitMenuTests(unittest.TestCase):
+    ENDING = (0x32, *host_call(7, 12, 13, 1), 0x33)
+    SCHEDULED = {}
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -169,7 +172,8 @@ class EpisodeExitMenuTests(unittest.TestCase):
         profile.start()
         self.addCleanup(profile.stop)
         apk = self.root / 'authored.apk'
-        make_apk(apk, archive({1: metadata(), 25001: program(0x32, *host_call(7, 12, 13, 1), 0x33).to_bytes()}))
+        make_apk(apk, archive({1: metadata(), 25001: program(*self.ENDING).to_bytes(),
+                                **{key: program(*code).to_bytes() for key, code in self.SCHEDULED.items()}}))
         import_game(apk, [], self.root / 'library')
         self.library = ContentLibrary(self.root / 'library')
         self.addCleanup(self.library.close)
@@ -304,6 +308,30 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertFalse(app.can_resume())
 
     @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_exit_keeps_the_click_of_the_tap_that_ended_the_episode(self):
+        # Owner's report: CoD's message-panel Continue click was cut off by the exit's own sound stop.
+        from types import SimpleNamespace
+        app = self.make_app()
+        app.start(resume=False)
+        game = app.game
+        game.session.answer()
+        app.audio = True
+        click, story = object(), object()
+        busy = SimpleNamespace(get_busy=lambda: True, get_sound=lambda: click)
+        game.ui_sounds.channels = [busy]
+        channels = [SimpleNamespace(get_sound=lambda: click, stop=Mock()),
+                    SimpleNamespace(get_sound=lambda: story, stop=Mock())]
+        with patch.object(game, 'render'), patch.object(app.renderer, 'draw', return_value=app.renderer.canvas), \
+                patch('pygame.mixer.music'), patch('pygame.mixer.stop') as everything, \
+                patch('pygame.mixer.get_num_channels', return_value=2), \
+                patch('pygame.mixer.Channel', side_effect=lambda index: channels[index]):
+            app.render()
+            everything.assert_not_called()
+        channels[0].stop.assert_not_called()
+        channels[1].stop.assert_called_once_with()
+        self.assertEqual(app.screen, 'main')
+
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
     def test_failed_completion_checkpoint_keeps_terminal_session_for_retry(self):
         app = self.make_app()
         app.start(resume=False)
@@ -313,7 +341,7 @@ class EpisodeExitMenuTests(unittest.TestCase):
             app.tick(16)
         self.assertEqual(app.screen, 'main')
         self.assertIs(app.game, game)
-        self.assertTrue(game.session.episode_exited)
+        self.assertTrue(game.session.episode_ended)
         self.assertIn('Authored write failure', app.message)
         held = game.session.snapshot()
         app.message = ''
@@ -322,6 +350,30 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertEqual(app.screen, 'main')
         self.assertIsNone(app.game)
         self.assertFalse(app.can_resume())
+
+
+class HaltEndingMenuTests(EpisodeExitMenuTests):
+    """A branch that returns to its script's top-level HALT with nothing scheduled (CoD's "Your Case: The Missing
+    Child" "Try again" ending) ends the episode like service 7, rather than leaving a blank scene with music playing."""
+    ENDING = (0x32, *host_call(10, 25002, 0), 0x33)
+    SCHEDULED = {25002: (0x33,)}
+    # Service 7's own save validation and old-save upgrade; a HALT has neither.
+    test_corrupt_completion_marker_stays_visible_and_reports_load_error = None
+    test_loading_old_unsupported_exit_returns_to_menu_before_rendering = None
+
+    def test_halt_is_an_ended_episode_but_not_a_service_exit(self):
+        s = MenuState(self.library).session(self.library.episodes[0]['id'])
+        s.advance()
+        self.assertFalse(s.episode_ended)
+        self.assertEqual(s.answer().name, 'finished')
+        self.assertEqual((s.scene, s.scene_loads), (25002, 1))
+        self.assertTrue(s.episode_ended)
+        self.assertFalse(s.episode_exited)
+
+    def test_a_first_script_that_halts_stays_resumable(self):
+        s = Session(Resources(program(0x33)))
+        self.assertEqual(s.advance().name, 'finished')
+        self.assertFalse(s.episode_ended)
 
 
 if __name__ == '__main__':

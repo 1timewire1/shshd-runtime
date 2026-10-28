@@ -71,7 +71,7 @@ class DesktopUiSoundTests(unittest.TestCase):
         self.assertEqual(mixer.played, [])
         self.assertNotEqual(ui.session.pending and ui.session.pending.name, 'choice')
 
-    def test_pause_rows_and_back_click_but_switches_do_not(self):
+    def test_pause_rows_back_and_switches_click_and_the_sound_switch_plays_its_cue(self):
         for game, (click, sound_on, *_) in CUES.items():
             with self.subTest(game=game):
                 ui, mixer = self.ui(game)
@@ -79,12 +79,16 @@ class DesktopUiSoundTests(unittest.TestCase):
                 ui.command(('pause_open', 'options'))
                 ui.command(('pause_back',))
                 self.assertEqual(mixer.assets(), [click, click])
-                for key in ('choice_hints', 'music', 'music', 'sound'):
-                    ui.command(('pause_toggle', key))           # Sound switched off: silent
-                self.assertEqual(mixer.assets(), [click, click])
-                ui.command(('pause_toggle', 'sound'))
-                self.assertEqual(mixer.assets(), [click, click, sound_on])
-                self.assertEqual(mixer.stopped, 2)              # the switch's sound stops the others first
+                for key in ('choice_hints', 'music', 'music'):
+                    ui.command(('pause_toggle', key))           # the other switches click as rows do (owner's choice)
+                self.assertEqual(mixer.assets(), [click] * 5)
+                self.assertEqual(mixer.stopped, 0)              # without stopping the others
+                ui.command(('pause_toggle', 'sound'))           # Sound switched off: silent
+                ui.command(('pause_toggle', 'choice_hints'))
+                self.assertEqual(len(mixer.assets()), 5)
+                ui.command(('pause_toggle', 'sound'))           # on again: its own cue only, as natively
+                self.assertEqual(mixer.assets(), [click] * 5 + [sound_on])
+                self.assertEqual(mixer.stopped, 5)              # the Sound switch's own sound stops the others first
 
     def test_volume_sliders_preview_their_sounds(self):
         for game, (_, _, fx, music) in CUES.items():
@@ -126,7 +130,9 @@ class MainMenuUiSoundTests(unittest.TestCase):
                 shell = SimpleNamespace(app=Mock(state=state))
                 HdShell.toggle(shell, 'choice_hints')
                 HdShell.toggle(shell, 'sound')
-                shell.app.ui_sound.assert_called_once_with('SOUND_ON_SOUND', stop_others=True)
+                self.assertEqual(shell.app.ui_sound.call_args_list,      # ui_sound itself obeys the Sound switch
+                                 [unittest.mock.call('CLICK_SOUND'),
+                                  unittest.mock.call('SOUND_ON_SOUND', stop_others=True)])
                 shell.app.ui_sound.reset_mock()
                 HdShell.set_volume(shell, 'sound', .5)
                 HdShell.set_volume(shell, 'music', .25)

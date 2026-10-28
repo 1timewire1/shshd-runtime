@@ -1057,6 +1057,23 @@ remain as above. Page turns keep the full frame. Save version 20 adds
 not advance it. Older saves set `box_grow=false` for their current dialogue,
 retaining the already full-size box and all text/VM clocks.
 
+A retained speaker (narration to narration included) has no grow track, but
+its box no longer snaps to the new line's size: the renderer interpolates
+x/y/width/height linearly from the previous line's final frame over 250 ms from
+the line's start. HD's `SHSUIDialog::animateTextLayer` (**00043bdc**) sets the
+persistent bubble layer's (`g_layerBubble`, an `SHSBubbleLayer`) and text
+layer's `position` and `bounds` for every line; only a changed speaker then
+adds `setupAnimationsForTextLayer`'s keyframes (`animateLayers` **00044204**
+compares +0xf4 with +0x30). Nothing disables implicit actions (no
+`CATransaction` call in `SHSUIDialog`) and `SHSBubbleLayer` overrides neither
+`actionForKey:` nor `defaultActionForKey:`, so Core Animation animates the
+change with its own defaults, 0.25 s with linear pacing; the bubble's nine
+pieces move with it (`layoutSublayers`). The text layer moves too, but its
+typing starts only after the call's delay (+0.4 s with GameModel +0x400), so
+it is empty while it does. Not frame-captured. Shakes and page turns are
+unchanged, a tap settles the frame, and the previous frame lives only in the
+renderer, so a restored line shows its own frame.
+
 SHS `animatePortraitLayer` **0007e798** and CoD **000367b4** retain the current
 portrait layer's position when hiding it for narration or a speaker without
 art. Only the outgoing and cached layers swap; the current layer remains in
@@ -1553,6 +1570,25 @@ ring pair. Both iOS `updateButtonLayer` paths (SHS **0009f57c**, CoD
 **0004912c**) choose common frame 41 while held and 42 on release. Pointer
 tracking now applies that artwork and cancels a confirmation dragged outside;
 the APK retains its original frame 41.
+
+## Translated emoticons (shshd-runtime, not native)
+
+The cancelled Xbox 360 SHS prototype puts an "emoticon" over a character's head before some lines. Its translations
+(pack 31400, `tools/translate/x360.py`) carry the six cells of its sheet as episode images 26990–26995. They set the
+global number named by the shs profile's `TRANSLATED_PORTRAIT_EFFECTS` just before a line and clear it after.
+
+**Data:**
+- `Session.portrait_effect()` returns the effect for a dialogue with a portrait (modes 1 and 2).
+- The number is saved state, so a restored line shows its effect again.
+
+**Drawing:** `DialogueRenderer.draw_portrait_effect` draws the effect over the art and the relationship icons.
+- It is anchored at `EFFECT_ANCHOR` (30% of the housing's width toward the box, 30% of its height up from its center): the ring's upper corner on the box's side, mirrored for a right-side portrait.
+- It starts once a new speaker's portrait has come in (`portrait_delay_ms + PORTRAIT_MS`), at once for the same speaker, on `DialogueAnimation.age_ms`.
+
+**Animation:** `emoticon_effects` is pure and headless.
+- Each effect has an entrance (pop, spring or burst), then a quiet loop for as long as the line is up.
+- Hearts rise in a burst of four, then one every 0.9 s.
+- The X360's particles aren't reproduced; this is a presentation of this fork's own, as the original apps have no such feature.
 
 ## NPC relationship indicators
 

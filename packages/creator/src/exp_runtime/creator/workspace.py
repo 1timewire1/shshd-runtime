@@ -50,6 +50,7 @@ class Workspace:
                 'title': project.title, 'game': project.game,
                 'pack_id': project.pack_id, 'episode_id': project.episode_id, 'start': project.start,
                 'language': project.language, 'locales': project.locales, 'library': project.library,
+                'emoticons': project.emoticons,
                 'native': bool(project.native), 'node_count': len(project.nodes),
                 'nodes': [asdict(n) for n in project.nodes[offset:offset + limit]],
                 'characters': [asdict(c) for c in project.characters],
@@ -213,6 +214,9 @@ class Workspace:
         path = self.path(source)
         if path.stat().st_size > MAX_ASSET_BYTES: raise ProjectError('Image is too large')
         return self.edit(name, revision, lambda project: project.add_image(path.name, path.read_bytes()))
+
+    def import_audio(self, name, revision, source):
+        return self.batch(name, revision, [dict(op='audio', source=source)])
 
     def library_image(self, name, revision, library, resource, episode=None):
         from exp_runtime.content import ContentLibrary

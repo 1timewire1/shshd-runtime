@@ -32,6 +32,24 @@ class WordGameTests(unittest.TestCase):
         self.assertEqual(s.engine.word_game.weights, [-1, -1, -1, 1])
         self.assertEqual(s.engine.random48.state, 0x5e37dc5a3f85)
 
+    def test_translated_new_rules_quiz_plays_its_own_jingles_when_the_episode_has_them(self):
+        # shs profile TRANSLATED_WORD_GAME_SOUNDS: pack 31300 -> New Rules' right/wrong jingles at 26980 + 13 / + 1
+        right, wrong = 26980 + 13, 26980 + 1
+        for pack, present, expected in ((None, {right, wrong}, (8001, 8002)), (31300, set(), (8001, 8002)),
+                                        (31300, {right}, (8001, 8002)), (31300, {right, wrong}, (right, wrong))):
+            resources = word_resources()
+            resources.record['pack_id'] = pack
+            resources.exists = present.__contains__
+            s = Session(resources)
+            s.advance()
+            s.tick(400)
+            game = s.engine.word_game
+            s.answer(game.weights.index(1))
+            heard = [s.engine.sound_id]
+            s.answer(game.weights.index(-1))
+            heard.append(s.engine.sound_id)
+            self.assertEqual(tuple(heard), expected, pack)
+
     def test_score_clamp_entry_gate_and_actual_vm_callback(self):
         s = Session(word_resources())
         a = s.advance()

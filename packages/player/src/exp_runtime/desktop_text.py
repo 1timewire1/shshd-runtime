@@ -136,10 +136,11 @@ class BitmapTextRenderer:
             self._blit(surface, name, placed, scale, x, y - top * scale)
         return y + (max(layout.height, bottom) - top) * scale
 
-    def draw_layout(self, surface, name, layout, x, y, *, scale=1, source_end=None, inline=None, alpha=255):
+    def draw_layout(self, surface, name, layout, x, y, *, scale=1, source_end=None, inline=None, alpha=255,
+                    inline_density=1):
         """Draw a native layout origin without moving its ink overhang. `inline` maps glyph codes to images drawn in
-        place of the glyph (`CSFont::addCharImage`), one layout unit per image pixel. `alpha` fades the glyphs (the
-        cursor's blink, Choice hints' faint answers)."""
+        place of the glyph (`CSFont::addCharImage`), `inline_density` image pixels per layout unit. `alpha` fades the
+        glyphs (the cursor's blink, Choice hints' faint answers)."""
         self.font(name)
         for placed in layout.glyphs:
             if source_end is not None and placed.index >= source_end:
@@ -148,8 +149,8 @@ class BitmapTextRenderer:
             if image is None:
                 self._blit(surface, name, placed, scale, x, y, alpha)
                 continue
-            if scale != 1:
-                image = self._scaled(image, scale)
+            if scale != inline_density:
+                image = self._scaled(image, scale / inline_density)
             surface.blit(image, (floor(x + placed.x * scale + .5), floor(y + placed.y * scale + .5)))
 
     @lru_cache(maxsize=64)

@@ -153,7 +153,7 @@ class MessagePanelTests(unittest.TestCase):
             self.assertEqual(s.engine.message_panel.title, 'Instructions')
             self.assertEqual(s.engine.message_panel.argument, 4000)
             ui.tick(500); ui.render()
-            before = pygame.image.tobytes(ui.canvas, 'RGB')
+            before = pygame.image.tobytes(ui.message_renderer.canvas, 'RGBA')
             saved = s.snapshot()
             ui.command(('continue',))
             ui.command(('menu',)); ui.tick(5000); ui.command(('resume',))
@@ -161,9 +161,9 @@ class MessagePanelTests(unittest.TestCase):
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             self.assertEqual(s.snapshot(), saved)
             ui.session = Session.from_snapshot(r, saved)
-            ui.render(); self.assertEqual(pygame.image.tobytes(ui.canvas, 'RGB'), before)
+            ui.render(); self.assertEqual(pygame.image.tobytes(ui.message_renderer.canvas, 'RGBA'), before)
             ui.tick(500); ui.render(); self.assertIsNone(ui.error)
-            self.assertNotEqual(pygame.image.tobytes(ui.canvas, 'RGB'), before)
+            self.assertNotEqual(pygame.image.tobytes(ui.message_renderer.canvas, 'RGBA'), before)
             # Any screen click acknowledges, except the gear's menu region.
             ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1,
                                               pos=ui.viewport.center))
@@ -171,3 +171,15 @@ class MessagePanelTests(unittest.TestCase):
             self.assertEqual(ui.session.pending.name, 'word_game')
             self.assertEqual(ui.session.pending.request.pc, 638)
             self.assertIsNone(ui.session.engine.message_panel)
+
+
+class MessageInkTests(unittest.TestCase):
+    def test_cod_writes_the_panel_black_and_shs_keeps_its_blue(self):
+        from types import SimpleNamespace
+        from exp_runtime.desktop_message import BLUE, MessageRenderer
+        renderer = MessageRenderer.__new__(MessageRenderer)
+        for game, ink in (('cod', (0, 0, 0)), ('shs', BLUE), (None, BLUE)):
+            with self.subTest(game=game):
+                library = SimpleNamespace(game_id=game) if game else SimpleNamespace()
+                renderer.resources = SimpleNamespace(library=library)
+                self.assertEqual(renderer.ink(), ink)

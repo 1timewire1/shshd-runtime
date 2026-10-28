@@ -30,7 +30,7 @@ class DebugSession:
             from .preview import preview_resources
             self.context = preview_resources(self.compilation.data, library, project.game)
             self.resources = self.context.__enter__()
-        try: self.session = Session(self.resources)
+        try: self.session = Session(self.resources, ephemeral=True)  # A debug run never writes story-tree files.
         except Exception:
             self.close()
             raise

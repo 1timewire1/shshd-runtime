@@ -89,6 +89,7 @@ class MenuState:
         self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
         self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
+        self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
         self.order = 'episode'
         self.title_language = 'en'
         self.selected = None
@@ -97,6 +98,9 @@ class MenuState:
         # says `$KEY`. One table for the whole library, shared by every episode's session (Session.share_names) and
         # never cleared, so a name typed once is the one later episodes use instead of their defaults.
         self.names = {}
+        # shshd-runtime: a translated game's own table (the game profile's TRANSLATED_NAME_SETS, player.json
+        # `name_sets`), so its stories' `$Emily` or `$Date` never meet the smartphone stories' (owner, 2026-10-24).
+        self.name_sets = {}
         self.warning = ''
         if self.path.exists():
             try:
@@ -127,6 +131,8 @@ class MenuState:
                     self.vibration = data['vibration']
                 if type(data.get('hd_backdrop')) is bool:
                     self.hd_backdrop = data['hd_backdrop']
+                if type(data.get('hires_portraits')) is bool:
+                    self.hires_portraits = data['hires_portraits']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
                     self.hd_art = data['hd_art']
                 self.title_language = data.get('title_language', 'en')
@@ -142,6 +148,13 @@ class MenuState:
                                or len(v) > 32767 for k, v in names.items())):
                     raise ValueError('Invalid saved names')
                 self.names.update(names)
+                sets = data.get('name_sets', {})
+                if not isinstance(sets, dict) or any(
+                        not isinstance(table, dict) or len(table) > MAX_NAMES
+                        or any(not isinstance(k, str) or not isinstance(v, str) or not 0 < len(k) <= 255
+                               or len(v) > 32767 for k, v in table.items()) for table in sets.values()):
+                    raise ValueError('Invalid saved name sets')
+                self.name_sets.update({key: dict(table) for key, table in sets.items()})
             except (ValueError, OSError) as error:
                 self.warning = f'Could not read preferences: {error}'
         ids = {e['id'] for e in library.episodes}
@@ -167,6 +180,13 @@ class MenuState:
         record = self.library.select(episode)
         return self.library.directory / 'saves' / (record['id'] + '.shs-shot.jpg')
 
+    def names_for(self, record):
+        """The name-replacement table an episode's sessions share: its translated game's own (the profile's
+        TRANSLATED_NAME_SETS, by pack), else the library's."""
+        sets = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'TRANSLATED_NAME_SETS', {})
+        key = sets.get(record.get('pack_id')) if isinstance(record, dict) else None
+        return self.names if key is None else self.name_sets.setdefault(key, {})
+
     def resume_path(self, episode):
         paths = [self.save_path(episode, automatic=auto) for auto in (False, True)]
         path = max((p for p in paths if p.is_file()), key=lambda p: p.stat().st_mtime_ns, default=None)
@@ -176,11 +196,11 @@ class MenuState:
                     return path  # Session.load reports the existing size limit.
                 saved = json.loads(path.read_text(encoding='utf-8'))
                 pending = saved.get('pending') if isinstance(saved, dict) else None
-                if isinstance(pending, dict) and pending.get('name') == 'episode_exit':
+                if isinstance(pending, dict) and pending.get('name') in ('episode_exit', 'finished'):
                     # A validated terminal checkpoint masks older progress.
                     # Keep the manual slot available for an explicit load.
                     session = Session.from_snapshot(self.library.open_episode(episode), saved)
-                    if session.episode_exited:
+                    if session.episode_ended:
                         return None
             except (SaveError, OSError, ValueError, AttributeError):
                 # Invalid saves remain resumable so loading reports the error;
@@ -197,7 +217,9 @@ class MenuState:
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    hd_backdrop=self.hd_backdrop, names=self.names)      # in the order written: replacement walks the table in that order
+                    hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
+                    names=self.names,      # in the order written: replacement walks the table in that order
+                    name_sets=self.name_sets)
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.library.directory,
@@ -216,6 +238,9 @@ class MenuState:
         resources = self.library.open_episode(episode)
         path = self.resume_path(episode) if resume else None
         session = Session.load(resources, path) if path else Session(resources)
+        # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in
+        # Hector's Guide) must reach the table, not lose to the last playthrough's value when the window shares it.
+        session.share_names(self.names_for(resources.record))
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)

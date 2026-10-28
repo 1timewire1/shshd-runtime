@@ -11,18 +11,36 @@ import tempfile
 from exp_runtime.exp import ContentError
 
 FORMAT = 'exp-runtime-project'
-VERSION = 2
+VERSION = 3
+# shshd-runtime: the emoticons a dialogue line can show over its speaker (params.emoticon, emoticon_effects), in effect
+# order; the project picks an image for each (Project.emoticons).
+EMOTICONS = ('Lightning', 'Sweat', 'Anger', 'Heart', 'Exclamation', 'Question')
 MAX_PROJECT_BYTES = 96 * 1024 * 1024
 MAX_ASSET_BYTES = 64 * 1024 * 1024
 KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 'stop_audio',
          'relationship', 'score', 'input', 'text_branch', 'title', 'message', 'notice',
          'emphasis', 'scene_label', 'pan', 'transition', 'close_dialogue', 'random',
-         'word_game', 'football', 'grid', 'scene', 'end', 'native')
+         'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
+         'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
+         'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
+         'open_url', 'survey', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
 class ProjectError(ContentError):
     pass
+
+
+def is_image(data: bytes) -> bool:
+    return data.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8'))
+
+
+def is_mp3(data: bytes) -> bool:
+    return data.startswith(b'ID3') or len(data) > 1 and data[0] == 0xff and data[1] & 0xe0 == 0xe0
+
+
+def is_audio(data: bytes) -> bool:
+    return is_mp3(data) or data[:4] == b'RIFF' and data[8:12] == b'WAVE'
 
 
 @dataclass
@@ -115,12 +133,28 @@ class Project:
     locales: dict[str, dict[str, str]] = field(default_factory=dict)
     language: str = 'en'
     native: dict = field(default_factory=dict)
+    # shshd-runtime: the image of each emoticon (EMOTICONS), None for one the project doesn't use (version 3).
+    emoticons: list[int | None] = field(default_factory=lambda: [None] * len(EMOTICONS))
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
 
+    def add_audio(self, name: str, data: bytes) -> Asset:
+        """Embed an MP3 (music or a sound effect) or WAV (a sound effect), as the original episodes do from 26000."""
+        if not is_audio(data):
+            raise ProjectError('Choose an MP3 or WAV file')
+        if len(data) > MAX_ASSET_BYTES:
+            raise ProjectError('Audio exceeds the EXP resource size limit')
+        used = {asset.id for asset in self.assets}
+        resource = next((i for i in range(26000, 32768) if i not in used), None)
+        if resource is None:
+            raise ProjectError('No free episode resource IDs remain')
+        asset = Asset(resource, name, data)
+        self.assets.append(asset)
+        return asset
+
     def add_image(self, name: str, data: bytes) -> Asset:
-        if not data.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8')):
+        if not is_image(data):
             raise ProjectError('Choose a PNG or JPEG image')
         if len(data) > MAX_ASSET_BYTES:
             raise ProjectError('Image exceeds the EXP resource size limit')
@@ -182,7 +216,7 @@ def validate_structure(project: Project):
         _integer(node.timeout_option, 0, 7, 'Timeout option')
         _integer(node.value, -32768, 32767, 'Variable value')
         _integer(node.scene, 25001, 25999, 'Scene script ID')
-        _integer(node.expression, 0, 4, 'Expression slot')
+        _integer(node.expression, -1, 4, 'Expression slot (-1 uses the character default)')
         if not isinstance(node.params, dict):
             raise ProjectError('Node parameters must be an object')
         try:
@@ -229,6 +263,11 @@ def validate_structure(project: Project):
             _string(value, 'translated text')
     if not isinstance(project.native, dict):
         raise ProjectError('Invalid native archive data')
+    if not isinstance(project.emoticons, list) or len(project.emoticons) != len(EMOTICONS):
+        raise ProjectError(f'Emoticon images need exactly {len(EMOTICONS)} slots')
+    for resource in project.emoticons:
+        if resource is not None:
+            _integer(resource, 0, 32767, 'Emoticon image')
     if not isinstance(project.assets, list) or len(project.assets) > 2000:
         raise ProjectError('Too many image assets')
     ids, size = set(), 0
@@ -326,7 +365,7 @@ def project_from_record(data):
     data = deepcopy(data)
     try:
         if (not isinstance(data, dict) or data.pop('format', None) != FORMAT
-                or type(data.get('version')) is not int or data['version'] not in (1, VERSION)):
+                or type(data.get('version')) is not int or data['version'] not in (1, 2, VERSION)):
             raise ProjectError('Unsupported episode project format or version')
         version = data.pop('version')
         if version == 1:
@@ -335,6 +374,8 @@ def project_from_record(data):
                 node.update(scene=25001, character='', expression=0, params={})
                 for option in node['options']:
                     option['condition'] = ''
+        if version < 3:
+            data['emoticons'] = [None] * len(EMOTICONS)
         nodes = []
         for record in data['nodes']:
             node = _construct(Node, record)

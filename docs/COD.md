@@ -596,6 +596,25 @@ Plain iPhone placement reached past the art's left edge and left dead space. A w
 edge keeps the art's scale rather than stretching it: the old stretch made CoD's art about 26% wider. SHS's
 backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
 
+**Changes of picture are animated (both games).**
+- **A new scene picture crossfades in over 0.25 s.** `setLocationImageID` changes the location layer's contents and
+  bounds with Core Animation's implicit actions on. `SHSUIDialog::animateLocationLayer` (00039c68) unhides the
+  layer, sets the picture, aligns it, and returns 0.25.
+- **The card's own picture appears without one.** `SHSUIChapterScreen::animate` sets it inside `[CATransaction
+  begin]` / `setValue:forKey:` / `commit`, which turns the actions off.
+- **The card's exit glides.** Its `internalTransitionOff` (000408f0; SHS HD 0004b37c) puts the layer's scale back to
+  1 and its position to (160, 180) with the actions on. So the card's framing glides into the scene's as the next
+  picture fades in.
+- **Not in the binaries: the curve.** zazatree's lighttouch recordings of Volume One (2026-10-23) fit
+  kCAMediaTimingFunctionDefault best (rms .02-.04 against linear's .07-.10). `Desktop._location_change` uses it,
+  with the frame's placements (`'cover'` to the panned window) standing in for the iPhone's.
+- **The card's black layer ("revealLocation")** is opacity (1, 1, 0) at keyTimes (0, .6, 1) over 3.0 s in both
+  games. lighttouch shows the picture starting at 1.84 s. The runtime used 2.125 s before 2026-10-23.
+- **Not modelled: the Prologue's opening.** The recording shows its first narration ("You wake up somewhere cold
+  and dark...") over black, with the room appearing only at Sophie's next line. Chapter One, whose script has the
+  same shape, shows its bar under the first narration. Not explained yet: the runtime shows the room from the
+  narration.
+
 ## The portrait picker
 
 Service 78 draws CoD's `SHSUIPortraitSelect`: SHS HD's at iPhone size, without the frame offset
@@ -1211,7 +1230,9 @@ dialogue layers, starts `GameModel::setDownloading` (`00011e00`), and retains
 the argument frame while waiting. URL construction reads the poll ID from
 argument 0 and the upload type from argument 1. Type 0 reads argument 2 as a
 string; type 1 reads it as a signed number; type 2 reads an array through that
-pointer, using argument 3 as its count. It also reads request words 4 and 6.
+pointer, using argument 3 as its count. It also reads request words 4 and 6: SHS HD's
+`getPollURL` (0003c984, disassembled 2026-10-23) appends them as `&resultsType=` and `&resultsSize=`, after
+word 3 as `&upSize=`. The 235 SHS calls all pass type 2, six answers, results type 2 and four results.
 Argument positions here are zero-based; the native stack-string helper uses
 one-based positions internally.
 

@@ -213,11 +213,11 @@ def explore_library(directory, episode=None, *, runs=60, seed=0, reset=False, re
     with ContentLibrary(directory) as library:
         library.ensure_builtin_episodes()
         record = next(e for e in library.episodes if (e['id'] == episode if episode else e.get('builtin')))
-        if reset:
-            for name in ('dtview_tree.json',):
-                (library.directory / name).unlink(missing_ok=True)
-            for path in (library.directory / Session.TREE_STATE_DIRECTORY).glob('*.json.gz'):
-                path.unlink()
         resources = library.open_episode(record['id'])
+        if reset:
+            tree, saves = Session.tree_files(resources)
+            tree.unlink(missing_ok=True)
+            for path in saves.glob('*.json.gz'):
+                path.unlink()
         explorer = Explorer(resources, seed=seed)
         return explorer, explorer.explore(runs, report=report)

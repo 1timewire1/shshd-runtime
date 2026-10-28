@@ -72,7 +72,8 @@ def create_server(root):
 
     @edit_tool(name='project_update')
     def update_project(path: str, revision: str, changes: dict) -> dict:
-        """Change title/game/IDs/start/language/locales/library. Use project_get's revision."""
+        """Change title/game/IDs/start/language/locales/library/emoticons (six image asset IDs or null, the
+        dialogue params.emoticon images). Use project_get's revision."""
         return workspace.update(path, revision, changes)
 
     @edit_tool(name='graph_edit_node')
@@ -95,6 +96,11 @@ def create_server(root):
     def add_image(path: str, revision: str, source: str) -> dict:
         """Embed a local PNG/JPEG from this workspace in the project."""
         return workspace.import_image(path, revision, source)
+
+    @edit_tool(name='asset_import_audio')
+    def add_audio(path: str, revision: str, source: str) -> dict:
+        """Embed a local MP3 (music or a sound effect) or WAV (a sound effect) from this workspace in the project."""
+        return workspace.import_audio(path, revision, source)
 
     @read_tool(name='asset_list')
     def library_assets(library: str, episode: str | None = None, kind: str | None = None,

@@ -64,6 +64,31 @@ class CharacterPickerTests(unittest.TestCase):
         press(pygame.K_RETURN)
         self.assertEqual(s.engine.result_cells[0], 2)
 
+    def test_a_translated_pack_places_four_portraits_its_own_way_and_others_keep_the_native_slots(self):
+        from exp_runtime.shs.profile import TRANSLATED_PICKER_LAYOUTS
+        layout = TRANSLATED_PICKER_LAYOUTS[31300][4]
+        for pack, count, expected in ((31300, 4, layout), (5, 4, POSITIONS[:4]), (31300, 5, POSITIONS)):
+            with self.subTest(pack=pack, count=count):
+                r = picker_resources(count=count)
+                r.record['pack_id'] = pack
+                s = Session(r)
+                s.advance()
+                picker = s.engine.character_picker
+                self.assertEqual([p.end[:2] for p in picker.portraits], [(float(x), float(y)) for x, y in expected])
+                x, y = expected[min(2, count - 1)]
+                self.assertEqual(picker.hit((x, y)), min(2, count - 1))
+                restored = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
+                self.assertEqual(restored.engine.character_picker.positions[:count], [tuple(p) for p in expected])
+
+    def test_a_save_from_before_picker_layouts_keeps_the_native_slots(self):
+        s = Session(picker_resources())
+        s.advance()
+        state = json.loads(json.dumps(s.snapshot()))
+        state['version'] = 28
+        del state['engine']['character_picker']['positions']
+        restored = Session.from_snapshot(s.resources, state)
+        self.assertEqual(restored.engine.character_picker.positions, [tuple(p) for p in POSITIONS])
+
     def test_each_game_plays_its_own_swap_and_confirm_sounds(self):
         for game, sounds in (('shs', (8013, 8010)), ('cod', (8005, 8005))):
             with self.subTest(game=game):

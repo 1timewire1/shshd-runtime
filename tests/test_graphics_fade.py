@@ -60,5 +60,19 @@ class FadedTests(unittest.TestCase):
         self.assertEqual(tuple(image.get_at((1, 1))), (255, 0, 0, 255))
 
 
+    def test_opaque_raises_an_alpha_0_canvas_and_keeps_its_colour(self):
+        # macOS: the main menu's canvas carried alpha 0, so the picker lists' zoom showed black around their card.
+        from exp_runtime.graphics import opaque
+        pygame = self.pygame
+        canvas = pygame.Surface((3, 3), pygame.SRCALPHA)
+        canvas.fill((120, 60, 30, 0))
+        self.assertIs(opaque(canvas), canvas)
+        self.assertEqual(tuple(canvas.get_at((1, 1))), (120, 60, 30, 255))
+        plain = pygame.Surface((3, 3))
+        plain.fill((10, 20, 30))
+        opaque(plain)                                   # no alpha channel: left as it is
+        self.assertEqual(tuple(plain.get_at((0, 0)))[:3], (10, 20, 30))
+
+
 if __name__ == '__main__':
     unittest.main()

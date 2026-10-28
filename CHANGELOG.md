@@ -4,6 +4,72 @@
 
 ### Added
 
+- **Creator episodes can use the translated games' presentation.** Two-speaker lines, coloured named lines,
+  emoticons over the speaker and intros that run into a loop are no longer tied to the New Rules and X360
+  translations' pack IDs. An episode declares them in a small record of its own (resource 3, `presentation.py`,
+  SCHEMA.md "Presentation extension"), which the runtime reads when the shs profile has no table for its pack
+  (`content.presentation_feature`). Packs 31300 and 31400 keep their tables. Native SHS and other apps ignore the
+  record and show the line as SHS does.
+  - In the creator (SHS projects): a dialogue line's **Second speaker** and **Their expression**, a named line's
+    **Bubble color** (blue, pink or gray), a line's **Emoticon** with the project's own **Emoticon images…**, and a
+    Music node's **Then loop** track. They are in the inspector, the node schema and the MCP tools
+    (`project_update` takes `emoticons`). Projects move to format version 3; older ones upgrade on opening.
+  - A line sets SHS global numbers 31310–31312 / 31410 while it is up. A score or property-flag node may not use
+    one of those owner-0 keys in an episode whose lines use the matching option.
+  - The iOS app does not yet run an intro into its loop.
+- **`tools/translate x360`: the cancelled Xbox 360 prototype's two new stories as creator projects.** It reads the
+  May 2009 prototype's `data.pak` and walks its Lua scripts (`lua_subset.py`). *Day of Diss* is the King of Diss
+  prequel: a hub to talk to Kim, Hector, Ryan or Nicole, then Hector's diss battle intro. The *Puzzle Test* is two
+  short scenes. Lines, choices with their enable conditions, story variables, objectives (as "Objective Complete"
+  notices with the X360's success sound, shown on the talk's last line) and the hub's gating carry over, with a
+  scene transition into Hector's diss battle intro and a closing tally of the objectives completed; the 3D staging doesn't. Names the X360 colours are drawn in SHS's emphasis
+  colour, and its spaced ellipses (". . .") are joined. The cast wears its New Rules looks, as the King of Diss translation does.
+  Each story is written as an editable `.expproj` and an `.exp` (pack 31400), and `x360_check.py` plays one down many
+  random answer paths. The shs profile gives pack 31400 the New Rules translations' hi-res portrait set and frame
+  backdrop.
+- **Emoticons over a translated speaker's portrait** (the X360 prototype's line effects). Hearts, lightning bolts, a
+  sweat drop, an anger mark, an exclamation mark or a question mark appear at the portrait ring's corner on the box's
+  side, once the portrait is in. Each has its own animation, then a quiet loop for the rest of the line
+  (`emoticon_effects`, `Session.portrait_effect`, shs profile `TRANSLATED_PORTRAIT_EFFECTS`).
+  - `tools/translate x360` now carries the X360's emoticon cells and effect sounds, and sets the effect around each
+    line the scripts decorate; the three effects the X360 left empty are shown too.
+  - Sung lines get SHS's `{` music notes.
+  - The X360 translations hide SHS's relationship badges.
+- **Episodes translated from other SHS games get their own tag and category.** An episode titled
+  "... (SHSNR)" (a New Rules translation) imports without the tag in its title, files itself under New Rules, and
+  shows an "NR" tag in both episode pickers: New Rules' blue in the list view, blue text on the usual dark plate in
+  the grid. It is never hidden as a copy of its smartphone version. The list view's "SD" tag is now gray. Dancing
+  Queen, New Rules' other built-in story, is listed right after King of Diss (shs profile `LEGACY_GAMES` order). Now
+  Airing lists them under their own "Legacy Game Episodes" row after Season Bundles, without airdates (they share
+  their smartphone versions' titles, which had given two of them those versions' dates).
+- **Music that runs from an intro into a loop.** A translated pack can name a track as an intro that continues into
+  a loop (shs profile `TRANSLATED_MUSIC_LOOPS`): the intro plays once and the loop repeats after it without a gap,
+  and the pause menu resumes in whichever is playing. The X360 prototype's Day of Diss uses it for its own
+  "dont_trust_me" theme (`translate.py x360 --music-file`), levelled so the cutscene's loud opening matches the
+  rest. Episode music may be a WAV as well as an MP3, in the creator too.
+- **Translated New Rules episodes, owner's review of 2026-10-25** (`tools/translate`): title cards show SHS's own
+  location pictures (with their HD copies) instead of New Rules' stretched strips, chosen card by card; a character
+  telling a story off stage (King of Diss's Ryan and Nicole) is a named line in their own colour instead of over
+  someone else's portrait; lines from a TV or a doorbell take the colour New Rules gives their bubble (gray), and a
+  crowd of mixed voices keeps the yellow box, as New Rules' banner is; a
+  two-speaker line puts the first-named speaker on the left; no transition falls just before a game or the face
+  picker; beat boxing and the dance steps describe themselves instead of repeating the story's first line; "Ill"
+  leaves the speed disses. King of Diss takes seven capitals from the Xbox 360 prototype's copy of the story (its
+  epithets, "Team Battle", "The Beatdown of '06", "Yo' Mama", "Alaskan", and a lowercase "winter").
+- **King of Diss Lite borrows the full story's expressions and crowd colour** (`tools/translate`). Lite's lines carry
+  no expressions and list its crowd as the offscreen group (gray). Its lines that the full King of Diss also has
+  (375 of 488 with a portrait, matched in story order, Hector taking Kim's lines as Lite has no Kim) now show the full
+  story's expression, and its crowd lines the full story's colour (yellow), the TV's staying gray.
+- **The skip prompt offers each outcome a word quiz has.** A quiz whose story goes more than two ways by score (Football
+  Star's movie date: 0-3, 4-5, 6 or more; Local Ghosts, Spud the Stud, Battle of the Schools: Guy, Best Party Ever)
+  offers each range, best first, and finishes the quiz with that score. The ranges are found when the prompt opens,
+  by playing the quiz's next few scenes on throwaway copies for each score. A quiz whose score changes nothing offers
+  Skip; the rest keep Win and Lose. In the HD player, the "NR" tag also marks the Hi-Res Portraits switch.
+- **A short buffer against double clicks.** A tap or click in a dialogue line's (or page's) first quarter second is
+  ignored, so the second click of a double click no longer finishes or skips the next line.
+- **Named lines without a portrait can take a colour in translated episodes.** The translator can mark such a line
+  blue, pink or gray (shs profile `TRANSLATED_NARRATION_THEMES`), as New Rules shows an off-stage character in their
+  own colour and a TV or radio in gray; unmarked lines keep the yellow box.
 - **Skip Upsell Intros** (SHS, Options > General on the main menu, and the older menu's Cheats page;
   [#8](https://github.com/1timewire1/shshd-runtime/issues/8)). Thirty-three episodes open with store plugs before
   their story: "Want to catch up? Grab the Season 1 Set...", the Story Vote Ticket and genre votes, the Season 2
@@ -12,11 +78,123 @@
   every episode's opening (Game of Cones' and the novel's openings are story, and April Fools' joke messages stay).
   The runtime keeps them as hashes of their text; an opening that does not match is left alone. Season sets that
   show a plug after their chapter menu, and Cause of Death's plugs, are not covered yet.
+- **Each episode has its own Decision Tree.** Football Star keeps the library's original tree files; any other episode
+  that builds a tree keeps its own (`dtview/` and `dtsaves/<episode>/`), is not warp-locked, and its warps restore its
+  own saved state rather than Football Star's tracked variables.
 - The older menu's Cheats page (libraries without SHS HD) is respaced: its four switches and their notes now fit
   inside the box instead of running under the Back button.
+- **`tools/translate/`: a research tool that translates other SHS games' episodes into `.exp` files** (not part of any
+  wheel or app). It reads your own copy of a game and writes the translation to a folder you choose. It starts with
+  *Surviving High School: New Rules* downloads: their bytecode is rewritten to call SHS's services, the paper-doll
+  characters become portrait banks, the MIDI music is rendered to MP3 through a General MIDI soundfont, and the
+  all-lowercase text gets capitals back. Each minigame round is played as SHS's word game, as the smartphone
+  versions play it, from the arena-free version of the round that every New Rules download carries. It also
+  translates *King of Diss*, the story built into New Rules, in two versions: the full story with its compact dialogue
+  streams written out, its speed disses played as the Lite builds play theirs (timed rhyme choices, from the
+  minigame library's own rhyme pairs), its rhythm and beat-boxing games as word games and its face picker as SHS's
+  portrait picker; and the Lite Java builds' condensed retelling, whose text table becomes data, with its own
+  speed-diss choices. *Dancing Queen*, New Rules' other built-in story, translates too (`dancing-queen`). Its
+  minigames play as King of Diss's do, with DJ Fever and its dance steps as word games, so every New Rules
+  translation plays its games the same way. Its scripts move to where SHS starts an episode, and so do the scripts
+  its jumps name. The whole New Rules set (50 stories) now translates and plays to its end. A line New Rules
+  shows under another name ("Girl", "Boy", "Announcer") now keeps that name over the character's portrait and
+  bubble, where it used to show no portrait. Objects, sounds, unseen voices and crowds ("Radio", "Boom box",
+  "Crowd") stay named lines without a portrait.
+- **Two-speaker lines in translated New Rules episodes** ("Both", "Andy and Laura", "Dexter and Spud"). They show
+  the gray dialogue box with a portrait on each side at 80% size, the player's on the left when they are one of the
+  pair, and the name centered between them, shrunk if needed to fit two lines at most. Two speakers of one
+  colour give the box and title that colour; otherwise each name in the title takes its speaker's colour. Lines
+  with three or more speakers stay named lines without portraits. The translator records the second speaker in two
+  global numbers around the line, and the player reads them for that pack only (shs profile `TRANSLATED_DUETS`), so
+  an app without this shows the first speaker alone.
+- **Translated New Rules cues sound as the game wrote them.** Music cues 0 and 2–8 now render the right MIDI: New
+  Rules' own pack keeps its tracks in cue order, not the Java builds' track order the translator assumed. The six
+  short cues the smartphone versions play as sound effects (the right/wrong jingles and four stings) now play as
+  sound effects too, over the music and at the sound volume, still with New Rules' own sounds. The answer hints
+  read the jingles either way. The translator now renders the MIDI through Java's built-in synthesizer, as the J2ME
+  emulator plays the Java builds, with its reverb and chorus (`--synth java`, the default); the SF2 mixer stays as
+  `--synth sf2`. The timed word game plays New Rules' own right/wrong jingles in these episodes instead of SHS's
+  (shs profile `TRANSLATED_WORD_GAME_SOUNDS`; an episode without them keeps SHS's).
+- **Each translated game keeps its own names.** A name typed in a translated New Rules story (`$Emily`, `$Date`...)
+  goes in that game's own table (player.json `name_sets`, shs profile `TRANSLATED_NAME_SETS`), not the one the
+  smartphone stories share, where Homecoming Queen writes the same keys.
+  `tools/test_creator_native.py --exp FILE` runs any `.exp` in the original interpreters; the iOS builds' integer
+  division helper is now stood in for.
+- **Song lines show SHS HD's music notes** (SHS with the HD bundle). HD's dialogue fonts draw `{` as a music note in
+  the speaker's color (blue, rose or gray; `SHSEngine::initPermanents`), so "{ Toby or not Toby... {" now opens and
+  closes on ♪ as on the iPad, spaced as HD spaces it. HD's gold fonts (narration, named lines without a portrait)
+  register no note and showed a plain brace; this player gives them the gray note in their text color, so sung
+  narration keeps its notes too. The choice menu's description and options use the same face, so sung choices show their
+  notes there as well.
+- **Answer hints know translated New Rules episodes' right/wrong jingles.** Those episodes keep New Rules' own
+  answer jingles, where the smartphone versions play SHS's correct/wrong sounds, so for that pack (31300) the jingles
+  count as answer feedback. In *Train That Brain!*'s quiz, the right answer shows green.
+- **Translated New Rules episodes fill the frame with New Rules' own backdrop.** Their 3:1 location strips used to
+  leave black bands above and below. The translator now stores the backdrop New Rules draws behind its scene: its
+  blue pattern, with the cream stripe down the middle between thin orange edges, as wide a share as on New Rules'
+  WinMo screen. The art comes from its own greyscale UI packs, tinted as the game tints them and drawn at the
+  strips' pixel scale. For that pack (31300) the player draws it under the strip instead of black. Other episodes
+  are unchanged. Their portrait picker places four portraits evenly (one above the chosen face, one either side),
+  where SHS's own slots leave one side empty; other episodes keep the native slots. The orange frame New Rules puts
+  around its scene borders the strip too. Its sides fall outside the
+  view, as on New Rules' own screen, so its top and bottom bars show.
+- **Hi-Res Portraits** (SHS, Options > General on the main menu, and on the in-episode menu's General page in a
+  translated New Rules episode; on by default). Translated New Rules episodes now
+  carry two portrait sets: the WinMo busts, doubled, and the X1i build's redrawn ones, tripled to HD size. With the
+  switch on the player shows the X1i set at the height its WinMo portrait fills, so either set sits the same in the
+  ring, without the HD art fill on top; off, it shows the WinMo set as before. Flipping it mid-episode swaps the
+  portraits on screen at once, and a save always loads with the current set (saves name only the story's own
+  portraits). The switch only appears when the library holds such an episode (pack 31300). The X1i portraits had been
+  missing their torsos: the X1i copy of New Rules' clothing pack adds a group before the others, so every shirt
+  index pointed one group too early. The translator now shifts those indices, which puts back the suits, collars,
+  jackets and necklaces (49 looks use that pack).
+- **The episode creator covers more of what SHS and CoD episodes use** (`shshd-runtime-creator`), toward translating
+  other games' episodes:
+  - Story text shows numbers: `{points}`, `{points * 2}` or `{prop(0, 400)}` are formatted by the game's own service 0.
+  - Expressions read game state with `prop(owner, key)`, `bit(owner, key, n)` and `art(character)`; an owner can be a
+    character, as in `prop('alex', 407)`. A **Property flag** node sets or clears a bit.
+  - **Player / narrator** chooses the game's primary speaker and the character whose lines are narration.
+  - Shared `$KEY` names (`$USR`, `$ZOE`...) for answers, plus **Set text** and **Text default** nodes; they join the
+    names table that carries into later episodes.
+  - **Default expression** (dialogue expression "Character default"), **Character art** and **Rename character**
+    change a character mid-episode; **Choose a look** is the game's portrait picker; **Vibrate**.
+  - Embedded MP3/WAV music and sound effects (**Add MP3 / WAV**, MCP `asset_import_audio`).
+  - **SHS HD's side panels**: Faceplace (enable, posts, links and photos, default name, clear) and the Decision Tree
+    (tree scenes, results, joins), with a check that scenes and results alternate on every path. SHS only.
+  - `exp_runtime.creator.coverage` lists every service the original episodes call and how the creator covers it;
+    `tests/test_creator_coverage.py` keeps that list honest; nothing is missing now.
+  - **Append text**, **Loading screen**, **Open a link**, **Survey** (with SHS HD's poll frame, recovered from its
+    binary: results type and size are words 4 and 6), `build(n)` in expressions and the football node's final scores.
+  - The native harness gains an SHS HD 1.4.38 profile, which also runs HD's own `SHSScript::syscall` on every yield to
+    check that it reads only the frame the creator pushed. The native harness (`tools/test_creator_native.py`) checks the
+    new frames in Android 1.0.9, SHS iOS and CoD iOS.
 
 ### Changed
 
+- **Cause of Death's end of episode** ([#16](https://github.com/1timewire1/shshd-runtime/pull/16), thanks
+  @zazatree):
+  - **"Thanks for playing!" is CoD's own panel**, the iOS form SHS HD's panel already used, on CoD's layout bank
+    (HD's at half size): the gray box, one even gray body with thin dividers, black title and text, the gray pill
+    across the bottom edge. It opens on black as the scene and the last line fade out (0.25 s); the pill grows in and
+    the title fades in. Its Continue clicks. Checked against the owner's photo and zazatree's recording.
+  - **The "Miss An Episode?" window zooms in**, as the original's (entrance 20).
+  - **An episode whose later scene stops with nothing left to load returns to the menu** ("Your Case: The Missing
+    Child", "Try again") instead of sitting on a blank scene. What the original shows there is unverified.
+  - The Options pages' Back button stays dark while its page slides away.
+- **Resume zooms the pause menu out** before the story runs on, as the original does
+  ([#15](https://github.com/1timewire1/shshd-runtime/pull/15), thanks @zazatree): the card shrinks away over 0.4 s
+  (`animateView`'s exit zoom, to 1e-05 with ease-in/out), and the sepia goes at once (checked on the iPad). Taps and
+  keys wait until the menu has gone.
+- **The dialogue box, the Options switches and the pause menu's song**
+  ([#14](https://github.com/1timewire1/shshd-runtime/pull/14), thanks @zazatree):
+  - **A retained speaker's box resizes instead of snapping**, narration to narration included: from the last line's
+    box to the new one over 0.25 s, linearly. The original lets Core Animation carry its bubble there with its
+    defaults (`SHSUIDialog::animateTextLayer` sets the new frame with implicit actions enabled).
+  - **The Options switches slide** to their new side, as UIKit's switches do (0.2 s, not measured).
+  - **The Options switches click** as the menu's rows do (owner's choice: they are silent in the original). The Sound
+    switch keeps only its own sound when it is switched on.
+  - **Leaving Options > Sound fades the menu's song** that switching Music on there started, as Resume does (owner's
+    choice).
 - **Episode picker popups, resuming and the app icon**
   ([#12](https://github.com/1timewire1/shshd-runtime/pull/12), thanks @zazatree):
   - The New Game / Continue popup zooms open (an accepted difference: the original shows it at once).
@@ -38,6 +216,37 @@
 
 ### Fixed
 
+- **A translated episode's end card keeps its frame.** The sepia scene behind "Miss An Episode?" now shows a New
+  Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
+  of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a
+  location crossfade, which had let the screen before it (King of Diss's closing download notice) cover it.
+- **A speaker joined by a partner comes back in as a pair.** When a translated two-speaker line's first speaker
+  also said the line before, that portrait now zooms out and the pair zooms in, as for a new speaker; before, it
+  jumped to its two-speaker size and place with the partner already there. A pair that carries on together is
+  unchanged. A two-speaker line's box now grows from between its two portraits, and into or out of one, the box
+  stays hidden until it sets off (its starting point had shown as a small ring where the last portrait was).
+- **A two-speaker line's portraits leave together.** Past a translated line with a portrait on each side, both
+  portraits now shrink away at their two-speaker size; before, the partner vanished and the speaker jumped back to full
+  size first. A speaker who goes on alone stays, and only the partner leaves.
+- **A fade into a mini-game no longer stays black under the skip prompt.** With Skip mini-games on, the player held
+  every clock while it asked, including a scene transition still fading in, so the prompt waited under a black
+  screen (King of Diss's "practice dissing" fades straight into a word game). The fade now finishes; the game waits.
+- **Long one-word names fit the HD name plate** (SHS HD and Cause of Death). A word wider than the plate, such as
+  a typed handle like "StanTheDevil", is drawn smaller so it fits on one line, down to half size. The iPad's title code
+  broke it mid-word and pushed the last letters onto the dialogue text. Names with spaces still wrap at a space onto
+  two lines, as on the iPad.
+- **A name an episode resets at its start stays reset.** With Skip Upsell Intros on, a new game ran its opening
+  before joining the library's shared names, so a name the opening set lost to the last playthrough's value. Replaying
+  *Hector's Guide to Girls* (New Rules) showed the last handle until the new one was typed, instead of "You".
+- **Scene changes fade instead of cutting** in Cause of Death and SHS HD (@zazatree's lighttouch recordings): a new
+  background crossfades in over 0.25 s, as the original's location layer does with Core Animation's implicit
+  actions. The chapter card's picture still appears at once. When the card closes, its framing glides into the
+  scene's as the next picture fades in.
+- **The chapter card's picture fades in later and slower**, as in the original: black for 1.8 s, clear by 3.0 s
+  (it was 1.275 s and 2.125 s). Both games' card animations hold for 60% of 3.0 s.
+- **Now Airing and Episodes On Demand no longer open over black on macOS** (zazatree's report). While their card
+  zoomed in over the main menu, the menu's canvas could carry alpha 0 on a display with an alpha channel, so all but
+  the card showed black until the zoom ended. The menu under the zoom is made opaque first (`graphics.opaque`).
 - **Skip Ad Intros skips the High School Story ad again** (Game of Cones, The Conned Artist Parts 1 and 2). Since
   exp-runtime v0.6.1's merge a choice ignores taps for its first 250 ms, as SHS's menu does, and the skip answered
   the ad's choice at once, so it gave up and the ad played. It now waits out those 250 ms first. It also stops at

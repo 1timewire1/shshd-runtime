@@ -71,6 +71,7 @@ ROW_LABEL_POINTS = 14         # unverified (see module docstring); drawn in the 
 INFO_ICON = 34
 INFO_PLATE = (34, 26)         # the SD plate's width; a little taller, for the ring
 MARK_COLOR = (235, 238, 245)  # the SD mark's text
+MARK_TINT = .35               # a legacy game's tag colour, this much toward white to read on the dark plate
 INFO_TITLE_POINTS, INFO_META_POINTS = 26, 18
 INFO_TEXT_POINTS = (20, 19, 18, 17, 16, 15)
 
@@ -363,8 +364,9 @@ class HdEpisodePicker(HdUi):
         if self.keyboard and record['id'] == self.selected:
             pygame.draw.rect(layer, (255, 255, 255), (x * S - 3 * S, y * S - 3 * S, TILE[0] * S + 6 * S, TILE[1] * S + 6 * S),
                              2 * S, border_radius=4 * S)
-        if self.model.is_standard(record):
-            self.draw_standard_mark(layer, x + TILE[0] - 42, y + TILE[1] - 30)
+        mark = self.model.mark(record)
+        if mark is not None:
+            self.draw_standard_mark(layer, x + TILE[0] - 42, y + TILE[1] - 30, mark, self.model.mark_color(record))
         info = self.info_rect(record, x, y)
         if info is not None:
             self.draw_info_mark(layer, info)
@@ -375,7 +377,7 @@ class HdEpisodePicker(HdUi):
         show); None without an info card."""
         if not self.model.has_info(record):
             return None
-        right = x + TILE[0] - 8 - (42 if self.model.is_standard(record) else 0)
+        right = x + TILE[0] - 8 - (42 if self.model.mark(record) is not None else 0)
         return pygame.Rect(right - INFO_PLATE[0], y + TILE[1] - 10 - INFO_PLATE[1], *INFO_PLATE)
 
     def draw_info_mark(self, layer, rect):
@@ -403,12 +405,15 @@ class HdEpisodePicker(HdUi):
         pygame.draw.rect(surface, glyph, stem, border_radius=2 * S)
         layer.blit(surface, (round(cx * S - size * S / 2), round(cy * S - size * S / 2)))
 
-    def draw_standard_mark(self, layer, x, y):
-        """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition."""
+    def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
+        """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition.
+        An episode translated from another SHS game shows its game's tag ("NR") on the same plate, in its game's
+        colour lightened for the dark plate (owner, 2026-10-25)."""
         width, height = 34, 20
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
         pygame.draw.rect(plate, (0, 0, 0, 150), plate.get_rect(), border_radius=6 * S)
-        text = self.font(13).render('SD', True, MARK_COLOR)
+        tint = MARK_COLOR if color is None else tuple(round(c + (255 - c) * MARK_TINT) for c in color)
+        text = self.font(13).render(mark, True, tint)
         plate.blit(text, text.get_rect(center=plate.get_rect().center))
         layer.blit(plate, (x * S, y * S))
 

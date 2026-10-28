@@ -24,7 +24,7 @@ def apply(workspace, project, operation):
     allowed = {
         'project': {'changes'}, 'node': {'id', 'changes', 'remove'},
         'character': {'id', 'changes', 'remove'}, 'rename_node': {'id', 'new_id'},
-        'connect': {'source', 'target', 'field'}, 'image': {'source'},
+        'connect': {'source', 'target', 'field'}, 'image': {'source'}, 'audio': {'source'},
         'library_image': {'library', 'resource', 'episode'}, 'asset_label': {'id', 'label'}, 'layout': set(),
     }
     if op not in allowed or set(operation) - {'op'} - allowed[op]:
@@ -34,7 +34,8 @@ def apply(workspace, project, operation):
         if 'game' in changes and changes['game'] != project.game and (project.assets or project.native or project.library):
             raise ProjectError('Create a new project to change the game after importing resources')
         if changes.get('library'): changes['library'] = str(workspace.path(changes['library']))
-        patch_record(project, changes, {'title', 'game', 'pack_id', 'episode_id', 'start', 'language', 'locales', 'library'})
+        patch_record(project, changes, {'title', 'game', 'pack_id', 'episode_id', 'start', 'language', 'locales', 'library',
+                                        'emoticons'})
     elif op in ('node', 'character'):
         key = operation['id']
         if not isinstance(key, str) or not key: raise ProjectError('An edit needs a nonempty ID')
@@ -57,6 +58,11 @@ def apply(workspace, project, operation):
         path = workspace.path(operation['source'])
         if path.stat().st_size > MAX_ASSET_BYTES: raise ProjectError('Image is too large')
         project.add_image(path.name, path.read_bytes())
+    elif op == 'audio':
+        from .model import MAX_ASSET_BYTES
+        path = workspace.path(operation['source'])
+        if path.stat().st_size > MAX_ASSET_BYTES: raise ProjectError('Audio is too large')
+        project.add_audio(path.name, path.read_bytes())
     elif op == 'library_image':
         from exp_runtime.content import ContentLibrary
         from .assets import import_library_image
@@ -78,6 +84,11 @@ def check_removals(before, after):
     if after.start in removed or references:
         raise ProjectError('Removed node is still referenced; reconnect its incoming edges and project start in the same batch')
     removed_characters = {c.id for c in before.characters} - {c.id for c in after.characters}
-    if any(n.character in removed_characters or n.params.get('left_character') in removed_characters or
-           n.params.get('right_character') in removed_characters for n in after.nodes):
+    def referenced(node):
+        keys = [node.character, *(node.params.get(key) for key in ('left_character', 'right_character', 'player', 'narrator',
+                                                                    'partner'))]
+        looks = node.params.get('characters')
+        keys += looks if isinstance(looks, list) else []
+        return {key for key in keys if isinstance(key, str) and key}
+    if any(referenced(n) & removed_characters for n in after.nodes):
         raise ProjectError('Removed character is still referenced by a node')
