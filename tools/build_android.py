@@ -104,7 +104,9 @@ def build_command(source, sdk, ndk, arches=ARCHES, icon=None):
             f'--private={source}', f'--storage-dir={ROOT / "build/android/p4a"}',
             f'--sdk-dir={sdk}', f'--ndk-dir={ndk}', '--android-api=35', '--ndk-api=24',
             '--package=org.shshd.runtime', '--name=SHSHD Runtime', '--version=1.0.1',
-            '--numeric-version=1000101', '--orientation=portrait',
+            '--numeric-version=1000101',
+            # Portrait first; landscape for the side panels (platforms/android.py, OrientationBridge).
+            '--orientation=portrait', '--orientation=landscape', '--orientation=landscape-reverse',
             f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--debug',
             *((f'--icon={icon}', f'--presplash={icon}', f'--presplash-color={SPLASH_COLOR}') if icon else ())]
 

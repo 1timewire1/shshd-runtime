@@ -98,6 +98,42 @@ class FontTests(unittest.TestCase):
                 self.assertIsNone(match('verdana'))
 
 
+class SidePanelTests(unittest.TestCase):
+    def test_side_panels_turn_the_app_to_landscape_and_go_off_in_portrait(self):
+        """The owner's rule: panels turned on in portrait ask once for landscape, without locking rotation; turned back
+        to portrait (or never turned), they switch off and rotation is the user's again."""
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.platforms.android import PANELS_ROTATE_MS
+        Desktop._widen_for_panels(SimpleNamespace(fixed_window=True))      # the window is the screen's
+        host = Host.__new__(Host)
+        host.activity, host.panels_view = 'activity', None
+        host.orientation = Mock()
+        game = SimpleNamespace(panels_open=True)
+        game.toggle_panels = lambda: setattr(game, 'panels_open', not game.panels_open)
+        size = [1080, 2400]
+        host.app = SimpleNamespace(game=game, screen='game',
+                                   window=SimpleNamespace(get_size=lambda: tuple(size)))
+        host.panels_orientation(16)
+        host.panels_orientation(16)
+        host.orientation.requestLandscape.assert_called_once_with('activity')
+        size[:] = [2400, 1080]
+        host.panels_orientation(16)
+        self.assertTrue(game.panels_open)
+        size[:] = [1080, 2400]
+        host.panels_orientation(16)
+        self.assertFalse(game.panels_open)                                   # turned back: off
+        host.orientation.release.assert_called_once_with('activity')
+        game.panels_open = True
+        host.panels_orientation(16)
+        host.panels_orientation(PANELS_ROTATE_MS)
+        self.assertFalse(game.panels_open)                                   # never turned: off
+        game.panels_open, size[:] = True, [2400, 1080]
+        host.panels_orientation(16)
+        game.panels_open = False                                             # switched off in Options
+        host.panels_orientation(16)
+        self.assertEqual(host.orientation.release.call_count, 3)
+
+
 class LinkTests(unittest.TestCase):
     def test_a_storys_link_goes_to_the_host(self):
         """A script link (a novel's "Yes, please!") and the Faceplace wall's open through the app's opener (the

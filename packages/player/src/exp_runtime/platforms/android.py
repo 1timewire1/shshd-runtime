@@ -26,6 +26,8 @@ FONT_FILES['arialrounded'] = FONT_FILES['arialroundedmtbold']
 FONT_FILES['trebuchet'] = FONT_FILES['trebuchetms']
 FONT_SUFFIXES = ('.ttf', '.otf', '.ttc')
 SYSTEM_FONTS = Path('/system/fonts')
+# How long side panels turned on in portrait wait for the app to turn to landscape before they switch off.
+PANELS_ROTATE_MS = 3000
 
 
 def font_finder(directories):
@@ -63,6 +65,7 @@ class Host:
         self.activity_api = activity
         self.activity = autoclass('org.kivy.android.PythonActivity').mActivity
         self.bridge = autoclass('org.shshd.runtime.DocumentBridge')
+        self.orientation = autoclass('org.shshd.runtime.OrientationBridge')
         self.intent = autoclass('android.content.Intent')
         self.uri = autoclass('android.net.Uri')
         self.root = Path(str(self.activity.getFilesDir().getAbsolutePath())) / 'SHSHD Runtime'
@@ -80,9 +83,11 @@ class Host:
         self.closed = False
         self.backgrounded = False
         self.imported = []
+        self.panels_view = None         # [game, 'asked' | 'landscape', ms asked] while a game's side panels are open
         self.app = Application(file_picker=self.pick, library_root=self.root / 'libraries',
                                settings_path=self.root / 'settings.json', url_opener=self.open_url,
                                can_quit=False)
+        self.app.fixed_window = True    # the window is the screen: the side panels never widen it
         activity.bind(on_activity_result=self.on_result)
 
     def font_directories(self):
@@ -166,6 +171,31 @@ class Host:
             self.imported = value
             self.app._attempt(lambda: self.app.import_paths(value))
 
+    def panels_orientation(self, elapsed):
+        """The side panels want landscape (the screen's width holds them beside the game): turning them on in portrait
+        turns the app to landscape (OrientationBridge), without locking it there. Turned back to portrait afterwards,
+        or not turned within PANELS_ROTATE_MS, the panels switch off; rotation is the user's again once they are."""
+        game = self.app.game if self.app.screen == 'game' else None
+        if game is None or not game.panels_open:
+            if self.panels_view is not None:
+                self.panels_view = None
+                self.orientation.release(self.activity)
+            return
+        width, height = self.app.window.get_size()
+        state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
+        if width > height:
+            self.panels_view = [game, 'landscape', 0]
+            return
+        if state is None:
+            self.panels_view = [game, 'asked', 0]
+            self.orientation.requestLandscape(self.activity)
+            return
+        state[2] += elapsed
+        if state[1] == 'landscape' or state[2] >= PANELS_ROTATE_MS:
+            game.toggle_panels()
+            self.panels_view = None
+            self.orientation.release(self.activity)
+
     def open_url(self, url):
         self.activity.startActivity(self.intent(self.intent.ACTION_VIEW, self.uri.parse(url)))
 
@@ -215,6 +245,7 @@ class Host:
                 if running:
                     # A resumed frame must not advance timers by the sleep duration.
                     self.app.tick(elapsed if was_active and self.app.active else 0)
+                    self.panels_orientation(elapsed if self.app.active else 0)
                     if self.app.active:
                         self.app.render()
                     else:
