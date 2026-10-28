@@ -153,6 +153,8 @@ class Desktop:
     # under the prompt is the one without the panel; once the prompt has closed, the choice fades in again with its
     # whole entrance, unless the pick went on.
     choice_held = None
+    # The app's own way to open a link (Application.open_url: a mobile host's), or None for webbrowser.
+    url_opener = None
     # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
     choice_focus = None
     # The same for the Android pause menu's rows (HD's pause menu keeps its own, `pause_hd.state.focus`).
@@ -2524,6 +2526,9 @@ class Desktop:
 
     def _open_link(self, url):
         """`UIApplication openURL:` -- the system's handler for the link."""
+        if self.url_opener is not None:
+            self.url_opener(url)
+            return
         try:
             opened = webbrowser.open(url)
         except webbrowser.Error:

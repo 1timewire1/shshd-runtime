@@ -8,6 +8,51 @@ import shutil
 import time
 
 
+# Android ships none of the faces the HD and CoD screens draw with (Arial, Arial Rounded MT Bold, Trebuchet MS).
+# A player supplies them as font files (a bulk import copies them into each library's `fonts/` folder), under their
+# Windows/macOS file names or the face's name. `pygame.font.match_font` family -> file stems by (bold, italic).
+FONT_FILES = {
+    'arial': {(False, False): ('arial', 'arialmt'), (True, False): ('arialbd', 'arial-boldmt', 'arial bold'),
+              (False, True): ('ariali', 'arial-italicmt', 'arial italic'),
+              (True, True): ('arialbi', 'arial-bolditalicmt', 'arial bold italic')},
+    'arialroundedmtbold': {style: ('arialroundedmtbold', 'arlrdbd', 'arial rounded bold')
+                           for style in ((False, False), (True, False), (False, True), (True, True))},
+    'trebuchetms': {(False, False): ('trebuc', 'trebuchetms', 'trebuchet ms'),
+                    (True, False): ('trebucbd', 'trebuchetms-bold', 'trebuchet ms bold'),
+                    (False, True): ('trebucit', 'trebuchetms-italic', 'trebuchet ms italic'),
+                    (True, True): ('trebucbi', 'trebuchetms-bolditalic', 'trebuchet ms bold italic')},
+}
+FONT_FILES['arialrounded'] = FONT_FILES['arialroundedmtbold']
+FONT_FILES['trebuchet'] = FONT_FILES['trebuchetms']
+FONT_SUFFIXES = ('.ttf', '.otf', '.ttc')
+SYSTEM_FONTS = Path('/system/fonts')
+
+
+def font_finder(directories):
+    """pygame's `match_font` for Android: a face the player supplied (FONT_FILES, in `directories()`'s folders),
+    else Android's own Roboto in the asked style, so text still draws (in another face) without the files."""
+    def match_font(name, bold=False, italic=False):
+        families = [part.strip().lower().replace(' ', '') for part in str(name).split(',')]
+        files = {}
+        for directory in directories():
+            try:
+                for path in directory.iterdir():
+                    if path.is_file() and path.suffix.lower() in FONT_SUFFIXES:
+                        files.setdefault(path.stem.lower(), str(path))
+            except OSError:
+                continue
+        for family in families:
+            for stem in FONT_FILES.get(family, {}).get((bool(bold), bool(italic)), (family,)):
+                if stem in files:
+                    return files[stem]
+        style = 'BoldItalic' if bold and italic else 'Bold' if bold else 'Italic' if italic else 'Regular'
+        for fallback in (f'Roboto-{style}.ttf', 'Roboto-Regular.ttf', 'Roboto[wdth,wght].ttf', 'NotoSans-Regular.ttf'):
+            if (SYSTEM_FONTS / fallback).is_file():
+                return str(SYSTEM_FONTS / fallback)
+        return None
+    return match_font
+
+
 class Host:
     REQUEST = 4107
 
@@ -27,6 +72,8 @@ class Host:
         shutil.rmtree(self.staging, ignore_errors=True)
         self.staging.mkdir()
         os.environ['XDG_DATA_HOME'] = str(self.root.parent)
+        import pygame
+        pygame.font.match_font = font_finder(self.font_directories)
         self.results = Queue()
         self.copier = ThreadPoolExecutor(max_workers=1)
         self.pending = False
@@ -37,6 +84,17 @@ class Host:
                                settings_path=self.root / 'settings.json', url_opener=self.open_url,
                                can_quit=False)
         activity.bind(on_activity_result=self.on_result)
+
+    def font_directories(self):
+        """Where supplied faces are found: the app's own `fonts/` folder, then every library's (bulk imports copy a
+        player's font files into each library they create)."""
+        libraries = self.root / 'libraries'
+        found = [self.root / 'fonts']
+        try:
+            found += sorted(path / 'fonts' for path in libraries.iterdir() if (path / 'fonts').is_dir())
+        except OSError:
+            pass
+        return found
 
     def pick(self, kind):
         if self.pending:

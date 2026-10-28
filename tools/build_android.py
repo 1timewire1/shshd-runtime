@@ -80,9 +80,12 @@ def stage(destination):
     return destination
 
 
-def build_command(source, sdk, ndk):
+ARCHES = ('arm64-v8a', 'x86_64')     # phones, and the x86-64 emulator images
+
+
+def build_command(source, sdk, ndk, arches=ARCHES):
     return [sys.executable, '-m', 'pythonforandroid.toolchain', 'apk',
-            '--bootstrap=sdl2', '--dist-name=shshd', '--arch=arm64-v8a',
+            '--bootstrap=sdl2', '--dist-name=shshd', *(f'--arch={arch}' for arch in arches),
             '--requirements=python3,pygame_ce,pillow,pyjnius,android,libbz2,liblzma',
             f'--local-recipes={ROOT / "android/recipes"}',
             f'--private={source}', f'--storage-dir={ROOT / "build/android/p4a"}',
@@ -95,6 +98,8 @@ def build_command(source, sdk, ndk):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build', action='store_true', help='Compile with the installed Android toolchain')
+    parser.add_argument('--arch', action='append', choices=ARCHES,
+                        help='An ABI to build (repeatable); default: both, arm64-v8a for devices and x86_64 for the emulator')
     args = parser.parse_args(argv)
     source = stage(ROOT / 'build/android/source')
     print(f'Staged runtime sources: {source}', flush=True)
@@ -109,7 +114,7 @@ def main(argv=None):
     prepare_recipe_cache(ROOT / 'build/android/p4a')
     output = ROOT / 'dist/android'
     output.mkdir(parents=True, exist_ok=True)
-    subprocess.run(build_command(source, sdk, ndk), cwd=output, check=True)
+    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES)), cwd=output, check=True)
     apks = sorted(output.glob('*.apk'))
     if not apks:
         raise RuntimeError('Android toolchain finished without an APK')

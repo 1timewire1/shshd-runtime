@@ -59,6 +59,42 @@ class ImportTests(unittest.TestCase):
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra required')
+class FontTests(unittest.TestCase):
+    def test_supplied_faces_are_found_by_style_then_roboto(self):
+        """Android has none of the HD faces: the player's files (Windows names here) are found by face and style, so
+        Trebuchet's bold and italic are told apart; anything missing falls back to Roboto."""
+        from exp_runtime.platforms import android
+        with tempfile.TemporaryDirectory() as root:
+            fonts, system = Path(root) / 'fonts', Path(root) / 'system'
+            fonts.mkdir()
+            system.mkdir()
+            for name in ('arial.ttf', 'ARIALBD.TTF', 'arialroundedmtbold.ttf', 'trebucbd.ttf', 'trebucit.ttf'):
+                (fonts / name).write_bytes(b'authored stand-in')
+            (system / 'Roboto-Regular.ttf').write_bytes(b'authored stand-in')
+            match = android.font_finder(lambda: [Path(root) / 'missing', fonts])
+            with patch.object(android, 'SYSTEM_FONTS', system):
+                self.assertEqual(Path(match('arial')).name, 'arial.ttf')
+                self.assertEqual(Path(match('arial', bold=True)).name, 'ARIALBD.TTF')
+                self.assertEqual(Path(match('Arial Rounded MT Bold,Arial Rounded', bold=True)).name,
+                                 'arialroundedmtbold.ttf')
+                self.assertEqual(Path(match('trebuchetms', bold=True)).name, 'trebucbd.ttf')
+                self.assertEqual(Path(match('trebuchetms', italic=True)).name, 'trebucit.ttf')
+                self.assertEqual(Path(match('arial', italic=True)).name, 'Roboto-Regular.ttf')
+                self.assertEqual(Path(match('liberationsans')).name, 'Roboto-Regular.ttf')
+            with patch.object(android, 'SYSTEM_FONTS', Path(root) / 'none'):
+                self.assertIsNone(match('verdana'))
+
+
+class LinkTests(unittest.TestCase):
+    def test_a_storys_link_goes_to_the_host(self):
+        """A script link (a novel's "Yes, please!") and the Faceplace wall's open through the app's opener (the
+        Android host's ACTION_VIEW intent): Python's webbrowser has no Android browser."""
+        from exp_runtime.desktop import Desktop
+        opened = []
+        Desktop._open_link(SimpleNamespace(url_opener=opened.append), 'https://example.com/story')
+        self.assertEqual(opened, ['https://example.com/story'])
+
+
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
         import pygame
