@@ -155,6 +155,8 @@ class Desktop:
     choice_held = None
     # The app's own way to open a link (Application.open_url: the iOS host's `open_url`), or None for webbrowser.
     url_opener = None
+    # The host's window is its view (iOS): the side panels never widen it; landscape gives them room (ios.Host).
+    fixed_window = False
     # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
     choice_focus = None
     # The same for the Android pause menu's rows (HD's pause menu keeps its own, `pause_hd.state.focus`).
@@ -2714,6 +2716,8 @@ class Desktop:
         beside the 576x768 game, so they fit at full height once the window
         is 4:3 or wider: a window already that wide is left alone, and a
         narrower one is widened to 4:3 at its own height (owner's choice)."""
+        if self.fixed_window:
+            return
         width, height = self.window.get_size()
         needed = max(1, round(height * 4 / 3))
         if width >= needed - 1:          # a pixel of rounding either way

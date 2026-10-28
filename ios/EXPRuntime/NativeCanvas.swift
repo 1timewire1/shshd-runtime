@@ -10,6 +10,10 @@ struct CanvasError: LocalizedError {
 /// belongs here. Image nodes are immutable and released by each frame's graph.
 final class NativeCanvas {
     private var images: [Int: CGImage] = [:]
+    // Drawn nodes not made into an image yet: one is drawn when something reads it (`image`). A node that only
+    // scales another, blitted by its parent, is never made: the parent draws the scaled source itself (the story
+    // layer, scaled to the frame each time a line types on, would otherwise be a full-frame image of its own).
+    private var drawings: [Int: [String: Any]] = [:]
     private struct Texture {
         let width: Int, height: Int
         let pixels: Data
@@ -106,6 +110,29 @@ final class NativeCanvas {
         }
         let matrix = rows.map { $0.map { $0.doubleValue } }
         var pixels = Data(count: source.pixels.count)
+        // Pillow's 12-value convert matrix (the HD pause overlay's sepia): a row and an offset per channel, in
+        // single precision, rounded half up and clamped (`ImagingConvertMatrix`).
+        if let offsets = op["offset"] as? [NSNumber] {
+            guard offsets.count == 3, offsets.allSatisfy({ $0.doubleValue.isFinite }) else {
+                throw CanvasError(message: "Invalid color matrix offset")
+            }
+            let m = rows.map { $0.map { $0.floatValue } }, o = offsets.map { $0.floatValue }
+            pixels.withUnsafeMutableBytes { output in
+                source.pixels.withUnsafeBytes { input in
+                    let src = input.bindMemory(to: UInt8.self), dst = output.bindMemory(to: UInt8.self)
+                    for offset in stride(from: 0, to: src.count, by: 4) {
+                        let red = Float(src[offset]), green = Float(src[offset + 1]), blue = Float(src[offset + 2])
+                        for channel in 0..<3 {
+                            let row = m[channel]
+                            let value: Float = red * row[0] + green * row[1] + blue * row[2] + o[channel] + 0.5
+                            dst[offset + channel] = value <= 0 ? 0 : value >= 255 ? 255 : UInt8(value)
+                        }
+                        dst[offset + 3] = 255
+                    }
+                }
+            }
+            return try matrixImage(pixels, source)
+        }
         pixels.withUnsafeMutableBytes { output in
             source.pixels.withUnsafeBytes { input in
                 let src = input.bindMemory(to: UInt8.self), dst = output.bindMemory(to: UInt8.self)
@@ -120,6 +147,10 @@ final class NativeCanvas {
                 }
             }
         }
+        return try matrixImage(pixels, source)
+    }
+
+    private func matrixImage(_ pixels: Data, _ source: Texture) throws -> CGImage {
         guard let provider = CGDataProvider(data: pixels as CFData), let image = CGImage(
             width: source.width, height: source.height, bitsPerComponent: 8, bitsPerPixel: 32,
             bytesPerRow: source.width * 4, space: space,
@@ -142,10 +173,25 @@ final class NativeCanvas {
     }
 
     private func image(_ op: [String: Any]) throws -> CGImage {
-        guard let id = op["source"] as? Int, let image = images[id] else {
-            throw CanvasError(message: "Missing drawing source")
-        }
+        guard let id = op["source"] as? Int else { throw CanvasError(message: "Missing drawing source") }
+        return try image(id)
+    }
+
+    private func image(_ id: Int) throws -> CGImage {
+        if let image = images[id] { return image }
+        guard let node = drawings.removeValue(forKey: id) else { throw CanvasError(message: "Missing drawing source") }
+        let image = try renderNode(node)
+        images[id] = image
         return image
+    }
+
+    /// The source and smoothing of a node that only scales an image to its own size, while it is not an image yet.
+    private func scaling(_ op: [String: Any]) -> (source: [String: Any], size: CGSize)? {
+        guard let id = op["source"] as? Int, images[id] == nil, let node = drawings[id],
+              let ops = node["ops"] as? [[String: Any]], ops.count == 1, ops[0]["kind"] as? String == "scale",
+              ops[0]["clip"] == nil, ops[0]["color"] == nil, ops[0]["blend"] == nil,
+              let size = node["size"] as? [NSNumber], size.count == 2 else { return nil }
+        return (ops[0], CGSize(width: size[0].doubleValue, height: size[1].doubleValue))
     }
 
     private func drawImage(_ image: CGImage, _ rect: CGRect, _ context: CGContext) {
@@ -235,11 +281,17 @@ final class NativeCanvas {
                     context.fillEllipse(in: bounds)
                 }
             case "blit":
-                let source = try image(op)
                 let at = try numbers(op["at"])
                 guard at.count == 2 else { throw CanvasError(message: "Invalid image position") }
                 context.setAlpha(CGFloat((op["alpha"] as? NSNumber)?.doubleValue ?? 255) / 255)
-                drawImage(source, CGRect(x: at[0], y: at[1], width: CGFloat(source.width), height: CGFloat(source.height)), context)
+                if let scaled = scaling(op) {
+                    let source = try image(scaled.source)
+                    context.interpolationQuality = (scaled.source["smooth"] as? Bool) == true ? .medium : .none
+                    drawImage(source, CGRect(origin: CGPoint(x: at[0], y: at[1]), size: scaled.size), context)
+                } else {
+                    let source = try image(op)
+                    drawImage(source, CGRect(x: at[0], y: at[1], width: CGFloat(source.width), height: CGFloat(source.height)), context)
+                }
             case "scale":
                 let source = try image(op)
                 context.interpolationQuality = (op["smooth"] as? Bool) == true ? .medium : .none
@@ -307,13 +359,14 @@ final class NativeCanvas {
         }
         for node in nodes {
             guard let id = node["id"] as? Int else { throw CanvasError(message: "Invalid drawing identifier") }
-            images[id] = try renderNode(node)
+            if node["png"] != nil { images[id] = try renderNode(node) } else { drawings[id] = node }
         }
+        let result = try image(root)
         for id in frame["release"] as? [Int] ?? [] {
             images.removeValue(forKey: id)
+            drawings.removeValue(forKey: id)
             textures.removeValue(forKey: id)
         }
-        guard let result = images[root] else { throw CanvasError(message: "Missing drawing frame") }
         return result
     }
 

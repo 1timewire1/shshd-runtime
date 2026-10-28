@@ -225,6 +225,9 @@
 
 ### Fixed
 
+- **The menus no longer slow down as you finish episodes.** Each time the main menu or the episode picker came
+  back, the app reopened every finished episode to check its save was an ending: several seconds once dozens were
+  done. Each save is now checked once, and again only when it changes.
 - **A translated episode's end card keeps its frame.** The sepia scene behind "Miss An Episode?" now shows a New
   Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
   of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a

@@ -83,6 +83,32 @@ class IosWindowTests(unittest.TestCase):
         self.assertEqual(move.pos, (100, 200))
         self.assertEqual((wheel.x, wheel.y), (0, 1.5))
 
+    def test_side_panels_turn_the_ipad_to_landscape_and_go_off_in_portrait(self):
+        """The owner's rule: side panels turned on in portrait ask once for landscape, without locking rotation;
+        turned back to portrait (or never turned), they switch off. The window is the view's, never widened."""
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.platforms.ios import PANELS_ROTATE_MS
+        host = self.host()
+        self.assertTrue(host.app.fixed_window)
+        Desktop._widen_for_panels(SimpleNamespace(fixed_window=True))      # no window change at all
+        game = SimpleNamespace(panels_open=True)
+        game.toggle_panels = lambda: setattr(game, 'panels_open', not game.panels_open)
+        host.app.game, host.app.screen = game, 'game'
+        self.addCleanup(setattr, host.app, 'game', None)
+        host.view_size = (1536, 2048)
+        self.assertEqual(host.panels_orientation(16), 'landscape')
+        self.assertIsNone(host.panels_orientation(16))                       # asked once
+        host.view_size = (2048, 1536)
+        self.assertIsNone(host.panels_orientation(16))
+        self.assertTrue(game.panels_open)
+        host.view_size = (1536, 2048)
+        host.panels_orientation(16)
+        self.assertFalse(game.panels_open)                                   # turned back: off
+        game.panels_open = True
+        self.assertEqual(host.panels_orientation(16), 'landscape')
+        host.panels_orientation(PANELS_ROTATE_MS)
+        self.assertFalse(game.panels_open)                                   # never turned: off
+
     def test_a_storys_link_goes_to_the_host(self):
         """A script link (a novel's "Yes, please!") and the Faceplace wall's go to the host's `open_url`, which opens
         them with UIApplication, rather than to Python's webbrowser."""

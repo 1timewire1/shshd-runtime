@@ -16,7 +16,34 @@ struct RuntimeView: UIViewControllerRepresentable {
 }
 
 final class GameCanvasView: UIView, UIKeyInput {
-    var image: CGImage? { didSet { setNeedsDisplay() } }
+    // The frame is a layer's contents, composited and scaled by Core Animation, not redrawn by the CPU in `draw(_:)`
+    // (a 1536 x 2048 copy each frame). A frame that did not change is the same image and changes nothing.
+    var image: CGImage? {
+        didSet {
+            guard image !== oldValue else { return }
+            frameLayer.contents = image
+            frameLayer.frame = viewport
+        }
+    }
+    private let frameLayer: CALayer = {
+        let layer = CALayer()
+        layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "frame": NSNull()]
+        layer.magnificationFilter = .linear
+        layer.minificationFilter = .linear
+        return layer
+    }()
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        layer.addSublayer(frameLayer)
+    }
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        layer.addSublayer(frameLayer)
+    }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        frameLayer.frame = viewport
+    }
     var send: (([String: Any]) -> Void)?
     var scrollable = false
     var generation = 0
@@ -49,13 +76,6 @@ final class GameCanvasView: UIView, UIKeyInput {
     // Gestures are judged in the phone layout's 480 x 720 units, whatever the frame's size: the drag threshold and the
     // scroll step feel the same on every screen.
     private func units(_ distance: CGFloat) -> CGFloat { distance * 720 / max(1, viewport.height) }
-
-    override func draw(_ rect: CGRect) {
-        UIColor.black.setFill()
-        UIRectFill(bounds)
-        guard let image = image else { return }
-        UIImage(cgImage: image).draw(in: viewport)
-    }
 
     // A touch in the frame's pixels (the app's window coordinates; the shared app maps them to its own canvases).
     private func point(_ touch: UITouch) -> CGPoint {
@@ -301,6 +321,10 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     // Picked files are copied here, off the engine's queue, so frames (and the busy screen) keep running meanwhile.
     private let copyQueue = DispatchQueue(label: "org.expruntime.import-copy", qos: .userInitiated)
     private let renderer = NativeCanvas()
+    // Frames are drawn here, in order, while the engine's queue runs Python for the next one: a frame takes the longer
+    // of the two, not both. At most two wait (`rendering`), so the picture is never more than a frame behind.
+    private let renderQueue = DispatchQueue(label: "org.expruntime.render", qos: .userInitiated)
+    private var rendering = 0
     private let audio = NativeAudio()
     private let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     private var displayLink: CADisplayLink?
@@ -370,7 +394,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     }
 
     @objc private func frame() {
-        guard !working, !failed, running || !requests.isEmpty else { return }
+        guard !working, !failed, rendering < 2, running || !requests.isEmpty else { return }
         working = true
         let now = CACurrentMediaTime()
         let operation: [String: Any]
@@ -394,8 +418,11 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         let directory = documents.path
         let renderer = self.renderer
         let feedbackGeneration = activityGeneration
+        // The simulator check draws each frame before its result is handled: its captures and checks read that image.
+        let drawsInline = verifying
         engineQueue.async {
             let response: Result<([String: Any], CGImage?), Error>
+            var drawing: [String: Any]?
             do {
                 let input = String(data: try JSONSerialization.data(withJSONObject: request), encoding: .utf8)!
                 let output = try PythonBridge().request(input, directory: directory)
@@ -403,11 +430,19 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     throw CanvasError(message: "Invalid runtime response")
                 }
                 if let fixture = result["drawing_test"] as? [String: Any] { try NativeCanvas.verify(fixture) }
-                let image = try (result["frame"] as? [String: Any]).map { try renderer.render($0) }
-                response = .success((result, image))
+                if drawsInline {
+                    let image = try (result["frame"] as? [String: Any]).map { try renderer.render($0) }
+                    response = .success((result, image))
+                } else {
+                    drawing = result["frame"] as? [String: Any]
+                    response = .success((result, nil))
+                }
             } catch { response = .failure(error) }
+            // Queued before the drawing below can finish, so the main queue counts it (`rendering`) before it ends.
+            let drawn = drawing
             DispatchQueue.main.async {
                 self.working = false
+                if drawn != nil { self.rendering += 1 }
                 if operation["operation"] as? String == "active", operation["active"] as? Bool == false { self.finishBackgroundTask() }
                 switch response {
                 case .success(let (result, image)):
@@ -445,6 +480,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if let link = result["open_url"] as? String, let url = URL(string: link) {
                         UIApplication.shared.open(url)
                     }
+                    if result["orientation"] as? String == "landscape" { self.requestLandscape() }
                     if let request = result["update_request"] as? [String: Any] {
                         self.fetchRelease(request)
                     }
@@ -490,6 +526,30 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                 }
                 if !self.requests.isEmpty { self.frame() }
             }
+            guard let drawn = drawn else { return }
+            self.renderQueue.async {
+                let rendered = Result { try renderer.render(drawn) }
+                DispatchQueue.main.async {
+                    self.rendering -= 1
+                    switch rendered {
+                    case .success(let image): self.canvas.image = image
+                    case .failure(let error): self.showError(error.localizedDescription, fatal: true)
+                    }
+                    if !self.requests.isEmpty { self.frame() }
+                }
+            }
+        }
+    }
+
+    // The side panels were turned on in portrait: turn the interface to landscape once. Rotation stays free (every
+    // orientation stays supported), so turning the iPad back to portrait is how the panels go off (ios.Host).
+    private func requestLandscape() {
+        guard let scene = view.window?.windowScene else { return }
+        if #available(iOS 16.0, *) {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { _ in }
+        } else {
+            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
         }
     }
 

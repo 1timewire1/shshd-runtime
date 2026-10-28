@@ -179,6 +179,42 @@ NSString *EXPFontRequest(NSString *json, NSError **error) {
                                 @(round(advance.width))]];
         }
         result[@"glyphs"] = glyphs;
+    } else if ([request[@"operation"] isEqual:@"stroked"]) {
+        // vector_text's fill-and-stroke glyph for a system face (no outline file for Python to read): each layer the
+        // glyph filled and/or stroked with a mitered line of `width` pixels (`CSFont::setStroke`, kCGTextFillStroke),
+        // drawn in order. `left`/`top` place the image from the pen on the baseline, y down.
+        NSString *text = request[@"text"] ?: @"";
+        NSArray *layers = request[@"layers"] ?: @[];
+        UniChar code = text.length ? [text characterAtIndex:0] : ' ';
+        CGGlyph glyph = 0;
+        CTFontGetGlyphsForCharacters(font, &code, &glyph, 1);
+        CGRect bounds;
+        CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationHorizontal, &glyph, &bounds, 1);
+        if (CGRectIsEmpty(bounds)) bounds = CGRectZero;
+        CGFloat widest = 0;
+        for (NSDictionary *layer in layers) widest = MAX(widest, [layer[@"width"] doubleValue]);
+        int padding = (int)ceil(widest / 2) + 2;
+        int left = (int)floor(CGRectGetMinX(bounds)) - padding, top = -(int)ceil(CGRectGetMaxY(bounds)) - padding;
+        int w = MAX(1, (int)ceil(CGRectGetMaxX(bounds)) + padding - left);
+        int h = MAX(1, -(int)floor(CGRectGetMinY(bounds)) + padding - top);
+        CGContextRef context = bitmap(w, h);
+        CGPoint origin = CGPointMake(-left, h + top);
+        CGContextSetLineJoin(context, kCGLineJoinMiter);
+        for (NSDictionary *layer in layers) {
+            CGColorRef paint = color(layer[@"color"]);
+            CGFloat width = [layer[@"width"] doubleValue];
+            BOOL fill = [layer[@"fill"] boolValue];
+            CGContextSetFillColorWithColor(context, paint);
+            CGContextSetStrokeColorWithColor(context, paint);
+            CGContextSetLineWidth(context, width);
+            CGContextSetTextDrawingMode(context, width > 0 ? (fill ? kCGTextFillStroke : kCGTextStroke) : kCGTextFill);
+            CTFontDrawGlyphs(font, &glyph, &origin, 1, context);
+            CGColorRelease(paint);
+        }
+        result[@"left"] = @(left);
+        result[@"top"] = @(top);
+        result[@"png"] = png(context);
+        CGContextRelease(context);
     } else {
         NSAttributedString *text = [[NSAttributedString alloc] initWithString:request[@"text"] ?: @""
             attributes:@{(__bridge NSString *)kCTFontAttributeName: (__bridge id)font,

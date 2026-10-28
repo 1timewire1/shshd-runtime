@@ -17,6 +17,8 @@ _host = None
 _verifying = False
 LOG_NAME = 'shshd-runtime.log'
 LOG_LIMIT = 2 * 1024 * 1024
+# How long side panels turned on in portrait wait for the iPad to turn to landscape before they switch off.
+PANELS_ROTATE_MS = 3000
 
 
 def install_log(directory):
@@ -82,6 +84,9 @@ class Host:
         self.url = None
         self.staging = []
         self.last_active = True
+        self.view_size = None           # the view's pixel size, as Swift last sent it
+        self.panels_view = None         # [game, 'asked' | 'landscape', ms asked] while a game's side panels are open
+        self.app.fixed_window = True    # the window is the view: the side panels never widen it (landscape holds them)
         self.app.render()
         self.input_stamp = self._input_stamp()
         self.generation = 0
@@ -122,12 +127,35 @@ class Host:
         by the player: the shared app fits its frames to whatever window it has, so the iPad gets the HD frame at
         its own resolution. The running game shares the window."""
         width, height = (max(320, min(4096, int(value))) for value in size)
+        self.view_size = width, height
         if self.app.window is not None and self.app.window.get_size() == (width, height):
             return
         window = self.backend.display.set_mode((width, height))
         self.app.window = window
         if self.app.game is not None:
             self.app.game.window = window
+
+    def panels_orientation(self, elapsed):
+        """The side panels want landscape (the iPad's 4:3 holds them beside the game): turning them on in portrait
+        asks the system to rotate ('landscape' for Swift), without locking it. Turned back to portrait afterwards,
+        or not turned within PANELS_ROTATE_MS, the panels switch off."""
+        game = self.app.game if self.app.screen == 'game' else None
+        if game is None or not game.panels_open or self.view_size is None:
+            self.panels_view = None
+            return None
+        width, height = self.view_size
+        state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
+        if width > height:
+            self.panels_view = [game, 'landscape', 0]
+            return None
+        if state is None:
+            self.panels_view = [game, 'asked', 0]
+            return 'landscape'
+        state[2] += elapsed
+        if state[1] == 'landscape' or state[2] >= PANELS_ROTATE_MS:
+            game.toggle_panels()
+            self.panels_view = None
+        return None
 
     def _end_copying(self):
         """The copy of picked files is over (import_copying): the app is free again for the import itself."""
@@ -252,6 +280,7 @@ class Host:
         self.backend.ticks += elapsed
         self.handle_events(message.get('events', ()))
         self.app.tick(elapsed)
+        orientation = self.panels_orientation(elapsed)
         if not self.app.busy and self.staging:
             # Swift copied imports into a disposable, app-owned directory.
             # Never remove a selected original or a library being played.
@@ -297,6 +326,7 @@ class Host:
                 and str(verification.get('verification_check', '')).endswith('stat-increase sound')):
             verification['verify_effect_audio'] = game.sound_players[-1][1].channel
         return dict(verification, status='ok', frame=frame, audio=audio, keyboard=self.backend.keyboard, picker=picker, open_url=url,
+                    orientation=orientation,
                     vibrations=vibrations,
                     update_request=update_request,
                     generation=self.generation,

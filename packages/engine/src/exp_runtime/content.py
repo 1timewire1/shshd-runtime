@@ -946,6 +946,12 @@ class ContentLibrary:
         return path
 
     def select(self, selector: str) -> dict:
+        if len(selector) == 64:
+            # A whole ID (IDs are content hashes): the menus look up every episode's saves this way each time they
+            # refresh, so the full scan below (prefixes, names, titles, aliases) is kept for other selectors.
+            exact = next((e for e in self.episodes if e['id'] == selector), None)
+            if exact is not None:
+                return exact
         matches = [e for e in self.episodes if e['id'].startswith(selector)
                    or e['name'] == selector or (selector.strip() and selector in e['titles'])
                    or selector.casefold() in [alias.casefold() for alias in e.get('aliases', [])]]

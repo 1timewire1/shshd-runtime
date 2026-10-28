@@ -153,6 +153,34 @@ class DrawingTests(unittest.TestCase):
         self.assertGreater(font.descender(), 0)
 
 
+class StrokedTextTests(unittest.TestCase):
+    def test_a_system_faces_stroke_is_drawn_by_the_host(self):
+        """Cause of Death's emphasis (Trebuchet Italic, `setStroke(0.5, colour)`) on iOS: a system face has no outline
+        file for Python, so its fill-and-stroke is the host's CoreText (`stroked`), not a thickened copy of the glyph,
+        and a red-edged set's edge is drawn over its fill."""
+        from exp_runtime import graphics
+        from exp_runtime.vector_text import FaceSource, VectorFont
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        icon = Path(folder.name) / 'icon.png'
+        Image.new('RGBA', (2, 2)).save(icon)
+        host = FontHost()
+        previous = graphics.install(drawing.Backend(host, icon))
+        self.addCleanup(graphics.install, previous)
+        font = VectorFont('TrebuchetMS-Italic', 16, 20, '', {}, {}, FaceSource(path='TrebuchetMS-Italic'), 16,
+                          None, 0, .5 / 16, (254, 53, 53))
+        with patch('exp_runtime.vector_text._grow', side_effect=AssertionError('thickened in Python')):
+            surface, dx, dy = font.render_glyph(ord('A'), (0, 0, 0), 4)
+            font.render_glyph(ord('A'), (0, 0, 0), 4)
+        stroked = [request for request in host.requests if request.get('operation') == 'stroked']
+        self.assertEqual(len(stroked), 1)                                   # kept: once per glyph
+        self.assertEqual([(layer['width'], layer['fill']) for layer in stroked[0]['layers']], [(0, True), (2.0, False)])
+        self.assertEqual(tuple(stroked[0]['layers'][1]['color']), (254, 53, 53, 255))
+        self.assertEqual(stroked[0]['size'], 64)
+        self.assertGreater(surface.get_width(), 0)
+        self.assertLess(dy, 0)
+
+
 class SoundTests(unittest.TestCase):
     def test_interface_sounds_play_on_effect_channels_at_their_volume(self):
         mixer = drawing.Mixer()

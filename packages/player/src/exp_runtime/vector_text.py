@@ -222,7 +222,20 @@ class VectorFont(BitmapFont):
         outlines = _OUTLINES.get(id(self.source))
         if outlines is None:
             if _system_face(self.source):
-                return None             # no outline data to read
+                # No outline data to read (iOS's system faces: Cause of Death's emphasis Trebuchet): the host's
+                # CoreText draws the same layers, as the original's own fill-and-stroke does.
+                stroked = getattr(self.source.font(px), 'stroked', None)
+                if stroked is None:
+                    return None
+                layers = []
+                if self.stroke > 0:
+                    layers.append((self.stroke * px, tuple(STROKE_COLOR), True))
+                if self.embolden_color is None:
+                    layers.append((self.embolden * px, tuple(fill), True))
+                else:
+                    layers.append((0, tuple(fill), True))
+                    layers.append((self.embolden * px, tuple(self.embolden_color), False))
+                return stroked(chr(code), tuple(layers))
             data = self.source.data if self.source.data is not None else Path(self.source.path).read_bytes()
             outlines = _OUTLINES[id(self.source)] = Outlines(data)
         if not outlines.available:

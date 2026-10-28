@@ -726,6 +726,9 @@ class HdPauseMenu:
     @staticmethod
     def sepia(surface):
         """The frame dimmed and tinted the way the pause overlay does."""
+        native = getattr(pygame.transform, 'color_matrix', None)
+        if native is not None:
+            return native(surface, SEPIA)       # the iOS host's color_matrix: no Python pass over the frame
         image = Image.frombytes('RGB', surface.get_size(), pygame.image.tobytes(surface, 'RGB'))
         image = image.convert('RGB', SEPIA)
         return pygame.image.frombytes(image.tobytes(), image.size, 'RGB')

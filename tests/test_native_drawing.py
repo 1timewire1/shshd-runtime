@@ -164,6 +164,47 @@ class NativeDrawingTests(unittest.TestCase):
             sent.append([node for node in encoder.encode(canvas)['nodes'] if 'png' in node])
         self.assertEqual([len(nodes) for nodes in sent], [1, 0, 0])
 
+    def test_a_layer_drawn_the_same_again_is_not_sent_again(self):
+        """The shared app redraws every layer each frame: a layer with last frame's ops over the same sources is sent as
+        last frame's node, so the host rasters only what changed (an idle menu: nothing)."""
+        encoder, image = d.FrameEncoder(), d.Surface.from_pixels(Image.new('RGBA', (4, 4), (9, 8, 7, 255)))
+
+        def draw(x):
+            layer = d.Surface((32, 32), d.SRCALPHA)
+            layer.blit(image, (x, 0))
+            canvas = d.Surface((64, 64))
+            canvas.blit(d.Transform.smoothscale(layer, (64, 64)), (0, 0))
+            return encoder.encode(canvas)
+
+        first, again, moved = draw(1), draw(1), draw(2)
+        self.assertEqual(len(first['nodes']), 4)                            # the image, the layer, its scale, the canvas
+        self.assertEqual((again['nodes'], again['release'], again['root']), ([], [], first['root']))
+        self.assertEqual(len(moved['nodes']), 3)                            # the image stays
+        self.assertNotEqual(moved['root'], first['root'])
+        self.assertEqual(len(moved['release']), 3)
+
+    def test_an_atlas_frame_read_each_frame_is_one_image(self):
+        """`image.frombytes` of the same bytes (an atlas frame the side panels cut every frame) is one node."""
+        pixels = bytes(range(64))
+        first, second = d.ImageAPI.frombytes(pixels, (4, 4), 'RGBA'), d.ImageAPI.frombytes(pixels, (4, 4), 'RGBA')
+        self.assertIs(first.snapshot(), second.snapshot())
+        second.fill((0, 0, 0, 255))
+        self.assertEqual(d.ImageAPI.tobytes(first, 'RGBA'), pixels)        # a copy each: drawing on one leaves the rest
+        other = bytes(bytearray(pixels))                                    # equal bytes, another object
+        self.assertIsNot(d.ImageAPI.frombytes(other, (4, 4), 'RGBA').snapshot(), first.snapshot())
+
+    def test_the_pause_sepia_is_the_hosts_matrix_with_pillows_rounding(self):
+        """The HD pause overlay's 12-value sepia goes to the host's color_matrix (offsets, rounded as Pillow's convert),
+        not a Python pass over the whole frame when the menu opens."""
+        from exp_runtime.desktop_pause_hd import SEPIA
+        source = Image.frombytes('RGB', (16, 16), bytes(range(256)) * 3)
+        frame = d.Surface.from_pixels(source)
+        tinted = d.Transform.color_matrix(frame, SEPIA)
+        op = tinted.snapshot().ops[0]
+        self.assertEqual((op['kind'], len(op['matrix']), len(op['offset'])), ('color_matrix', 3, 3))
+        self.assertTrue(tinted.opaque)
+        self.assertEqual(d.ImageAPI.tobytes(tinted, 'RGB'), source.convert('RGB', SEPIA).tobytes())
+
     def test_frame_graph_releases_transients_and_reuses_cached_images(self):
         encoder = d.FrameEncoder()
         canvas = d.Surface((320, 480))

@@ -19,6 +19,21 @@ class FontHost:
             return dict(face=f'Registered{len(self.registered)}')
         face = ImageFont.load_default(size=request['size'])
         text = request.get('text', '')
+        if operation == 'stroked':
+            # Pillow's own stroke stands in for CoreText's fill-and-stroke; the layout is the host's: an image placed
+            # by `left`/`top` from the pen on the baseline.
+            widest = max([layer['width'] for layer in request['layers']] + [0])
+            pad = int(widest // 2) + 2
+            left, top, right, bottom = face.getbbox(text[:1], anchor='ls')
+            image = Image.new('RGBA', (right - left + 2 * pad, bottom - top + 2 * pad))
+            for layer in request['layers']:
+                width = round(layer['width'] / 2)
+                ImageDraw.Draw(image).text((pad - left, pad - top), text[:1], font=face, anchor='ls',
+                                           fill=tuple(layer['color']), stroke_width=width,
+                                           stroke_fill=tuple(layer['color']))
+            stream = BytesIO()
+            image.save(stream, format='PNG')
+            return dict(png=base64.b64encode(stream.getvalue()).decode('ascii'), left=left - pad, top=top - pad)
         if operation == 'glyphs':
             glyphs = []
             for char in text:

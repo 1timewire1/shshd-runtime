@@ -16,7 +16,7 @@ import os
 import struct
 from types import SimpleNamespace
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageMath
 
 
 class DrawingError(ValueError):
@@ -149,8 +149,11 @@ def rgba(color):
 
 
 def _multiply(a, b):
-    # SDL's multiply is (a*b + 255) >> 8.
-    return Image.frombytes(a.mode, a.size, bytes((x * y + 255) >> 8 for x, y in zip(a.tobytes(), b.tobytes())))
+    # SDL's multiply is (a*b + 255) >> 8, per band in Pillow's integer image maths (a byte loop in Python took ~90 ms
+    # for an HD portrait's mask, each time a new face came up).
+    bands = [ImageMath.lambda_eval(lambda v: (v['x'] * v['y'] + 255) >> 8, x=x.convert('I'), y=y.convert('I')).convert('L')
+             for x, y in zip(a.split(), b.split())]
+    return Image.merge(a.mode, bands)
 
 
 def blend(destination, source, flags):
@@ -178,13 +181,16 @@ class Node:
     # Pieces of these pixels read through a subsurface, by box: one node (one PNG for the host) each, however often
     # it is read (a font sheet's glyphs, every frame of a title card).
     crops: dict = field(default_factory=dict, repr=False)
+    # get_bounding_rect's answers, by min_alpha: the same drawing has the same ink (the pause menu reads its rows'
+    # capitals every frame).
+    bounds: dict = field(default_factory=dict, repr=False)
 
     def record(self):
         record = dict(id=self.identifier, size=self.size)
         if self.pixels is not None:
             if self.encoded is None:
                 stream = BytesIO()
-                self.pixels.save(stream, 'PNG')
+                self.pixels.save(stream, 'PNG', compress_level=1)    # in-process: speed over size
                 self.encoded = base64.b64encode(stream.getvalue()).decode('ascii')
             record['png'] = self.encoded
         else:
@@ -334,8 +340,11 @@ class Surface:
     def get_bounding_rect(self, min_alpha=1):
         """pygame's: the smallest rectangle holding every pixel whose alpha is at least `min_alpha` (the HD screens
         place text by its ink)."""
-        alpha = raster(self.snapshot()).getchannel('A').point(lambda a: 255 if a >= min_alpha else 0)
-        box = alpha.getbbox()
+        node = self.snapshot()
+        if min_alpha not in node.bounds:
+            alpha = raster(node).getchannel('A').point(lambda a: 255 if a >= min_alpha else 0)
+            node.bounds[min_alpha] = alpha.getbbox()
+        box = node.bounds[min_alpha]
         return Rect(0, 0, 0, 0) if box is None else Rect(box[0], box[1], box[2] - box[0], box[3] - box[1])
 
     def subsurface(self, rect):
@@ -468,8 +477,14 @@ class Draw:
 class Transform:
     @staticmethod
     def color_matrix(surface, matrix):
-        return Surface.from_node(Node(surface.get_size(),
-            (dict(kind='color_matrix', source=surface.snapshot(), matrix=matrix),)))
+        """The host's RGB matrix: three rows, or Pillow's 12-value convert matrix (a row and its offset per channel,
+        rounded as Pillow does: the HD pause overlay's sepia, once over the whole frame when the menu opens)."""
+        op = dict(kind='color_matrix', source=surface.snapshot(), matrix=matrix)
+        if len(matrix) == 12:
+            op.update(matrix=tuple(tuple(matrix[i:i + 3]) for i in (0, 4, 8)), offset=tuple(matrix[3::4]))
+        result = Surface.from_node(Node(surface.get_size(), (op,)))
+        result.opaque = True
+        return result
 
     @staticmethod
     def _scale(surface, size, smooth):
@@ -551,6 +566,10 @@ def raster(node):
         if kind == 'color_matrix':
             from ..color_transform import transform_rgb
             source = raster(op['source']).convert('RGB')
+            if 'offset' in op:      # Pillow's own convert(matrix): the HD pause overlay's sepia
+                flat = tuple(value for row, offset in zip(op['matrix'], op['offset']) for value in (*row, offset))
+                image = source.convert('RGB', flat).convert('RGBA')
+                continue
             image = Image.frombytes('RGB', node.size,
                                     transform_rgb(source.tobytes(), op['matrix'])).convert('RGBA')
             continue
@@ -638,9 +657,22 @@ class ImageAPI:
     def __init__(self, icon_path):
         self.icon_path = icon_path
 
-    @staticmethod
-    def frombytes(data, size, mode):
-        return Surface.from_pixels(Image.frombytes(mode, size, data))
+    # Pixels already made into a surface, by their bytes object: an atlas frame read every frame (the side panels'
+    # bars, the Continue arrow, Faceplace emoticons) stays one node, not a new PNG for the host each frame.
+    _from_bytes = {}
+
+    @classmethod
+    def frombytes(cls, data, size, mode):
+        if type(data) is not bytes:
+            return Surface.from_pixels(Image.frombytes(mode, size, data))
+        key = id(data), tuple(size), mode
+        kept = cls._from_bytes.pop(key, None)
+        if kept is None or kept[0] is not data:
+            kept = data, Surface.from_pixels(Image.frombytes(mode, size, data))
+        cls._from_bytes[key] = kept
+        while len(cls._from_bytes) > 512:
+            del cls._from_bytes[next(iter(cls._from_bytes))]
+        return kept[1].copy()
 
     @staticmethod
     def load(source):
@@ -671,25 +703,39 @@ class ImageAPI:
 
 
 class FrameEncoder:
+    """Each frame's graph for the host: only nodes it does not hold yet, and the ones no longer drawn to release.
+    The shared app redraws its layers every frame, so a surface drawn the same way as last frame (the same ops over
+    the same sources) is a new node with last frame's content: it is sent as last frame's node, and the host does not
+    raster it again (an idle menu, every layer but the one a typing line changes)."""
     def __init__(self):
         self.previous = set()
+        self.drawn = {}             # an op node's drawing (size, ops with its sources' identifiers) -> its identifier
 
     def encode(self, surface):
-        nodes, visited = [], set()
+        nodes, visited, drawn, same = [], set(), {}, {}
+
         def visit(node):
-            if node.identifier in visited:
-                return
-            visited.add(node.identifier)
-            for op in node.ops:
-                if 'source' in op:
-                    visit(op['source'])
-            if node.identifier not in self.previous:
-                nodes.append(node.record())
-        root = surface.snapshot()
-        visit(root)
+            if node.identifier in same:
+                return same[node.identifier]
+            if node.pixels is not None:
+                identifier, record = node.identifier, None
+            else:
+                ops = [dict(op, source=visit(op['source'])) if 'source' in op else op for op in node.ops]
+                key = repr((node.size, ops))
+                identifier = drawn.get(key) or self.drawn.get(key) or node.identifier
+                drawn[key] = identifier
+                record = dict(id=identifier, size=node.size, ops=ops)
+            same[node.identifier] = identifier
+            if identifier not in visited:
+                visited.add(identifier)
+                if identifier not in self.previous:
+                    nodes.append(record if record is not None else node.record())
+            return identifier
+
+        root = visit(surface.snapshot())
         released = sorted(self.previous - visited)
-        self.previous = visited
-        return dict(root=root.identifier, nodes=nodes, release=released)
+        self.previous, self.drawn = visited, drawn
+        return dict(root=root, nodes=nodes, release=released)
 
 
 class PlatformFont:
@@ -742,6 +788,14 @@ class PlatformFont:
         result = self.bridge(dict(operation='text', face=self.face, size=self.points, text=text, color=rgba(color),
                                   left=left))
         return ImageAPI.load(BytesIO(base64.b64decode(result['png'])))
+
+    @lru_cache(maxsize=512)
+    def stroked(self, text, layers):
+        """vector_text's fill-and-stroke glyph on CoreText (`layers`: (width in pixels, colour, filled), drawn in order;
+        a width strokes with mitered joins): (surface, left, top) from the pen on the baseline, y down."""
+        result = self.bridge(dict(operation='stroked', face=self.face, size=self.points, text=text,
+                                  layers=[dict(width=width, color=rgba(color), fill=fill) for width, color, fill in layers]))
+        return ImageAPI.load(BytesIO(base64.b64decode(result['png']))), result['left'], result['top']
 
 
 class Fonts:
