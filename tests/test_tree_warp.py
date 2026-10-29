@@ -356,6 +356,33 @@ class DesktopWarpTests(unittest.TestCase):
             self.ui.handle_event(event)                                 # a plain tap still warps
         self.assertIn('First scene', self.text())
 
+    def test_a_flicked_tree_glides_on_and_the_touch_that_stops_it_does_not_warp(self):
+        """Momentum on touch screens (owner's report from Android): HD's tree is a UIScrollView."""
+        from unittest.mock import patch
+        from exp_runtime import momentum
+        pygame, clock = self.pygame, [0]
+        panels = self.ui.side_panels
+        panels.tree_rect, panels.tree_scale, panels.tree_scroll, panels.tree_scroll_x = pygame.Rect(0, 0, 200, 700), 2.0, 100.0, 0.0
+        node_rect = next(rect for rect, target in panels.tree_targets if target[0] == 'node')
+        x, y = node_rect.center
+        with patch.object(momentum, 'ENABLED', True), patch.object(momentum, '_now', lambda: clock[0]):
+            self.ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(x, y), button=1))
+            for clock[0], dy in ((20, 20), (40, 40), (60, 60)):
+                self.ui.handle_event(pygame.event.Event(pygame.MOUSEMOTION, pos=(x, y + dy), rel=(0, 20), buttons=(1, 0, 0)))
+            self.ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, pos=(x, y + 60), button=1))
+            self.assertEqual(panels.tree_scroll, 70.0)
+            clock[0] = 100
+            self.ui.tick(16)
+            self.assertLess(panels.tree_scroll, 70.0)                   # still moving up the tree
+            for event in (pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=node_rect.center, button=1),
+                          pygame.event.Event(pygame.MOUSEBUTTONUP, pos=node_rect.center, button=1)):
+                self.ui.handle_event(event)
+            self.assertIn('Third scene', self.text())                   # caught, not warped
+            caught = panels.tree_scroll
+            clock[0] = 200
+            self.ui.tick(16)
+            self.assertEqual(panels.tree_scroll, caught)
+
     def test_only_scenes_on_the_followed_story_are_warp_targets(self):
         view = self.ui.session.engine.dt_view
         first = view.by_serial(1)
