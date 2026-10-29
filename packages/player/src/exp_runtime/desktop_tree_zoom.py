@@ -19,14 +19,15 @@ Zooming in during the story also brings up the pause menu (`invokePauseMenu`, wi
 `open_pause`), and every toggle plays 8017. The pause menu is drawn on the game, which is off the screen, so it shows
 once the tree is put back. A warp closes the zoom (`closeDTZ`, from `warpToNode:`).
 
-ENABLED switches the exploration on (owner, 2026-10-29: to judge it, perhaps for phones, where landscape makes the
-game small). MARKER is the temporary tab art: HD has none.
+ENABLED switches the exploration on. Off (owner, 2026-10-29): tried on desktop, too rough as it stands (the portrait
+strip shows about one scene); to be revisited for phones, where landscape makes the game small, once the Android and
+iOS ports are ready for outside testing. MARKER is the temporary tab art: HD has none.
 """
 import math
 
 from . import graphics as pygame
 
-ENABLED = True
+ENABLED = False
 DURATION_MS = 500                       # `setAnimationDuration: 0.5`
 MARKER = (255, 0, 200, 150)             # temporary: HD draws nothing
 MARKER_EDGE = (255, 255, 255)
