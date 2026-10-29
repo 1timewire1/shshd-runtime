@@ -45,11 +45,30 @@ final class GameCanvasView: UIView, UIKeyInput {
     }()
     override init(frame: CGRect) {
         super.init(frame: frame)
-        layer.addSublayer(frameLayer)
+        setUp()
     }
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        setUp()
+    }
+    // HD's story tree is a UIScrollView, zoomed with UIKit's own pinch: the same recognizer here, its steps sent to
+    // the shared app (ios.Host pinch: SidePanels.zoom_tree about the fingers' midpoint, which carries the tree along).
+    // Once it recognizes, UIKit cancels the first finger's touch (`touchesCancelled`), so that drag ends.
+    private func setUp() {
         layer.addSublayer(frameLayer)
+        addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
+    }
+    @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
+        let phase: String
+        switch pinch.state {
+        case .began: phase = "began"
+        case .changed: phase = "changed"
+        case .ended, .cancelled, .failed: phase = "ended"
+        default: return
+        }
+        let p = point(pinch.location(in: self))
+        send?(["kind": "pinch", "phase": phase, "scale": Double(pinch.scale), "point": [p.x, p.y]])
+        pinch.scale = 1                 // each step's own factor, not the gesture's running one
     }
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -62,6 +81,7 @@ final class GameCanvasView: UIView, UIKeyInput {
     private var start: CGPoint?
     private var previous: CGPoint?
     private var dragging = false
+    private var tracked: UITouch?       // the one finger the app follows (a second one is the pinch's)
     var hasText: Bool { true }
     override var canBecomeFirstResponder: Bool { true }
     var autocorrectionType: UITextAutocorrectionType = .no
@@ -89,21 +109,28 @@ final class GameCanvasView: UIView, UIKeyInput {
     private func units(_ distance: CGFloat) -> CGFloat { distance * 720 / max(1, viewport.height) }
 
     // A touch in the frame's pixels (the app's window coordinates; the shared app maps them to its own canvases).
-    private func point(_ touch: UITouch) -> CGPoint {
-        let p = touch.location(in: self), v = viewport, frame = frameSize
+    private func point(_ touch: UITouch) -> CGPoint { point(touch.location(in: self)) }
+    private func point(_ p: CGPoint) -> CGPoint {
+        let v = viewport, frame = frameSize
         return CGPoint(x: (p.x - v.minX) * frame.width / v.width, y: (p.y - v.minY) * frame.height / v.height)
     }
 
-    private func pointer(_ kind: String, _ p: CGPoint) { send?(["kind": kind, "point": [p.x, p.y], "generation": touchGeneration]) }
+    // `time`: when UIKit saw the touch (ms of system uptime, CACurrentMediaTime's clock), not when the frame read it:
+    // a flick's speed (momentum.py) comes from these, as UIScrollView's does.
+    private func pointer(_ kind: String, _ p: CGPoint, _ touch: UITouch) {
+        send?(["kind": kind, "point": [p.x, p.y], "generation": touchGeneration, "time": touch.timestamp * 1000])
+    }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
+        if let old = tracked, old.phase == .ended || old.phase == .cancelled { tracked = nil }   // ended unseen
+        guard tracked == nil, let touch = touches.first else { return }
+        tracked = touch
         let p = point(touch)
         touchGeneration = generation
         start = p; previous = p; dragging = false
-        if !scrollable { pointer("down", p) }
+        if !scrollable { pointer("down", p, touch) }
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, let first = start, let last = previous else { return }
+        guard let touch = tracked, touches.contains(touch), let first = start, let last = previous else { return }
         let p = point(touch)
         if scrollable {
             let scale = frameSize.height / max(1, viewport.height)      // frame pixels per view point
@@ -111,18 +138,20 @@ final class GameCanvasView: UIView, UIKeyInput {
             if dragging {
                 send?(["kind": "scroll", "delta": units((p.y - last.y) / scale) / 52.5, "generation": touchGeneration])
             }
-        } else { pointer("move", p) }
+        } else { pointer("move", p, touch) }
         previous = p
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, let first = start else { return }
+        guard let touch = tracked, touches.contains(touch), let first = start else { return }
+        tracked = nil
         let p = point(touch)
-        if scrollable && !dragging { pointer("down", first); pointer("up", p) }
-        else if !scrollable { pointer("up", p) }
+        if scrollable && !dragging { pointer("down", first, touch); pointer("up", p, touch) }
+        else if !scrollable { pointer("up", p, touch) }
         start = nil; previous = nil
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        send?(["kind": "cancel"]); start = nil; previous = nil
+        guard let touch = tracked, touches.contains(touch) else { return }
+        send?(["kind": "cancel"]); start = nil; previous = nil; tracked = nil
     }
     func insertText(_ text: String) {
         if text == "\n" { send?(["kind": "key", "key": "return", "generation": generation]) }
@@ -360,7 +389,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         super.viewDidLoad()
         view.backgroundColor = .black
         canvas.backgroundColor = view.backgroundColor
-        canvas.isMultipleTouchEnabled = false
+        canvas.isMultipleTouchEnabled = true     // the pinch's second finger (GameCanvasView follows only one)
         canvas.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(canvas)
         NSLayoutConstraint.activate([
@@ -424,6 +453,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         var body = operation.merging(["audio_playing": audio.playing, "audio_positions": audio.positions,
                                       "vibration_available": NativeVibration.available]) { _, value in value }
         body["timing"] = ["engine_ms": engineMs, "render_ms": renderMs]
+        body["now"] = now * 1000         // the touches' clock (their `time`), for momentum.py
         // The app draws at the view's own pixel size (the iPad mini's 1536 x 2048), not a stretched 540 x 720 frame.
         // The simulator check keeps the app's default window: its taps are placed for that size.
         let pixels = canvas.pixelSize

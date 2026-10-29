@@ -90,6 +90,8 @@ class Host:
         self.staging = []
         self.last_active = True
         self.view_size = None           # the view's pixel size, as Swift last sent it
+        self.clock_offset = None        # pygame's ticks less Swift's clock (touch times), from the last frame
+        self.pinch_at = None            # the pinch's last midpoint while it zooms the story tree, else None
         self.panels_view = None         # [game, 'asked' | 'landscape', ms asked] while a game's side panels are open
         self.app.fixed_window = True    # the window is the view: the side panels never widen it (landscape holds them)
         self.app.render()
@@ -186,6 +188,13 @@ class Host:
     def _event(self, event):
         b = self.backend
         kind = event['kind']
+        if kind in ('down', 'up', 'move') and 'time' in event and self.clock_offset is not None:
+            from .. import momentum
+            momentum.EVENT_TIME = min(b.ticks, float(event['time']) + self.clock_offset)
+            try:
+                return self._event({key: value for key, value in event.items() if key != 'time'})
+            finally:
+                momentum.EVENT_TIME = None
         if kind in ('down', 'up', 'move'):
             position = tuple(event['point'])
             b.pointer = position if kind != 'up' else (-1, -1)
@@ -204,9 +213,38 @@ class Host:
             b.pointer = (-1, -1)
             self.app.cancel_pointer()
             return
+        elif kind == 'pinch':
+            self.pinch(event)
+            return
         else:
             raise ValueError(f'Unsupported iOS input: {kind}')
         self.app.handle_event(event)
+
+    def pinch(self, event):
+        """UIKit's pinch (Swift's recognizer; HD's story tree is a UIScrollView zoomed by one): begun on the tree, it
+        zooms about the fingers' midpoint (SidePanels.zoom_tree, desktop's wheel) by each step's factor, and that point
+        carries the tree along, wherever the fingers go after. Android's two-finger pinch does the same."""
+        import math
+        game = self.app.game if self.app.screen == 'game' else None
+        panels = getattr(game, 'side_panels', None) if game is not None and game.panels_open else None
+        centre = tuple(event['point'])
+        if event['phase'] == 'began':
+            self.pinch_at = None
+            if panels is not None and panels.tree_rect is not None and panels.tree_rect.collidepoint(centre):
+                game.tree_drag = None           # the first finger's drag ends once the second lands
+                game.tree_fling.stop()
+                self.pinch_at = centre
+            return
+        if event['phase'] == 'ended' or self.pinch_at is None or panels is None or panels.tree_rect is None:
+            self.pinch_at = None
+            return
+        scale = float(event['scale'])
+        if scale > 0:
+            panels.zoom_tree(math.log(scale) / math.log(panels.ZOOM_STEP), centre)
+        s = panels.tree_scale or 1.0
+        cx, cy = self.pinch_at
+        panels.scroll_tree(-(centre[1] - cy) / s, -(centre[0] - cx) / s)
+        self.pinch_at = centre
 
     def active(self, value):
         if value == self.last_active:
@@ -286,6 +324,9 @@ class Host:
             raise ValueError(f'Unsupported iOS operation: {operation}')
         elapsed = max(0, int(message.get('elapsed', 0))) if self.last_active else 0
         self.backend.ticks += elapsed
+        if 'now' in message:
+            # Touch times (Swift's clock) to pygame's: this frame's ticks are Swift's `now`.
+            self.clock_offset = self.backend.ticks - float(message['now'])
         self.handle_events(message.get('events', ()))
         self.app.tick(elapsed)
         orientation = self.panels_orientation(elapsed)

@@ -114,6 +114,48 @@ class IosWindowTests(unittest.TestCase):
         game.panels_open = False                                             # switched off from the menu
         self.assertEqual(host.panels_orientation(16), 'release')
 
+    def test_a_flick_read_in_one_frame_keeps_its_touches_times(self):
+        """UIKit's touch times reach momentum.py on the game's clock: a slow frame can hold a whole flick, and read
+        at the frame's time its moves were all at once, so it never glided (owner's report)."""
+        from exp_runtime import momentum
+        host = self.host()
+        seen = []
+        host.app.handle_event = lambda event: seen.append(momentum._now())
+        host.request(dict(operation='frame', elapsed=16, size=[768, 992], now=50_000.0, events=[]))
+        ticks = host.backend.ticks
+        host.request(dict(operation='frame', elapsed=200, size=[768, 992], now=50_200.0, events=[
+            dict(kind='down', point=[100, 500], time=50_020.0), dict(kind='move', point=[100, 400], time=50_060.0),
+            dict(kind='move', point=[100, 300], time=50_100.0), dict(kind='up', point=[100, 300], time=50_110.0)]))
+        self.assertEqual(seen, [ticks + 20, ticks + 60, ticks + 100, ticks + 110])
+        self.assertIsNone(momentum.EVENT_TIME)                          # the frame's own clock again afterwards
+
+    def test_a_pinch_begun_on_the_tree_zooms_it_about_the_fingers_and_carries_it(self):
+        """UIKit's pinch (HD's tree is a UIScrollView): each step zooms by its factor about the midpoint, which then
+        drags the tree; a pinch begun off the tree leaves it alone."""
+        import math
+        from types import SimpleNamespace
+        from exp_runtime.platforms.drawing import Rect
+        host = self.host()
+        calls = []
+        panels = SimpleNamespace(tree_rect=Rect(0, 0, 200, 700), tree_scale=2.0, ZOOM_STEP=1.15,
+                                 zoom_tree=lambda notches, at: calls.append(('zoom', round(notches, 6), at)),
+                                 scroll_tree=lambda down, across=0.0: calls.append(('scroll', down, across)))
+        game = SimpleNamespace(panels_open=True, side_panels=panels, tree_drag=['held'],
+                               tree_fling=SimpleNamespace(stop=lambda: calls.append(('stop',))))
+        host.app.game, host.app.screen = game, 'game'
+        self.addCleanup(setattr, host.app, 'game', None)
+        host._event(dict(kind='pinch', phase='began', scale=1.0, point=[100, 300]))
+        self.assertIsNone(game.tree_drag)
+        host._event(dict(kind='pinch', phase='changed', scale=1.15, point=[110, 320]))
+        host._event(dict(kind='pinch', phase='ended', scale=1.0, point=[110, 320]))
+        host._event(dict(kind='pinch', phase='changed', scale=2.0, point=[110, 320]))     # over: nothing
+        self.assertEqual(calls, [('stop',), ('zoom', round(math.log(1.15) / math.log(1.15), 6), (110, 320)),
+                                 ('scroll', -10.0, -5.0)])
+        calls.clear()
+        host._event(dict(kind='pinch', phase='began', scale=1.0, point=[500, 300]))       # beside the tree
+        host._event(dict(kind='pinch', phase='changed', scale=1.5, point=[500, 300]))
+        self.assertEqual(calls, [])
+
     def test_slow_frames_are_summarised_in_the_runtime_log(self):
         """The owner's iPad is the only place its slowness shows: a span with a slow frame writes one summary line
         (Swift's timings with it); a smooth span writes nothing."""
