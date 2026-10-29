@@ -140,12 +140,13 @@ class Host:
 
     def panels_orientation(self, elapsed):
         """The side panels want landscape (the iPad's 4:3 holds them beside the game): turning them on in portrait
-        asks the system to rotate ('landscape' for Swift), without locking it. Turned back to portrait afterwards,
-        or not turned within PANELS_ROTATE_MS, the panels switch off."""
+        asks Swift to turn the app ('landscape'), which holds landscape until the iPad itself is turned, then follows
+        the device again. Turned back to portrait afterwards, or not turned within PANELS_ROTATE_MS, the panels switch
+        off, and 'release' hands rotation back (a hold the iPad was never turned for ends there too)."""
         game = self.app.game if self.app.screen == 'game' else None
         if game is None or not game.panels_open or self.view_size is None:
-            self.panels_view = None
-            return None
+            released, self.panels_view = self.panels_view is not None, None
+            return 'release' if released else None
         width, height = self.view_size
         state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
         if width > height:
@@ -158,6 +159,7 @@ class Host:
         if state[1] == 'landscape' or state[2] >= PANELS_ROTATE_MS:
             game.toggle_panels()
             self.panels_view = None
+            return 'release'
         return None
 
     def _end_copying(self):

@@ -102,12 +102,17 @@ class IosWindowTests(unittest.TestCase):
         self.assertIsNone(host.panels_orientation(16))
         self.assertTrue(game.panels_open)
         host.view_size = (1536, 2048)
-        host.panels_orientation(16)
+        self.assertEqual(host.panels_orientation(16), 'release')
         self.assertFalse(game.panels_open)                                   # turned back: off
+        self.assertIsNone(host.panels_orientation(16))                       # released once
         game.panels_open = True
         self.assertEqual(host.panels_orientation(16), 'landscape')
-        host.panels_orientation(PANELS_ROTATE_MS)
+        self.assertEqual(host.panels_orientation(PANELS_ROTATE_MS), 'release')
         self.assertFalse(game.panels_open)                                   # never turned: off
+        game.panels_open = True
+        self.assertEqual(host.panels_orientation(16), 'landscape')
+        game.panels_open = False                                             # switched off from the menu
+        self.assertEqual(host.panels_orientation(16), 'release')
 
     def test_a_storys_link_goes_to_the_host(self):
         """A script link (a novel's "Yes, please!") and the Faceplace wall's go to the host's `open_url`, which opens

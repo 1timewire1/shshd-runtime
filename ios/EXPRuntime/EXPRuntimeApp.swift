@@ -3,8 +3,19 @@ import UniformTypeIdentifiers
 import AVFAudio
 import AudioToolbox
 
+// The orientations the app allows. A SwiftUI app's own view controller is not the window's root, so its
+// supportedInterfaceOrientations is never asked: the app delegate's answer is (RuntimeController.requestLandscape).
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    static var orientations: UIInterfaceOrientationMask = .all
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        AppDelegate.orientations
+    }
+}
+
 @main
 struct EXPRuntimeApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene {
         WindowGroup { RuntimeView().background(Color.black.ignoresSafeArea()).ignoresSafeArea(.keyboard) }
     }
@@ -340,6 +351,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var verifying = false
     private var verificationReport: [String: Any] = [:]
     private var verificationChecks: [String] = []
+    private var holdingLandscape = false    // the side panels' landscape, held until the iPad is turned (requestLandscape)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -480,7 +492,11 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if let link = result["open_url"] as? String, let url = URL(string: link) {
                         UIApplication.shared.open(url)
                     }
-                    if result["orientation"] as? String == "landscape" { self.requestLandscape() }
+                    switch result["orientation"] as? String {
+                    case "landscape": self.requestLandscape()
+                    case "release": self.releaseOrientation()
+                    default: break
+                    }
                     if let request = result["update_request"] as? [String: Any] {
                         self.fetchRelease(request)
                     }
@@ -541,14 +557,45 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         }
     }
 
-    // The side panels were turned on in portrait: turn the interface to landscape once. Rotation stays free (every
-    // orientation stays supported), so turning the iPad back to portrait is how the panels go off (ios.Host).
+    // The side panels were turned on in portrait: the interface turns to landscape and stays there (only landscape is
+    // allowed) until the iPad itself is held sideways; from then it follows the device again, so turning it back to
+    // portrait is how the panels go off (ios.Host). A request with every orientation allowed was ignored: the iPad
+    // was still held upright. iPadOS only turns a full-screen app (Info.plist UIRequiresFullScreen).
     private func requestLandscape() {
-        guard let scene = view.window?.windowScene else { return }
+        guard !holdingLandscape, let scene = view.window?.windowScene else { return }
+        holdingLandscape = true
+        AppDelegate.orientations = .landscape
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        NotificationCenter.default.addObserver(self, selector: #selector(deviceTurned),
+                                               name: UIDevice.orientationDidChangeNotification, object: nil)
         if #available(iOS 16.0, *) {
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { _ in }
+            view.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { [weak self] error in
+                DispatchQueue.main.async {
+                    self?.requests.append(["operation": "message",
+                                           "text": "Side panels could not turn to landscape: \(error.localizedDescription)"])
+                }
+            }
         } else {
             UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            UIViewController.attemptRotationToDeviceOrientation()
+        }
+    }
+
+    @objc private func deviceTurned() {
+        if UIDevice.current.orientation.isLandscape { releaseOrientation() }
+    }
+
+    // The iPad was turned to landscape, or the panels went off: every orientation is allowed again.
+    private func releaseOrientation() {
+        guard holdingLandscape else { return }
+        holdingLandscape = false
+        NotificationCenter.default.removeObserver(self, name: UIDevice.orientationDidChangeNotification, object: nil)
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        AppDelegate.orientations = .all
+        if #available(iOS 16.0, *) {
+            view.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        } else {
             UIViewController.attemptRotationToDeviceOrientation()
         }
     }
