@@ -30,7 +30,7 @@ except ImportError:
     HdFootballRenderer = HdWordRenderer = None
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
-from . import desktop_tree_zoom, frame_log, scene_fade
+from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
@@ -287,6 +287,7 @@ class Desktop:
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
         self.pause_hd = HdPauseMenu(session.resources)
+        self.tree_fling, self.wall_fling = momentum.Fling(), momentum.Fling()   # released drags gliding on
         if self.dialogue_renderer.game_id() == 'cod':
             # Cause of Death's own Pause / Options / Help & About (its menu engine windows in its own art).
             from .desktop_cod_pause import CodPauseMenu
@@ -2540,6 +2541,7 @@ class Desktop:
         if event.type == pygame.MOUSEWHEEL:
             if not area.collidepoint(pygame.mouse.get_pos()):
                 return False
+            self.tree_fling.stop()
             if pygame.key.get_mods() & pygame.KMOD_SHIFT:          # shift: the wheel scrolls instead of zooming
                 panels.scroll_tree(-event.y * 40 / s, event.x * 40 / s)
             else:
@@ -2550,7 +2552,8 @@ class Desktop:
             panels.reset_tree_zoom()                               # the middle button fits the tree to the panel again
             return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and area.collidepoint(event.pos):
-            self.tree_drag = [event.pos, (panels.tree_scroll, panels.tree_scroll_x), False]
+            # A touch that catches the gliding tree only stops it; it is not a tap on the scene under it.
+            self.tree_drag = [event.pos, (panels.tree_scroll, panels.tree_scroll_x), self.tree_fling.stop()]
             return True
         elif event.type == pygame.MOUSEMOTION and self.tree_drag:
             (x, y), (down, across) = event.pos, (self.tree_drag[0], self.tree_drag[1])
@@ -2560,9 +2563,12 @@ class Desktop:
                 panels.tree_scroll = across[0] - (y - down[1]) / s
                 panels.tree_scroll_x = across[1] - (x - down[0]) / s
                 panels.tree_follow = False
+                self.tree_fling.track(panels.tree_scroll, panels.tree_scroll_x)
                 return True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.tree_drag:
             dragged, self.tree_drag = self.tree_drag[2], None
+            if dragged:
+                self.tree_fling.release()
             return dragged
         return False
 
@@ -2583,10 +2589,12 @@ class Desktop:
         if event.type == pygame.MOUSEWHEEL:
             if not area.collidepoint(pygame.mouse.get_pos()):
                 return False
+            self.wall_fling.stop()
             panels.scroll_wall(-event.y * 40 / s)
             return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and area.collidepoint(event.pos):
-            self.wall_drag = [event.pos, panels.wall_scroll, False]
+            # As the tree's: catching the gliding wall is not a tap on a link.
+            self.wall_drag = [event.pos, panels.wall_scroll, self.wall_fling.stop()]
             return True
         if event.type == pygame.MOUSEMOTION and self.wall_drag:
             down = self.wall_drag[0]
@@ -2595,9 +2603,12 @@ class Desktop:
             if self.wall_drag[2]:
                 panels.wall_scroll = self.wall_drag[1] - (event.pos[1] - down[1]) / s
                 panels.wall_scrolled_at = pygame.time.get_ticks()
+                self.wall_fling.track(panels.wall_scroll)
                 return True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self.wall_drag:
             dragged, self.wall_drag = self.wall_drag[2], None
+            if dragged:
+                self.wall_fling.release()
             if not dragged:
                 url = next((url for rect, url in panels.wall_targets if rect.collidepoint(event.pos)), None)
                 if url:
@@ -2731,7 +2742,23 @@ class Desktop:
         frame = self.bg_viewport.clip(self.window.get_rect())
         return pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
 
+    def _coast_panels(self):
+        """Each frame: the story tree and the wall gliding on after a drag (momentum); the panels' own clamps end a
+        glide at an edge."""
+        panels = getattr(self, 'side_panels', None)
+        if panels is None:
+            return
+        values = self.tree_fling.step(panels.tree_scroll, panels.tree_scroll_x)
+        if values is not None:
+            (panels.tree_scroll, panels.tree_scroll_x), panels.tree_follow = values, False
+        values = self.wall_fling.step(panels.wall_scroll)
+        if values is not None:
+            panels.wall_scroll, = values
+            panels.wall_scrolled_at = pygame.time.get_ticks()
+
     def tick(self, elapsed_ms):
+        if self.active:
+            self._coast_panels()
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)

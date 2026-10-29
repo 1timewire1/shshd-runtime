@@ -300,6 +300,7 @@ class HdEpisodeList(HdEpisodePicker):
     def draw(self, *, backdrop=True):
         """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points). With
         `backdrop` off it renders onto a transparent layer instead (`begin_layer`)."""
+        self.coast()
         self.clamp()
         layer = self.begin_layer(backdrop, dim=self.card is None)
         self.hits = []
