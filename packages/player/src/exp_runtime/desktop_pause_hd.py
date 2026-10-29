@@ -185,11 +185,18 @@ class HdPauseMenu:
         except AttributeError:
             return None
 
+    _available = None
+
     def available(self):
-        try:
-            return all(self.raw(i) is not None for i in (15, 32, 155)) and pygame.font.match_font('arial', bold=True)
-        except (AttributeError, KeyError):
-            return False
+        # Asked every frame while paused; the bundle and fonts stay as they are for the episode (a font lookup took
+        # ~1.7 ms a frame on a phone).
+        if self._available is None:
+            try:
+                self._available = bool(all(self.raw(i) is not None for i in (15, 32, 155))
+                                       and pygame.font.match_font('arial', bold=True))
+            except (AttributeError, KeyError):
+                self._available = False
+        return self._available
 
     @lru_cache(maxsize=1)
     def strings(self):
