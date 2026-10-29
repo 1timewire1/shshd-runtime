@@ -367,18 +367,26 @@ class SidePanels:
             top += step
         return top
 
-    def not_supported(self, panel, message, s, bar):
+    def not_supported(self, panel, message, s, bar, shape=PANEL):
         if bar:
             panel.blit(self.frame(DARK_BAR, (panel.get_width(), round(48 * s))), (0, panel.get_height() - round(48 * s)))
-        self.centered(panel, 'ArialMT14', 12, message, PANEL[0] / 2, PANEL[1] / 2 - 12, PANEL[0] - 24, NA_COLOR, s)
+        self.centered(panel, 'ArialMT14', 12, message, shape[0] / 2, shape[1] / 2 - 12, shape[0] - 24, NA_COLOR, s)
 
     # -- the story tree -------------------------------------------------
     BLANK = 2                   # pack-155 frame of a title / footer bar with nothing to offer
 
+    # The tree view's shape in points: the side column (PANEL), or HD's portrait strip (`SHSDTView
+    # setupViewOrientation_internal:` case 1: 768 x 224, desktop_tree_zoom.py), which has no divider.
+    tree_shape = PANEL
+
+    def _tree_divider(self):
+        return DIVIDER_WIDTH if self.tree_shape[0] < self.tree_shape[1] else 0.0
+
     def draw_tree(self, window, session, progress, rect):
         dt = session.engine.dt_view
-        s = rect.height / PANEL[1]
-        panel = pygame.Surface((round(PANEL[0] * s), rect.height)).convert()
+        shape_w, shape_h = self.tree_shape
+        s = rect.height / shape_h
+        panel = pygame.Surface((round(shape_w * s), rect.height)).convert()
         origin = (rect.right - panel.get_width() - round(rect.width * (1 - progress)), rect.y)
         self.tree_targets = []
         self._origin, self._scale = origin, s
@@ -389,7 +397,8 @@ class SidePanels:
         if enabled:
             if dt.root is not None:
                 self._tree(panel, dt, s)
-            content = round((PANEL[0] - DIVIDER_WIDTH) * s)
+            content_w = shape_w - self._tree_divider()
+            content = round(content_w * s)
             # Rewind needs a scene before the current one, Fast Forward one after it that is on the story followed; a bar
             # with nothing to go to is drawn empty and does nothing (`SHSDTTitleOverView` / `SHSDTHelpOverView drawRect:`).
             # While warping is locked (`SHSEngine +0x6490a`, until Football Season is finished) both show anyway (Rewind
@@ -399,7 +408,7 @@ class SidePanels:
             child = dt.real_child(current) if current is not None else None
             usable = {STR_REWIND: current is not None and (parent is not None or self.warp_locked),
                       STR_FAST_FORWARD: (child is not None and child.active) or self.warp_locked}
-            for index, key, top in ((REWIND, STR_REWIND, 0), (FAST_FORWARD, STR_FAST_FORWARD, PANEL[1] - BAR)):
+            for index, key, top in ((REWIND, STR_REWIND, 0), (FAST_FORWARD, STR_FAST_FORWARD, shape_h - BAR)):
                 shown = usable[key]
                 panel.blit(self.frame(index if shown else self.BLANK, (content, round(BAR * s))), (0, round(top * s)))
                 # Either way a black 1-point line closes the bar against the tree: the title view's last row (`fillRect(0,
@@ -410,12 +419,16 @@ class SidePanels:
                     self.tree_targets.append((pygame.Rect(origin[0], origin[1] + round(top * s), content, round(BAR * s)),
                                               ('rewind',) if key == STR_REWIND else ('forward',)))
                     text = self.string(key, 'Rewind' if key == STR_REWIND else 'Fast Forward')
-                    self.centered(panel, 'ArialRoundedMTBold14', 16, text, 88, top + 9, 160, (255, 255, 255), s)
-            self.divider(panel, 'left', s)
+                    # 88 in the column: 18.25 points left of its content's middle.
+                    self.centered(panel, 'ArialRoundedMTBold14', 16, text, content_w / 2 - 18.25, top + 9, 160,
+                                  (255, 255, 255), s)
+            if self._tree_divider():
+                self.divider(panel, 'left', s)
         else:
             self.not_supported(panel, self.string(STR_NO_TREE, 'The Decision Tree feature is not supported in this episode'),
-                               s, bar=False)
-            self.divider(panel, 'left', s)
+                               s, bar=False, shape=self.tree_shape)
+            if self._tree_divider():
+                self.divider(panel, 'left', s)
         window.blit(panel, origin)
 
     warp_locked = False         # the app's warp lock (`Desktop.warp_unlocked` false): both bars show (see draw_tree)
@@ -474,7 +487,7 @@ class SidePanels:
         sz = min(SZ_RANGE[1], max(SZ_RANGE[0], self.tree_sz or DT_DEFAULT_SZ))
         self.tree_sz_now = sz
         layout = self._layout_for(dt, sz)
-        width, height = PANEL[0] - DIVIDER_WIDTH, PANEL[1] - 2 * BAR
+        width, height = self.tree_shape[0] - self._tree_divider(), self.tree_shape[1] - 2 * BAR
         margin = self.TREE_MARGIN
         current = layout.by_src.get(id(dt.current)) or layout.root
         if self.tree_follow or self._followed != id(dt.current):
@@ -495,7 +508,7 @@ class SidePanels:
             w, h = frames[image][0].get_size()
             half_w, half_h = w * 0.6 * sz / node.spec.image_scale, h * 0.6 * sz / node.spec.image_scale
             cx, cy = node.x - cam_x, node.y + sz - cam_y + margin + BAR
-            if not BAR <= cy <= PANEL[1] - BAR or not -half_w <= cx <= width + half_w:
+            if not BAR <= cy <= self.tree_shape[1] - BAR or not -half_w <= cx <= width + half_w:
                 continue
             ox, oy = self._origin
             self.tree_targets.append((pygame.Rect(round(ox + (cx - half_w) * s), round(oy + (cy - half_h) * s),
