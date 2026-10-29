@@ -137,13 +137,24 @@ def capture_title_card(library, record):
     return pygame.transform.smoothscale(window, SIZE)
 
 
+# The menus' own modules (one long-lived instance each, never an episode's art) and the drawing hosts' font caches:
+# release_episode_caches leaves them. Emptied, the main menu and picker decoded their art again (on iOS, each picture
+# sent to the host again and each text drawn by CoreText again) after every preview, while the menu's intro played.
+KEPT_CACHES = frozenset(('exp_runtime.hd_ui', 'exp_runtime.hd_layout', 'exp_runtime.ui_assets',
+                          'exp_runtime.desktop_main_hd', 'exp_runtime.desktop_episode_picker', 'exp_runtime.desktop_menu',
+                          'exp_runtime.desktop_cod_main', 'exp_runtime.desktop_cod_episodes',
+                          'exp_runtime.desktop_cod_menu'))
+
+
 def release_episode_caches():
-    """Empty the instance methods' lru caches of this package's classes. Each preview runs a whole episode view
-    (Desktop, its renderers, the episode's archive), and a class-level method cache keeps every one it saw, with the
-    episode's decoded art: ~40 MB an episode, until Android stopped a first-time picker setup (~3 GB). Module
-    functions' and static methods' caches keep nothing per episode and stay."""
+    """Empty the instance methods' lru caches of this package's episode classes. Each preview runs a whole episode
+    view (Desktop, its renderers, the episode's archive), and a class-level method cache keeps every one it saw, with
+    the episode's decoded art: ~40 MB an episode, until Android stopped a first-time picker setup (~3 GB). Module
+    functions' and static methods' caches keep nothing per episode and stay, as do the menus' (KEPT_CACHES)."""
     for name, module in list(sys.modules.items()):
         if module is None or not (name == 'exp_runtime' or name.startswith('exp_runtime.')):
+            continue
+        if name in KEPT_CACHES or name.startswith('exp_runtime.platforms.'):
             continue
         for value in list(vars(module).values()):
             if not isinstance(value, type) or value.__module__ != name:

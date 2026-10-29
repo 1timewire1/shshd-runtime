@@ -256,9 +256,24 @@ class PreviewMemoryTests(unittest.TestCase):
         Renderer().art(1)
         Renderer.font(12)
         module.table(3)
+        kept = types.ModuleType('exp_runtime.platforms.test_host')
+
+        class Fonts:
+            @functools.lru_cache(maxsize=None)
+            def measure(self, text):
+                return len(text)
+
+        Fonts.__module__ = kept.__name__
+        kept.Fonts = Fonts
+        sys.modules[kept.__name__] = kept
+        self.addCleanup(sys.modules.pop, kept.__name__)
+        Fonts().measure('Mg')
         episode_thumbnails.release_episode_caches()
         self.assertEqual(Renderer.art.cache_info().currsize, 0)
         self.assertEqual((Renderer.font.cache_info().currsize, module.table.cache_info().currsize), (1, 1))
+        # The drawing hosts' text and the menus' art stay (on iOS each is a CoreText call or a picture again).
+        self.assertEqual(Fonts.measure.cache_info().currsize, 1)
+        self.assertIn('exp_runtime.hd_ui', episode_thumbnails.KEPT_CACHES)
 
 
 class TitleCardRunTests(unittest.TestCase):
