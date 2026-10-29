@@ -127,7 +127,7 @@ class IosWindowTests(unittest.TestCase):
             for elapsed in [120] + [16] * 305:
                 stats.add(dict(elapsed=elapsed, timing=dict(engine_ms=9, render_ms=40)), frame, 3.0, 'picker')
         self.assertEqual(len(logged.output), 1)
-        self.assertIn('frames (picker, 306,', logged.output[0])
+        self.assertIn('frames (picker, , 306,', logged.output[0])
         self.assertIn('interval 16.3/120.0', logged.output[0])
         self.assertIn('render 40.0/40.0', logged.output[0])
         self.assertIn('png_kb 3.0/3.0 op_mpx 1.0/1.0', logged.output[0])

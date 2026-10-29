@@ -362,7 +362,8 @@ def request(payload, directory):
     started = time.perf_counter()
     result = _host.request(message)
     if message.get('operation', 'frame') == 'frame':
-        _host.frame_stats.add(message, result, (time.perf_counter() - started) * 1000, _host.app.screen)
+        _host.frame_stats.add(message, result, (time.perf_counter() - started) * 1000, _host.app.screen,
+                              _host.app.window.get_size() if _host.app.window is not None else None)
     return json.dumps(result, separators=(',', ':'))
 
 
@@ -379,7 +380,7 @@ class FrameStats:
         self.rows = []
         self.span = 0
 
-    def add(self, message, result, python_ms, screen):
+    def add(self, message, result, python_ms, screen, size=None):
         nodes = (result.get('frame') or {}).get('nodes', ())
         timing = message.get('timing') or {}
         elapsed = max(0, int(message.get('elapsed', 0)))
@@ -396,4 +397,4 @@ class FrameStats:
         columns = list(zip(*rows))
         summary = ' '.join(f'{name} {sum(column) / len(column):.1f}/{max(column):.1f}'
                            for name, column in zip(names, columns))
-        logging.warning('frames (%s, %d, mean/max ms): %s', screen, len(rows), summary)
+        logging.warning('frames (%s, %s, %d, mean/max ms): %s', screen, 'x'.join(map(str, size or ())), len(rows), summary)

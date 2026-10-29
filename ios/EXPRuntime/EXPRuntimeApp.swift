@@ -570,7 +570,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     // The side panels were turned on in portrait: the interface turns to landscape and stays there (only landscape is
     // allowed) until the iPad itself is held sideways; from then it follows the device again, so turning it back to
     // portrait is how the panels go off (ios.Host). A request with every orientation allowed was ignored: the iPad
-    // was still held upright. iPadOS only turns a full-screen app (Info.plist UIRequiresFullScreen).
+    // was still held upright.
     private func requestLandscape() {
         guard !holdingLandscape, let scene = view.window?.windowScene else { return }
         holdingLandscape = true
