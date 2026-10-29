@@ -70,6 +70,9 @@ class Host:
         graphics.install(backend)
         # Import after installing the backend: pygame is not bundled on iOS.
         from ..application import Application
+        from .. import desktop_choice, momentum
+        desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out (as Android)
+        momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (as Android)
         self.directory = Path(directory)
         install_log(self.directory)
         self.update_future = None

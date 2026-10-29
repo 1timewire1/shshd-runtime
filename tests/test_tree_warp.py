@@ -356,6 +356,33 @@ class DesktopWarpTests(unittest.TestCase):
             self.ui.handle_event(event)                                 # a plain tap still warps
         self.assertIn('First scene', self.text())
 
+    def test_the_tree_panel_is_painted_again_only_when_something_on_it_changed(self):
+        """As the wall: repainting every scene each frame made a whole new panel each frame (slow on the iPad)."""
+        from unittest.mock import patch
+        pygame = self.pygame
+        panels, session = self.ui.side_panels, self.ui.session
+        window, rect, painted = pygame.Surface((800, 600)), pygame.Rect(0, 0, 200, 600), []
+
+        def backdrop(panel, side, enabled, s, divider):
+            painted.append(s)
+            panels.tree_targets.append((pygame.Rect(0, 60, 30, 30), ('node', session.engine.dt_view.current)))
+
+        with patch.object(session.engine.dt_view, 'enabled', True),                 patch.object(panels, '_tree', lambda *a: None), patch.object(panels, 'backdrop', backdrop), \
+                patch.object(panels, 'divider', lambda *a, **k: None), patch.object(panels, 'centered', lambda *a: None), \
+                patch.object(panels, 'string', lambda key, text: text), \
+                patch.object(panels, 'frame', lambda index, size: pygame.Surface(size)):
+            panels.draw_tree(window, session, 1.0, rect)
+            targets = list(panels.tree_targets)
+            panels.draw_tree(window, session, 1.0, rect)
+            self.assertEqual(len(painted), 1)
+            self.assertEqual(panels.tree_targets, targets)              # its touch areas kept with it
+            panels.scroll_tree(5)
+            panels.draw_tree(window, session, 1.0, rect)
+            session.engine.dt_view.version += 1                         # the tree itself changed
+            panels.draw_tree(window, session, 1.0, rect)
+            panels.draw_tree(window, session, 0.5, rect)                # sliding in
+            self.assertEqual(len(painted), 4)
+
     def test_a_flicked_tree_glides_on_and_the_touch_that_stops_it_does_not_warp(self):
         """Momentum on touch screens (owner's report from Android): HD's tree is a UIScrollView."""
         from unittest.mock import patch

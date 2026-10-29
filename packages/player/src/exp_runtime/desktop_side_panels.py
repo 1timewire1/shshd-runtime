@@ -378,13 +378,21 @@ class SidePanels:
     def draw_tree(self, window, session, progress, rect):
         dt = session.engine.dt_view
         s = rect.height / PANEL[1]
-        panel = pygame.Surface((round(PANEL[0] * s), rect.height)).convert()
-        origin = (rect.right - panel.get_width() - round(rect.width * (1 - progress)), rect.y)
-        self.tree_targets = []
+        size = (round(PANEL[0] * s), rect.height)
+        origin = (rect.right - size[0] - round(rect.width * (1 - progress)), rect.y)
         self._origin, self._scale = origin, s
         self.tree_scale = s
-        self.tree_rect = pygame.Rect(origin, panel.get_size())
+        self.tree_rect = pygame.Rect(origin, size)
         enabled = dt.enabled        # `script_enable`: per episode (the saved tree persists, the flag does not)
+        # As the wall: painted again only when something on it changed (the tree, its scroll or zoom, size or place).
+        # Every scene's icon and title repainted each frame made a whole new panel for the iPad to draw every frame.
+        key = self._tree_key(dt, size, origin, enabled)
+        if self._tree_painted is not None and self._tree_painted[0] == key:
+            window.blit(self._tree_painted[1], origin)
+            self.tree_targets = list(self._tree_painted[2])
+            return
+        panel = pygame.Surface(size).convert()
+        self.tree_targets = []
         self.backdrop(panel, 'left', enabled, s, divider=False)
         if enabled:
             if dt.root is not None:
@@ -417,8 +425,18 @@ class SidePanels:
                                s, bar=False)
             self.divider(panel, 'left', s)
         window.blit(panel, origin)
+        # Keyed after painting: _tree settles the scroll (following the current scene, clamping to the tree).
+        self._tree_painted = (self._tree_key(dt, size, origin, enabled), panel, list(self.tree_targets))
 
-    warp_locked = False         # the app's warp lock (`Desktop.warp_unlocked` false): both bars show (see draw_tree)
+    _tree_painted = None        # (key, the painted panel, its touch targets): the tree as last painted
+
+    def _tree_key(self, dt, size, origin, enabled):
+        """What the tree panel's pixels depend on (the layout's own key, _layout_for, covers the tree itself)."""
+        tree = (id(dt), dt.version, id(dt.root), id(dt.current), dt.last_was_result) if enabled else None
+        return (size, origin, enabled, tree, self.tree_scroll, self.tree_scroll_x, self.tree_follow, self.tree_sz,
+                self.warp_locked)
+
+    warp_locked = False        # the app's warp lock (`Desktop.warp_unlocked` false): both bars show (see draw_tree)
     tree_targets = ()           # (window rectangle, ('node', node) | ('rewind',) | ('forward',)) of the last drawn tree
     tree_rect = None            # where the tree panel was drawn (window pixels)
     tree_scroll = 0.0           # the tree's y (points) at the top of the tree view, less its top margin
