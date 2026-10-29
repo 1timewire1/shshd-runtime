@@ -13,6 +13,9 @@ os.environ.setdefault('SDL_ANDROID_BLOCK_ON_PAUSE', '0')
 # logical_size): smoothly, and to any size (pygame's SCALED reads its own spelling of the hint for that).
 os.environ.setdefault('SDL_RENDER_SCALE_QUALITY', '1')
 os.environ.setdefault('SDL_HINT_RENDER_SCALE_QUALITY', '1')
+# The HD menus draw at the frame's own resolution too, not the iPad's 2x (hd_scale): a 2x layer was four times the
+# pixels, then shrunk every frame, for a frame shown about 768 pixels across (the sound prompt took 50 ms a frame).
+os.environ.setdefault('SHSHD_HD_SCALE', '1')
 
 from exp_runtime.platforms.android import main
 
