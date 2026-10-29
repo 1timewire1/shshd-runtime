@@ -502,16 +502,28 @@ class SidePanels:
                                                   max(1, round(2 * half_w * s)), max(1, round(2 * half_h * s))),
                                       ('node', node.src)))
 
+    _wall_painted = None        # (key, the painted panel, its link targets): the wall as last painted
+
     def draw_wall(self, window, session, progress, rect):
         engine = session.engine
         s = rect.height / PANEL[1]
-        panel = pygame.Surface((round(PANEL[0] * s), rect.height)).convert()
+        size = (round(PANEL[0] * s), rect.height)
         origin = (rect.x + round(rect.width * (1 - progress)), rect.y)
         wall = engine.faceplace
         enabled = wall.enabled
-        self.wall_targets = []
-        self.wall_rect = pygame.Rect(origin, panel.get_size())
+        self.wall_rect = pygame.Rect(origin, size)
         self.wall_scale = s
+        # The wall is painted again only when something on it changed (its posts, its scroll, its size or place, the
+        # scroll indicator's fade): every row repainted each frame cost ~150 ms a frame on a phone.
+        indicator = (self.wall_scrolled_at is not None
+                     and pygame.time.get_ticks() - self.wall_scrolled_at < self.INDICATOR_SECONDS * 1000)
+        key = (size, origin, enabled, self._wall_state(engine, wall) if enabled else None, self.wall_scroll)
+        if self._wall_painted is not None and self._wall_painted[0] == key and not indicator:
+            window.blit(self._wall_painted[1], origin)
+            self.wall_targets = list(self._wall_painted[2])
+            return
+        panel = pygame.Surface(size).convert()
+        self.wall_targets = []
         self.backdrop(panel, 'right', enabled, s, divider=False)
         if enabled:
             self._wall(panel, engine, wall, s, origin)
@@ -523,6 +535,10 @@ class SidePanels:
                                s, bar=True)
             self.divider(panel, 'right', s)
         window.blit(panel, origin)
+        # Keyed after painting: _wall settles the scroll (a new post scrolls to the top, the range clamps it). Not kept
+        # while the scroll indicator fades: the next paint after it would keep its last faint frame.
+        key = key[:4] + (self.wall_scroll,)
+        self._wall_painted = None if indicator else (key, panel, list(self.wall_targets))
 
     # -- the message wall (`SHSFSView`: a scroll view, newest message on top) -----------------------------------------
 
@@ -540,11 +556,16 @@ class SidePanels:
         self.wall_scroll += points
         self.wall_scrolled_at = pygame.time.get_ticks()
 
+    @staticmethod
+    def _wall_state(engine, wall):
+        """What the wall's posts depend on: a change of it lays the rows out (and paints them) again."""
+        return (id(wall), len(wall.messages), sum(len(message.continuations) for message in wall.messages),
+                id(wall.messages[-1]) if wall.messages else None, id(engine.character_names))
+
     def _wall_layout(self, engine, wall):
         """(rows, content height): every row laid out once per change of the wall (`measureMessageHeight`); the content is
         the sum of the rows' advances (`measureAllMessagesFull`)."""
-        key = (id(wall), len(wall.messages), sum(len(message.continuations) for message in wall.messages),
-               id(wall.messages[-1]) if wall.messages else None, id(engine.character_names))
+        key = self._wall_state(engine, wall)
         if self._wall_key != key:
             self._wall_posts, self._wall_key = self._build_wall(engine, wall), key
         rows = self._wall_posts
