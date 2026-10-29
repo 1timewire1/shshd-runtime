@@ -768,7 +768,10 @@ class Application:
             self.shell.main.draw_busy(canvas, 'Preparing episodes' if self.job_kind == 'previews' else 'Importing content',
                                       self.progress_text if self.job_kind == 'previews' else 'Checking and copying your files...')
         elif self.message:
-            self.shell.main.draw_busy(canvas, self.game_title, self.message)
+            # The prompt's card with an OK button: on a phone or an iPad there is no Escape or Enter to dismiss it
+            # (the owner's g54 was left on "Added 53 episodes." with no way out).
+            rects = self.shell.windows.draw_prompt(canvas, self.game_title, self.message, ('OK',))
+            self.shell_prompt = [(rects[0], ('dismiss',))]
         elif self.update_prompt is not None:
             # Drawn by the shell's window renderer, which has each game's own footer buttons.
             commands = (('update_no',), ('update_yes',)) if self.can_quit else (('update_no',),)
@@ -1608,6 +1611,14 @@ class Application:
             elif event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
                 if self.screen == 'picker' and self.picker is not None:
                     self._picker_message_pointer(event)
+                elif self.screen == 'main' and self.shell is not None:
+                    # The HD menus' message card (render_shell): its OK button, in frame points.
+                    if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                        point = self.picker_point(event.pos)
+                        hit = next((command for rect, command in self.shell_prompt if rect.collidepoint(point)), None)
+                        if hit is not None:
+                            self._click_sound()
+                            self.command(hit)
                 else:
                     self._pointer_event(event)
             return True
