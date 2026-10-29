@@ -54,10 +54,33 @@ jobs:
           key: android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt') }}-${{ github.run_id }}
           restore-keys: |
             android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt') }}-
-      - name: Build ARM64 debug APK
+      # The release key (tools/build_android.read_signing), from the repository's secrets: every tester build carries
+      # it, so each installs over the last. Without the secrets (a fork), a debug build with the runner's own key.
+      - name: Release key
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "No release key: building a debug APK"
+            exit 0
+          fi
+          umask 077
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/signing/release.jks"
+          printf 'keystore=release.jks\nalias=%s\nstore_password=%s\nkey_password=%s\n' \
+            "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" > "$RUNNER_TEMP/signing/signing.properties"
+          echo "args=--release --signing $RUNNER_TEMP/signing/signing.properties" >> "$GITHUB_OUTPUT"
+      - name: Build APK
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
-        run: python tools/build_android.py --build
+        run: python tools/build_android.py --build ${{ steps.signing.outputs.args }}
+      - name: Remove release key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
       - uses: actions/cache/save@v4
         if: always() && !cancelled()
         with:
@@ -65,7 +88,7 @@ jobs:
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
-          name: shshd-runtime-android-arm64-debug
+          name: shshd-runtime-android
           path: |
             dist/android/*.apk
             dist/android/*.sha256

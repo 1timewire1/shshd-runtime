@@ -332,6 +332,52 @@ class RarTests(unittest.TestCase):
             self.assertEqual(list(rar._library_candidates()), ['libarchive.so'])
 
 
+class SigningTests(unittest.TestCase):
+    def test_release_builds_and_resigned_debug_builds_use_the_one_release_key(self):
+        """Every APK a tester installs carries the release key (a properties file beside the keystore): a release
+        build signed by python-for-android from its P4A_RELEASE_* environment, a debug build re-signed by apksigner
+        with the passwords in the environment, never on the command line."""
+        spec = importlib.util.spec_from_file_location('build_android', Path(__file__).resolve().parents[1]
+                                                       / 'tools/build_android.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertIn('--debug', module.build_command(Path('source'), Path('sdk'), Path('ndk')))
+        command = module.build_command(Path('source'), Path('sdk'), Path('ndk'), release=True)
+        self.assertIn('--release', command)
+        self.assertIn('--sign', command)
+        self.assertNotIn('--debug', command)
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            (root / 'release.jks').write_bytes(b'keystore')
+            properties = root / 'signing.properties'
+            properties.write_text('# the key\nkeystore=release.jks\nalias=shshd\nstore_password=secret\n')
+            signing = module.read_signing(properties)
+            self.assertEqual(signing['keystore'], (root / 'release.jks').resolve())
+            self.assertEqual(signing['key_password'], 'secret')           # the store's when absent
+            self.assertEqual(module.signing_env(signing), {
+                'P4A_RELEASE_KEYSTORE': str((root / 'release.jks').resolve()), 'P4A_RELEASE_KEYALIAS': 'shshd',
+                'P4A_RELEASE_KEYSTORE_PASSWD': 'secret', 'P4A_RELEASE_KEYALIAS_PASSWD': 'secret'})
+            for version in ('9.0.0', '35.0.0', '34.0.0'):
+                tool = root / 'sdk/build-tools' / version / 'apksigner'
+                tool.parent.mkdir(parents=True)
+                tool.write_text('')
+            with patch.object(module.subprocess, 'run') as run:
+                module.resign(root / 'app.apk', signing, root / 'sdk')
+            sign, verify = (call.args[0] for call in run.call_args_list)
+            self.assertEqual(sign[0], str(root / 'sdk/build-tools/35.0.0/apksigner'))
+            self.assertNotIn('secret', sign)
+            self.assertEqual(run.call_args_list[0].kwargs['env']['SHSHD_STORE_PASSWORD'], 'secret')
+            self.assertEqual(verify[1:], ['verify', str(root / 'app.apk')])
+            properties.write_text('keystore=release.jks\nalias=shshd\n')
+            with self.assertRaises(ValueError):
+                module.read_signing(properties)
+            properties.write_text('keystore=missing.jks\nalias=shshd\nstore_password=secret\n')
+            with self.assertRaises(ValueError):
+                module.read_signing(properties)
+        with self.assertRaises(SystemExit):                     # an unsigned release APK does not install
+            module.main(['--release'])
+
+
 class RecipeCacheTests(unittest.TestCase):
     def test_recipe_edits_preserve_other_compiled_dependencies(self):
         spec = importlib.util.spec_from_file_location('build_android', Path(__file__).resolve().parents[1]

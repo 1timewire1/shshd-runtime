@@ -72,3 +72,8 @@ DerivedData/
 *.provisionprofile
 .env
 .env.*
+
+# The Android release key (docs/ANDROID_APP.md): never committed
+*.jks
+*.keystore
+signing.properties

@@ -16,23 +16,28 @@ episodes on an Android 15 emulator; physical-device checks are pending.
 ## Build with GitHub Actions
 
 The **Android APK** workflow uses a standard Ubuntu x86-64 runner. Standard
-runners are free for public repositories. No game files, signing credentials,
-or other secrets are required. A debug APK is signed with the runner's
-development key; it is intended for sideloading, not Play Store publication.
+runners are free for public repositories. No game files are used. The APK is
+a release build signed with the project's release key, kept in four repository
+secrets: `ANDROID_KEYSTORE_BASE64` (the keystore, base64), `ANDROID_KEY_ALIAS`,
+`ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD`. Without them (a fork), the
+workflow builds a debug APK signed with the runner's own development key. It is
+intended for sideloading, not Play Store publication.
 
 1. Push the changes to a repository you control. The workflow runs on pushes
    to `android-port`. Forks may need Actions enabled first.
 2. Open **Actions → Android APK** and select the latest run. Once the workflow
    exists on the repository's default branch it can also be run manually.
-3. Download **shshd-runtime-android-arm64-debug** from the completed run's
-   artifacts. Extract it to find the APK and SHA-256 checksum.
-4. Transfer the APK to an ARM64 Android device and open it. Allow installation
+3. Download **shshd-runtime-android** from the completed run's artifacts.
+   Extract it to find the APKs (`arm64-v8a` for devices, `x86_64` for the
+   emulator) and their SHA-256 checksums.
+4. Transfer the APK to an Android device and open it. Allow installation
    from that file manager/browser when Android asks.
 
-New cloud runs may use a different debug signing key. If Android refuses an
-update due to a signature mismatch, do not uninstall without backing up any
-progress you want to keep. A persistent signing key is needed before regular
-update distribution; this initial workflow deliberately uses no private keys.
+Every build signed with the release key installs over the last, keeping the
+player's libraries and saves. An APK signed with another key (a fork's debug
+build, or one built before the release key) cannot: Android refuses it with a
+signature mismatch, and only uninstalling (which deletes the app's data) lets
+it in. Back up any progress you want to keep first.
 
 The initial native build can take tens of minutes. The workflow has a
 90-minute timeout and keeps the downloadable APK for seven days. It grants
@@ -56,7 +61,16 @@ export ANDROID_HOME=/path/to/android-sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
 python tools/build_android.py --build                 # arm64-v8a and x86_64
 python tools/build_android.py --build --arch x86_64   # the emulator only
+python tools/build_android.py --build --release --signing signing.properties
 ```
+
+`--signing` names a properties file beside the release keystore
+(`keystore=`, the keystore's path relative to the file, `alias=`,
+`store_password=` and `key_password=`); keep both outside the checkout and
+never commit them. With `--release` the APK is a release build signed with that
+key; without it, a debug build re-signed with it (`apksigner`), which installs
+over the testers' release builds. A debug build without `--signing` carries the
+machine's own debug key.
 
 The first build compiles Python, SDL, Pillow and pygame-ce for each ABI (about
 15 minutes for one on an x86-64 desktop); later builds reuse them. Run

@@ -1,4 +1,4 @@
-"""Stage only owned runtime sources, optionally build a debug ARM64 APK."""
+"""Stage only owned runtime sources, optionally build the APK: debug, or a release signed with the release key."""
 import argparse
 import hashlib
 import json
@@ -131,7 +131,7 @@ def render_icons(directory):
     return directory
 
 
-def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None):
+def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None, release=False):
     return [sys.executable, '-m', 'pythonforandroid.toolchain', 'apk',
             '--bootstrap=sdl2', '--dist-name=shshd', *(f'--arch={arch}' for arch in arches),
             '--requirements=python3,pygame_ce,pillow,pyjnius,android,libbz2,liblzma,libarchive',
@@ -143,10 +143,56 @@ def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None):
             # Portrait first; landscape for the side panels (platforms/android.py, OrientationBridge).
             '--orientation=portrait', '--orientation=landscape', '--orientation=landscape-reverse',
             # VIBRATE: General's Vibration, the phone's own vibrator (platforms/android.Host.find_vibrator).
-            f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--permission=VIBRATE', '--debug',
+            f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--permission=VIBRATE',
+            # A release build is signed by python-for-android from the P4A_RELEASE_* environment (signing_env): --sign
+            # adds the Gradle signing config that reads it (without it, shshd-release-unsigned).
+            *(('--release', '--sign') if release else ('--debug',)),
             *((f'--icon={icons / "icon.png"}', f'--icon-fg={icons / "icon_foreground.png"}',
                f'--icon-bg={icons / "icon_background.png"}', f'--presplash={icons / "icon_background.png"}',
                '--presplash-color=#{:02x}{:02x}{:02x}'.format(*ICON_BACKGROUND)) if icons else ())]
+
+
+def read_signing(path):
+    """The release key from a properties file: keystore (relative to the file), alias, store_password and
+    key_password (the store's when absent). One key signs every build that testers install, so an update installs over
+    the last; each machine's own debug key did not (a CI build and a local one each needed an uninstall)."""
+    path = Path(path)
+    values = {}
+    for line in path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            key, value = line.split('=', 1)
+            values[key.strip()] = value.strip()
+    missing = [key for key in ('keystore', 'alias', 'store_password') if not values.get(key)]
+    if missing:
+        raise ValueError(f'Signing file {path} lacks {", ".join(missing)}')
+    keystore = (path.parent / values['keystore']).resolve()
+    if not keystore.is_file():
+        raise ValueError(f'Keystore not found: {keystore}')
+    return dict(keystore=keystore, alias=values['alias'], store_password=values['store_password'],
+                key_password=values.get('key_password') or values['store_password'])
+
+
+def signing_env(signing):
+    """python-for-android's release signing (its Gradle template reads these)."""
+    return {'P4A_RELEASE_KEYSTORE': str(signing['keystore']), 'P4A_RELEASE_KEYALIAS': signing['alias'],
+            'P4A_RELEASE_KEYSTORE_PASSWD': signing['store_password'],
+            'P4A_RELEASE_KEYALIAS_PASSWD': signing['key_password']}
+
+
+def resign(apk, signing, sdk):
+    """A debug build signed with the release key (apksigner, the newest build-tools'): it stays debuggable for
+    development and installs over a tester's release build. Passwords go through the environment, not the
+    command line."""
+    tools = sorted(Path(sdk).glob('build-tools/*/apksigner'), key=lambda p: [int(n) for n in p.parent.name.split('.')
+                                                                            if n.isdigit()])
+    if not tools:
+        raise RuntimeError(f'No apksigner under {sdk}/build-tools')
+    env = dict(os.environ, SHSHD_STORE_PASSWORD=signing['store_password'], SHSHD_KEY_PASSWORD=signing['key_password'])
+    subprocess.run([str(tools[-1]), 'sign', '--ks', str(signing['keystore']), '--ks-key-alias', signing['alias'],
+                    '--ks-pass', 'env:SHSHD_STORE_PASSWORD', '--key-pass', 'env:SHSHD_KEY_PASSWORD', str(apk)],
+                   env=env, check=True)
+    subprocess.run([str(tools[-1]), 'verify', str(apk)], check=True)
 
 
 def main(argv=None):
@@ -154,7 +200,15 @@ def main(argv=None):
     parser.add_argument('--build', action='store_true', help='Compile with the installed Android toolchain')
     parser.add_argument('--arch', action='append', choices=ARCHES,
                         help='An ABI to build (repeatable); default: both, arm64-v8a for devices and x86_64 for the emulator')
+    parser.add_argument('--release', action='store_true',
+                        help='A release build (not debuggable), signed with --signing: what testers install')
+    parser.add_argument('--signing', type=Path,
+                        help='The release key (a properties file, see read_signing). With a debug build, the APK is '
+                             're-signed with it, so it installs over a release build')
     args = parser.parse_args(argv)
+    if args.release and not args.signing:
+        parser.error('--release needs --signing: an unsigned release APK does not install')
+    signing = read_signing(args.signing) if args.signing else None
     source = stage(ROOT / 'build/android/source')
     print(f'Staged runtime sources: {source}', flush=True)
     if not args.build:
@@ -169,10 +223,17 @@ def main(argv=None):
     output = ROOT / 'dist/android'
     output.mkdir(parents=True, exist_ok=True)
     icons = render_icons(ROOT / 'build/android/icons')
-    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES), icons), cwd=output, check=True)
-    apks = sorted(output.glob('*.apk'))
+    env = dict(os.environ, **signing_env(signing)) if args.release else None
+    earlier = {path: path.stat().st_mtime_ns for path in output.glob('*.apk')}
+    subprocess.run(build_command(source, sdk, ndk, tuple(args.arch or ARCHES), icons, release=args.release),
+                   cwd=output, check=True, env=env)
+    # This build's APKs only: an earlier build's (the other kind, another version) stays as it was.
+    apks = sorted(path for path in output.glob('*.apk') if earlier.get(path) != path.stat().st_mtime_ns)
     if not apks:
         raise RuntimeError('Android toolchain finished without an APK')
+    if signing is not None and not args.release:
+        for path in apks:
+            resign(path, signing, sdk)
     for path in apks:
         (path.with_suffix(path.suffix + '.sha256')).write_text(
             f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n')
