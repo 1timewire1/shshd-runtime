@@ -13,18 +13,25 @@ from . import graphics as pygame
 
 ENABLED = False
 RATE = 0.998            # UIScrollViewDecelerationRateNormal: the speed kept each millisecond
+RATE_FAST = 0.99        # UIScrollViewDecelerationRateFast: the story tree's (`SHSDTView scrollViewWillBeginDecelerating:`)
 WINDOW_MS = 120         # the drag samples this recent set the speed at release
 RESTED_MS = 80          # a finger held still this long before lifting releases without coasting
 REST_SPEED = 0.01       # points a millisecond: below this it has stopped
 TOP_SPEED = 8.0         # points a millisecond: a jittery last sample never throws a list away
 
 
+# When the input being handled happened, on pygame's clock, if the host knows (the iOS host: UIKit's touch times),
+# else None. A frame can hold a whole flick; read at the frame's time, its moves were all at once and it never glided.
+EVENT_TIME = None
+
+
 def _now():
-    return pygame.time.get_ticks()
+    return EVENT_TIME if EVENT_TIME is not None else pygame.time.get_ticks()
 
 
 class Fling:
-    def __init__(self):
+    def __init__(self, rate=RATE):
+        self.rate = rate            # the speed kept each millisecond while coasting
         self.samples = []           # [(ms, values)] while dragging
         self.velocity = None        # points a millisecond for each value while coasting
         self.left = None            # the values the last step set, to notice a clamp or another hand moving them
@@ -72,8 +79,8 @@ class Fling:
             return None
         now = _now() if now is None else now
         elapsed, self.time = max(0, now - self.time), now
-        decay = RATE ** elapsed
-        travelled = (decay - 1) / math.log(RATE)            # the integral of RATE ** t over the elapsed time
+        decay = self.rate ** elapsed
+        travelled = (decay - 1) / math.log(self.rate)       # the integral of rate ** t over the elapsed time
         self.left = tuple(value + v * travelled for value, v in zip(values, self.velocity))
         self.velocity = tuple(v * decay for v in self.velocity)
         if max(abs(v) for v in self.velocity) < REST_SPEED:
