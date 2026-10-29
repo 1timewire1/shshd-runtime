@@ -2184,6 +2184,11 @@ class Desktop:
             if action and action.name == 'text_input' and not self.menu_open and self.active:
                 if kind in ('input_dismiss', 'input_focus'):
                     self.input_error, self.input_keyboard = None, True
+                    if self.text_input_started:
+                        # A phone's keyboard closed by Back (owner's g54) leaves SDL's text input on, so nothing
+                        # changes here; asking again shows the on-screen keyboard (SDL_StartTextInput shows it when
+                        # it is hidden). A desktop has no on-screen keyboard: nothing to see.
+                        pygame.key.start_text_input()
                 elif kind == 'continue':
                     self._submit_input(action)
             if action and action.name == 'character_picker' and kind in ('choose', 'continue'):
