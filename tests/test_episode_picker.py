@@ -275,6 +275,31 @@ class PreviewMemoryTests(unittest.TestCase):
         self.assertEqual(Fonts.measure.cache_info().currsize, 1)
         self.assertIn('exp_runtime.hd_ui', episode_thumbnails.KEPT_CACHES)
 
+    def test_a_let_go_episode_views_cycle_is_freed_at_once(self):
+        """A Desktop and its renderers are a cycle (each keeps `Desktop._image`); the collector counts Python objects,
+        not a view's images, so on the owner's g54 nine previews' views (1.6 GB) waited for it. Releasing a view's
+        caches collects: the cycle goes then, with automatic collection off."""
+        import gc
+        import weakref
+
+        class View:
+            def __init__(self):
+                self.renderer = type('Renderer', (), {})()
+                self.renderer.image = self._image           # the cycle: view -> renderer -> bound method -> view
+
+            def _image(self):
+                return None
+
+        enabled = gc.isenabled()
+        gc.disable()
+        self.addCleanup(lambda: gc.enable() if enabled else None)
+        view = View()
+        gone = weakref.ref(view)
+        del view
+        self.assertIsNotNone(gone())                        # left for the collector
+        episode_thumbnails.release_episode_caches()
+        self.assertIsNone(gone())
+
     def test_letting_a_games_library_go_empties_the_menus_caches_too(self):
         """A switched-away game's menus are keyed into their own methods' caches and module functions' (the CoD
         menu's title_layer takes the library): every one empties when the library goes, but the drawing hosts'."""
