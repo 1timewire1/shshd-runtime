@@ -49,6 +49,9 @@ SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
 SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS episodes open with (upsell_intro.py)
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
+# General's switch for the device's own vibrator (owner, 2026-10-29), offered where the host has one
+# (graphics.supports_vibration: Android's, the iPhone's); the simulated sound stays in Sound.
+DEVICE_VIBRATION_LABEL = 'Vibration'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
@@ -71,8 +74,8 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
-GENERAL_KEYS = ('side_panels', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop', 'hires_portraits',
-                'check_updates')
+GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
+                'hires_portraits', 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -83,8 +86,8 @@ DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
 CONTROL_RIGHT = 26
 CYCLE_SIZE, CYCLE_POINTS = (104, 34), 18
-SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'autoplay': AUTOPLAY_LABEL,
-                 'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
+SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VIBRATION_LABEL,
+                 'autoplay': AUTOPLAY_LABEL, 'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
@@ -489,7 +492,7 @@ class HdPauseMenu:
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'),
+        ('pause_toggle', 'vibration'|'device_vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""
@@ -621,12 +624,9 @@ class HdPauseMenu:
         """[(kind, label, key)] of an Options category: 'switch', 'slider', 'cycle' or 'action' rows, those whose
         setting the host offers."""
         if category == 'sound':
-            # This player's buzz in place of the iPhone's vibration (PR #10): last, under its own name. On a device that
-            # can vibrate (exp-runtime's iOS host, graphics.supports_vibration) the same preference is the game's own
-            # Vibration switch (string 11), and the buzz is not played.
-            from . import graphics
-            label = strings[11] if graphics.supports_vibration() else VIBRATION_SOUND_LABEL
-            vibration = [('switch', label, 'vibration')] if 'vibration' in settings else []
+            # This player's buzz in place of the iPhone's vibration (PR #10): last, under its own name. A device's own
+            # vibrator is General's Vibration (DEVICE_VIBRATION_LABEL), a separate switch.
+            vibration = [('switch', VIBRATION_SOUND_LABEL, 'vibration')] if 'vibration' in settings else []
             return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
                     ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration
         if category == 'general':

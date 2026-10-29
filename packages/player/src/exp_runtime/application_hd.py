@@ -18,6 +18,7 @@ import webbrowser
 
 import pygame
 
+from . import graphics
 from .desktop_boot_hd import FLASH_TOTAL, HdBootScreen, JINGLE, LOADING_TIME
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
@@ -296,6 +297,8 @@ class HdShell:
                         skip_minigames=state.skip_minigames, skip_ad_intros=state.skip_ad_intros,
                         skip_upsell_intros=state.skip_upsell_intros,
                         autoplay=state.autoplay, disable_choice_timer=state.disable_choice_timer)
+        if graphics.supports_vibration():
+            settings['device_vibration'] = state.device_vibration   # General's Vibration: a device that has one
         if self.backdrop_available():
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():
@@ -353,6 +356,8 @@ class HdShell:
         self.app.menu_music_changed(switched=which == 'music')
         if which == 'vibration' and state.vibration:
             self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
+        if which == 'device_vibration' and state.device_vibration:
+            graphics.vibrate()          # (the same: the device's own vibrator)
         if which == 'sound':
             if state.sound:
                 # `SHSEngine::setSoundEnabled(true, true)`: the switch's own sound, other effects stopped.

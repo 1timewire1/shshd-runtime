@@ -4,14 +4,25 @@ Desktop uses pygame directly. A mobile host installs its backend before it
 imports the application; menus, panel geometry and event handling stay shared.
 """
 _backend = None
+# A host's own vibrator, when its backend has none (Android's, platforms/android.py): called with a duration in ms.
+_vibrator = None
+
+
+def set_vibrator(vibrator):
+    """Register the device's vibrator (a callable taking ms), or None; General's Vibration switch shows where one is."""
+    global _vibrator
+    _vibrator = vibrator
 
 
 def supports_vibration():
-    return bool(getattr(_backend, 'vibration_available', False))
+    return _vibrator is not None or bool(getattr(_backend, 'vibration_available', False))
 
 
-def vibrate():
-    if supports_vibration():
+def vibrate(duration_ms=1000):
+    """The device vibrates (service 82 asks Android's vibrator for 1000 ms; the iPhone plays its system alert)."""
+    if _vibrator is not None:
+        _vibrator(duration_ms)
+    elif supports_vibration():
         _backend.vibrate()
 
 

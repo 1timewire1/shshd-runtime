@@ -83,6 +83,36 @@ class DesktopBuzzTests(unittest.TestCase):
         self.assertEqual(self.Sound.return_value.play.call_count, 2)
 
 
+    def test_the_device_vibrator_and_the_simulated_sound_are_separate_switches(self):
+        """Owner, 2026-10-29: General's Vibration is the device's own vibrator (graphics.set_vibrator: Android's),
+        Sound's Simulated Vibration Sound the buzz; either, both or neither."""
+        from exp_runtime import graphics
+        ui, engine = self.ui, self.ui.session.engine
+        felt = []
+        graphics.set_vibrator(felt.append)
+        self.addCleanup(graphics.set_vibrator, None)
+        self.assertTrue(graphics.supports_vibration())
+        engine.vibration_serial += 1
+        ui._sync_audio()
+        self.assertEqual((self.Sound.return_value.play.call_count, felt), (1, []))   # the buzz alone
+        ui.command(('pause_toggle', 'device_vibration'))     # switched on: it vibrates once (setVibrationEnabled)
+        self.assertEqual((ui.device_vibration_enabled, felt), (True, [1000]))
+        ui.command(('pause_toggle', 'vibration'))            # the buzz off; the vibrator still on
+        self.assertFalse(ui.vibration_enabled)
+        self.assertIn('device_vibration', ui._pause_settings())
+        graphics.set_vibrator(None)
+        self.assertNotIn('device_vibration', ui._pause_settings())     # no vibrator: General does not offer it
+
+    def test_general_offers_the_vibrator_and_sound_keeps_the_simulated_sound(self):
+        from exp_runtime.desktop_pause_hd import DEVICE_VIBRATION_LABEL, HdPauseMenu, VIBRATION_SOUND_LABEL
+        menu, strings = HdPauseMenu.__new__(HdPauseMenu), ['label'] * 20
+        settings = dict(vibration=False, device_vibration=True, music=True, sound=True)
+        self.assertIn(('switch', DEVICE_VIBRATION_LABEL, 'device_vibration'), menu.option_rows('general', settings, strings))
+        self.assertIn(('switch', VIBRATION_SOUND_LABEL, 'vibration'), menu.option_rows('sound', settings, strings))
+        del settings['device_vibration']
+        self.assertNotIn('device_vibration', [key for *_, key in menu.option_rows('general', settings, strings)])
+
+
 def resources(game):
     result = Resources(program(*host_call(82), *host_call(82), 0x33))
     result.library.game_id = game
@@ -132,9 +162,9 @@ class PlayerVibrationTests(unittest.TestCase):
         from exp_runtime.desktop import Desktop
         for enabled in (False, True):
             with self.subTest(enabled=enabled), patch('exp_runtime.graphics.vibrate') as vibrate:
-                ui = Desktop(Session(resources('shs')), audio=False, vibration_enabled=enabled)
+                ui = Desktop(Session(resources('shs')), audio=False, device_vibration_enabled=enabled)
                 self.assertEqual(vibrate.call_count, 2 if enabled else 0)
-                ui.vibration_enabled = True
+                ui.device_vibration_enabled = True
                 ui.tick(0); ui.render(); ui.render()
                 self.assertEqual(vibrate.call_count, 2 if enabled else 0)
 
@@ -147,12 +177,12 @@ class PlayerVibrationTests(unittest.TestCase):
                                       (True, False, True)):
             with self.subTest(active=active, menu=menu, enabled=enabled), \
                     patch('exp_runtime.graphics.vibrate') as vibrate:
-                ui.active, ui.menu_open, ui.vibration_enabled = active, menu, enabled
+                ui.active, ui.menu_open, ui.device_vibration_enabled = active, menu, enabled
                 ui.session = Session(resources('cod'))
                 ui._attempt(ui.session.advance)
                 expected = 2 if active and not menu and enabled else 0
                 self.assertEqual(vibrate.call_count, expected)
-                ui.active, ui.menu_open, ui.vibration_enabled = True, False, True
+                ui.active, ui.menu_open, ui.device_vibration_enabled = True, False, True
                 ui.tick(0)
                 self.assertEqual(vibrate.call_count, expected)
 

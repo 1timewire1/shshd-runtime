@@ -214,6 +214,15 @@ class EpisodeExitMenuTests(unittest.TestCase):
         self.assertEqual(reopened.session(state.selected).snapshot(), fresh.snapshot())
         self.assertEqual(manual.read_bytes(), before)
 
+    def test_the_device_vibration_preference_is_saved_apart_from_the_buzz(self):
+        # General's Vibration (the device's vibrator) and Sound's Simulated Vibration Sound: two preferences, both off.
+        state = MenuState(self.library)
+        self.assertEqual((state.device_vibration, state.vibration), (False, False))
+        state.device_vibration = True
+        state.persist()
+        reopened = MenuState(self.library)
+        self.assertEqual((reopened.device_vibration, reopened.vibration), (True, False))
+
     def test_a_finished_saves_check_is_kept_until_the_file_changes(self):
         """Whether a save is an ending opens its episode; the menus ask for every episode at each refresh, so the
         answer is kept per file (path, time, size) and found again only once the save is rewritten."""

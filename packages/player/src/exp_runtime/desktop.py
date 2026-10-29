@@ -246,7 +246,8 @@ class Desktop:
                 and index == len(action.details['options']))
 
     def __init__(self, session: Session, *, audio: bool = True, window=None, on_main_menu=None, capture=False,
-                 episode_title=None, on_menu_page=None, names=None, vibration_enabled=False):
+                 episode_title=None, on_menu_page=None, names=None, vibration_enabled=False,
+                 device_vibration_enabled=False):
         self.names = names
         pygame.display.init()
         pygame.font.init()
@@ -394,6 +395,8 @@ class Desktop:
         self.music_enabled = self.sound_enabled = True
         # Off by default (the buzz is an opt-in addition, PR #10); set here so the first script's requests obey it.
         self.vibration_enabled = vibration_enabled
+        # General's Vibration: the device's own vibrator (graphics.set_vibrator), where there is one.
+        self.device_vibration_enabled = device_vibration_enabled
         self.choice_hints = False
         self.active = True
         self.menu_open = False
@@ -425,7 +428,7 @@ class Desktop:
         """exp-runtime v0.6.0's device vibration (graphics.vibrate: the iOS backend; nothing on a desktop). This fork's
         simulated buzz is separate (`_buzz`, from service 82's serial)."""
         count = self.session.take_vibrations()
-        if not count or not self.vibration_enabled or not self.active or self.menu_open:
+        if not count or not self.device_vibration_enabled or not self.active or self.menu_open:
             return
         for _ in range(count):
             pygame.vibrate()
@@ -656,8 +659,8 @@ class Desktop:
     buzz_sound = None           # service 82's stand-in for the vibrator (vibration.py), built on first use
 
     def _buzz(self):
-        if not (self.vibration_enabled and self.sound_enabled) or pygame.supports_vibration():
-            return                          # (a device that vibrates does so instead: `_sync_vibration`)
+        if not (self.vibration_enabled and self.sound_enabled):
+            return                          # (a device's own vibrator is General's Vibration: `_sync_vibration`)
         try:
             if self.buzz_sound is None:
                 self.buzz_sound = pygame.mixer.Sound(file=BytesIO(buzz_wav()))
@@ -1964,6 +1967,7 @@ class Desktop:
         # No Skip Ad / Upsell Intros here: they only act as an episode starts, so the main menu's Options alone lists
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
+                    **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames,
@@ -2121,10 +2125,12 @@ class Desktop:
                 self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
-                if self.vibration_enabled and pygame.supports_vibration():
-                    pygame.vibrate()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
-                elif self.vibration_enabled and self.audio:
-                    self._buzz()
+                if self.vibration_enabled and self.audio:
+                    self._buzz()            # SHSEngine::setVibrationEnabled vibrates once when it is switched on
+            elif command[1] == 'device_vibration':
+                self.device_vibration_enabled = not self.device_vibration_enabled
+                if self.device_vibration_enabled and pygame.supports_vibration():
+                    pygame.vibrate()        # (the same: the device's own vibrator)
             else:
                 self.sound_enabled = not self.sound_enabled
             if command[1] == 'sound':
