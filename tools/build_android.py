@@ -23,7 +23,7 @@ def prepare_recipe_cache(storage):
         previous = {}
     current = {}
     changed = False
-    for name, module in (('android', 'android'), ('pygame_ce', 'pygame'), ('Pillow', 'PIL')):
+    for name, module in (('android', 'android'), ('pygame_ce', 'pygame'), ('Pillow', 'PIL'), ('libarchive', None)):
         recipe = ROOT / 'android/recipes' / name
         digest = hashlib.sha256()
         for path in sorted(recipe.rglob('*.py')):
@@ -38,7 +38,7 @@ def prepare_recipe_cache(storage):
             if directory.name == name or directory.name.startswith(name + '-'):
                 shutil.rmtree(directory)
         installs = storage / 'build/python-installs/shshd'
-        for arch in installs.glob('*'):
+        for arch in installs.glob('*') if module is not None else ():     # a native library has no Python module
             if arch.is_dir():
                 shutil.rmtree(arch / module, ignore_errors=True)
         print(f'Custom Android recipe will rebuild: {name}', flush=True)
@@ -46,6 +46,14 @@ def prepare_recipe_cache(storage):
         shutil.rmtree(storage / 'dists/shshd', ignore_errors=True)
     storage.mkdir(parents=True, exist_ok=True)
     marker.write_text(json.dumps(current, sort_keys=True) + '\n')
+
+
+def libarchive_notices():
+    """The APK carries libarchive for RAR import (android/recipes/libarchive): its notices, as the desktop builds'
+    (tools/build_rar.py downloads the pinned release once and checks it)."""
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from build_rar import license_text
+    return license_text()
 
 
 def stage(destination):
@@ -80,6 +88,7 @@ def stage(destination):
     shutil.copy2(ROOT / 'LICENSE', licenses / 'runtime-MIT.txt')
     for component in COMPONENTS:
         shutil.copy2(ROOT / 'packages' / component / 'LICENSE', licenses / f'{component}-MIT.txt')
+    (licenses / 'libarchive-LICENSE.txt').write_text(libarchive_notices(), encoding='utf-8')
     manifest = {p.relative_to(destination).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted(destination.rglob('*')) if p.is_file()}
     (destination / 'source-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -125,7 +134,7 @@ def render_icons(directory):
 def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None):
     return [sys.executable, '-m', 'pythonforandroid.toolchain', 'apk',
             '--bootstrap=sdl2', '--dist-name=shshd', *(f'--arch={arch}' for arch in arches),
-            '--requirements=python3,pygame_ce,pillow,pyjnius,android,libbz2,liblzma',
+            '--requirements=python3,pygame_ce,pillow,pyjnius,android,libbz2,liblzma,libarchive',
             f'--local-recipes={ROOT / "android/recipes"}',
             f'--private={source}', f'--storage-dir={ROOT / "build/android/p4a"}',
             f'--sdk-dir={sdk}', f'--ndk-dir={ndk}', '--android-api=35', '--ndk-api=24',

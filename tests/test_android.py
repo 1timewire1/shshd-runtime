@@ -254,8 +254,10 @@ class StagingTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         (module.ROOT / 'build/android').mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=module.ROOT / 'build/android') as root:
+        with tempfile.TemporaryDirectory(dir=module.ROOT / 'build/android') as root, \
+                patch.object(module, 'libarchive_notices', return_value='libarchive notices'):
             destination = module.stage(Path(root) / 'source')
+            self.assertEqual((destination / 'licenses/libarchive-LICENSE.txt').read_text(), 'libarchive notices')
             self.assertTrue((destination / 'exp_runtime/platforms/android.py').is_file())
             self.assertTrue((destination / 'exp_runtime/cod/profile.py').is_file())
             self.assertFalse((destination / 'exp_runtime/__init__.py').exists())
@@ -274,6 +276,24 @@ class StagingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.stage(Path(root))
             self.assertEqual(source.read_text(), 'keep')
+
+
+class RarTests(unittest.TestCase):
+    def test_the_apk_builds_libarchive_and_rar_import_loads_it_by_name(self):
+        """RAR import on Android: the APK's own libarchive (android/recipes/libarchive), loaded by its unversioned
+        name, as the desktop downloads bundle theirs (tools/build_rar.py) and Apple platforms use the OS's."""
+        spec = importlib.util.spec_from_file_location('build_android', Path(__file__).resolve().parents[1]
+                                                       / 'tools/build_android.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        command = module.build_command(Path('source'), Path('sdk'), Path('ndk'))
+        requirements = next(a for a in command if a.startswith('--requirements=')).split('=', 1)[1].split(',')
+        self.assertIn('libarchive', requirements)
+        recipe = (Path(__file__).resolve().parents[1] / 'android/recipes/libarchive/__init__.py').read_text()
+        self.assertIn("version = '3.8.9'", recipe)                 # tools/build_rar.py's pinned release
+        from exp_runtime import rar
+        with patch.object(rar.sys, 'platform', 'android'):
+            self.assertEqual(list(rar._library_candidates()), ['libarchive.so'])
 
 
 class RecipeCacheTests(unittest.TestCase):
