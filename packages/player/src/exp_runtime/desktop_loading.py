@@ -4,6 +4,7 @@ from functools import lru_cache
 from . import graphics as pygame
 
 from .fonts import TextStyle
+from .hd_scale import S as HD_SCALE
 from .menu import MenuStrings
 from .ui_assets import Rect, read_ui
 
@@ -64,9 +65,10 @@ class HdLoadingRenderer:
     626-631, "Loading" and "Please wait..." in bold blue sans centered on x 384 (ink 447-483 and 531-551), and
     the runner wheel straddling the lower rule -- the choice timer's wheel (gray rim, white ring, light-gray
     disc), the frame's blue border bulging around it -- with resource 155's runner frames 28-32 (500 ms each)
-    in the disc. Drawn 2x supersampled.
+    in the disc. Drawn at the HD menus' scale (hd_scale: 2x, or the frame's own on Android): the menus' episode
+    loading screen puts it in their layer as it is (a 2x band in Android's 1x layer was twice the screen's size).
     """
-    S = 2
+    S = HD_SCALE
     FRAME = (768, 1024)
     hd_layer = True
     edge_bar = 'bar'
@@ -124,7 +126,7 @@ class HdLoadingRenderer:
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
 
     def draw_band(self, frame):
-        """The band with runner `frame` (23-27) on the transparent 2x canvas (also the menus' episode loading screen:
+        """The band with runner `frame` (23-27) on the transparent canvas, at S (also the menus' episode loading screen:
         application_hd.HdShell.load_episode)."""
         S, canvas = self.S, self.canvas
         canvas.fill((0, 0, 0, 0))

@@ -822,6 +822,9 @@ class CodShellActionTests(unittest.TestCase):
         self.assertIs(HdShell.band_class(), HdLoadingRenderer)
         self.assertEqual((CodLoadingBand.RULE, HdLoadingRenderer.RULE), ((79, 81, 81), HdLoadingRenderer.BLUE))
         self.assertEqual((CodLoadingBand.TEXT, HdLoadingRenderer.TEXT), ((0, 0, 0), HdLoadingRenderer.BLUE))
+        # Drawn at the menus' own scale: the episode loading screen puts the band in their layer as it is (owner's
+        # g54: a 2x band in Android's 1x layer filled twice the screen, its band at the bottom).
+        self.assertEqual((HdLoadingRenderer.S, CodLoadingBand.S), (S, S))
 
     def test_only_a_complete_cod_library_gets_the_shell(self):
         from exp_runtime.application_cod import CodShell
