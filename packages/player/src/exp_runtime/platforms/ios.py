@@ -4,10 +4,12 @@ Swift owns device services only. Imports, menus, hit testing, clocks, game
 sessions, layout and saves all run through the desktop application's code.
 """
 import json
+import logging
 from concurrent.futures import Future
 from pathlib import Path
 import shutil
 import tempfile
+import time
 from types import SimpleNamespace
 
 from ..launcher import APP_NAME
@@ -93,6 +95,7 @@ class Host:
         self.app.render()
         self.input_stamp = self._input_stamp()
         self.generation = 0
+        self.frame_stats = FrameStats()      # slow frames, summarised in the runtime log (request)
 
     def _input_stamp(self):
         game = self.app.game if self.app.screen == 'game' else None
@@ -356,4 +359,41 @@ def request(payload, directory):
             parent.mkdir(parents=True, exist_ok=True)
             root = Path(tempfile.mkdtemp(prefix='libraries-', dir=parent))
         _host = Host(directory, library_root=root, check_updates=not _verifying)
-    return json.dumps(_host.request(message), separators=(',', ':'))
+    started = time.perf_counter()
+    result = _host.request(message)
+    if message.get('operation', 'frame') == 'frame':
+        _host.frame_stats.add(message, result, (time.perf_counter() - started) * 1000, _host.app.screen)
+    return json.dumps(result, separators=(',', ':'))
+
+
+class FrameStats:
+    """Where a slow device's frames go, in the runtime log (the owner's iPad is the only place they show): each
+    STATS_MS of play with a frame slower than SLOW_MS writes one line. The interval is Swift's time between frames;
+    python is this module's handling of one; engine is Swift's whole call (JSON both ways, Python, the lock) and
+    render is CoreGraphics drawing the frame's graph, both for the frame before; png/op are the new picture and
+    drawn nodes sent (KB, megapixels)."""
+    STATS_MS = 5000
+    SLOW_MS = 50
+
+    def __init__(self):
+        self.rows = []
+        self.span = 0
+
+    def add(self, message, result, python_ms, screen):
+        nodes = (result.get('frame') or {}).get('nodes', ())
+        timing = message.get('timing') or {}
+        elapsed = max(0, int(message.get('elapsed', 0)))
+        self.rows.append((elapsed, python_ms, float(timing.get('engine_ms', 0)), float(timing.get('render_ms', 0)),
+                          sum(len(node['png']) for node in nodes if 'png' in node) * 3 / 4 / 1024,
+                          sum(node['size'][0] * node['size'][1] for node in nodes if 'ops' in node) / 1e6))
+        self.span += elapsed
+        if self.span < self.STATS_MS:
+            return
+        rows, self.rows, self.span = self.rows, [], 0
+        if max(row[0] for row in rows) < self.SLOW_MS:
+            return
+        names = ('interval', 'python', 'engine', 'render', 'png_kb', 'op_mpx')
+        columns = list(zip(*rows))
+        summary = ' '.join(f'{name} {sum(column) / len(column):.1f}/{max(column):.1f}'
+                           for name, column in zip(names, columns))
+        logging.warning('frames (%s, %d, mean/max ms): %s', screen, len(rows), summary)

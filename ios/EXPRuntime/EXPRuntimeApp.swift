@@ -352,6 +352,9 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var verificationReport: [String: Any] = [:]
     private var verificationChecks: [String] = []
     private var holdingLandscape = false    // the side panels' landscape, held until the iPad is turned (requestLandscape)
+    // The last frame's whole engine call and its drawing (ms), sent with the next frame for the runtime log's timings.
+    private var engineMs = 0.0
+    private var renderMs = 0.0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -420,6 +423,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         if operation["operation"] as? String != "frame" { lastFrame = now }
         var body = operation.merging(["audio_playing": audio.playing, "audio_positions": audio.positions,
                                       "vibration_available": NativeVibration.available]) { _, value in value }
+        body["timing"] = ["engine_ms": engineMs, "render_ms": renderMs]
         // The app draws at the view's own pixel size (the iPad mini's 1536 x 2048), not a stretched 540 x 720 frame.
         // The simulator check keeps the app's default window: its taps are placed for that size.
         let pixels = canvas.pixelSize
@@ -433,6 +437,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         // The simulator check draws each frame before its result is handled: its captures and checks read that image.
         let drawsInline = verifying
         engineQueue.async {
+            let began = CACurrentMediaTime()
             let response: Result<([String: Any], CGImage?), Error>
             var drawing: [String: Any]?
             do {
@@ -452,8 +457,10 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             } catch { response = .failure(error) }
             // Queued before the drawing below can finish, so the main queue counts it (`rendering`) before it ends.
             let drawn = drawing
+            let spent = (CACurrentMediaTime() - began) * 1000
             DispatchQueue.main.async {
                 self.working = false
+                self.engineMs = spent
                 if drawn != nil { self.rendering += 1 }
                 if operation["operation"] as? String == "active", operation["active"] as? Bool == false { self.finishBackgroundTask() }
                 switch response {
@@ -544,9 +551,12 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             }
             guard let drawn = drawn else { return }
             self.renderQueue.async {
+                let began = CACurrentMediaTime()
                 let rendered = Result { try renderer.render(drawn) }
+                let spent = (CACurrentMediaTime() - began) * 1000
                 DispatchQueue.main.async {
                     self.rendering -= 1
+                    self.renderMs = spent
                     switch rendered {
                     case .success(let image): self.canvas.image = image
                     case .failure(let error): self.showError(error.localizedDescription, fatal: true)

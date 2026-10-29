@@ -114,6 +114,24 @@ class IosWindowTests(unittest.TestCase):
         game.panels_open = False                                             # switched off from the menu
         self.assertEqual(host.panels_orientation(16), 'release')
 
+    def test_slow_frames_are_summarised_in_the_runtime_log(self):
+        """The owner's iPad is the only place its slowness shows: a span with a slow frame writes one summary line
+        (Swift's timings with it); a smooth span writes nothing."""
+        from exp_runtime.platforms.ios import FrameStats
+        stats = FrameStats()
+        frame = dict(frame=dict(nodes=[dict(png='A' * 4096), dict(ops=[], size=[1000, 1000])]))
+        with self.assertNoLogs(level='WARNING'):
+            for _ in range(FrameStats.STATS_MS // 16 + 1):
+                stats.add(dict(elapsed=16), frame, 3.0, 'main')
+        with self.assertLogs(level='WARNING') as logged:
+            for elapsed in [120] + [16] * 305:
+                stats.add(dict(elapsed=elapsed, timing=dict(engine_ms=9, render_ms=40)), frame, 3.0, 'picker')
+        self.assertEqual(len(logged.output), 1)
+        self.assertIn('frames (picker, 306,', logged.output[0])
+        self.assertIn('interval 16.3/120.0', logged.output[0])
+        self.assertIn('render 40.0/40.0', logged.output[0])
+        self.assertIn('png_kb 3.0/3.0 op_mpx 1.0/1.0', logged.output[0])
+
     def test_a_storys_link_goes_to_the_host(self):
         """A script link (a novel's "Yes, please!") and the Faceplace wall's go to the host's `open_url`, which opens
         them with UIApplication, rather than to Python's webbrowser."""
