@@ -31,7 +31,7 @@ from .menu import MenuStrings
 from .ui_assets import UIAssetError
 from .vector_text import system_font_path
 
-S = 2
+from .hd_scale import S
 FRAME = (768, 1024)
 BLUE = (41, 104, 221)
 # Arial Bold (the fallback when Arial Rounded MT Bold is not installed) sets the same text about 1% narrower

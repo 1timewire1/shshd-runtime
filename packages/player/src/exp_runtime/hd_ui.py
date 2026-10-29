@@ -12,7 +12,7 @@ from .hd_layout import HdLayouts, STRINGS_ID
 from .menu import MenuStrings
 from .vector_text import system_font_path
 
-S = 2
+from .hd_scale import S
 FRAME = (768, 1024)
 BUNDLE = 'Payload/Surviving_HS.app/'
 BLUE = (41, 104, 221)
@@ -132,10 +132,27 @@ class HdUi:
     def text(self, layer, text, points, x, y, *, color=(255, 255, 255), outline=True, width=None, alpha=255):
         """Text with its top-left at (x, y) points. With `outline` a dark outline and soft shadow (tile captions);
         `width` centers it in that width."""
+        # Rendered once each: the picker draws every tile's outlined caption each frame (nine renders and a fade a
+        # caption took ~2 ms each on a phone).
+        key = (text, points, color, outline, alpha)
+        cache = self.__dict__.setdefault('_texts', {})
+        rendered = cache.get(key)
+        if rendered is None:
+            if len(cache) > 400:
+                cache.clear()
+            rendered = cache[key] = self._render_text(text, points, color, outline, alpha)
+        if width is not None:
+            x += (width - (rendered[0].get_width() - (6 * S if outline else 0)) / S) / 2
+        if outline:
+            shade, plate = rendered
+            layer.blit(shade, (round(x * S) - 3 * S, round(y * S) - 3 * S))
+            layer.blit(plate, (round(x * S) - 3 * S, round(y * S) - 3 * S))
+            return
+        layer.blit(rendered[0], (round(x * S), round(y * S)))
+
+    def _render_text(self, text, points, color, outline, alpha):
         font = self.font(points)
         surface = font.render(text, True, color)
-        if width is not None:
-            x += (width - surface.get_width() / S) / 2
         if outline:
             dark = font.render(text, True, (20, 20, 30))
             plate = pygame.Surface((surface.get_width() + 6 * S, surface.get_height() + 6 * S), pygame.SRCALPHA)
@@ -145,12 +162,8 @@ class HdUi:
             shade.blit(dark, (3 * S + 2 * S, 3 * S + 2 * S))
             shade = faded(shade, 110)
             plate.blit(surface, (3 * S, 3 * S))
-            layer.blit(shade, (round(x * S) - 3 * S, round(y * S) - 3 * S))
-            layer.blit(plate, (round(x * S) - 3 * S, round(y * S) - 3 * S))
-            return
-        if alpha < 255:
-            surface = faded(surface, alpha)
-        layer.blit(surface, (round(x * S), round(y * S)))
+            return shade, plate
+        return (faded(surface, alpha) if alpha < 255 else surface,)
 
     def centered_line(self, layer, text, points, center_x, center_y, color=BLUE):
         """One line of text centered on a point (points)."""

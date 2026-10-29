@@ -25,7 +25,7 @@ from .pointer import step_focus
 from .ui_assets import ImagePack
 
 FRAME = (768, 1024)
-S = 2
+from .hd_scale import S
 BLUE = (41, 104, 221)
 HEADER_COLOR, FOOTER_COLOR = (248, 246, 245), (253, 251, 249)
 PANEL = FOOTER_COLOR
