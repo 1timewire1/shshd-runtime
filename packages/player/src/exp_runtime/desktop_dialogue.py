@@ -441,8 +441,10 @@ class DialogueRenderer:
     # box's *visible* bottom edge starts from rect.bottom + this.
     BORDER_LINE_OFFSET = 8.25
 
+    @lru_cache(maxsize=32)
     def portrait_group(self, portrait):
-        """The art and both rings as one layer (see portrait_layers)."""
+        """The art and both rings as one layer (see portrait_layers). Kept: the Faceplace wall and alert draw every
+        poster's face each time they are painted (~20 ms a face on a phone), and callers copy before changing it."""
         rings, art, topleft = self.portrait_layers(portrait)
         layer = rings.copy()
         layer.blit(art, (0, 0))

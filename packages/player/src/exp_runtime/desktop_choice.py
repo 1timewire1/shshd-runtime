@@ -9,6 +9,20 @@ from .choice import BODY_FONT, FOOTER_FONT, ChoiceLayout
 from .content import ContentError
 from .desktop_dialogue import DialogueRenderer
 from .choice_hints import preview_choices
+
+# A mobile host's choice: work the hints out on a worker, from a copy of the session made as the choice comes up, so
+# the choice shows at once and its hints follow (the preview took ~450 ms of a phone's frame). Desktop keeps them
+# worked out before the choice is drawn.
+BACKGROUND_HINTS = False
+_HINT_WORKER = None
+
+
+def _hint_worker():
+    global _HINT_WORKER
+    if _HINT_WORKER is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _HINT_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix='choice-hints')
+    return _HINT_WORKER
 from .fonts import TextStyle
 from .ui_assets import Rect
 
@@ -28,6 +42,8 @@ RULE, END_RULE = (136, 136, 136), (175, 175, 175)     # HD's row rules and the c
 
 
 class ChoiceRenderer:
+    hint_job = None
+
     def __init__(self, resources, text_renderer, artwork, scale=1):
         self.resources, self.text, self.art = resources, text_renderer, artwork
         self.layout = None
@@ -50,6 +66,7 @@ class ChoiceRenderer:
         self.hint_key = None
         self.hints = ()
         self.hint_ms = 0            # preview time not yet handed to Desktop (take_hint_ms)
+        self.hint_job = None        # (page key, future) of hints being worked out on the worker (BACKGROUND_HINTS)
         self.viewport = pygame.Rect(0, 0, 320, 421)
         self.pending_background = None
         self.pending_background_origin = (160, 180)
@@ -648,13 +665,34 @@ class ChoiceRenderer:
             image = faded(image, round(255 * opacity))
             self.overlay.blit(image, (round((left + x / d) * k), round((top + y / d) * k)))
 
-    def draw(self, target, session, *, scroll=0, pointer=None, pressed=None, focus=None, choice_hints=False):
-        page = self.page(session)
-        if choice_hints and self.hint_key != self.cached_key:
+    def _update_hints(self, session):
+        """The pending choice's hints (choice_hints.preview_choices) for the page on show: worked out now, or on the
+        worker under BACKGROUND_HINTS (unknown until they are ready)."""
+        if self.hint_key == self.cached_key:
+            return
+        if BACKGROUND_HINTS:
+            if self.hint_job is None or self.hint_job[0] != self.cached_key:
+                from copy import deepcopy
+                real = getattr(session, 'real_session', session)     # (Disable Choice Timer's stand-in)
+                copy = deepcopy(real, {id(real.resources): real.resources, id(real.vm.program): real.vm.program})
+                copy.ephemeral = True
+                self.hint_job = (self.cached_key, _hint_worker().submit(preview_choices, copy))
+            elif self.hint_job[1].done():
+                try:
+                    self.hints = self.hint_job[1].result()
+                except Exception:       # noqa: BLE001 -- a preview that fails leaves every hint unknown
+                    self.hints = ()
+                self.hint_key, self.hint_job = self.cached_key, None
+        else:
             started = pygame.time.get_ticks()
             self.hints = preview_choices(getattr(session, 'real_session', session))     # (Disable Choice Timer's stand-in)
             self.hint_key = self.cached_key
             self.hint_ms += pygame.time.get_ticks() - started
+
+    def draw(self, target, session, *, scroll=0, pointer=None, pressed=None, focus=None, choice_hints=False):
+        page = self.page(session)
+        if choice_hints:
+            self._update_hints(session)
         scroll = min(page.max_scroll, max(0, scroll))
         from .hd_choice import HdChoicePage
         if isinstance(page, HdChoicePage):

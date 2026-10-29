@@ -89,6 +89,8 @@ class Host:
         from android import activity
         from jnius import autoclass
         from ..application import Application
+        from .. import desktop_choice
+        desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out
         self.activity_api = activity
         self.activity = autoclass('org.kivy.android.PythonActivity').mActivity
         self.bridge = autoclass('org.shshd.runtime.DocumentBridge')
