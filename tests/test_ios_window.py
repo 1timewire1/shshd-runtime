@@ -56,6 +56,16 @@ class IosWindowTests(unittest.TestCase):
         host.request(dict(operation='frame', elapsed=16, size=[2048, 1536]))   # turned to landscape
         self.assertEqual(host.app.window.get_size(), (2048, 1536))
 
+    def test_the_hd_menus_draw_at_the_windows_scale(self):
+        """The window is the view's size in points (the owner's iPad mini: 768 x 992), so the HD menus' layers are
+        asked for at 1x, as Android's (hd_scale), not drawn at 2x and shrunk every frame."""
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ):
+            os.environ.pop('SHSHD_HD_SCALE', None)
+            self.host()
+            self.assertEqual(os.environ.get('SHSHD_HD_SCALE'), '1')
+
     def test_the_input_stamp_reads_this_forks_prompt(self):
         """The one-input gate's stamp follows the fork's host prompt (desktop._host_prompt), not upstream's
         `minigame_prompt`, which this Desktop lacks: every episode stopped the runtime on its first frame."""

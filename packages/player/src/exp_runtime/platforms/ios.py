@@ -5,6 +5,7 @@ sessions, layout and saves all run through the desktop application's code.
 """
 import json
 import logging
+import os
 from concurrent.futures import Future
 from pathlib import Path
 import shutil
@@ -70,6 +71,10 @@ class Host:
             backend = Backend(font, Path(__file__).resolve().parents[3] / 'kiwi.png')
         self.backend = backend
         graphics.install(backend)
+        # The HD menus at the window's own scale (hd_scale), as Android's: the window is the view's size in points
+        # (768 x 992 on the owner's iPad mini; UIKit gives this view a content scale of 1), so the 2x layers were drawn
+        # and shrunk to it every frame. Set before the menus are imported.
+        os.environ.setdefault('SHSHD_HD_SCALE', '1')
         # Import after installing the backend: pygame is not bundled on iOS.
         from ..application import Application
         from .. import desktop_choice, momentum
