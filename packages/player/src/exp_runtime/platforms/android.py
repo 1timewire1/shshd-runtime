@@ -28,6 +28,13 @@ FONT_SUFFIXES = ('.ttf', '.otf', '.ttc')
 SYSTEM_FONTS = Path('/system/fonts')
 # How long side panels turned on in portrait wait for the app to turn to landscape before they switch off.
 PANELS_ROTATE_MS = 3000
+# Android screens come in every shape (the owner's point): only one this much taller than wide counts as portrait
+# for the side panels' rule. Phones (about 2.2) and upright tablets (1.33-1.6) turn; a near-square screen (a
+# foldable's inner one) keeps its panels however it is held.
+PANELS_TALL = 1.2
+# How long the screen stays portrait after landscape before the panels switch off: turning the phone back, not the
+# moment's flip while Android hands rotation over (seen on the emulator as the device turned sideways).
+PANELS_PORTRAIT_MS = 700
 
 
 def font_finder(directories):
@@ -57,6 +64,7 @@ def font_finder(directories):
 
 class Host:
     REQUEST = 4107
+    LIFECYCLE = frozenset()     # the window and app events (pygame's), filled in once pygame is imported (__init__)
 
     def __init__(self):
         from android import activity
@@ -82,6 +90,11 @@ class Host:
         # thread dies: a crash on rotating). resize() makes the new surface on SDL's thread instead.
         pygame.display.init()
         pygame.display._set_autoresize(False)       # pygame-ce's (private, used by its own window code)
+        Host.LIFECYCLE = frozenset(getattr(pygame, name) for name in (
+            'QUIT', 'WINDOWFOCUSGAINED', 'WINDOWFOCUSLOST', 'WINDOWSHOWN', 'WINDOWHIDDEN', 'WINDOWEXPOSED',
+            'WINDOWMINIMIZED', 'WINDOWRESTORED', 'WINDOWSIZECHANGED', 'WINDOWRESIZED', 'VIDEORESIZE', 'VIDEOEXPOSE',
+            'APP_WILLENTERBACKGROUND', 'APP_DIDENTERBACKGROUND', 'APP_WILLENTERFOREGROUND', 'APP_DIDENTERFOREGROUND',
+            'APP_LOWMEMORY', 'APP_TERMINATING') if hasattr(pygame, name))
         self.results = Queue()
         self.copier = ThreadPoolExecutor(max_workers=1)
         self.pending = False
@@ -178,8 +191,9 @@ class Host:
 
     def panels_orientation(self, elapsed):
         """The side panels want landscape (the screen's width holds them beside the game): turning them on in portrait
-        turns the app to landscape (OrientationBridge), without locking it there. Turned back to portrait afterwards,
-        or not turned within PANELS_ROTATE_MS, the panels switch off; rotation is the user's again once they are."""
+        (a screen PANELS_TALL times taller than wide) turns the app to landscape (OrientationBridge), without locking
+        it there. Turned back to portrait afterwards, or not turned within PANELS_ROTATE_MS, the panels switch off;
+        rotation is the user's again once they are. Portrait counts once it has lasted PANELS_PORTRAIT_MS."""
         game = self.app.game if self.app.screen == 'game' else None
         if game is None or not game.panels_open:
             if self.panels_view is not None:
@@ -188,15 +202,17 @@ class Host:
             return
         width, height = self.app.window.get_size()
         state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
-        if width > height:
+        if height <= width * PANELS_TALL:
             self.panels_view = [game, 'landscape', 0]
             return
         if state is None:
             self.panels_view = [game, 'asked', 0]
             self.orientation.requestLandscape(self.activity)
             return
+        if state[1] == 'landscape':
+            state[1:] = ['leaving', 0]
         state[2] += elapsed
-        if state[1] == 'landscape' or state[2] >= PANELS_ROTATE_MS:
+        if state[2] >= (PANELS_PORTRAIT_MS if state[1] == 'leaving' else PANELS_ROTATE_MS):
             game.toggle_panels()
             self.panels_view = None
             self.orientation.release(self.activity)
@@ -227,11 +243,20 @@ class Host:
             self.window_size = size
             return
         logging.info('Android window %s -> %s', self.window_size, size)
-        self.window_size = size
+        # set_mode makes SDL ask for an orientation from this hint (read at the call; empty: FULL_USER, rotation the
+        # user's). While the side panels hold landscape it must ask for landscape too, or each new window would turn
+        # the app back to portrait and the panels' rule would read that as the user turning it.
+        holding = self.panels_view is not None and self.orientation.isHolding()
+        os.environ['SDL_IOS_ORIENTATIONS'] = 'LandscapeLeft LandscapeRight' if holding else ''
         window = pygame.display.set_mode(size, pygame.RESIZABLE)
+        # What SDL made, which can differ from what was asked while the screen is still turning (SDL's own
+        # orientation request on set_mode): the next frame then sees the difference and catches up.
+        self.window_size = window.get_size()
         self.app.window = window
         if self.app.game is not None:
             self.app.game.window = window
+        if self.panels_view is not None:
+            self.orientation.afterWindow(self.activity)     # SDL's own request replaced the panels' (FULL_USER)
 
     def active(self, active):
         import pygame
@@ -261,13 +286,22 @@ class Host:
                 was_active = self.app.active
                 token = self.app.input_token()
                 with frame_log.section('events'):
+                    # One input per frame (Application.run's rule) drops the rest of the batch's input, never its
+                    # window and app events: rotating sends focus lost then gained together, and dropping the second
+                    # left the app inactive (no frames) after turning the phone.
+                    input_closed = False
                     for event in pygame.event.get():
+                        if event.type not in self.LIFECYCLE:
+                            if input_closed:
+                                continue
                         running = self.event(event) and not self.app.quit_requested
-                        if not running or self.app.input_token() != token:
+                        if not running:
                             break
-                        if (self.app.screen == 'game'
-                                and self.app.game.screen_token != self.app.game._screen_token()):
-                            break
+                        if event.type not in self.LIFECYCLE and (
+                                self.app.input_token() != token
+                                or (self.app.screen == 'game'
+                                    and self.app.game.screen_token != self.app.game._screen_token())):
+                            input_closed = True
                 if running:
                     # A resumed frame must not advance timers by the sleep duration.
                     with frame_log.section('tick'):

@@ -102,9 +102,18 @@ A face that is missing is drawn in Android's Roboto instead.
 
 The story tree and Faceplace panels need the screen's width, so turning them on
 in portrait turns the app to landscape (`OrientationBridge`), without locking
-it: once the phone is held sideways, rotation is the user's again, and turning
-back to portrait switches the panels off (as on iPad). The app otherwise
-follows the phone's rotation.
+it: once the phone is held sideways the app follows the phone (even with
+auto-rotate off), and turning it back to portrait for 0.7 s switches the panels
+off and gives rotation back to the user's setting (as on iPad). Only a screen
+more than 1.2 times taller than wide counts as portrait here, so a near-square
+one (a foldable's inner screen) keeps its panels however it is held. The app
+otherwise follows the phone's rotation.
+
+SDL asks for its own orientation whenever the window is remade (on every
+rotation), so the host has it ask for landscape while the panels hold it and
+the bridge asks again for its own afterwards. pygame's own resize handling is
+off: it re-made the window surface on Android's UI thread, which crashed SDL on
+rotation; the host re-makes it on SDL's thread.
 
 ## CoD colors
 

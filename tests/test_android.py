@@ -103,7 +103,7 @@ class SidePanelTests(unittest.TestCase):
         """The owner's rule: panels turned on in portrait ask once for landscape, without locking rotation; turned back
         to portrait (or never turned), they switch off and rotation is the user's again."""
         from exp_runtime.desktop import Desktop
-        from exp_runtime.platforms.android import PANELS_ROTATE_MS
+        from exp_runtime.platforms.android import PANELS_PORTRAIT_MS, PANELS_ROTATE_MS
         Desktop._widen_for_panels(SimpleNamespace(fixed_window=True))      # the window is the screen's
         host = Host.__new__(Host)
         host.activity, host.panels_view = 'activity', None
@@ -121,6 +121,12 @@ class SidePanelTests(unittest.TestCase):
         self.assertTrue(game.panels_open)
         size[:] = [1080, 2400]
         host.panels_orientation(16)
+        self.assertTrue(game.panels_open)                                    # a moment's flip: still on
+        size[:] = [2400, 1080]
+        host.panels_orientation(16)
+        size[:] = [1080, 2400]
+        host.panels_orientation(16)
+        host.panels_orientation(PANELS_PORTRAIT_MS)
         self.assertFalse(game.panels_open)                                   # turned back: off
         host.orientation.release.assert_called_once_with('activity')
         game.panels_open = True
@@ -132,6 +138,12 @@ class SidePanelTests(unittest.TestCase):
         game.panels_open = False                                             # switched off in Options
         host.panels_orientation(16)
         self.assertEqual(host.orientation.release.call_count, 3)
+        # A near-square screen (a foldable's inner one) is no portrait screen: no turn asked, the panels stay.
+        game.panels_open, size[:] = True, [1800, 2000]
+        host.panels_orientation(16)
+        host.panels_orientation(PANELS_ROTATE_MS)
+        self.assertTrue(game.panels_open)
+        self.assertEqual(host.orientation.requestLandscape.call_count, 2)
 
 
 class LinkTests(unittest.TestCase):
