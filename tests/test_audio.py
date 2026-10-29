@@ -52,6 +52,32 @@ class MusicLoopTests(unittest.TestCase):
             self.assertEqual(music.play.call_args.kwargs, {'loops': -1, 'start': 0})
             self.assertEqual(music.queue.call_count, 1)
 
+    def test_a_looping_cue_the_mixer_lets_end_starts_again_and_a_single_one_still_ends(self):
+        # Android's SDL_mixer played the word grid's 72 s MP3 (8201, `loops=-1`) once and fell silent (the owner's
+        # g54, 2026-10-29): a looping cue found stopped is played again from its start, once logged.
+        from exp_runtime.music_stream import MusicStream
+        track = silent_wav(2)
+        stream = MusicStream()
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            stream.play(8201, 1, lambda music_id: (track, 0), 0)
+            music.play.reset_mock()
+            stream.update(1000, enabled=True, menu_open=False, paused=False)
+            music.play.assert_not_called()                                         # still playing: left alone
+            music.get_busy.return_value = False
+            with self.assertLogs(level='WARNING') as logged:
+                stream.update(2500, enabled=True, menu_open=False, paused=False)
+            self.assertIn('8201 stopped while looping', logged.output[0])
+            self.assertEqual(music.play.call_args.kwargs, {'loops': -1, 'start': 0})
+            self.assertTrue(stream.loaded)
+            self.assertAlmostEqual(stream.position(), 0)
+            stream.reset()
+            stream.play(8202, 0, lambda music_id: (track, 0), 3000)                # not looping: it ends
+            music.play.reset_mock()
+            stream.update(5500, enabled=True, menu_open=False, paused=False)
+            music.play.assert_not_called()
+            self.assertFalse(stream.loaded)
+
 
 class MusicCueTests(unittest.TestCase):
     def test_stat_notices_use_explicit_script_sounds_and_do_not_invent_a_cue(self):

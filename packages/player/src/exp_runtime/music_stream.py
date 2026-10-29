@@ -123,6 +123,9 @@ class MusicStream:
                 self._unload(stop=not (self.pending is not None and enabled))     # starting the next cue stops it
         if self.current is not None and self.stored is None and not self.paused and self._finished():
             self._unload()
+        if (self.current is not None and self.current['flag'] and self.stored is None and not self.paused
+                and self.fade is None and self._stopped()):
+            self._loop_again(now)
         if self.current is None and self.pending is not None and not menu_open:
             music_id, flag, opener = self.pending
             self.pending = None
@@ -270,10 +273,41 @@ class MusicStream:
                 logging.warning('Music volume failed: %s', error)
 
     def _finished(self):
+        if self.current['flag']:
+            return False
+        return self._stopped()
+
+    @staticmethod
+    def _stopped():
+        """The mixer has nothing playing (False when it cannot say)."""
         get_busy = getattr(pygame.mixer.music, 'get_busy', None)
-        if get_busy is None or self.current['flag']:
+        if get_busy is None:
             return False
         try:
             return not get_busy()
         except pygame.error:
             return False
+
+    looped_again = 0        # how many times a looping cue had to be started again (the log names the first)
+
+    def _loop_again(self, now):
+        """A looping cue the mixer let end: started again from where its loop starts. Android's SDL_mixer played the
+        word grid's 72 s MP3 (8201, `loops=-1`) once and fell silent (the owner's g54, 2026-10-29); the desktop's
+        repeats it. An intro's loop starts after the intro; any other cue at 0."""
+        current = self.current
+        if not self.looped_again:
+            logging.warning('Music %s stopped while looping; started again', current['id'])
+        self.looped_again += 1
+        intro = current['length'] if current.get('loop') is not None else None
+        try:
+            self._set_volume(self.volume)
+            if intro is not None:
+                self._play(current['data'], current['loop'], intro, True, intro)
+            else:
+                pygame.mixer.music.play(loops=-1, start=0)
+        except (pygame.error, OSError, ValueError) as error:
+            logging.warning('Music %s cannot loop: %s', current['id'], error)
+            self._unload()
+            return
+        current.update(start=intro or 0, played=0)
+        self.clock = now
