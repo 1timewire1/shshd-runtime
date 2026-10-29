@@ -396,7 +396,9 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             canvas.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             canvas.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             canvas.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            canvas.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+            // The keyboard is drawn over the game, as HD's is (its name entry sits above it); tied to the keyboard's
+            // top, the whole frame shrank into the space left above it.
+            canvas.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
         canvas.send = { [weak self] event in self?.events.append(event) }
         NotificationCenter.default.addObserver(self, selector: #selector(suspend), name: UIApplication.willResignActiveNotification, object: nil)
