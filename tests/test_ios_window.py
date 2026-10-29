@@ -156,6 +156,53 @@ class IosWindowTests(unittest.TestCase):
         host._event(dict(kind='pinch', phase='changed', scale=1.5, point=[500, 300]))
         self.assertEqual(calls, [])
 
+    def test_a_drag_on_the_tree_outlives_the_story_moving_on(self):
+        """A touch from before the screen changed (its generation) answers nothing, but a finger dragging the tree or
+        the wall goes on, its lift ending the drag; one that never moved is let go, not a tap on the new screen. Each
+        touch begun on the tree is one runtime-log line."""
+        from exp_runtime.platforms.drawing import Rect
+        host = self.host()
+        seen = []
+        panels = SimpleNamespace(tree_rect=Rect(0, 0, 200, 700), tree_scroll=0.0, tree_scroll_x=0.0, tree_sz_now=1.0)
+        game = SimpleNamespace(panels_open=True, side_panels=panels, tree_drag=None, wall_drag=None,
+                               session=SimpleNamespace(pending=None), screen_token=None)
+        game._screen_token = lambda: None
+        host.app.game, host.app.screen = game, 'game'
+        self.addCleanup(setattr, host.app, 'game', None)
+
+        def handle(event):
+            seen.append(event.type)
+            if event.type == host.backend.MOUSEBUTTONDOWN:
+                game.tree_drag = [event.pos, (0.0, 0.0), False]
+            elif event.type == host.backend.MOUSEMOTION and game.tree_drag:
+                game.tree_drag[2] = True
+                panels.tree_scroll = 50.0
+            elif event.type == host.backend.MOUSEBUTTONUP:
+                game.tree_drag = None
+        host.app.handle_event = handle
+        cancelled = []
+        host.app.cancel_pointer = lambda: cancelled.append(True)
+        host.app.input_token = lambda: ('game', None, None)
+        stale = host.generation - 1
+        with self.assertLogs(level='WARNING') as log:
+            host.handle_events([dict(kind='down', point=[100, 300], generation=host.generation)])
+            host.handle_events([dict(kind='move', point=[100, 250], generation=stale),
+                                dict(kind='up', point=[100, 250], generation=stale)])
+        b = host.backend
+        self.assertEqual(seen, [b.MOUSEBUTTONDOWN, b.MOUSEMOTION, b.MOUSEBUTTONUP])
+        self.assertIsNone(game.tree_drag)
+        self.assertEqual(len(log.records), 1)
+        self.assertIn("{'move': 1, 'up': 1}, dropped {}", log.output[0])
+        self.assertIn('-> (50.0, 0.0, 1.0)', log.output[0])
+        seen.clear()
+        host.handle_events([dict(kind='down', point=[100, 300], generation=host.generation)])
+        host.handle_events([dict(kind='up', point=[100, 300], generation=stale)])     # a tap: let go
+        self.assertEqual(seen, [b.MOUSEBUTTONDOWN])
+        self.assertIsNone(game.tree_drag)
+        self.assertEqual(cancelled, [True])
+        host.handle_events([dict(kind='move', point=[100, 250], generation=stale)])  # no drag: dropped
+        self.assertEqual(seen, [b.MOUSEBUTTONDOWN])
+
     def test_slow_frames_are_summarised_in_the_runtime_log(self):
         """The owner's iPad is the only place its slowness shows: a span with a slow frame writes one summary line
         (Swift's timings with it); a smooth span writes nothing."""

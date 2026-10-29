@@ -98,6 +98,42 @@ class Host:
         self.input_stamp = self._input_stamp()
         self.generation = 0
         self.frame_stats = FrameStats()      # slow frames, summarised in the runtime log (request)
+        self.tree_touch = None               # a touch begun on the story tree, traced into the runtime log
+        self.tree_scroll_logged = -2000      # when a scroll-mode drag over the side panels was last logged
+
+    def _tree_panel(self):
+        game = self.app.game if self.app.screen == 'game' else None
+        panels = getattr(game, 'side_panels', None) if game is not None and game.panels_open else None
+        return panels if panels is not None and panels.tree_rect is not None else None
+
+    def trace_tree_touch(self, event, dropped=False):
+        """One runtime-log line for each touch begun on the story tree: what reached the app and where the tree went.
+        The owner's iPad would not scroll the tree with one finger, though the same touches scroll it here."""
+        kind, panels = event['kind'], self._tree_panel()
+        if kind == 'scroll' and panels is not None:
+            # Swift's scroll mode (the frame's `scrollable`) sends a drag as wheel steps, without a point.
+            if self.backend.ticks - self.tree_scroll_logged >= 2000:
+                self.tree_scroll_logged = self.backend.ticks
+                logging.warning('scroll-mode drag while the side panels are open (dropped %s, max_scroll %s)',
+                                dropped, self.app.game.max_scroll)
+            return
+        if kind == 'down' and not dropped:
+            self.tree_touch = None
+            if panels is not None and panels.tree_rect.collidepoint(tuple(event['point'])):
+                self.tree_touch = dict(start=tuple(event['point']), scroll=(panels.tree_scroll, panels.tree_scroll_x),
+                                       zoom=panels.tree_sz_now, counts={}, dropped={})
+            return
+        trace = self.tree_touch
+        if trace is None:
+            return
+        counts = trace['dropped' if dropped else 'counts']
+        counts[kind] = counts.get(kind, 0) + 1
+        if kind in ('up', 'cancel') and not dropped:
+            self.tree_touch = None
+            after = (panels.tree_scroll, panels.tree_scroll_x, panels.tree_sz_now) if panels is not None else None
+            logging.warning('tree touch at %s: %s, dropped %s; scroll %s zoom %s -> %s; last point %s',
+                            trace['start'], trace['counts'], trace['dropped'], trace['scroll'], trace['zoom'], after,
+                            event.get('point'))
 
     def _input_stamp(self):
         game = self.app.game if self.app.screen == 'game' else None
@@ -114,8 +150,11 @@ class Host:
         entry = self.app.game.session.pending if screen == 'game' else None
         for event in events:
             if event.get('generation', self.generation) != self.generation:
-                continue  # A touch begun on an expired timed choice cannot answer its successor.
+                if not self._stale_drag(event):
+                    self.trace_tree_touch(event, dropped=True)
+                    continue  # A touch begun on an expired timed choice cannot answer its successor.
             self._event(event)
+            self.trace_tree_touch(event)
             if self.app.input_token() != token:
                 break
             if screen == 'game' and self.app.game.screen_token != self.app.game._screen_token():
@@ -126,6 +165,21 @@ class Host:
                            and (event['kind'] == 'text' or event.get('key') == 'backspace'))
                 if not editing:
                     break
+
+    def _stale_drag(self, event):
+        """Whether a touch from before the screen changed still goes on: a finger dragging the story tree or the wall
+        (Desktop.tree_drag / wall_drag) answers nothing, and the story moving on under it (a line of narration, a
+        scene) must not leave it stuck. Its lift ends the drag when it moved; one that never moved would be a tap on
+        the changed screen, so it is let go instead."""
+        game = self.app.game if self.app.screen == 'game' else None
+        drag = (game.tree_drag or game.wall_drag) if game is not None else None
+        if drag is None or event['kind'] not in ('move', 'up'):
+            return False
+        if event['kind'] == 'up' and not drag[2]:
+            game.tree_drag = game.wall_drag = None
+            self.app.cancel_pointer()
+            return False
+        return True
 
     def pick(self, kind):
         self.picker = kind
