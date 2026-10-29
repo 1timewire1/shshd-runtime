@@ -291,8 +291,40 @@ remain separate from simulator verification.
 The engine remains experimental: unsupported game services stop explicitly,
 as on desktop. Shared layout and clocks do not imply identical rasterization;
 CoreGraphics interpolation/antialiasing can differ from SDL, and CoreText can
-differ from desktop FreeType. Device keyboard, document providers, audio routes
-and performance still need physical-device testing.
+differ from desktop FreeType. Device keyboard, document providers and audio
+routes still need wider physical-device testing.
+
+## Performance
+
+The app draws at the screen's own resolution (an iPad mini 5: 1536 x 1984 in
+portrait, 2048 x 1472 with the side panels), with the HD menus' layers at 2x
+(`ios.hd_scale_for`). Still screens cost almost nothing. Busy ones are limited
+by CoreGraphics drawing each frame on the CPU, not by Python. The owner's
+iPad mini 5 (2026-10-29, `shshd-runtime.log` frame summaries) measured:
+
+| | Python | CoreGraphics drawing | Drawn |
+|---|---|---|---|
+| Animated menus and cards | 3–8 ms | 25–75 ms | 3–9 Mpx |
+| Picker while scrolling | 6–27 ms | 30–75 ms | 3–9 Mpx, 0.4–0.8 MB of PNG |
+| Still screens | ~5 ms | ~0 ms | 0 |
+
+Drawing costs about 10 ms per megapixel. A busy frame draws two to three times
+the window's own area: every changed layer is rasterised into its own
+full-size bitmap and then composited into the frame. Busy screens therefore run
+at about 12–30 fps. Screen changes that load new art take 0.4–0.8 s once.
+
+The planned fix is to composite on the GPU. Each of a frame's top-level layers
+would become a Core Animation layer, positioned, scaled and faded by Core
+Animation, instead of being drawn into one bitmap by the CPU each frame. Cheaper
+options were checked and set aside:
+- The PNG encoding of Python's pictures is already at its fastest setting.
+- Using the iPad's native BGRA bitmap format would trade one conversion for
+  another, since the PNG art would then be converted, and the self-test reads
+  RGBA bytes.
+- A cheaper scaling filter would soften scaled art.
+
+The 768 x 992 point-sized frames used before (the view's content scale stayed
+1) were faster but visibly soft.
 
 ## Implementation boundary
 
