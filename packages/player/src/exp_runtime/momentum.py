@@ -9,7 +9,7 @@ Off by default: a mouse drag on desktop stops where it ends; touch hosts turn it
 """
 import math
 
-import pygame
+from . import graphics as pygame
 
 ENABLED = False
 RATE = 0.998            # UIScrollViewDecelerationRateNormal: the speed kept each millisecond
