@@ -652,6 +652,13 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             } catch { response = .failure(error) }
             // Queued before the drawing below can finish, so the main queue counts it (`rendering`) before it ends.
             let drawn = drawing
+            // A frame's UIKit controls go up with its picture, when the render queue has drawn it: placed as the
+            // result came, they ran a frame or more ahead of the sliding and zooming cards (more so at Retina).
+            var framedControls: [[String: Any]]?
+            if drawn != nil, case .success(let (result, _)) = response {
+                framedControls = result["controls"] as? [[String: Any]]
+            }
+            let controls = framedControls
             let spent = (CACurrentMediaTime() - began) * 1000
             DispatchQueue.main.async {
                 self.working = false
@@ -663,7 +670,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if let image = image { self.canvas.image = image }
                     self.canvas.generation = result["generation"] as? Int ?? 0
                     self.canvas.scrollable = result["scrollable"] as? Bool ?? false
-                    if let placed = result["controls"] as? [[String: Any]] { self.canvas.placeControls(placed) }
+                    if drawn == nil, let placed = result["controls"] as? [[String: Any]] { self.canvas.placeControls(placed) }
                     self.canvas.syncText(result["text"] as? String, editsSent: editsSent)
                     self.showAlert(result["alert"] as? [String: Any])
                     if self.running && result["keyboard"] as? Bool == true && self.alert == nil {
@@ -757,7 +764,9 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     self.rendering -= 1
                     self.renderMs = spent
                     switch rendered {
-                    case .success(let image): self.canvas.image = image
+                    case .success(let image):
+                        self.canvas.image = image
+                        if let placed = controls { self.canvas.placeControls(placed) }
                     case .failure(let error): self.showError(error.localizedDescription, fatal: true)
                     }
                     if !self.requests.isEmpty { self.frame() }
