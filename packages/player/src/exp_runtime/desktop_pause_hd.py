@@ -149,6 +149,19 @@ KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
 PAGE_KEYS = {pygame.K_UP: -40, pygame.K_DOWN: 40, pygame.K_PAGEUP: -400, pygame.K_PAGEDOWN: 400}
 
 
+def place_switches(renderer, centre, scale, *, space='window', alpha=1.0):
+    """Hand the host this frame's switches (graphics.native_switches), the card being drawn `scale` times its size
+    about `centre` (where the frame's centre lands): in the window's pixels, or with `space='frame'` in the frame's
+    points (the HD menus' canvas, which the host maps to the window). `scale` is that space's units per point."""
+    if pygame.native_switches is None:
+        return
+    cx, cy = centre
+    for key, right, middle, on in renderer.placed_switches():
+        pygame.native_switches.append(dict(key=key, on=on, space=space, alpha=alpha, scale=scale,
+                                           right=cx + (right - FRAME[0] / 2) * scale,
+                                           middle=cy + (middle - FRAME[1] / 2) * scale))
+
+
 def focus_step(key):
     """-1 or 1 for a key that moves a menu's highlight back or on (Up / Left / Shift-Tab, Down / Right / Tab), else
     None."""
@@ -272,7 +285,20 @@ class HdPauseMenu:
 
     def start_slide(self, direction):
         self.slide = (direction, self.shown, 0.) if self.shown is not None else None
+        self.slid_switches = self.shown_switches     # the page sliding out takes its host switches along
         self.switches = None        # a page's switches first show at rest
+
+    screen_switches = shown_switches = slid_switches = ()   # (key, right, middle, on) of a page's host switches
+
+    def placed_switches(self):
+        """Where the last laid-out screen's host switches are (key, right x, middle y in frame points, on), sliding
+        with their pages (`layout`) as UIKit's subviews would."""
+        if self.slide is None:
+            return list(self.shown_switches)
+        direction, _, elapsed = self.slide
+        shift = ease_in_out(elapsed / SLIDE_MS) * FRAME[0]
+        return ([(key, x - direction * shift, y, on) for key, x, y, on in self.slid_switches]
+                + [(key, x + direction * (FRAME[0] - shift), y, on) for key, x, y, on in self.shown_switches])
 
     def advance(self, ms):
         if self.slide is not None:
@@ -511,6 +537,7 @@ class HdPauseMenu:
         (`open` / `back`) the layer holds both cards and there are no buttons."""
         layer, buttons = self.screen_layout(settings, host_rows, message=message)
         self.shown, self.drawn = layer, ((settings, host_rows), {'message': message})
+        self.shown_switches = self.screen_switches
         if self.slide is None:
             return layer, buttons
         direction, previous, elapsed = self.slide
@@ -524,6 +551,7 @@ class HdPauseMenu:
         """The current screen alone, at rest: `layout`'s (layer, buttons)."""
         layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
         strings, state, buttons = self.strings(), self.state, []
+        self.screen_switches = []
         bottom_rule = None
         focus = state.focus
         if state.screen == 'pause':
@@ -577,7 +605,12 @@ class HdPauseMenu:
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
                          badge=switch_badge(key))
-                if kind == 'switch':
+                if kind == 'switch' and pygame.native_switches is not None:
+                    # The host's own control (the iOS host's UISwitch), placed over the row (place_switches).
+                    self.screen_switches.append((key, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
+                                                 bool(settings.get(key, False))))
+                    buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
+                elif kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
                                 self.switch_position(key, settings.get(key, False)))
                     buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))

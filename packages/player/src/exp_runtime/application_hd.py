@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, focus_step
+from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, focus_step, place_switches
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
 from .pointer import step_focus
@@ -451,6 +451,9 @@ class HdShell:
             if size != layer.get_size():
                 layer = pygame.transform.smoothscale(layer, size)
             canvas.blit(layer, layer.get_rect(center=canvas.get_rect().center))
+            # (the host's switches in the frame's points, faded with the frame: draw_fade comes after)
+            place_switches(self.pause, (FRAME[0] / 2, FRAME[1] / 2), scale, space='frame',
+                           alpha=1 - self.fade_level())
 
     def variables(self):
         strings = self.windows.strings()

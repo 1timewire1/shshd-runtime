@@ -80,6 +80,7 @@ class Host:
         from .. import desktop_choice, momentum
         desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out (as Android)
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (as Android)
+        graphics.native_switches = []               # the options' switches are UIKit's, as SHS HD's (switches)
         self.directory = Path(directory)
         install_log(self.directory)
         self.update_future = None
@@ -275,9 +276,46 @@ class Host:
         elif kind == 'pinch':
             self.pinch(event)
             return
+        elif kind == 'switch':
+            self.flip_switch(event['key'], bool(event['on']))
+            return
         else:
             raise ValueError(f'Unsupported iOS input: {kind}')
         self.app.handle_event(event)
+
+    def flip_switch(self, key, on):
+        """A UISwitch the player flipped (Swift's `switch` event): the same toggle a tap on its row makes, unless the
+        setting already is `on` or its page has gone (the next frame then puts the switch back, or hides it)."""
+        shown = {placed['key']: placed['on'] for placed in self.switches_shown}
+        if shown.get(key, on) == on:
+            return
+        game = self.app.game if self.app.screen == 'game' else None
+        if game is not None and game.menu_open and not game.pause_closing:
+            game.command(('pause_toggle', key))
+        elif self.app.screen == 'main' and self.app.shell is not None and self.app.shell.pause_open:
+            self.app.shell.activate(('pause_toggle', key))
+
+    switches_shown = ()             # the switches the last frame placed (switches)
+
+    def switches(self):
+        """This frame's option switches for Swift's UISwitches, in the window's pixels (desktop_pause_hd.place_switches):
+        the main menu's are in its frame's points, mapped by the frame's viewport, and give way to whatever the app
+        draws over its menus (the busy card, a message, the update prompt)."""
+        from .. import graphics
+        from ..desktop_pause_hd import FRAME as HD_FRAME
+        placed, graphics.native_switches = graphics.native_switches, []
+        app, shown = self.app, []
+        covered = app.busy or app.message or app.update_prompt is not None
+        for switch in placed:
+            if switch['space'] == 'frame':
+                if app.screen != 'main' or covered or getattr(app, 'viewport', None) is None:
+                    continue
+                v, k = app.viewport, app.viewport.width / HD_FRAME[0]
+                switch = dict(switch, right=v.x + switch['right'] * k, middle=v.y + switch['middle'] * k,
+                              scale=switch['scale'] * k)
+            shown.append({key: switch[key] for key in ('key', 'on', 'right', 'middle', 'scale', 'alpha')})
+        self.switches_shown = shown
+        return shown
 
     def pinch(self, event):
         """UIKit's pinch (Swift's recognizer; HD's story tree is a UIScrollView zoomed by one): begun on the tree, it
@@ -407,6 +445,8 @@ class Host:
                             break
                         parent = parent.parent
             self.staging.clear()
+        from .. import graphics
+        graphics.native_switches = []        # this frame's switches only (switches)
         self.app.render()
         stamp = self._input_stamp()
         if stamp != self.input_stamp:
@@ -439,6 +479,7 @@ class Host:
                     update_request=update_request,
                     generation=self.generation,
                     scrollable=self.app.screen in ('episodes', 'browser') or bool(game and game.max_scroll),
+                    switches=self.switches(),
                     busy=self.app.busy, screen=self.app.screen, game=self.app.selected_game,
                     pending=pending.name if pending else None, scene=game.session.scene if game else None,
                     error=game.error if game else self.app.message or None)

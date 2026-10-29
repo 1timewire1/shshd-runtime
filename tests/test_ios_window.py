@@ -213,6 +213,43 @@ class IosWindowTests(unittest.TestCase):
         host.handle_events([dict(kind='move', point=[100, 250], generation=stale)])  # no drag: dropped
         self.assertEqual(seen, [b.MOUSEBUTTONDOWN])
 
+    def test_the_option_switches_are_uikits_and_a_flip_toggles_the_setting(self):
+        """The host turns the menus' switches into UISwitches (graphics.native_switches): each frame lists them in the
+        window's pixels (the main menu's mapped from its frame by the viewport, none under a message), and a flip
+        Swift sends is the row's toggle, once, only while it differs and its page is up."""
+        from exp_runtime import graphics
+        from exp_runtime.platforms.drawing import Rect
+        host = self.host()
+        self.assertEqual(graphics.native_switches, [])
+        app = host.app
+        app.viewport = Rect(0, 16, 384, 512)                    # the frame at half size, 16 down
+        toggled = []
+        app.shell = SimpleNamespace(pause_open=True, activate=toggled.append)
+        app.screen, app.message = 'main', ''
+        graphics.native_switches.append(dict(key='autoplay', on=False, space='frame', alpha=1.0, scale=1.0,
+                                             right=660, middle=300))
+        shown = host.switches()
+        self.assertEqual(shown, [dict(key='autoplay', on=False, right=330.0, middle=166.0, scale=.5, alpha=1.0)])
+        self.assertEqual(graphics.native_switches, [])
+        host._event(dict(kind='switch', key='autoplay', on=True))
+        host._event(dict(kind='switch', key='autoplay', on=False))         # already off: nothing
+        self.assertEqual(toggled, [('pause_toggle', 'autoplay')])
+        app.message = 'Added 3 episodes.'                                  # the message card covers the menu
+        graphics.native_switches.append(dict(key='autoplay', on=True, space='frame', alpha=1.0, scale=1.0,
+                                             right=660, middle=300))
+        self.assertEqual(host.switches(), [])
+        game = SimpleNamespace(menu_open=True, pause_closing=False, command=toggled.append)
+        app.game, app.screen, app.message = game, 'game', ''
+        self.addCleanup(setattr, app, 'game', None)
+        graphics.native_switches.append(dict(key='choice_hints', on=False, space='window', alpha=1.0, scale=1.0,
+                                             right=600, middle=400))
+        host.switches()
+        host._event(dict(kind='switch', key='choice_hints', on=True))
+        self.assertEqual(toggled[-1], ('pause_toggle', 'choice_hints'))
+        game.pause_closing = True                                          # the card is going: let it be
+        host._event(dict(kind='switch', key='choice_hints', on=True))
+        self.assertEqual(len(toggled), 2)
+
     def test_slow_frames_are_summarised_in_the_runtime_log(self):
         """The owner's iPad is the only place its slowness shows: a span with a slow frame writes one summary line
         (Swift's timings with it); a smooth span writes nothing."""

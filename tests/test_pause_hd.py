@@ -69,6 +69,37 @@ class HdPauseTests(unittest.TestCase):
         menu.open('options:sound')                                         # a new page's switches start at rest
         self.assertIsNone(menu.switches)
 
+    def test_a_hosts_own_switches_are_placed_not_drawn_and_slide_with_their_page(self):
+        """Where the host shows UIKit's switches (iOS, graphics.native_switches), a page records each switch's place
+        instead of drawing it (no knob animation of its own), keeps its row's tap, and the switches slide with their
+        page; place_switches hands them over zoomed about the card's centre."""
+        from exp_runtime import graphics
+        menu, module = self.menu, self.module
+        with patch.object(graphics, 'native_switches', []):
+            menu.state.screen = 'options:extras'
+            self.settings['choice_hints'] = True
+            buttons = self.commands()
+            self.assertIn(('pause_toggle', 'choice_hints'), [c for _, c in buttons])
+            self.assertIsNone(menu.switches)                               # nothing drawn, nothing animating
+            right = module.PANEL_X + module.PANEL_W - module.CONTROL_RIGHT
+            placed = {key: (x, on) for key, x, _, on in menu.placed_switches()}
+            self.assertEqual(placed['choice_hints'], (right, True))
+            self.assertEqual(placed['skip_minigames'], (right, False))
+            module.place_switches(menu, (100, 200), .5, alpha=.25)
+            first = graphics.native_switches[0]
+            self.assertEqual((first['right'], first['scale'], first['alpha'], first['space']),
+                             (100 + (right - 384) * .5, .5, .25, 'window'))
+            menu.back()                                                    # Extras slides out to the right
+            self.commands()
+            menu.advance(module.SLIDE_MS / 2)
+            self.commands()
+            moved = {key: x for key, x, _, _ in menu.placed_switches()}
+            self.assertAlmostEqual(moved['choice_hints'], right + module.FRAME[0] / 2, places=3)
+            menu.advance(module.SLIDE_MS)
+            self.commands()
+            self.assertEqual(menu.placed_switches(), [])                   # the categories page has none
+        self.commands()                                                    # drawn again without a host
+
     def test_host_rows_follow_the_real_ones(self):
         buttons = self.commands(host_rows=[('Save', ('save',))])
         self.assertEqual([c for _, c in buttons][-2:], [("main_menu",), ("save",)])

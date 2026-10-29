@@ -78,6 +78,48 @@ final class GameCanvasView: UIView, UIKeyInput {
     var scrollable = false
     var generation = 0
     private var touchGeneration = 0
+
+    // The options' switches are UIKit's own, as SHS HD's were (subviews of its menus): each frame names the switches
+    // the menus show, where (`right` edge and `middle` in the frame's pixels), how big (`scale`: frame pixels per menu
+    // point, the card zooming open) and how faded. Those not named are hidden. A flip goes back as a `switch` event:
+    // the app toggles that setting as a tap on its row does, and the next frame confirms it or puts the switch back.
+    private var switches: [String: UISwitch] = [:]
+    func placeSwitches(_ placed: [[String: Any]]) {
+        let v = viewport, frame = frameSize
+        let k = v.width / max(1, frame.width)        // view points per frame pixel
+        var shown = Set<String>()
+        for item in placed {
+            guard let key = item["key"] as? String, let on = item["on"] as? Bool,
+                  let right = (item["right"] as? NSNumber)?.doubleValue,
+                  let middle = (item["middle"] as? NSNumber)?.doubleValue,
+                  let scale = (item["scale"] as? NSNumber)?.doubleValue else { continue }
+            let control = switches[key] ?? makeSwitch(key)
+            shown.insert(key)
+            let s = max(0.001, CGFloat(scale) * k)
+            control.transform = .identity
+            let size = control.intrinsicContentSize
+            control.bounds = CGRect(origin: .zero, size: size)
+            control.transform = CGAffineTransform(scaleX: s, y: s)
+            control.center = CGPoint(x: v.minX + CGFloat(right) * k - size.width * s / 2, y: v.minY + CGFloat(middle) * k)
+            control.alpha = CGFloat((item["alpha"] as? NSNumber)?.doubleValue ?? 1)
+            control.isHidden = false
+            if control.isOn != on && !control.isTracking { control.setOn(on, animated: true) }
+        }
+        for (key, control) in switches where !shown.contains(key) { control.isHidden = true }
+    }
+    private func makeSwitch(_ key: String) -> UISwitch {
+        let control = UISwitch()
+        control.accessibilityIdentifier = key
+        control.isHidden = true
+        control.addTarget(self, action: #selector(switchFlipped(_:)), for: .valueChanged)
+        addSubview(control)
+        switches[key] = control
+        return control
+    }
+    @objc private func switchFlipped(_ control: UISwitch) {
+        guard let key = control.accessibilityIdentifier else { return }
+        send?(["kind": "switch", "key": key, "on": control.isOn])
+    }
     private var start: CGPoint?
     private var previous: CGPoint?
     private var dragging = false
@@ -500,6 +542,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if let image = image { self.canvas.image = image }
                     self.canvas.generation = result["generation"] as? Int ?? 0
                     self.canvas.scrollable = result["scrollable"] as? Bool ?? false
+                    if let placed = result["switches"] as? [[String: Any]] { self.canvas.placeSwitches(placed) }
                     if self.running && result["keyboard"] as? Bool == true { self.canvas.becomeFirstResponder() }
                     else { self.canvas.resignFirstResponder() }
                     NativeVibration.perform(result["vibrations"] as? Int ?? 0,
