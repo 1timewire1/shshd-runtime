@@ -229,12 +229,38 @@ class Surface:
             self._node = Node(self._size, tuple(self._ops))
         return self._node
 
-    def _append(self, op):
-        if not self._ops and self._node is not None:
-            self._ops = [dict(kind='blit', source=self._node, at=(0, 0), alpha=255,
-                              clip=(0, 0, *self._size))]
+    def _append(self, op, cover=None):
+        """Record `op`. `cover` is the area it paints fully opaque (an opaque fill or blit, clipped), if any."""
+        if not self._ops:
+            self._cover = []
+            if self._node is not None:
+                self._ops = [dict(kind='blit', source=self._node, at=(0, 0), alpha=255,
+                                  clip=(0, 0, *self._size))]
         self._node = None
         self._ops.append(dict(op, clip=tuple(self._clip)))
+        if cover is not None:
+            self._cover.append((len(self._ops) - 1, Rect(cover)))
+            self._drop_hidden()
+
+    COVER_LIMIT = 16
+
+    def _drop_hidden(self):
+        """Forget the ops that later opaque ones paint over entirely. One opaque fill or blit of the whole surface
+        already starts it afresh; a surface covered in pieces (a window's strips beside the frame, then the frame:
+        present_frame) kept every frame's ops, and the host drew them all each frame (the owner's iPad: 0.3 s a frame
+        and more, until iOS stopped the app at its memory limit)."""
+        cover = self._cover[-self.COVER_LIMIT:]
+        width, height = self._size
+        if sum(rect.width * rect.height for _index, rect in cover) < width * height:
+            self._cover = cover
+            return
+        for start in range(len(cover) - 1, -1, -1):
+            if _covers([rect for _index, rect in cover[start:]], width, height):
+                first = cover[start][0]
+                self._ops = self._ops[first:]
+                self._cover = [(index - first, rect) for index, rect in cover[start:]]
+                return
+        self._cover = cover
 
     def get_size(self):
         return self._size
@@ -297,7 +323,8 @@ class Surface:
             if region == self.get_rect():
                 self._ops, self._node = [], None
                 self.opaque = rgba(color)[3] == 255
-            self._append(dict(kind='fill', color=rgba(color), rect=tuple(region)))
+            self._append(dict(kind='fill', color=rgba(color), rect=tuple(region)),
+                         cover=region if rgba(color)[3] == 255 else None)
         return region
 
     def blit(self, source, destination, area=None, special_flags=0):
@@ -316,10 +343,11 @@ class Surface:
             self._blend_into(raster(source.snapshot()), at, special_flags, 'image')
         elif bounds.width > 0 and bounds.height > 0:
             node = source.snapshot()
-            if source.opaque and source._alpha == 255 and bounds == self.get_rect():
+            solid = source.opaque and source._alpha == 255
+            if solid and bounds == self.get_rect():
                 self._ops, self._node = [], None
                 self.opaque = True
-            self._append(dict(kind='blit', source=node, at=at, alpha=source._alpha))
+            self._append(dict(kind='blit', source=node, at=at, alpha=source._alpha), cover=bounds if solid else None)
         return bounds
 
     def _blend_into(self, source, at, flags, what):
@@ -354,6 +382,17 @@ class Surface:
         return SurfaceView(self, rect)
 
 
+def _covers(rects, width, height):
+    """Whether `rects` (each within the surface) together cover a `width` x `height` surface."""
+    xs = sorted({0, width, *(r.left for r in rects), *(r.right for r in rects)})
+    ys = sorted({0, height, *(r.top for r in rects), *(r.bottom for r in rects)})
+    for top, bottom in zip(ys, ys[1:]):
+        for left, right in zip(xs, xs[1:]):
+            if not any(r.left <= left and right <= r.right and r.top <= top and bottom <= r.bottom for r in rects):
+                return False
+    return True
+
+
 def _translated(op, dx, dy):
     """`op` (a drawing command) moved by (dx, dy)."""
     op = dict(op)
@@ -378,7 +417,15 @@ class SurfaceView(Surface):
         self._parent, self._offset, self._size = parent, (rect.x, rect.y), rect.size
         self._alpha = 255
         self._clip = Rect(0, 0, *self._size)
-        self.opaque = False
+
+    @property
+    def opaque(self):
+        """A window onto an opaque surface is opaque (present_frame's strips of the art beside the frame)."""
+        return self._parent.opaque
+
+    @opaque.setter
+    def opaque(self, value):
+        pass                    # what it shows is its parent's: drawing into it goes there
 
     def _on_parent(self, call):
         parent, saved = self._parent, self._parent._clip

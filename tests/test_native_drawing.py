@@ -150,6 +150,28 @@ class NativeDrawingTests(unittest.TestCase):
             if got[index + 3] and want[index + 3]:
                 self.assertEqual(got[index:index + 3], want[index:index + 3])
 
+    def test_a_window_covered_in_pieces_each_frame_keeps_only_that_frames_drawing(self):
+        """present_frame draws the art beside the frame in strips, then the frame: no one fill covers the window, but
+        together they do. Without dropping what they hide, the window kept every frame's drawing and the host drew it
+        all each frame (the owner's iPad: slower each frame until iOS stopped the app at its memory limit)."""
+        art = d.Surface((768, 992)); art.fill((30, 40, 50))
+        frame = d.Surface((744, 992)); frame.fill((200, 10, 10))
+        window = d.Surface((768, 992))
+        encoder = d.FrameEncoder()
+        for _ in range(50):
+            for strip in (d.Rect(0, 0, 12, 992), d.Rect(756, 0, 12, 992)):
+                window.blit(art, strip, strip)                  # a subsurface of an opaque surface is opaque
+            window.blit(frame, (12, 0))
+            encoder.encode(window)
+        self.assertEqual(len(window._ops), 3)
+        window.blit(d.Surface((10, 10), d.SRCALPHA), (0, 0))   # see-through: kept on top, nothing dropped
+        window.fill((0, 0, 0), (0, 0, 768, 500))                # half: the window is not covered by it alone
+        self.assertEqual(len(window._ops), 5)
+        pixels = d.raster(window.snapshot())
+        self.assertEqual(pixels.getpixel((5, 600)), (30, 40, 50, 255))
+        self.assertEqual(pixels.getpixel((400, 600)), (200, 10, 10, 255))
+        self.assertEqual(pixels.getpixel((400, 100)), (0, 0, 0, 255))
+
     def test_subsurface_reads_of_an_image_reuse_one_node(self):
         """A font sheet's glyph read through a subsurface every frame is one node (one PNG for the host)."""
         sheet = d.Surface.from_pixels(Image.new('RGBA', (8, 8), (1, 2, 3, 255)))
