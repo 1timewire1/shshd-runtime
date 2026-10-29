@@ -123,6 +123,14 @@ class WallConfirmTests(unittest.TestCase):
         self.assertEqual(self.ui.notice_stack.stack, [self.ui.exit_menu])
         self.assertEqual(self.ui.wall_link, 'http://example.invalid/pogo')
 
+    def test_a_touch_that_stops_the_gliding_wall_is_not_a_link_tap(self):
+        fling = self.ui.wall_fling
+        fling.velocity, fling.left, fling.time = (1.0,), (self.ui.side_panels.wall_scroll,), 0
+        self.ui.handle_event(self.event(self.pygame.MOUSEBUTTONDOWN, pos=(1200, 420), button=1))
+        self.ui.handle_event(self.event(self.pygame.MOUSEBUTTONUP, pos=(1200, 420), button=1))
+        self.assertFalse(fling.moving)
+        self.assertEqual(self.ui.notice_stack.stack, [])
+
     def test_a_help_page_link_in_the_pause_menu_asks_first(self):
         # An About page's link, tapped in a story's pause menu, goes through the same "Exit Game?" prompt.
         with patch('exp_runtime.desktop.webbrowser.open', return_value=True) as opened:

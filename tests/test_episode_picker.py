@@ -376,6 +376,48 @@ class ScreenTests(unittest.TestCase):
         self.assertGreater(picker.scroll_y, 0)
         self.assertEqual(picker.row_x, {})
 
+    def test_a_flicked_picker_glides_on_and_a_touch_catches_it(self):
+        """The owner's report: on a touch screen the rows' column (and a row) glides on after the finger lifts, as
+        HD's UIScrollViews do; the touch that stops it is not a tap on the tile that slid under it."""
+        from exp_runtime import momentum
+        clock = [0]
+        picker = self.picker
+        picker.hits = [(pygame.Rect(0, 0, 768, 1024), ('tile', self.first))]
+        with patch.object(momentum, 'ENABLED', True), patch.object(momentum, '_now', lambda: clock[0]):
+            picker.pointer_down((300, 500))
+            for clock[0], y in ((20, 480), (40, 460), (60, 440)):
+                picker.pointer_move((302, y))
+            picker.pointer_up((302, 440))
+            released = picker.scroll_y
+            clock[0] = 100
+            picker.coast()
+            self.assertGreater(picker.scroll_y, released)
+            picker.pointer_down((300, 500))
+            self.assertIsNone(picker.pointer_up((300, 500)))
+            caught = picker.scroll_y
+            clock[0] = 200
+            picker.coast()
+            self.assertEqual(picker.scroll_y, caught)
+            picker.pointer_down((300, 900))                             # a hard flick stops at the last row
+            for clock[0], y in ((210, 700), (220, 500), (230, 300)):
+                picker.pointer_move((302, y))
+            picker.pointer_up((302, 300))
+            for clock[0] in range(246, 2000, 16):
+                picker.coast()
+            self.assertEqual(picker.scroll_y, picker.max_scroll_y())
+            self.assertFalse(picker.fling.moving)
+            # A row flicked sideways glides too.
+            picker.scroll_y = 0
+            picker.pointer_down((500, 100))
+            for clock[0], x in ((2010, 480), (2020, 460), (2030, 440)):
+                picker.pointer_move((x, 102))
+            picker.pointer_up((440, 102))
+            key = self.model.rows[0].key
+            released = picker.row_x[key]
+            clock[0] = 2060
+            picker.coast()
+            self.assertGreater(picker.row_x[key], released)
+
     def test_popup_and_alert_capture_keys_and_pointer_scrolling(self):
         picker = self.picker
         picker.popup = self.model.records[0]

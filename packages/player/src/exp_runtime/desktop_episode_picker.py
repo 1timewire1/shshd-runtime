@@ -33,6 +33,7 @@ from io import BytesIO
 
 import pygame
 
+from . import momentum
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .graphics import faded
 from .episode_picker import EpisodeInfo
@@ -40,7 +41,7 @@ from .episode_thumbnails import BUNDLE
 from .hd_layout import HdLayouts
 from .hd_ui import HdUi
 
-S = 2
+from .hd_scale import S
 FRAME = (768, 1024)
 ROW_HEIGHT = 320
 TILE = (216, 290)
@@ -110,6 +111,8 @@ class HdEpisodePicker(HdUi):
         self.pressed = None
         self.saved = set()
         self.drag = None
+        self.fling = momentum.Fling()   # a released drag gliding on
+        self.fling_row = None        # the row it slides sideways, or None for the rows' column
         self.show_restore = True     # only the Play/Resume picker has the Restore button
 
     # ------------------------------------------------------------ availability and resources
@@ -181,6 +184,7 @@ class HdEpisodePicker(HdUi):
 
     def enter(self, selected):
         self.popup = self.alert = self.drag = self.pressed = None
+        self.fling.stop()
         self.selected = selected if selected in self.model.position else None
         self.keyboard = False
         if self.selected:
@@ -202,8 +206,10 @@ class HdEpisodePicker(HdUi):
 
     def pointer_down(self, point):
         command = self.command_at(point)
-        self.pressed = command
-        self.drag = dict(start=point, last=point, mode=None, row=self.row_at(point))
+        # A touch that catches a gliding list only stops it; it is not a tap on what slid under it.
+        caught = self.fling.stop()
+        self.pressed = None if caught else command
+        self.drag = dict(start=point, last=point, mode=None, row=self.row_at(point), caught=caught)
         self.keyboard = False
         self.popup_focus = None
 
@@ -219,25 +225,47 @@ class HdEpisodePicker(HdUi):
         if drag['mode'] is None and max(abs(dx), abs(dy)) > DRAG_THRESHOLD:
             drag['mode'] = 'x' if abs(dx) > abs(dy) and drag['row'] is not None else 'y'
             self.pressed = None
+            self.fling_row = drag['row'].key if drag['mode'] == 'x' else None
         if drag['mode'] == 'x':
             self.row_x[drag['row'].key] = self.row_x.get(drag['row'].key, 0) - (point[0] - drag['last'][0])
         elif drag['mode'] == 'y':
             self.scroll_y -= point[1] - drag['last'][1]
         drag['last'] = point
         self.clamp()
+        if drag['mode'] is not None:
+            self.fling.track(*self.fling_values())
 
     def pointer_up(self, point):
         """The command a click ends in, or None (a drag, or a release somewhere else)."""
         drag, pressed = self.drag, self.pressed
         self.drag = self.pressed = None
         if drag is not None and drag['mode'] is not None:
+            self.fling.release()
+            return None
+        if drag is not None and drag['caught']:
             return None
         command = self.command_at(point)
         return command if command is not None and command == pressed else None
 
+    def fling_values(self):
+        return (self.scroll_y,) if self.fling_row is None else (self.row_x.get(self.fling_row, 0),)
+
+    def coast(self):
+        """Each frame: a released drag's glide (momentum), ended by the clamp at an edge."""
+        values = self.fling.step(*self.fling_values())
+        if values is None:
+            return
+        if self.fling_row is None:
+            self.scroll_y = values[0]
+        else:
+            self.row_x[self.fling_row] = values[0]
+        self.clamp()
+        self.fling.settled(*self.fling_values())
+
     def wheel(self, dx, dy, point):
         if self.popup or self.alert:
             return
+        self.fling.stop()
         row = self.row_at(point)
         if dx and row is not None:
             self.row_x[row.key] = self.row_x.get(row.key, 0) - dx * SCROLL_STEP
@@ -333,17 +361,21 @@ class HdEpisodePicker(HdUi):
     def caption(self, layer, record, x, y):
         """The tile's caption over its top-left corner."""
         text = self.model.label(record)
-        for points in (24, 20):
-            lines = self.wrap(text, points, TILE_STEP - 4, 2)
-            if len(lines) == 1 or points == 20:
-                break
+        wrapped = self.__dict__.setdefault('_captions', {})
+        if text not in wrapped:
+            for points in (24, 20):
+                lines = self.wrap(text, points, TILE_STEP - 4, 2)
+                if len(lines) == 1 or points == 20:
+                    break
+            wrapped[text] = points, lines
+        points, lines = wrapped[text]
         for index, line in enumerate(lines):
             self.text(layer, line, points, x - 10, y - 12 + index * (points + 4))
 
     def tile_image(self, record):
         """The tile's face at 2x: the preview, or preview above / saved screenshot below the zigzag."""
         preview = self.model.preview(record)
-        shot = self.shots(record) if record['id'] in self.saved else None
+        shot = self.saved_face(record)
         if shot is None:
             return preview
         face = pygame.Surface((TILE[0] * S, TILE[1] * S), pygame.SRCALPHA)
@@ -449,6 +481,7 @@ class HdEpisodePicker(HdUi):
     def draw(self, *, backdrop=True):
         """Render into the 2x canvas; returns it. `self.hits` lists the clickable rectangles (points). With
         `backdrop` off it renders onto a transparent layer instead (`begin_layer`)."""
+        self.coast()
         self.clamp()
         layer = self.begin_layer(backdrop)
         self.hits = []
@@ -532,16 +565,36 @@ class HdEpisodePicker(HdUi):
     def card_image(self):
         return self.bundle_image('popupBackground.png')
 
+    _shots = None                   # {record id: (saved screenshot, it at the tile's width)}
+
+    def saved_face(self, record):
+        """A saved game's screenshot at the tile's width in layer pixels, or None. They are saved 432 pixels wide
+        (the tile at 2x); a layer at another scale (hd_scale) gets them resized, once each."""
+        shot = self.shots(record) if record['id'] in self.saved else None
+        width = TILE[0] * S
+        if shot is None or shot.get_width() == width:
+            return shot
+        if self._shots is None:
+            self._shots = {}
+        cached = self._shots.get(record['id'])
+        if cached is None or cached[0] is not shot:
+            size = (width, round(shot.get_height() * width / shot.get_width()))
+            cached = self._shots[record['id']] = (shot, pygame.transform.smoothscale(shot, size))
+        return cached[1]
+
+    _card = None                    # (the card image, it at the layer's scale): scaled once, not every frame
+
     def draw_card(self, layer):
         card = self.card_image()
-        layer.blit(pygame.transform.smoothscale(card, (CARD[0] * S, CARD[1] * S)),
-                   (CARD_TOP_LEFT[0] * S, CARD_TOP_LEFT[1] * S))
+        if self._card is None or self._card[0] is not card:
+            self._card = (card, pygame.transform.smoothscale(card, (CARD[0] * S, CARD[1] * S)))
+        layer.blit(self._card[1], (CARD_TOP_LEFT[0] * S, CARD_TOP_LEFT[1] * S))
 
     def draw_popup(self, layer, record, strings):
         self.draw_card(layer)
         left, top = CARD_TOP_LEFT
         preview = self.model.preview(record)
-        shot = self.shots(record) if record['id'] in self.saved else None
+        shot = self.saved_face(record)
         for label, image, x, command in ((strings[self.NEW_GAME], preview, left + 22, ('new', record['id'])),
                                          (strings[self.CONTINUE], shot or preview, left + 260, ('continue', record['id']))):
             shade = self.shadow()

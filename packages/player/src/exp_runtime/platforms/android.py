@@ -84,13 +84,15 @@ def font_finder(directories):
 class Host:
     REQUEST = 4107
     LIFECYCLE = frozenset()     # the window and app events (pygame's), filled in once pygame is imported (__init__)
+    TOUCH = frozenset()         # the finger events: they only feed the pinch, never act, so never dropped either
 
     def __init__(self):
         from android import activity
         from jnius import autoclass
         from ..application import Application
-        from .. import desktop_choice
+        from .. import desktop_choice, momentum
         desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out
+        momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (owner's report)
         self.activity_api = activity
         self.activity = autoclass('org.kivy.android.PythonActivity').mActivity
         self.bridge = autoclass('org.shshd.runtime.DocumentBridge')
@@ -117,6 +119,7 @@ class Host:
             'WINDOWMINIMIZED', 'WINDOWRESTORED', 'WINDOWSIZECHANGED', 'WINDOWRESIZED', 'VIDEORESIZE', 'VIDEOEXPOSE',
             'APP_WILLENTERBACKGROUND', 'APP_DIDENTERBACKGROUND', 'APP_WILLENTERFOREGROUND', 'APP_DIDENTERFOREGROUND',
             'APP_LOWMEMORY', 'APP_TERMINATING') if hasattr(pygame, name))
+        Host.TOUCH = frozenset((pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP))
         self.results = Queue()
         self.copier = ThreadPoolExecutor(max_workers=1)
         self.pending = False
@@ -262,11 +265,12 @@ class Host:
 
     fingers = None                      # {finger id: (x, y)} in the drawing surface's pixels, while touching
     pinching = False                    # two fingers have been down since the screen was last untouched
-    pinch_span = None                   # the two fingers' distance at the last zoom step
+    pinch = None                        # (span, centre) at the last step of a pinch on the story tree, else None
 
     def finger(self, event):
-        """Two fingers pinch the story tree panel's zoom about the point between them, as desktop's wheel does
-        (SidePanels.zoom_tree); SDL turns only the first finger into mouse events."""
+        """Two fingers on the story tree panel zoom it and carry it along, as UIScrollView's pinch does (HD's tree
+        is one): the zoom is about the point between them (SidePanels.zoom_tree, desktop's wheel) and that point
+        drags the tree. SDL turns only the first finger into mouse events; those stop for the whole gesture."""
         import math
         import pygame
         fingers = self.fingers if self.fingers is not None else {}
@@ -275,24 +279,44 @@ class Host:
             fingers.pop(event.finger_id, None)
         else:
             fingers[event.finger_id] = (event.x * width, event.y * height)
+        if len(fingers) > 1:
+            # A finger lifted whose FINGERUP never arrived must not count: SDL's own list says who is touching.
+            try:
+                from pygame._sdl2 import touch
+                down = {touch.get_finger(event.touch_id, i)['id'] for i in range(touch.get_num_fingers(event.touch_id))}
+                for finger_id in [f for f in fingers if f not in down and f != event.finger_id]:
+                    del fingers[finger_id]
+            except (ImportError, pygame.error, KeyError, TypeError):
+                pass
         self.fingers = fingers
         if not fingers:
-            self.pinching, self.pinch_span = False, None
+            self.pinching, self.pinch = False, None
             return
         if len(fingers) != 2:
-            self.pinch_span = None
+            self.pinch = None
             return
         (ax, ay), (bx, by) = fingers.values()
         span, centre = math.hypot(bx - ax, by - ay), ((ax + bx) / 2, (ay + by) / 2)
         game = self.app.game if self.app.screen == 'game' else None
+        panels = getattr(game, 'side_panels', None)
         if not self.pinching:
             self.pinching = True
             if game is not None:
-                game.tree_drag = None   # the first finger's drag stops scrolling once the second lands
-        panels = getattr(game, 'side_panels', None)
-        if self.pinch_span and span > 0 and panels is not None and panels.tree_rect is not None                 and panels.tree_rect.collidepoint(centre):
-            panels.zoom_tree(math.log(span / self.pinch_span) / math.log(panels.ZOOM_STEP), centre)
-        self.pinch_span = span
+                game.tree_drag = None   # the first finger's drag ends once the second lands
+                game.tree_fling.stop()
+            # The gesture belongs to the tree if it starts there; it then follows the fingers anywhere.
+            if panels is not None and panels.tree_rect is not None and panels.tree_rect.collidepoint(centre):
+                self.pinch = (span, centre)
+                logging.info('Pinch on the story tree at %s', centre)
+            return
+        if self.pinch is None or panels is None or panels.tree_rect is None:
+            return
+        (last_span, (cx, cy)) = self.pinch
+        if span > 0 and last_span > 0:
+            panels.zoom_tree(math.log(span / last_span) / math.log(panels.ZOOM_STEP), centre)
+        s = panels.tree_scale or 1.0
+        panels.scroll_tree(-(centre[1] - cy) / s, -(centre[0] - cx) / s)
+        self.pinch = (span, centre)
 
     def resize(self):
         """The first frame, or the screen turned (or a split screen changed it): a new drawing surface for the window
@@ -371,7 +395,7 @@ class Host:
                     # left the app inactive (no frames) after turning the phone.
                     input_closed = False
                     for event in pygame.event.get():
-                        if event.type not in self.LIFECYCLE:
+                        if event.type not in self.LIFECYCLE and event.type not in self.TOUCH:
                             if input_closed:
                                 continue
                         running = self.event(event) and not self.app.quit_requested
