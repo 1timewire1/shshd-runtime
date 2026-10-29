@@ -1,3 +1,5 @@
+import inspect
+import math
 import unittest
 from unittest.mock import patch
 
@@ -28,6 +30,23 @@ class FlingTests(unittest.TestCase):
             value, = fling.step(value, now=fling.time + 16)
         self.assertLess(value - last, 1)
         self.assertLess(value, 40 + 1 / 0.0020020027)                   # never past the glide's whole distance
+
+    def test_the_story_tree_slows_at_uiscrollviews_fast_rate(self):
+        """`SHSDTView scrollViewWillBeginDecelerating:` sets UIScrollViewDecelerationRateFast: the tree's glide is a
+        fifth of the wall's or the pickers' (1 / -ln 0.99 against 1 / -ln 0.998)."""
+        def whole(rate):
+            fling = Fling(rate)
+            for ms, value in ((0, 0.0), (20, 20.0), (40, 40.0)):
+                fling.track(value, now=ms)
+            fling.release(now=40)
+            value = 40.0
+            while fling.moving:
+                value, = fling.step(value, now=fling.time + 16)
+            return value - 40
+        self.assertAlmostEqual(whole(momentum.RATE_FAST), 1 / -math.log(0.99), delta=2)
+        self.assertGreater(whole(momentum.RATE), 4 * whole(momentum.RATE_FAST))
+        from exp_runtime.desktop import Desktop
+        self.assertIn('momentum.Fling(momentum.RATE_FAST), momentum.Fling()', inspect.getsource(Desktop.__init__))
 
     def test_a_finger_held_still_or_a_slow_drag_does_not_glide(self):
         self.assertFalse(self.flicked((0, 0.0), (20, 20.0), (40, 40.0), (200, 40.0)).moving)

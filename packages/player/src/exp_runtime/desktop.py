@@ -287,7 +287,8 @@ class Desktop:
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
         self.pause_hd = HdPauseMenu(session.resources)
-        self.tree_fling, self.wall_fling = momentum.Fling(), momentum.Fling()   # released drags gliding on
+        # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
+        self.tree_fling, self.wall_fling = momentum.Fling(momentum.RATE_FAST), momentum.Fling()
         if self.dialogue_renderer.game_id() == 'cod':
             # Cause of Death's own Pause / Options / Help & About (its menu engine windows in its own art).
             from .desktop_cod_pause import CodPauseMenu
