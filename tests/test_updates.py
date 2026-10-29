@@ -167,6 +167,33 @@ class ApplicationUpdateTests(unittest.TestCase):
         opener.assert_not_called()
         self.fetcher.assert_called_once_with()
 
+    def test_a_message_over_the_hd_menus_has_an_ok_that_a_tap_dismisses(self):
+        """The owner's g54 was left on "Added 53 episodes." over the HD main menu: the busy card had no button, and a
+        phone or an iPad has no Escape or Enter. The message is the prompt's card with an OK; a tap on it dismisses."""
+        import pygame
+        app = self.app()
+        app.window = pygame.display.set_mode((768, 1024))
+        drawn = []
+
+        def draw_prompt(canvas, title, text, labels):
+            drawn.append((title, text, labels))
+            return [pygame.Rect(306, 588, 156, 58)]
+        canvas = pygame.Surface((768, 1024))
+        app.shell = SimpleNamespace(render=lambda: canvas, windows=SimpleNamespace(draw_prompt=draw_prompt))
+        app.screen, app.message = 'main', 'Added 53 episodes.'
+        self.assertFalse(app.busy)
+        with patch.object(app, 'present_frame'):
+            app.render_shell()
+        self.assertEqual(drawn, [(app.game_title, 'Added 53 episodes.', ('OK',))])
+        app.viewport = pygame.Rect(0, 0, 768, 1024)
+        with patch.object(app, 'picker_point', side_effect=lambda pos: pos):
+            for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                app.handle_event(pygame.event.Event(kind, pos=(100, 100), button=1))
+            self.assertEqual(app.message, 'Added 53 episodes.')                 # beside the button: nothing
+            for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                app.handle_event(pygame.event.Event(kind, pos=(380, 610), button=1))
+        self.assertEqual(app.message, '')
+
     def test_yes_opens_only_the_release_page_then_closes_the_game(self):
         app = self.app()
         opener = app.url_opener = Mock()
