@@ -74,7 +74,10 @@ class MenuState:
         # whole episode, and the menus ask for every episode each time they refresh (seconds once many are finished).
         self.ended_saves = {}
         self.music = self.sound = True
-        self.vibration = False         # Options' Vibration switch: service 82's buzz (vibration.py); off by default
+        self.vibration = False         # Sound's Simulated Vibration Sound: service 82's buzz (vibration.py); off by default
+        # General's Vibration: service 82 on the device's own vibrator, where the host has one (graphics.set_vibrator:
+        # Android's, the iPhone's); off by default, as the buzz.
+        self.device_vibration = False
         # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
         self.music_volume = self.sound_volume = 50
         self.logging_disabled = False
@@ -132,6 +135,8 @@ class MenuState:
                     self.warp_unlocked = data['warp_unlocked']
                 if type(data.get('vibration')) is bool:
                     self.vibration = data['vibration']
+                if type(data.get('device_vibration')) is bool:
+                    self.device_vibration = data['device_vibration']
                 if type(data.get('hd_backdrop')) is bool:
                     self.hd_backdrop = data['hd_backdrop']
                 if type(data.get('hires_portraits')) is bool:
@@ -219,6 +224,7 @@ class MenuState:
 
     def persist(self):
         data = dict(version=1, selected=self.selected, music=self.music, sound=self.sound, vibration=self.vibration,
+                    device_vibration=self.device_vibration,
                     order=self.order,
                     music_volume=self.music_volume, sound_volume=self.sound_volume, logging_disabled=self.logging_disabled,
                     warp_unlocked=self.warp_unlocked, hd_art=self.hd_art,

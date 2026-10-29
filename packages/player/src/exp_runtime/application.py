@@ -860,11 +860,8 @@ class Application:
         self.ui_sound('CLICK_SOUND')
 
     def play_buzz(self):
-        """The vibration stand-in's buzz (vibration.py) at the Sound FX volume, while Sound is on; a device that can
-        vibrate vibrates instead."""
-        if pygame.supports_vibration():
-            pygame.vibrate()
-            return
+        """The vibration stand-in's buzz (vibration.py) at the Sound FX volume, while Sound is on (Sound's Simulated
+        Vibration Sound; a device's own vibrator is General's Vibration)."""
         if not (self.audio and self.state.sound):
             return
         from .vibration import buzz_wav
@@ -942,12 +939,14 @@ class Application:
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
                                 names=self.state.names_for(session.resources.record),
                                 vibration_enabled=self.state.vibration,
+                                device_vibration_enabled=self.state.device_vibration,
                                 episode_title=self.state.title(session.resources.record), on_menu_page=self.show)
         self.stop_menu_music()
         self.game.episode_title = self.state.title(self.game.session.resources.record)
         pygame.display.set_caption(self.game_title + ' — ' + self.game.episode_title)
         self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
         self.game.vibration_enabled = self.state.vibration
+        self.game.device_vibration_enabled = self.state.device_vibration
         self.game.url_opener = self.url_opener
         self.game.fixed_window = self.fixed_window
         self.game.music_volume, self.game.sound_volume = self.state.music_volume / 100, self.state.sound_volume / 100
@@ -1046,6 +1045,7 @@ class Application:
         """The in-game pause menu's music / sound switches are the same host options as the main menu's."""
         self.state.music, self.state.sound = self.game.music_enabled, self.game.sound_enabled
         self.state.vibration = self.game.vibration_enabled
+        self.state.device_vibration = self.game.device_vibration_enabled
         self.state.choice_hints = self.game.choice_hints
         self.state.skip_minigames = self.game.skip_minigames
         self.state.skip_ad_intros = self.game.skip_ad_intros
@@ -1251,8 +1251,9 @@ class Application:
                 self.set_update_check(not self.settings.check_for_updates)
             elif kind == 'toggle':
                 key = command[1]
-                if key not in ('music', 'sound', 'vibration', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
-                               'skip_upsell_intros', 'autoplay', 'disable_choice_timer', 'hires_portraits'):
+                if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
+                               'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
+                               'hires_portraits'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -1266,6 +1267,7 @@ class Application:
                 if self.game:
                     self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
                     self.game.vibration_enabled = self.state.vibration
+                    self.game.device_vibration_enabled = self.state.device_vibration
                     self.game.choice_hints = self.state.choice_hints
                     self.game.skip_minigames = self.state.skip_minigames
                     self.game.skip_ad_intros = self.state.skip_ad_intros

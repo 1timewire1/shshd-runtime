@@ -278,6 +278,42 @@ class StagingTests(unittest.TestCase):
             self.assertEqual(source.read_text(), 'keep')
 
 
+class VibrationTests(unittest.TestCase):
+    def test_the_phones_vibrator_is_found_with_the_permission_and_asked_for_the_duration(self):
+        """General's Vibration on Android: the system Vibrator (VIBRATE in the APK), a one-shot effect from Android
+        8 and vibrate(ms) before it; no permission or no vibrator: not offered."""
+        import sys
+        host = Host.__new__(Host)
+        vibrator = Mock(**{'hasVibrator.return_value': True})
+        effect = Mock(DEFAULT_AMPLITUDE=-1)
+        classes = {'android.content.Context': Mock(VIBRATOR_SERVICE='vibrator'),
+                   'android.content.pm.PackageManager': Mock(PERMISSION_GRANTED=0),
+                   'android.os.VibrationEffect': effect, 'android.os.Build$VERSION': Mock(SDK_INT=35)}
+        host.activity = Mock(**{'checkSelfPermission.return_value': 0})
+        jnius = SimpleNamespace(cast=lambda name, value: vibrator)
+        with patch.dict(sys.modules, {'jnius': jnius}):
+            self.assertIs(host.find_vibrator(classes.__getitem__), vibrator)
+            host.vibrator = vibrator
+            host.vibrate(1000)
+            effect.createOneShot.assert_called_once_with(1000, -1)
+            vibrator.vibrate.assert_called_once_with(effect.createOneShot.return_value)
+            classes['android.os.Build$VERSION'] = Mock(SDK_INT=25)              # Android 7: vibrate(ms)
+            host.find_vibrator(classes.__getitem__)
+            vibrator.reset_mock()
+            host.vibrate(1000)
+            vibrator.vibrate.assert_called_once_with(1000)
+            host.activity.checkSelfPermission.return_value = -1                  # an APK without VIBRATE
+            self.assertIsNone(host.find_vibrator(classes.__getitem__))
+            host.activity.checkSelfPermission.return_value = 0
+            vibrator.hasVibrator.return_value = False                            # a device without one
+            self.assertIsNone(host.find_vibrator(classes.__getitem__))
+        spec = importlib.util.spec_from_file_location('build_android', Path(__file__).resolve().parents[1]
+                                                       / 'tools/build_android.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertIn('--permission=VIBRATE', module.build_command(Path('source'), Path('sdk'), Path('ndk')))
+
+
 class RarTests(unittest.TestCase):
     def test_the_apk_builds_libarchive_and_rar_import_loads_it_by_name(self):
         """RAR import on Android: the APK's own libarchive (android/recipes/libarchive), loaded by its unversioned

@@ -100,6 +100,10 @@ class Host:
         self.sdl_activity = autoclass('org.libsdl.app.SDLActivity')
         self.intent = autoclass('android.content.Intent')
         self.uri = autoclass('android.net.Uri')
+        self.vibrator = self.find_vibrator(autoclass)
+        if self.vibrator is not None:
+            from .. import graphics
+            graphics.set_vibrator(self.vibrate)     # General's Vibration (desktop_pause_hd.DEVICE_VIBRATION_LABEL)
         self.root = Path(str(self.activity.getFilesDir().getAbsolutePath())) / 'SHSHD Runtime'
         self.root.mkdir(parents=True, exist_ok=True)
         self.staging = self.root / 'imports'
@@ -241,6 +245,37 @@ class Host:
             game.toggle_panels()
             self.panels_view = None
             self.orientation.release(self.activity)
+
+    def find_vibrator(self, autoclass):
+        """The phone's vibrator, or None: none fitted, or the APK was built without the VIBRATE permission (an
+        older build): General's Vibration is then not offered."""
+        try:
+            from jnius import cast
+            context = autoclass('android.content.Context')
+            granted = autoclass('android.content.pm.PackageManager').PERMISSION_GRANTED
+            if self.activity.checkSelfPermission('android.permission.VIBRATE') != granted:
+                return None
+            vibrator = cast('android.os.Vibrator', self.activity.getSystemService(context.VIBRATOR_SERVICE))
+            if vibrator is None or not vibrator.hasVibrator():
+                return None
+            self.effect = (autoclass('android.os.VibrationEffect')
+                           if autoclass('android.os.Build$VERSION').SDK_INT >= 26 else None)
+            return vibrator
+        except Exception as error:          # (pyjnius raises its own JavaException)
+            logging.warning('No vibrator: %s', error)
+            return None
+
+    effect = None                       # android.os.VibrationEffect from Android 8; before it, vibrate(ms)
+
+    def vibrate(self, duration_ms):
+        """Service 82 on the phone: Android's original asks its vibrator for 1000 ms (FUN_000a3040)."""
+        try:
+            if self.effect is not None:
+                self.vibrator.vibrate(self.effect.createOneShot(duration_ms, self.effect.DEFAULT_AMPLITUDE))
+            else:
+                self.vibrator.vibrate(duration_ms)
+        except Exception as error:
+            logging.warning('Vibration failed: %s', error)
 
     def open_url(self, url):
         self.activity.startActivity(self.intent(self.intent.ACTION_VIEW, self.uri.parse(url)))

@@ -388,8 +388,8 @@ class MenuRenderer:
             if app.state is not None:
                 settings = [('Music', app.state.music, 'music'), ('Sound', app.state.sound, 'sound')]
                 spacing = 44
-                if pygame.supports_vibration():
-                    settings.append(('Vibration', app.state.vibration, 'vibration'))
+                if pygame.supports_vibration():         # the device's own vibrator (graphics.set_vibrator)
+                    settings.append(('Vibration', app.state.device_vibration, 'device_vibration'))
                     y, spacing = 108, 34
                 for label, value, setting in settings:
                     self.label(label, (31, y + 5, 147, 30), size=20)

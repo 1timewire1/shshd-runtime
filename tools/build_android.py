@@ -142,7 +142,8 @@ def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None):
             '--package=org.shshd.runtime', '--name=SHSHD Runtime', f'--version={version or project_version()}',
             # Portrait first; landscape for the side panels (platforms/android.py, OrientationBridge).
             '--orientation=portrait', '--orientation=landscape', '--orientation=landscape-reverse',
-            f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--debug',
+            # VIBRATE: General's Vibration, the phone's own vibrator (platforms/android.Host.find_vibrator).
+            f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--permission=VIBRATE', '--debug',
             *((f'--icon={icons / "icon.png"}', f'--icon-fg={icons / "icon_foreground.png"}',
                f'--icon-bg={icons / "icon_background.png"}', f'--presplash={icons / "icon_background.png"}',
                '--presplash-color=#{:02x}{:02x}{:02x}'.format(*ICON_BACKGROUND)) if icons else ())]
