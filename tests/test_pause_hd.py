@@ -349,7 +349,8 @@ class CodPauseTests(unittest.TestCase):
         self.assertEqual((self.menu.TITLE_COLOR, self.menu.LABEL_COLOR), ((0, 0, 0), (60, 60, 62)))
         self.assertEqual(self.menu.slider_value(143), 0)
         self.assertEqual(self.menu.slider_value(603), 1)
-        self.assertEqual(self.menu.art(32, 13).get_size(), (4 * 2 * 2, 4 * 2 * 2))   # a 4-pixel 1x frame, 2 points a pixel, 2 layer pixels a point
+        from exp_runtime.hd_scale import S
+        self.assertEqual(self.menu.art(32, 13).get_size(), (4 * 2 * S, 4 * 2 * S))   # a 4-pixel 1x frame, 2 points a pixel, S layer pixels a point
         self.assertIs(type(self.menu).switch, HdPauseMenu.switch)
 
     def test_help_lists_cods_pages_and_back_steps_out(self):

@@ -21,7 +21,7 @@ from functools import lru_cache
 
 import pygame
 
-S = 2
+from .hd_scale import S
 FRAME = (768, 1024)
 TAB = (362, 120)
 TAB_TOP = 100

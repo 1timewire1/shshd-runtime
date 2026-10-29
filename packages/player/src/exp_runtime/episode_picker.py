@@ -10,12 +10,13 @@ import pygame
 
 from . import episode_thumbnails
 from .content import ContentError, is_bundled
+from .hd_scale import S
 from .episode_dates import RELEASE_DATES, REDUNDANT_BUNDLES, VOTE_PACKAGES
 from .games import GAMES, game_id
 from .episode_index import (HD, PickerRow, STANDARD, build_chronological_rows, build_rows, category_labels,
                             duplicates, episode_label, format_airdate, resolve_variants)
 
-TILE_PIXELS = (432, 580)         # 2x the 216 x 290 tile
+TILE_PIXELS = (216 * S, 290 * S)  # the 216 x 290 point tile at the menus' scale (hd_scale)
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from exp_runtime.application_hd import HdShell, MISS_MENU, END_MENU
 from exp_runtime.desktop_boot_hd import FLASH_TOTAL, HdBootScreen
 from exp_runtime.desktop_hd_menu import BUTTON_STRIP, CARD_W, FOOTER_HEIGHT, HdMenuWindows, ROW_HEIGHT
 from exp_runtime.desktop_pause_hd import HdPauseMenu
+from exp_runtime.hd_scale import S
 from exp_runtime.desktop_main_hd import (BUTTONS_START_INTRO, GEAR_DELAY, HdMainMenu, INFO_FADE, LEAVE_TIME,
                                          OUT_DELAYS, READY_AFTER, SLIDE_FROM, SLIDE_OVERSHOOT, SLIDE_TIME, STAGGER,
                                          keyframes, layer_progress)
@@ -433,7 +434,7 @@ class ShellActionTests(unittest.TestCase):
                                      hits=[('rect', ('play',))], ready=True)
         box = pygame.Surface((320, 480), pygame.SRCALPHA)
         shell.zoom_out(box)
-        self.assertEqual(shell.leaving[0].get_size(), (1536, 2048))
+        self.assertEqual(shell.leaving[0].get_size(), (768 * S, 1024 * S))
         self.assertEqual((shell.stage, shell.app.played, entered), ('main', [], [True]))
         self.assertEqual(shell.hits(), [])                           # nothing takes input until it has gone
         shell.tick(.25)
@@ -905,14 +906,14 @@ class CodWindowTests(unittest.TestCase):
     def test_card_is_cods_window_as_vectors_and_buttons_are_pack_16_art(self):
         from exp_runtime.desktop_cod_menu import CARD_BORDER, CARD_EDGE
         from exp_runtime.desktop_hd_menu import CARD_LEFT
-        layer = pygame.Surface((1536, 2048), pygame.SRCALPHA)
+        layer = pygame.Surface((768 * S, 1024 * S), pygame.SRCALPHA)
         g = self.windows.draw(layer, 16, pressed=('item', 1))
         self.assertFalse({(16, 80), (16, 78), (16, 79)} & set(self.frames))                # no stretched 1x pieces
-        x = (CARD_LEFT + 2) * 2                                                             # inside the 6-point border
-        self.assertEqual(tuple(layer.get_at((x, round((g['top'] + 60) * 2))))[:3], CARD_BORDER)
+        x = (CARD_LEFT + 2) * S                                                             # inside the 6-point border
+        self.assertEqual(tuple(layer.get_at((x, round((g['top'] + 60) * S))))[:3], CARD_BORDER)
         tall = self.windows.layout(17)
         self.windows.draw(layer, 17)
-        edge = tuple(layer.get_at((x, round((tall['top'] + 130) * 2))))[:3]
+        edge = tuple(layer.get_at((x, round((tall['top'] + 130) * S))))[:3]
         self.assertTrue(all(abs(a - b) <= 2 for a, b in zip(edge, CARD_EDGE)), edge)        # beside the body
         self.assertTrue({(16, 90), (16, 91), (16, 92)} <= set(self.frames))                # No, up
         self.assertTrue({(16, 93), (16, 94), (16, 95)} <= set(self.frames))                # Yes, pressed
