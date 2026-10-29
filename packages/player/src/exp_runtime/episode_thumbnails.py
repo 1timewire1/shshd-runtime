@@ -5,6 +5,7 @@ those are gone. An episode's preview is its title card, which is the first thing
 rendered here once, while a library is being set up, by running the episode to its title card and photographing that
 frame at twice the tile's size. Episodes that open without a title card keep `missingEpisodePreview.jpg`.
 """
+import gc
 import logging
 from pathlib import Path
 import sys
@@ -162,6 +163,16 @@ def release_episode_caches():
             for attribute in vars(value).values():
                 if callable(getattr(attribute, 'cache_clear', None)) and not isinstance(attribute, staticmethod):
                     attribute.cache_clear()
+    collect_views()
+
+
+def collect_views():
+    """Free the episode views just let go. A Desktop and its renderers are a reference cycle (each renderer keeps
+    `Desktop._image`), so only the cycle collector frees one, and it counts Python objects, not the native images a
+    view holds: on the owner's g54 nine previews' views (1.6 GB, mostly surfaces) were waiting for it by the
+    fifteenth CoD preview, and the app passed 3 GB during SHS's. Collected here, after each preview and when an
+    episode's view is replaced, at most one is alive."""
+    gc.collect()
 
 
 def release_game_caches():
@@ -183,6 +194,7 @@ def release_game_caches():
                         attribute.cache_clear()
                     elif isinstance(attribute, staticmethod) and callable(getattr(attribute.__func__, 'cache_clear', None)):
                         attribute.__func__.cache_clear()
+    collect_views()                     # (the last game's menus are cycles too)
 
 
 def generate(library, record):
