@@ -146,6 +146,39 @@ class SidePanelTests(unittest.TestCase):
         self.assertEqual(host.orientation.requestLandscape.call_count, 2)
 
 
+class PinchTests(unittest.TestCase):
+    def test_two_fingers_zoom_the_story_tree_about_their_middle(self):
+        """The owner's request: pinch zooms the tree panel as desktop's wheel does (zoom_tree), about the point between
+        the fingers; the first finger's mouse events stop meanwhile, so a pinch is never a tap or a drag."""
+        import math
+        import pygame
+        host = Host.__new__(Host)
+        zooms = []
+        panels = SimpleNamespace(ZOOM_STEP=1.15, tree_rect=pygame.Rect(0, 0, 400, 1000),
+                                 zoom_tree=lambda notches, point: zooms.append((notches, point)))
+        game = SimpleNamespace(side_panels=panels, tree_drag=['down'])
+        handled = []
+        host.app = SimpleNamespace(screen='game', game=game, window=SimpleNamespace(get_size=lambda: (1000, 1000)),
+                                   handle_event=handled.append, active=True)
+
+        def touch(kind, finger, x, y):
+            return pygame.event.Event(kind, finger_id=finger, x=x, y=y, dx=0, dy=0, touch_id=0)
+
+        host.event(touch(pygame.FINGERDOWN, 1, .1, .5))
+        host.event(touch(pygame.FINGERDOWN, 2, .3, .5))
+        self.assertIsNone(game.tree_drag)
+        host.event(pygame.event.Event(pygame.MOUSEMOTION, pos=(100, 500), rel=(0, 0), buttons=(1, 0, 0)))
+        self.assertEqual(handled, [])                                   # swallowed while pinching
+        host.event(touch(pygame.FINGERMOTION, 2, .35, .5))              # 200 -> 250 px apart
+        notches, point = zooms[0]
+        self.assertAlmostEqual(notches, math.log(250 / 200) / math.log(1.15))
+        self.assertEqual(point, (225.0, 500.0))
+        host.event(touch(pygame.FINGERUP, 1, .1, .5))
+        host.event(touch(pygame.FINGERUP, 2, .35, .5))
+        host.event(pygame.event.Event(pygame.MOUSEMOTION, pos=(100, 500), rel=(0, 0), buttons=(0, 0, 0)))
+        self.assertEqual(len(handled), 1)                               # back to ordinary input
+
+
 class LinkTests(unittest.TestCase):
     def test_a_storys_link_goes_to_the_host(self):
         """A script link (a novel's "Yes, please!") and the Faceplace wall's open through the app's opener (the

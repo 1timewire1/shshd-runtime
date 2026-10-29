@@ -251,9 +251,48 @@ class Host:
             if event.type == pygame.APP_DIDENTERFOREGROUND:
                 self.active(True)
             return True
+        if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+            self.finger(event)
+            return True
+        if self.pinching and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+            return True                 # the first finger's mouse events: a pinch is never a tap or a drag
         if event.type in (pygame.KEYDOWN, pygame.KEYUP) and event.key == pygame.K_AC_BACK:
             event = pygame.event.Event(event.type, dict(event.dict, key=pygame.K_ESCAPE))
         return self.app.handle_event(event)
+
+    fingers = None                      # {finger id: (x, y)} in the drawing surface's pixels, while touching
+    pinching = False                    # two fingers have been down since the screen was last untouched
+    pinch_span = None                   # the two fingers' distance at the last zoom step
+
+    def finger(self, event):
+        """Two fingers pinch the story tree panel's zoom about the point between them, as desktop's wheel does
+        (SidePanels.zoom_tree); SDL turns only the first finger into mouse events."""
+        import math
+        import pygame
+        fingers = self.fingers if self.fingers is not None else {}
+        width, height = self.app.window.get_size()
+        if event.type == pygame.FINGERUP:
+            fingers.pop(event.finger_id, None)
+        else:
+            fingers[event.finger_id] = (event.x * width, event.y * height)
+        self.fingers = fingers
+        if not fingers:
+            self.pinching, self.pinch_span = False, None
+            return
+        if len(fingers) != 2:
+            self.pinch_span = None
+            return
+        (ax, ay), (bx, by) = fingers.values()
+        span, centre = math.hypot(bx - ax, by - ay), ((ax + bx) / 2, (ay + by) / 2)
+        game = self.app.game if self.app.screen == 'game' else None
+        if not self.pinching:
+            self.pinching = True
+            if game is not None:
+                game.tree_drag = None   # the first finger's drag stops scrolling once the second lands
+        panels = getattr(game, 'side_panels', None)
+        if self.pinch_span and span > 0 and panels is not None and panels.tree_rect is not None                 and panels.tree_rect.collidepoint(centre):
+            panels.zoom_tree(math.log(span / self.pinch_span) / math.log(panels.ZOOM_STEP), centre)
+        self.pinch_span = span
 
     def resize(self):
         """The first frame, or the screen turned (or a split screen changed it): a new drawing surface for the window
