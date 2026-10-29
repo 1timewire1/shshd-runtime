@@ -77,6 +77,11 @@ class Host:
         os.environ['XDG_DATA_HOME'] = str(self.root.parent)
         import pygame
         pygame.font.match_font = font_finder(self.font_directories)
+        # pygame's own resize watch re-creates the window surface from whichever thread delivers the resize: on
+        # Android that is the UI thread, whose GL calls race SDL's thread for the context (EGL_BAD_ACCESS, then SDL's
+        # thread dies: a crash on rotating). resize() makes the new surface on SDL's thread instead.
+        pygame.display.init()
+        pygame.display._set_autoresize(False)       # pygame-ce's (private, used by its own window code)
         self.results = Queue()
         self.copier = ThreadPoolExecutor(max_workers=1)
         self.pending = False
@@ -212,6 +217,22 @@ class Host:
             event = pygame.event.Event(event.type, dict(event.dict, key=pygame.K_ESCAPE))
         return self.app.handle_event(event)
 
+    def resize(self):
+        """The screen turned (or a split screen changed it): a new window surface at the window's size, made here on
+        SDL's thread (pygame's own watch is off, see __init__), for the app and the running game, as the iOS host's
+        `resize`. Frames drawn into the old one never showed."""
+        import pygame
+        size = pygame.display.get_window_size()
+        if size == getattr(self, 'window_size', size):
+            self.window_size = size
+            return
+        logging.info('Android window %s -> %s', self.window_size, size)
+        self.window_size = size
+        window = pygame.display.set_mode(size, pygame.RESIZABLE)
+        self.app.window = window
+        if self.app.game is not None:
+            self.app.game.window = window
+
     def active(self, active):
         import pygame
         was_backgrounded = getattr(self, 'backgrounded', False)
@@ -236,6 +257,7 @@ class Host:
                 if self.app.skip_elapsed:           # Application.run's: the picker's Continue, a long load
                     elapsed, self.app.skip_elapsed = 0, False
                 self.poll()
+                self.resize()
                 was_active = self.app.active
                 token = self.app.input_token()
                 with frame_log.section('events'):
