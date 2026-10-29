@@ -272,6 +272,7 @@ class Application:
             pygame.mixer.stop()
         if self.library:
             self.library.close()
+            episode_thumbnails.release_game_caches()        # the game's menus and art go with its library
         self.library = self.state = self.game = None
         self.saved = set()
         self.selected = None

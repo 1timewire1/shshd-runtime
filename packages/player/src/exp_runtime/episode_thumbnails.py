@@ -164,6 +164,27 @@ def release_episode_caches():
                     attribute.cache_clear()
 
 
+def release_game_caches():
+    """Empty every lru cache of this package but the drawing hosts' (their fonts are no game's): a game's library
+    is being let go (another game, or the game chooser). The menus' caches are keyed by their instances, and module
+    functions' by the library (desktop_cod_main.title_layer), so a switched-away game's menus, layouts and library
+    stayed alive with them (desktop: three libraries open after SHS -> CoD -> SHS)."""
+    for name, module in list(sys.modules.items()):
+        if module is None or not (name == 'exp_runtime' or name.startswith('exp_runtime.')):
+            continue
+        if name.startswith('exp_runtime.platforms.'):
+            continue
+        for value in list(vars(module).values()):
+            if callable(getattr(value, 'cache_clear', None)) and getattr(value, '__module__', None) == name:
+                value.cache_clear()
+            elif isinstance(value, type) and value.__module__ == name:
+                for attribute in vars(value).values():
+                    if callable(getattr(attribute, 'cache_clear', None)):
+                        attribute.cache_clear()
+                    elif isinstance(attribute, staticmethod) and callable(getattr(attribute.__func__, 'cache_clear', None)):
+                        attribute.__func__.cache_clear()
+
+
 def generate(library, record):
     """Render and cache one episode's preview; True when a file was written."""
     path = thumbnail_path(library, record)

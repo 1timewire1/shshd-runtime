@@ -275,6 +275,36 @@ class PreviewMemoryTests(unittest.TestCase):
         self.assertEqual(Fonts.measure.cache_info().currsize, 1)
         self.assertIn('exp_runtime.hd_ui', episode_thumbnails.KEPT_CACHES)
 
+    def test_letting_a_games_library_go_empties_the_menus_caches_too(self):
+        """A switched-away game's menus are keyed into their own methods' caches and module functions' (the CoD
+        menu's title_layer takes the library): every one empties when the library goes, but the drawing hosts'."""
+        import functools
+        import sys
+        import types
+        modules = {}
+        for name in ('exp_runtime.hd_ui_release_probe', 'exp_runtime.platforms.release_probe'):
+            module = types.ModuleType(name)
+
+            class Menu:
+                @functools.lru_cache(maxsize=None)
+                def layers(self, key):
+                    return key
+
+            Menu.__module__ = name
+            module.Menu = Menu
+            module.title_layer = functools.lru_cache(maxsize=2)(lambda library: library)
+            module.title_layer.__module__ = name
+            sys.modules[name] = module
+            self.addCleanup(sys.modules.pop, name)
+            Menu().layers(1)
+            module.title_layer('library')
+            modules[name] = module
+        episode_thumbnails.release_game_caches()
+        menu = modules['exp_runtime.hd_ui_release_probe']
+        self.assertEqual((menu.Menu.layers.cache_info().currsize, menu.title_layer.cache_info().currsize), (0, 0))
+        host = modules['exp_runtime.platforms.release_probe']
+        self.assertEqual((host.Menu.layers.cache_info().currsize, host.title_layer.cache_info().currsize), (1, 1))
+
 
 class TitleCardRunTests(unittest.TestCase):
     def test_answers_what_an_episode_asks_before_its_title_card(self):
