@@ -988,6 +988,19 @@ class Desktop:
             for x, y, w, h in scene_fade.blind_rects(kind, amount, area.size):
                 self.window.fill((0, 0, 0), (area.x + x, area.y + y, w, h))
 
+    def input_alert(self):
+        """The name entry's alert as UIKit shows it (`SHSUITextEntry::tick`'s UIAlertView: HD strings 235 "Alert",
+        237 and its button 154; the Android bank's 258 / 260 / 164 say the same), while there is one; else None. A
+        host showing UIKit's controls (graphics.native_controls) presents it instead of the drawn alert."""
+        action = self.session.pending
+        if not self.input_error or action is None or action.name != 'text_input' or self.menu_open:
+            return None
+        if self.pause_hd.available():
+            strings, (title, message, button) = self.pause_hd.strings(), (235, 237, 154)
+        else:
+            strings, (title, message, button) = self.input_renderer.strings(), (258, 260, 164)
+        return dict(title=strings[title], message=strings[message], button=strings[button])
+
     def _submit_input(self, action):
         if self.input_error:
             self.input_error, self.input_keyboard = None, True
@@ -1051,7 +1064,8 @@ class Desktop:
                     'text_input': lambda: self.input_renderer,
                 }
                 renderer = selectors[action.name]()
-                options = (dict(error=self.input_error,
+                # (where the host presents the alert itself, input_alert, the entry stays drawn under it)
+                options = (dict(error=self.input_error if pygame.native_controls is None else None,
                                 cursor_visible=self.text_input_started and pygame.time.get_ticks() % 1000 < 500,
                                 choice_hints=self.choice_hints)
                            if action.name == 'text_input' else {})

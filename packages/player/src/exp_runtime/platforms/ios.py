@@ -252,6 +252,12 @@ class Host:
         elif kind == 'switch':
             self.flip_switch(event['key'], bool(event['on']))
             return
+        elif kind == 'alert':
+            # The name entry's UIAlertController was dismissed: as a tap on the drawn alert's OK.
+            game = self.app.game if self.app.screen == 'game' else None
+            if game is not None and game.input_error:
+                game.command(('input_dismiss',))
+            return
         elif kind == 'slider':
             self.slide_volume(event['key'], min(1.0, max(0.0, float(event['value']))))
             return
@@ -291,6 +297,15 @@ class Host:
             page.set_volume(key, value)
         else:
             page._set_volume(key, value)
+
+    def typed_text(self):
+        """The name typed so far while the name entry is up (Swift's keyboard greys its Done key while it is empty,
+        as SHS HD's UITextView did with `enablesReturnKeyAutomatically`), else None."""
+        game = self.app.game if self.app.screen == 'game' else None
+        action = game.session.pending if game is not None else None
+        if action is None or action.name != 'text_input':
+            return None
+        return action.details.get('draft', action.details.get('default', ''))
 
     controls_shown = ()             # the controls the last frame placed (controls)
 
@@ -478,6 +493,8 @@ class Host:
                     generation=self.generation,
                     scrollable=self.app.screen in ('episodes', 'browser') or bool(game and game.max_scroll),
                     controls=self.controls(),
+                    alert=game.input_alert() if game is not None else None,
+                    text=self.typed_text(),
                     busy=self.app.busy, screen=self.app.screen, game=self.app.selected_game,
                     pending=pending.name if pending else None, scene=game.session.scene if game else None,
                     error=game.error if game else self.app.message or None)

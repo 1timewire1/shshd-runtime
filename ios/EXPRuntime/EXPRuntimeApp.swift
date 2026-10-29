@@ -167,7 +167,18 @@ final class GameCanvasView: UIView, UIKeyInput {
     private var previous: CGPoint?
     private var dragging = false
     private var tracked: UITouch?       // the one finger the app follows (a second one is the pinch's)
-    var hasText: Bool { true }
+    // SHS HD's name entry keyboard (`SHSUITextEntry::initTextEntry`'s UITextView): the name layout (keyboard type 6)
+    // and a Done key (return type 9) that stays grey while the name is empty (`enablesReturnKeyAutomatically`).
+    // `typed` is the name as far as this view knows: each frame brings the app's (`syncText`), and keys typed since
+    // the frame was asked for are applied to it here at once, so Done follows each key.
+    private(set) var typed = ""
+    private(set) var edits = 0
+    var hasText: Bool { !typed.isEmpty }
+    var keyboardType: UIKeyboardType = .namePhonePad
+    var enablesReturnKeyAutomatically = true
+    func syncText(_ text: String?, editsSent: Int) {
+        if edits == editsSent { typed = text ?? "" }
+    }
     override var canBecomeFirstResponder: Bool { true }
     var autocorrectionType: UITextAutocorrectionType = .no
     var autocapitalizationType: UITextAutocapitalizationType = .none
@@ -240,9 +251,16 @@ final class GameCanvasView: UIView, UIKeyInput {
     }
     func insertText(_ text: String) {
         if text == "\n" { send?(["kind": "key", "key": "return", "generation": generation]) }
-        else { send?(["kind": "text", "text": text, "generation": generation]) }
+        else {
+            typed += text; edits += 1
+            send?(["kind": "text", "text": text, "generation": generation])
+        }
     }
-    func deleteBackward() { send?(["kind": "key", "key": "backspace", "generation": generation]) }
+    func deleteBackward() {
+        if !typed.isEmpty { typed.removeLast() }
+        edits += 1
+        send?(["kind": "key", "key": "backspace", "generation": generation])
+    }
 }
 
 final class NativeAudio: NSObject, AVAudioPlayerDelegate {
@@ -500,6 +518,27 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var verifying = false
     private var verificationReport: [String: Any] = [:]
     private var verificationChecks: [String] = []
+    // The name entry's alert (SHS HD's UIAlertView in `SHSUITextEntry::tick`), as a UIAlertController: shown while
+    // the app has one (each frame's `alert`), its button sent back as an `alert` event (the drawn alert's OK).
+    private var alert: UIAlertController?
+    private var alertAnswered = false       // OK was tapped; frames asked for before it still name the alert
+    private func showAlert(_ wanted: [String: Any]?) {
+        guard let wanted = wanted else {
+            alertAnswered = false
+            if let shown = alert { alert = nil; shown.dismiss(animated: true) }
+            return
+        }
+        guard alert == nil, !alertAnswered, presentedViewController == nil else { return }
+        let shown = UIAlertController(title: wanted["title"] as? String, message: wanted["message"] as? String,
+                                      preferredStyle: .alert)
+        shown.addAction(UIAlertAction(title: wanted["button"] as? String ?? "OK", style: .default) { [weak self] _ in
+            self?.alert = nil
+            self?.alertAnswered = true
+            self?.events.append(["kind": "alert"])
+        })
+        alert = shown
+        present(shown, animated: true)
+    }
     private var holdingLandscape = false    // the side panels' landscape, held until the iPad is turned (requestLandscape)
     // The last frame's whole engine call and its drawing (ms), sent with the next frame for the runtime log's timings.
     private var engineMs = 0.0
@@ -586,6 +625,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             body["size"] = [Int(pixels.width), Int(pixels.height)]
         }
         let request = body
+        let editsSent = canvas.edits           // keys typed after this go with the next frame (syncText)
         let directory = documents.path
         let renderer = self.renderer
         let feedbackGeneration = activityGeneration
@@ -624,8 +664,11 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     self.canvas.generation = result["generation"] as? Int ?? 0
                     self.canvas.scrollable = result["scrollable"] as? Bool ?? false
                     if let placed = result["controls"] as? [[String: Any]] { self.canvas.placeControls(placed) }
-                    if self.running && result["keyboard"] as? Bool == true { self.canvas.becomeFirstResponder() }
-                    else { self.canvas.resignFirstResponder() }
+                    self.canvas.syncText(result["text"] as? String, editsSent: editsSent)
+                    self.showAlert(result["alert"] as? [String: Any])
+                    if self.running && result["keyboard"] as? Bool == true && self.alert == nil {
+                        self.canvas.becomeFirstResponder()
+                    } else { self.canvas.resignFirstResponder() }
                     NativeVibration.perform(result["vibrations"] as? Int ?? 0,
                                             active: self.running && feedbackGeneration == self.activityGeneration
                                                 && UIApplication.shared.applicationState == .active,

@@ -263,6 +263,25 @@ class IosWindowTests(unittest.TestCase):
         host._event(dict(kind='slider', key='sound', value=.9))
         self.assertEqual((len(toggled), len(volumes)), (2, 2))
 
+    def test_the_name_entrys_alert_and_typed_name_go_to_uikit(self):
+        """SHS HD's name entry showed a UIAlertView: Swift's alert's OK is the drawn alert's (input_dismiss). The
+        name typed so far goes with each frame, for the keyboard's Done (grey while the name is empty)."""
+        host = self.host()
+        commands = []
+        details = dict(default='', draft='Zo')
+        game = SimpleNamespace(input_error='bad', command=commands.append,
+                               session=SimpleNamespace(pending=SimpleNamespace(name='text_input', details=details)))
+        host.app.game, host.app.screen = game, 'game'
+        self.addCleanup(setattr, host.app, 'game', None)
+        self.assertEqual(host.typed_text(), 'Zo')
+        host._event(dict(kind='alert'))
+        self.assertEqual(commands, [('input_dismiss',)])
+        game.input_error = None
+        host._event(dict(kind='alert'))                                    # already gone: nothing
+        self.assertEqual(commands, [('input_dismiss',)])
+        game.session.pending = SimpleNamespace(name='dialogue', details={})
+        self.assertIsNone(host.typed_text())
+
     def test_slow_frames_are_summarised_in_the_runtime_log(self):
         """The owner's iPad is the only place its slowness shows: a span with a slow frame writes one summary line
         (Swift's timings with it); a smooth span writes nothing."""

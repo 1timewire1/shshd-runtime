@@ -259,6 +259,29 @@ class DesktopInputTests(unittest.TestCase):
         start.assert_called_once_with()
         self.assertTrue(ui.text_input_started)
 
+    def test_a_host_with_uikit_controls_presents_the_name_alert_itself(self):
+        """SHS HD's alert is UIKit's (`SHSUITextEntry::tick`): input_alert gives its title, message and button while
+        the name is refused, and where the host shows UIKit's controls the entry stays drawn under it."""
+        import pygame
+        from unittest.mock import patch
+        from exp_runtime import graphics
+        ui = self.desktop()
+        ui.render()
+        self.assertIsNone(ui.input_alert())
+        ui.handle_event(pygame.event.Event(pygame.TEXTINPUT, text='!'))
+        alert = ui.input_alert()
+        self.assertEqual(alert['message'], NAME_ENTRY_ERROR)
+        self.assertTrue(alert['title'] and alert['button'])
+        drawn = []
+        original = ui.input_renderer.draw
+        with patch.object(ui.input_renderer, 'draw', lambda *a, **k: drawn.append(k.get('error')) or original(*a, **k)), \
+                patch.object(graphics, 'native_controls', []):
+            ui.render()
+        self.assertEqual(drawn[-1:], [None])
+        self.assertIsNone(ui.error)
+        ui.command(('input_dismiss',))
+        self.assertIsNone(ui.input_alert())
+
     def test_typing_alert_empty_return_backspace_and_callback(self):
         import pygame
         ui = self.desktop(); s = ui.session
