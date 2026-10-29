@@ -30,7 +30,7 @@ except ImportError:
     HdFootballRenderer = HdWordRenderer = None
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
-from . import frame_log, momentum, scene_fade
+from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
@@ -1472,7 +1472,18 @@ class Desktop:
         # UI canvas) -- so a panel starting at self.viewport's edge covered
         # the outermost strip of that wider background instead of sitting
         # fully beside it. Margins now start at bg_viewport's own edge.
-        if (self.panels_open or self.panels_progress > 0) and not self.error:
+        zoom_mode = self._tree_zoom_mode()
+        if zoom_mode is None:
+            self.tree_zoom.close(instantly=True)
+            self.tree_zoom.tab = None
+        if zoom_mode is not None and self.tree_zoom.showing:
+            try:
+                with frame_log.section('panels'):
+                    self._draw_tree_zoom(zoom_mode, width, height)
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Tree zoom rendering stopped: %s', error)
+        elif (self.panels_open or self.panels_progress > 0) and not self.error:
             left_margin = pygame.Rect(0, 0, self.bg_viewport.x, height)
             right_margin = pygame.Rect(self.bg_viewport.right, 0, width - self.bg_viewport.right, height)
             try:
@@ -1487,12 +1498,103 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
+        if zoom_mode is not None and not self.capture:
+            self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
         self._draw_transition()
         if self.fade:
             self._draw_fade()
         if not self.capture:
             with frame_log.section('flip'):
                 pygame.display.flip()
+
+    @property
+    def tree_zoom(self):
+        """HD's tree zoom tab (desktop_tree_zoom.py; exploration, with a temporary marker), made when first used."""
+        zoom = self.__dict__.get('_tree_zoom')
+        if zoom is None:
+            zoom = self.__dict__['_tree_zoom'] = desktop_tree_zoom.TreeZoom()
+        return zoom
+
+    def _tree_zoom_mode(self):
+        """Where HD's tree zoom tab is (desktop_tree_zoom.py): 'landscape' beside the open side panels, 'portrait' in
+        an upright window without them, or None (switched off, no tree in this episode, the panels moving, an error)."""
+        if not desktop_tree_zoom.ENABLED or self.error or not hasattr(self, 'bg_viewport'):
+            return None
+        if not self.session.engine.dt_view.enabled or not self.side_panels.available():
+            return None                 # `setEnable:` follows the tree panels' own switch for the episode
+        if self.panels_open and self.panels_progress >= 1:
+            return 'landscape'
+        if not self.panels_open and self.panels_progress <= 0:
+            return desktop_tree_zoom.TreeZoom.mode(self.window.get_size(), False)
+        return None
+
+    def _draw_tree_zoom(self, mode, width, height):
+        """The screen while the tree zoom is in or moving (desktop_tree_zoom.py has HD's numbers): the game drawn so
+        far moves off as one, and the panels are drawn where the zoom has them now."""
+        from .desktop_side_panels import PANEL
+        zoom, panels = self.tree_zoom, self.side_panels
+        a = zoom.amount
+        s, left, top = zoom.screen(mode, self.bg_viewport)
+        panels.warp_locked = not self.warp_unlocked
+        game = self.window.copy()
+        self.window.fill((0, 0, 0))
+        if mode == 'landscape':
+            self.window.blit(game, (round(desktop_tree_zoom.GAME_SHIFT * s * a), 0))
+            wall = pygame.Rect(self.bg_viewport.right + round(desktop_tree_zoom.LANDSCAPE_WALL_SHIFT * s * a), 0,
+                               width - self.bg_viewport.right, height)
+            panels.draw_wall(self.window, self.session, 1.0, wall)
+            column = round(PANEL[0] * height / PANEL[1])
+            start, end = self.bg_viewport.x - column, (width - column) // 2
+            panels.draw_tree(self.window, self.session, 1.0,
+                             pygame.Rect(round(start + (end - start) * a), 0, column, height))
+            return
+        x, y, w, h = desktop_tree_zoom.PORTRAIT_WALL
+        panels.draw_wall(self.window, self.session, 1.0,
+                         pygame.Rect(round(left + x * s), round(top + y * s), round(w * s), round(h * s)))
+        shut, zoomed = desktop_tree_zoom.PORTRAIT_TREE_Y
+        w, h = desktop_tree_zoom.PORTRAIT_TREE
+        middle = shut + (zoomed - shut) * a
+        panels.tree_shape = desktop_tree_zoom.PORTRAIT_TREE
+        try:
+            panels.draw_tree(self.window, self.session, 1.0, pygame.Rect(
+                round(left), round(top + (middle - h / 2) * s), round(w * s), round(h * s)))
+        finally:
+            panels.tree_shape = PANEL
+        self.window.blit(game, (0, round(desktop_tree_zoom.GAME_SHIFT * s * a)))
+
+    def _tree_zoom_toggled(self):
+        """`toggleDTZ`: zooming in during the story pauses it (`invokePauseMenu`, with its sound 8011); either way
+        8017 plays. The pause menu is on the game, off the screen until the tree is put back."""
+        if self.tree_zoom.zoomed:
+            self.tree_drag = self.wall_drag = None
+            self.tree_fling.stop()
+            if not self.menu_open and self.session.pending is not None:
+                self.open_pause()
+        if hasattr(GAMES[game_id(self.session.resources)], 'TREE_ZOOM_SOUND'):
+            self._ui_sound('TREE_ZOOM_SOUND')
+
+    def _tree_zoom_pointer(self, event):
+        """Input while the tree zoom tab is there: the tab toggles the zoom; zoomed, the tree (and the wall beside it in
+        portrait) take the pointer and the game, off the screen, takes none. True when the event is used up."""
+        result = self.tree_zoom.pointer(event, down=pygame.MOUSEBUTTONDOWN, up=pygame.MOUSEBUTTONUP)
+        if result == 'toggled':
+            self._tree_zoom_toggled()
+        if result:
+            return True
+        if not self.tree_zoom.showing:
+            return False
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.tree_zoom.toggle()
+            self._tree_zoom_toggled()
+            return True
+        pointer = event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)
+        if not pointer or not self.tree_zoom.settled:
+            return pointer
+        if self._tree_pointer(event) or self._wall_pointer(event):
+            return True
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._tree_click(event.pos)
+        return True
 
     def _draw_background_layer(self, target_size, viewport):
         """Composited directly at window resolution, under the UI canvas.
@@ -2192,6 +2294,8 @@ class Desktop:
                 pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL,
                 pygame.TEXTINPUT):
             return True                         # the menu is zooming out after Resume: input waits for the story
+        if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
+            return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
                 if not self.pause_hd.available() or self.pause_hd.back():
@@ -2595,6 +2699,7 @@ class Desktop:
     def _warp(self, node):
         """`SHSDTView warpToNode:animatedScroll:`: load the scene's saved game and fade the game back in from black; the
         side panels stay open and the tree scrolls to the scene."""
+        self.tree_zoom.close()          # `warpToNode:` -> `closeDTZ`
         try:
             restored = self.session.warp(node)
         except (SaveError, VMError, OSError, ValueError) as error:
@@ -2651,6 +2756,7 @@ class Desktop:
     def tick(self, elapsed_ms):
         if self.active:
             self._coast_panels()
+        self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)
             self.hint_discount_ms -= discount

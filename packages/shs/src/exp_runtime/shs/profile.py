@@ -56,6 +56,8 @@ CLICK_SOUND = 8010
 WORD_CHOICE_SOUNDS = {1: 8001, -1: 8002}
 # SHSEngine::buttonPressed pause branch (iOS 00051214).
 PAUSE_SOUND = 8011
+# -[SHSViewController toggleDTZ] (0004d0dc): every toggle of the tree zoom tab (desktop_tree_zoom.py).
+TREE_ZOOM_SOUND = 8017
 # SHS HD's Options (ui_sound.py): switching Sound on plays 0x1f44 with the other effects stopped
 # (SHSEngine::setSoundEnabled 00022280, from SHSWidgetMenu::buttonPressed tag 11); the Sound FX slider previews
 # getToggleSoundID (0001ae18, 0x1f47) and the Music slider 0x1f49 at its own volume (sliderChanged 0004f1cc).
