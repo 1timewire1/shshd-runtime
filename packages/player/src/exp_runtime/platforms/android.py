@@ -35,6 +35,25 @@ PANELS_TALL = 1.2
 # How long the screen stays portrait after landscape before the panels switch off: turning the phone back, not the
 # moment's flip while Android hands rotation over (seen on the emulator as the device turned sideways).
 PANELS_PORTRAIT_MS = 700
+# The HD frame at its own resolution (768 x 1024 points at 2 pixels a point, the iPad's screen). The app draws into a
+# surface sized so the frame fits it at exactly this size, and SDL's renderer scales that surface to the screen on the
+# GPU: fitting the frame to a phone's 1080 pixels with pygame's smoothscale took 1.1 s a frame on a Moto g54's CPU.
+FRAME_PIXELS = (1536, 2048)
+
+
+def screen_size():
+    """The screen's size in pixels as it is turned now: the display's current mode, which SDL updates on rotation
+    (pygame's window sizes give the drawing surface's under SCALED)."""
+    import pygame
+    sizes = pygame.display.get_desktop_sizes()
+    return tuple(sizes[0]) if sizes else pygame.display.get_window_size()
+
+
+def logical_size(window):
+    """The drawing surface for a `window` (pixels): its shape, at the scale where the frame fits it as FRAME_PIXELS."""
+    width, height = window
+    scale = max(FRAME_PIXELS[0] / width, FRAME_PIXELS[1] / height)
+    return round(width * scale), round(height * scale)
 
 
 def font_finder(directories):
@@ -74,6 +93,7 @@ class Host:
         self.activity = autoclass('org.kivy.android.PythonActivity').mActivity
         self.bridge = autoclass('org.shshd.runtime.DocumentBridge')
         self.orientation = autoclass('org.shshd.runtime.OrientationBridge')
+        self.sdl_activity = autoclass('org.libsdl.app.SDLActivity')
         self.intent = autoclass('android.content.Intent')
         self.uri = autoclass('android.net.Uri')
         self.root = Path(str(self.activity.getFilesDir().getAbsolutePath())) / 'SHSHD Runtime'
@@ -234,24 +254,31 @@ class Host:
         return self.app.handle_event(event)
 
     def resize(self):
-        """The screen turned (or a split screen changed it): a new window surface at the window's size, made here on
-        SDL's thread (pygame's own watch is off, see __init__), for the app and the running game, as the iOS host's
-        `resize`. Frames drawn into the old one never showed."""
+        """The first frame, or the screen turned (or a split screen changed it): a new drawing surface for the window
+        (logical_size, scaled to the screen by SDL's renderer), made here on SDL's thread (pygame's own watch is off,
+        see __init__), for the app and the running game, as the iOS host's `resize`. Frames drawn into the old one
+        never showed."""
         import pygame
-        size = pygame.display.get_window_size()
-        if size == getattr(self, 'window_size', size):
-            self.window_size = size
+        size = screen_size()
+        if size == getattr(self, 'window_size', None):
             return
-        logging.info('Android window %s -> %s', self.window_size, size)
+        logging.info('Android window %s -> %s, drawn at %s', getattr(self, 'window_size', None), size,
+                     logical_size(size))
         # set_mode makes SDL ask for an orientation from this hint (read at the call; empty: FULL_USER, rotation the
         # user's). While the side panels hold landscape it must ask for landscape too, or each new window would turn
         # the app back to portrait and the panels' rule would read that as the user turning it.
         holding = self.panels_view is not None and self.orientation.isHolding()
         os.environ['SDL_IOS_ORIENTATIONS'] = 'LandscapeLeft LandscapeRight' if holding else ''
-        window = pygame.display.set_mode(size, pygame.RESIZABLE)
-        # What SDL made, which can differ from what was asked while the screen is still turning (SDL's own
-        # orientation request on set_mode): the next frame then sees the difference and catches up.
-        self.window_size = window.get_size()
+        # RESIZABLE as well: SDL takes a fixed window's shape as the only orientation allowed (a landscape one locked the
+        # app sideways).
+        window = pygame.display.set_mode(logical_size(size), pygame.SCALED | pygame.RESIZABLE)
+        # The screen's size this surface was made for (pygame reports the drawing surface's own size as the window's
+        # under SCALED); if the screen turned meanwhile, the next frame sees the difference and catches up.
+        self.window_size = size
+        # SCALED asks SDL for a window the drawing surface's size, and SDL keeps that size until Android reports a
+        # change, which it never does (the screen did not change): SDL's GL then drew a 1:1 corner of the surface.
+        # SDL's own resize callback reads the real surface size again.
+        self.sdl_activity.onNativeResize()
         self.app.window = window
         if self.app.game is not None:
             self.app.game.window = window
@@ -276,9 +303,21 @@ class Host:
         from .. import frame_log
         clock = pygame.time.Clock()
         running = True
+        # Development only: SHSHD_PROFILE names a file that gets Python's profile of the loop every 300 frames (where a
+        # phone's frames go, which a desktop's timings do not tell).
+        profile_path, profiler, frames = os.environ.get('SHSHD_PROFILE'), None, 0
+        if profile_path:
+            import cProfile
+            profiler = cProfile.Profile()
+            profiler.enable()
         try:
             while running:
                 elapsed = clock.tick(60)
+                frames += 1
+                if profiler is not None and frames % 300 == 0:
+                    profiler.disable()
+                    profiler.dump_stats(profile_path)
+                    profiler.enable()
                 if self.app.skip_elapsed:           # Application.run's: the picker's Continue, a long load
                     elapsed, self.app.skip_elapsed = 0, False
                 self.poll()

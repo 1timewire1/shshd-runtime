@@ -11,6 +11,14 @@ class PygameCERecipe(Pygame2Recipe):
     site_packages_name = 'pygame'
     hostpython_prerequisites = ['setuptools<81', 'Cython>=3.1,<4']
 
+    def get_recipe_env(self, arch, **kwargs):
+        # python-for-android's arch flags carry no optimisation level and pygame's setup.py adds none, so its C was
+        # built at -O0: an alpha blit of the HD frame took 577 ms on a Moto g54 (about 180 ns a pixel), so every
+        # screen ran at about a frame a second.
+        env = super().get_recipe_env(arch, **kwargs)
+        env['CFLAGS'] = env.get('CFLAGS', '') + ' -O3 -DNDEBUG'
+        return env
+
     def prebuild_arch(self, arch):
         super().prebuild_arch(arch)
         setup = Path(self.get_build_dir(arch.arch)) / 'setup.py'
