@@ -297,5 +297,35 @@ class ChoiceHintTests(unittest.TestCase):
                 self.assertEqual((s.scene, s.pending.request.pc), (25006, 2080))
 
 
+
+class BackgroundHintTests(unittest.TestCase):
+    def test_a_mobile_hosts_hints_follow_the_choice_from_a_copy(self):
+        """Under BACKGROUND_HINTS (the Android host's) the choice is drawn at once with every hint unknown, and the
+        preview runs on a worker over a copy of the session made as the choice came up, never the live one."""
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from exp_runtime import desktop_choice
+        renderer = desktop_choice.ChoiceRenderer.__new__(desktop_choice.ChoiceRenderer)
+        renderer.cached_key, renderer.hint_key, renderer.hints, renderer.hint_ms = 'page', None, (), 0
+        live = SimpleNamespace(resources=object(), vm=SimpleNamespace(program=object()), numbers=[1])
+        seen = []
+
+        def preview(session):
+            seen.append(session)
+            return ('gain', 'loss')
+
+        with patch.object(desktop_choice, 'BACKGROUND_HINTS', True),                 patch.object(desktop_choice, 'preview_choices', preview):
+            renderer._update_hints(live)
+            self.assertEqual(renderer.hints, ())                        # drawn now, hints unknown
+            renderer.hint_job[1].result(timeout=5)
+            renderer._update_hints(live)
+        self.assertEqual((renderer.hints, renderer.hint_key, renderer.hint_ms), (('gain', 'loss'), 'page', 0))
+        copy = seen[0]
+        self.assertIsNot(copy, live)
+        self.assertIs(copy.resources, live.resources)                   # shared, as the preview's own copies do
+        self.assertTrue(copy.ephemeral)
+
+
 if __name__ == '__main__':
     unittest.main()
