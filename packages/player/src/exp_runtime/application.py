@@ -741,11 +741,25 @@ class Application:
         self.viewport = pygame.Rect((width - size[0]) // 2, (height - size[1]) // 2, *size)
         self.buttons = []
         with frame_log.section('backdrop'):
-            self.window.fill((8, 12, 20))
-            if size != (width, height) and self.shell is not None:      # beside the frame, or above and below it
-                self.window.blit(self.shell.main.side_art((width, height)), (0, 0))
+            # Only beside the frame (or above and below it): the canvas covers the rest, and on a phone the whole
+            # window is several megapixels a frame.
+            art = self.shell.main.side_art((width, height)) if size != (width, height) and self.shell is not None else None
+            for strip in self._backdrop_strips(width, height):
+                if art is not None:
+                    self.window.blit(art, strip, strip)
+                else:
+                    self.window.fill((8, 12, 20), strip)
         with frame_log.section('present'):
-            self.window.blit(pygame.transform.smoothscale(canvas, size), self.viewport)
+            # Already the frame's size (Android draws at the HD frame's own resolution): no pass over its pixels.
+            fitted = canvas if canvas.get_size() == size else pygame.transform.smoothscale(canvas, size)
+            self.window.blit(fitted, self.viewport)
+
+    def _backdrop_strips(self, width, height):
+        """The window's parts outside the frame's viewport (present_frame's): left and right of it, or above and below."""
+        v = self.viewport
+        strips = (pygame.Rect(0, 0, v.left, height), pygame.Rect(v.right, 0, width - v.right, height),
+                  pygame.Rect(v.left, 0, v.width, v.top), pygame.Rect(v.left, v.bottom, v.width, height - v.bottom))
+        return [strip for strip in strips if strip.width > 0 and strip.height > 0]
 
     def render_shell(self):
         canvas = self.shell.render()
