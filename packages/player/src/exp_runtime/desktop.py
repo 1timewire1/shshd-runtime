@@ -1066,6 +1066,11 @@ class Desktop:
                 self.pending_background = getattr(renderer, 'pending_background', None)
                 self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
                 self.pending_background_alpha = getattr(renderer, 'pending_background_alpha', 255)
+                if action.name == 'text_input':
+                    # The gear opens the pause menu here too (owner, 2026-10-29). The originals leave it inert, but their
+                    # keyboard covered it; this player's gear stays in sight (on a desktop always), so an inert one read as
+                    # broken. The pause menu stops text input, which hides the keyboard (_sync_text_input) until Resume.
+                    buttons = [*buttons, ((-32, 422, 92, 58), ('menu',))]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 edge_bar = getattr(renderer, 'edge_bar', None)

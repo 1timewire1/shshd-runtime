@@ -227,6 +227,24 @@ class DesktopInputTests(unittest.TestCase):
             target, (20, 20, 20), (rect.x, rect.y, rect.width, rect.height))
         return ui
 
+    def test_the_gear_opens_the_pause_menu_from_name_entry_and_resume_brings_the_keyboard_back(self):
+        """Owner, 2026-10-29: the originals leave the gear inert here (their keyboard covered it); this player's gear
+        stays in sight, so it opens the pause menu, which stops text input until Resume."""
+        ui = self.desktop()
+        ui.render()
+        self.assertIn(('menu',), [command for _, command in ui.buttons])
+        self.assertTrue(ui.text_input_started)
+        ui.command(('menu',))
+        ui._sync_text_input()
+        self.assertTrue(ui.menu_open)
+        self.assertFalse(ui.text_input_started)            # the keyboard is down under the pause menu
+        ui.command(('resume',))
+        for _ in range(60):
+            ui.tick(16)
+        ui._sync_text_input()
+        self.assertFalse(ui.menu_open)
+        self.assertTrue(ui.text_input_started)
+
     def test_typing_alert_empty_return_backspace_and_callback(self):
         import pygame
         ui = self.desktop(); s = ui.session
@@ -332,7 +350,7 @@ class DesktopInputTests(unittest.TestCase):
         self.assertEqual(ui.session.vm.snapshot(), before['vm'])
         layout, width, scale = ui.input_renderer.title('AAA')
         self.assertEqual(([g.x for g in layout.glyphs], width, scale), ([0, 6, 12], 20, 1))
-        self.assertEqual([command for _, command in ui.buttons], [('input_focus',)])
+        self.assertEqual([command for _, command in ui.buttons], [('input_focus',), ('menu',)])
 
     def test_hd_panel_is_placed_from_layout_46_and_the_prompt_height(self):
         import pygame
@@ -379,7 +397,7 @@ class DesktopInputTests(unittest.TestCase):
         self.assertEqual(canvas.get_at((round(19 * k), round(120 * k))).a, 0)
         self.assertEqual(canvas.get_at((round(100 * k), round(118 * k))).a, 0)
         # The field's box (node 34) is the name entry's click target, in column units.
-        self.assertEqual([command for _, command in ui.buttons], [('input_focus',)])
+        self.assertEqual([command for _, command in ui.buttons], [('input_focus',), ('menu',)])
         rect = ui.buttons[0][0]
         # (30, 60) HD layout units = (15, 30) units in from the box origin (20, 119.05).
         self.assertEqual((rect.x, rect.y), (round(1.5 * 35), round(1.5 * 149)))
