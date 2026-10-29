@@ -31,7 +31,7 @@ except ImportError:
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import FRAME as HD_FRAME, HdPauseMenu, KEYS_ACTIVATE, focus_step, place_switches
+from .desktop_pause_hd import FRAME as HD_FRAME, HdPauseMenu, KEYS_ACTIVATE, focus_step, place_controls
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import has_links, play_option
@@ -1964,7 +1964,7 @@ class Desktop:
             self._pause_card = (key, card, self.pause_buttons) if resting and not self.pause_hd.animating() else None
         self.window.blit(card, pygame.Rect((0, 0), size).move(frame.centerx - size[0] // 2, frame.centery - size[1] // 2))
         if not (self.notice_stack is not None and self.notice_stack.stack):      # (a notice is drawn over the card)
-            place_switches(self.pause_hd, frame.center, size[0] / HD_FRAME[0])
+            place_controls(self.pause_hd, frame.center, size[0] / HD_FRAME[0])
 
     def _pause_settings(self):
         # No Skip Ad / Upsell Intros here: they only act as an episode starts, so the main menu's Options alone lists

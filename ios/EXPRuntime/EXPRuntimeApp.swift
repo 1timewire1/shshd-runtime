@@ -74,38 +74,65 @@ final class GameCanvasView: UIView, UIKeyInput {
         super.layoutSubviews()
         frameLayer.frame = viewport
     }
+    // A view that does not draw itself keeps a content scale of 1, which made `pixelSize` the view's points: the app
+    // drew a 768 x 992 frame for the iPad mini's 1536 x 2048 screen, and everything looked soft. The screen's own
+    // scale makes the frame one pixel per screen pixel, as SHS HD drew.
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if let scale = window?.windowScene?.screen.scale { contentScaleFactor = scale }
+    }
     var send: (([String: Any]) -> Void)?
     var scrollable = false
     var generation = 0
     private var touchGeneration = 0
 
-    // The options' switches are UIKit's own, as SHS HD's were (subviews of its menus): each frame names the switches
-    // the menus show, where (`right` edge and `middle` in the frame's pixels), how big (`scale`: frame pixels per menu
-    // point, the card zooming open) and how faded. Those not named are hidden. A flip goes back as a `switch` event:
-    // the app toggles that setting as a tap on its row does, and the next frame confirms it or puts the switch back.
+    // The options' switches and volume sliders are UIKit's own, as SHS HD's were (subviews of its menus): each frame
+    // names the controls the menus show, where (a switch's `right` edge, a slider's `left` and `right` track ends, and
+    // their `middle`, in the frame's pixels), how big (`scale`: frame pixels per menu point, the card zooming open)
+    // and how faded. Those not named are hidden. A change goes back as a `switch` or `slider` event: the app sets
+    // that option as a tap or drag on the drawn one did, and the next frame confirms it or puts the control back.
     private var switches: [String: UISwitch] = [:]
-    func placeSwitches(_ placed: [[String: Any]]) {
+    private var sliders: [String: UISlider] = [:]
+    func placeControls(_ placed: [[String: Any]]) {
         let v = viewport, frame = frameSize
         let k = v.width / max(1, frame.width)        // view points per frame pixel
         var shown = Set<String>()
+        func number(_ item: [String: Any], _ key: String) -> CGFloat? {
+            (item[key] as? NSNumber).map { CGFloat($0.doubleValue) }
+        }
         for item in placed {
-            guard let key = item["key"] as? String, let on = item["on"] as? Bool,
-                  let right = (item["right"] as? NSNumber)?.doubleValue,
-                  let middle = (item["middle"] as? NSNumber)?.doubleValue,
-                  let scale = (item["scale"] as? NSNumber)?.doubleValue else { continue }
-            let control = switches[key] ?? makeSwitch(key)
-            shown.insert(key)
-            let s = max(0.001, CGFloat(scale) * k)
+            guard let kind = item["kind"] as? String, let key = item["key"] as? String,
+                  let right = number(item, "right"), let middle = number(item, "middle"),
+                  let scale = number(item, "scale") else { continue }
+            let s = max(0.001, scale * k)
+            let control: UIControl
+            let size: CGSize
+            if kind == "slider" {
+                guard let left = number(item, "left"), let value = number(item, "value") else { continue }
+                let slider = sliders[key] ?? makeSlider(key)
+                control = slider
+                // As wide as the drawn track once scaled (UIKit's thumb then travels the track's ends, as HD's).
+                slider.transform = .identity
+                size = CGSize(width: (right - left) * k / s, height: slider.intrinsicContentSize.height)
+                if !slider.isTracking && abs(CGFloat(slider.value) - value) > 0.001 { slider.value = Float(value) }
+            } else if kind == "switch" {
+                guard let on = item["on"] as? Bool else { continue }
+                let toggle = switches[key] ?? makeSwitch(key)
+                control = toggle
+                toggle.transform = .identity
+                size = toggle.intrinsicContentSize
+                if toggle.isOn != on && !toggle.isTracking { toggle.setOn(on, animated: true) }
+            } else { continue }
+            shown.insert(kind + ":" + key)
             control.transform = .identity
-            let size = control.intrinsicContentSize
             control.bounds = CGRect(origin: .zero, size: size)
             control.transform = CGAffineTransform(scaleX: s, y: s)
-            control.center = CGPoint(x: v.minX + CGFloat(right) * k - size.width * s / 2, y: v.minY + CGFloat(middle) * k)
-            control.alpha = CGFloat((item["alpha"] as? NSNumber)?.doubleValue ?? 1)
+            control.center = CGPoint(x: v.minX + right * k - size.width * s / 2, y: v.minY + middle * k)
+            control.alpha = number(item, "alpha") ?? 1
             control.isHidden = false
-            if control.isOn != on && !control.isTracking { control.setOn(on, animated: true) }
         }
-        for (key, control) in switches where !shown.contains(key) { control.isHidden = true }
+        for (key, control) in switches where !shown.contains("switch:" + key) { control.isHidden = true }
+        for (key, control) in sliders where !shown.contains("slider:" + key) { control.isHidden = true }
     }
     private func makeSwitch(_ key: String) -> UISwitch {
         let control = UISwitch()
@@ -116,9 +143,25 @@ final class GameCanvasView: UIView, UIKeyInput {
         switches[key] = control
         return control
     }
+    private func makeSlider(_ key: String) -> UISlider {
+        let control = UISlider()
+        control.accessibilityIdentifier = key
+        control.minimumValue = 0
+        control.maximumValue = 1
+        control.isContinuous = true         // the volume follows the thumb, its preview sound with it
+        control.isHidden = true
+        control.addTarget(self, action: #selector(sliderMoved(_:)), for: .valueChanged)
+        addSubview(control)
+        sliders[key] = control
+        return control
+    }
     @objc private func switchFlipped(_ control: UISwitch) {
         guard let key = control.accessibilityIdentifier else { return }
         send?(["kind": "switch", "key": key, "on": control.isOn])
+    }
+    @objc private func sliderMoved(_ control: UISlider) {
+        guard let key = control.accessibilityIdentifier else { return }
+        send?(["kind": "slider", "key": key, "value": Double(control.value)])
     }
     private var start: CGPoint?
     private var previous: CGPoint?
@@ -208,6 +251,26 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
     private var sounds: [AVAudioPlayer] = []
     // pygame's music queue: a track's next cue (an intro's loop), started when the playing one ends.
     private var queued: [String: (player: AVAudioPlayer, loops: Int)] = [:]
+    // Tracks whose queued cue is already scheduled on the audio clock for the moment the playing one ends
+    // (`play(atTime:)`). Started from `audioPlayerDidFinishPlaying` instead, Day of Diss's loop came about half a
+    // second after its intro (the files themselves meet with no silence): the callback arrives late, and a player
+    // started then still has to spin up.
+    private var scheduled: Set<String> = []
+    private func scheduleQueued(_ track: String) {
+        unscheduleQueued(track)
+        guard let current = tracks[track], current.isPlaying, current.numberOfLoops == 0,
+              let next = queued[track] else { return }
+        next.player.numberOfLoops = next.loops
+        next.player.volume = current.volume
+        let remaining = max(0, current.duration - current.currentTime)
+        if next.player.play(atTime: current.deviceCurrentTime + remaining) { scheduled.insert(track) }
+    }
+    private func unscheduleQueued(_ track: String) {
+        guard scheduled.remove(track) != nil, let next = queued[track]?.player else { return }
+        next.stop()
+        next.currentTime = 0
+        next.prepareToPlay()
+    }
     func perform(_ commands: [[String: Any]]) throws {
         for command in commands {
             guard let kind = command["kind"] as? String else { throw CanvasError(message: "Missing audio command") }
@@ -224,9 +287,12 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
                 player.delegate = self
                 guard player.prepareToPlay() else { throw CanvasError(message: "Could not prepare audio playback") }
                 if action == "music_load" {
+                    unscheduleQueued(track)
                     tracks[track] = player; pausedTracks.remove(track); queued.removeValue(forKey: track)
                 } else if action == "music_queue" {
+                    unscheduleQueued(track)
                     queued[track] = (player, (command["loops"] as? NSNumber)?.intValue ?? 0)
+                    scheduleQueued(track)
                 } else {
                     guard player.play() else { throw CanvasError(message: "Could not start sound playback") }
                     sounds.append(player)
@@ -237,22 +303,29 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
                 player.currentTime = (command["start"] as? NSNumber)?.doubleValue ?? 0
                 guard player.play() else { throw CanvasError(message: "Could not start music playback") }
                 pausedTracks.remove(track)
+                scheduleQueued(track)
             case "music_pause":
                 if let player = tracks[track], player.isPlaying {
+                    unscheduleQueued(track)
                     player.pause()
                     pausedTracks.insert(track)
                 }
             case "music_resume":
-                if pausedTracks.remove(track) != nil, let player = tracks[track], !player.play() {
-                    throw CanvasError(message: "Could not resume music playback")
+                if pausedTracks.remove(track) != nil, let player = tracks[track] {
+                    guard player.play() else { throw CanvasError(message: "Could not resume music playback") }
+                    scheduleQueued(track)
                 }
             case "music_stop":
+                unscheduleQueued(track)
                 tracks[track]?.stop(); tracks.removeValue(forKey: track); pausedTracks.remove(track)
                 queued.removeValue(forKey: track)
             case "music_volume":
-                tracks[track]?.volume = (command["volume"] as? NSNumber)?.floatValue ?? 1
+                let volume = (command["volume"] as? NSNumber)?.floatValue ?? 1
+                tracks[track]?.volume = volume
+                queued[track]?.player.volume = volume
             case "music_loops":
                 tracks[track]?.numberOfLoops = (command["loops"] as? NSNumber)?.intValue ?? 0
+                scheduleQueued(track)
             case "sounds_stop": sounds.forEach { $0.stop() }; sounds.removeAll()
             default: throw CanvasError(message: "Unsupported audio command")
             }
@@ -261,12 +334,16 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         sounds.removeAll { $0 === player }
         for (key, value) in tracks where value === player {
-            // The intro has ended: its queued loop takes over the track, at the intro's volume.
+            // The intro has ended: its queued loop takes over the track, at the intro's volume. Scheduled, it is
+            // already playing from the intro's last sample (scheduleQueued).
             guard let next = queued.removeValue(forKey: key) else { continue }
-            next.player.numberOfLoops = next.loops
-            next.player.volume = player.volume
+            let started = scheduled.remove(key) != nil && next.player.isPlaying
             tracks[key] = next.player
-            next.player.play()
+            if !started {
+                next.player.numberOfLoops = next.loops
+                next.player.volume = player.volume
+                next.player.play()
+            }
         }
         for (key, value) in tracks where key.hasPrefix("effect:") && value === player {
             tracks.removeValue(forKey: key)
@@ -413,6 +490,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var events: [[String: Any]] = []
     private var requests: [[String: Any]] = []
     private var working = false
+    private var started = false             // the first request has gone (with the canvas's size)
     private var running = true
     private var activityGeneration = 0
     private var failed = false
@@ -483,6 +561,9 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
 
     @objc private func frame() {
         guard !working, !failed, rendering < 2, running || !requests.isEmpty else { return }
+        // The app starts once the canvas has its size: the first frame's size picks the menus' scale (ios.Host).
+        if !verifying && !started && canvas.pixelSize.width < 320 { return }
+        started = true
         working = true
         let now = CACurrentMediaTime()
         let operation: [String: Any]
@@ -542,7 +623,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if let image = image { self.canvas.image = image }
                     self.canvas.generation = result["generation"] as? Int ?? 0
                     self.canvas.scrollable = result["scrollable"] as? Bool ?? false
-                    if let placed = result["switches"] as? [[String: Any]] { self.canvas.placeSwitches(placed) }
+                    if let placed = result["controls"] as? [[String: Any]] { self.canvas.placeControls(placed) }
                     if self.running && result["keyboard"] as? Bool == true { self.canvas.becomeFirstResponder() }
                     else { self.canvas.resignFirstResponder() }
                     NativeVibration.perform(result["vibrations"] as? Int ?? 0,

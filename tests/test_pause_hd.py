@@ -69,35 +69,45 @@ class HdPauseTests(unittest.TestCase):
         menu.open('options:sound')                                         # a new page's switches start at rest
         self.assertIsNone(menu.switches)
 
-    def test_a_hosts_own_switches_are_placed_not_drawn_and_slide_with_their_page(self):
-        """Where the host shows UIKit's switches (iOS, graphics.native_switches), a page records each switch's place
-        instead of drawing it (no knob animation of its own), keeps its row's tap, and the switches slide with their
-        page; place_switches hands them over zoomed about the card's centre."""
+    def test_a_hosts_own_controls_are_placed_not_drawn_and_slide_with_their_page(self):
+        """Where the host shows UIKit's controls (iOS, graphics.native_controls), a page records each switch's and
+        volume slider's place instead of drawing it (no knob animation of its own; the speaker icons stay art), keeps
+        its row's tap, and the controls slide with their page; place_controls hands them over zoomed about the card's
+        centre."""
         from exp_runtime import graphics
         menu, module = self.menu, self.module
-        with patch.object(graphics, 'native_switches', []):
+        with patch.object(graphics, 'native_controls', []):
             menu.state.screen = 'options:extras'
             self.settings['choice_hints'] = True
             buttons = self.commands()
             self.assertIn(('pause_toggle', 'choice_hints'), [c for _, c in buttons])
             self.assertIsNone(menu.switches)                               # nothing drawn, nothing animating
             right = module.PANEL_X + module.PANEL_W - module.CONTROL_RIGHT
-            placed = {key: (x, on) for key, x, _, on in menu.placed_switches()}
-            self.assertEqual(placed['choice_hints'], (right, True))
-            self.assertEqual(placed['skip_minigames'], (right, False))
-            module.place_switches(menu, (100, 200), .5, alpha=.25)
-            first = graphics.native_switches[0]
+            placed = {c['key']: (c['kind'], c['right'], c['on']) for c in menu.placed_controls()}
+            self.assertEqual(placed['choice_hints'], ('switch', right, True))
+            self.assertEqual(placed['skip_minigames'], ('switch', right, False))
+            module.place_controls(menu, (100, 200), .5, alpha=.25)
+            first = graphics.native_controls[0]
             self.assertEqual((first['right'], first['scale'], first['alpha'], first['space']),
                              (100 + (right - 384) * .5, .5, .25, 'window'))
             menu.back()                                                    # Extras slides out to the right
             self.commands()
             menu.advance(module.SLIDE_MS / 2)
             self.commands()
-            moved = {key: x for key, x, _, _ in menu.placed_switches()}
+            moved = {c['key']: c['right'] for c in menu.placed_controls()}
             self.assertAlmostEqual(moved['choice_hints'], right + module.FRAME[0] / 2, places=3)
             menu.advance(module.SLIDE_MS)
             self.commands()
-            self.assertEqual(menu.placed_switches(), [])                   # the categories page has none
+            self.assertEqual(menu.placed_controls(), [])                   # the categories page has none
+            menu.state.screen = 'options:sound'
+            self.commands()
+            sliders = [c for c in menu.placed_controls() if c['kind'] == 'slider']
+            self.assertEqual([(c['key'], c['left'], c['right'], c['value']) for c in sliders],
+                             [('music', 143, 603, .5), ('sound', 143, 603, .25)])
+            graphics.native_controls.clear()
+            module.place_controls(menu, (384, 512), 2.0)
+            placed = [c for c in graphics.native_controls if c['kind'] == 'slider'][0]
+            self.assertEqual((placed['left'], placed['right']), (384 + (143 - 384) * 2, 384 + (603 - 384) * 2))
         self.commands()                                                    # drawn again without a host
 
     def test_host_rows_follow_the_real_ones(self):

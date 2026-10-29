@@ -6,10 +6,10 @@ imports the application; menus, panel geometry and event handling stay shared.
 _backend = None
 # A host's own vibrator, when its backend has none (Android's, platforms/android.py): called with a duration in ms.
 _vibrator = None
-# The option switches a host shows as its own controls over the window, as SHS HD's were UIKit's (the iOS host's
-# UISwitches): None draws them into the frame (desktop, Android); a list, which the host empties before each frame,
-# receives where each is this frame (desktop_pause_hd.place_switches) instead.
-native_switches = None
+# The options' switches and volume sliders a host shows as its own controls over the window, as SHS HD's were
+# UIKit's (the iOS host's UISwitches and UISliders): None draws them into the frame (desktop, Android); a list, which
+# the host empties before each frame, receives where each is this frame (desktop_pause_hd.place_controls) instead.
+native_controls = None
 
 
 def set_vibrator(vibrator):
@@ -174,10 +174,10 @@ def project_quad(target, image, points):
 
 
 def install(backend):
-    """Draw through `backend` (None: pygame). The switches are drawn again until its host asks for its own."""
-    global _backend, native_switches
+    """Draw through `backend` (None: pygame). The controls are drawn again until its host asks for its own."""
+    global _backend, native_controls
     previous, _backend = _backend, backend
-    native_switches = None
+    native_controls = None
     return previous
 
 

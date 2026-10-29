@@ -61,8 +61,18 @@ def install_log(directory):
     return path
 
 
+def hd_scale_for(view_size):
+    """The HD menus' layer scale for a view of `view_size` pixels (either way up): 2 when the HD frame is shown at
+    more than 1.25 times its 768 x 1024 points, else 1."""
+    if not view_size:
+        return 1
+    width, height = view_size
+    fit = max(min(width / 768, height / 1024), min(height / 768, width / 1024))
+    return 2 if fit > 1.25 else 1
+
+
 class Host:
-    def __init__(self, directory, *, backend=None, library_root=None, check_updates=True):
+    def __init__(self, directory, *, backend=None, library_root=None, check_updates=True, view_size=None):
         from .. import graphics
         if backend is None:
             import exp_platform
@@ -71,16 +81,17 @@ class Host:
             backend = Backend(font, Path(__file__).resolve().parents[3] / 'kiwi.png')
         self.backend = backend
         graphics.install(backend)
-        # The HD menus at the window's own scale (hd_scale), as Android's: the window is the view's size in points
-        # (768 x 992 on the owner's iPad mini; UIKit gives this view a content scale of 1), so the 2x layers were drawn
-        # and shrunk to it every frame. Set before the menus are imported.
-        os.environ.setdefault('SHSHD_HD_SCALE', '1')
+        # The HD menus at the window's own scale (hd_scale), set before they are imported: the window is the view's
+        # pixel size (Swift's first frame sends it), so 2x on a Retina iPad (1536 x 2048) or a phone, where the 768 x
+        # 1024 point frame is shown at well over its size; 1x where it is not (the self-test's small window). At 1x
+        # the owner's iPad looked soft: SHS HD drew it all at the screen's resolution.
+        os.environ.setdefault('SHSHD_HD_SCALE', '2' if hd_scale_for(view_size) == 2 else '1')
         # Import after installing the backend: pygame is not bundled on iOS.
         from ..application import Application
         from .. import desktop_choice, momentum
         desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out (as Android)
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (as Android)
-        graphics.native_switches = []               # the options' switches are UIKit's, as SHS HD's (switches)
+        graphics.native_controls = []               # the options' switches and sliders are UIKit's (controls)
         self.directory = Path(directory)
         install_log(self.directory)
         self.update_future = None
@@ -104,42 +115,6 @@ class Host:
         self.input_stamp = self._input_stamp()
         self.generation = 0
         self.frame_stats = FrameStats()      # slow frames, summarised in the runtime log (request)
-        self.tree_touch = None               # a touch begun on the story tree, traced into the runtime log
-        self.tree_scroll_logged = -2000      # when a scroll-mode drag over the side panels was last logged
-
-    def _tree_panel(self):
-        game = self.app.game if self.app.screen == 'game' else None
-        panels = getattr(game, 'side_panels', None) if game is not None and game.panels_open else None
-        return panels if panels is not None and panels.tree_rect is not None else None
-
-    def trace_tree_touch(self, event, dropped=False):
-        """One runtime-log line for each touch begun on the story tree: what reached the app and where the tree went.
-        The owner's iPad would not scroll the tree with one finger, though the same touches scroll it here."""
-        kind, panels = event['kind'], self._tree_panel()
-        if kind == 'scroll' and panels is not None:
-            # Swift's scroll mode (the frame's `scrollable`) sends a drag as wheel steps, without a point.
-            if self.backend.ticks - self.tree_scroll_logged >= 2000:
-                self.tree_scroll_logged = self.backend.ticks
-                logging.warning('scroll-mode drag while the side panels are open (dropped %s, max_scroll %s)',
-                                dropped, self.app.game.max_scroll)
-            return
-        if kind == 'down' and not dropped:
-            self.tree_touch = None
-            if panels is not None and panels.tree_rect.collidepoint(tuple(event['point'])):
-                self.tree_touch = dict(start=tuple(event['point']), scroll=(panels.tree_scroll, panels.tree_scroll_x),
-                                       zoom=panels.tree_sz_now, counts={}, dropped={})
-            return
-        trace = self.tree_touch
-        if trace is None:
-            return
-        counts = trace['dropped' if dropped else 'counts']
-        counts[kind] = counts.get(kind, 0) + 1
-        if kind in ('up', 'cancel') and not dropped:
-            self.tree_touch = None
-            after = (panels.tree_scroll, panels.tree_scroll_x, panels.tree_sz_now) if panels is not None else None
-            logging.warning('tree touch at %s: %s, dropped %s; scroll %s zoom %s -> %s; last point %s',
-                            trace['start'], trace['counts'], trace['dropped'], trace['scroll'], trace['zoom'], after,
-                            event.get('point'))
 
     def _input_stamp(self):
         game = self.app.game if self.app.screen == 'game' else None
@@ -157,10 +132,8 @@ class Host:
         for event in events:
             if event.get('generation', self.generation) != self.generation:
                 if not self._stale_drag(event):
-                    self.trace_tree_touch(event, dropped=True)
                     continue  # A touch begun on an expired timed choice cannot answer its successor.
             self._event(event)
-            self.trace_tree_touch(event)
             if self.app.input_token() != token:
                 break
             if screen == 'game' and self.app.game.screen_token != self.app.game._screen_token():
@@ -279,42 +252,67 @@ class Host:
         elif kind == 'switch':
             self.flip_switch(event['key'], bool(event['on']))
             return
+        elif kind == 'slider':
+            self.slide_volume(event['key'], min(1.0, max(0.0, float(event['value']))))
+            return
         else:
             raise ValueError(f'Unsupported iOS input: {kind}')
         self.app.handle_event(event)
 
-    def flip_switch(self, key, on):
-        """A UISwitch the player flipped (Swift's `switch` event): the same toggle a tap on its row makes, unless the
-        setting already is `on` or its page has gone (the next frame then puts the switch back, or hides it)."""
-        shown = {placed['key']: placed['on'] for placed in self.switches_shown}
-        if shown.get(key, on) == on:
-            return
+    def _control_page(self):
+        """Who takes a UIKit control's change: the story's pause card (while it is not closing), the main menu's
+        Options, or nobody (its page has gone: the next frame puts the control back, or hides it)."""
         game = self.app.game if self.app.screen == 'game' else None
         if game is not None and game.menu_open and not game.pause_closing:
-            game.command(('pause_toggle', key))
-        elif self.app.screen == 'main' and self.app.shell is not None and self.app.shell.pause_open:
-            self.app.shell.activate(('pause_toggle', key))
+            return game
+        if self.app.screen == 'main' and self.app.shell is not None and self.app.shell.pause_open:
+            return self.app.shell
+        return None
 
-    switches_shown = ()             # the switches the last frame placed (switches)
+    def flip_switch(self, key, on):
+        """A UISwitch the player flipped (Swift's `switch` event): the same toggle a tap on its row makes, unless the
+        setting already is `on`."""
+        shown = {placed['key']: placed['on'] for placed in self.controls_shown if placed['kind'] == 'switch'}
+        page = self._control_page()
+        if shown.get(key, on) == on or page is None:
+            return
+        if page is self.app.shell:
+            page.activate(('pause_toggle', key))
+        else:
+            page.command(('pause_toggle', key))
 
-    def switches(self):
-        """This frame's option switches for Swift's UISwitches, in the window's pixels (desktop_pause_hd.place_switches):
-        the main menu's are in its frame's points, mapped by the frame's viewport, and give way to whatever the app
-        draws over its menus (the busy card, a message, the update prompt)."""
+    def slide_volume(self, key, value):
+        """A UISlider the player moved (Swift's `slider` event, while it moves): that volume, as dragging the drawn
+        slider sets it (its preview sound included)."""
+        page = self._control_page()
+        if key not in ('music', 'sound') or page is None:
+            return
+        if page is self.app.shell:
+            page.set_volume(key, value)
+        else:
+            page._set_volume(key, value)
+
+    controls_shown = ()             # the controls the last frame placed (controls)
+
+    def controls(self):
+        """This frame's option switches and volume sliders for Swift's UISwitches and UISliders, in the window's
+        pixels (desktop_pause_hd.place_controls): the main menu's are in its frame's points, mapped by the frame's
+        viewport, and give way to whatever the app draws over its menus (the busy card, a message, the update
+        prompt)."""
         from .. import graphics
         from ..desktop_pause_hd import FRAME as HD_FRAME
-        placed, graphics.native_switches = graphics.native_switches, []
+        placed, graphics.native_controls = graphics.native_controls, []
         app, shown = self.app, []
         covered = app.busy or app.message or app.update_prompt is not None
-        for switch in placed:
-            if switch['space'] == 'frame':
+        for control in placed:
+            if control['space'] == 'frame':
                 if app.screen != 'main' or covered or getattr(app, 'viewport', None) is None:
                     continue
                 v, k = app.viewport, app.viewport.width / HD_FRAME[0]
-                switch = dict(switch, right=v.x + switch['right'] * k, middle=v.y + switch['middle'] * k,
-                              scale=switch['scale'] * k)
-            shown.append({key: switch[key] for key in ('key', 'on', 'right', 'middle', 'scale', 'alpha')})
-        self.switches_shown = shown
+                control = dict(control, middle=v.y + control['middle'] * k, scale=control['scale'] * k,
+                               **{edge: v.x + control[edge] * k for edge in ('left', 'right') if edge in control})
+            shown.append({key: value for key, value in control.items() if key != 'space'})
+        self.controls_shown = shown
         return shown
 
     def pinch(self, event):
@@ -446,7 +444,7 @@ class Host:
                         parent = parent.parent
             self.staging.clear()
         from .. import graphics
-        graphics.native_switches = []        # this frame's switches only (switches)
+        graphics.native_controls = []        # this frame's controls only (controls)
         self.app.render()
         stamp = self._input_stamp()
         if stamp != self.input_stamp:
@@ -479,7 +477,7 @@ class Host:
                     update_request=update_request,
                     generation=self.generation,
                     scrollable=self.app.screen in ('episodes', 'browser') or bool(game and game.max_scroll),
-                    switches=self.switches(),
+                    controls=self.controls(),
                     busy=self.app.busy, screen=self.app.screen, game=self.app.selected_game,
                     pending=pending.name if pending else None, scene=game.session.scene if game else None,
                     error=game.error if game else self.app.message or None)
@@ -499,7 +497,7 @@ def request(payload, directory):
             parent = Path(directory) / 'Verification'
             parent.mkdir(parents=True, exist_ok=True)
             root = Path(tempfile.mkdtemp(prefix='libraries-', dir=parent))
-        _host = Host(directory, library_root=root, check_updates=not _verifying)
+        _host = Host(directory, library_root=root, check_updates=not _verifying, view_size=message.get('size'))
     started = time.perf_counter()
     result = _host.request(message)
     if message.get('operation', 'frame') == 'frame':

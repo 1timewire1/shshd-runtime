@@ -149,17 +149,19 @@ KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
 PAGE_KEYS = {pygame.K_UP: -40, pygame.K_DOWN: 40, pygame.K_PAGEUP: -400, pygame.K_PAGEDOWN: 400}
 
 
-def place_switches(renderer, centre, scale, *, space='window', alpha=1.0):
-    """Hand the host this frame's switches (graphics.native_switches), the card being drawn `scale` times its size
+def place_controls(renderer, centre, scale, *, space='window', alpha=1.0):
+    """Hand the host this frame's controls (graphics.native_controls), the card being drawn `scale` times its size
     about `centre` (where the frame's centre lands): in the window's pixels, or with `space='frame'` in the frame's
     points (the HD menus' canvas, which the host maps to the window). `scale` is that space's units per point."""
-    if pygame.native_switches is None:
+    if pygame.native_controls is None:
         return
     cx, cy = centre
-    for key, right, middle, on in renderer.placed_switches():
-        pygame.native_switches.append(dict(key=key, on=on, space=space, alpha=alpha, scale=scale,
-                                           right=cx + (right - FRAME[0] / 2) * scale,
-                                           middle=cy + (middle - FRAME[1] / 2) * scale))
+    for control in renderer.placed_controls():
+        placed = dict(control, space=space, alpha=alpha, scale=scale, middle=cy + (control['middle'] - FRAME[1] / 2) * scale)
+        for edge in ('left', 'right'):
+            if edge in control:
+                placed[edge] = cx + (control[edge] - FRAME[0] / 2) * scale
+        pygame.native_controls.append(placed)
 
 
 def focus_step(key):
@@ -285,20 +287,25 @@ class HdPauseMenu:
 
     def start_slide(self, direction):
         self.slide = (direction, self.shown, 0.) if self.shown is not None else None
-        self.slid_switches = self.shown_switches     # the page sliding out takes its host switches along
+        self.slid_controls = self.shown_controls     # the page sliding out takes its host controls along
         self.switches = None        # a page's switches first show at rest
 
-    screen_switches = shown_switches = slid_switches = ()   # (key, right, middle, on) of a page's host switches
+    # A page's host controls (graphics.native_controls), in frame points: {'kind': 'switch', 'key', 'right', 'middle',
+    # 'on'} or {'kind': 'slider', 'key', 'left', 'right', 'middle', 'value'}.
+    screen_controls = shown_controls = slid_controls = ()
 
-    def placed_switches(self):
-        """Where the last laid-out screen's host switches are (key, right x, middle y in frame points, on), sliding
-        with their pages (`layout`) as UIKit's subviews would."""
+    def placed_controls(self):
+        """Where the last laid-out screen's host controls are, sliding with their pages (`layout`) as UIKit's
+        subviews would."""
         if self.slide is None:
-            return list(self.shown_switches)
+            return list(self.shown_controls)
         direction, _, elapsed = self.slide
         shift = ease_in_out(elapsed / SLIDE_MS) * FRAME[0]
-        return ([(key, x - direction * shift, y, on) for key, x, y, on in self.slid_switches]
-                + [(key, x + direction * (FRAME[0] - shift), y, on) for key, x, y, on in self.shown_switches])
+
+        def moved(control, by):
+            return dict(control, **{edge: control[edge] + by for edge in ('left', 'right') if edge in control})
+        return ([moved(control, -direction * shift) for control in self.slid_controls]
+                + [moved(control, direction * (FRAME[0] - shift)) for control in self.shown_controls])
 
     def advance(self, ms):
         if self.slide is not None:
@@ -463,13 +470,18 @@ class HdPauseMenu:
         track.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
         return track
 
-    def slider(self, layer, top, value):
-        """A UISlider row's control line (track between the two speaker icons)."""
+    def slider(self, layer, top, value, key=None):
+        """A UISlider row's control line (track between the two speaker icons). Where the host shows its own (iOS:
+        a UISlider, graphics.native_controls), the icons are drawn and the track is placed for it instead."""
         middle = top + 86
         small, large = self.art(155, 53), self.art(155, 54)
         layer.blit(small, (round(108 * S), round(middle * S - small.get_height() / 2)))
         layer.blit(large, (round(620 * S), round(middle * S - large.get_height() / 2)))
         left, right = 143, 603
+        if pygame.native_controls is not None and key is not None:
+            self.screen_controls.append(dict(kind='slider', key=key, left=left, right=right, middle=middle,
+                                             value=float(value)))
+            return pygame.Rect(left - 10, middle - 22, right - left + 20, 44)
         self.rect(layer, (74, 132, 213), (left, middle - 3, right - left, 6), 3)
         self.rect(layer, (150, 185, 235), (left, middle - 3, right - left, 2), 1)
         knob = round((left + (right - left) * value) * S)
@@ -537,7 +549,7 @@ class HdPauseMenu:
         (`open` / `back`) the layer holds both cards and there are no buttons."""
         layer, buttons = self.screen_layout(settings, host_rows, message=message)
         self.shown, self.drawn = layer, ((settings, host_rows), {'message': message})
-        self.shown_switches = self.screen_switches
+        self.shown_controls = self.screen_controls
         if self.slide is None:
             return layer, buttons
         direction, previous, elapsed = self.slide
@@ -551,7 +563,7 @@ class HdPauseMenu:
         """The current screen alone, at rest: `layout`'s (layer, buttons)."""
         layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
         strings, state, buttons = self.strings(), self.state, []
-        self.screen_switches = []
+        self.screen_controls = []
         bottom_rule = None
         focus = state.focus
         if state.screen == 'pause':
@@ -598,17 +610,17 @@ class HdPauseMenu:
                     self.rows_body(layer, y, SLIDER_ROW, self.row_color(index),
                                    lit=focus is not None and focus[:2] == ('pause_slider', key))
                     self.text(layer, label, PANEL_X + 31, y + 39 - self.cap_offset(ROW_PX), ROW_PX, self.LABEL_COLOR)
-                    track = self.slider(layer, y, settings[key + '_volume'])
+                    track = self.slider(layer, y, settings[key + '_volume'], key=key)
                     buttons.append((track, ('pause_slider', key, track)))
                     y += SLIDER_ROW
                     continue
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
                          badge=switch_badge(key))
-                if kind == 'switch' and pygame.native_switches is not None:
-                    # The host's own control (the iOS host's UISwitch), placed over the row (place_switches).
-                    self.screen_switches.append((key, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
-                                                 bool(settings.get(key, False))))
+                if kind == 'switch' and pygame.native_controls is not None:
+                    # The host's own control (the iOS host's UISwitch), placed over the row (place_controls).
+                    self.screen_controls.append(dict(kind='switch', key=key, right=PANEL_X + PANEL_W - CONTROL_RIGHT,
+                                                     middle=y + ROW / 2, on=bool(settings.get(key, False))))
                     buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
                 elif kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,

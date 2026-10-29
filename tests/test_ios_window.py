@@ -13,7 +13,7 @@ class IosWindowTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def host(self):
+    def host(self, view_size=None):
         import logging
         from exp_runtime import graphics
         from exp_runtime.app_icon import icon_surface
@@ -28,7 +28,8 @@ class IosWindowTests(unittest.TestCase):
         self.addCleanup(graphics.install, previous)
         icon_surface.cache_clear()
         self.addCleanup(icon_surface.cache_clear)
-        host = Host(self.root, backend=backend, library_root=self.root / 'libraries', check_updates=False)
+        host = Host(self.root, backend=backend, library_root=self.root / 'libraries', check_updates=False,
+                    view_size=view_size)
         self.addCleanup(host.app.close)
 
         def drop_log():
@@ -56,15 +57,18 @@ class IosWindowTests(unittest.TestCase):
         host.request(dict(operation='frame', elapsed=16, size=[2048, 1536]))   # turned to landscape
         self.assertEqual(host.app.window.get_size(), (2048, 1536))
 
-    def test_the_hd_menus_draw_at_the_windows_scale(self):
-        """The window is the view's size in points (the owner's iPad mini: 768 x 992), so the HD menus' layers are
-        asked for at 1x, as Android's (hd_scale), not drawn at 2x and shrunk every frame."""
+    def test_the_hd_menus_draw_at_the_screens_resolution(self):
+        """The window is the view's pixel size (Swift's first frame sends it): the HD menus' layers are 2x where the
+        frame is shown well over its 768 x 1024 points (a Retina iPad, either way up; a phone), 1x where it is not."""
         import os
         from unittest.mock import patch
+        from exp_runtime.platforms.ios import hd_scale_for
+        self.assertEqual([hd_scale_for(size) for size in ([1536, 2048], [2048, 1536], [1179, 2556], [768, 992],
+                                                          [540, 720], None)], [2, 2, 2, 1, 1, 1])
         with patch.dict(os.environ):
             os.environ.pop('SHSHD_HD_SCALE', None)
-            self.host()
-            self.assertEqual(os.environ.get('SHSHD_HD_SCALE'), '1')
+            self.host(view_size=[1536, 1984])
+            self.assertEqual(os.environ.get('SHSHD_HD_SCALE'), '2')
 
     def test_the_input_stamp_reads_this_forks_prompt(self):
         """The one-input gate's stamp follows the fork's host prompt (desktop._host_prompt), not upstream's
@@ -168,8 +172,7 @@ class IosWindowTests(unittest.TestCase):
 
     def test_a_drag_on_the_tree_outlives_the_story_moving_on(self):
         """A touch from before the screen changed (its generation) answers nothing, but a finger dragging the tree or
-        the wall goes on, its lift ending the drag; one that never moved is let go, not a tap on the new screen. Each
-        touch begun on the tree is one runtime-log line."""
+        the wall goes on, its lift ending the drag; one that never moved is let go, not a tap on the new screen."""
         from exp_runtime.platforms.drawing import Rect
         host = self.host()
         seen = []
@@ -194,16 +197,13 @@ class IosWindowTests(unittest.TestCase):
         host.app.cancel_pointer = lambda: cancelled.append(True)
         host.app.input_token = lambda: ('game', None, None)
         stale = host.generation - 1
-        with self.assertLogs(level='WARNING') as log:
-            host.handle_events([dict(kind='down', point=[100, 300], generation=host.generation)])
-            host.handle_events([dict(kind='move', point=[100, 250], generation=stale),
-                                dict(kind='up', point=[100, 250], generation=stale)])
+        host.handle_events([dict(kind='down', point=[100, 300], generation=host.generation)])
+        host.handle_events([dict(kind='move', point=[100, 250], generation=stale),
+                            dict(kind='up', point=[100, 250], generation=stale)])
         b = host.backend
         self.assertEqual(seen, [b.MOUSEBUTTONDOWN, b.MOUSEMOTION, b.MOUSEBUTTONUP])
         self.assertIsNone(game.tree_drag)
-        self.assertEqual(len(log.records), 1)
-        self.assertIn("{'move': 1, 'up': 1}, dropped {}", log.output[0])
-        self.assertIn('-> (50.0, 0.0, 1.0)', log.output[0])
+        self.assertEqual(panels.tree_scroll, 50.0)
         seen.clear()
         host.handle_events([dict(kind='down', point=[100, 300], generation=host.generation)])
         host.handle_events([dict(kind='up', point=[100, 300], generation=stale)])     # a tap: let go
@@ -213,42 +213,55 @@ class IosWindowTests(unittest.TestCase):
         host.handle_events([dict(kind='move', point=[100, 250], generation=stale)])  # no drag: dropped
         self.assertEqual(seen, [b.MOUSEBUTTONDOWN])
 
-    def test_the_option_switches_are_uikits_and_a_flip_toggles_the_setting(self):
-        """The host turns the menus' switches into UISwitches (graphics.native_switches): each frame lists them in the
-        window's pixels (the main menu's mapped from its frame by the viewport, none under a message), and a flip
-        Swift sends is the row's toggle, once, only while it differs and its page is up."""
+    def test_the_options_controls_are_uikits_and_their_changes_set_the_options(self):
+        """The host turns the menus' switches and volume sliders into UIKit's (graphics.native_controls): each frame
+        lists them in the window's pixels (the main menu's mapped from its frame by the viewport, none under a
+        message). A flip Swift sends is the row's toggle, once, only while it differs and its page is up; a slider's
+        move sets that volume."""
         from exp_runtime import graphics
         from exp_runtime.platforms.drawing import Rect
         host = self.host()
-        self.assertEqual(graphics.native_switches, [])
+        self.assertEqual(graphics.native_controls, [])
         app = host.app
         app.viewport = Rect(0, 16, 384, 512)                    # the frame at half size, 16 down
-        toggled = []
-        app.shell = SimpleNamespace(pause_open=True, activate=toggled.append)
+        toggled, volumes = [], []
+        app.shell = SimpleNamespace(pause_open=True, activate=toggled.append,
+                                    set_volume=lambda which, value: volumes.append(('menu', which, value)))
         app.screen, app.message = 'main', ''
-        graphics.native_switches.append(dict(key='autoplay', on=False, space='frame', alpha=1.0, scale=1.0,
-                                             right=660, middle=300))
-        shown = host.switches()
-        self.assertEqual(shown, [dict(key='autoplay', on=False, right=330.0, middle=166.0, scale=.5, alpha=1.0)])
-        self.assertEqual(graphics.native_switches, [])
+        graphics.native_controls.extend([
+            dict(kind='switch', key='autoplay', on=False, space='frame', alpha=1.0, scale=1.0, right=660, middle=300),
+            dict(kind='slider', key='music', value=.5, space='frame', alpha=1.0, scale=1.0, left=143, right=603,
+                 middle=400)])
+        shown = host.controls()
+        self.assertEqual(shown, [dict(kind='switch', key='autoplay', on=False, right=330.0, middle=166.0, scale=.5,
+                                      alpha=1.0),
+                                 dict(kind='slider', key='music', value=.5, left=71.5, right=301.5, middle=216.0,
+                                      scale=.5, alpha=1.0)])
+        self.assertEqual(graphics.native_controls, [])
         host._event(dict(kind='switch', key='autoplay', on=True))
         host._event(dict(kind='switch', key='autoplay', on=False))         # already off: nothing
         self.assertEqual(toggled, [('pause_toggle', 'autoplay')])
+        host._event(dict(kind='slider', key='music', value=1.4))
+        self.assertEqual(volumes, [('menu', 'music', 1.0)])
         app.message = 'Added 3 episodes.'                                  # the message card covers the menu
-        graphics.native_switches.append(dict(key='autoplay', on=True, space='frame', alpha=1.0, scale=1.0,
-                                             right=660, middle=300))
-        self.assertEqual(host.switches(), [])
-        game = SimpleNamespace(menu_open=True, pause_closing=False, command=toggled.append)
+        graphics.native_controls.append(dict(kind='switch', key='autoplay', on=True, space='frame', alpha=1.0,
+                                             scale=1.0, right=660, middle=300))
+        self.assertEqual(host.controls(), [])
+        game = SimpleNamespace(menu_open=True, pause_closing=False, command=toggled.append,
+                               _set_volume=lambda which, value: volumes.append(('game', which, value)))
         app.game, app.screen, app.message = game, 'game', ''
         self.addCleanup(setattr, app, 'game', None)
-        graphics.native_switches.append(dict(key='choice_hints', on=False, space='window', alpha=1.0, scale=1.0,
-                                             right=600, middle=400))
-        host.switches()
+        graphics.native_controls.append(dict(kind='switch', key='choice_hints', on=False, space='window', alpha=1.0,
+                                             scale=1.0, right=600, middle=400))
+        host.controls()
         host._event(dict(kind='switch', key='choice_hints', on=True))
+        host._event(dict(kind='slider', key='sound', value=.3))
         self.assertEqual(toggled[-1], ('pause_toggle', 'choice_hints'))
+        self.assertEqual(volumes[-1], ('game', 'sound', .3))
         game.pause_closing = True                                          # the card is going: let it be
         host._event(dict(kind='switch', key='choice_hints', on=True))
-        self.assertEqual(len(toggled), 2)
+        host._event(dict(kind='slider', key='sound', value=.9))
+        self.assertEqual((len(toggled), len(volumes)), (2, 2))
 
     def test_slow_frames_are_summarised_in_the_runtime_log(self):
         """The owner's iPad is the only place its slowness shows: a span with a slow frame writes one summary line
