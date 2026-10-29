@@ -227,6 +227,20 @@ class DesktopInputTests(unittest.TestCase):
             target, (20, 20, 20), (rect.x, rect.y, rect.width, rect.height))
         return ui
 
+    def test_a_tap_on_the_field_shows_a_keyboard_closed_by_back_again(self):
+        """A phone's Back closes the on-screen keyboard but leaves SDL's text input on (owner's g54: no way to bring
+        the keyboard back). A tap on the field asks SDL again, which shows it; with text input off it starts it."""
+        import pygame
+        from unittest.mock import patch
+        ui = self.desktop()
+        ui.render()
+        self.assertTrue(ui.text_input_started)
+        with patch('pygame.key.start_text_input') as start:
+            ui.command(('input_focus',))
+            ui._sync_text_input()
+        start.assert_called_once_with()
+        self.assertTrue(ui.text_input_started)
+
     def test_typing_alert_empty_return_backspace_and_callback(self):
         import pygame
         ui = self.desktop(); s = ui.session
