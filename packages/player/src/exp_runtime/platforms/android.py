@@ -38,7 +38,7 @@ PANELS_PORTRAIT_MS = 700
 # The HD frame at its own resolution (768 x 1024 points at 2 pixels a point, the iPad's screen). The app draws into a
 # surface sized so the frame fits it at exactly this size, and SDL's renderer scales that surface to the screen on the
 # GPU: fitting the frame to a phone's 1080 pixels with pygame's smoothscale took 1.1 s a frame on a Moto g54's CPU.
-FRAME_PIXELS = (1536, 2048)
+FRAME_PIXELS = (768, 1024)
 
 
 def screen_size():

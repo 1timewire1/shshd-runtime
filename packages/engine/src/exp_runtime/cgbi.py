@@ -11,7 +11,7 @@ from io import BytesIO
 import struct
 import zlib
 
-from PIL import Image
+from PIL import Image, ImageMath
 
 
 class CgBIError(ValueError):
@@ -68,11 +68,15 @@ def decode(data: bytes) -> Image.Image:
     channels = list(image.split())
     channels[0], channels[2] = channels[2], channels[0]
     if image.mode == 'RGBA':
-        alpha = channels[3].tobytes()
-        planes = []
-        for plane in channels[:3]:
-            raw = plane.tobytes()
-            planes.append(Image.frombytes('L', image.size, bytes(
-                min(255, value * 255 // a) if 0 < a < 255 else value for value, a in zip(raw, alpha))))
-        channels[:3] = planes
+        # Un-premultiplied as min(255, value * 255 // alpha), a pixel with alpha 0 or 255 left as it is: in Pillow's
+        # integer image maths (a byte loop in Python took ~100 ms a portrait on a phone, each new face).
+        alpha = channels[3].convert('I')
+
+        def straight(v):
+            value, a = v['value'], v['alpha']
+            divided = v['min'](value * 255 / v['max'](a, 1), 255)
+            return (a == 0) * value + (a == 255) * value + (a != 0) * (a != 255) * divided
+
+        channels[:3] = [ImageMath.lambda_eval(straight, value=plane.convert('I'), alpha=alpha).convert('L')
+                        for plane in channels[:3]]
     return Image.merge(image.mode, channels)

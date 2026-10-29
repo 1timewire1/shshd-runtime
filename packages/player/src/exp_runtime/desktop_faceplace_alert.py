@@ -203,10 +203,24 @@ class FaceplaceAlertRenderer:
             below += len(extra.lines) * LINE_PITCH
         return card
 
-    @staticmethod
-    def shrink(surface, size):
+    # shrink's results by (the source surface, size): the wall panel and the alert shrink the same faces every frame
+    # (a Lanczos pass each, ~14 ms on a phone). The source is kept in the entry so its id cannot be reused meanwhile.
+    _shrunk = {}
+
+    @classmethod
+    def shrink(cls, surface, size):
         """Resample down with premultiplied alpha (a plain filter smears the
         transparent pixels' color into the ring's thin lines)."""
+        key = (id(surface), tuple(size))
+        kept = cls._shrunk.get(key)
+        if kept is None or kept[0] is not surface:
+            kept = cls._shrunk[key] = (surface, cls._shrink(surface, size))
+            while len(cls._shrunk) > 64:
+                del cls._shrunk[next(iter(cls._shrunk))]
+        return kept[1]
+
+    @staticmethod
+    def _shrink(surface, size):
         try:
             from PIL import Image
         except ImportError:

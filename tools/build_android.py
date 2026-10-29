@@ -23,7 +23,7 @@ def prepare_recipe_cache(storage):
         previous = {}
     current = {}
     changed = False
-    for name, module in (('android', 'android'), ('pygame_ce', 'pygame')):
+    for name, module in (('android', 'android'), ('pygame_ce', 'pygame'), ('Pillow', 'PIL')):
         recipe = ROOT / 'android/recipes' / name
         digest = hashlib.sha256()
         for path in sorted(recipe.rglob('*.py')):

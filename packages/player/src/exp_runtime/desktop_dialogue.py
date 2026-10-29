@@ -373,16 +373,25 @@ class DialogueRenderer:
         if self.game_id() == 'cod':
             x, bottom = 2 * int((layer_w / 2 - round(width)) / 2), self.COD_PORTRAIT_BOTTOM   # truncated in units
         layer.blit(art, (round(x * k), round((bottom - round(height * 2)) * k)))
+        layer.blit(self.hd_portrait_clip(density), (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        return layer, round((layer_h - layer_w) * k)
+
+    @lru_cache(maxsize=4)
+    def hd_portrait_clip(self, density):
+        """hd_portrait's soft mask (pack 268 frame 0) over the layer at `density`: the same for every face, so made once
+        (its bytes were built one by one in Python for each portrait)."""
         mask = self.pack(268).images[0]
         mx, my, mw, mh = self.HD_PORTRAIT_MASK
-        shape = pygame.image.frombytes(bytes(b for value in mask.pixels for b in (255, 255, 255, 255 - value)),
-                                       (mask.width, mask.height), 'RGBA')
+        layer_w, layer_h = self.HD_PORTRAIT_LAYER
+        k = density / 2
+        alpha = bytes(255 - value for value in range(256))
+        shape = pygame.image.frombytes(bytes(b for value in bytes(mask.pixels).translate(alpha)
+                                             for b in (255, 255, 255, value)), (mask.width, mask.height), 'RGBA')
         shape = pygame.transform.smoothscale(shape, (round(mw * k), round(mh * k)))
-        clip = pygame.Surface(layer.get_size(), pygame.SRCALPHA).convert_alpha()
+        clip = pygame.Surface((round(layer_w * k), round(layer_h * k)), pygame.SRCALPHA).convert_alpha()
         clip.fill((255, 255, 255, 0))                   # nothing outside the mask's rectangle is drawn
         clip.blit(shape, (round(mx * k), round(my * k)))
-        layer.blit(clip, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        return layer, round((layer_h - layer_w) * k)
+        return clip
 
     def portrait_rect(self, image, center=(0, 0), density=1):
         """FUN_0009c034 positions the sprite center within the bubble.

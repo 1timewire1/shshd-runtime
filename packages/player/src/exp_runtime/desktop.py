@@ -1399,7 +1399,7 @@ class Desktop:
         frame.center = (width // 2, height // 2)
         target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
         with frame_log.section('present'):
-            scaled = pygame.transform.smoothscale(self.canvas, target_size)
+            scaled = self.canvas if self.canvas.get_size() == target_size else pygame.transform.smoothscale(self.canvas, target_size)
         alpha, overlay = self.panel_alpha, self.panel_overlay
         self.panel_alpha = self.panel_overlay = None
         if alpha is not None and alpha < 1:
@@ -1431,7 +1431,8 @@ class Desktop:
             else:
                 area = self.viewport
             with frame_log.section('present'):
-                layer = pygame.transform.smoothscale(layer, area.size)
+                # Already the area's size when the window is drawn at the story's own density (Android): no pass.
+                layer = layer if layer.get_size() == area.size else pygame.transform.smoothscale(layer, area.size)
             if alpha is not None and alpha < 1:
                 layer = faded(layer, round(255 * alpha))
             self.window.blit(layer, area)
