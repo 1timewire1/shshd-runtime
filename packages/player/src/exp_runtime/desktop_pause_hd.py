@@ -101,7 +101,13 @@ CONFIRM_NAMES = {'south': 'Bottom', 'east': 'Right'}
 # highlighted cell.
 GRID_CONTROLS_LABEL = 'Word Grid Controls'
 GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
-DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another Library'))
+# Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
+# menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
+DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('open_library', 'Open Another Library'))),
+              ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'),)),
+              ('data:progress', 'Progress', (('reset_names', 'Reset Names'), ('delete_saves', 'Delete All Saves'))))
+DATA_LAST = (('reset_settings', 'Reset Settings'),)
+DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
 CONTROL_RIGHT = 26
@@ -167,6 +173,9 @@ SWITCH_MS = 200
 FOCUS_SHADE, VOLUME_STEP = .85, .1
 KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
 PAGE_KEYS = {pygame.K_UP: -40, pygame.K_DOWN: 40, pygame.K_PAGEUP: -400, pygame.K_PAGEDOWN: 400}
+
+
+DATA_TITLES = {screen: title for screen, title, _ in DATA_PAGES}
 
 
 def focus_step(key):
@@ -245,7 +254,15 @@ class HdPauseMenu:
         """A UIKit control's own label (the switches' ON / OFF): the system bold face, whatever the menu's text face."""
         return HdPauseMenu.font(self, points)
 
+    def show_text(self, screen, title, body, parent):
+        """Open a text page the host wrote (Data Management's Library Info): `title` over `body`, its back step to
+        `parent`."""
+        self.text_pages = dict(self.text_pages, **{screen: (title, body, parent)})      # (the class's stays empty)
+        self.open(screen)
+
     def text_lines(self, page):
+        if page in self.text_pages:
+            return self.text_pages[page][:2]
         override = HELP_TEXT_OVERRIDES.get(page)
         if override is not None:
             title, body = override
@@ -257,6 +274,7 @@ class HdPauseMenu:
         return strings[title_id], body
 
     # -- state ----------------------------------------------------------
+    text_pages = {}                 # screen -> (title, body, parent) of the host's own text pages (show_text)
     slide = None
     shown = None
     drawn = None
@@ -277,8 +295,9 @@ class HdPauseMenu:
         if state.screen == 'pause':
             return True
         leaving = state.screen
-        state.screen = ('help' if state.screen in PAGES else 'options' if state.screen.startswith('options:')
-                        else 'pause')
+        state.screen = ('help' if state.screen in PAGES else self.text_pages[state.screen][2]
+                        if state.screen in self.text_pages else 'options:data' if state.screen in DATA_TITLES
+                        else 'options' if state.screen.startswith('options:') else 'pause')
         if self.main_menu and state.screen == 'pause':
             return True
         if self.shown is not None and self.drawn is not None:
@@ -560,16 +579,16 @@ class HdPauseMenu:
                 buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
             bottom_rule = top + height - FOOT
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
-        elif state.screen.startswith('options:'):
+        elif state.screen.startswith('options:') or state.screen in DATA_TITLES:
             # Sound: the app's own Music / Sound switches and sliders. General: in a story, the side panels (a native
             # feature: the device shows them on rotation, so it has no switch or string of its own), then this
             # player's switches (exp-runtime's Options -> Cheats; no native strings, so the labels are this project's).
-            category = state.screen.split(':', 1)[1]
+            category = state.screen if state.screen in DATA_TITLES else state.screen.split(':', 1)[1]
             rows = self.option_rows(category, settings, strings)
             sliders = sum(1 for kind, _, _ in rows if kind == 'slider')
             height = HEADER + (len(rows) - sliders) * ROW + sliders * SLIDER_ROW + FOOT
             top = (FRAME[1] - height) / 2
-            title = dict(OPTION_CATEGORIES).get(category, strings[10])
+            title = DATA_TITLES.get(category) or dict(OPTION_CATEGORIES).get(category, strings[10])
             body = self.panel(layer, top, top + height, title)
             y = body
             for index, (kind, label, key) in enumerate(rows):
@@ -581,7 +600,8 @@ class HdPauseMenu:
                     buttons.append((track, ('pause_slider', key, track)))
                     y += SLIDER_ROW
                     continue
-                command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
+                command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'),
+                           key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
                          badge=switch_badge(key))
                 if kind == 'switch':
@@ -596,7 +616,7 @@ class HdPauseMenu:
                     self.cycle_button(layer, box, settings[key], pressed=self.pressed == ('pause_cycle', key))
                     buttons.append((box, ('pause_cycle', key)))
                 else:
-                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), ('pause_action', key)))
+                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))     # an action or a page
                 y += ROW
             bottom_rule = top + height - FOOT
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
@@ -678,7 +698,12 @@ class HdPauseMenu:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows
         if category == 'data':
-            return [('action', label, key) for key, label in DATA_ACTIONS if key in settings]
+            pages = [('page', title, screen) for screen, title, rows in DATA_PAGES
+                     if any(key in settings for key, _ in rows)]
+            return pages + [('action', label, key) for key, label in DATA_LAST if key in settings]
+        if category in DATA_TITLES:
+            rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
+            return [('action', label, key) for key, label in rows if key in settings]
         return []
 
     def cycle_button(self, layer, box, label, *, pressed=False):

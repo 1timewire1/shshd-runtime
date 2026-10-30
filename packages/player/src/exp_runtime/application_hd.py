@@ -26,6 +26,7 @@ from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import (CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step)
+from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
@@ -44,6 +45,15 @@ SOUND_MENU, MUSIC_MENU = 7, 8
 PRIVACY_MENU, LEAVE_MENU, DISABLE_MENU, ENABLE_MENU = 16, 17, 19, 20
 DELETE_MENU, CONNECTION_MENU = 12, 41
 END_MENU, MISS_MENU = 23, 24
+# Data Management's confirmations (title, message, the Yes button's verb); `~game~` is the game's title.
+DATA_CONFIRMATIONS = {
+    'reset_names': ('Reset Names?', 'The names you typed in ~game~ will be forgotten: new games ask for them again '
+                    '(or take their defaults). Saved games keep the names they were saved with.', 'Reset'),
+    'delete_saves': ('Delete All Saves?', 'Every saved game of ~game~ will be deleted, with the Decision Tree\'s '
+                     'saved scenes. Episodes, names and settings stay.', 'Delete'),
+    'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default, Start In '
+                       'and Check for Updates too. Saves and names stay.', 'Reset'),
+}
 # "Options Unlocked" / "Warping feature has been unlocked for Football Season Mega Pack!" (strings 115 / 272): shown by
 # `SHSEngine::setAppMode` on the main menu after Football Season clears the warp lock (its flag +0x6490b), and by
 # Extras' Unlock Warping.
@@ -316,7 +326,9 @@ class HdShell:
             settings['hires_portraits'] = state.hires_portraits
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
-        settings['add_episodes'] = settings['open_library'] = True
+        # Data Management's rows (main menu only).
+        for key in ('add_episodes', 'open_library', 'library_info', 'reset_names', 'delete_saves', 'reset_settings'):
+            settings[key] = True
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
@@ -639,6 +651,13 @@ class HdShell:
         elif kind == 'pause_action' and command[1] == 'unlock_warp':
             if self.app.unlock_warp():
                 self.open_window(WARP_UNLOCKED_MENU)
+        elif kind == 'pause_action' and command[1] == 'library_info':
+            self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
+        elif kind == 'pause_action' and command[1] in DATA_CONFIRMATIONS:
+            title, message, verb = DATA_CONFIRMATIONS[command[1]]
+            action = getattr(self.app, command[1])
+            self.confirm(title, message.replace('~game~', self.app.game_title), verb,
+                         lambda: self.notify(*action()))
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':
@@ -654,6 +673,12 @@ class HdShell:
     def perform(self, number):
         """`SHSEngine::doMenuEngineAction` for the actions the menus of this shell use."""
         state = self.app.state
+        if number == self.CONFIRM_ACTION:             # a Data Management confirmation's Yes
+            self.stack.clear()
+            action, self.confirmed = self.confirmed, None
+            if action is not None:
+                self.app._attempt(action)
+            return
         if number == 0:                                   # "Play with sound?" -> No
             state.music = state.sound = False
             state.persist()
@@ -698,6 +723,24 @@ class HdShell:
             callback, self.pending_yes = self.pending_yes, None
             self.stack.clear()
             callback()
+
+    # Data Management's confirmations and notices: windows of this player's own in the shell's menu engine
+    # (menu_engine.MenuEngineData.add_window), drawn as "Delete Saved Game?" is.
+    CONFIRM_MENU, NOTICE_MENU, CONFIRM_ACTION = CUSTOM_MENUS, CUSTOM_MENUS + 1, CUSTOM_MENUS
+    confirmed = None                # what the confirmation window's Yes does
+
+    def confirm(self, title, message, verb, action):
+        """Ask before a Data Management action: `title` and `message`, No and `verb` (orange, as a Yes is); `verb`
+        runs `action`."""
+        self.data.add_window(self.CONFIRM_MENU, title, message, (('No', ((BACK, 0),)),
+                                                                (verb, ((ENGINE, self.CONFIRM_ACTION),))))
+        self.confirmed = action
+        self.open_window(self.CONFIRM_MENU)
+
+    def notify(self, title, message):
+        """A notice with an OK (what a Data Management action did)."""
+        self.data.add_window(self.NOTICE_MENU, title, message, (('OK', ((BACK, 0),)),))
+        self.open_window(self.NOTICE_MENU)
 
     def open_window(self, menu):
         """Open menu-engine window `menu` with its entrance (it zooms in, as `showInter`'s windows do)."""

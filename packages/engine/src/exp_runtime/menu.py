@@ -81,6 +81,13 @@ def shared_preference(key, value):
     return check is not None and value in check
 
 
+def preference_defaults():
+    """The shared preferences (SHARED_PREFERENCES) at their defaults."""
+    defaults = MenuState.__new__(MenuState)
+    defaults._preference_defaults()
+    return {key: getattr(defaults, key) for key in SHARED_PREFERENCES}
+
+
 class MenuState:
     """Per-library preferences and selection; saves remain content-bound.
 
@@ -98,40 +105,7 @@ class MenuState:
         # resume_path's answer for a save whose checkpoint is an ending, by (path, mtime, size): checking it opens the
         # whole episode, and the menus ask for every episode each time they refresh (seconds once many are finished).
         self.ended_saves = {}
-        self.music = self.sound = True
-        self.vibration = False         # Sound's Simulated Vibration Sound: service 82's buzz (vibration.py); off by default
-        # General's Vibration: service 82 on the device's own vibrator, where the host has one (graphics.set_vibrator:
-        # Android's, the iPhone's); off by default, as the buzz.
-        self.device_vibration = False
-        # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
-        self.music_volume = self.sound_volume = 50
-        self.logging_disabled = False
-        # The story tree's warping: the iOS app locks it until Football Season has been completed once; this player
-        # starts it unlocked so scenes can be visited (set false in player.json for the app's behavior).
-        self.hd_art = 'fill'           # higher-density art for standard episodes: 'off', 'twins' or 'fill' (hd_twins.py);
-                                        # 'fill' is the only one reachable without hand-editing player.json
-        self.warp_unlocked = False     # `SHSEngine +0x6490a` (a lock) is set at first run and cleared when Football Season ends
-        self.choice_hints = False
-        # ask whether to play, win or lose each football game / word grid: this fork's counterpart of exp-runtime
-        # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
-        self.skip_minigames = False
-        self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
-        self.skip_upsell_intros = False     # pass the store plugs some SHS episodes open with (upsell_intro.py)
-        self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
-        self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
-        self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
-        self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
-        # Sound's Skip Sound Prompt (owner, 2026-10-29): the launch passes "Play with sound?" and keeps Music / Sound
-        # as they are (application_hd.HdShell.tick)
-        self.skip_sound_prompt = False
-        # Options' Controller page (owner, 2026-10-29): a controller's confirm button, the bottom one ('south') or, for
-        # a Nintendo layout, the right one ('east') (gamepad.py)
-        self.controller_confirm = 'south'
-        # The word grid with a controller (owner, 2026-10-29): 'hold' (the default), the confirm button held drags, the
-        # stick or D-pad steering it (desktop.Desktop._grid_hold); 'tap', confirm adds the highlighted cell
-        self.grid_controls = 'hold'
-        self.order = 'episode'
-        self.title_language = 'en'
+        self._preference_defaults()
         self.selected = None
         # The app's name-replacement table (`SHSEntityTable` renames, kept in shs_options.sav): `$USR`, a series lead's
         # `$ZOE` / `$Scott` / `$Travis`, `$DATE`... written by the scripts (services 46, 47, 113) and shown wherever text
@@ -217,6 +191,44 @@ class MenuState:
             default = next((e for e in library.episodes if (e.get('pack_id'), e.get('episode_id')) == preferred),
                            library.episodes[0])
             self.selected = max(saved)[1] if saved else default['id']
+
+    def _preference_defaults(self):
+        """Every preference at its default (Data Management's Reset Settings takes the shared ones from here:
+        preference_defaults)."""
+        self.music = self.sound = True
+        self.vibration = False         # Sound's Simulated Vibration Sound: service 82's buzz (vibration.py); off by default
+        # General's Vibration: service 82 on the device's own vibrator, where the host has one (graphics.set_vibrator:
+        # Android's, the iPhone's); off by default, as the buzz.
+        self.device_vibration = False
+        # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
+        self.music_volume = self.sound_volume = 50
+        self.logging_disabled = False
+        # The story tree's warping: the iOS app locks it until Football Season has been completed once; this player
+        # starts it unlocked so scenes can be visited (set false in player.json for the app's behavior).
+        self.hd_art = 'fill'           # higher-density art for standard episodes: 'off', 'twins' or 'fill' (hd_twins.py);
+                                        # 'fill' is the only one reachable without hand-editing player.json
+        self.warp_unlocked = False     # `SHSEngine +0x6490a` (a lock) is set at first run and cleared when Football Season ends
+        self.choice_hints = False
+        # ask whether to play, win or lose each football game / word grid: this fork's counterpart of exp-runtime
+        # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
+        self.skip_minigames = False
+        self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
+        self.skip_upsell_intros = False     # pass the store plugs some SHS episodes open with (upsell_intro.py)
+        self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
+        self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
+        self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
+        self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
+        # Sound's Skip Sound Prompt (owner, 2026-10-29): the launch passes "Play with sound?" and keeps Music / Sound
+        # as they are (application_hd.HdShell.tick)
+        self.skip_sound_prompt = False
+        # Options' Controller page (owner, 2026-10-29): a controller's confirm button, the bottom one ('south') or, for
+        # a Nintendo layout, the right one ('east') (gamepad.py)
+        self.controller_confirm = 'south'
+        # The word grid with a controller (owner, 2026-10-29): 'hold' (the default), the confirm button held drags, the
+        # stick or D-pad steering it (desktop.Desktop._grid_hold); 'tap', confirm adds the highlighted cell
+        self.grid_controls = 'hold'
+        self.order = 'episode'
+        self.title_language = 'en'
 
     def title(self, record):
         return episode_title(record, self.title_language)

@@ -34,6 +34,8 @@ from io import BytesIO
 import pygame
 
 from . import momentum
+
+DELETE_SAVE_LABEL = 'Delete'        # the popup's Delete Save button
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .graphics import faded
 from .episode_picker import EpisodeInfo
@@ -276,9 +278,9 @@ class HdEpisodePicker(HdUi):
     INFO_KEY = pygame.K_i            # the highlighted episode's info card (an episode that has one)
 
     def popup_commands(self):
-        """The popup's New Game, Continue and back, in keyboard order."""
+        """The popup's New Game, Continue, back and Delete Save, in keyboard order."""
         record = self.popup
-        return [('new', record['id']), ('continue', record['id']), ('close',)]
+        return [('new', record['id']), ('continue', record['id']), ('close',), ('delete_save', record['id'])]
 
     def popup_key(self, key):
         """The New Game / Continue popup's keys: arrows or Tab move a highlight over its two cards and its back button,
@@ -610,6 +612,13 @@ class HdEpisodePicker(HdUi):
         back = pygame.Rect(left + 22, top + 359, *BUTTON_SIZE)
         self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('close',) or self.popup_focus == ('close',))
         self.hits.append((back, ('close',)))
+        # Delete Save (this player's; Data Management, owner 2026-10-29): the back button's twin at the card's right,
+        # asking "Delete Saved Game?" first (Application.picker_command).
+        delete = pygame.Rect(left + CARD[0] - 22 - BUTTON_SIZE[0], top + 359, *BUTTON_SIZE)
+        command = ('delete_save', record['id'])
+        self.draw_button(layer, delete.x, delete.y, label=DELETE_SAVE_LABEL,
+                         pressed=self.pressed == command or self.popup_focus == command)
+        self.hits.append((delete, command))
         # A click outside the card closes it.
         self.hits.insert(0, (pygame.Rect(0, 0, *FRAME), ('close',)))
 

@@ -72,7 +72,8 @@ class HdMenuWindows(HdUi):
     def text_for(self, string_id, variables=None):
         if string_id == NO_STRING:
             return ''
-        text = self.strings()[string_id]
+        # A window of this player's own carries its text itself (menu_engine.MenuEngineData.add_window).
+        text = string_id if isinstance(string_id, str) else self.strings()[string_id]
         for key, value in (variables or {}).items():
             text = text.replace(f'~{key}~', value)
         return text

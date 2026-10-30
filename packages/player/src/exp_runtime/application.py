@@ -36,7 +36,7 @@ from .games import GAMES
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
-                   default_library, group_episodes, remember_library, shared_preference)
+                   default_library, group_episodes, preference_defaults, remember_library, shared_preference)
 from .runtime import SaveError, Session
 from .settings import AppSettings
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
@@ -51,6 +51,20 @@ AUTOSAVE_MS = 60000     # SHSEngine::onTick saves the game every 60 s of play
 # This fork: the HD launch waits at most this long past its loading screen for the update check (it usually finishes
 # during loading), so an offer comes before "Play with sound?"; a later answer waits for the idle main menu.
 UPDATE_WAIT = 2.5
+
+
+def folder_lines(path, width=34):
+    """A folder's path as lines of at most about `width` characters, broken after its separators (a text page wraps
+    at spaces only, and a path has none)."""
+    parts = [part for part in str(path).replace('\\', '/').split('/')]
+    lines, line = [], ''
+    for index, part in enumerate(parts):
+        piece = part + (os.sep if index < len(parts) - 1 else '')
+        if line and len(line) + len(piece) > width:
+            lines.append(line)
+            line = ''
+        line += piece
+    return lines + [line] if line else lines
 
 
 class Application:
@@ -195,6 +209,88 @@ class Application:
             self.updates.start()
 
     shell_prompt = ()
+
+    # -- Data Management (owner, 2026-10-29) ------------------------------------------------------------------------
+
+    def library_info(self):
+        """Library Info's page: what this game's library was built from and what it holds."""
+        library, manifest = self.library, self.library.manifest
+        kind = {'apk': 'its Android app (APK)', 'ipa': 'its iOS app (IPA)'}.get(library.kind, library.kind)
+        version = library.profile.rsplit('-', 1)[-1]
+        sources = [f'{library.game_title}, from {kind}, version {version}.']
+        if manifest.get('hd_ipa'):
+            sources.append('With the SHS HD app (IPA): its menus, art and music.')
+        saves = self.saved_episodes()
+        trees = len(list((library.directory / 'dtsaves').rglob('*.json.gz'))) if (library.directory / 'dtsaves').is_dir() else 0
+        lines = sources + [
+            '',
+            f'Episodes: {len(library.episodes)}.',
+            f'Saved games: {len(saves)}.',
+            f'Decision Tree scenes saved: {trees}.',
+            f'Names remembered: {len(self.state.names) + sum(len(table) for table in self.state.name_sets.values())}.',
+            '',
+            'Folder:',
+            *folder_lines(library.directory),
+        ]
+        return '\n'.join(lines)
+
+    def saved_episodes(self):
+        """The ids of the episodes with a saved game (an automatic checkpoint or the manual slot)."""
+        folder = self.library.directory / 'saves'
+        if not folder.is_dir():
+            return set()
+        return {path.name.split('.', 1)[0] for path in folder.iterdir()
+                if path.name.endswith(('.shs-auto.json', '.shs-save.json'))}
+
+    def reset_names(self):
+        """Reset Names: the library's name tables emptied (saved games keep the names they were saved with: a save's
+        own names join the table again when it is loaded, Session.share_names)."""
+        self.state.names.clear()
+        self.state.name_sets.clear()
+        self.state.persist()
+        return 'Names Reset', f'{self.game_title} will ask for the names again.'
+
+    def delete_all_saves(self):
+        """Delete All Saves: every saved game of the library (the automatic checkpoints, the manual slot and their
+        screenshots) and every Decision Tree's scenes and tree."""
+        import shutil
+        directory = self.library.directory
+        count = len(self.saved_episodes())
+        for path in (directory / 'saves', directory / 'dtsaves', directory / 'dtview'):
+            if path.is_dir():
+                shutil.rmtree(path)
+        (directory / 'dtview_tree.json').unlink(missing_ok=True)
+        self.state.ended_saves.clear()
+        self.shot_cache.clear()
+        self.refresh_saves()
+        self.picker = None                                      # the picker's saved-game marks and pictures
+        return 'Saves Deleted', f'{count} saved game{"s" if count != 1 else ""} of {self.game_title} deleted.'
+
+    delete_saves = delete_all_saves
+
+    def delete_save(self, episode):
+        """Delete Save: one episode's saved games (the automatic checkpoint, the manual slot) and its screenshot; its
+        Decision Tree stays (Reset Decision Tree is its own row)."""
+        record = self.library.select(episode)
+        for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
+            (self.library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
+        self.state.ended_saves.clear()
+        self.shot_cache.pop(record['id'], None)
+        self.refresh_saves()
+
+    def reset_settings(self):
+        """Reset Settings: every shared option at its default (menu.preference_defaults), Start In and Check for
+        Updates too; saves, names and each game's own data stay."""
+        for key, value in preference_defaults().items():
+            setattr(self.state, key, value)
+        self.state.persist()
+        self.settings.set_start_in('auto')
+        if not self.settings.check_for_updates:
+            self.set_update_check(True)
+        self.apply_hires_portraits()
+        self.sync_controller()
+        self.menu_music_changed()
+        return 'Settings Reset', 'Every option is back to its default.'
 
     def sync_controller(self):
         """The controllers' confirm button (gamepad.Gamepads.confirm) as the shared preference has it: the open
@@ -1802,6 +1898,16 @@ class Application:
             else:
                 self.selected = command[1]
                 self.enter_episode(resume=False)
+        elif kind == 'delete_save' and self.shell is not None and command[1] in self.saved:
+            # Delete Save: asked in a window of this player's own (HD's "Delete Saved Game?" asks to overwrite, New
+            # Game's question); Delete deletes it and closes the popup.
+            record = picker.model.by_id[command[1]]
+
+            def delete():
+                self.delete_save(command[1])
+                picker.popup = None
+            self.shell.confirm('Delete Saved Game?', f'The saved game of {picker.model.label(record)} will be deleted.',
+                               'Delete', delete)
         elif kind == 'new' and self.shell is not None and command[1] in self.saved:
             record = picker.model.by_id[command[1]]
             self.selected = command[1]
