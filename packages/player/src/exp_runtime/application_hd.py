@@ -60,6 +60,8 @@ DATA_CONFIRMATIONS = {
     'rebuild_hd_art': ('Rebuild HD Art?', 'The HD pictures ~game~ shows in standard episodes are found again in your '
                        'HD files, which can take a few minutes.', 'Rebuild'),
 }
+# The Episodes page's rows that open an episode list to choose from (application.EPISODE_CHOICES).
+EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees')
 # The confirmations above that run as a background job: (the busy card's title, the Application method given the result).
 DATA_JOBS = {
     'verify_library': ('Verifying library', 'verify_report'),
@@ -340,7 +342,7 @@ class HdShell:
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).
         for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
-                    'delete_saves', 'reset_settings'):
+                    'delete_saves', 'reset_settings') + EPISODE_LISTS:
             settings[key] = True
         if self.app.picker_available():
             settings['rebuild_previews'] = True
@@ -670,6 +672,8 @@ class HdShell:
                 self.open_window(WARP_UNLOCKED_MENU)
         elif kind == 'pause_action' and command[1] == 'library_info':
             self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
+        elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
+            self.app.open_choice(command[1])
         elif kind == 'pause_action' and command[1] == 'storage':
             self.app.start_data_job('Measuring storage', self.app.storage_text, lambda text: self.pause.show_text(
                 'data:storage', 'Storage', text, 'data:library'))

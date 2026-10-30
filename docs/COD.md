@@ -873,8 +873,21 @@ CoD's colours (`cod/hd_art.positional_frames`).
     - **Data Management** (owner, 2026-10-29) lists three pages, then Reset Settings:
       - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
         Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library.
-      - **Episodes:** Add Episodes.
+      - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
       - **Progress:** Reset Names, Delete All Saves.
+
+      Delete Episodes, Export Episodes and Reset Decision Tree each open the Episodes On Demand list in place of
+      the card (`EpisodeChoice`). The list shows only the episodes the action fits, each with a tick box. Its
+      footer counts the ticked ones, and the action's button acts on them. On a keyboard or controller, Enter ticks
+      the highlighted row, and moving down past the last row reaches the button.
+      - **Delete** offers the imported episodes, but never a built-in one or the one being played. It takes their
+        saves, previews and trees, while HD art already built from them stays in the twin store.
+      - **Export** copies each episode's EXP file under its own name to
+        `Downloads/SHSHD Runtime Episodes/<game>`, adding a number to the name rather than overwriting a
+        different file.
+      - **Reset Decision Tree** offers the episodes that have a tree.
+
+      Back, or a finished action, returns to the Episodes page.
 
       Each row that changes something asks first, in a window of this player's own drawn like HD's "Delete Saved
       Game?", and reports with an OK notice. Verify Library and the two Rebuild rows run as background jobs under

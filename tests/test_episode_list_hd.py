@@ -46,6 +46,33 @@ class ListTests(unittest.TestCase):
         headers = [row.key for _, _, row, record in entries if record is None]
         self.assertIn(key, headers)
 
+    def test_a_choice_lists_only_its_episodes_and_ticks_them_by_tap_and_key(self):
+        from exp_runtime.desktop_episode_list_hd import CHOICE_ACT, EpisodeChoice
+        first, *rest = [r for row in self.model.rows for r in row.episodes]
+        allowed = {first['id'], rest[-1]['id']}
+        self.list.choosing = EpisodeChoice('Delete Episodes', 'Delete', allowed)
+        self.assertEqual(self.list.title_text(), 'Delete Episodes')
+        entries, _ = self.list.entries()
+        self.assertEqual({record['id'] for _, _, _, record in entries if record is not None}, allowed)
+        self.assertEqual(sum(1 for *_, record in entries if record is None), 2)    # groups with nothing are left out
+        rect = pygame.Rect(0, 0, 700, 72)
+        self.list.hits = [(rect, ('pick', first['id']))]
+        self.list.pointer_down(rect.center)
+        self.assertIsNone(self.list.pointer_up(rect.center))                      # a tick, not an app command
+        self.assertEqual(self.list.choosing.chosen, {first['id']})
+        for key in (pygame.K_DOWN, pygame.K_DOWN, pygame.K_RETURN):               # highlight, the second row, tick
+            self.assertIsNone(self.list.key(key))
+        self.assertEqual(self.list.choosing.chosen, allowed)
+        self.list.key(pygame.K_DOWN)                                               # past the last row: the verb
+        self.assertTrue(self.list.act_focus)
+        self.assertEqual(self.list.key(pygame.K_RETURN), CHOICE_ACT)
+        self.list.choosing.chosen.clear()
+        self.assertIsNone(self.list.key(pygame.K_RETURN))                          # nothing ticked: inert
+        self.list.key(pygame.K_UP)
+        self.assertFalse(self.list.act_focus)
+        self.list.choosing.toggle('not offered')
+        self.assertEqual(self.list.choosing.chosen, set())
+
     def test_a_header_tap_toggles_its_row_and_is_never_forwarded_as_an_app_command(self):
         key = self.model.rows[0].key
         rect = pygame.Rect(0, 0, 700, 52)

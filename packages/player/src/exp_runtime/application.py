@@ -11,6 +11,7 @@ from io import BytesIO
 import logging
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
@@ -73,6 +74,18 @@ STORAGE_PARTS = (('Episodes', ('library.json',)), ('Saved games', ('saves', 'pla
 # Verify Library's names for the manifest's own files (not episodes).
 APP_FILES = (('apk', 'The Android app'), ('ipa', 'The iOS app'), ('hd_ipa', 'The SHS HD app'),
              ('music_apk', 'The music APK'), ('shs_hd_art', 'The SHS HD art app'), ('store', 'The store listing'))
+
+
+# Data Management's episode lists: (the list's title, its verb button, the notice when no episode fits, the busy
+# card's title while its work runs).
+EPISODE_CHOICES = {
+    'delete_episodes': ('Delete Episodes', 'Delete', ('No Episodes', 'Every episode is built in or being played.'),
+                        'Deleting episodes'),
+    'export_episodes': ('Export Episodes', 'Export', ('No Episodes', 'The library has no episodes.'),
+                        'Exporting episodes'),
+    'reset_trees': ('Reset Decision Tree', 'Reset', ('No Trees', 'No episode has a Decision Tree yet.'),
+                    'Resetting trees'),
+}
 
 
 def disk_size(path):
@@ -438,6 +451,134 @@ class Application:
         self.picker = None                                      # its SD marks follow the new coverage
         self.shell.notify('HD Art Rebuilt', f'The store holds {count} HD picture{"s" if count != 1 else ""}.')
 
+    # -- Data Management's episode lists (step 3) -------------------------------------------------------------------
+
+    def tree_files(self, record):
+        """An episode's Decision Tree: (its tree file, its scenes' saved games), as Session.tree_files places them.
+        Football Star's scenes are the top level of `dtsaves/`, which other episodes' folders sit in."""
+        resources = SimpleNamespace(library=self.library, record=record, identity={'episode_sha256': record['sha256']})
+        tree, scenes = Session.tree_files(resources)
+        shared = Session.original_tree(resources)
+        files = [tree] + (list(scenes.glob('*.json.gz')) if scenes.is_dir() else [])
+        return [path for path in files if path.is_file()], None if shared else scenes
+
+    def has_tree(self, record):
+        files, folder = self.tree_files(record)
+        return bool(files) or (folder is not None and folder.is_dir())
+
+    def choice_allowed(self, kind):
+        """The episodes an episode list offers: Delete, the imported ones but the one being played (a built-in one
+        would be extracted again); Export, all; Reset Decision Tree, those with a tree."""
+        episodes = self.library.episodes
+        if kind == 'delete_episodes':
+            playing = self.game.session.resources.record['id'] if self.game is not None else None
+            return {r['id'] for r in episodes if 'file' in r and not r.get('builtin') and r['id'] != playing}
+        if kind == 'export_episodes':
+            return {r['id'] for r in episodes}
+        return {r['id'] for r in episodes if self.has_tree(r)}
+
+    def open_choice(self, kind):
+        """An episode list of Data Management's Episodes page, in place of its card; Back returns to the page."""
+        from .desktop_episode_list_hd import EpisodeChoice
+        allowed = self.choice_allowed(kind)
+        if not allowed:
+            self.shell.notify(*EPISODE_CHOICES[kind][2])
+            return
+        title, verb = EPISODE_CHOICES[kind][:2]
+        self.shell.pause_open = False
+        self.picker = None
+        self.open_picker(restore=False, style='list')
+        self.picker.choosing = EpisodeChoice(title, verb, allowed)
+        self.choice_kind = kind
+
+    def leave_choice(self):
+        """Back from an episode list: the list goes (the next one is built afresh) and the Episodes page comes back."""
+        self.picker, self.choice_kind = None, None
+        self.show('main', remember=False)
+        self.shell.activate(('options',))
+        self.shell.pause.open('data:episodes')
+
+    def choice_command(self):
+        """The list's verb button: Delete and Reset ask first; each runs off the UI thread, then the page comes back
+        with a notice."""
+        kind, chosen = self.choice_kind, set(self.picker.choosing.chosen)
+        count = f'{len(chosen)} episode{"s" if len(chosen) != 1 else ""}'
+
+        def run():
+            # The work runs under the busy card over the Episodes page (the picker screen has none).
+            work = getattr(self, kind)
+            self.leave_choice()
+            self.start_data_job(EPISODE_CHOICES[kind][3], lambda library: work(library, chosen), self.choice_done)
+        if kind == 'delete_episodes':
+            self.shell.confirm('Delete Episodes?', f'{count} will be deleted from {self.game_title}, with their saved '
+                               'games and Decision Trees. Add Episodes brings one back from its file.', 'Delete', run)
+        elif kind == 'reset_trees':
+            self.shell.confirm('Reset Decision Tree?', f'The Decision Tree of {count} will be cleared, with its saved '
+                               'scenes. Saved games stay.', 'Reset', run)
+        else:
+            run()
+
+    def choice_done(self, result):
+        self.refresh_saves()
+        self.picker = None
+        self.shell.notify(*result)
+
+    def delete_episodes(self, library, ids):
+        """Delete Episodes: the episodes, their saved games, screenshots, previews and Decision Trees. HD art already
+        built from an HD episode stays in the twin store."""
+        import shutil
+        records = [library.select(record_id) for record_id in ids]
+        for record in records:
+            for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
+                (library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
+            for suffix in ('.jpg', '.none'):
+                (library.directory / 'thumbs' / (record['id'] + suffix)).unlink(missing_ok=True)
+            files, folder = self.tree_files(record)
+            for path in files:
+                path.unlink(missing_ok=True)
+            if folder is not None and folder.is_dir():
+                shutil.rmtree(folder)
+        count = library.remove_episodes(ids)
+        return 'Episodes Deleted', f'{count} episode{"s were" if count != 1 else " was"} deleted from {self.game_title}.'
+
+    def export_folder(self):
+        """Where Export Episodes puts its copies: a folder of this app's in Downloads (else the home folder)."""
+        home = Path.home()
+        base = home / 'Downloads' if (home / 'Downloads').is_dir() else home
+        return base / f'{APP_NAME} Episodes' / self.game_title
+
+    def export_episodes(self, library, ids):
+        """Export Episodes: each chosen episode's EXP file, as imported and under its own name, into export_folder."""
+        folder = self.export_folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        records = [record for record in library.episodes if record['id'] in ids]
+        for index, record in enumerate(records):
+            self.progress_text = f'{index + 1} of {len(records)}: {record["titles"][0]}'[:44]
+            name = Path(record.get('name') or record['id'] + '.exp').name
+            if not name.lower().endswith('.exp'):
+                name += '.exp'
+            target, number = folder / name, 2
+            while target.exists() and target.read_bytes() != library.episode_bytes(record):
+                target, number = folder / f'{Path(name).stem} ({number}).exp', number + 1
+            target.write_bytes(library.episode_bytes(record))
+        # Named folder by folder: a notice wraps at spaces, and a path has none.
+        where = ' / '.join(part.name for part in (folder.parent.parent, folder.parent, folder))
+        return ('Episodes Exported', f'{len(records)} episode{"s were" if len(records) != 1 else " was"} copied to '
+                f'{where}.')
+
+    def reset_trees(self, library, ids):
+        """Reset Decision Tree: each chosen episode's tree and its scenes' saved games."""
+        import shutil
+        count = 0
+        for record in (r for r in library.episodes if r['id'] in ids):
+            files, folder = self.tree_files(record)
+            for path in files:
+                path.unlink(missing_ok=True)
+            if folder is not None and folder.is_dir():
+                shutil.rmtree(folder)
+            count += 1
+        return 'Trees Reset', f'The Decision Tree of {count} episode{"s" if count != 1 else ""} was cleared.'
+
     def sync_controller(self):
         """The controllers' confirm button (gamepad.Gamepads.confirm) as the shared preference has it: the open
         library's, else the app's settings (the game chooser)."""
@@ -602,6 +743,7 @@ class Application:
     # the menus do: docs/MAIN_MENU.md, "Menu entrances") while the menu's buttons slide out; ms into that, or done.
     picker_zoom = PAUSE_OPEN_MS
     picker_under_window = False     # "Delete Saved Game?" is open over the picker (render_picker)
+    choice_kind = None              # the picker is one of Data Management's episode lists (EPISODE_CHOICES' key)
     # Its "No": ms into the window sliding back out to the right while the picker slides in from the left, or done;
     # and the window's picture for that slide.
     picker_back_ms = PAUSE_OPEN_MS
@@ -1125,6 +1267,8 @@ class Application:
             self.shell.back()
         elif self.screen == 'picker' and self.shell is not None and self.shell.overlay_active:
             self.shell.close_window()
+        elif self.screen == 'picker' and self.choice_kind is not None:
+            self.leave_choice()
         elif self.history:
             screen = self.history.pop()
             self.show(screen, remember=False)
@@ -2026,6 +2170,8 @@ class Application:
         picker, kind = self.picker, command[0]
         if kind == 'back':
             self.back()
+        elif kind == 'act' and self.choice_kind is not None and picker.choosing.chosen:
+            self.choice_command()
         elif kind == 'restore':
             picker.alert = picker.restore_alert()
         elif kind == 'dismiss':

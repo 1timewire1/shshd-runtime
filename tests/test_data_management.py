@@ -177,6 +177,72 @@ class LibraryActionTests(unittest.TestCase):
             self.assertEqual(app.rebuild_previews(app.library), 2)
         self.assertFalse(thumbs.exists())
 
+    def episode_app(self):
+        """self.app() with three episode records: one imported, one built in, one inside the game's package."""
+        app = self.app()
+        app.library.episodes = [dict(id='a', sha256='a', titles=['A'], name='A.exp', file='content/a.exp'),
+                                dict(id='f', sha256='f', titles=['Football Star'], name='Football_Star.exp',
+                                     file='content/f.exp', builtin='football-star'),
+                                dict(id='p', sha256='p', titles=['P'], name='P.exp', apk_member='assets/P.exp')]
+        app.library.select = lambda key: next(r for r in app.library.episodes if r['id'] == key)
+        return app
+
+    def test_each_episode_list_offers_the_episodes_it_can_act_on(self):
+        app = self.episode_app()
+        directory = app.library.directory
+        self.assertEqual(app.choice_allowed('delete_episodes'), {'a'})         # not built in, not in the package
+        self.assertEqual(app.choice_allowed('export_episodes'), {'a', 'f', 'p'})
+        self.assertEqual(app.choice_allowed('reset_trees'), {'f'})             # dtview_tree.json + dtsaves/1.json.gz
+        (directory / 'dtview' / 'a.json').write_text('{}')
+        self.assertEqual(app.choice_allowed('reset_trees'), {'a', 'f'})
+        app.game = SimpleNamespace(session=SimpleNamespace(resources=SimpleNamespace(record={'id': 'a'})))
+        self.assertEqual(app.choice_allowed('delete_episodes'), set())         # the one being played stays
+
+    def test_reset_trees_clears_football_stars_tree_but_not_the_others_folders(self):
+        app = self.episode_app()
+        directory = app.library.directory
+        title, message = app.reset_trees(app.library, {'f'})
+        self.assertEqual(title, 'Trees Reset')
+        self.assertFalse((directory / 'dtview_tree.json').exists())
+        self.assertFalse((directory / 'dtsaves' / '1.json.gz').exists())
+        self.assertTrue((directory / 'dtsaves' / 'k').is_dir())               # another episode's scenes
+        (directory / 'dtsaves' / 'a').mkdir()
+        (directory / 'dtview' / 'a.json').write_text('{}')
+        app.reset_trees(app.library, {'a'})
+        self.assertFalse((directory / 'dtsaves' / 'a').exists())
+        self.assertFalse((directory / 'dtview' / 'a.json').exists())
+        self.assertTrue((directory / 'dtsaves' / 'k').is_dir())
+
+    def test_delete_episodes_takes_their_saves_previews_and_trees(self):
+        app = self.episode_app()
+        directory = app.library.directory
+        (directory / 'thumbs').mkdir()
+        (directory / 'thumbs' / 'a.jpg').write_bytes(b'')
+        (directory / 'saves' / 'a.shs-save.json').write_text('{}')
+        (directory / 'dtview' / 'a.json').write_text('{}')
+        removed = []
+        app.library.remove_episodes = lambda ids: removed.extend(ids) or len(ids)
+        title, message = app.delete_episodes(app.library, {'a'})
+        self.assertEqual((title, removed), ('Episodes Deleted', ['a']))
+        self.assertEqual(sorted(p.name for p in (directory / 'saves').iterdir()), ['b.shs-auto.json', 'b.shs-save.json'])
+        self.assertFalse((directory / 'thumbs' / 'a.jpg').exists())
+        self.assertFalse((directory / 'dtview' / 'a.json').exists())
+        self.assertTrue((directory / 'dtview_tree.json').exists())             # Football Star's tree stays
+
+    def test_export_copies_each_file_under_its_own_name_without_overwriting_another(self):
+        app = self.episode_app()
+        folder = self.root / 'exports'
+        app.export_folder = lambda: folder
+        app.library.episode_bytes = lambda record: record['id'].encode()
+        folder.mkdir()
+        (folder / 'A.exp').write_bytes(b'someone else')
+        title, message = app.export_episodes(app.library, {'a', 'p'})
+        self.assertEqual(title, 'Episodes Exported')
+        self.assertEqual({p.name: p.read_bytes() for p in folder.iterdir()},
+                         {'A.exp': b'someone else', 'A (2).exp': b'a', 'P.exp': b'p'})
+        app.export_episodes(app.library, {'a'})                                # the same file again: no third copy
+        self.assertEqual(len(list(folder.iterdir())), 3)
+
     def test_library_info_breaks_the_folder_where_a_page_can_wrap_it(self):
         from exp_runtime.application import folder_lines
         lines = folder_lines(Path('C:/Users/someone/AppData/Local/SHSHD Runtime/libraries/shs'), width=20)

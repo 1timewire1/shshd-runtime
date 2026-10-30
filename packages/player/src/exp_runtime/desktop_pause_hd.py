@@ -106,7 +106,9 @@ GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
 DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
                                            ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
                                            ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'))),
-              ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'),)),
+              ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
+                                             ('export_episodes', 'Export Episodes'),
+                                             ('reset_trees', 'Reset Decision Tree'))),
               ('data:progress', 'Progress', (('reset_names', 'Reset Names'), ('delete_saves', 'Delete All Saves'))))
 DATA_LAST = (('reset_settings', 'Reset Settings'),)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST

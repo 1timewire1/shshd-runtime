@@ -961,13 +961,38 @@ class ContentLibrary:
 
     def open_episode(self, selector: str):
         record = self.select(selector)
+        return EpisodeResources(self, record, ExpArchive(self.episode_bytes(record)))
+
+    def episode_bytes(self, record: dict) -> bytes:
+        """An episode's EXP file as it was imported (from the library's content, or the game package it ships in)."""
         if self.kind + '_member' in record:
             data = _zip_read(self.package, record[self.kind + '_member'])
         else:
             data = self._content_file(record, '.exp').read_bytes()
         if digest(data) != record['sha256']:
             raise ContentError('Episode content does not match its imported hash')
-        return EpisodeResources(self, record, ExpArchive(data))
+        return data
+
+    def remove_episodes(self, ids) -> int:
+        """Take episodes out of the library (Delete Episodes): a new manifest without them, then their content files.
+        Built-in episodes, and those inside the game's package, stay (the next open would list them again). Returns
+        how many went."""
+        ids = set(ids)
+        gone = [e for e in self.episodes if e['id'] in ids and 'file' in e and not e.get('builtin')]
+        if not gone:
+            return 0
+        current = json.loads((self.directory / 'library.json').read_text(encoding='utf-8'))
+        if current != self.manifest:
+            raise ContentError('The library changed since it was opened; reopen it and try again')
+        updated = dict(self.manifest, episodes=[e for e in self.episodes if e not in gone])
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self.directory, prefix='.library-',
+                                         suffix='.json', delete=False) as stream:
+            stream.write(json.dumps(updated, indent=2, ensure_ascii=False) + '\n')
+        Path(stream.name).replace(self.directory / 'library.json')
+        self.manifest, self.episodes = updated, updated['episodes']
+        for record in gone:
+            (self.directory / record['file']).unlink(missing_ok=True)
+        return len(gone)
 
     def read_ui_asset(self, name: str) -> bytes:
         """Read an exact named UI asset, separately from numeric EXP resources.

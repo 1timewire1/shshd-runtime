@@ -194,6 +194,22 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(len(library.episodes), before)
             self.assertEqual(library.restore_builtin_episodes(), 0)     # nothing built in is lost
 
+    def test_removing_episodes_rewrites_the_manifest_and_keeps_the_built_in_one(self):
+        target = self.root / 'library'
+        data = archive({1: metadata('Another episode'), 25001: program(0x33).to_bytes()})
+        episode = self.root / 'second.exp'
+        episode.write_bytes(data)
+        import_game(self.apk, [episode], target)
+        with ContentLibrary(target) as library:
+            record = library.select('second.exp')
+            self.assertEqual(library.episode_bytes(record), data)
+            others = [e['id'] for e in library.episodes if e['id'] != record['id']]
+            self.assertEqual(library.remove_episodes([record['id'], *others]), 1)    # only files of its own go
+            self.assertFalse((target / record['file']).exists())
+            self.assertEqual([e['id'] for e in library.episodes], others)
+        with ContentLibrary(target) as library:
+            self.assertEqual([e['id'] for e in library.episodes], others)
+
     def test_legacy_android_manifest_retains_profile_and_resources(self):
         target = self.root / 'legacy'
         manifest = import_game(self.apk, [], target)
