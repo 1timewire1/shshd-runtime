@@ -51,8 +51,8 @@ DATA_CONFIRMATIONS = {
                     '(or take their defaults). Saved games keep the names they were saved with.', 'Reset'),
     'delete_saves': ('Delete All Saves?', 'Every saved game of ~game~ will be deleted, with the Decision Tree\'s '
                      'saved scenes. Episodes, names and settings stay.', 'Delete'),
-    'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default, Start In '
-                       'and Check for Updates too. Saves and names stay.', 'Reset'),
+    'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
+                       'Check for Updates and the chosen folders too. Saves and names stay.', 'Reset'),
     'verify_library': ('Verify Library?', 'Every file of ~game~ is checked against its checksum, which can take a few '
                        'minutes. A damaged episode\'s file is removed: adding the episode again restores it.', 'Verify'),
     'rebuild_previews': ('Rebuild Previews?', 'Every episode preview of ~game~ is drawn again from its title card, '
@@ -348,6 +348,10 @@ class HdShell:
             settings['rebuild_previews'] = True
         if self.app.hd_art_offered():
             settings['rebuild_hd_art'] = True
+        if getattr(self.app, 'file_picker', None) is None:
+            # A computer's own file browser chooses them; a phone's backups and exports stay in Downloads.
+            for key in ('backup_folder', 'export_folder'):
+                settings[key] = self.app.folder_label(key)
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
@@ -663,6 +667,8 @@ class HdShell:
             state = self.app.state
             state.grid_controls = 'hold' if state.grid_controls == 'tap' else 'tap'
             self.app._attempt(state.persist)
+        elif kind == 'pause_cycle' and command[1] in ('backup_folder', 'export_folder'):
+            self.app.choose_folder(command[1])
         elif kind == 'pause_cycle' and command[1] == 'start_in':
             choices = START_IN
             self.app._attempt(lambda: self.app.settings.set_start_in(

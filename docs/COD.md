@@ -888,6 +888,12 @@ CoD's colours (`cod/hd_art.positional_frames`).
       with the backup's. The bundle is checked whole before anything changes: its game, and every file's path. A
       swap that fails puts the library's own progress back.
 
+      **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
+      2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add
+      Episodes uses, starting in that folder, and **Use This Folder** chooses the folder there. The choice is kept
+      in `settings.json` (`backup_folder`, `export_folder`), and Reset Settings clears it. When a folder is chosen,
+      Restore Progress looks in it and in the default folder. A phone keeps the default folders in Downloads.
+
       Delete Episodes, Export Episodes and Reset Decision Tree each open the Episodes On Demand list in place of
       the card (`EpisodeChoice`). The list shows only the episodes the action fits, each with a tick box. Its
       footer counts the ticked ones, and the action's button acts on them. On a keyboard or controller, Enter ticks
@@ -895,7 +901,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
       - **Delete** offers the imported episodes, but never a built-in one or the one being played. It takes their
         saves, previews and trees, while HD art already built from them stays in the twin store.
       - **Export** copies each episode's EXP file under its own name to
-        `Downloads/SHSHD Runtime Episodes/<game>`, adding a number to the name rather than overwriting a
+        `Downloads/SHSHD Runtime Episodes/<game>` (or the chosen Exports Folder), adding a number to the name rather than overwriting a
         different file.
       - **Reset Decision Tree** offers the episodes that have a tree.
 

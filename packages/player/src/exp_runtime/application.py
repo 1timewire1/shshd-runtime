@@ -89,6 +89,9 @@ EPISODE_CHOICES = {
 
 
 RESTORE_ROWS = 8                # Restore Progress lists this many of the newest backups
+# Backups / Exports Folder (a computer's, owner 2026-10-30): settings key -> (the file browser's kind, its Data page).
+FOLDER_ROWS = {'backup_folder': ('backups', 'data:progress'), 'export_folder': ('exports', 'data:episodes')}
+FOLDER_LABEL = 22               # the rows' value: a longer folder name is shortened to this many characters
 
 
 def disk_size(path):
@@ -328,6 +331,9 @@ class Application:
             setattr(self.state, key, value)
         self.state.persist()
         self.settings.set_start_in('auto')
+        for key in ('backup_folder', 'export_folder'):
+            if getattr(self.settings, key, None) is not None:
+                self.settings.set_folder(key, None)
         if not self.settings.check_for_updates:
             self.set_update_check(True)
         self.apply_hires_portraits()
@@ -551,9 +557,48 @@ class Application:
         base = home / 'Downloads' if (home / 'Downloads').is_dir() else home
         return base / f'{APP_NAME} {name}'
 
+    @staticmethod
+    def folder_text(folder):
+        """A folder for a notice, named folder by folder ("Downloads / SHSHD Runtime Backups"): a notice wraps at
+        spaces, and a path has none."""
+        parts = [part for part in (folder.parent.parent, folder.parent, folder) if part.name]
+        return ' / '.join(part.name for part in parts[-3:]) or str(folder)
+
+    def chosen_folder(self, key):
+        """The folder the player chose for `key` (settings.FOLDERS; a computer's Backups / Exports Folder), or None."""
+        chosen = getattr(getattr(self, 'settings', None), key, None)
+        return Path(chosen) if chosen else None
+
     def export_folder(self):
-        """Where Export Episodes puts its copies."""
-        return self.user_folder('Episodes') / self.game_title
+        """Where Export Episodes puts its copies: the chosen folder, else a folder per game in the default one."""
+        return self.chosen_folder('export_folder') or self.user_folder('Episodes') / self.game_title
+
+    def folder_label(self, key):
+        """The Backups / Exports Folder row's value: the folder's own name, shortened to fit the row."""
+        chosen = self.chosen_folder(key)
+        name = (chosen.name or str(chosen) if chosen is not None
+                else self.user_folder('Backups' if key == 'backup_folder' else 'Episodes').name)
+        return name if len(name) <= FOLDER_LABEL else name[:FOLDER_LABEL - 1] + '…'
+
+    def choose_folder(self, key):
+        """The Backups / Exports Folder row (a computer's; file_picker is a phone's): the file browser, opened in the
+        folder now used (or its nearest existing parent), where Use This Folder chooses another."""
+        folder = self.backup_folder() if key == 'backup_folder' else self.export_folder()
+        while not folder.is_dir() and folder.parent != folder:
+            folder = folder.parent
+        self.folder = folder
+        self.browse(FOLDER_ROWS[key][0])
+
+    def use_folder(self, folder):
+        """Use This Folder in a folder browser: the setting, then the Data page it came from, with a notice."""
+        key = next(key for key, (kind, _) in FOLDER_ROWS.items() if kind == self.browser_kind)
+        self.settings.set_folder(key, folder)
+        self.history = []
+        self.show('main', remember=False)
+        self.shell.activate(('options',))
+        self.shell.pause.open(FOLDER_ROWS[key][1])
+        what = 'Backups' if key == 'backup_folder' else 'Exported episodes'
+        self.shell.notify('Folder Chosen', f'{what} will be saved in {self.folder_text(folder)}.')
 
     def export_episodes(self, library, ids):
         """Export Episodes: each chosen episode's EXP file, as imported and under its own name, into export_folder."""
@@ -569,10 +614,8 @@ class Application:
             while target.exists() and target.read_bytes() != library.episode_bytes(record):
                 target, number = folder / f'{Path(name).stem} ({number}).exp', number + 1
             target.write_bytes(library.episode_bytes(record))
-        # Named folder by folder: a notice wraps at spaces, and a path has none.
-        where = ' / '.join(part.name for part in (folder.parent.parent, folder.parent, folder))
         return ('Episodes Exported', f'{len(records)} episode{"s were" if len(records) != 1 else " was"} copied to '
-                f'{where}.')
+                f'{self.folder_text(folder)}.')
 
     def reset_trees(self, library, ids):
         """Reset Decision Tree: each chosen episode's tree and its scenes' saved games."""
@@ -592,7 +635,8 @@ class Application:
     backup_choices = {}             # Restore Progress's rows: key -> backup file
 
     def backup_folder(self):
-        return self.user_folder('Backups')
+        """Where Back Up Progress writes: the chosen folder, else the default."""
+        return self.chosen_folder('backup_folder') or self.user_folder('Backups')
 
     def player_data(self):
         """The library's own player.json data a backup carries (taken on the UI thread, before a job starts)."""
@@ -620,19 +664,27 @@ class Application:
         path, manifest = result
         count = len(manifest['saved'])
         self.shell.notify('Progress Backed Up', f'{count} saved game{"s" if count != 1 else ""} and the names went '
-                          f'to Downloads / {self.backup_folder().name}, as "{path.stem}".')
+                          f'to {self.folder_text(path.parent)}, as "{path.stem}".')
 
     def backups(self):
-        """This game's backups in backup_folder, newest first: [(file, manifest)]."""
+        """This game's backups in backup_folder (and the default one, when another was chosen), newest first:
+        [(file, manifest)]."""
         from .progress_bundle import BundleError, read_manifest
-        folder, found = self.backup_folder(), []
-        for path in folder.glob('*.zip') if folder.is_dir() else ():
-            try:
-                manifest = read_manifest(path)
-            except BundleError:
-                continue
-            if manifest.get('game') == self.library.game_id:
-                found.append((path, manifest))
+        folders = [self.backup_folder()]
+        if self.chosen_folder('backup_folder') is not None:
+            folders.append(self.user_folder('Backups'))
+        found, seen = [], set()
+        for folder in folders:
+            for path in folder.glob('*.zip') if folder.is_dir() else ():
+                if path.resolve() in seen:
+                    continue
+                seen.add(path.resolve())
+                try:
+                    manifest = read_manifest(path)
+                except BundleError:
+                    continue
+                if manifest.get('game') == self.library.game_id:
+                    found.append((path, manifest))
         return sorted(found, key=lambda item: (item[1].get('created', ''), item[0].stat().st_mtime_ns), reverse=True)
 
     @staticmethod
@@ -660,7 +712,7 @@ class Application:
         """Restore Progress: a page of this game's newest backups (RESTORE_ROWS), one row each."""
         backups = self.backups()[:RESTORE_ROWS]
         if not backups:
-            self.shell.notify('No Backups', f'Back Up Progress makes one, in Downloads / {self.backup_folder().name}.')
+            self.shell.notify('No Backups', f'Back Up Progress makes one, in {self.folder_text(self.backup_folder())}.')
             return
         self.backup_choices = {f'restore:{index}': path for index, (path, _) in enumerate(backups)}
         rows = [(f'restore:{index}', self.backup_label(manifest)) for index, (_, manifest) in enumerate(backups)]
@@ -1904,7 +1956,9 @@ class Application:
                 else:
                     self.import_paths([command[1]])
             elif kind == 'folder':
-                if self.browser_kind == 'library':
+                if self.browser_kind in ('backups', 'exports'):
+                    self.use_folder(self.folder)
+                elif self.browser_kind == 'library':
                     had_library = self.library is not None
                     self.open_library(self.folder, remember=True)
                     if had_library and self.shell is not None and self.screen == 'main':

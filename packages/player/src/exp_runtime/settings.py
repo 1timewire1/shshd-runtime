@@ -15,6 +15,9 @@ from .launcher import user_data_directory
 # General's Start In: the game an episode was last played in (the default: the game chooser until there is one; owner,
 # 2026-10-29), the game chooser, or one game.
 START_IN = ('auto', 'games', 'shs', 'cod')
+# Data Management's folders a player may choose on a computer (owner, 2026-10-30): where Back Up Progress and Export
+# Episodes write. None is the default, a folder of this app's in Downloads.
+FOLDERS = ('backup_folder', 'export_folder')
 
 
 class AppSettings:
@@ -24,6 +27,7 @@ class AppSettings:
         self.preferences = {}           # shared game preferences (MenuState checks each value as it reads it)
         self.start_in = 'auto'
         self.last_game = None
+        self.backup_folder = self.export_folder = None
         try:
             data = json.loads(self.path.read_text(encoding='utf-8'))
             if (not isinstance(data, dict) or data.get('version') != 1
@@ -46,6 +50,9 @@ class AppSettings:
             self.start_in = data['start_in']
         if isinstance(data.get('last_game'), str) and data['last_game'] in START_IN[2:]:
             self.last_game = data['last_game']
+        for key in FOLDERS:
+            if isinstance(data.get(key), str) and data[key]:
+                setattr(self, key, data[key])
 
     def set_update_check(self, enabled):
         if type(enabled) is not bool:
@@ -69,6 +76,12 @@ class AppSettings:
         if game != self.last_game:
             self._write(last_game=game)
 
+    def set_folder(self, key, folder):
+        """Backups' or exports' folder (FOLDERS), or None for the default."""
+        if key not in FOLDERS:
+            raise ValueError('Unknown folder setting')
+        self._write(**{key: None if folder is None else str(folder)})
+
     def boot_game(self, has_library):
         """The game the app opens in when it is not told one (`has_library(game)`: whether it has a library), or None
         for the game chooser."""
@@ -77,7 +90,8 @@ class AppSettings:
 
     def _write(self, **changes):
         values = dict(check_for_updates=self.check_for_updates, preferences=self.preferences,
-                      start_in=self.start_in, last_game=self.last_game)
+                      start_in=self.start_in, last_game=self.last_game,
+                      **{key: getattr(self, key) for key in FOLDERS})
         values.update(changes)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = None

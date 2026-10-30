@@ -107,10 +107,11 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
                                            ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
                                            ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'))),
               ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
-                                             ('export_episodes', 'Export Episodes'),
+                                             ('export_episodes', 'Export Episodes'), ('export_folder', 'Exports Folder'),
                                              ('reset_trees', 'Reset Decision Tree'))),
               ('data:progress', 'Progress', (('back_up', 'Back Up Progress'), ('restore', 'Restore Progress'),
-                                             ('reset_names', 'Reset Names'), ('delete_saves', 'Delete All Saves'))))
+                                             ('backup_folder', 'Backups Folder'), ('reset_names', 'Reset Names'),
+                                             ('delete_saves', 'Delete All Saves'))))
 DATA_LAST = (('reset_settings', 'Reset Settings'),)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
@@ -717,8 +718,10 @@ class HdPauseMenu:
                      if any(key in settings for key, _ in rows)]
             return pages + [('action', label, key) for key, label in DATA_LAST if key in settings]
         if category in DATA_TITLES:
+            # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it on a value button.
             rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
-            return [('action', label, key) for key, label in rows if key in settings]
+            return [('cycle' if isinstance(settings[key], str) else 'action', label, key)
+                    for key, label in rows if key in settings]
         if category in self.row_pages:
             return [('action', label, key) for key, label in self.row_pages[category][1]]
         return []

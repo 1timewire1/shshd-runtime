@@ -466,7 +466,8 @@ class MenuRenderer:
             self.button('GitHub Project', (30, 390, 260, 29), ('project',), pressed=app.pressed)
         elif screen == 'browser':
             self.panel({'apk': 'Choose Game', 'music_apk': 'Add APK Music', 'episodes': 'Add Episodes',
-                        'library': 'Open Library', 'bulk': 'Bulk Import'}[app.browser_kind])
+                        'library': 'Open Library', 'bulk': 'Bulk Import', 'backups': 'Backups Folder',
+                        'exports': 'Exports Folder'}[app.browser_kind])
             pygame.draw.rect(self.canvas, (230, 236, 244), (19, 110, 282, 37), border_radius=4)
             self.label(app.path_text, (24, 114, 272, 30), size=11)
             self.buttons.append((pygame.Rect(19, 110, 282, 37), ('path',)))
@@ -485,8 +486,9 @@ class MenuRenderer:
                 self.buttons.append((rect.clip(clip), ('file', path)))
             self.canvas.set_clip(None)
             if not app.files:
-                self.label('No matching files in this folder.', (30, 230, 260, 70), color=GRAY)
-            if app.browser_kind in ('episodes', 'library'):
+                self.label('No folders in this folder.' if app.browser_kind in ('backups', 'exports')
+                           else 'No matching files in this folder.', (30, 230, 260, 70), color=GRAY)
+            if app.browser_kind in ('episodes', 'library', 'backups', 'exports'):
                 self.button('Use This Folder', (162, 436, 146, 29), ('folder',))
         if app.busy:
             if app.job_kind == 'previews':

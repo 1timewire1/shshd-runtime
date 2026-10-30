@@ -272,6 +272,38 @@ class LibraryActionTests(unittest.TestCase):
         self.assertEqual(len(labels), 2)
         self.assertTrue(labels[0].endswith('(before restore)'))              # the newer progress, kept
 
+    def test_a_chosen_folder_takes_backups_and_exports_and_restore_still_finds_the_default_ones(self):
+        from exp_runtime.settings import AppSettings
+        app = self.episode_app()
+        app.library.game_id = 'shs'
+        app.settings = AppSettings(self.root / 'settings.json')
+        default = self.root / 'downloads'
+        app.user_folder = lambda name: default / f'SHSHD Runtime {name}'
+        self.assertEqual(app.backup_folder(), default / 'SHSHD Runtime Backups')
+        self.assertEqual(app.export_folder(), default / 'SHSHD Runtime Episodes' / 'Surviving High School')
+        old, _ = app.back_up_progress(app.library, app.player_data())
+        chosen = self.root / 'My Backups'
+        chosen.mkdir()
+        app.browser_kind = 'backups'
+        app.shell = SimpleNamespace(notify=Mock(), activate=Mock(), pause=Mock())
+        app.show = Mock()
+        app.use_folder(chosen)
+        self.assertEqual(AppSettings(self.root / 'settings.json').backup_folder, str(chosen))    # kept
+        app.shell.pause.open.assert_called_once_with('data:progress')
+        self.assertIn('My Backups', app.shell.notify.call_args.args[1])
+        new, _ = app.back_up_progress(app.library, app.player_data())
+        self.assertEqual(new.parent, chosen)
+        self.assertEqual({path for path, _ in app.backups()}, {old, new})
+        self.assertEqual(app.folder_label('backup_folder'), 'My Backups')
+        app.settings.set_folder('export_folder', self.root / 'Exports')
+        self.assertEqual(app.export_folder(), self.root / 'Exports')
+        app.state.shared = app.settings
+        app.apply_hires_portraits = app.sync_controller = app.menu_music_changed = lambda *a, **k: None
+        app.set_update_check = app.settings.set_update_check
+        app.reset_settings()
+        self.assertEqual((app.settings.backup_folder, app.settings.export_folder), (None, None))
+        self.assertEqual(app.backup_folder(), default / 'SHSHD Runtime Backups')
+
     def test_library_info_breaks_the_folder_where_a_page_can_wrap_it(self):
         from exp_runtime.application import folder_lines
         lines = folder_lines(Path('C:/Users/someone/AppData/Local/SHSHD Runtime/libraries/shs'), width=20)
