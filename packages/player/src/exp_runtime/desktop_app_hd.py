@@ -11,6 +11,7 @@ app icon (from the player's APK / IPA).
 Commands are the SD screens' (`Application.command`): this only draws, and lists its buttons in frame points.
 """
 from functools import lru_cache
+from pathlib import Path
 import time
 
 import pygame
@@ -157,7 +158,9 @@ OPTION_STRINGS = {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 1
                   15: 'Sound FX Volume', 20: 'Resume', 120: 'Help & About'}
 LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 # The chooser's Library page rows that act on each game's library in turn (AppOptions' methods of these names).
-BOTH_GAMES_ACTIONS = ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art')
+BOTH_GAMES_ACTIONS = ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art', 'back_up',
+                      'reset_names', 'delete_saves')
+SHORT_TITLES = {'shs': 'SHS', 'cod': 'CoD'}     # a backup's row names its game short
 SLIDER = (143, 460)                     # a volume slider's track: its left and width in points (HdShell's)
 # Options only one game offers are not listed before a game is chosen (owner, 2026-10-30): SHS's High School Story ad
 # intros and store plugs (CodPauseMenu leaves both out), its New Rules Hi-Res Portraits (TRANSLATED_PORTRAIT_ART) and
@@ -225,7 +228,7 @@ class AppOptions:
         # Data Management for both games (owner, 2026-10-30): what has a library to act on.
         games = app.games_with_libraries()
         if games:
-            for key in ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art'):
+            for key in BOTH_GAMES_ACTIONS + ('restore',):
                 settings[key] = True
             for game in games:
                 settings[f'delete_library_{game}'] = True
@@ -280,6 +283,10 @@ class AppOptions:
                 app.choose_folder(key)
         elif kind == 'pause_action' and command[1] in BOTH_GAMES_ACTIONS:
             getattr(self, command[1])()
+        elif kind == 'pause_action' and command[1] == 'restore':
+            self.show_backups()
+        elif kind == 'pause_action' and command[1].startswith('restore:'):
+            self.restore_backup(command[1])
         elif kind == 'pause_action' and command[1] == 'delete_libraries':
             self.confirm_delete(app.games_with_libraries())
         elif kind == 'pause_action' and command[1].startswith('delete_library_'):
@@ -398,6 +405,169 @@ class AppOptions:
         self.confirm('Rebuild HD Art?', 'The HD pictures both games show in standard episodes are found again in your HD '
                      'files (Surviving High School first: Cause of Death takes its own from it), which can take a few '
                      'minutes.', 'Rebuild', lambda: self.each('Building HD art', work, done))
+
+    # -- Progress -----------------------------------------------------------------------------------------------
+
+    def titles(self):
+        """The games that have a library, as a sentence names them ("Surviving High School and Cause of Death")."""
+        return ' and '.join(GAMES[game].TITLE for game in self.app.games_with_libraries())
+
+    def back_up(self):
+        """Back Up Progress: one file for both games (the default: Enter takes it), or a file for each."""
+        self.ask = ('Back Up Progress', f'The saved games, Decision Trees and names of {self.titles()}: in one file, '
+                    'or a file for each game?', ('Combined', 'Separate'),
+                    (lambda: self.start_back_up(True), lambda: self.start_back_up(False)))
+
+    def start_back_up(self, combined):
+        import shutil
+        import tempfile
+        from datetime import datetime
+        from .launcher import APP_NAME
+        from .progress_bundle import write_bundle, write_set
+        app = self.app
+
+        def job(_):
+            made, parts = [], {}
+            folder = Path(tempfile.mkdtemp(prefix='shshd-backup-'))
+            try:
+                for game in app.games_with_libraries():
+                    app.progress_text = GAMES[game].TITLE
+                    with app.opened_library(game) as (library, state):
+                        player = app.player_data(state)
+                        if combined:
+                            titles = {record['id']: record['titles'][0] for record in library.episodes}
+                            parts[game] = folder / f'{game}.zip'
+                            write_bundle(library.directory, game, player, titles, parts[game])
+                        else:
+                            made.append(app.back_up_progress(library, player)[0])
+                if combined:
+                    stamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
+                    target = app.backup_folder() / f'{APP_NAME} {stamp} (both games).zip'
+                    write_set(target, parts)
+                    made.append(target)
+            finally:
+                shutil.rmtree(folder, ignore_errors=True)
+            return made
+
+        def done(made):
+            self.notice('Progress Backed Up', f'Saved to {app.folder_text(made[0].parent)}, as '
+                        + ' and '.join(f'"{path.stem}"' for path in made) + '.')
+        app.start_data_job('Backing up progress', job, done)
+
+    def backups(self):
+        """Every backup in the backups folder (and the default one, when another was chosen), a game's or both
+        games', newest first: [(file, manifest)]."""
+        from .progress_bundle import BundleError, read_backup
+        app = self.app
+        folders = [app.backup_folder()]
+        if app.chosen_folder('backup_folder') is not None:
+            folders.append(app.user_folder('Backups'))
+        found, seen = [], set()
+        for folder in folders:
+            for path in sorted(folder.glob('*.zip')) if folder.is_dir() else ():
+                if path.resolve() in seen:
+                    continue
+                seen.add(path.resolve())
+                try:
+                    found.append((path, read_backup(path)))
+                except BundleError:
+                    continue
+        return sorted(found, key=lambda item: (item[1].get('created', ''), item[0].stat().st_mtime_ns), reverse=True)
+
+    def backup_label(self, manifest):
+        when = self.app.backup_when(manifest, short=True)
+        games = manifest['games']
+        if manifest.get('note'):
+            return f'{when} ({manifest["note"]})'
+        what = 'Both' if len(games) > 1 else SHORT_TITLES.get(games[0], games[0])   # (short: the row is one line)
+        count = sum(manifest.get('saved', {}).values())
+        return f'{when}: {what}, {count} save{"s" if count != 1 else ""}'
+
+    restore_choices = {}
+
+    def show_backups(self):
+        from .application import RESTORE_ROWS
+        backups = self.backups()[:RESTORE_ROWS]
+        if not backups:
+            self.notice('No Backups', f'Back Up Progress makes one, in {self.app.folder_text(self.app.backup_folder())}.')
+            return
+        self.restore_choices = {f'restore:{index}': item for index, item in enumerate(backups)}
+        rows = [(key, self.backup_label(manifest)) for key, (_, manifest) in self.restore_choices.items()]
+        self.menu.show_rows('data:restore', 'Restore Progress', rows, 'data:progress')
+
+    def restore_backup(self, key):
+        """A backup's row: each game it holds that has a library here is backed up as it is now, then restored."""
+        import shutil
+        import tempfile
+        from .progress_bundle import bundle_options, restore_bundle, set_member
+        app = self.app
+        path, manifest = self.restore_choices[key]
+        have = app.games_with_libraries()
+        held = [game for game in GAMES if game in manifest['games']]       # in the games' own order, SHS first
+        games = [game for game in held if game in have]
+        missing = [GAMES[game].TITLE for game in held if game not in have]
+        if not games:
+            self.notice('Nothing to Restore', f'This backup holds {" and ".join(missing)}, which has no library here. '
+                        'Import the game first.')
+            return
+        titles = ' and '.join(GAMES[game].TITLE for game in games)
+        current = self.values()
+
+        def job(_):
+            folder = Path(tempfile.mkdtemp(prefix='shshd-restore-'))
+            results, options = [], {}
+            try:
+                for game in games:
+                    app.progress_text = GAMES[game].TITLE
+                    bundle = set_member(path, game, folder)
+                    restored_options = bundle_options(bundle) or {}
+                    with app.opened_library(game) as (library, state):
+                        kept = {key: current[key] for key in restored_options if key in current}
+                        app.back_up_progress(library, app.player_data(state), note='before restore',
+                                             options=kept or None)
+                        restored, player = restore_bundle(library.directory, bundle, game)
+                        app.restore_player(state, player)
+                        here = {record['id'] for record in library.episodes}
+                    saved = [entry.get('id') for entry in restored.get('saved', ())]
+                    results.append((game, sum(1 for key in saved if key in here), sum(1 for key in saved if key not in here)))
+                    options.update(restored_options)
+            finally:
+                shutil.rmtree(folder, ignore_errors=True)
+            return results, options
+
+        def done(result):
+            from .menu import shared_preference
+            results, options = result
+            accepted = {key: value for key, value in options.items() if shared_preference(key, value)}
+            if accepted:
+                app.settings.set_preferences(accepted)
+            lines = [f'{GAMES[game].TITLE}: {restored} saved game{"s" if restored != 1 else ""} restored'
+                     + (f', {waiting} more for episodes it lacks' if waiting else '') + '.'
+                     for game, restored, waiting in results]
+            if missing:
+                lines.append(f'{" and ".join(missing)} has no library here and was skipped.')
+            self.notice('Progress Restored', ' '.join(lines))
+
+        when = app.backup_when(manifest)
+        skipped = f' {" and ".join(missing)} has no library here and is skipped.' if missing else ''
+        self.confirm('Restore Progress?', f'The saved games, Decision Trees and names of {titles} will be replaced by '
+                     f'the backup\'s from {when}. The current progress is backed up first.{skipped}', 'Restore',
+                     lambda: app.start_data_job('Restoring progress', job, done))
+
+    def reset_names(self):
+        def done(results):
+            self.notice('Names Reset', f'{self.titles()} will ask for the names again.')
+        self.confirm('Reset Names?', f'The names you typed in {self.titles()} will be forgotten: new games ask for them '
+                     'again (or take their defaults). Saved games keep the names they were saved with.', 'Reset',
+                     lambda: self.each('Resetting names', lambda library, state: self.app.reset_names(state), done))
+
+    def delete_saves(self):
+        def done(results):
+            self.notice('Saves Deleted', ' '.join(message for _, (_, message) in results))
+        self.confirm('Delete All Saves?', f'Every saved game of {self.titles()} will be deleted, with the Decision '
+                     'Trees\' saved scenes. Episodes, names and settings stay.', 'Delete',
+                     lambda: self.each('Deleting saves', lambda library, state: self.app.delete_all_saves(library, state),
+                                       done))
 
     def confirm_delete(self, games):
         """Delete a library (or both): asked twice, as each game's own Delete Library is."""

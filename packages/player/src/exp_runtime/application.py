@@ -881,11 +881,10 @@ class Application:
             self.sync = SyncFlow(self)
         return self.sync
 
-    def progress_restored(self, result):
-        manifest, player, options = result
-        if options:
-            self.apply_options(options)
-        state = self.state
+    @staticmethod
+    def restore_player(state, player):
+        """A restored backup's player.json data (its name tables, replacing the library's, and its warp lock) into a
+        library's menu state, persisted."""
         names, name_sets = player.get('names'), player.get('name_sets')
         if isinstance(names, dict):
             state.names.clear()
@@ -897,6 +896,13 @@ class Application:
         if 'warp_unlocked' in player:
             state.warp_unlocked = bool(player['warp_unlocked'])
         state.persist()
+
+    def progress_restored(self, result):
+        manifest, player, options = result
+        if options:
+            self.apply_options(options)
+        state = self.state
+        self.restore_player(state, player)
         state.ended_saves.clear()
         self.shot_cache.clear()
         self.refresh_saves()

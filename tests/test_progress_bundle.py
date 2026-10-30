@@ -108,6 +108,28 @@ class BundleTests(unittest.TestCase):
         self.assertTrue((receiver / 'dtsaves' / '1.json.gz').exists())
         self.assertEqual([p.name for p in receiver.iterdir() if p.name.startswith('.')], [])
 
+    def test_a_set_holds_each_games_bundle_and_reads_as_either_kind_of_backup(self):
+        from exp_runtime.progress_bundle import SET_FORMAT, read_backup, set_member, write_set
+        shs = library_folder(self.root / 'shs', {'a.shs-auto.json': 'A', 'b.shs-save.json': 'B'})
+        cod = library_folder(self.root / 'cod', {'c.shs-auto.json': 'C'}, tree=False)
+        parts = {'shs': self.root / 'shs.zip', 'cod': self.root / 'cod.zip'}
+        write_bundle(shs, 'shs', {}, {}, parts['shs'])
+        write_bundle(cod, 'cod', {}, {}, parts['cod'])
+        target = self.root / 'both.zip'
+        manifest = write_set(target, parts)
+        self.assertEqual((manifest['format'], manifest['games'], manifest['saved']),
+                         (SET_FORMAT, ['cod', 'shs'], {'cod': 1, 'shs': 2}))
+        self.assertEqual(read_backup(target)['games'], ['cod', 'shs'])
+        self.assertEqual(read_backup(parts['shs'])['games'], ['shs'])           # a game's own backup reads the same way
+        self.assertEqual(read_backup(parts['shs'])['saved'], {'shs': 2})
+        unpacked = set_member(target, 'cod', self.root)
+        restored = library_folder(self.root / 'restored', {})
+        restore_bundle(restored, unpacked, 'cod')
+        self.assertEqual([p.name for p in (restored / 'saves').iterdir()], ['c.shs-auto.json'])
+        self.assertEqual(set_member(parts['shs'], 'shs', self.root), parts['shs'])
+        with self.assertRaises(BundleError):
+            set_member(target, '../x', self.root)
+
     def test_a_swap_that_fails_puts_the_librarys_own_progress_back(self):
         source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A'})
         target = self.root / 'one.zip'
