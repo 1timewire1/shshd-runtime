@@ -326,6 +326,27 @@ class LibraryActionTests(unittest.TestCase):
         remove_library(directory)
         self.assertEqual([p.name for p in directory.iterdir()], ['my notes.txt'])
 
+    def test_actions_on_another_library_leave_the_open_ones_menus_alone(self):
+        from exp_runtime.menu import MenuState
+        app = self.app()
+        picker = app.picker
+        other_dir = self.root / 'cod'
+        (other_dir / 'saves').mkdir(parents=True)
+        (other_dir / 'saves' / 'x.shs-auto.json').write_text('{}')
+        (other_dir / 'player.json').write_text(json.dumps(dict(version=1, names={'$USR': 'Ana'})))
+        other = SimpleNamespace(directory=other_dir, episodes=[{'id': 'x'}], game_id='cod',
+                                select=lambda key: {'id': key})
+        state = MenuState(other)
+        title, message = app.delete_all_saves(other, state)
+        self.assertEqual(title, 'Saves Deleted')
+        self.assertIn('1 saved game of Cause of Death', message)
+        self.assertFalse((other_dir / 'saves').exists())
+        self.assertTrue((app.library.directory / 'saves').exists())          # the open library's saves stay
+        self.assertIs(app.picker, picker)
+        self.assertEqual(app.reset_names(state), ('Names Reset', 'Cause of Death will ask for the names again.'))
+        self.assertEqual(json.loads((other_dir / 'player.json').read_text())['names'], {})
+        self.assertEqual(app.state.names, {'$USR': 'Zoe'})                  # the open library's names stay
+
     def test_library_info_breaks_the_folder_where_a_page_can_wrap_it(self):
         from exp_runtime.application import folder_lines
         lines = folder_lines(Path('C:/Users/someone/AppData/Local/SHSHD Runtime/libraries/shs'), width=20)

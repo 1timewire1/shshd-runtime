@@ -292,59 +292,90 @@ class Application:
 
     # -- Data Management (owner, 2026-10-29) ------------------------------------------------------------------------
 
-    def library_info(self):
-        """Library Info's page: what this game's library was built from and what it holds."""
-        library, manifest = self.library, self.library.manifest
+    def library_info(self, library=None, state=None):
+        """Library Info's page: what this game's library (or `library`, with its `state`) was built from and holds."""
+        library, state = library or self.library, state or self.state
+        manifest = library.manifest
         kind = {'apk': 'its Android app (APK)', 'ipa': 'its iOS app (IPA)'}.get(library.kind, library.kind)
         version = library.profile.rsplit('-', 1)[-1]
         sources = [f'{library.game_title}, from {kind}, version {version}.']
         if manifest.get('hd_ipa'):
             sources.append('With the SHS HD app (IPA): its menus, art and music.')
-        saves = self.saved_episodes()
+        saves = self.saved_episodes(library)
         trees = len(list((library.directory / 'dtsaves').rglob('*.json.gz'))) if (library.directory / 'dtsaves').is_dir() else 0
         lines = sources + [
             '',
             f'Episodes: {len(library.episodes)}.',
             f'Saved games: {len(saves)}.',
             f'Decision Tree scenes saved: {trees}.',
-            f'Names remembered: {len(self.state.names) + sum(len(table) for table in self.state.name_sets.values())}.',
+            f'Names remembered: {len(state.names) + sum(len(table) for table in state.name_sets.values())}.',
             '',
             'Folder:',
             *folder_lines(library.directory),
         ]
         return '\n'.join(lines)
 
-    def saved_episodes(self):
+    def games_with_libraries(self):
+        """The games that have a library (the chooser's Data Management acts on each), SHS first (CoD's HD art is
+        taken from SHS's)."""
+        return [key for key in GAMES if (self.library_path(key) / 'library.json').is_file()]
+
+    def opened_library(self, game):
+        """A game's library and its menu state, opened for a job of the chooser's Data Management (no library is open
+        there): use as `with app.opened_library(game) as (library, state):`; the library closes after."""
+        from contextlib import contextmanager
+
+        @contextmanager
+        def opened():
+            library = ContentLibrary(self.library_path(game))
+            try:
+                yield library, MenuState(library, shared=self.settings)
+            finally:
+                library.close()
+        return opened()
+
+    def title_of(self, library):
+        """A library's game's title: the open one's own, another's from its game."""
+        if library is None or library is self.library:
+            return self.game_title
+        return GAMES[library.game_id].TITLE
+
+    def saved_episodes(self, library=None):
         """The ids of the episodes with a saved game (an automatic checkpoint or the manual slot)."""
-        folder = self.library.directory / 'saves'
+        folder = (library or self.library).directory / 'saves'
         if not folder.is_dir():
             return set()
         return {path.name.split('.', 1)[0] for path in folder.iterdir()
                 if path.name.endswith(('.shs-auto.json', '.shs-save.json'))}
 
-    def reset_names(self):
+    def reset_names(self, state=None):
         """Reset Names: the library's name tables emptied (saved games keep the names they were saved with: a save's
-        own names join the table again when it is loaded, Session.share_names)."""
-        self.state.names.clear()
-        self.state.name_sets.clear()
-        self.state.persist()
-        return 'Names Reset', f'{self.game_title} will ask for the names again.'
+        own names join the table again when it is loaded, Session.share_names). `state`: another library's."""
+        state = state or self.state
+        state.names.clear()
+        state.name_sets.clear()
+        state.persist()
+        return 'Names Reset', f'{self.title_of(state.library)} will ask for the names again.'
 
-    def delete_all_saves(self):
+    def delete_all_saves(self, library=None, state=None):
         """Delete All Saves: every saved game of the library (the automatic checkpoints, the manual slot and their
-        screenshots) and every Decision Tree's scenes and tree."""
+        screenshots) and every Decision Tree's scenes and tree. `library` / `state`: another library's (the chooser's
+        Data Management), else the open one's, whose menus follow."""
         import shutil
-        directory = self.library.directory
-        count = len(self.saved_episodes())
+        library, state = library or self.library, state or self.state
+        directory = library.directory
+        count = len(self.saved_episodes(library))
         for path in (directory / 'saves', directory / 'dtsaves', directory / 'dtview'):
             if path.is_dir():
                 shutil.rmtree(path)
         (directory / 'dtview_tree.json').unlink(missing_ok=True)
-        self.state.ended_saves.clear()
-        self.shot_cache.clear()
-        self.refresh_saves()
-        self.picker = None                                      # the picker's saved-game marks and pictures
-        return 'Saves Deleted', f'{count} saved game{"s" if count != 1 else ""} of {self.game_title} deleted.'
+        state.ended_saves.clear()
+        if library is self.library:
+            self.shot_cache.clear()
+            self.refresh_saves()
+            self.picker = None                                  # the picker's saved-game marks and pictures
+        title = self.title_of(library)
+        return 'Saves Deleted', f'{count} saved game{"s" if count != 1 else ""} of {title} deleted.'
 
     delete_saves = delete_all_saves
 
@@ -461,12 +492,13 @@ class Application:
             self.progress_text = f'{done + 1} of {total}: {title}'[:44]
         return episode_thumbnails.ensure(library, model.records, progress)
 
-    def hd_art_offered(self):
+    def hd_art_offered(self, library=None):
         """Whether Rebuild HD Art has something to build: a CoD library (its HD backgrounds), or an SHS one with HD
         episodes."""
-        if self.cod_twin_map() is not None:
+        library = library or self.library
+        if self.cod_twin_map(library) is not None:
             return True
-        return self.twin_map() is not None and any(r.get('variant') == 'hd' for r in self.library.episodes)
+        return self.twin_map(library) is not None and any(r.get('variant') == 'hd' for r in library.episodes)
 
     def rebuild_hd_art(self, library):
         """Rebuild HD Art: the twin store thrown away and built again from the shipped map and the player's files.
@@ -476,14 +508,14 @@ class Application:
         if store.directory.exists():
             shutil.rmtree(store.directory)
         library._twins = None
-        if self.cod_twin_map() is not None:
+        if self.cod_twin_map(library) is not None:
             self._build_cod_twins(library)
         else:
             from .hd_twins import build_from_map
 
             def found(done, total):
                 self.progress_text = f'HD art: {done + 1} of {total} episodes'[:44]
-            build_from_map(library, self.twin_map(), found)
+            build_from_map(library, self.twin_map(library), found)
         return len(library.twin_store())
 
     def previews_rebuilt(self, made):
@@ -683,9 +715,9 @@ class Application:
         """Where Back Up Progress writes: the chosen folder, else the default."""
         return self.chosen_folder('backup_folder') or self.user_folder('Backups')
 
-    def player_data(self):
+    def player_data(self, state=None):
         """The library's own player.json data a backup carries (taken on the UI thread, before a job starts)."""
-        state = self.state
+        state = state or self.state
         return dict(names=dict(state.names), name_sets={key: dict(table) for key, table in state.name_sets.items()},
                     warp_unlocked=state.warp_unlocked)
 
@@ -697,7 +729,7 @@ class Application:
         from .progress_bundle import write_bundle
         self.progress_text = 'Packing saved games...'
         stamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
-        target = self.backup_folder() / f'{self.game_title} {stamp}{f" ({note})" if note else ""}.zip'
+        target = self.backup_folder() / f'{self.title_of(library)} {stamp}{f" ({note})" if note else ""}.zip'
         titles = {record['id']: record['titles'][0] for record in library.episodes}
         return target, write_bundle(library.directory, library.game_id, player, titles, target, note=note, **bundle)
 
@@ -1277,14 +1309,16 @@ class Application:
         self.progress_text = 'Starting...'
         self.job = self.executor.submit(self._prepare_previews, self.library)
 
-    def twin_map(self):
+    def twin_map(self, library=None):
         """The library's game's shipped HD twin map (SHS's), or None."""
-        loader = getattr(GAMES.get(self.library.game_id), 'twin_map', None) if self.library else None
+        library = library or self.library
+        loader = getattr(GAMES.get(library.game_id), 'twin_map', None) if library else None
         return loader() if loader else None
 
-    def cod_twin_map(self):
+    def cod_twin_map(self, library=None):
         """Cause of Death's shipped map of backgrounds that are SHS HD pictures, or None (not a CoD library)."""
-        loader = getattr(GAMES.get(self.library.game_id), 'background_twin_map', None) if self.library else None
+        library = library or self.library
+        loader = getattr(GAMES.get(library.game_id), 'background_twin_map', None) if library else None
         return loader() if loader else None
 
     def shs_library_path(self):
@@ -1337,7 +1371,7 @@ class Application:
                     shs = ContentLibrary(shs_path)
                 except (ContentError, OSError) as error:
                     logging.warning('CoD HD art: the SHS library could not be read: %s', error)
-            build(library, shs, self.cod_twin_map(), found)
+            build(library, shs, self.cod_twin_map(library), found)
         finally:
             if shs is not None:
                 shs.close()
