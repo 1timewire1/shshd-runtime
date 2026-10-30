@@ -33,13 +33,13 @@ class SharedSettingsTests(unittest.TestCase):
         path.write_text(json.dumps(dict(version=1, check_for_updates=False)), encoding='utf-8')
         settings = AppSettings(path)
         self.assertEqual((settings.check_for_updates, settings.preferences, settings.start_in, settings.last_game),
-                         (False, {}, 'games', None))
-        settings.set_start_in('auto')
+                         (False, {}, 'auto', None))
+        settings.set_start_in('games')
         settings.set_last_game('cod')
         settings.set_preferences(dict(autoplay=True))
         again = AppSettings(path)
         self.assertEqual((again.check_for_updates, again.preferences, again.start_in, again.last_game),
-                         (False, {'autoplay': True}, 'auto', 'cod'))
+                         (False, {'autoplay': True}, 'games', 'cod'))
         with self.assertRaises(ValueError):
             again.set_start_in('elsewhere')
         before = path.stat().st_mtime_ns
@@ -51,12 +51,15 @@ class SharedSettingsTests(unittest.TestCase):
     def test_start_in_opens_a_game_that_has_a_library_else_the_chooser(self):
         settings = AppSettings(self.root / 'settings.json')
         everything, nothing = (lambda game: True), (lambda game: False)
-        self.assertIsNone(settings.boot_game(everything))                  # Choose a Game, the default
+        self.assertIsNone(settings.boot_game(everything))                  # Last Played, the default: none yet
+        settings.set_last_game('cod')
+        self.assertEqual(settings.boot_game(everything), 'cod')
+        settings.set_start_in('games')
+        self.assertIsNone(settings.boot_game(everything))                  # Choose a Game
         settings.set_start_in('cod')
         self.assertEqual(settings.boot_game(everything), 'cod')
         self.assertIsNone(settings.boot_game(nothing))                     # no library yet: the chooser
         settings.set_start_in('auto')
-        self.assertIsNone(settings.boot_game(everything))                  # Last Played, nothing played yet
         settings.set_last_game('shs')
         self.assertEqual(settings.boot_game(everything), 'shs')
 
@@ -109,11 +112,9 @@ class UnlockWarpingTests(unittest.TestCase):
         self.assertFalse(self.app(unlocked=True).warp_lock_offered())
         self.assertFalse(self.app(football=False).warp_lock_offered())     # Cause of Death has no Football Season
         app = self.app()
-        app.game = SimpleNamespace(warp_unlocked=False, warp_lock_offered=True)
         self.assertTrue(app.unlock_warp())
         self.assertTrue(app.state.warp_unlocked)
         app.state.persist.assert_called_once_with()
-        self.assertEqual((app.game.warp_unlocked, app.game.warp_lock_offered), (True, False))
         self.assertFalse(app.unlock_warp())                                # gone with the lock
 
     def test_football_seasons_unlock_shows_its_notice_on_the_main_menu(self):
@@ -134,19 +135,12 @@ class UnlockWarpingTests(unittest.TestCase):
         app.show_warp_notice()
         self.assertEqual(queued, [WARP_UNLOCKED_MENU])                     # once
 
-    def test_in_a_story_the_notice_opens_over_the_pause_menu(self):
+    def test_a_storys_extras_does_not_offer_it(self):
         from exp_runtime.desktop import Desktop
-        ui = Desktop.__new__(Desktop)
-        ui.press, ui.gear_pointer_down, ui._sync_text_input = Mock(), False, Mock()
-        ui.fade, ui.session = None, SimpleNamespace(transitioning=False)
-        ui.notice_stack, ui.exit_menu = Mock(), 17
-        ui.on_unlock_warp = Mock(return_value=True)
-        ui.command(('pause_action', 'unlock_warp'))
-        ui.notice_stack.queue.assert_called_once_with(29)
-        ui.on_unlock_warp.return_value = False
-        ui.command(('pause_action', 'unlock_warp'))
-        ui.notice_stack.queue.assert_called_once_with(29)
-
+        self.assertNotIn('unlock_warp', Desktop._pause_settings(SimpleNamespace(
+            vibration_enabled=False, music_enabled=True, sound_enabled=True, music_volume=1, sound_volume=1,
+            panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
+            backdrop_switch=lambda: False, hires_switch=lambda: False)))
 
 if __name__ == '__main__':
     unittest.main()

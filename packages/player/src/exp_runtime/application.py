@@ -993,8 +993,6 @@ class Application:
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
         self.game.warp_unlocked = (self.state.warp_unlocked
                                    or self.game.session.resources.record.get('builtin') != 'football-star')
-        self.game.warp_lock_offered = self.warp_lock_offered()      # Extras' Unlock Warping, in any SHS episode
-        self.game.on_unlock_warp = self.unlock_warp
         self.game.on_settings = self.save_game_settings
         self.game.active = self.active
         self.screen, self.history, self.focus = 'game', [], None
@@ -1105,7 +1103,8 @@ class Application:
     warp_notice_due = False         # Football Season unlocked warping: its notice waits for the main menu
 
     def warp_lock_offered(self):
-        """Whether Extras offers Unlock Warping: SHS's library (it has Football Season) with warping still locked."""
+        """Whether the main menu's Extras offers Unlock Warping (not a story's: owner, 2026-10-29): SHS's library (it has
+        Football Season) with warping still locked."""
         return (self.state is not None and not self.state.warp_unlocked and self.library is not None
                 and any(record.get('builtin') == 'football-star' for record in self.library.episodes))
 
@@ -1117,8 +1116,6 @@ class Application:
         self.state.warp_unlocked = True
         self._attempt(self.state.persist)
         self.warp_notice_due = False
-        if self.game is not None:
-            self.game.warp_unlocked, self.game.warp_lock_offered = True, False
         return True
 
     def show_warp_notice(self):
@@ -1876,7 +1873,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=f'{APP_NAME} — play SHS or Cause of Death with your own assets')
     parser.add_argument('--library', type=Path, help='Local content library (default: per-user application data)')
     parser.add_argument('--game', choices=GAMES,
-                        help="The game to open (default: General's Start In, the game chooser until it is set)")
+                        help="The game to open (default: General's Start In, the game last played)")
     parser.add_argument('--game-library', nargs=2, action='append', default=[], metavar=('GAME', 'PATH'),
                         help="A game's library for Switch Game, not remembered (repeatable; this fork's option)")
     parser.add_argument('--no-audio', action='store_true')

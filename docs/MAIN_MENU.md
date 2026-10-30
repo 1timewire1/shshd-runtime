@@ -329,7 +329,7 @@ and reports the write error. See the [exit contract](STORY_SERVICES.md#episode-e
 | --- | --- |
 | `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", title_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English titles. `names` (object of `$KEY` to string, at most 4096) is the name table every episode shares ([RUNTIME.md](RUNTIME.md#names-shared-across-episodes)) |
 | `saves/<episode-sha>.shs-save.json` | Existing manual F5/F9 slot, [runtime save schema](RUNTIME.md#runtime-save-schema-version-13) |
-| `settings.json` (the app's data folder, not a library) | `{version:1, check_for_updates:bool, preferences:{...}, start_in:"games"\|"auto"\|"shs"\|"cod", last_game:"shs"\|"cod"\|null}`. `preferences` holds the Options both games share (`menu.SHARED_PREFERENCES`), which override `player.json`'s copies; an older file with only `check_for_updates` still reads |
+| `settings.json` (the app's data folder, not a library) | `{version:1, check_for_updates:bool, preferences:{...}, start_in:"auto"\|"games"\|"shs"\|"cod" (default "auto"), last_game:"shs"\|"cod"\|null}`. `preferences` holds the Options both games share (`menu.SHARED_PREFERENCES`), which override `player.json`'s copies; an older file with only `check_for_updates` still reads |
 | `saves/<episode-sha>.shs-auto.json` | Automatic checkpoint on menu return and application exit, same schema |
 
 Preferences and saves use temporary files plus atomic replacement. Resume after

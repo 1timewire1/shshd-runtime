@@ -84,11 +84,14 @@ TITLE_LANGUAGE_LABEL = 'Episode Titles'
 # General's Start In, also offered by the main menus only (owner, 2026-10-29): which game the app opens in
 # (settings.AppSettings.start_in); `settings['start_in']` is the current choice's name.
 START_IN_LABEL = 'Start In'
-START_IN_NAMES = {'games': 'Choose a Game', 'auto': 'Last Played', 'shs': 'Surviving High School',
+START_IN_NAMES = {'auto': 'Last Played', 'games': 'Choose a Game', 'shs': 'Surviving High School',
                   'cod': 'Cause of Death'}
 # Extras' Unlock Warping (owner, 2026-10-29): SHS's story-tree lock (`SHSEngine +0x6490a`, cleared by finishing
 # Football Season) undone at once, with the app's own notice (menu 29); offered only while warping is locked.
 UNLOCK_WARP_LABEL = 'Unlock Warping'
+# Sound's last row on the main menu (owner, 2026-10-29): launch without asking "Play with sound?" (the music and sound
+# switches as set).
+SKIP_SOUND_PROMPT_LABEL = 'Skip Sound Prompt'
 DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another Library'))
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
@@ -637,8 +640,9 @@ class HdPauseMenu:
             # This player's buzz in place of the iPhone's vibration (PR #10): last, under its own name. A device's own
             # vibrator is General's Vibration (DEVICE_VIBRATION_LABEL), a separate switch.
             vibration = [('switch', VIBRATION_SOUND_LABEL, 'vibration')] if 'vibration' in settings else []
+            prompt = [('switch', SKIP_SOUND_PROMPT_LABEL, 'skip_sound_prompt')] if 'skip_sound_prompt' in settings else []
             return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
-                    ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration
+                    ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration + prompt
         if category == 'general':
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
             if 'title_language' in settings:

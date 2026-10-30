@@ -171,6 +171,10 @@ class HdPauseTests(unittest.TestCase):
         wide = self.commands()[-2][0]
         self.assertGreater(wide.width, narrow.width)
         self.assertEqual((wide.right, wide.height), (PANEL_X + PANEL_W - CONTROL_RIGHT, 34))
+        state.screen = 'options:sound'
+        self.assertNotIn(('pause_toggle', 'skip_sound_prompt'), [c for _, c in self.commands()])   # in a story
+        self.settings['skip_sound_prompt'] = False
+        self.assertEqual([c for _, c in self.commands()][-2], ('pause_toggle', 'skip_sound_prompt'))
         state.screen = 'options:extras'
         self.assertNotIn(('pause_action', 'unlock_warp'), [c for _, c in self.commands()])
         self.settings['unlock_warp'] = True
