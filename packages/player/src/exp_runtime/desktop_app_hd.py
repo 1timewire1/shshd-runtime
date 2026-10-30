@@ -156,6 +156,8 @@ class AppCard(HdPauseMenu):
 OPTION_STRINGS = {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 13: 'Music Volume', 14: 'Sound FX',
                   15: 'Sound FX Volume', 20: 'Resume', 120: 'Help & About'}
 LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
+# The chooser's Library page rows that act on each game's library in turn (AppOptions' methods of these names).
+BOTH_GAMES_ACTIONS = ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art')
 SLIDER = (143, 460)                     # a volume slider's track: its left and width in points (HdShell's)
 # Options only one game offers are not listed before a game is chosen (owner, 2026-10-30): SHS's High School Story ad
 # intros and store plugs (CodPauseMenu leaves both out), its New Rules Hi-Res Portraits (TRANSLATED_PORTRAIT_ART) and
@@ -220,6 +222,15 @@ class AppOptions:
         if getattr(app, 'file_picker', None) is None:
             for key in ('backup_folder', 'export_folder'):
                 settings[key] = app.folder_label(key)
+        # Data Management for both games (owner, 2026-10-30): what has a library to act on.
+        games = app.games_with_libraries()
+        if games:
+            for key in ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art'):
+                settings[key] = True
+            for game in games:
+                settings[f'delete_library_{game}'] = True
+            if len(games) > 1:
+                settings['delete_libraries'] = True
         return {key: value for key, value in settings.items() if key not in ONE_GAME_OPTIONS}
 
     def draw(self, layer):
@@ -267,6 +278,12 @@ class AppOptions:
                 self.set(key, 'hold' if v[key] == 'tap' else 'tap')
             elif key in ('backup_folder', 'export_folder'):
                 app.choose_folder(key)
+        elif kind == 'pause_action' and command[1] in BOTH_GAMES_ACTIONS:
+            getattr(self, command[1])()
+        elif kind == 'pause_action' and command[1] == 'delete_libraries':
+            self.confirm_delete(app.games_with_libraries())
+        elif kind == 'pause_action' and command[1].startswith('delete_library_'):
+            self.confirm_delete([command[1][len('delete_library_'):]])
         elif kind == 'pause_action' and command[1] == 'reset_settings':
             self.ask = ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
                         'Check for Updates and the chosen folders too. Saves and names stay.', ('No', 'Reset'),
@@ -290,6 +307,123 @@ class AppOptions:
 
     def notice(self, title, text):
         self.ask = (title, text, ('OK',), (None,))
+
+    def confirm(self, title, text, verb, action):
+        self.ask = (title, text, ('No', verb), (None, action))
+
+    # -- Data Management for both games (owner, 2026-10-30) ---------------------------------------------------
+
+    def each(self, title, work, done):
+        """`work(library, state)` for each game that has a library, opened for it, off the UI thread under the busy
+        card; then `done([(game, result)])` on the UI thread."""
+        app = self.app
+
+        def job(_):
+            results = []
+            for game in app.games_with_libraries():
+                app.progress_text = GAMES[game].TITLE
+                with app.opened_library(game) as (library, state):
+                    results.append((game, work(library, state)))
+            return results
+        app.start_data_job(title, job, done)
+
+    def page(self, screen, title, text):
+        """A text page under Library (the pause menu's own, scrolled as Help's are)."""
+        self.menu.show_text(screen, title, text, 'data:library')
+
+    def library_info(self):
+        self.each('Reading libraries', lambda library, state: self.app.library_info(library, state),
+                  lambda results: self.page('data:info', 'Library Info',
+                                            '\n\n\n'.join(text for _, text in results)))
+
+    def storage(self):
+        from .application import disk_size, size_text
+
+        def measure(library, state):
+            text = self.app.storage_text(library).split('\n')
+            return [line for line in text if line and not line.startswith(('Total', 'Free'))], disk_size(library.directory)
+
+        def done(results):
+            import shutil
+            folder = self.app.library_path(results[0][0]).parent if results else None
+            lines = []
+            for game, (rows, total) in results:
+                lines += [GAMES[game].TITLE, *rows, f'Total: {size_text(total)}', '']
+            if len(results) > 1:
+                lines.append(f'Both games: {size_text(sum(total for _, (_, total) in results))}')
+            if folder is not None:
+                lines.append(f'Free on this drive: {size_text(shutil.disk_usage(folder).free)}')
+            self.page('data:storage', 'Storage', '\n'.join(lines))
+        self.each('Measuring storage', measure, done)
+
+    def verify_library(self):
+        def done(results):
+            problems = [(game, result) for game, result in results if result[1] or result[2]]
+            restored = sum(result[3] for _, result in results)
+            again = f' {restored} built-in episode{"s were" if restored != 1 else " was"} restored.' if restored else ''
+            if not problems:
+                counts = ' and '.join(f'{result[0]} of {GAMES[game].TITLE}' for game, result in results)
+                self.notice('Libraries Verified', f'All {counts} files are intact.{again}')
+                return
+            lines = []
+            for game, (checked, missing, damaged, _) in results:
+                lines += [GAMES[game].TITLE, f'{checked} files checked.']
+                lines += [f'Missing: {name}' for name in missing] + [f'Damaged: {name}' for name in damaged] + ['']
+            lines.append('Add Episodes (in that game) restores an episode when given its file again; a damaged file '
+                         'was removed. A missing or damaged app comes back only by importing the game again.' + again)
+            self.page('data:verify', 'Verify Library', '\n'.join(lines))
+        self.confirm('Verify Libraries?', 'Every file of both games is checked against its checksum, which can take a '
+                     'few minutes. A damaged episode\'s file is removed: adding the episode again restores it.', 'Verify',
+                     lambda: self.each('Verifying libraries', lambda library, state: self.app.verify_library(library),
+                                       done))
+
+    def rebuild_previews(self):
+        def done(results):
+            self.notice('Previews Rebuilt', ' '.join(
+                f'{GAMES[game].TITLE}: {made} drawn again.' for game, made in results))
+        self.confirm('Rebuild Previews?', 'Every episode preview of both games is drawn again from its title card, which '
+                     'can take a few minutes.', 'Rebuild',
+                     lambda: self.each('Drawing previews', lambda library, state: self.app.rebuild_previews(library),
+                                       done))
+
+    def rebuild_hd_art(self):
+        app = self.app
+
+        def work(library, state):
+            return app.rebuild_hd_art(library) if app.hd_art_offered(library) else None
+
+        def done(results):
+            built = [f'{GAMES[game].TITLE}: {count} HD pictures.' for game, count in results if count is not None]
+            self.notice('HD Art Rebuilt', ' '.join(built) or 'Neither library has HD art to build.')
+        self.confirm('Rebuild HD Art?', 'The HD pictures both games show in standard episodes are found again in your HD '
+                     'files (Surviving High School first: Cause of Death takes its own from it), which can take a few '
+                     'minutes.', 'Rebuild', lambda: self.each('Building HD art', work, done))
+
+    def confirm_delete(self, games):
+        """Delete a library (or both): asked twice, as each game's own Delete Library is."""
+        from .application import remove_library
+        titles = ' and '.join(GAMES[game].TITLE for game in games)
+        which = 'both libraries' if len(games) > 1 else 'its library'
+
+        def delete():
+            # What earlier jobs left cached of these libraries (a preview's fonts from a library's fonts/ folder stay
+            # open while cached) goes first, as letting a library go does.
+            import gc
+            from . import episode_thumbnails
+            episode_thumbnails.release_game_caches()
+            gc.collect()
+            left = sum(remove_library(self.app.library_path(game)) for game in games)
+            self.notice('Libraries Deleted' if len(games) > 1 else 'Library Deleted',
+                        f'The {"libraries" if len(games) > 1 else "library"} of {titles} '
+                        f'{"were" if len(games) > 1 else "was"} deleted.'
+                        + (f' {left} files were in use and stay in their folder.' if left else ''))
+
+        self.confirm('Delete Both Libraries?' if len(games) > 1 else 'Delete Library?',
+                     f'Everything {titles} keep{"" if len(games) > 1 else "s"} in this app will be deleted: episodes, '
+                     f'saved games, Decision Trees, names, previews and HD art. The files you imported from stay where '
+                     f'they are. Back Up Progress first to keep your saves.', 'Delete',
+                     lambda: self.confirm('Delete Everything?', f'This cannot be undone. To play {titles} again, import '
+                                          f'{"their" if len(games) > 1 else "its"} files again.', 'Delete', delete))
 
     def step_back(self):
         """Escape / Back: close the window, else go up a page; False once past the list (Options is left)."""

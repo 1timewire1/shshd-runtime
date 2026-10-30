@@ -106,7 +106,11 @@ GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
 DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
                                            ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
                                            ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'),
-                                           ('delete_library', 'Delete Library'))),
+                                           ('delete_library', 'Delete Library'),
+                                           # The chooser's (both games, owner 2026-10-30): a row per game, then both.
+                                           ('delete_library_shs', 'Delete Surviving High School'),
+                                           ('delete_library_cod', 'Delete Cause of Death'),
+                                           ('delete_libraries', 'Delete Both Libraries'))),
               ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
                                              ('export_episodes', 'Export Episodes'), ('export_folder', 'Exports Folder'),
                                              ('reset_trees', 'Reset Decision Tree'))),

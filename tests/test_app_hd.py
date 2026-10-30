@@ -80,7 +80,7 @@ class AppScreenTests(unittest.TestCase):
         from exp_runtime.settings import AppSettings
         settings = AppSettings(Path(self.root) / 'settings.json')
         host = SimpleNamespace(settings=settings, file_picker=Mock(), back=Mock(), _click_sound=Mock(),
-                               sync_controller=Mock(), choose_folder=Mock(),
+                               sync_controller=Mock(), choose_folder=Mock(), games_with_libraries=lambda: [],
                                set_update_check=lambda on: settings.set_update_check(on))
         options = AppOptions(host)
         options.enter()
@@ -137,6 +137,38 @@ class AppScreenTests(unittest.TestCase):
         self.assertIn(('file', files[-1]), [c for _, c in self.screens.buttons])    # the last row, at the end
         self.screens.scroll_browser(-10_000)
         self.assertEqual(self.screens.browser_scroll, 0)
+
+    def test_the_choosers_library_page_acts_on_the_games_that_have_libraries(self):
+        from unittest.mock import Mock
+        from exp_runtime.desktop_app_hd import AppOptions
+        from exp_runtime.settings import AppSettings
+        root = Path(self.root)
+        for game in ('shs', 'cod'):
+            (root / game).mkdir()
+            (root / game / 'library.json').write_text('{}')
+            (root / game / 'saves').mkdir()
+        (root / 'cod' / 'notes.txt').write_text('mine')                     # the player's own: it stays
+        host = SimpleNamespace(settings=AppSettings(root / 'settings.json'), file_picker=Mock(),
+                               library_path=lambda key: root / key,
+                               games_with_libraries=lambda: [k for k in ('shs', 'cod')
+                                                             if (root / k / 'library.json').is_file()])
+        options = AppOptions(host)
+        rows = options.settings()
+        self.assertTrue(all(rows.get(key) for key in ('library_info', 'storage', 'verify_library', 'rebuild_previews',
+                                                      'rebuild_hd_art', 'delete_library_shs', 'delete_library_cod',
+                                                      'delete_libraries')))
+        self.assertNotIn('open_library', rows)                              # per game only: not here
+        options.activate(('pause_action', 'delete_library_cod'))
+        self.assertEqual(options.ask[0], 'Delete Library?')
+        options.ask[3][1]()
+        self.assertEqual(options.ask[0], 'Delete Everything?')
+        options.ask[3][1]()
+        self.assertEqual(options.ask[0], 'Library Deleted')
+        self.assertEqual([p.name for p in (root / 'cod').iterdir()], ['notes.txt'])
+        self.assertTrue((root / 'shs' / 'library.json').exists())
+        rows = options.settings()
+        self.assertNotIn('delete_library_cod', rows)
+        self.assertNotIn('delete_libraries', rows)                          # one library left: no "both" row
 
     def test_long_text_wraps_inside_the_card(self):
         lines = self.screens.card.wrap('word ' * 60, 26, 300)
