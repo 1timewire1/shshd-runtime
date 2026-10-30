@@ -45,6 +45,18 @@ def device_name():
     return (name or socket.gethostname() or 'This device')[:40]
 
 
+def hold_multicast(held):
+    """While the sender listens for beacons, a phone must keep its Wi-Fi taking broadcasts (Android drops them to save
+    power without a multicast lock): the host's `graphics.hold_multicast`, where it has one."""
+    from . import graphics
+    hold = getattr(graphics, 'hold_multicast', None)
+    if callable(hold):
+        try:
+            hold(held)
+        except Exception as error:              # a phone without it still finds receivers it is told of
+            logging.warning('Sync: multicast lock: %s', error)
+
+
 # SHSHD_SYNC_LOOPBACK=1 keeps sync to this computer's loopback: two copies of the app syncing with each other, with no
 # firewall question (play-sync-test.ps1).
 LOOPBACK = os.environ.get('SHSHD_SYNC_LOOPBACK') == '1'
@@ -95,9 +107,11 @@ class SyncFlow:
             self.shell.notify('Nothing to Send', 'Turn on at least one of the things to send.')
             return
         self.stop()
+        hold_multicast(True)
         try:
             self.finder = lan_sync.Finder(port=self.DISCOVERY_PORT, bind=self.BIND)
         except OSError as error:
+            hold_multicast(False)
             logging.warning('Sync: cannot listen for receivers: %s', error)
             self.shell.notify('Cannot Search', 'This device cannot listen on the network right now. Close any other '
                               'copy of SHSHD Runtime and try again.')
@@ -118,6 +132,7 @@ class SyncFlow:
         device = self.devices[index]
         self.finder.stop()
         self.finder = None
+        hold_multicast(False)
         categories = [key for key, _ in SYNC_CATEGORIES if self.choices[key]]
         self.asked = False
         self.provider = SendProvider(self.app, categories)
@@ -255,6 +270,7 @@ class SyncFlow:
         """Leave sync: the ear, the waiting room and any session closed, the receiver's stage removed."""
         if self.finder is not None:
             self.finder.stop()
+            hold_multicast(False)
         if self.receiver is not None:
             self.receiver.stop()
         if self.session is not None and not self.session.finished:
