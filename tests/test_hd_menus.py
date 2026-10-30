@@ -613,6 +613,13 @@ class ShellActionTests(unittest.TestCase):
         shell.tick(0)
         self.assertEqual((shell.stage, shell.stack.stack, played), ('flash', [], [JINGLE]))
         self.assertEqual((shell.app.state.music, shell.app.state.sound), (False, True))
+        # Through the game's own answer (action 1): CoD has no EA flash (its shell fades through black instead), and
+        # SHS HD's flash stage crashed its launch.
+        answers = []
+        shell.perform = answers.append
+        shell.stage, shell.age = 'loading', LOADING_TIME + SOUND_DELAY
+        shell.tick(0)
+        self.assertEqual((answers, shell.stage), ([1], 'sound'))
 
     def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
         canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))

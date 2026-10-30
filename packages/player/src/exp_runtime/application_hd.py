@@ -281,12 +281,12 @@ class HdShell:
         self.was_covered = covered
         if (self.stage == 'loading' and self.age >= LOADING_TIME + SOUND_DELAY
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
+            self.stage = 'sound'
             if getattr(self.app.state, 'skip_sound_prompt', False):
-                # Sound's Skip Sound Prompt: on as "Play with sound?" answered would (perform 1), Music and Sound as set.
-                self.stage, self.flash_age = 'flash', 0.0
-                self.app.play_asset(JINGLE)
+                # Sound's Skip Sound Prompt: on as "Play with sound?" answered goes (action 1: SHS HD's EA flash, CoD's
+                # fade through black), Music and Sound as set.
+                self.perform(1)
             else:
-                self.stage = 'sound'
                 self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
                 self.window_ms = 0
         elif self.stage == 'flash':
