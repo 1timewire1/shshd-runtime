@@ -142,8 +142,11 @@ def build_command(source, sdk, ndk, arches=ARCHES, icons=None, version=None, rel
             '--package=org.shshd.runtime', '--name=SHSHD Runtime', f'--version={version or project_version()}',
             # Portrait first; landscape for the side panels (platforms/android.py, OrientationBridge).
             '--orientation=portrait', '--orientation=landscape', '--orientation=landscape-reverse',
-            # VIBRATE: General's Vibration, the phone's own vibrator (platforms/android.Host.find_vibrator).
+            # VIBRATE: General's Vibration, the phone's own vibrator (platforms/android.Host.find_vibrator). The Wi-Fi and
+            # network states and the multicast lock: Sync Devices (sync_flow.py; Host.hold_multicast).
             f'--add-source={ROOT / "android/java"}', '--permission=INTERNET', '--permission=VIBRATE',
+            '--permission=ACCESS_WIFI_STATE', '--permission=ACCESS_NETWORK_STATE',
+            '--permission=CHANGE_WIFI_MULTICAST_STATE',
             # A release build is signed by python-for-android from the P4A_RELEASE_* environment (signing_env): --sign
             # adds the Gradle signing config that reads it (without it, shshd-release-unsigned).
             *(('--release', '--sign') if release else ('--debug',)),

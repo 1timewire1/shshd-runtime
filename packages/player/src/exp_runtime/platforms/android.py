@@ -101,9 +101,17 @@ class Host:
         self.intent = autoclass('android.content.Intent')
         self.uri = autoclass('android.net.Uri')
         self.vibrator = self.find_vibrator(autoclass)
+        from .. import graphics
         if self.vibrator is not None:
-            from .. import graphics
             graphics.set_vibrator(self.vibrate)     # General's Vibration (desktop_pause_hd.DEVICE_VIBRATION_LABEL)
+        # Sync Devices (sync_flow.py): the phone's name, and Wi-Fi taking broadcasts while it looks for receivers.
+        self.autoclass, self.multicast = autoclass, None
+        graphics.device_name, graphics.hold_multicast = self.device_name, self.hold_multicast
+        # Backups (a sync's "before sync" one) where a player can reach them over USB: the app's external files
+        # folder (Android/data/<package>/files), which needs no permission.
+        external = self.activity.getExternalFilesDir(None)
+        if external is not None:
+            Application.USER_FOLDER_ROOT = str(external.getAbsolutePath())
         self.root = Path(str(self.activity.getFilesDir().getAbsolutePath())) / 'SHSHD Runtime'
         self.root.mkdir(parents=True, exist_ok=True)
         self.staging = self.root / 'imports'
@@ -276,6 +284,35 @@ class Host:
                 self.vibrator.vibrate(duration_ms)
         except Exception as error:
             logging.warning('Vibration failed: %s', error)
+
+    def device_name(self):
+        """The phone's name as its owner set it (Settings > About phone), else its maker and model."""
+        try:
+            settings = self.autoclass('android.provider.Settings$Global')
+            name = settings.getString(self.activity.getContentResolver(), 'device_name')
+            if name:
+                return str(name)
+        except Exception as error:
+            logging.warning('Sync: no device name: %s', error)
+        build = self.autoclass('android.os.Build')
+        model = str(build.MODEL or 'Android phone')
+        maker = str(build.MANUFACTURER or '')
+        return model if model.lower().startswith(maker.lower()) else f'{maker.capitalize()} {model}'.strip()
+
+    def hold_multicast(self, held):
+        """sync_flow.hold_multicast: WifiManager's MulticastLock (needs CHANGE_WIFI_MULTICAST_STATE), held while
+        the sender listens for receivers' beacons."""
+        if held:
+            if self.multicast is None:
+                from jnius import cast
+                context = self.autoclass('android.content.Context')
+                wifi = cast('android.net.wifi.WifiManager',
+                            self.activity.getApplicationContext().getSystemService(context.WIFI_SERVICE))
+                self.multicast = wifi.createMulticastLock('shshd-sync')
+                self.multicast.setReferenceCounted(False)
+            self.multicast.acquire()
+        elif self.multicast is not None and self.multicast.isHeld():
+            self.multicast.release()
 
     def open_url(self, url):
         self.activity.startActivity(self.intent(self.intent.ACTION_VIEW, self.uri.parse(url)))
