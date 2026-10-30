@@ -36,6 +36,7 @@ SLIDE_MS = 400                                  # a page change slides, as the H
 FOCUS = (255, 214, 102)                          # the keyboard / controller highlight
 WINDOW_TOP = 260
 SHORT_FOOT = 26                                 # a card's footer with nothing in it: a closing band
+BROWSER_ROW = 72                                # a file browser row
 # The busy card's note (owner, 2026-10-30): an import takes minutes, longer on a phone.
 IMPORT_NOTE = ('Importing can take a while: a few minutes on a computer, longer on a phone. Keep SHSHD Runtime open '
                'until it finishes.')
@@ -370,8 +371,13 @@ class AppScreens:
 
     @staticmethod
     def handles(app):
-        """Whether the app's screen is one of these: APP_SCREENS, and Options with no library open (the chooser's)."""
-        return app.screen in APP_SCREENS or (app.screen == 'options' and app.library is None)
+        """Whether the app's screen is one of these: APP_SCREENS, Options with no library open (the chooser's), and
+        the file browser (in either dress)."""
+        return app.screen in APP_SCREENS or app.screen == 'browser' or (app.screen == 'options' and app.library is None)
+
+    browser_scroll = 0.0                # the file list's scroll, in points
+    browser_folder = None               # the folder it was scrolled in (a new one starts at the top)
+    browser_area = None                 # the list's rectangle (points), for scrolling
 
     # -- the frame --------------------------------------------------------------------------------------------
 
@@ -397,7 +403,8 @@ class AppScreens:
         screen = app.screen
         if screen == 'options' and (self.last is None or self.last[0] != 'options'):
             self.options.enter()                        # Options opens on its list (or the page asked for)
-        layer = self.backdrop(screen != 'options').copy()
+        layer = self.game_backdrop(app) if screen == 'browser' else None
+        layer = layer or self.backdrop(screen not in ('options', 'browser')).copy()
         getattr(self, 'draw_' + screen)(app, layer)
         now = time.monotonic() * 1000
         if self.last is not None and self.last[0] != screen:
@@ -473,10 +480,10 @@ class AppScreens:
         self.buttons.append((rect, command))
         return top + ROW
 
-    def chevron(self, layer, rect):
+    def chevron(self, layer, rect, color=LABEL_BLUE):
         x, y = rect.right - 34, rect.centery
         points = [(x - 7, y - 12), (x + 5, y), (x - 7, y + 12)]
-        pygame.draw.lines(layer, LABEL_BLUE, False, [(round(px * S), round(py * S)) for px, py in points], 3 * S)
+        pygame.draw.lines(layer, color, False, [(round(px * S), round(py * S)) for px, py in points], 3 * S)
 
     def icon(self, app, key):
         """A game's own app icon at GAME_ICON points (from its library), or None before it is imported."""
@@ -567,6 +574,122 @@ class AppScreens:
         y = self.text(layer, later + hd, y) + 26
         y = self.action(layer, y, 'Choose Game Files', ('browse', 'apk'), 0)
         self.action(layer, y, 'Open Library', ('browse', 'library'), 1)
+
+    # -- the file browser (Add Episodes, Open Library, Choose Game, Bulk Import, Add APK Music, the folders) -------
+
+    @staticmethod
+    def game_card(app):
+        """The open game's own menu card (HdPauseMenu / CodPauseMenu), or None before a library."""
+        shell = getattr(app, 'shell', None)
+        return shell.pause if app.library is not None and shell is not None else None
+
+    def game_backdrop(self, app):
+        """The open game's HD main menu without its buttons, under its own card (as On Demand's list sits), or None."""
+        if self.game_card(app) is None:
+            return None
+        try:
+            return app.shell.main.draw(buttons=False).copy()
+        except Exception:                               # the menu's art unavailable: the app's backdrop instead
+            return None
+
+    def scroll_browser(self, delta):
+        """Scroll the file list by `delta` points (the wheel, Page Up / Down)."""
+        if self.browser_area is not None:
+            self.browser_scroll = max(0., min(self.browser_max, self.browser_scroll + delta))
+
+    browser_max = 0.
+
+    def draw_browser(self, app, layer):
+        """A tall card in the game's dress (else the app's): the folder's path (a tap types one), Up (and Default for
+        a folder setting), the folder's entries as rows, Back and Use This Folder."""
+        from .desktop_pause_hd import TALL
+        card = self.game_card(app) or self.card
+        titles = {'apk': 'Choose Game', 'music_apk': 'Add APK Music', 'episodes': 'Add Episodes',
+                  'library': 'Open Library', 'bulk': 'Bulk Import', 'backups': 'Backups Folder',
+                  'exports': 'Exports Folder'}
+        folder_kind = app.browser_kind in ('backups', 'exports')
+        top, bottom = TALL
+        body = card.panel(layer, top, bottom, titles.get(app.browser_kind, 'Files'))
+        inner = PANEL_X + BORDER, PANEL_W - 2 * BORDER
+        pressed = app.pressed
+        # The path: tapped, it takes a typed one (Enter opens it).
+        typing = getattr(app, 'focus', None) == 'path'
+        card.rect(layer, card.see_through(ROW_BACKGROUND), (inner[0], body, inner[1], 64))
+        text = (app.path_text + '|') if typing else str(app.folder)
+        font, width = card.font(22), PANEL_W - 70
+        while font.size(text)[0] / S > width and len(text) > 4:
+            text = '…' + text[2:] if text.startswith('…') else '…' + text[1:]
+        card.text(layer, text, PANEL_X + 35, body + 20, 22, BLUE if typing else GRAY)
+        self.buttons.append((pygame.Rect(inner[0], body, inner[1], 64), ('path',)))
+        # Up, a hint, and Default for the folder settings.
+        strip = body + 64
+        card.rect(layer, card.see_through(ROW_BACKGROUND), (inner[0], strip, inner[1], 70))
+        card.rect(layer, SEPARATOR, (inner[0], strip, inner[1], 1))
+        up = pygame.Rect(PANEL_X + 26, strip + 13, 110, 44)
+        card.cycle_button(layer, up, 'Up', pressed=pressed == ('up',))
+        self.buttons.append((up, ('up',)))
+        card.text(layer, 'Click a folder to open it', up.right + 20, strip + 22, 20, GRAY)
+        if folder_kind:
+            default = pygame.Rect(PANEL_X + PANEL_W - 26 - 130, strip + 13, 130, 44)
+            card.cycle_button(layer, default, 'Default', pressed=pressed == ('default_folder',))
+            self.buttons.append((default, ('default_folder',)))
+        # The entries, scrolled; a new folder starts at the top.
+        area = pygame.Rect(inner[0], strip + 70, inner[1], bottom - FOOT - strip - 70)
+        self.browser_area = area
+        if self.browser_folder != app.folder:
+            self.browser_folder, self.browser_scroll = app.folder, 0.
+        files = list(app.files)
+        self.browser_max = max(0., len(files) * BROWSER_ROW - area.height)
+        self.browser_scroll = min(self.browser_scroll, self.browser_max)
+        card.rect(layer, SEPARATOR, (inner[0], area.top, inner[1], 1))
+        clip = pygame.Rect(round(area.x * S), round(area.y * S), round(area.width * S), round(area.height * S))
+        layer.set_clip(clip)
+        card.rect(layer, card.see_through(ROW_BACKGROUND), area)
+        first = int(self.browser_scroll // BROWSER_ROW)
+        for index in range(first, min(len(files), first + area.height // BROWSER_ROW + 2)):
+            path = files[index]
+            y = area.top + index * BROWSER_ROW - self.browser_scroll
+            command = ('file', path)
+            card.rows_body(layer, y, BROWSER_ROW, card.row_color(index), lit=pressed == command)
+            self.file_icon(layer, card, PANEL_X + 30, y + BROWSER_ROW / 2, path)
+            name, font = path.name, card.font(24)
+            while font.size(name)[0] / S > PANEL_W - 170 and len(name) > 4:
+                name = name[:-2] + '…'
+            card.text(layer, name, PANEL_X + 92, y + BROWSER_ROW / 2 - card.cap_offset(24), 24, card.LABEL_COLOR)
+            row = pygame.Rect(inner[0], y, inner[1], BROWSER_ROW).clip(area)
+            if path.is_dir():
+                self.chevron(layer, row.move(0, (y + BROWSER_ROW / 2) - row.centery), card.LABEL_COLOR)
+            if row.height > BROWSER_ROW / 2:
+                self.buttons.append((row, command))
+        if not files:
+            message = 'No folders in this folder.' if folder_kind else 'No matching files in this folder.'
+            self.text(layer, message, area.top + 40, center=True)
+        layer.set_clip(None)
+        if self.browser_max:
+            track = area.height - 16
+            thumb = max(40., track * area.height / (area.height + self.browser_max))
+            y = area.top + 8 + (track - thumb) * self.browser_scroll / self.browser_max
+            card.rect(layer, (150, 160, 178), (area.right - 10, y, 5, thumb), 3)
+        card.rect(layer, SEPARATOR, (inner[0], bottom - FOOT, inner[1], 1))
+        self.buttons.append((card.back_button(layer, bottom, lit=pressed == ('back',)), ('back',)))
+        if app.browser_kind in ('episodes', 'library', 'backups', 'exports'):
+            use = pygame.Rect(PANEL_X + PANEL_W - 14 - 230, bottom - 13 - 58, 230, 58)
+            card.cycle_button(layer, use, 'Use This Folder', pressed=pressed == ('folder',))
+            self.buttons.append((use, ('folder',)))
+
+    @staticmethod
+    def file_icon(layer, card, x, middle, path):
+        """A folder (its tab and body) or a file (a page, its kind's letters under it), as shapes."""
+        if path.is_dir():
+            card.rect(layer, (226, 170, 64), (x, middle - 15, 20, 8), 3)
+            card.rect(layer, (240, 190, 84), (x, middle - 11, 44, 28), 5)
+            return
+        card.rect(layer, (214, 220, 230), (x + 6, middle - 20, 32, 40), 4)
+        card.rect(layer, (150, 160, 178), (x + 6, middle - 20, 32, 40), 4, 2)
+        kind = path.suffix.lstrip('.').upper()[:4]
+        if kind:
+            label = card.font(12).render(kind, True, (90, 100, 120))
+            layer.blit(label, label.get_rect(center=(round((x + 22) * S), round((middle + 6) * S))))
 
     def draw_options(self, app, layer):
         """The chooser's Options (AppOptions): the pause menu's pages, and a question / notice window over them.

@@ -808,5 +808,15 @@ New Rules Hi-Res Portraits and Episode Titles); each game's own Options still ha
 - Data Management, with the Backups and Exports folders and Reset Settings. Choosing a folder returns to its page
   with the notice.
 
-A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. Still to come: the file
-browser. The standard edition's own SD menus stay as they are.
+The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,
+Add Episodes, Add APK Music, and the Backups and Exports folders. It is a tall card with:
+- the folder's path at the top (a tap lets you type one, and Enter opens it);
+- a strip with Up, and Default for the two folder settings;
+- the folder's entries as rows, with shape icons, scrolled by the wheel and Page Up / Down;
+- Back and, where a folder is what you choose, Use This Folder.
+
+Opened from an HD library, it wears that game's own card (`shell.pause`, SHS's or CoD's art and colours) over its main
+menu without the buttons, as On Demand does. Before a library it wears the app's card on the dark backdrop.
+
+A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. The standard edition's
+own SD menus stay as they are.

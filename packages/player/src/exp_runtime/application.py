@@ -23,7 +23,7 @@ from .app_info import PROJECT_URL
 from .content import ContentError, ContentLibrary, file_digest, import_game, is_bundled
 from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
 from .application_hd import WARP_UNLOCKED_MENU, HdShell
-from .desktop_app_hd import APP_SCREENS, AppScreens
+from .desktop_app_hd import BROWSER_ROW, AppScreens
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import FRAME as PICKER_FRAME, HdEpisodePicker
 from .animation_curves import ease_in_out
@@ -2351,6 +2351,9 @@ class Application:
 
     def _scroll(self, delta):
         self.press.cancel()
+        if self.screen == 'browser' and self.buttons_in_frame:
+            self.app_screens.scroll_browser(delta * BROWSER_ROW / 35)     # the HD list's rows (SD's were 35 high)
+            return
         total, height = (len(self.files) * 35, 210) if self.screen == 'browser' else (self.episode_rows()[1], 252)
         self.scroll = max(0, min(max(0, total - height), self.scroll + delta))
 

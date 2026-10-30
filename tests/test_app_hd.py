@@ -113,6 +113,31 @@ class AppScreenTests(unittest.TestCase):
         self.assertEqual({key: stored.preferences[key] for key in preference_defaults()}, preference_defaults())
         self.assertEqual((stored.start_in, options.ask[0]), ('auto', 'Settings Reset'))
 
+    def test_the_file_browser_lists_the_folder_and_each_kind_its_buttons(self):
+        folder = Path(self.root) / 'files'
+        (folder / 'Episodes').mkdir(parents=True)
+        files = [folder / 'Episodes'] + [folder / f'{n:02d}.exp' for n in range(30)]
+        for path in files[1:]:
+            path.write_bytes(b'')
+        state = dict(screen='browser', library=None, folder=folder, files=files, path_text=str(folder))
+        commands = self.commands(app(self.root, browser_kind='episodes', **state))
+        self.assertEqual(commands[:2], [('path',), ('up',)])
+        self.assertEqual(commands[2:4], [('file', files[0]), ('file', files[1])])
+        self.assertEqual(commands[-2:], [('back',), ('folder',)])             # Back, Use This Folder
+        rows = [c for c in commands if c[0] == 'file']
+        self.assertLess(len(rows), len(files))                               # only the rows in view
+        backups = self.commands(app(self.root, browser_kind='backups', **state))
+        self.assertIn(('default_folder',), backups)
+        apk = self.commands(app(self.root, browser_kind='apk', **state))
+        self.assertNotIn(('folder',), apk)                                   # a game's files are chosen, not a folder
+        self.assertNotIn(('default_folder',), apk)
+        self.screens.scroll_browser(10_000)
+        self.assertEqual(self.screens.browser_scroll, self.screens.browser_max)
+        self.commands(app(self.root, browser_kind='episodes', **state))
+        self.assertIn(('file', files[-1]), [c for _, c in self.screens.buttons])    # the last row, at the end
+        self.screens.scroll_browser(-10_000)
+        self.assertEqual(self.screens.browser_scroll, 0)
+
     def test_long_text_wraps_inside_the_card(self):
         lines = self.screens.card.wrap('word ' * 60, 26, 300)
         self.assertGreater(len(lines), 3)
