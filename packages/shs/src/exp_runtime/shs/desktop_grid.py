@@ -17,6 +17,8 @@ from ..menu import MenuStrings
 
 
 class GridRenderer:
+    cursor = None                   # the cell the keys (or a controller) have highlighted: Desktop.grid_cursor
+
     def __init__(self, resources, text, art):
         self.resources, self.text, self.art = resources, text, art
         # SRCALPHA: the background is composited separately by Desktop, at
@@ -302,6 +304,9 @@ class GridRenderer:
         draw_depth_quads(self.canvas, faces)
         if outgoing or game.phase == 4:
             return
+        if self.cursor is not None and 0 <= self.cursor < len(cells):
+            # The keys' highlighted cell (Desktop.grid_cursor; this player's), outlined on the face a touch is tested on.
+            pygame.draw.polygon(self.canvas, (255, 255, 255), cells[self.cursor][0], 1)
         paths = [(game.selection, False)]
         if p.show_hints:
             for start in starts:

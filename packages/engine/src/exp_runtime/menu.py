@@ -67,6 +67,7 @@ SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
     hd_backdrop=bool, hires_portraits=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    controller_confirm=('south', 'east'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES)
 
 
@@ -123,6 +124,9 @@ class MenuState:
         # Sound's Skip Sound Prompt (owner, 2026-10-29): the launch passes "Play with sound?" and keeps Music / Sound
         # as they are (application_hd.HdShell.tick)
         self.skip_sound_prompt = False
+        # Options' Controller page (owner, 2026-10-29): a controller's confirm button, the bottom one ('south') or, for
+        # a Nintendo layout, the right one ('east') (gamepad.py)
+        self.controller_confirm = 'south'
         self.order = 'episode'
         self.title_language = 'en'
         self.selected = None
@@ -170,6 +174,8 @@ class MenuState:
                     self.hires_portraits = data['hires_portraits']
                 if type(data.get('skip_sound_prompt')) is bool:
                     self.skip_sound_prompt = data['skip_sound_prompt']
+                if data.get('controller_confirm') in ('south', 'east'):
+                    self.controller_confirm = data['controller_confirm']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
                     self.hd_art = data['hd_art']
                 self.title_language = data.get('title_language', 'en')
@@ -266,7 +272,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    skip_sound_prompt=self.skip_sound_prompt,
+                    skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     names=self.names,      # in the order written: replacement walks the table in that order
                     name_sets=self.name_sets)
         temporary = None

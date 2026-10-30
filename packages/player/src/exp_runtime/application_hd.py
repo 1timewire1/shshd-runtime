@@ -24,7 +24,8 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES, focus_step
+from .desktop_pause_hd import (CONFIRM_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+                               focus_step)
 from .settings import START_IN
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
@@ -319,6 +320,8 @@ class HdShell:
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
+        if graphics.controller_connected():
+            settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
         if self.app.warp_lock_offered():
             settings['unlock_warp'] = True
         return settings
@@ -544,9 +547,11 @@ class HdShell:
         focus = self.focus if self.focus in targets else None
         if focus_step(key):
             self.focus = step_focus(targets, focus, focus_step(key))
-        elif key in KEYS_ACTIVATE and focus is not None:
-            self.activate(focus)
-            return focus
+        elif key in KEYS_ACTIVATE and (focus is not None or len(targets) == 1):
+            self.activate(focus or targets[0])
+            return focus or targets[0]
+        elif key in KEYS_ACTIVATE and targets:
+            self.focus = targets[0]         # nothing highlighted: Enter (a controller's confirm) shows where it is
         return None
 
     def wheel(self, dy):
@@ -616,6 +621,11 @@ class HdShell:
                                                    % len(TITLE_LANGUAGES)]
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
+        elif kind == 'pause_cycle' and command[1] == 'controller_confirm':
+            state = self.app.state
+            state.controller_confirm = 'east' if state.controller_confirm == 'south' else 'south'
+            self.app._attempt(state.persist)
+            self.app.sync_controller()
         elif kind == 'pause_cycle' and command[1] == 'start_in':
             choices = START_IN
             self.app._attempt(lambda: self.app.settings.set_start_in(

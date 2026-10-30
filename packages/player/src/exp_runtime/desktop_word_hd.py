@@ -677,7 +677,19 @@ class HdWordRenderer:
                           symbols=game.symbols)
         if outgoing or game.phase == 4:
             return
+        self.cursor_outline(p)
         self.arrows(game, p)
+
+    cursor = None                   # the cell the keys (or a controller) have highlighted: Desktop.grid_cursor
+
+    def cursor_outline(self, p):
+        """The keys' highlighted cell (this player's: a finger needs none), outlined on its top face, the face a touch
+        is tested against (hit)."""
+        if self.cursor is None or not 0 <= self.cursor < p.width * p.height:
+            return
+        x, y = self.cursor % p.width * (CUBE + GAP), self.cursor // p.width * (CUBE + GAP)
+        quad = [project(p.width, p.height, x + dx, y + dy, 0) for dx, dy in ((0, 0), (CUBE, 0), (CUBE, CUBE), (0, CUBE))]
+        pygame.draw.polygon(self.canvas, (255, 255, 255), quad, max(2, round(self.canvas.get_width() / 256)))
 
     # -- arrows ---------------------------------------------------------
     DIRECTIONS = ((1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1))

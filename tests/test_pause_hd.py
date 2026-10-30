@@ -277,8 +277,8 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(menu.key(pygame.K_RETURN), ('pause_open', 'options'))
         state.screen = 'options:sound'
         self.commands()
-        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing here is highlighted yet
-        menu.key(pygame.K_DOWN)
+        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing highlighted: it shows the first
+        self.assertEqual(state.focus, ('pause_toggle', 'music'))
         self.assertEqual(menu.key(pygame.K_SPACE), ('pause_toggle', 'music'))
         menu.key(pygame.K_DOWN)
         self.assertEqual(state.focus[:2], ('pause_slider', 'music'))

@@ -196,6 +196,16 @@ class Application:
 
     shell_prompt = ()
 
+    def sync_controller(self):
+        """The controllers' confirm button (gamepad.Gamepads.confirm) as the shared preference has it: the open
+        library's, else the app's settings (the game chooser)."""
+        pads = pygame.gamepads()
+        if pads is None:
+            return
+        confirm = (self.state.controller_confirm if self.state is not None
+                   else self.settings.preferences.get('controller_confirm'))
+        pads.confirm = confirm if shared_preference('controller_confirm', confirm) else 'south'
+
     def seed_shared_preferences(self):
         """The shared preferences (menu.SHARED_PREFERENCES) start as the most recently saved game's player.json had them:
         before both games shared them, each library kept its own."""
@@ -406,6 +416,7 @@ class Application:
         self.selected_game = library.game_id
         set_window_icon(library)
         self.state, self.renderer, self.game = state, renderer, None
+        self.sync_controller()
         self.processes[process_key] = state.process
         if 'SHS_HD_ART' not in os.environ:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
@@ -988,6 +999,7 @@ class Application:
         self.game.skip_ad_intros = self.state.skip_ad_intros
         self.game.autoplay = self.state.autoplay
         self.game.disable_choice_timer = self.state.disable_choice_timer
+        self.game.controller_confirm = self.state.controller_confirm
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.hires_portraits = self.state.hires_portraits
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -1077,6 +1089,7 @@ class Application:
     def save_game_settings(self):
         """The in-game pause menu's music / sound switches are the same host options as the main menu's."""
         self.state.music, self.state.sound = self.game.music_enabled, self.game.sound_enabled
+        self.state.controller_confirm = self.game.controller_confirm
         self.state.vibration = self.game.vibration_enabled
         self.state.device_vibration = self.game.device_vibration_enabled
         self.state.choice_hints = self.game.choice_hints
@@ -1834,6 +1847,7 @@ class Application:
         clock = pygame.time.Clock()
         running = True
         gamepads = Gamepads.start()
+        self.sync_controller()
         try:
             while running:
                 elapsed = clock.tick(60)

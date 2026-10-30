@@ -31,6 +31,15 @@ def vibrate(duration_ms=1000):
         _gamepads.vibrate()
 
 
+def gamepads():
+    """The desktop's controllers (gamepad.Gamepads) while its run loop has them, else None."""
+    return _gamepads
+
+
+def controller_connected():
+    return bool(_gamepads and _gamepads.connected)
+
+
 def install_gamepads(gamepads):
     global _gamepads
     previous, _gamepads = _gamepads, gamepads

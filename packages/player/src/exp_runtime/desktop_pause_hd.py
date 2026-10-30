@@ -73,7 +73,8 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # player's own: SHS HD's Options is one page). A row shows when its setting is offered (`layout`'s `settings`), so a
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
-OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
+OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 'Controller'), ('extras', 'Extras'),
+                     ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'hires_portraits', 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
@@ -92,6 +93,10 @@ UNLOCK_WARP_LABEL = 'Unlock Warping'
 # Sound's last row on the main menu (owner, 2026-10-29): launch without asking "Play with sound?" (the music and sound
 # switches as set).
 SKIP_SOUND_PROMPT_LABEL = 'Skip Sound Prompt'
+# Controller (owner, 2026-10-29), offered while a controller is connected: which face button confirms, the bottom one
+# or the right one (a Nintendo layout; the other face buttons swap with it). Football's plays stay by position.
+CONFIRM_BUTTON_LABEL = 'Confirm Button'
+CONFIRM_NAMES = {'south': 'Bottom', 'east': 'Right'}
 DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another Library'))
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
@@ -629,6 +634,8 @@ class HdPauseMenu:
             state.focus = step_focus(targets, focus, focus_step(key))
         elif key in KEYS_ACTIVATE and focus is not None and focus[0] != 'pause_slider':
             return focus
+        elif key in KEYS_ACTIVATE and focus is None and targets:
+            state.focus = targets[0]        # nothing highlighted: Enter (a controller's confirm) shows where it is
         return None
 
     SWITCH_LABELS = SWITCH_LABELS        # a game's own wording (desktop_cod_pause.CodPauseMenu)
@@ -650,6 +657,8 @@ class HdPauseMenu:
             if 'start_in' in settings:
                 rows.append(('cycle', START_IN_LABEL, 'start_in'))
             return rows
+        if category == 'controller':
+            return [('cycle', CONFIRM_BUTTON_LABEL, 'controller_confirm')] if 'controller_confirm' in settings else []
         if category == 'extras':
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
             if 'unlock_warp' in settings:

@@ -98,6 +98,143 @@ class GamepadTests(unittest.TestCase):
         ui._sync_vibration()
         self.pad.rumble.assert_not_called()                  # General's Vibration off: no rumble
 
+    def presses(self, *events, now=0):
+        with patch('pygame.event.get', return_value=[self.pygame.event.Event(t, **a) for t, a in events]):
+            return [(e.controller, e.key) for e in self.pads.events(now)]
+
+    def test_each_press_names_its_button_and_a_nintendo_layout_swaps_what_the_face_buttons_mean(self):
+        """Buttons by position (a Switch Pro's B is `south`); confirm is the bottom button, or the right one."""
+        pygame, faces = self.pygame, ('A', 'B', 'X', 'Y')
+        self.assertEqual(self.presses(*(self.button(name) for name in faces)),
+                         [('south', pygame.K_RETURN), ('east', pygame.K_ESCAPE), ('west', pygame.K_BACKSPACE),
+                          ('north', pygame.K_i)])
+        self.pads.confirm = 'east'
+        self.assertEqual(self.presses(*(self.button(name) for name in faces)),
+                         [('south', pygame.K_ESCAPE), ('east', pygame.K_RETURN), ('west', pygame.K_i),
+                          ('north', pygame.K_BACKSPACE)])
+        self.assertEqual(self.presses(self.button('RIGHTSTICK'), self.button('START')),
+                         [('r3', pygame.K_UNKNOWN), ('start', pygame.K_ESCAPE)])
+
+    def test_a_trigger_presses_once_past_half_its_travel(self):
+        pygame, full = self.pygame, self.gamepad.AXIS_RANGE
+
+        def trigger(value):
+            return (pygame.CONTROLLERAXISMOTION, dict(axis=pygame.CONTROLLER_AXIS_TRIGGERLEFT, value=value,
+                                                      instance_id=7))
+        self.assertEqual(self.presses(trigger(round(.4 * full))), [])
+        self.assertEqual(self.presses(trigger(round(.6 * full)), trigger(full)), [('lt', pygame.K_UNKNOWN)])
+        self.assertEqual(self.presses(trigger(round(.2 * full)), trigger(round(.7 * full))), [('lt', pygame.K_UNKNOWN)])
+
+
+class ControllerScreenTests(unittest.TestCase):
+    """Football's plays by position, the word grid's highlighted cell, notices' buttons by key."""
+
+    def desktop(self, pending, **fields):
+        from types import SimpleNamespace
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.press, ui.gear_pointer_down, ui._sync_text_input = Mock(), False, Mock()
+        ui.fade, ui.menu_open, ui.error, ui.host_prompt, ui.notice_stack = None, False, None, None, None
+        ui.pause_closing, ui._tree_zoom = False, SimpleNamespace(tab=None, showing=False)
+        ui.session = SimpleNamespace(pending=SimpleNamespace(name=pending), transitioning=False,
+                                     engine=SimpleNamespace(**fields), grid_pointer=Mock())
+        ui.command, ui._attempt = Mock(), (lambda operation: operation())
+        return ui
+
+    def key(self, ui, key, button=None):
+        from exp_runtime.gamepad import key_event
+        return ui.handle_event(key_event(key, button))
+
+    def test_football_takes_its_nine_plays_by_position_and_from_the_number_pad(self):
+        import pygame
+        ui = self.desktop('football', word_grid=None)
+        for button, slot in (('lt', 0), ('north', 1), ('rt', 2), ('west', 3), ('r3', 4), ('east', 5), ('lb', 6),
+                             ('south', 7), ('rb', 8)):
+            self.key(ui, pygame.K_UNKNOWN, button)
+            self.assertEqual(ui.command.call_args.args[0], ('choose', slot))
+        self.key(ui, pygame.K_ESCAPE, 'east')               # the right button is a play here, not the pause menu
+        self.assertEqual(ui.command.call_args.args[0], ('choose', 5))
+        self.key(ui, pygame.K_KP7)
+        self.assertEqual(ui.command.call_args.args[0], ('choose', 0))
+        self.key(ui, pygame.K_KP3)
+        self.assertEqual(ui.command.call_args.args[0], ('choose', 8))
+        self.key(ui, pygame.K_ESCAPE, 'start')              # Start still pauses
+        self.assertEqual(ui.command.call_args.args[0], ('menu',))
+
+    def test_the_word_grid_draws_a_word_from_a_highlighted_cell(self):
+        import pygame
+        from types import SimpleNamespace
+        game = SimpleNamespace(problem=SimpleNamespace(width=3), board=list('ABCDEFGHI'), selection=[])
+        ui = self.desktop('word_grid', word_grid=game)
+        grid = ui.session.grid_pointer
+        self.key(ui, pygame.K_RETURN, 'south')                # the first key shows the highlight, in the middle
+        self.assertEqual(ui.grid_cursor, 4)
+        grid.assert_not_called()
+        self.key(ui, pygame.K_UP, 'up')
+        self.key(ui, pygame.K_LEFT, 'left')
+        self.key(ui, pygame.K_LEFT, 'left')                   # held at the edge
+        self.assertEqual(ui.grid_cursor, 0)
+        self.key(ui, pygame.K_RETURN, 'south')
+        grid.assert_called_with('down', 0)
+        game.selection = [0]
+        self.key(ui, pygame.K_RIGHT, 'right')
+        self.key(ui, pygame.K_RETURN, 'south')
+        grid.assert_called_with('move', 1)
+        self.key(ui, pygame.K_BACKSPACE, 'west')              # let go, as lifting the finger
+        grid.assert_called_with('up')
+
+    def test_the_highlighted_cell_is_outlined_on_the_face_a_touch_is_tested_on(self):
+        import pygame
+        from types import SimpleNamespace
+        from exp_runtime.desktop_word_hd import HdWordRenderer
+        pygame.init()
+        self.addCleanup(pygame.quit)
+        renderer = HdWordRenderer.__new__(HdWordRenderer)
+        renderer.canvas = pygame.Surface((768, 1024), pygame.SRCALPHA)
+        game = SimpleNamespace(problem=SimpleNamespace(width=3, height=3), selection=[])
+        renderer.cursor = None
+        renderer.cursor_outline(game.problem)
+        self.assertIsNone(renderer.canvas.get_bounding_rect().width or None)       # nothing without a highlight
+        renderer.cursor = 4
+        renderer.cursor_outline(game.problem)
+        outline = renderer.canvas.get_bounding_rect()
+        self.assertTrue(outline.width and outline.height)
+        centre = outline.center
+        self.assertEqual(renderer.hit((centre[0], centre[1] + 1), game), 4)          # around the middle cell
+
+    def test_a_notice_takes_enter_on_its_only_button_and_the_arrows_on_several(self):
+        import pygame
+        from types import SimpleNamespace
+        from exp_runtime.desktop_pause import PAUSE_OPEN_MS
+        ui = self.desktop('dialogue')
+        ui.notice_stack = SimpleNamespace(stack=[28], press=Mock(), pop=Mock())
+        ui.notice_data = SimpleNamespace(action=lambda number: ('action', number))
+        ui.notice_windows = SimpleNamespace(hits=[(pygame.Rect(0, 0, 1, 1), ('item', 80))])
+        ui.notice_ms = PAUSE_OPEN_MS
+        self.key(ui, pygame.K_RETURN, 'south')
+        ui.notice_stack.press.assert_called_once_with(('action', 80))
+        ui.notice_windows.hits = [(pygame.Rect(0, 0, 1, 1), ('item', 17)), (pygame.Rect(0, 0, 1, 1), ('item', 18))]
+        ui.notice_stack.press.reset_mock()
+        self.key(ui, pygame.K_RETURN, 'south')                # two buttons: the first is highlighted
+        self.assertEqual(ui.notice_focus, ('item', 17))
+        self.key(ui, pygame.K_RIGHT, 'right')
+        self.key(ui, pygame.K_RETURN, 'south')
+        ui.notice_stack.press.assert_called_once_with(('action', 18))
+
+    def test_the_controller_page_shows_while_a_controller_is_connected(self):
+        from exp_runtime import gamepad, graphics
+        from exp_runtime.desktop_pause_hd import HdPauseMenu
+        menu = HdPauseMenu.__new__(HdPauseMenu)
+        self.assertEqual(menu.option_rows('controller', {}, []), [])
+        self.assertEqual(menu.option_rows('controller', {'controller_confirm': 'Bottom'}, []),
+                         [('cycle', 'Confirm Button', 'controller_confirm')])
+        pads = gamepad.Gamepads(Mock())
+        previous = graphics.install_gamepads(pads)
+        self.addCleanup(graphics.install_gamepads, previous)
+        self.assertFalse(graphics.controller_connected())
+        pads.pads[1] = Mock()
+        self.assertTrue(graphics.controller_connected())
+
 
 if __name__ == '__main__':
     unittest.main()

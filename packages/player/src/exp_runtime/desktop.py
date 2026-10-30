@@ -31,7 +31,7 @@ except ImportError:
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, focus_step
+from .desktop_pause_hd import CONFIRM_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import has_links, play_option
@@ -144,6 +144,15 @@ class _UntimedChoice:
         return getattr(self.real_session, name)
 
 
+# Football's nine plays (football.py SLOTS: three rows of three, top left first) by controller position (owner,
+# 2026-10-29): the face buttons are the edges' middles, the triggers the top corners, the bumpers the bottom corners
+# and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
+# reading order (1 is the top left).
+FOOTBALL_BUTTONS = {'lt': 0, 'north': 1, 'rt': 2, 'west': 3, 'r3': 4, 'east': 5, 'lb': 6, 'south': 7, 'rb': 8}
+FOOTBALL_KEYPAD = {pygame.K_KP7: 0, pygame.K_KP8: 1, pygame.K_KP9: 2, pygame.K_KP4: 3, pygame.K_KP5: 4,
+                   pygame.K_KP6: 5, pygame.K_KP1: 6, pygame.K_KP2: 7, pygame.K_KP3: 8}
+
+
 class Desktop:
     story_layer = None
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
@@ -188,6 +197,7 @@ class Desktop:
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
     warp_unlocked = True
+    controller_confirm = 'south'    # a controller's confirm button (Options' Controller page; the app's MenuState)
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
@@ -1300,8 +1310,12 @@ class Desktop:
         return self.picker_hd if self.picker_hd.available() else self.picker_renderer
 
     def _word_grid(self):
-        """HD's word game art when an HD app bundle is imported, else the Android renderer."""
-        return self.word_hd if self.word_hd is not None and self.word_hd.available() else self.grid_renderer
+        """HD's word game art when an HD app bundle is imported, else the Android renderer (with the keys' highlighted
+        cell, grid_cursor)."""
+        renderer = self.word_hd if self.word_hd is not None and self.word_hd.available() else self.grid_renderer
+        if renderer is not None:
+            renderer.cursor = self.grid_cursor
+        return renderer
 
     _backdrop = (None, None)        # (window size, surface) of the last window backdrop
 
@@ -1969,6 +1983,8 @@ class Desktop:
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
                     **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
+                    **({'controller_confirm': CONFIRM_NAMES[self.controller_confirm]}
+                       if pygame.controller_connected() else {}),
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames,
@@ -1998,7 +2014,7 @@ class Desktop:
             # (`notifyNewMenu`'s 0.4 s zoom; the owner, on the device).
             self.notice_shown, self.notice_ms = current, 0
         layer = pygame.Surface((HD_FRAME[0] * HD_S, HD_FRAME[1] * HD_S), pygame.SRCALPHA)
-        self.notice_windows.draw(layer, current, pressed=self.notice_pressed)
+        self.notice_windows.draw(layer, current, pressed=self.notice_pressed or self.notice_focus)
         scale = pause_scale(self.notice_ms)
         size = tuple(max(1, round(length * scale)) for length in area.size)
         self.window.blit(pygame.transform.smoothscale(layer, size),
@@ -2094,6 +2110,15 @@ class Desktop:
         if kind == 'pause_back':
             self.pause_hd.back()
             self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'controller_confirm':
+            # Options' Controller page: the confirm button, bottom or right (gamepad.py); the app keeps it.
+            self.controller_confirm = 'east' if self.controller_confirm == 'south' else 'south'
+            pads = pygame.gamepads()
+            if pads is not None:
+                pads.confirm = self.controller_confirm
+            if self.on_settings:
+                self.on_settings()
             return
         if kind == 'pause_link':
             # A link in a help page's text (an About page's override): behind the game's "Exit Game?" prompt, as the
@@ -2303,6 +2328,8 @@ class Desktop:
             # pause menu's own Escape handling right after this.
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self.notice_stack.pop()
+            elif event.type == pygame.KEYDOWN:
+                self._notice_key(event.key)
             else:
                 self._notice_pointer(event)
             return True
@@ -2311,6 +2338,8 @@ class Desktop:
                 pygame.TEXTINPUT):
             return True                         # the menu is zooming out after Resume: input waits for the story
         if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
+            return True
+        if event.type == pygame.KEYDOWN and (self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2412,6 +2441,7 @@ class Desktop:
             else:
                 phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEMOTION: 'move',
                          pygame.MOUSEBUTTONUP: 'up'}[event.type]
+                self.grid_cursor = None
                 renderer = self.word_hd if hd else self.grid_renderer
                 index = renderer.hit((x, y), self.session.engine.word_grid)
                 self._attempt(lambda: self.session.grid_pointer(phase, index))
@@ -2641,6 +2671,77 @@ class Desktop:
         self.notice_stack.clear()
         if number == self.exit_action and self.wall_link:
             self._open_link(self.wall_link)
+
+    notice_focus = None             # the notice window's button the arrow keys (or a controller) have highlighted
+
+    def _notice_key(self, key):
+        """Keys while a notice window is open: the arrows highlight its buttons and Enter presses the highlighted one;
+        with none highlighted, Enter presses a window's only button, or highlights the first of several (Escape steps
+        back: handle_event)."""
+        if self.notice_ms < PAUSE_OPEN_MS:
+            return
+        targets = [command for _, command in self.notice_windows.hits]
+        focus = self.notice_focus if self.notice_focus in targets else None
+        if focus_step(key):
+            self.notice_focus = step_focus(targets, focus, focus_step(key))
+        elif key in KEYS_ACTIVATE and targets:
+            if focus is None and len(targets) > 1:
+                self.notice_focus = targets[0]
+                return
+            self.notice_focus = None
+            self.notice_stack.press(self.notice_data.action((focus or targets[0])[1]))
+
+    def _football_input(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'football' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _football_key(self, event):
+        """A play picked by its position (FOOTBALL_BUTTONS, FOOTBALL_KEYPAD); True when the key was one."""
+        if not self._football_input():
+            return False
+        slot = FOOTBALL_BUTTONS.get(getattr(event, 'controller', None), FOOTBALL_KEYPAD.get(event.key))
+        if slot is None:
+            return False
+        self.command(('choose', slot))
+        return True
+
+    grid_cursor = None              # the word grid's cell the arrow keys (or a controller) have highlighted
+
+    def _grid_key(self, event):
+        """The word grid by keys (this player's; a finger draws the word natively): the arrows move a highlighted
+        cell, Enter adds it to the word (starting one; only a neighbour of the last letter joins, as under a finger),
+        Backspace lets the word go as lifting the finger would (its error sound when it was no word). The first key
+        only shows the highlight. True when the key was one of these."""
+        action = self.session.pending
+        game = self.session.engine.word_grid
+        if (action is None or action.name != 'word_grid' or game is None or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        key, width = event.key, game.problem.width
+        cells = len(game.board)
+        moves = {pygame.K_LEFT: (-1, 0), pygame.K_RIGHT: (1, 0), pygame.K_UP: (0, -1), pygame.K_DOWN: (0, 1)}
+        if key not in moves and key not in KEYS_ACTIVATE and key != pygame.K_BACKSPACE:
+            return False
+        if self.grid_cursor is None or not 0 <= self.grid_cursor < cells:
+            if key == pygame.K_BACKSPACE and game.selection:
+                self._attempt(lambda: self.session.grid_pointer('up'))
+            else:
+                self.grid_cursor = cells // 2 if not game.selection else game.selection[-1]
+            return True
+        if key in moves:
+            dx, dy = moves[key]
+            col, row = self.grid_cursor % width, self.grid_cursor // width
+            col = min(width - 1, max(0, col + dx))
+            row = min(cells // width - 1, max(0, row + dy))
+            self.grid_cursor = row * width + col
+        elif key == pygame.K_BACKSPACE:
+            if game.selection:
+                self._attempt(lambda: self.session.grid_pointer('up'))
+        else:
+            cursor = self.grid_cursor
+            self._attempt(lambda: self.session.grid_pointer('move' if game.selection else 'down', cursor))
+        return True
 
     def _notice_pointer(self, event):
         """Pointer input while a native notice/confirm window is open (same hit-list convention as
