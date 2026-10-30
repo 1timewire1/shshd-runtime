@@ -77,6 +77,37 @@ class BundleTests(unittest.TestCase):
         self.assertEqual([p.name for p in (other / 'saves').iterdir()], ['c.shs-auto.json'])
         self.assertEqual((other / 'content' / 'a.exp').read_bytes(), b'episode')
 
+    def test_a_merge_replaces_only_the_episodes_it_holds_and_a_backup_can_take_just_those(self):
+        from exp_runtime.progress_bundle import bundle_options, merge_bundle, overwritten
+        sender = library_folder(self.root / 'sender', {'a.shs-auto.json': 'A new'}, tree=False)
+        (sender / 'dtview').mkdir()
+        (sender / 'dtview' / 'k.json').write_text('new tree')
+        (sender / 'dtsaves' / 'k').mkdir(parents=True)
+        (sender / 'dtsaves' / 'k' / '9.json.gz').write_bytes(b'new scene')
+        sent = self.root / 'sent.zip'
+        write_bundle(sender, 'shs', {'names': {'$USR': 'Zoe'}}, {}, sent, options={'autoplay': True})
+        receiver = library_folder(self.root / 'receiver', {'a.shs-auto.json': 'A old', 'a.shs-save.json': 'A slot',
+                                                           'c.shs-auto.json': 'C'})
+        (receiver / 'dtview').mkdir()
+        (receiver / 'dtview' / 'k.json').write_text('old tree')
+        # What the merge would replace, backed up first (owner: the sender's "back up the receiver" switch).
+        backup = self.root / 'before.zip'
+        write_bundle(receiver, 'shs', {}, {}, backup, keep=overwritten(sent))
+        with ZipFile(backup) as bundle:
+            self.assertEqual(sorted(n for n in bundle.namelist() if '/' in n),
+                             ['dtsaves/k/2.json.gz', 'dtview/k.json', 'saves/a.shs-auto.json', 'saves/a.shs-save.json'])
+        manifest, player = merge_bundle(receiver, sent, 'shs')
+        self.assertEqual(player, {'names': {'$USR': 'Zoe'}})
+        self.assertEqual(bundle_options(sent), {'autoplay': True})
+        self.assertIsNone(bundle_options(backup))
+        saves = {p.name: p.read_text() for p in (receiver / 'saves').iterdir()}
+        self.assertEqual(saves, {'a.shs-auto.json': 'A new', 'c.shs-auto.json': 'C'})   # a's slot went with its saves
+        self.assertEqual((receiver / 'dtview' / 'k.json').read_text(), 'new tree')
+        self.assertEqual(sorted(p.name for p in (receiver / 'dtsaves' / 'k').iterdir()), ['9.json.gz'])
+        self.assertEqual((receiver / 'dtview_tree.json').read_text(), '{"tree": 1}')    # Football Star's: not sent
+        self.assertTrue((receiver / 'dtsaves' / '1.json.gz').exists())
+        self.assertEqual([p.name for p in receiver.iterdir() if p.name.startswith('.')], [])
+
     def test_a_swap_that_fails_puts_the_librarys_own_progress_back(self):
         source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A'})
         target = self.root / 'one.zip'
