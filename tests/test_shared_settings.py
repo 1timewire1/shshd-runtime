@@ -125,7 +125,7 @@ class UnlockWarpingTests(unittest.TestCase):
         self.assertTrue(app.warp_notice_due)
         queued = []
         app.shell = SimpleNamespace(stage='end', overlay_active=False, pause_open=False, fading=False,
-                                    stack=SimpleNamespace(queue=queued.append))
+                                    open_window=queued.append)
         app.screen = 'main'
         app.show_warp_notice()
         self.assertEqual(queued, [])                                       # the end menu is still up
