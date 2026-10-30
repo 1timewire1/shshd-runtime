@@ -2204,8 +2204,8 @@ class Application:
     def tick(self, elapsed):
         if getattr(self, 'warp_notice_due', False):
             self.show_warp_notice()
-        if getattr(self, 'sync', None) is not None and self.shell is not None:
-            self.sync.tick()
+        if getattr(self, 'sync', None) is not None:
+            self.sync.tick()                # in a game's menus or the chooser's Options
         if self.job and self.job.done():
             job, kind = self.job, self.job_kind
             self.job = self.job_kind = None

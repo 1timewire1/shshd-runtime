@@ -890,23 +890,29 @@ CoD's colours (`cod/hd_art.positional_frames`).
       with the backup's. The bundle is checked whole before anything changes: its game, and every file's path. A
       swap that fails puts the library's own progress back.
 
-      **Sync Devices** (owner, 2026-10-30) sends one game's progress to another device on the same network
-      (`lan_sync.py` moves the files, `sync_flow.py` is the app's side).
+      **Sync Devices** (owner, 2026-10-30) sends a game's progress to another device on the same network
+      (`lan_sync.py` moves the files, `sync_flow.py` is the app's side). In a game it sends that game. From the game
+      chooser's Options it sends both games, or the one chosen on the send page's **Games** row.
       - **Send to Another Device:** switches for Saved Games & Trees, Names, Options and Episodes, plus Back Up
-        Receiver First. Then **Find Receiver** lists the receivers heard on the network for this game.
+        Receiver First. Then **Find Receiver** lists the receivers heard on the network.
       - **Receive from Another Device:** a page showing this device's name and address while it waits.
       - **Pairing:** once connected, each device asks its person "Send to X?" / "Receive from X?" with the same
         four-digit code on both screens. A no on either side ends both at once.
-      - **What goes:** the episodes the receiver lacks, and one progress bundle. The receiver merges the bundle: each
+      - **What goes:** for each sent game the receiver has a library of (open or not), the episodes it lacks and a
+        progress bundle. The receiver merges the bundle: each
         episode in it replaces that episode's saves and tree there, and every other episode's progress stays. The
         sender's names win, and the receiver's other names stay. Options are applied, except those that stay per
         device (`DEVICE_OPTIONS`: the vibration switches and the controller settings).
       - **Back Up Receiver First:** what would be replaced goes first into the receiver's backups folder, as a
         "before sync" backup that holds the options too. Restore Progress puts options back when a backup has them.
+      - **A missing game:** a sent game the receiver has no library of is named after the sync, with the size of the
+        sender's library of it, and both people are asked again. Yes sends that whole library (its
+        `LIBRARY_PARTS`), installed where the game's library belongs; no keeps what was already synced.
       - **Result:** both devices show the result, or the short reason it failed.
 
       Discovery is a UDP beacon from the receiver (port 47915), and the transfer runs over TCP (port 47914, or any
-      free port).
+      free port). Protocol 2 (both games, whole libraries) does not talk to builds of protocol 1: each side says the
+      versions differ.
 
       **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
       2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add

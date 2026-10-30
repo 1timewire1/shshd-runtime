@@ -7,17 +7,25 @@ with a small UDP beacon to the network's broadcast addresses every BEACON_S. The
 DISCOVERY_PORT (an Android host holds a multicast lock meanwhile), or is given the receiver's address by hand.
 
 **A connection** carries frames: a 4-byte big-endian length, a JSON header of that length, then `size` bytes of
-payload when the header names one. The conversation:
+payload when the header names one. The conversation (a sync is of one game or of both, owner 2026-10-30):
 
-    sender   -> hello   {protocol, app, name, game, categories, backup, nonce}
-    receiver -> hello   {protocol, app, name, nonce, error?}   an error ends it (this device cannot take that game)
+    sender   -> hello   {protocol, app, name, games, categories, backup, nonce}
+    receiver -> hello   {protocol, app, name, nonce, games, missing, error?}
+                        games: those it takes (it has their library); missing: those it lacks; an error ends it
     both     -> confirm {ok}                                   each person checks the other's name and the code
-    sender   -> offer   {episodes}  receiver -> want {episodes}  (only when episodes are sent)
+    sender   -> offer   {episodes: {game: [id]}}  receiver -> want {episodes: {game: [id]}}  (episodes sent)
     sender   -> item    {kind, name, index, count, size} + payload, for each item; then end {}
+                        (names start with their game: "shs/progress.zip", "cod/3/Volume_8.exp")
+    receiver -> result  {ok, message, missing}
+  and when the receiver lacks a game's library, that library can follow whole (both people asked again):
+    sender   -> full    {games, size}
+    both     -> confirm {ok}
+    sender   -> item    {kind: 'library', name: '<game>/<path in the library>'} + payload...; end {}
     receiver -> result  {ok, message}
 
 `code` (four digits from both nonces) is shown on both screens, so each person can see they paired the right devices.
 """
+import re
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -30,7 +38,7 @@ import struct
 import threading
 import time
 
-PROTOCOL = 1
+PROTOCOL = 2                    # 2: a sync of both games, and a missing library sent whole
 APP = 'shshd-sync'
 PORT = 47914                    # the receiver's TCP port, when it is free (the address typed by hand needs no port)
 DISCOVERY_PORT = 47915          # the sender's UDP port, for receivers' beacons
@@ -314,10 +322,13 @@ class Session:
                 except OSError:
                     pass
 
-    def _confirm(self, channel):
-        """Both people answer; a no on either side ends it. While this person thinks, the other side's answer (or its
-        cancel) is read as soon as it comes, so a no there closes this side's question at once."""
-        self.status = 'confirm'
+    def _confirm(self, channel, status='confirm', *, strict=True):
+        """Both people answer (`status` while they think: 'confirm', or 'confirm_full' for a whole library); a no on
+        either side ends it (`strict`), else only returns False. While this person thinks, the other side's answer (or
+        its cancel) is read as soon as it comes, so a no there closes this side's question at once."""
+        self._answer = None
+        self._answered.clear()
+        self.status = status
         channel.sock.settimeout(CONFIRM_S)
         deadline, peer = time.monotonic() + CONFIRM_S, None
         while not self._answered.wait(0.2):
@@ -326,16 +337,30 @@ class Session:
             if peer is None and select.select([channel.sock], [], [], 0)[0]:
                 peer = channel.expect('confirm')
                 if not peer.get('ok'):
-                    raise SyncError(DECLINED)
+                    if strict:
+                        raise SyncError(DECLINED)
+                    channel.send(dict(type='confirm', ok=False))    # the other side waits for this side's answer
+                    self.status = 'transfer'            # (this side's question closes: the other said no)
+                    return False
         if self._cancelled.is_set():
             raise SyncError(CANCELLED)
         channel.send(dict(type='confirm', ok=self._answer))
         if not self._answer:
-            raise SyncError(CANCELLED)
-        if peer is None and not channel.expect('confirm').get('ok'):
-            raise SyncError(DECLINED)
+            if strict:
+                raise SyncError(CANCELLED)
+            if peer is None:
+                channel.expect('confirm')               # the other's answer, whatever it is
+            self.status = 'transfer'
+            return False
+        if peer is None:
+            peer = channel.expect('confirm')
         channel.sock.settimeout(IDLE_S)
         self.status = 'transfer'
+        if not peer.get('ok'):
+            if strict:
+                raise SyncError(DECLINED)
+            return False
+        return True
 
     def _hello(self, header):
         if header.get('protocol') != PROTOCOL:
@@ -344,60 +369,89 @@ class Session:
 
 
 class SendSession(Session):
-    """The sender. `provider` supplies what goes:
-    - `offer()`: the episode ids it could send (None without the episodes category);
-    - `items(wanted)`: after both confirmed, [(kind, name, payload bytes or Path)], given the episodes the receiver
-      wants. Called on this session's thread."""
+    """The sender. `provider` supplies what goes (called on this session's thread):
+    - `offer(games)`: {game: the episode ids it could send} (only with the episodes category);
+    - `items(games, wanted)`: after both confirmed, [(kind, name, payload bytes or Path)] for `games` (those the
+      receiver takes), given {game: the episodes it wants}; each name starts with its game;
+    - `library_size(game)` and `library_items(game)` ([(path in the library, file)]): a whole library, for a
+      receiver that lacks it."""
 
-    def __init__(self, address, port, *, name, app_version, game, categories, backup, provider):
+    def __init__(self, address, port, *, name, app_version, games, categories, backup, provider):
         super().__init__(name, app_version)
         self.address, self.port = address, port
-        self.game, self.categories, self.backup = game, list(categories), bool(backup)
+        self.games, self.categories, self.backup = list(games), list(categories), bool(backup)
         self.provider = provider
+        self.full = None                # (games, bytes) of the whole libraries offered after the sync
 
     def _run(self):
         sock = socket.create_connection((self.address, self.port), timeout=CONNECT_S)
         sock.settimeout(IDLE_S)
         channel = self.channel = Channel(sock)
-        channel.send(dict(type='hello', protocol=PROTOCOL, app=self.app_version, name=self.name, game=self.game,
+        channel.send(dict(type='hello', protocol=PROTOCOL, app=self.app_version, name=self.name, games=self.games,
                           categories=self.categories, backup=self.backup, nonce=self.nonce))
         reply = channel.expect('hello')
         self._hello(reply)
         if reply.get('error'):
             raise SyncError(str(reply['error']))
+        taken = [game for game in reply.get('games', ()) if game in self.games]
         self.code = pairing_code(self.nonce, reply.get('nonce', ''))
         self._confirm(channel)
-        wanted = None
-        offer = self.provider.offer() if 'episodes' in self.categories else None
-        if offer is not None:
-            channel.send(dict(type='offer', episodes=list(offer)))
-            wanted = [key for key in channel.expect('want').get('episodes', []) if key in set(offer)]
+        wanted = {}
+        if 'episodes' in self.categories and taken:
+            offer = self.provider.offer(taken)
+            channel.send(dict(type='offer', episodes=offer))
+            asked = channel.expect('want').get('episodes', {})
+            wanted = {game: [key for key in asked.get(game, ()) if key in set(offer.get(game, ()))] for game in taken}
         self.progress = 'Packing...'
-        items = self.provider.items(wanted)
+        self.send_items(channel, self.provider.items(taken, wanted) if taken else [])
+        result = self.result(channel)
+        message = str(result.get('message', ''))
+        missing = [game for game in result.get('missing', ()) if game in self.games]
+        if not missing:
+            return message
+        # The receiver lacks these games' libraries: offered whole, both people asked again.
+        size = sum(self.provider.library_size(game) for game in missing)
+        self.full = (missing, size)
+        channel.send(dict(type='full', games=missing, size=size))
+        if not self._confirm(channel, 'confirm_full', strict=False):
+            return message
+        self.send_items(channel, [('library', f'{game}/{path}', file) for game in missing
+                                  for path, file in self.provider.library_items(game)])
+        return ' '.join(part for part in (message, str(self.result(channel).get('message', ''))) if part)
+
+    def send_items(self, channel, items):
         for index, (kind, name, payload) in enumerate(items):
-            label = f'Sending {index + 1} of {len(items)}'
-            self.progress = label
+            self.progress = f'Sending {index + 1} of {len(items)}'
             channel.send(dict(type='item', kind=kind, name=name, index=index, count=len(items)), payload)
         channel.send(dict(type='end'))
+
+    def result(self, channel):
         self.progress = 'Waiting for the other device...'
         channel.sock.settimeout(None)               # the receiver applies everything before it answers
         result = channel.expect('result')
+        channel.sock.settimeout(IDLE_S)
         if not result.get('ok'):
             raise SyncError(str(result.get('message') or LOST))
-        return str(result.get('message', ''))
+        return result
+
+
+GAME = re.compile(r'[a-z]+')
 
 
 class ReceiveSession(Session):
-    """The receiver's side of one connection. `host` decides:
-    - `check(hello)`: None, or the reason this device cannot take the sync (no library of that game);
-    - `want(ids)`: which of the offered episodes it lacks;
-    - `apply(hello, stage)`: everything has arrived in `stage` (items by kind: progress.zip, options.json,
-      episodes/<name>); returns the success message. Called on this session's thread."""
+    """The receiver's side of one connection. `host` decides (called on this session's thread):
+    - `check(hello)`: None, or the reason this device cannot take the sync at all;
+    - `games(hello)`: (the offered games it takes, those whose library it lacks);
+    - `want(game, ids)`: which of a game's offered episodes it lacks;
+    - `apply(hello, stage, games)`: everything has arrived in `stage` (each game's: <game>/progress.zip,
+      <game>/episodes/<n>/<file>.exp); returns the success message;
+    - `install(game, folder)`: a whole library arrived in `folder` (its files at their paths); returns the message."""
 
     def __init__(self, sock, stage, *, name, app_version, host):
         super().__init__(name, app_version)
         self.sock, self.stage, self.host = sock, Path(stage), host
         self.hello = None
+        self.full = None                # (games, bytes) of the whole libraries offered after the sync
 
     def _run(self):
         self.sock.settimeout(IDLE_S)
@@ -408,52 +462,81 @@ class ReceiveSession(Session):
                               nonce=self.nonce, error=VERSION))
             raise SyncError(VERSION)
         self._hello(hello)
+        offered = [game for game in hello.get('games', ()) if isinstance(game, str) and GAME.fullmatch(game)]
         error = self.host.check(hello)
+        taken, missing = self.host.games(hello) if not error else ([], [])
+        taken = [game for game in taken if game in offered]
+        missing = [game for game in missing if game in offered]
         channel.send(dict(type='hello', protocol=PROTOCOL, app=self.app_version, name=self.name, nonce=self.nonce,
-                          **(dict(error=error) if error else {})))
+                          games=taken, missing=missing, **(dict(error=error) if error else {})))
         if error:
             raise SyncError(error)
         self.code = pairing_code(hello.get('nonce', ''), self.nonce)
         self._confirm(channel)
-        if 'episodes' in hello.get('categories', ()):
-            offered = [key for key in channel.expect('offer').get('episodes', []) if isinstance(key, str)]
-            channel.send(dict(type='want', episodes=list(self.host.want(offered))))
-        (self.stage / 'episodes').mkdir(parents=True, exist_ok=True)
+        if 'episodes' in hello.get('categories', ()) and taken:
+            offer = channel.expect('offer').get('episodes', {})
+            channel.send(dict(type='want', episodes={game: list(self.host.want(game, [
+                key for key in offer.get(game, ()) if isinstance(key, str)])) for game in taken}))
+        self.receive_items(channel, taken)
+        self.progress = 'Applying...'
+        message = self.reply(channel, lambda: self.host.apply(hello, self.stage, taken) if taken else '',
+                             missing=missing)
+        if not missing:
+            return message
+        offer = channel.expect('full')
+        games = [game for game in offer.get('games', ()) if game in missing]
+        self.full = (games, int(offer.get('size', 0)))
+        if not self._confirm(channel, 'confirm_full', strict=False):
+            return message
+        self.receive_items(channel, games, library=True)
+        self.progress = 'Installing...'
+        more = self.reply(channel, lambda: ' '.join(self.host.install(game, self.stage / 'library' / game)
+                                                     for game in games))
+        return ' '.join(part for part in (message, more) if part)
+
+    def receive_items(self, channel, games, *, library=False):
         while True:
             header = channel.header()
             if header['type'] == 'end':
-                break
+                return
             if header['type'] == 'cancel':
                 raise SyncError(header.get('message') or CANCELLED)
-            if header['type'] != 'item':
+            if header['type'] != 'item' or (header.get('kind') == 'library') != library:
                 raise SyncError(LOST)
             self.progress = f'Receiving {header.get("index", 0) + 1} of {header.get("count", 0)}'
-            channel.payload(header, self._target(header))
-        self.progress = 'Applying...'
+            channel.payload(header, self._target(header, games))
+
+    def reply(self, channel, work, **extra):
+        """Run `work` (the host's apply / install) and tell the sender how it went; returns its message."""
         try:
-            message = self.host.apply(hello, self.stage)
+            message = work()
         except Exception as error:
             logging.exception('Sync: applying failed')
             channel.send(dict(type='result', ok=False, message=str(error) or LOST))
             raise SyncError(str(error) or LOST) from error
-        channel.send(dict(type='result', ok=True, message=message))
+        channel.send(dict(type='result', ok=True, message=message, **extra))
         return message
 
-    def _target(self, header):
-        """Where an item lands in the stage. An episode is named `<n>/<file>.exp`: a folder each, since two episodes
-        may share a file name (an HD and a standard "The_New_Girl.exp")."""
+    def _target(self, header, games):
+        """Where an item lands in the stage: under its game (one this sync takes). An episode is `<n>/<file>.exp`: a
+        folder each, since two episodes may share a file name (an HD and a standard "The_New_Girl.exp"); a library's
+        file keeps its path in the library."""
         kind, name = header.get('kind'), str(header.get('name', ''))
-        if kind == 'episode':
-            folder, _, file = name.rpartition('/')
-            file = Path(file).name
-            if folder.isdigit() and file.lower().endswith('.exp') and file not in ('.exp',):
-                (self.stage / 'episodes' / folder).mkdir(parents=True, exist_ok=True)
-                return self.stage / 'episodes' / folder / file
+        game, _, rest = name.partition('/')
+        parts = rest.split('/')
+        if game not in games or not rest or any(part in ('', '.', '..') or ':' in part or '\\' in part
+                                                for part in parts):
             raise SyncError(LOST)
-        name = Path(name).name
-        if kind in ('progress', 'options'):
-            return self.stage / {'progress': 'progress.zip', 'options': 'options.json'}[kind]
-        raise SyncError(LOST)
+        if kind == 'library':
+            target = self.stage / 'library' / game / Path(*parts)
+        elif kind == 'episode' and len(parts) == 2 and parts[0].isdigit() and parts[1].lower().endswith('.exp'):
+            target = self.stage / game / 'episodes' / parts[0] / parts[1]
+        elif kind == 'progress' and parts == ['progress.zip']:
+            target = self.stage / game / 'progress.zip'
+        else:
+            raise SyncError(LOST)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
 
 
 class Receiver:

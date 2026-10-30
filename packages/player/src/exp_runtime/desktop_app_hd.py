@@ -236,6 +236,11 @@ class AppOptions:
                 settings[f'delete_library_{game}'] = True
             if len(games) > 1:
                 settings['delete_libraries'] = True
+            settings['sync_send'] = True
+        # Receiving needs no library: a game the sender has comes whole (owner, 2026-10-30).
+        settings['sync_receive'] = True
+        if getattr(app, 'sync', None) is not None:
+            settings.update(app.sync.switches())        # Sync's send page
         return {key: value for key, value in settings.items() if key not in ONE_GAME_OPTIONS}
 
     def draw(self, layer):
@@ -261,6 +266,8 @@ class AppOptions:
         elif kind == 'pause_back':
             if self.menu.back():
                 app.back()                              # past Options: back to the chooser
+        elif kind == 'pause_toggle' and command[1].startswith('sync_'):
+            app.sync_flow().toggle(command[1])          # Sync's send page: what goes (not a saved option)
         elif kind == 'pause_toggle':
             key = command[1]
             if key == 'check_updates':
@@ -283,6 +290,8 @@ class AppOptions:
                 self.set(key, 'hold' if v[key] == 'tap' else 'tap')
             elif key in ('backup_folder', 'export_folder'):
                 app.choose_folder(key)
+            elif key == 'sync_games':
+                app.sync_flow().cycle_games()
         elif kind == 'pause_action' and command[1] in BOTH_GAMES_ACTIONS:
             getattr(self, command[1])()
         elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
@@ -298,6 +307,14 @@ class AppOptions:
             self.confirm_delete(app.games_with_libraries())
         elif kind == 'pause_action' and command[1].startswith('delete_library_'):
             self.confirm_delete([command[1][len('delete_library_'):]])
+        elif kind == 'pause_action' and command[1] == 'sync_send':
+            app.sync_flow().show_send_page()
+        elif kind == 'pause_action' and command[1] == 'sync_receive':
+            app.sync_flow().receive()
+        elif kind == 'pause_action' and command[1] == 'sync_find':
+            app.sync_flow().find()
+        elif kind == 'pause_action' and command[1].startswith('sync_device:'):
+            app.sync_flow().choose(command[1])
         elif kind == 'pause_action' and command[1] == 'reset_settings':
             self.ask = ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
                         'Check for Updates and the chosen folders too. Saves and names stay.', ('No', 'Reset'),

@@ -29,35 +29,56 @@ class Provider:
     def __init__(self, root, episodes):
         self.root, self.episodes = Path(root), episodes
         self.wanted = None
+        library = self.root / 'sender-cod'
+        (library / 'content').mkdir(parents=True, exist_ok=True)
+        (library / 'library.json').write_text('{"game": "cod"}')
+        (library / 'content' / 'v1.exp').write_bytes(b'volume one')
 
-    def offer(self):
-        return list(self.episodes)
+    def offer(self, games):
+        return {game: list(self.episodes) for game in games}
 
-    def items(self, wanted):
+    def items(self, games, wanted):
         self.wanted = wanted
         episode = self.root / 'b.exp'
         episode.write_bytes(b'episode b' * 10000)            # a file streamed in blocks
-        items = [('progress', 'progress.zip', b'bundle bytes'), ('options', 'options.json', b'{"autoplay": true}')]
-        return items + [('episode', f'{index}/{key}.exp', episode) for index, key in enumerate(wanted or ())]
+        items = [('progress', f'{game}/progress.zip', b'bundle bytes') for game in games]
+        return items + [('episode', f'{game}/{index}/{key}.exp', episode)
+                        for game in games for index, key in enumerate(wanted.get(game, ()))]
+
+    def library_items(self, game):
+        folder = self.root / 'sender-cod'
+        return [(path.relative_to(folder).as_posix(), path) for path in sorted(folder.rglob('*')) if path.is_file()]
+
+    def library_size(self, game):
+        return sum(path.stat().st_size for _, path in self.library_items(game))
 
 
 class Host:
-    def __init__(self, *, error=None, have=(), fail=None):
-        self.error, self.have, self.fail = error, set(have), fail
-        self.applied = None
+    def __init__(self, *, error=None, have=(), fail=None, games=('shs',)):
+        self.error, self.have, self.fail, self.has = error, set(have), fail, set(games)
+        self.applied = self.installed = None
 
     def check(self, hello):
         return self.error
 
-    def want(self, offered):
+    def games(self, hello):
+        offered = hello.get('games', ())
+        return [game for game in offered if game in self.has], [game for game in offered if game not in self.has]
+
+    def want(self, game, offered):
         return [key for key in offered if key not in self.have]
 
-    def apply(self, hello, stage):
+    def apply(self, hello, stage, games):
         if self.fail:
             raise OSError(self.fail)
-        self.applied = (hello, {path.relative_to(stage).as_posix(): path.read_bytes()
-                                for path in stage.rglob('*') if path.is_file()})
+        self.applied = (hello, games, {path.relative_to(stage).as_posix(): path.read_bytes()
+                                       for path in stage.rglob('*') if path.is_file()})
         return 'Received 1 episode.'
+
+    def install(self, game, folder):
+        self.installed = (game, {path.relative_to(folder).as_posix(): path.read_bytes()
+                                 for path in folder.rglob('*') if path.is_file()})
+        return f'The {game} library was installed.'
 
 
 class SyncTests(unittest.TestCase):
@@ -72,8 +93,8 @@ class SyncTests(unittest.TestCase):
         self.addCleanup(receiver.stop)
         return receiver
 
-    def sender(self, receiver, provider, categories=('progress', 'options', 'episodes')):
-        session = SendSession('127.0.0.1', receiver.port, name='PC', app_version='1.0.2', game='shs',
+    def sender(self, receiver, provider, categories=('progress', 'options', 'episodes'), games=('shs',)):
+        session = SendSession('127.0.0.1', receiver.port, name='PC', app_version='1.0.2', games=games,
                               categories=categories, backup=True, provider=provider).start()
         self.addCleanup(session.cancel)
         return session
@@ -95,11 +116,10 @@ class SyncTests(unittest.TestCase):
         self.assertTrue(wait(self, lambda: sender.finished and incoming.finished))
         self.assertEqual((sender.status, sender.message), ('done', 'Received 1 episode.'))
         self.assertEqual(incoming.status, 'done')
-        self.assertEqual(provider.wanted, ['b'])                       # the receiver had 'a'
-        hello, files = host.applied
-        self.assertEqual((hello['backup'], hello['game']), (True, 'shs'))
-        self.assertEqual(files, {'progress.zip': b'bundle bytes', 'options.json': b'{"autoplay": true}',
-                                 'episodes/0/b.exp': b'episode b' * 10000})
+        self.assertEqual(provider.wanted, {'shs': ['b']})              # the receiver had 'a'
+        hello, games, files = host.applied
+        self.assertEqual((hello['backup'], hello['games'], games), (True, ['shs'], ['shs']))
+        self.assertEqual(files, {'shs/progress.zip': b'bundle bytes', 'shs/episodes/0/b.exp': b'episode b' * 10000})
 
     def test_a_no_on_either_side_ends_it_for_both_at_once(self):
         for refuser in ('sender', 'receiver'):
@@ -141,6 +161,64 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(receiver.session.message, lan_sync.CANCELLED_THERE)
         self.assertTrue(wait(self, lambda: sender.finished))
         self.assertEqual(sender.message, lan_sync.CANCELLED)
+
+    def confirm_both(self, sender, receiver, status='confirm'):
+        self.assertTrue(wait(self, lambda: sender.status == status and receiver.session is not None
+                             and receiver.session.status == status))
+        self.assertEqual(sender.code, receiver.session.code)
+        sender.confirm(True)
+        receiver.session.confirm(True)
+
+    def test_both_games_sync_what_the_receiver_has_then_offer_the_missing_library_whole(self):
+        host, provider = Host(games=('shs',)), Provider(self.root, ['b'])
+        receiver = self.receiver(host)
+        sender = self.sender(receiver, provider, games=('shs', 'cod'))
+        self.confirm_both(sender, receiver)
+        self.confirm_both(sender, receiver, 'confirm_full')               # CoD: no library there
+        self.assertEqual(sender.full[0], ['cod'])
+        self.assertEqual(sender.full[1], len(b'{"game": "cod"}') + len(b'volume one'))
+        self.assertTrue(wait(self, lambda: sender.finished and receiver.session.finished))
+        self.assertEqual(sender.status, 'done')
+        self.assertEqual(sender.message, 'Received 1 episode. The cod library was installed.')
+        self.assertEqual(host.applied[1], ['shs'])                         # only SHS synced as progress
+        self.assertEqual(host.installed, ('cod', {'library.json': b'{"game": "cod"}', 'content/v1.exp': b'volume one'}))
+
+    def test_a_no_to_the_whole_library_keeps_the_sync_that_was_made(self):
+        for refuser in ('sender', 'receiver'):
+            with self.subTest(refuser=refuser):
+                host = Host(games=('shs',))
+                receiver = self.receiver(host)
+                sender = self.sender(receiver, Provider(self.root, []), categories=('progress',), games=('shs', 'cod'))
+                self.confirm_both(sender, receiver)
+                self.assertTrue(wait(self, lambda: sender.status == 'confirm_full'
+                                     and receiver.session.status == 'confirm_full'))
+                (sender if refuser == 'sender' else receiver.session).confirm(False)
+                other = receiver.session if refuser == 'sender' else sender
+                self.assertTrue(wait(self, lambda: sender.finished and receiver.session.finished))
+                self.assertEqual((sender.status, receiver.session.status), ('done', 'done'))
+                self.assertEqual(sender.message, 'Received 1 episode.')
+                self.assertIsNone(host.installed)
+                self.assertIsNot(other, None)
+
+    def test_a_receiver_without_any_of_the_games_can_still_take_them_whole(self):
+        host = Host(games=())
+        receiver = self.receiver(host)
+        sender = self.sender(receiver, Provider(self.root, []), games=('cod',))
+        self.confirm_both(sender, receiver)
+        self.confirm_both(sender, receiver, 'confirm_full')
+        self.assertTrue(wait(self, lambda: sender.finished))
+        self.assertEqual((sender.status, sender.message), ('done', 'The cod library was installed.'))
+        self.assertIsNone(host.applied)
+
+    def test_an_item_outside_its_game_or_its_folder_ends_the_sync(self):
+        from exp_runtime.lan_sync import ReceiveSession, SyncError
+        session = ReceiveSession(None, self.root / 'stage', name='Phone', app_version='', host=Host())
+        for header in (dict(kind='library', name='cod/../../x'), dict(kind='progress', name='other/progress.zip'),
+                       dict(kind='episode', name='shs/a/b.exp'), dict(kind='library', name='shs/C:/x')):
+            with self.subTest(header=header), self.assertRaises(SyncError):
+                session._target(header, ['shs', 'cod'])
+        self.assertEqual(session._target(dict(kind='library', name='cod/content/v.exp'), ['cod']),
+                         self.root / 'stage' / 'library' / 'cod' / 'content' / 'v.exp')
 
     def test_a_beacon_is_heard_and_forgotten_once_it_stops(self):
         port = free_port()

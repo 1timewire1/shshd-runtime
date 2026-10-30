@@ -805,8 +805,18 @@ shared options in `settings.json`, since no library is open there; the next game
 shared copy wins. Options only one game offers are left out (`ONE_GAME_OPTIONS`: SHS's ad and upsell intros,
 New Rules Hi-Res Portraits and Episode Titles); each game's own Options still has them. Its pages:
 - General, Sound, Controller (with a controller connected) and Extras;
-- Data Management, with the Backups and Exports folders and Reset Settings. Choosing a folder returns to its page
-  with the notice.
+- Data Management for both games (owner, 2026-10-30), with the Backups and Exports folders and Reset Settings.
+  Choosing a folder returns to its page with the notice. Each game that has a library is opened for a row in turn
+  (`AppOptions.each`, `Application.opened_library`):
+  - Library: Library Info, Storage, Verify Library and the two Rebuild rows cover each game; Delete has a row per
+    game, then Delete Both Libraries.
+  - Episodes: Delete / Export Episodes and Reset Decision Tree pick the game first, then show that game's own list on
+    the app's card (`ChooserList`), with no game menu opened.
+  - Progress: Back Up Progress asks Combined (one file holding a bundle per game, `progress_bundle.write_set`; the
+    default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
+  - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
+    Receiving needs no library at all.
+  Open Another Library, Add Episodes and Add APK Music stay per game.
 
 The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,
 Add Episodes, Add APK Music, and the Backups and Exports folders. It is a tall card with:
