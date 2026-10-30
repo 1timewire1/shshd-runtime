@@ -53,6 +53,18 @@ DATA_CONFIRMATIONS = {
                      'saved scenes. Episodes, names and settings stay.', 'Delete'),
     'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default, Start In '
                        'and Check for Updates too. Saves and names stay.', 'Reset'),
+    'verify_library': ('Verify Library?', 'Every file of ~game~ is checked against its checksum, which can take a few '
+                       'minutes. A damaged episode\'s file is removed: adding the episode again restores it.', 'Verify'),
+    'rebuild_previews': ('Rebuild Previews?', 'Every episode preview of ~game~ is drawn again from its title card, '
+                         'which can take a few minutes.', 'Rebuild'),
+    'rebuild_hd_art': ('Rebuild HD Art?', 'The HD pictures ~game~ shows in standard episodes are found again in your '
+                       'HD files, which can take a few minutes.', 'Rebuild'),
+}
+# The confirmations above that run as a background job: (the busy card's title, the Application method given the result).
+DATA_JOBS = {
+    'verify_library': ('Verifying library', 'verify_report'),
+    'rebuild_previews': ('Drawing previews', 'previews_rebuilt'),
+    'rebuild_hd_art': ('Building HD art', 'hd_art_rebuilt'),
 }
 # "Options Unlocked" / "Warping feature has been unlocked for Football Season Mega Pack!" (strings 115 / 272): shown by
 # `SHSEngine::setAppMode` on the main menu after Football Season clears the warp lock (its flag +0x6490b), and by
@@ -327,8 +339,13 @@ class HdShell:
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).
-        for key in ('add_episodes', 'open_library', 'library_info', 'reset_names', 'delete_saves', 'reset_settings'):
+        for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
+                    'delete_saves', 'reset_settings'):
             settings[key] = True
+        if self.app.picker_available():
+            settings['rebuild_previews'] = True
+        if self.app.hd_art_offered():
+            settings['rebuild_hd_art'] = True
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
@@ -653,11 +670,18 @@ class HdShell:
                 self.open_window(WARP_UNLOCKED_MENU)
         elif kind == 'pause_action' and command[1] == 'library_info':
             self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
+        elif kind == 'pause_action' and command[1] == 'storage':
+            self.app.start_data_job('Measuring storage', self.app.storage_text, lambda text: self.pause.show_text(
+                'data:storage', 'Storage', text, 'data:library'))
         elif kind == 'pause_action' and command[1] in DATA_CONFIRMATIONS:
             title, message, verb = DATA_CONFIRMATIONS[command[1]]
             action = getattr(self.app, command[1])
-            self.confirm(title, message.replace('~game~', self.app.game_title), verb,
-                         lambda: self.notify(*action()))
+            if command[1] in DATA_JOBS:
+                busy, done = DATA_JOBS[command[1]]
+                run = lambda: self.app.start_data_job(busy, action, getattr(self.app, done))
+            else:
+                run = lambda: self.notify(*action())
+            self.confirm(title, message.replace('~game~', self.app.game_title), verb, run)
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':

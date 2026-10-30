@@ -179,6 +179,21 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(resources.program(25001).instructions[0].opcode, 0x33)
             self.assertEqual(resources.identity['episode_sha256'], digest(self.data))
 
+    def test_adding_an_episode_again_restores_its_missing_file(self):
+        target = self.root / 'library'
+        data = archive({1: metadata('Another episode'), 25001: program(0x33).to_bytes()})
+        episode = self.root / 'second.exp'
+        episode.write_bytes(data)
+        import_game(self.apk, [episode], target)
+        with ContentLibrary(target) as library:
+            path = target / library.select('second.exp')['file']
+            path.unlink()                                       # what Verify Library does to a damaged one
+            before = len(library.episodes)
+            self.assertEqual(library.add_episodes([episode]), 0)
+            self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(len(library.episodes), before)
+            self.assertEqual(library.restore_builtin_episodes(), 0)     # nothing built in is lost
+
     def test_legacy_android_manifest_retains_profile_and_resources(self):
         target = self.root / 'legacy'
         manifest = import_game(self.apk, [], target)

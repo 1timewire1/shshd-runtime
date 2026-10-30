@@ -103,7 +103,9 @@ GRID_CONTROLS_LABEL = 'Word Grid Controls'
 GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
-DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('open_library', 'Open Another Library'))),
+DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
+                                           ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
+                                           ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'))),
               ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'),)),
               ('data:progress', 'Progress', (('reset_names', 'Reset Names'), ('delete_saves', 'Delete All Saves'))))
 DATA_LAST = (('reset_settings', 'Reset Settings'),)

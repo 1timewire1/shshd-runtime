@@ -1157,16 +1157,38 @@ class ContentLibrary:
             return 0
         return self._install_episodes([record])
 
+    def restore_builtin_episodes(self) -> int:
+        """Write a built-in episode's missing content file again from the retained game package (Verify Library);
+        returns how many came back. Only the copy the library already lists is restored (its checksum must match)."""
+        profile = GAMES[self.game_id]
+        lost = [e for e in self.episodes if e.get('builtin') == profile.BUILTIN and 'file' in e
+                and not (self.directory / e['file']).is_file()]
+        if not lost:
+            return 0
+        hd = dict(hd_ipa=self.hd_ipa) if self.game_id == 'shs' and self.kind == 'apk' else {}
+        record = profile.extract_builtin(self.package, self.asset_root, ios=self.kind == 'ipa', **hd)
+        if record is None or digest(record[0]) not in {e['id'] for e in lost}:
+            return 0
+        self._install_episodes([record])
+        return sum(1 for e in lost if (self.directory / e['file']).is_file())
+
     def _install_episodes(self, episodes, *, catalog=None, drop=(), store=None) -> int:
         records = {e['id']: e for e in self.episodes if e['id'] not in drop}
         catalog = self.catalog.merge(catalog) if catalog is not None else self.catalog
         with tempfile.TemporaryDirectory(prefix='.exp-import-', dir=self.directory) as temporary:
             stage = Path(temporary)
-            additions = []
+            additions, repairs, repaired = [], [], set()
+            listed = {record['id'] for record in self.episodes}     # in the library before this batch
             for data, name, source in episodes:
                 sha = digest(data)
                 if sha in records:
                     records[sha] = _with_episode_alias(records[sha], name)
+                    if (sha in listed and sha not in repaired and 'file' in records[sha]
+                            and not (self.directory / records[sha]['file']).is_file()):
+                        # Its file went missing (Verify Library removes a damaged one): this copy restores it.
+                        (stage / (sha + '.exp')).write_bytes(data)
+                        repairs.append(records[sha])
+                        repaired.add(sha)
                     continue
                 archive = ExpArchive(data)
                 meta, programs = archive.metadata(), archive.programs()
@@ -1181,6 +1203,8 @@ class ContentLibrary:
                 records[sha] = record
                 additions.append(record)
             store_sha = digest(store) if store is not None else None
+            for record in repairs:
+                (stage / (record['id'] + '.exp')).replace(self.directory / record['file'])
             if (not additions and not drop and list(records.values()) == self.episodes
                     and catalog.entries == self.catalog.entries
                     and (store is None or self.manifest.get('store', {}).get('sha256') == store_sha)):

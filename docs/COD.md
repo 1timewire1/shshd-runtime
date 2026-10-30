@@ -870,7 +870,18 @@ CoD's colours (`cod/hd_art.positional_frames`).
       in; the default, the game chooser until there is one), Choose a Game, Surviving High School or Cause of
       Death. The app opens there when it is not told a game
       or library; a game without a library opens the chooser instead.
-    - **Data Management:** Add Episodes, Open Another Library.
+    - **Data Management** (owner, 2026-10-29) lists three pages, then Reset Settings:
+      - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
+        Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library.
+      - **Episodes:** Add Episodes.
+      - **Progress:** Reset Names, Delete All Saves.
+
+      Each row that changes something asks first, in a window of this player's own drawn like HD's "Delete Saved
+      Game?", and reports with an OK notice. Verify Library and the two Rebuild rows run as background jobs under
+      the busy card. Verify checks every file against the checksum the library recorded. A damaged episode's file
+      is removed, since it cannot play. A built-in episode is written again from the game's app, and any other
+      comes back when Add Episodes is given its file again. Rebuild HD Art is offered where there is HD art to
+      build: an SHS library with HD episodes, or Cause of Death.
   - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
     79 x 27 switch, and the value buttons at 104 x 34 with an 18-point label, wider where the value needs it.
 

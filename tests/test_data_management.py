@@ -122,6 +122,61 @@ class LibraryActionTests(unittest.TestCase):
         self.assertEqual((app.settings.start_in, app.settings.check_for_updates), ('auto', True))
         self.assertEqual(app.settings.preferences['music_volume'], 50)
 
+    def test_storage_counts_each_part_of_the_folder(self):
+        app = self.app()
+        directory = app.library.directory
+        (directory / 'content').mkdir()
+        (directory / 'content' / 'e.exp').write_bytes(b'x' * 3000)
+        (directory / 'content' / 'g.apk').write_bytes(b'x' * 2_500_000)
+        (directory / 'thumbs').mkdir()
+        (directory / 'thumbs' / 'a.jpg').write_bytes(b'x' * 1500)
+        lines = app.storage_text(app.library).split('\n')
+        self.assertIn('Episodes: 3.0 KB', lines)
+        self.assertIn('Game apps: 2.5 MB', lines)
+        self.assertIn('Previews: 1.5 KB', lines)
+        self.assertTrue(any(line.startswith('Total: 2.5 MB') for line in lines))
+        self.assertTrue(any(line.startswith('Free on this drive: ') for line in lines))
+
+    def test_verify_removes_a_damaged_episode_and_names_what_is_wrong(self):
+        import hashlib
+        app = self.app()
+        directory = app.library.directory
+        (directory / 'content').mkdir()
+        good, bad = b'good episode', b'damaged episode'
+        (directory / 'content' / 'good.exp').write_bytes(good)
+        (directory / 'content' / 'bad.exp').write_bytes(bad)
+        sha = lambda data: hashlib.sha256(data).hexdigest()
+        app.library.manifest = {'apk': dict(file='content/game.apk', sha256=sha(b'app'))}   # missing
+        app.library.episodes = [dict(id='g', titles=['Good'], file='content/good.exp', sha256=sha(good)),
+                                dict(id='b', titles=['Bad'], file='content/bad.exp', sha256=sha(b'what it was'))]
+        app.library.restore_builtin_episodes = lambda: 0
+        checked, missing, damaged, restored = app.verify_library(app.library)
+        self.assertEqual((checked, missing, damaged, restored), (3, ['The Android app'], ['Bad'], 0))
+        self.assertFalse((directory / 'content' / 'bad.exp').exists())      # adding it again restores it
+        self.assertTrue((directory / 'content' / 'good.exp').exists())
+        app.shell = SimpleNamespace(pause=Mock(), notify=Mock())
+        app.verify_report((checked, missing, damaged, restored))
+        screen, title, body, parent = app.shell.pause.show_text.call_args.args
+        self.assertEqual((screen, title, parent), ('data:verify', 'Verify Library', 'data:library'))
+        self.assertIn('Damaged: Bad', body)
+        self.assertIn('importing the game again', body)
+        app.verify_report((3, [], [], 1))
+        title, message = app.shell.notify.call_args.args
+        self.assertEqual(title, 'Library Verified')
+        self.assertIn('1 built-in episode was restored', message)
+
+    def test_rebuild_previews_draws_every_preview_again(self):
+        from unittest.mock import patch
+        app = self.app()
+        thumbs = app.library.directory / 'thumbs'
+        thumbs.mkdir()
+        (thumbs / 'a.jpg').write_bytes(b'old')
+        (thumbs / 'b.none').write_bytes(b'4')
+        with patch('exp_runtime.application.PickerModel', lambda library: SimpleNamespace(records=['a', 'b'])), \
+                patch('exp_runtime.episode_thumbnails.ensure', lambda library, records, progress: len(records)):
+            self.assertEqual(app.rebuild_previews(app.library), 2)
+        self.assertFalse(thumbs.exists())
+
     def test_library_info_breaks_the_folder_where_a_page_can_wrap_it(self):
         from exp_runtime.application import folder_lines
         lines = folder_lines(Path('C:/Users/someone/AppData/Local/SHSHD Runtime/libraries/shs'), width=20)

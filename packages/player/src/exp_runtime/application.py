@@ -19,7 +19,7 @@ from . import graphics as pygame
 
 from .app_icon import icon_surface, set_window_icon
 from .app_info import PROJECT_URL
-from .content import ContentError, ContentLibrary, import_game, is_bundled
+from .content import ContentError, ContentLibrary, file_digest, import_game, is_bundled
 from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
 from .application_hd import WARP_UNLOCKED_MENU, HdShell
 from .desktop_episode_list_hd import HdEpisodeList
@@ -65,6 +65,33 @@ def folder_lines(path, width=34):
             line = ''
         line += piece
     return lines + [line] if line else lines
+
+
+# Storage's parts of a library folder: (label, its names in the folder); `content/` is split by its files' kind.
+STORAGE_PARTS = (('Episodes', ('library.json',)), ('Saved games', ('saves', 'player.json')), ('Decision Tree', ('dtsaves', 'dtview', 'dtview_tree.json')),
+                 ('Previews', ('thumbs',)), ('HD art', ('hd_twins',)), ('Fonts', ('fonts',)))
+# Verify Library's names for the manifest's own files (not episodes).
+APP_FILES = (('apk', 'The Android app'), ('ipa', 'The iOS app'), ('hd_ipa', 'The SHS HD app'),
+             ('music_apk', 'The music APK'), ('shs_hd_art', 'The SHS HD art app'), ('store', 'The store listing'))
+
+
+def disk_size(path):
+    """Bytes a file, or a folder with everything in it, takes (0 for one that is gone)."""
+    try:
+        if path.is_file():
+            return path.stat().st_size
+        return sum(item.stat().st_size for item in path.rglob('*') if item.is_file())
+    except OSError:
+        return 0
+
+
+def size_text(size):
+    if not size:
+        return 'None'
+    for unit, scale in (('GB', 1e9), ('MB', 1e6), ('KB', 1e3)):
+        if size >= scale:
+            return f'{size / scale:.1f} {unit}'
+    return f'{size} bytes'
 
 
 class Application:
@@ -291,6 +318,125 @@ class Application:
         self.sync_controller()
         self.menu_music_changed()
         return 'Settings Reset', 'Every option is back to its default.'
+
+    def start_data_job(self, title, work, done):
+        """A Data Management row's work, `work(library)` off the UI thread under the busy card titled `title` (its
+        progress below it); `done(result)` gets the result back on the UI thread (tick)."""
+        if self.busy:
+            return
+        self.job_kind, self.job_title, self.job_done = 'data', title, done
+        self.progress_text = 'Starting...'
+        self.job = self.executor.submit(work, self.library)
+
+    def storage_text(self, library):
+        """Storage's page: what each part of the library takes on disk, and what its drive has free."""
+        self.progress_text = 'Measuring...'
+        directory = library.directory
+        sizes = dict.fromkeys(('Episodes', 'Game apps') + tuple(label for label, _ in STORAGE_PARTS) + ('Other',), 0)
+        parts = {name: label for label, names in STORAGE_PARTS for name in names}
+        for path in directory.iterdir():
+            if path.name == 'content' and path.is_dir():
+                for item in path.iterdir():
+                    sizes['Episodes' if item.suffix in ('.exp', '.json') else 'Game apps'] += disk_size(item)
+            else:
+                sizes[parts.get(path.name, 'Other')] += disk_size(path)
+        import shutil
+        lines = [f'{label}: {size_text(size)}' for label, size in sizes.items() if size or label != 'Other']
+        return '\n'.join(lines + ['', f'Total: {size_text(sum(sizes.values()))}',
+                                  f'Free on this drive: {size_text(shutil.disk_usage(directory).free)}'])
+
+    def library_files(self, library):
+        """Every file the library's manifest names, with its checksum: (name, path in the folder, sha256, episode
+        record or None)."""
+        files = [(label, record['file'], record['sha256'], None) for key, label in APP_FILES
+                 for record in (library.manifest.get(key),) if isinstance(record, dict) and 'file' in record]
+        return files + [((record.get('titles') or [record['name']])[0], record['file'], record['sha256'], record)
+                        for record in library.episodes if 'file' in record]
+
+    def verify_library(self, library):
+        """Verify Library: every file checked against its checksum. A damaged episode's file is removed (it cannot
+        play): a built-in episode is then written again from the game's app here, and any other comes back when Add
+        Episodes is given it again (ContentLibrary._install_episodes). Returns (checked, missing, damaged, restored),
+        the middle two as names."""
+        files = self.library_files(library)
+        missing, damaged = [], []
+        for index, (name, file, sha256, record) in enumerate(files):
+            self.progress_text = f'{index + 1} of {len(files)}: {name}'[:44]
+            path = library.directory / file
+            if not path.is_file():
+                missing.append((name, record))
+            elif file_digest(path) != sha256:
+                damaged.append((name, record))
+                if record is not None:
+                    path.unlink()
+        restored = library.restore_builtin_episodes() if any(record for _, record in missing + damaged) else 0
+        back = {name for name, record in missing + damaged
+                if record is not None and (library.directory / record['file']).is_file()}
+        return (len(files), [name for name, _ in missing if name not in back],
+                [name for name, _ in damaged if name not in back], restored)
+
+    def verify_report(self, result):
+        """Verify Library's answer: a notice when every file is intact, else a page naming the others."""
+        checked, missing, damaged, restored = result
+        again = f' {restored} built-in episode{"s were" if restored != 1 else " was"} restored from the game\'s app.' \
+            if restored else ''
+        if not missing and not damaged:
+            self.shell.notify('Library Verified', f'All {checked} files of {self.game_title} are intact.{again}')
+            return
+        apps = {label for _, label in APP_FILES}
+        lines = [f'{checked} files checked.{again}', '']
+        lines += [f'Missing: {name}' for name in missing] + [f'Damaged: {name}' for name in damaged]
+        lines.append('')
+        if any(name not in apps for name in missing + damaged):
+            lines.append('Add Episodes restores an episode when it is given the episode\'s file again (a damaged '
+                         'file was removed).')
+        if any(name in apps for name in missing + damaged):
+            lines.append('A missing or damaged app comes back only by importing the game again.')
+        self.picker = None
+        self.shell.pause.show_text('data:verify', 'Verify Library', '\n'.join(lines), 'data:library')
+
+    def rebuild_previews(self, library):
+        """Rebuild Previews: every drawn episode preview (and its "no title card" mark) thrown away and drawn again."""
+        import shutil
+        shutil.rmtree(library.directory / 'thumbs', ignore_errors=True)
+        model = PickerModel(library)
+
+        def progress(done, total, title):
+            self.progress_text = f'{done + 1} of {total}: {title}'[:44]
+        return episode_thumbnails.ensure(library, model.records, progress)
+
+    def hd_art_offered(self):
+        """Whether Rebuild HD Art has something to build: a CoD library (its HD backgrounds), or an SHS one with HD
+        episodes."""
+        if self.cod_twin_map() is not None:
+            return True
+        return self.twin_map() is not None and any(r.get('variant') == 'hd' for r in self.library.episodes)
+
+    def rebuild_hd_art(self, library):
+        """Rebuild HD Art: the twin store thrown away and built again from the shipped map and the player's files.
+        Returns how many pictures it holds."""
+        import shutil
+        store = library.twin_store()
+        if store.directory.exists():
+            shutil.rmtree(store.directory)
+        library._twins = None
+        if self.cod_twin_map() is not None:
+            self._build_cod_twins(library)
+        else:
+            from .hd_twins import build_from_map
+
+            def found(done, total):
+                self.progress_text = f'HD art: {done + 1} of {total} episodes'[:44]
+            build_from_map(library, self.twin_map(), found)
+        return len(library.twin_store())
+
+    def previews_rebuilt(self, made):
+        self.picker = None
+        self.shell.notify('Previews Rebuilt', f'{made} episode preview{"s were" if made != 1 else " was"} drawn again.')
+
+    def hd_art_rebuilt(self, count):
+        self.picker = None                                      # its SD marks follow the new coverage
+        self.shell.notify('HD Art Rebuilt', f'The store holds {count} HD picture{"s" if count != 1 else ""}.')
 
     def sync_controller(self):
         """The controllers' confirm button (gamepad.Gamepads.confirm) as the shared preference has it: the open
@@ -901,8 +1047,9 @@ class Application:
     def render_shell(self):
         canvas = self.shell.render()
         if self.busy:
-            self.shell.main.draw_busy(canvas, 'Preparing episodes' if self.job_kind == 'previews' else 'Importing content',
-                                      self.progress_text if self.job_kind == 'previews' else 'Checking and copying your files...')
+            title = {'previews': 'Preparing episodes', 'data': self.job_title}.get(self.job_kind, 'Importing content')
+            self.shell.main.draw_busy(canvas, title, self.progress_text if self.job_kind in ('previews', 'data')
+                                      else 'Checking and copying your files...')
         elif self.message:
             # The prompt's card with an OK button: on a phone or an iPad there is no Escape or Enter to dismiss it
             # (the owner's g54 was left on "Added 53 episodes." with no way out).
@@ -1524,6 +1671,8 @@ class Application:
                     self._open_staged(result)
                 elif kind == 'previews':
                     self.picker, self.transition_age = None, 200
+                elif kind == 'data':
+                    self.job_done(result)
                 elif kind == 'music':
                     # Retry the current cue on Resume if its earlier load failed.
                     # Keep the live story and all existing checkpoints intact.
