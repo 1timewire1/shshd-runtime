@@ -789,3 +789,15 @@ scene 25006, PC 1245 now completes into the first football mini game. The tested
 route plays both halves and returns to dialogue. Relationship indicators now
 render with native icon/count selection, cache writes, sound and animation;
 see [UI_FIDELITY.md](UI_FIDELITY.md#npc-relationship-indicators).
+
+## This player's own screens in HD
+
+The game chooser, Bulk Import and each game's Setup page (with the message, update and busy cards over them) are drawn
+in the HD frame by `desktop_app_hd.py` (owner, 2026-10-30), no longer by the SD renderer. No HD art exists before a
+library: it comes from the player's own SHS HD app, and none ships. So they use the HD pause menu's card (its
+measurements, colours, rows and Arial Bold), and `AppCard` draws the parts that card takes from the art (the blue
+back button and the orange buttons) as shapes. They are drawn in SHS HD's blue on a dark gradient, with the kiwi
+above the card. The chooser shows each imported game's own app icon. The busy card notes that an import can take a
+while. Commands are the SD screens' own; the buttons are listed in frame points (`Application.buttons_in_frame`).
+A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. Still to come: the
+chooser's Options (the shared Options) and the file browser. The standard edition's own SD menus stay as they are.

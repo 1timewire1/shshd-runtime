@@ -154,9 +154,9 @@ class ApplicationUpdateTests(unittest.TestCase):
         opener = app.url_opener = Mock()
         self.future.set_result(release())
         app.tick(0)
-        with patch.object(app.renderer, 'label', wraps=app.renderer.label) as label:
+        with patch.object(app.app_screens, 'window', wraps=app.app_screens.window) as window:   # the HD card
             app.render()
-            self.assertIn(update_message('0.5.0'), [call.args[0] for call in label.call_args_list])
+            self.assertIn(update_message('0.5.0'), [call.args[2] for call in window.call_args_list])
         self.assertEqual([c for _, c in app.buttons], [('update_no',), ('update_yes',)])
         app.command(('choose_game', 'shs'))
         self.assertEqual(app.screen, 'games')  # Covered controls are inert.
@@ -288,14 +288,15 @@ class ApplicationUpdateTests(unittest.TestCase):
         import pygame
         app = self.app()
         app.render()
-        old = app.buttons[0][0].center
-        position = tuple(round(n * app.viewport.width / 320) for n in old)
+        def window(rect):           # an HD app screen's button (frame points) in the window
+            v = app.viewport
+            return (round(v.x + rect.centerx * v.width / 768), round(v.y + rect.centery * v.height / 1024))
+        position = window(app.buttons[0][0])
         app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=position))
         self.assertIsNotNone(app.pressed)
         self.future.set_result(release()); app.tick(0); app.render()
         self.assertIsNone(app.pressed)
-        yes = next(r for r, command in app.buttons if command == ('update_yes',)).center
-        position = tuple(round(n * app.viewport.width / 320) for n in yes)
+        position = window(next(r for r, command in app.buttons if command == ('update_yes',)))
         app.url_opener = Mock()
         app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=position))
         app.url_opener.assert_not_called()

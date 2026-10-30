@@ -419,19 +419,23 @@ class ApplicationTests(unittest.TestCase):
         import pygame
         app = self.make_app()
         app.render()
+
+        def window(rect):           # an HD app screen's button (frame points) in the window
+            v = app.viewport
+            return (round(v.x + rect.centerx * v.width / 768), round(v.y + rect.centery * v.height / 1024))
         rect = next(r for r, c in app.buttons if c == ('browse', 'apk'))
-        point = tuple(v * 1.5 for v in rect.center)
+        point = window(rect)
         def pointer(kind, position=point):
             app.handle_event(pygame.event.Event(kind, button=1, pos=position))
             app.render()
-        normal = pygame.image.tobytes(app.renderer.canvas, 'RGB')
+        normal = pygame.image.tobytes(app.window, 'RGB')
         pointer(pygame.MOUSEBUTTONDOWN)
         self.assertEqual(app.screen, 'setup')
         self.assertEqual(app.pressed, ('browse', 'apk'))
-        self.assertNotEqual(pygame.image.tobytes(app.renderer.canvas, 'RGB'), normal)
+        self.assertNotEqual(pygame.image.tobytes(app.window, 'RGB'), normal)
         pointer(pygame.MOUSEMOTION, (-1, -1))
         self.assertIsNone(app.pressed)
-        self.assertEqual(pygame.image.tobytes(app.renderer.canvas, 'RGB'), normal)
+        self.assertEqual(pygame.image.tobytes(app.window, 'RGB'), normal)
         pointer(pygame.MOUSEBUTTONUP, (-1, -1))
         self.assertEqual(app.screen, 'setup')
         pointer(pygame.MOUSEBUTTONDOWN)
@@ -442,11 +446,12 @@ class ApplicationTests(unittest.TestCase):
         pointer(pygame.MOUSEBUTTONDOWN)
         app.message = 'Authored alert'
         app.render()
-        pointer(pygame.MOUSEBUTTONUP, (240, 553))
+        ok = window(next(r for r, c in app.buttons if c == ('dismiss',)))
+        pointer(pygame.MOUSEBUTTONUP, ok)
         self.assertEqual(app.message, 'Authored alert')
-        pointer(pygame.MOUSEBUTTONDOWN, (240, 553))
+        pointer(pygame.MOUSEBUTTONDOWN, ok)
         self.assertEqual(app.pressed, ('dismiss',))
-        pointer(pygame.MOUSEBUTTONUP, (240, 553))
+        pointer(pygame.MOUSEBUTTONUP, ok)
         self.assertEqual(app.message, '')
 
 

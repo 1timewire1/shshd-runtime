@@ -203,6 +203,12 @@ def install(backend):
     return previous
 
 
+def native():
+    """Whether a host's own backend draws (iOS's), not pygame: the HD modules that draw with pygame itself
+    (desktop_app_hd) are then not used."""
+    return _backend is not None and getattr(_backend, '__name__', None) != 'pygame'   # (the fallback below sets pygame)
+
+
 def __getattr__(name):
     global _backend
     if _backend is None:

@@ -359,7 +359,7 @@ class GameChooserTests(unittest.TestCase):
         app = Application(audio=False, check_updates=False); self.addCleanup(app.close)
         self.assertEqual(app.screen, 'games')
         app.render()
-        self.assertEqual({command for _, command in app.renderer.buttons},
+        self.assertEqual({command for _, command in app.buttons},          # the HD chooser's (desktop_app_hd)
                          {('choose_game', 'shs'), ('choose_game', 'cod'), ('bulk',), ('options',)})
         app.choose_game('cod'); app.render()
         self.assertEqual((app.screen, app.selected_game, app.library), ('setup', 'cod', None))

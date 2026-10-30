@@ -23,6 +23,7 @@ from .app_info import PROJECT_URL
 from .content import ContentError, ContentLibrary, file_digest, import_game, is_bundled
 from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
 from .application_hd import WARP_UNLOCKED_MENU, HdShell
+from .desktop_app_hd import APP_SCREENS, AppScreens
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import FRAME as PICKER_FRAME, HdEpisodePicker
 from .animation_curves import ease_in_out
@@ -1445,8 +1446,23 @@ class Application:
         else:
             self.show('main', remember=False)
 
-    def present_frame(self, canvas):
-        """Show a 768 x 1024 point canvas, fitted to the window (with the collage HD shows beside its frame)."""
+    app_screens = None              # this player's own screens in HD (desktop_app_hd.AppScreens), once drawn
+    buttons_in_frame = False        # `buttons` are in frame points (an HD app screen's), not the SD screens' 320 x 480
+
+    def render_app(self):
+        """An HD app screen (desktop_app_hd: the chooser, Bulk Import, Setup) and its card."""
+        if self.app_screens is None:
+            self.app_screens = AppScreens()
+        canvas = self.app_screens.draw(self)
+        self.present_frame(canvas, side_art=False)
+        self.buttons = self.app_screens.buttons if self.ready or self.message or self.update_prompt else []
+        self.buttons_in_frame = True
+        with frame_log.section('flip'):
+            pygame.display.flip()
+
+    def present_frame(self, canvas, *, side_art=True):
+        """Show a 768 x 1024 point canvas, fitted to the window (with the collage HD shows beside its frame: not
+        beside an app screen, whose shell, if one is left, is a let-go library's)."""
         width, height = self.window.get_size()
         factor = min(width / PICKER_FRAME[0], height / PICKER_FRAME[1])
         size = max(1, round(PICKER_FRAME[0] * factor)), max(1, round(PICKER_FRAME[1] * factor))
@@ -1455,7 +1471,8 @@ class Application:
         with frame_log.section('backdrop'):
             # Only beside the frame (or above and below it): the canvas covers the rest, and on a phone the whole
             # window is several megapixels a frame.
-            art = self.shell.main.side_art((width, height)) if size != (width, height) and self.shell is not None else None
+            art = (self.shell.main.side_art((width, height))
+                   if side_art and size != (width, height) and self.shell is not None else None)
             for strip in self._backdrop_strips(width, height):
                 if art is not None:
                     self.window.blit(art, strip, strip)
@@ -1478,7 +1495,8 @@ class Application:
         if self.busy:
             title = {'previews': 'Preparing episodes', 'data': self.job_title}.get(self.job_kind, 'Importing content')
             self.shell.main.draw_busy(canvas, title, self.progress_text if self.job_kind in ('previews', 'data')
-                                      else 'Checking and copying your files...')
+                                      else 'Checking and copying your files. This can take a while: keep the '
+                                           'app open.')
         elif self.message:
             # The prompt's card with an OK button: on a phone or an iPad there is no Escape or Enter to dismiss it
             # (the owner's g54 was left on "Added 53 episodes." with no way out).
@@ -2245,6 +2263,10 @@ class Application:
         if self.screen == 'main' and self.shell is not None:
             self.render_shell()
             return
+        if self.screen in APP_SCREENS and not pygame.native():
+            self.render_app()
+            return
+        self.buttons_in_frame = False
         canvas = self.renderer.draw(self)
         if (self.transition_from is not None and self.transition_age < self.transition_duration
                 and not self.message and not self.busy and self.update_prompt is None):
@@ -2514,8 +2536,9 @@ class Application:
     def _pointer_event(self, event):
         if event.type != pygame.MOUSEMOTION and event.button != 1:
             return
-        point = ((event.pos[0] - self.viewport.x) * 320 / self.viewport.width,
-                 (event.pos[1] - self.viewport.y) * 480 / self.viewport.height)
+        point = (self.picker_point(event.pos) if self.buttons_in_frame else
+                 ((event.pos[0] - self.viewport.x) * 320 / self.viewport.width,
+                  (event.pos[1] - self.viewport.y) * 480 / self.viewport.height))
         hit = (next((command for rect, command in self.buttons if rect.collidepoint(point)), None)
                if self.viewport.collidepoint(event.pos) else None)
         phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEBUTTONUP: 'up',
