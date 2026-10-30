@@ -160,6 +160,8 @@ LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'D
 # The chooser's Library page rows that act on each game's library in turn (AppOptions' methods of these names).
 BOTH_GAMES_ACTIONS = ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art', 'back_up',
                       'reset_names', 'delete_saves')
+# The Episodes page's lists (application.EPISODE_CHOICES): from the chooser, the game is picked first.
+EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees')
 SHORT_TITLES = {'shs': 'SHS', 'cod': 'CoD'}     # a backup's row names its game short
 SLIDER = (143, 460)                     # a volume slider's track: its left and width in points (HdShell's)
 # Options only one game offers are not listed before a game is chosen (owner, 2026-10-30): SHS's High School Story ad
@@ -228,7 +230,7 @@ class AppOptions:
         # Data Management for both games (owner, 2026-10-30): what has a library to act on.
         games = app.games_with_libraries()
         if games:
-            for key in BOTH_GAMES_ACTIONS + ('restore',):
+            for key in BOTH_GAMES_ACTIONS + ('restore',) + EPISODE_LISTS:
                 settings[key] = True
             for game in games:
                 settings[f'delete_library_{game}'] = True
@@ -283,6 +285,11 @@ class AppOptions:
                 app.choose_folder(key)
         elif kind == 'pause_action' and command[1] in BOTH_GAMES_ACTIONS:
             getattr(self, command[1])()
+        elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
+            self.pick_game(command[1])
+        elif kind == 'pause_action' and command[1].startswith('pick:'):
+            _, action, game = command[1].split(':')
+            app.choice_for_game(action, game)
         elif kind == 'pause_action' and command[1] == 'restore':
             self.show_backups()
         elif kind == 'pause_action' and command[1].startswith('restore:'):
@@ -405,6 +412,20 @@ class AppOptions:
         self.confirm('Rebuild HD Art?', 'The HD pictures both games show in standard episodes are found again in your HD '
                      'files (Surviving High School first: Cause of Death takes its own from it), which can take a few '
                      'minutes.', 'Rebuild', lambda: self.each('Building HD art', work, done))
+
+    # -- Episodes -----------------------------------------------------------------------------------------------
+
+    def pick_game(self, action):
+        """Delete / Export Episodes and Reset Decision Tree from the chooser (owner, 2026-10-30): the game first (one
+        list per game, not one long list of both), then its own episode list."""
+        games = self.app.games_with_libraries()
+        if len(games) == 1:
+            self.app.choice_for_game(action, games[0])
+            return
+        titles = {'delete_episodes': 'Delete Episodes', 'export_episodes': 'Export Episodes',
+                  'reset_trees': 'Reset Decision Tree'}
+        self.menu.show_rows('data:pick', titles[action], [(f'pick:{action}:{game}', GAMES[game].TITLE)
+                                                          for game in games], 'data:episodes')
 
     # -- Progress -----------------------------------------------------------------------------------------------
 

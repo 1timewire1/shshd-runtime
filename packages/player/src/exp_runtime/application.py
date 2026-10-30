@@ -528,10 +528,11 @@ class Application:
 
     # -- Data Management's episode lists (step 3) -------------------------------------------------------------------
 
-    def tree_files(self, record):
+    def tree_files(self, record, library=None):
         """An episode's Decision Tree: (its tree file, its scenes' saved games), as Session.tree_files places them.
         Football Star's scenes are the top level of `dtsaves/`, which other episodes' folders sit in."""
-        resources = SimpleNamespace(library=self.library, record=record, identity={'episode_sha256': record['sha256']})
+        resources = SimpleNamespace(library=library or self.library, record=record,
+                                    identity={'episode_sha256': record['sha256']})
         tree, scenes = Session.tree_files(resources)
         shared = Session.original_tree(resources)
         files = [tree] + (list(scenes.glob('*.json.gz')) if scenes.is_dir() else [])
@@ -566,8 +567,42 @@ class Application:
         self.picker.choosing = EpisodeChoice(title, verb, allowed)
         self.choice_kind = kind
 
+    choice_from_chooser = False     # the episode list was opened from the chooser's Data Management (both games)
+
+    def choice_for_game(self, kind, game):
+        """The chooser's Episodes page (both games, owner 2026-10-30): `game`'s library opened onto its main menu (no
+        loading screen or jingle) for its episode list; Back, or the action done, ends on the chooser's Episodes page."""
+        self.choose_game(game)
+        if self.library is None or self.shell is None:
+            self.back_to_chooser()
+            return
+        self.shell.stack.clear()
+        self.shell.enter_main(intro=False)
+        if not self.choice_allowed(kind):
+            self.back_to_chooser(EPISODE_CHOICES[kind][2])
+            return
+        self.choice_from_chooser = True
+        self.open_choice(kind)
+
+    def back_to_chooser(self, notice=None):
+        """The game let go, the chooser's Options on its Data Management > Episodes page (with `notice` there)."""
+        self.choice_from_chooser = False
+        self.picker, self.choice_kind = None, None
+        self.show_game_chooser()
+        if self.app_screens is None:
+            self.app_screens = AppScreens(self)
+        options = self.app_screens.options
+        options.next_screen = 'data:episodes'
+        options.next_ask = (*notice, ('OK',), (None,)) if notice else None
+        self.app_screens.last = None                    # Options enters afresh, even with no frame drawn in between
+        self.history = ['games']
+        self.show('options', remember=False)
+
     def leave_choice(self):
         """Back from an episode list: the list goes (the next one is built afresh) and the Episodes page comes back."""
+        if self.choice_from_chooser:
+            self.back_to_chooser()
+            return
         self.picker, self.choice_kind = None, None
         self.show('main', remember=False)
         self.shell.activate(('options',))
@@ -582,6 +617,17 @@ class Application:
         def run():
             # The work runs under the busy card over the Episodes page (the picker screen has none).
             work = getattr(self, kind)
+            if self.choice_from_chooser:
+                # Back on the chooser the game is let go: the job opens its library for itself.
+                game = self.library.game_id
+                self.back_to_chooser()
+
+                def on_its_own(_):
+                    with self.opened_library(game) as (library, state):
+                        return work(library, chosen)
+                self.start_data_job(EPISODE_CHOICES[kind][3], on_its_own,
+                                    lambda result: self.app_screens.options.notice(*result))
+                return
             self.leave_choice()
             self.start_data_job(EPISODE_CHOICES[kind][3], lambda library: work(library, chosen), self.choice_done)
         if kind == 'delete_episodes':
@@ -608,13 +654,14 @@ class Application:
                 (library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
             for suffix in ('.jpg', '.none'):
                 (library.directory / 'thumbs' / (record['id'] + suffix)).unlink(missing_ok=True)
-            files, folder = self.tree_files(record)
+            files, folder = self.tree_files(record, library)
             for path in files:
                 path.unlink(missing_ok=True)
             if folder is not None and folder.is_dir():
                 shutil.rmtree(folder)
         count = library.remove_episodes(ids)
-        return 'Episodes Deleted', f'{count} episode{"s were" if count != 1 else " was"} deleted from {self.game_title}.'
+        return ('Episodes Deleted',
+                f'{count} episode{"s were" if count != 1 else " was"} deleted from {self.title_of(library)}.')
 
     @staticmethod
     def user_folder(name):
@@ -635,9 +682,9 @@ class Application:
         chosen = getattr(getattr(self, 'settings', None), key, None)
         return Path(chosen) if chosen else None
 
-    def export_folder(self):
+    def export_folder(self, library=None):
         """Where Export Episodes puts its copies: the chosen folder, else a folder per game in the default one."""
-        return self.chosen_folder('export_folder') or self.user_folder('Episodes') / self.game_title
+        return self.chosen_folder('export_folder') or self.user_folder('Episodes') / self.title_of(library)
 
     def folder_label(self, key):
         """The Backups / Exports Folder row's value: the folder's own name, shortened to fit the row."""
@@ -679,7 +726,7 @@ class Application:
 
     def export_episodes(self, library, ids):
         """Export Episodes: each chosen episode's EXP file, as imported and under its own name, into export_folder."""
-        folder = self.export_folder()
+        folder = self.export_folder(library)
         folder.mkdir(parents=True, exist_ok=True)
         records = [record for record in library.episodes if record['id'] in ids]
         for index, record in enumerate(records):
@@ -699,7 +746,7 @@ class Application:
         import shutil
         count = 0
         for record in (r for r in library.episodes if r['id'] in ids):
-            files, folder = self.tree_files(record)
+            files, folder = self.tree_files(record, library)
             for path in files:
                 path.unlink(missing_ok=True)
             if folder is not None and folder.is_dir():

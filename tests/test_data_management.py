@@ -232,7 +232,7 @@ class LibraryActionTests(unittest.TestCase):
     def test_export_copies_each_file_under_its_own_name_without_overwriting_another(self):
         app = self.episode_app()
         folder = self.root / 'exports'
-        app.export_folder = lambda: folder
+        app.export_folder = lambda library=None: folder
         app.library.episode_bytes = lambda record: record['id'].encode()
         folder.mkdir()
         (folder / 'A.exp').write_bytes(b'someone else')
