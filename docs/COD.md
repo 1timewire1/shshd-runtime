@@ -874,7 +874,19 @@ CoD's colours (`cod/hd_art.positional_frames`).
       - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
         Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library.
       - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
-      - **Progress:** Reset Names, Delete All Saves.
+      - **Progress:** Back Up Progress, Restore Progress, Reset Names, Delete All Saves.
+
+      **Back Up Progress** writes a progress bundle (`progress_bundle.py`) to `Downloads/SHSHD Runtime Backups`. The
+      bundle is a zip of the library's saved games, Decision Trees, name tables and warp lock, with a manifest.
+      Options are not in it: both games share them, in `settings.json`. Every save and tree is named by its
+      episode's content id, the SHA-256 of the episode's file, which is the same in any library imported from that
+      file. So a bundle restores into any library of the same game. Progress for an episode the library lacks waits
+      there until the episode is added.
+
+      **Restore Progress** lists that game's eight newest backups. Choosing one asks first, backs up the current
+      progress (a "before restore" backup, which is also how a restore is undone), and then replaces the progress
+      with the backup's. The bundle is checked whole before anything changes: its game, and every file's path. A
+      swap that fails puts the library's own progress back.
 
       Delete Episodes, Export Episodes and Reset Decision Tree each open the Episodes On Demand list in place of
       the card (`EpisodeChoice`). The list shows only the episodes the action fits, each with a tick box. Its

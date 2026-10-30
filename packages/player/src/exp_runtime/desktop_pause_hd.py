@@ -109,7 +109,8 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
               ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
                                              ('export_episodes', 'Export Episodes'),
                                              ('reset_trees', 'Reset Decision Tree'))),
-              ('data:progress', 'Progress', (('reset_names', 'Reset Names'), ('delete_saves', 'Delete All Saves'))))
+              ('data:progress', 'Progress', (('back_up', 'Back Up Progress'), ('restore', 'Restore Progress'),
+                                             ('reset_names', 'Reset Names'), ('delete_saves', 'Delete All Saves'))))
 DATA_LAST = (('reset_settings', 'Reset Settings'),)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
@@ -264,6 +265,12 @@ class HdPauseMenu:
         self.text_pages = dict(self.text_pages, **{screen: (title, body, parent)})      # (the class's stays empty)
         self.open(screen)
 
+    def show_rows(self, screen, title, rows, parent):
+        """Open a page of action rows the host wrote (Restore Progress's backups): `rows` are (key, label), each a
+        ('pause_action', key); its back step to `parent`."""
+        self.row_pages = dict(self.row_pages, **{screen: (title, tuple(rows), parent)})
+        self.open(screen)
+
     def text_lines(self, page):
         if page in self.text_pages:
             return self.text_pages[page][:2]
@@ -279,6 +286,7 @@ class HdPauseMenu:
 
     # -- state ----------------------------------------------------------
     text_pages = {}                 # screen -> (title, body, parent) of the host's own text pages (show_text)
+    row_pages = {}                  # screen -> (title, rows, parent) of the host's own row pages (show_rows)
     slide = None
     shown = None
     drawn = None
@@ -299,8 +307,9 @@ class HdPauseMenu:
         if state.screen == 'pause':
             return True
         leaving = state.screen
-        state.screen = ('help' if state.screen in PAGES else self.text_pages[state.screen][2]
-                        if state.screen in self.text_pages else 'options:data' if state.screen in DATA_TITLES
+        host = self.text_pages.get(state.screen) or self.row_pages.get(state.screen)
+        state.screen = ('help' if state.screen in PAGES else host[2]
+                        if host is not None else 'options:data' if state.screen in DATA_TITLES
                         else 'options' if state.screen.startswith('options:') else 'pause')
         if self.main_menu and state.screen == 'pause':
             return True
@@ -583,16 +592,18 @@ class HdPauseMenu:
                 buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
             bottom_rule = top + height - FOOT
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
-        elif state.screen.startswith('options:') or state.screen in DATA_TITLES:
+        elif state.screen.startswith('options:') or state.screen in DATA_TITLES or state.screen in self.row_pages:
             # Sound: the app's own Music / Sound switches and sliders. General: in a story, the side panels (a native
             # feature: the device shows them on rotation, so it has no switch or string of its own), then this
             # player's switches (exp-runtime's Options -> Cheats; no native strings, so the labels are this project's).
-            category = state.screen if state.screen in DATA_TITLES else state.screen.split(':', 1)[1]
+            category = (state.screen if state.screen in DATA_TITLES or state.screen in self.row_pages
+                        else state.screen.split(':', 1)[1])
             rows = self.option_rows(category, settings, strings)
             sliders = sum(1 for kind, _, _ in rows if kind == 'slider')
             height = HEADER + (len(rows) - sliders) * ROW + sliders * SLIDER_ROW + FOOT
             top = (FRAME[1] - height) / 2
-            title = DATA_TITLES.get(category) or dict(OPTION_CATEGORIES).get(category, strings[10])
+            title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
+                     or dict(OPTION_CATEGORIES).get(category, strings[10]))
             body = self.panel(layer, top, top + height, title)
             y = body
             for index, (kind, label, key) in enumerate(rows):
@@ -708,6 +719,8 @@ class HdPauseMenu:
         if category in DATA_TITLES:
             rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
             return [('action', label, key) for key, label in rows if key in settings]
+        if category in self.row_pages:
+            return [('action', label, key) for key, label in self.row_pages[category][1]]
         return []
 
     def cycle_button(self, layer, box, label, *, pressed=False):

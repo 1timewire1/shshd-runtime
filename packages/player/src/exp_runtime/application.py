@@ -88,6 +88,9 @@ EPISODE_CHOICES = {
 }
 
 
+RESTORE_ROWS = 8                # Restore Progress lists this many of the newest backups
+
+
 def disk_size(path):
     """Bytes a file, or a folder with everything in it, takes (0 for one that is gone)."""
     try:
@@ -541,11 +544,16 @@ class Application:
         count = library.remove_episodes(ids)
         return 'Episodes Deleted', f'{count} episode{"s were" if count != 1 else " was"} deleted from {self.game_title}.'
 
-    def export_folder(self):
-        """Where Export Episodes puts its copies: a folder of this app's in Downloads (else the home folder)."""
+    @staticmethod
+    def user_folder(name):
+        """A folder of this app's in the player's Downloads (else their home folder): `<APP_NAME> <name>`."""
         home = Path.home()
         base = home / 'Downloads' if (home / 'Downloads').is_dir() else home
-        return base / f'{APP_NAME} Episodes' / self.game_title
+        return base / f'{APP_NAME} {name}'
+
+    def export_folder(self):
+        """Where Export Episodes puts its copies."""
+        return self.user_folder('Episodes') / self.game_title
 
     def export_episodes(self, library, ids):
         """Export Episodes: each chosen episode's EXP file, as imported and under its own name, into export_folder."""
@@ -578,6 +586,130 @@ class Application:
                 shutil.rmtree(folder)
             count += 1
         return 'Trees Reset', f'The Decision Tree of {count} episode{"s" if count != 1 else ""} was cleared.'
+
+    # -- Back Up / Restore Progress (step 4; progress_bundle.py) ------------------------------------------------------
+
+    backup_choices = {}             # Restore Progress's rows: key -> backup file
+
+    def backup_folder(self):
+        return self.user_folder('Backups')
+
+    def player_data(self):
+        """The library's own player.json data a backup carries (taken on the UI thread, before a job starts)."""
+        state = self.state
+        return dict(names=dict(state.names), name_sets={key: dict(table) for key, table in state.name_sets.items()},
+                    warp_unlocked=state.warp_unlocked)
+
+    def back_up_progress(self, library, player, note=''):
+        """Back Up Progress: the library's saved games, Decision Trees and names into a new file in backup_folder.
+        Returns (its file, its manifest)."""
+        from datetime import datetime
+        from .progress_bundle import write_bundle
+        self.progress_text = 'Packing saved games...'
+        stamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
+        target = self.backup_folder() / f'{self.game_title} {stamp}{" (before restore)" if note else ""}.zip'
+        titles = {record['id']: record['titles'][0] for record in library.episodes}
+        return target, write_bundle(library.directory, library.game_id, player, titles, target, note=note)
+
+    def start_back_up(self):
+        player = self.player_data()
+        self.start_data_job('Backing up progress', lambda library: self.back_up_progress(library, player),
+                            self.backed_up)
+
+    def backed_up(self, result):
+        path, manifest = result
+        count = len(manifest['saved'])
+        self.shell.notify('Progress Backed Up', f'{count} saved game{"s" if count != 1 else ""} and the names went '
+                          f'to Downloads / {self.backup_folder().name}, as "{path.stem}".')
+
+    def backups(self):
+        """This game's backups in backup_folder, newest first: [(file, manifest)]."""
+        from .progress_bundle import BundleError, read_manifest
+        folder, found = self.backup_folder(), []
+        for path in folder.glob('*.zip') if folder.is_dir() else ():
+            try:
+                manifest = read_manifest(path)
+            except BundleError:
+                continue
+            if manifest.get('game') == self.library.game_id:
+                found.append((path, manifest))
+        return sorted(found, key=lambda item: (item[1].get('created', ''), item[0].stat().st_mtime_ns), reverse=True)
+
+    @staticmethod
+    def backup_when(manifest, *, short=False):
+        """When a backup was made, as "Oct 30, 2026, 2:05 PM" (`short`: without this year's year, for a row)."""
+        from datetime import datetime
+        try:
+            made = datetime.fromisoformat(manifest.get('created', ''))
+        except ValueError:
+            return 'an unknown date'
+        hour = made.hour % 12 or 12
+        year = '' if short and made.year == datetime.now().year else f'{made:%Y}, '
+        return f'{made:%b} {made.day}, {year}{hour}:{made:%M} {"AM" if made.hour < 12 else "PM"}'
+
+    @classmethod
+    def backup_label(cls, manifest):
+        """A backup's row: when it was made, and how many saved games it holds (or that Restore made it)."""
+        when = cls.backup_when(manifest, short=True)
+        if manifest.get('note'):
+            return f'{when} (before restore)'
+        count = len(manifest.get('saved', ()))
+        return f'{when}: {count} save{"s" if count != 1 else ""}'
+
+    def show_backups(self):
+        """Restore Progress: a page of this game's newest backups (RESTORE_ROWS), one row each."""
+        backups = self.backups()[:RESTORE_ROWS]
+        if not backups:
+            self.shell.notify('No Backups', f'Back Up Progress makes one, in Downloads / {self.backup_folder().name}.')
+            return
+        self.backup_choices = {f'restore:{index}': path for index, (path, _) in enumerate(backups)}
+        rows = [(f'restore:{index}', self.backup_label(manifest)) for index, (_, manifest) in enumerate(backups)]
+        self.shell.pause.show_rows('data:restore', 'Restore Progress', rows, 'data:progress')
+
+    def restore_progress(self, key):
+        """A backup's row: asks, backs up the current progress, then restores the backup's."""
+        from .progress_bundle import read_manifest
+        path = self.backup_choices[key]
+        when = self.backup_when(read_manifest(path))
+
+        def run():
+            player = self.player_data()
+            self.start_data_job('Restoring progress', lambda library: self._restore(library, path, player),
+                                self.progress_restored)
+        self.shell.confirm('Restore Progress?', f'The saved games, Decision Trees and names of {self.game_title} will '
+                           f'be replaced by the backup\'s from {when}. Your current progress is backed up first.',
+                           'Restore', run)
+
+    def _restore(self, library, path, player):
+        from .progress_bundle import restore_bundle
+        self.back_up_progress(library, player, note='before restore')
+        self.progress_text = 'Restoring...'
+        return restore_bundle(library.directory, path, library.game_id)
+
+    def progress_restored(self, result):
+        manifest, player = result
+        state = self.state
+        names, name_sets = player.get('names'), player.get('name_sets')
+        if isinstance(names, dict):
+            state.names.clear()
+            state.names.update({str(key): str(value) for key, value in names.items()})
+        if isinstance(name_sets, dict):
+            state.name_sets.clear()
+            state.name_sets.update({str(key): {str(k): str(v) for k, v in table.items()}
+                                    for key, table in name_sets.items() if isinstance(table, dict)})
+        if 'warp_unlocked' in player:
+            state.warp_unlocked = bool(player['warp_unlocked'])
+        state.persist()
+        state.ended_saves.clear()
+        self.shot_cache.clear()
+        self.refresh_saves()
+        self.picker = None
+        here = {record['id'] for record in self.library.episodes}
+        saved = [entry.get('id') for entry in manifest.get('saved', ())]
+        restored = sum(1 for key in saved if key in here)
+        waiting = len(saved) - restored
+        self.shell.notify('Progress Restored', f'{restored} saved game{"s" if restored != 1 else ""} restored.'
+                          + (f' {waiting} more wait for episodes this library does not have.' if waiting else ''))
 
     def sync_controller(self):
         """The controllers' confirm button (gamepad.Gamepads.confirm) as the shared preference has it: the open

@@ -243,6 +243,35 @@ class LibraryActionTests(unittest.TestCase):
         app.export_episodes(app.library, {'a'})                                # the same file again: no third copy
         self.assertEqual(len(list(folder.iterdir())), 3)
 
+    def test_back_up_then_restore_brings_back_the_saves_and_names_and_keeps_the_newer_progress(self):
+        app = self.episode_app()
+        app.library.game_id = 'shs'
+        app.backup_folder = lambda: self.root / 'backups'
+        app.shell = SimpleNamespace(notify=Mock(), pause=Mock())
+        directory = app.library.directory
+        app.state.names['$USR'] = 'Zoe'
+        path, manifest = app.back_up_progress(app.library, app.player_data())
+        self.assertEqual([entry['id'] for entry in manifest['saved']], ['a', 'b'])
+        app.backed_up((path, manifest))
+        self.assertIn('2 saved games', app.shell.notify.call_args.args[1])
+        # Newer progress: a save deleted, a name changed.
+        app.delete_save('a')
+        app.state.names['$USR'] = 'Max'
+        app.show_backups()
+        screen, title, rows, parent = app.shell.pause.show_rows.call_args.args
+        self.assertEqual((screen, title, parent, len(rows)), ('data:restore', 'Restore Progress', 'data:progress', 1))
+        self.assertTrue(rows[0][1].endswith(': 2 saves'))
+        result = app._restore(app.library, app.backup_choices[rows[0][0]], app.player_data())
+        app.progress_restored(result)
+        self.assertTrue((directory / 'saves' / 'a.shs-auto.json').exists())
+        self.assertEqual(app.state.names['$USR'], 'Zoe')
+        self.assertEqual(json.loads((directory / 'player.json').read_text())['names'], {'$USR': 'Zoe'})
+        self.assertEqual(app.saved, {'a'})                                   # of this library's episodes
+        self.assertIn('1 more wait', app.shell.notify.call_args.args[1])     # 'b' is no episode of this library
+        labels = [app.backup_label(m) for _, m in app.backups()]
+        self.assertEqual(len(labels), 2)
+        self.assertTrue(labels[0].endswith('(before restore)'))              # the newer progress, kept
+
     def test_library_info_breaks_the_folder_where_a_page_can_wrap_it(self):
         from exp_runtime.application import folder_lines
         lines = folder_lines(Path('C:/Users/someone/AppData/Local/SHSHD Runtime/libraries/shs'), width=20)
