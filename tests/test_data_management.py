@@ -309,6 +309,23 @@ class LibraryActionTests(unittest.TestCase):
         self.assertEqual((app.settings.backup_folder, app.settings.export_folder), (None, None))
         self.assertEqual(app.backup_folder(), default / 'SHSHD Runtime Backups')
 
+    def test_deleting_a_library_takes_only_its_own_parts(self):
+        from exp_runtime.application import remove_library
+        app = self.app()
+        directory = app.library.directory
+        for name in ('content', 'thumbs', 'hd_twins', 'fonts', '.sync-abc'):
+            (directory / name).mkdir()
+            (directory / name / 'x').write_bytes(b'x')
+        (directory / 'library.json').write_text('{}')
+        self.assertEqual(remove_library(directory), 0)
+        self.assertFalse(directory.exists())                                   # nothing else was there
+        app = self.app()
+        directory = app.library.directory
+        (directory / 'library.json').write_text('{}')
+        (directory / 'my notes.txt').write_text('mine')                       # the player's own file
+        remove_library(directory)
+        self.assertEqual([p.name for p in directory.iterdir()], ['my notes.txt'])
+
     def test_library_info_breaks_the_folder_where_a_page_can_wrap_it(self):
         from exp_runtime.application import folder_lines
         lines = folder_lines(Path('C:/Users/someone/AppData/Local/SHSHD Runtime/libraries/shs'), width=20)

@@ -342,7 +342,8 @@ class HdShell:
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).
         for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
-                    'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive') + EPISODE_LISTS:
+                    'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive',
+                    'delete_library') + EPISODE_LISTS:
             settings[key] = True
         sync = getattr(self.app, 'sync', None)
         if sync is not None:
@@ -697,6 +698,8 @@ class HdShell:
             self.app.sync_flow().choose(command[1])
         elif kind == 'pause_action' and command[1] == 'sync_none':
             pass                                        # "Looking for receivers...": nothing to press yet
+        elif kind == 'pause_action' and command[1] == 'delete_library':
+            self.app.confirm_delete_library()
         elif kind == 'pause_action' and command[1] == 'back_up':
             self.app.start_back_up()
         elif kind == 'pause_action' and command[1] == 'restore':

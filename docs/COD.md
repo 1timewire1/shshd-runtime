@@ -872,7 +872,9 @@ CoD's colours (`cod/hd_art.positional_frames`).
       or library; a game without a library opens the chooser instead.
     - **Data Management** (owner, 2026-10-29) lists three pages, then Reset Settings:
       - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
-        Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library.
+        Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library, Delete Library.
+        Delete Library asks twice, then deletes the library's own parts (`application.LIBRARY_PARTS`, never
+        anything else in its folder) and goes to the game chooser.
       - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
       - **Progress:** Back Up Progress, Restore Progress, Reset Names, Delete All Saves.
 

@@ -95,6 +95,38 @@ FOLDER_ROWS = {'backup_folder': ('backups', 'data:progress'), 'export_folder': (
 FOLDER_LABEL = 22               # the rows' value: a longer folder name is shortened to this many characters
 
 
+# A library's own parts (Delete Library removes these and nothing else its folder holds): library.json first, so a
+# delete cut short never leaves a library the app would try to open; and the folders a job stages in (`.sync-...`).
+LIBRARY_PARTS = ('library.json', 'content', 'saves', 'dtsaves', 'dtview', 'dtview_tree.json', 'player.json', 'thumbs',
+                 'hd_twins', 'fonts')
+LIBRARY_STAGES = ('.sync-', '.sync-send-', '.restore-', '.merge-', '.exp-import-', '.player-', '.library-')
+
+
+def remove_library(directory):
+    """Delete a library's own parts, then its folder if nothing else is left in it. Returns how many files could not be
+    removed (in use)."""
+    import shutil
+    directory = Path(directory)
+    left = []
+    for name in LIBRARY_PARTS:
+        path = directory / name
+        if path.is_dir():
+            shutil.rmtree(path, onexc=lambda function, failed, error: left.append(failed))
+        elif path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                left.append(path)
+    for path in directory.iterdir() if directory.is_dir() else ():
+        if path.name.startswith(LIBRARY_STAGES):
+            shutil.rmtree(path, ignore_errors=True) if path.is_dir() else path.unlink(missing_ok=True)
+    try:
+        directory.rmdir()
+    except OSError:
+        pass                                            # something of the player's own is there: it stays
+    return len(left)
+
+
 def disk_size(path):
     """Bytes a file, or a folder with everything in it, takes (0 for one that is gone)."""
     try:
@@ -746,6 +778,43 @@ class Application:
                               if restored and options else None)
         self.progress_text = 'Restoring...'
         return (*restore_bundle(library.directory, path, library.game_id), restored)
+
+    # -- Delete Library (step 5) -------------------------------------------------------------------------------------
+
+    def confirm_delete_library(self):
+        """Delete Library's two questions (a library takes long to import again: minutes on a computer, more on a
+        phone): what goes, then that it cannot be undone."""
+        title = self.game_title
+        other = next((key for key in GAMES if key != self.selected_game), None)
+        kept = (f' {GAMES[other].TITLE} keeps the HD backgrounds it already took from it.'
+                if self.selected_game == 'shs' and other and (self.library_path(other) / 'library.json').is_file()
+                else '')
+        self.shell.confirm('Delete Library?', f'Everything {title} keeps in this app will be deleted: its episodes, '
+                           f'saved games, Decision Trees, names, previews and HD art. The files you imported from stay '
+                           f'where they are. Back Up Progress first to keep your saves.{kept}', 'Delete',
+                           lambda: self.shell.confirm('Delete Everything?', f'This cannot be undone. To play {title} '
+                                                      f'again, import its files again.', 'Delete', self.delete_library))
+
+    def delete_library(self):
+        """Delete Library: the menu fades out, the library is let go and its own parts deleted (LIBRARY_PARTS: never
+        anything else its folder may hold), then the game chooser, with a message saying what went."""
+        def go():
+            title, directory = self.game_title, Path(self.library.directory)
+            if self.sync is not None:
+                self.sync.stop()
+            self.release_library()
+            self.picker = None
+            import gc
+            gc.collect()                                # the let-go library's menus and their open files
+            left = remove_library(directory)
+            self.show_game_chooser()                    # whether or not the other game has a library (owner)
+            self.message = (f'The library of {title} was deleted.' if not left else
+                            f'The library of {title} was deleted, but {left} of its files were in use and stay in its '
+                            f'folder.')
+        if self.shell is not None and not self.shell.fading:
+            self.shell.leave(go)
+        else:
+            go()
 
     def option_values(self):
         """The shared options as they are (menu.SHARED_PREFERENCES)."""
