@@ -1574,7 +1574,8 @@ class Desktop:
         """`toggleDTZ`: zooming in during the story pauses it (`invokePauseMenu`, with its sound 8011); either way
         8017 plays. The pause menu is on the game, off the screen until the tree is put back."""
         if self.tree_zoom.zoomed:
-            self.tree_drag = None
+            self.tree_drag = self.wall_drag = None
+            self.tree_fling.stop()
             if not self.menu_open and self.session.pending is not None:
                 self.open_pause()
         if hasattr(GAMES[game_id(self.session.resources)], 'TREE_ZOOM_SOUND'):
