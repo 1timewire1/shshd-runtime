@@ -40,6 +40,14 @@ def controller_connected():
     return bool(_gamepads and _gamepads.connected)
 
 
+def vibration_source():
+    """What General's Vibration would vibrate: 'device' (a phone's vibrator), 'controller' (only a connected
+    controller: Options shows the switch on its Controller page), or None."""
+    if _vibrator is not None or getattr(_backend, 'vibration_available', False):
+        return 'device'
+    return 'controller' if controller_connected() else None
+
+
 def install_gamepads(gamepads):
     global _gamepads
     previous, _gamepads = _gamepads, gamepads

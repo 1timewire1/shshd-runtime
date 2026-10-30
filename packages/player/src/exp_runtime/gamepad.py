@@ -14,6 +14,7 @@ Vibration switch is offered and service 82 rumbles it, as on a phone; Sound's Si
 separate switch.
 """
 import logging
+import math
 import os
 
 import pygame
@@ -97,6 +98,7 @@ class Gamepads:
         self.sticks = {}                # SDL instance id -> [x, y], each -1..1
         self.stick_held = {}            # SDL instance id -> the direction its stick holds
         self.triggers = set()           # (SDL instance id, 'lt' / 'rt') held past STICK_PRESS
+        self.down = set()               # (SDL instance id, button) of the buttons held now (pressed, not yet let go)
         self.held = None                # (direction, next repeat in ms) of the direction last pressed and still held
 
     @classmethod
@@ -128,6 +130,26 @@ class Gamepads:
 
     vibration_available = connected
 
+    def holding(self, button):
+        """Whether `button` is held on any controller ('confirm' for the confirm button, as Gamepads.confirm has it)."""
+        button = self.confirm if button == 'confirm' else button
+        return any(held == button for _, held in self.down)
+
+    def steering(self):
+        """Where the D-pad or the left stick points, eight ways: (dx, dy), each -1, 0 or 1. Two D-pad directions held
+        together are a diagonal; the stick past STICK_PRESS points to the nearest of its eight 45-degree sectors (a
+        word grid's drag goes diagonally as often as straight)."""
+        held = {button for _, button in self.down}
+        dx = ('right' in held) - ('left' in held)
+        dy = ('down' in held) - ('up' in held)
+        if dx or dy:
+            return dx, dy
+        for x, y in self.sticks.values():
+            if max(abs(x), abs(y)) >= STICK_PRESS:
+                sector = round(math.atan2(y, x) / (math.pi / 4)) % 8
+                return ((1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1))[sector]
+        return 0, 0
+
     def vibrate(self):
         for pad in self.pads.values():
             try:
@@ -145,8 +167,10 @@ class Gamepads:
             elif event.type == pygame.CONTROLLERBUTTONDOWN:
                 button = BUTTONS.get(event.button)
                 if button is not None:
+                    self.down.add((event.instance_id, button))
                     result.append(self._press(button, now))
             elif event.type == pygame.CONTROLLERBUTTONUP:
+                self.down.discard((event.instance_id, BUTTONS.get(event.button)))
                 if self.held is not None and BUTTONS.get(event.button) == self.held[0]:
                     self.held = None
             elif event.type == pygame.CONTROLLERAXISMOTION:
@@ -175,6 +199,7 @@ class Gamepads:
             pad = self.pads.pop(event.instance_id, None)
             self.sticks.pop(event.instance_id, None)
             self.triggers = {held for held in self.triggers if held[0] != event.instance_id}
+            self.down = {held for held in self.down if held[0] != event.instance_id}
             if self.stick_held.pop(event.instance_id, None) is not None:
                 self.held = None
             if pad is not None:

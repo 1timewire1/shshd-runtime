@@ -31,7 +31,7 @@ except ImportError:
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import CONFIRM_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
+from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import has_links, play_option
@@ -149,6 +149,9 @@ class _UntimedChoice:
 # and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
 # reading order (1 is the top left).
 FOOTBALL_BUTTONS = {'lt': 0, 'north': 1, 'rt': 2, 'west': 3, 'r3': 4, 'east': 5, 'lb': 6, 'south': 7, 'rb': 8}
+# Hold mode's drag (Options' Word Grid Controls): a push steps one cell at once, then one every GRID_HOLD_STEP_MS while
+# it is held (this player's pace; a finger moves as fast as it likes).
+GRID_HOLD_FIRST_MS, GRID_HOLD_STEP_MS = 0, 220
 FOOTBALL_KEYPAD = {pygame.K_KP7: 0, pygame.K_KP8: 1, pygame.K_KP9: 2, pygame.K_KP4: 3, pygame.K_KP5: 4,
                    pygame.K_KP6: 5, pygame.K_KP1: 6, pygame.K_KP2: 7, pygame.K_KP3: 8}
 
@@ -198,6 +201,7 @@ class Desktop:
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
     warp_unlocked = True
     controller_confirm = 'south'    # a controller's confirm button (Options' Controller page; the app's MenuState)
+    grid_controls = 'hold'          # the word grid with a controller: 'hold' or 'tap' (Options' Controller page)
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
@@ -1983,7 +1987,9 @@ class Desktop:
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
                     **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
-                    **({'controller_confirm': CONFIRM_NAMES[self.controller_confirm]}
+                    **(dict(controller_confirm=CONFIRM_NAMES[self.controller_confirm],
+                            grid_controls=GRID_CONTROLS_NAMES[self.grid_controls],
+                            controller_vibration=pygame.vibration_source() == 'controller')
                        if pygame.controller_connected() else {}),
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
@@ -2110,6 +2116,11 @@ class Desktop:
         if kind == 'pause_back':
             self.pause_hd.back()
             self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'grid_controls':
+            self.grid_controls = 'hold' if self.grid_controls == 'tap' else 'tap'
+            if self.on_settings:
+                self.on_settings()
             return
         if kind == 'pause_cycle' and command[1] == 'controller_confirm':
             # Options' Controller page: the confirm button, bottom or right (gamepad.py); the app keeps it.
@@ -2723,6 +2734,14 @@ class Desktop:
         moves = {pygame.K_LEFT: (-1, 0), pygame.K_RIGHT: (1, 0), pygame.K_UP: (0, -1), pygame.K_DOWN: (0, 1)}
         if key not in moves and key not in KEYS_ACTIVATE and key != pygame.K_BACKSPACE:
             return False
+        if self._grid_holding_mode(event):
+            if key in KEYS_ACTIVATE and self.grid_cursor is not None and 0 <= self.grid_cursor < cells:
+                cursor = self.grid_cursor
+                self._attempt(lambda: self.session.grid_pointer('down', cursor))
+                self.grid_drag, self.grid_step_ms = True, GRID_HOLD_FIRST_MS
+                return True
+            if key in moves and self.grid_drag:
+                return True                     # the held drag steers itself (_grid_hold)
         if self.grid_cursor is None or not 0 <= self.grid_cursor < cells:
             if key == pygame.K_BACKSPACE and game.selection:
                 self._attempt(lambda: self.session.grid_pointer('up'))
@@ -2742,6 +2761,43 @@ class Desktop:
             cursor = self.grid_cursor
             self._attempt(lambda: self.session.grid_pointer('move' if game.selection else 'down', cursor))
         return True
+
+    grid_drag = False               # Hold mode: the confirm button is down on the grid (a finger laid on it)
+    grid_step_ms = 0                # Hold mode: ms until the held drag steps to the next cell
+
+    def _grid_holding_mode(self, event):
+        """Whether a controller key works the grid in Hold mode (Options' Word Grid Controls)."""
+        return (self.grid_controls == 'hold' and getattr(event, 'controller', None) is not None
+                and pygame.gamepads() is not None)
+
+    def _grid_hold(self, elapsed_ms):
+        """Hold mode, each frame: while the confirm button is held the highlighted cell follows the D-pad or the stick,
+        eight ways (gamepad.Gamepads.steering), every GRID_HOLD_STEP_MS, and each cell it reaches joins the word as
+        under a dragged finger; letting go lifts the finger (a word that was none gets its error sound)."""
+        if not self.grid_drag:
+            return
+        pads, game = pygame.gamepads(), self.session.engine.word_grid
+        action = self.session.pending
+        if (pads is None or game is None or action is None or action.name != 'word_grid' or self.menu_open
+                or not pads.holding('confirm')):
+            self.grid_drag = False
+            if game is not None and action is not None and action.name == 'word_grid':
+                self._attempt(lambda: self.session.grid_pointer('up'))
+            return
+        dx, dy = pads.steering()
+        if not (dx or dy):
+            self.grid_step_ms = 0                     # a fresh push steps at once
+            return
+        self.grid_step_ms -= elapsed_ms
+        if self.grid_step_ms > 0:
+            return
+        self.grid_step_ms = GRID_HOLD_STEP_MS
+        width = game.problem.width
+        col = min(width - 1, max(0, self.grid_cursor % width + dx))
+        row = min(len(game.board) // width - 1, max(0, self.grid_cursor // width + dy))
+        if row * width + col != self.grid_cursor:
+            self.grid_cursor = cursor = row * width + col
+            self._attempt(lambda: self.session.grid_pointer('move', cursor))
 
     def _notice_pointer(self, event):
         """Pointer input while a native notice/confirm window is open (same hit-list convention as
@@ -2873,6 +2929,7 @@ class Desktop:
     def tick(self, elapsed_ms):
         if self.active:
             self._coast_panels()
+            self._grid_hold(elapsed_ms)
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)

@@ -97,6 +97,10 @@ SKIP_SOUND_PROMPT_LABEL = 'Skip Sound Prompt'
 # or the right one (a Nintendo layout; the other face buttons swap with it). Football's plays stay by position.
 CONFIRM_BUTTON_LABEL = 'Confirm Button'
 CONFIRM_NAMES = {'south': 'Bottom', 'east': 'Right'}
+# How a controller draws a word in the word grid: Hold (the default), confirm held drags; Tap, confirm adds the
+# highlighted cell.
+GRID_CONTROLS_LABEL = 'Word Grid Controls'
+GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
 DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another Library'))
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
@@ -651,14 +655,23 @@ class HdPauseMenu:
             return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
                     ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration + prompt
         if category == 'general':
-            rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
+            # General's Vibration is the Controller page's when only a controller vibrates (settings['controller_vibration'])
+            rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings
+                    and not (key == 'device_vibration' and settings.get('controller_vibration'))]
             if 'title_language' in settings:
                 rows.append(('cycle', TITLE_LANGUAGE_LABEL, 'title_language'))
             if 'start_in' in settings:
                 rows.append(('cycle', START_IN_LABEL, 'start_in'))
             return rows
         if category == 'controller':
-            return [('cycle', CONFIRM_BUTTON_LABEL, 'controller_confirm')] if 'controller_confirm' in settings else []
+            if 'controller_confirm' not in settings:
+                return []
+            rows = [('cycle', CONFIRM_BUTTON_LABEL, 'controller_confirm')]
+            if 'grid_controls' in settings:
+                rows.append(('cycle', GRID_CONTROLS_LABEL, 'grid_controls'))
+            if 'device_vibration' in settings and settings.get('controller_vibration'):
+                rows.append(('switch', self.SWITCH_LABELS['device_vibration'], 'device_vibration'))
+            return rows
         if category == 'extras':
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
             if 'unlock_warp' in settings:

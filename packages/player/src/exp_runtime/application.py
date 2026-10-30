@@ -1000,6 +1000,7 @@ class Application:
         self.game.autoplay = self.state.autoplay
         self.game.disable_choice_timer = self.state.disable_choice_timer
         self.game.controller_confirm = self.state.controller_confirm
+        self.game.grid_controls = self.state.grid_controls
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.hires_portraits = self.state.hires_portraits
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -1090,6 +1091,7 @@ class Application:
         """The in-game pause menu's music / sound switches are the same host options as the main menu's."""
         self.state.music, self.state.sound = self.game.music_enabled, self.game.sound_enabled
         self.state.controller_confirm = self.game.controller_confirm
+        self.state.grid_controls = self.game.grid_controls
         self.state.vibration = self.game.vibration_enabled
         self.state.device_vibration = self.game.device_vibration_enabled
         self.state.choice_hints = self.game.choice_hints

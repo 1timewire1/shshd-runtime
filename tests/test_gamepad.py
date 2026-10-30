@@ -166,6 +166,7 @@ class ControllerScreenTests(unittest.TestCase):
         from types import SimpleNamespace
         game = SimpleNamespace(problem=SimpleNamespace(width=3), board=list('ABCDEFGHI'), selection=[])
         ui = self.desktop('word_grid', word_grid=game)
+        ui.grid_controls = 'tap'                              # (Hold is the default)
         grid = ui.session.grid_pointer
         self.key(ui, pygame.K_RETURN, 'south')                # the first key shows the highlight, in the middle
         self.assertEqual(ui.grid_cursor, 4)
@@ -220,6 +221,64 @@ class ControllerScreenTests(unittest.TestCase):
         self.key(ui, pygame.K_RIGHT, 'right')
         self.key(ui, pygame.K_RETURN, 'south')
         ui.notice_stack.press.assert_called_once_with(('action', 18))
+
+    def test_steering_reads_eight_ways_from_the_stick_or_two_dpad_buttons(self):
+        from exp_runtime import gamepad
+        pads = gamepad.Gamepads(Mock())
+        self.assertEqual(pads.steering(), (0, 0))
+        pads.down = {(1, 'up'), (1, 'left')}
+        self.assertEqual(pads.steering(), (-1, -1))
+        pads.down = {(1, 'south')}
+        self.assertTrue(pads.holding('confirm'))
+        pads.confirm = 'east'
+        self.assertFalse(pads.holding('confirm'))
+        pads.sticks = {1: [.7, .7]}
+        self.assertEqual(pads.steering(), (1, 1))
+        pads.sticks = {1: [.9, .2]}
+        self.assertEqual(pads.steering(), (1, 0))
+        pads.sticks = {1: [.2, .2]}                         # inside the dead zone
+        self.assertEqual(pads.steering(), (0, 0))
+
+    def test_hold_mode_drags_a_word_while_confirm_is_held(self):
+        """Word Grid Controls' Hold: confirm down lays the finger on the highlighted cell; held, the steering adds each
+        cell the highlight reaches (diagonals too); let go, the finger lifts."""
+        import pygame
+        from types import SimpleNamespace
+        from exp_runtime import graphics
+        game = SimpleNamespace(problem=SimpleNamespace(width=3), board=list('ABCDEFGHI'), selection=[])
+        ui = self.desktop('word_grid', word_grid=game)
+        ui.grid_controls, ui.active = 'hold', True
+        pads = SimpleNamespace(held=True, steer=(0, 0))
+        pads.holding = lambda button: pads.held
+        pads.steering = lambda: pads.steer
+        previous = graphics.install_gamepads(pads)
+        self.addCleanup(graphics.install_gamepads, previous)
+        grid = ui.session.grid_pointer
+        self.key(ui, pygame.K_RETURN, 'south')                # the highlight first, in the middle
+        self.key(ui, pygame.K_RETURN, 'south')
+        grid.assert_called_with('down', 4)
+        self.assertTrue(ui.grid_drag)
+        pads.steer = (1, -1)                                 # up and right, as one diagonal step
+        ui._grid_hold(16)
+        grid.assert_called_with('move', 2)
+        ui._grid_hold(16)                                    # held: the next step waits for its turn
+        grid.assert_called_with('move', 2)
+        self.key(ui, pygame.K_LEFT, 'left')                  # the arrows' own presses do not move it during a drag
+        self.assertEqual(ui.grid_cursor, 2)
+        pads.held = False
+        ui._grid_hold(16)
+        grid.assert_called_with('up')
+        self.assertFalse(ui.grid_drag)
+
+    def test_vibration_is_the_controller_pages_when_only_a_controller_vibrates(self):
+        from exp_runtime.desktop_pause_hd import HdPauseMenu
+        menu = HdPauseMenu.__new__(HdPauseMenu)
+        phone = dict(device_vibration=True)
+        pad = dict(device_vibration=True, controller_confirm='Bottom', grid_controls='Tap', controller_vibration=True)
+        self.assertIn('device_vibration', [key for _, _, key in menu.option_rows('general', phone, [])])
+        self.assertNotIn('device_vibration', [key for _, _, key in menu.option_rows('general', pad, [])])
+        self.assertEqual([key for _, _, key in menu.option_rows('controller', pad, [])],
+                         ['controller_confirm', 'grid_controls', 'device_vibration'])
 
     def test_the_controller_page_shows_while_a_controller_is_connected(self):
         from exp_runtime import gamepad, graphics

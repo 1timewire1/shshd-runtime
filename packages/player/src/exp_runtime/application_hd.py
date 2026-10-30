@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (CONFIRM_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step)
 from .settings import START_IN
 from .hd_ui import S, FRAME
@@ -322,6 +322,8 @@ class HdShell:
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
         if graphics.controller_connected():
             settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
+            settings['grid_controls'] = GRID_CONTROLS_NAMES[state.grid_controls]
+            settings['controller_vibration'] = graphics.vibration_source() == 'controller'
         if self.app.warp_lock_offered():
             settings['unlock_warp'] = True
         return settings
@@ -626,6 +628,10 @@ class HdShell:
             state.controller_confirm = 'east' if state.controller_confirm == 'south' else 'south'
             self.app._attempt(state.persist)
             self.app.sync_controller()
+        elif kind == 'pause_cycle' and command[1] == 'grid_controls':
+            state = self.app.state
+            state.grid_controls = 'hold' if state.grid_controls == 'tap' else 'tap'
+            self.app._attempt(state.persist)
         elif kind == 'pause_cycle' and command[1] == 'start_in':
             choices = START_IN
             self.app._attempt(lambda: self.app.settings.set_start_in(
