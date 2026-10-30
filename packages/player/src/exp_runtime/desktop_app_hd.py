@@ -383,19 +383,17 @@ class AppScreens:
 
     # -- the frame --------------------------------------------------------------------------------------------
 
-    @lru_cache(maxsize=2)
-    def backdrop(self, kiwi=True):
-        """The dark gradient, with the kiwi above the card (not behind Options' pages, which can run the frame's
-        height)."""
+    @lru_cache(maxsize=1)
+    def backdrop(self):
+        """The dark gradient with the kiwi at the top: it stays put under every page (a tall card covers it)."""
         size = (FRAME[0] * S, FRAME[1] * S)
         surface = pygame.Surface(size)
         top, bottom = BACKDROP
         for y in range(size[1]):
             f = y / (size[1] - 1)
             surface.fill(tuple(round(a + (b - a) * f) for a, b in zip(top, bottom)), (0, y, size[0], 1))
-        if kiwi:
-            icon = icon_surface(KIWI * S)
-            surface.blit(icon, ((size[0] - icon.get_width()) // 2, KIWI_Y * S))
+        icon = icon_surface(KIWI * S)
+        surface.blit(icon, ((size[0] - icon.get_width()) // 2, KIWI_Y * S))
         return surface
 
     def draw(self, app):
@@ -405,28 +403,29 @@ class AppScreens:
         screen = app.screen
         if screen == 'options' and (self.last is None or self.last[0] != 'options'):
             self.options.enter()                        # Options opens on its list (or the page asked for)
-        layer = self.game_backdrop(app) if screen == 'browser' else None
-        layer = layer or self.backdrop(screen not in ('options', 'browser')).copy()
+        # The pages are drawn on a clear layer over a backdrop that stays put (owner, 2026-10-30): the gradient with the
+        # kiwi, which only a card over it hides; a library's browser has its game's main menu there instead.
+        canvas = (self.game_backdrop(app) if screen == 'browser' else None) or self.backdrop().copy()
+        layer = pygame.Surface(canvas.get_size(), pygame.SRCALPHA)
         getattr(self, 'draw_' + screen)(app, layer)
         now = time.monotonic() * 1000
         if self.last is not None and self.last[0] != screen:
             self.slide = (getattr(app, 'transition_direction', 1), self.last[1], now)
         self.last = (screen, layer)
-        canvas = layer
         if self.slide is not None:
             direction, previous, start = self.slide
             progress = ease_in_out(min(1., (now - start) / SLIDE_MS))
             if progress >= 1:
                 self.slide = None
             else:
-                canvas = self.backdrop().copy()
                 width = FRAME[0] * S
                 offset = round(width * progress) * direction
                 canvas.blit(previous, (-offset, 0))
                 canvas.blit(layer, (width * direction - offset, 0))
                 self.buttons = []                       # nothing takes a tap while it slides
+        if self.slide is None:
+            canvas.blit(layer, (0, 0))
         if app.busy or app.message or app.update_prompt is not None:
-            canvas = canvas.copy() if canvas is layer else canvas
             self.buttons = []
             self.draw_card(app, canvas)
         if getattr(app, 'focus', None) == 'buttons' and self.buttons:
