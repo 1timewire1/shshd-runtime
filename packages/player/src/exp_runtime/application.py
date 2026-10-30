@@ -590,7 +590,8 @@ class Application:
         self.browse(FOLDER_ROWS[key][0])
 
     def use_folder(self, folder):
-        """Use This Folder in a folder browser: the setting, then the Data page it came from, with a notice."""
+        """Use This Folder (or Use Default: None) in a folder browser: the setting, then the Data page it came from,
+        with a notice."""
         key = next(key for key, (kind, _) in FOLDER_ROWS.items() if kind == self.browser_kind)
         self.settings.set_folder(key, folder)
         self.history = []
@@ -598,7 +599,8 @@ class Application:
         self.shell.activate(('options',))
         self.shell.pause.open(FOLDER_ROWS[key][1])
         what = 'Backups' if key == 'backup_folder' else 'Exported episodes'
-        self.shell.notify('Folder Chosen', f'{what} will be saved in {self.folder_text(folder)}.')
+        where = self.backup_folder() if key == 'backup_folder' else self.export_folder()
+        self.shell.notify('Folder Chosen', f'{what} will be saved in {self.folder_text(where)}.')
 
     def export_episodes(self, library, ids):
         """Export Episodes: each chosen episode's EXP file, as imported and under its own name, into export_folder."""
@@ -1955,6 +1957,8 @@ class Application:
                     self.read_folder(command[1])
                 else:
                     self.import_paths([command[1]])
+            elif kind == 'default_folder' and self.browser_kind in ('backups', 'exports'):
+                self.use_folder(None)
             elif kind == 'folder':
                 if self.browser_kind in ('backups', 'exports'):
                     self.use_folder(self.folder)

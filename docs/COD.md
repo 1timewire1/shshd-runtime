@@ -890,7 +890,8 @@ CoD's colours (`cod/hd_art.positional_frames`).
 
       **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
       2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add
-      Episodes uses, starting in that folder, and **Use This Folder** chooses the folder there. The choice is kept
+      Episodes uses, starting in that folder. **Use This Folder** chooses the folder there, and **Default** goes back
+      to the default folder. The choice is kept
       in `settings.json` (`backup_folder`, `export_folder`), and Reset Settings clears it. When a folder is chosen,
       Restore Progress looks in it and in the default folder. A phone keeps the default folders in Downloads.
 

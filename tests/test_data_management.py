@@ -297,6 +297,11 @@ class LibraryActionTests(unittest.TestCase):
         self.assertEqual(app.folder_label('backup_folder'), 'My Backups')
         app.settings.set_folder('export_folder', self.root / 'Exports')
         self.assertEqual(app.export_folder(), self.root / 'Exports')
+        app.browser_kind = 'exports'
+        app.use_folder(None)                                                  # the browser's Default button
+        self.assertIsNone(app.settings.export_folder)
+        self.assertIn('SHSHD Runtime Episodes', app.shell.notify.call_args.args[1])
+        app.settings.set_folder('export_folder', self.root / 'Exports')
         app.state.shared = app.settings
         app.apply_hires_portraits = app.sync_controller = app.menu_music_changed = lambda *a, **k: None
         app.set_update_check = app.settings.set_update_check

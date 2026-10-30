@@ -472,7 +472,12 @@ class MenuRenderer:
             self.label(app.path_text, (24, 114, 272, 30), size=11)
             self.buttons.append((pygame.Rect(19, 110, 282, 37), ('path',)))
             self.button('Up', (20, 155, 60, 27), ('up',))
-            self.label('Click a folder to open it', (91, 161, 210, 23), size=11, color=GRAY)
+            if app.browser_kind in ('backups', 'exports'):
+                # Choosing a folder: back to the default one (a folder of this app's in Downloads) in one press.
+                self.label('Click to open a folder', (91, 161, 112, 23), size=11, color=GRAY)
+                self.button('Default', (213, 155, 88, 27), ('default_folder',))
+            else:
+                self.label('Click a folder to open it', (91, 161, 210, 23), size=11, color=GRAY)
             clip = pygame.Rect(19, 190, 282, 210)
             self.canvas.set_clip(clip)
             for i, path in enumerate(app.files):
