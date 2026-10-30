@@ -289,7 +289,7 @@ class AppOptions:
             self.pick_game(command[1])
         elif kind == 'pause_action' and command[1].startswith('pick:'):
             _, action, game = command[1].split(':')
-            app.choice_for_game(action, game)
+            app.app_screens.open_choice(action, game)
         elif kind == 'pause_action' and command[1] == 'restore':
             self.show_backups()
         elif kind == 'pause_action' and command[1].startswith('restore:'):
@@ -420,7 +420,7 @@ class AppOptions:
         list per game, not one long list of both), then its own episode list."""
         games = self.app.games_with_libraries()
         if len(games) == 1:
-            self.app.choice_for_game(action, games[0])
+            self.app.app_screens.open_choice(action, games[0])
             return
         titles = {'delete_episodes': 'Delete Episodes', 'export_episodes': 'Export Episodes',
                   'reset_trees': 'Reset Decision Tree'}
@@ -685,8 +685,124 @@ class AppOptions:
         return True
 
 
+class ChooserList:
+    """An episode list of the chooser's Episodes page (owner, 2026-10-30): one game's own list (desktop_episode_list_hd,
+    its rows and tick boxes) on the app's card over the kiwi, its library opened for it; no game menu opens."""
+
+    def __init__(self, app, kind, game, card):
+        from .application import EPISODE_CHOICES
+        from .content import ContentLibrary
+        from .desktop_episode_list_hd import EpisodeChoice
+        from .episode_picker import PickerModel
+        from .menu import MenuState
+        self.app, self.kind, self.game = app, kind, game
+        self.library = ContentLibrary(app.library_path(game))
+        try:
+            state = MenuState(self.library, shared=app.settings)
+            self.allowed = app.choice_allowed(kind, self.library)
+            if game == 'cod':
+                model = PickerModel(self.library)
+            else:                                       # as Application.ensure_picker builds SHS's
+                from .desktop_menu import MenuRenderer
+                strings = MenuRenderer(self.library).strings
+                model = PickerModel(self.library, mega_label=strings[82], novel_label=strings[302],
+                                    title_language=state.title_language)
+            self.picker = app.picker_classes(self.library)[1](self.library, model, lambda record: None)
+            self.picker.card = card
+            self.picker.show_restore = False
+            self.picker.enter(None)
+            title, verb = EPISODE_CHOICES[kind][:2]
+            self.picker.choosing = EpisodeChoice(title, verb, self.allowed)
+        except Exception:
+            self.library.close()
+            raise
+
+    def close(self):
+        from . import episode_thumbnails
+        self.library.close()
+        episode_thumbnails.release_game_caches()        # its menus' art and fonts go with it
+
+
 class AppScreens:
     """Draws APP_SCREENS and their cards into an HD canvas; `buttons` are [(rect in frame points, command)]."""
+
+    choice = None                       # the chooser's open episode list (ChooserList), on screen 'choice'
+
+    def open_choice(self, kind, game):
+        """The chooser's Episodes page: `game`'s list to choose from (a game with none to offer says so instead)."""
+        from .application import EPISODE_CHOICES
+        from .content import ContentError
+        try:
+            choice = ChooserList(self.app, kind, game, self.card)
+        except (ContentError, OSError) as error:
+            self.options.notice('Cannot Open', str(error))
+            return
+        if not choice.allowed:
+            choice.close()
+            self.options.notice(*EPISODE_CHOICES[kind][2])
+            return
+        self.choice = choice
+        self.app.show('choice')
+
+    def leave_choice(self, ask=None):
+        """Back to the chooser's Episodes page (with `ask` there: the action's question, or its notice)."""
+        choice, self.choice = self.choice, None
+        if choice is not None:
+            choice.close()
+        self.options.next_screen, self.options.next_ask = 'data:episodes', ask
+        self.app.history = ['games']
+        self.app.show('options', remember=False)
+
+    def choice_event(self, event):
+        """The list's input, as the app's picker takes it: taps and drags, the wheel, keys; Back and the verb."""
+        app, picker = self.app, self.choice.picker
+        command = None
+        if event.type == pygame.KEYDOWN:
+            command = picker.key(event.key)
+        elif event.type == pygame.MOUSEWHEEL:
+            picker.wheel(event.x, event.y, app.picker_point(pygame.mouse.get_pos()))
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            picker.pointer_down(app.picker_point(event.pos))
+        elif event.type == pygame.MOUSEMOTION and event.buttons[0]:
+            picker.pointer_move(app.picker_point(event.pos))
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            command = picker.pointer_up(app.picker_point(event.pos))
+        if command == ('back',):
+            app._click_sound()
+            self.leave_choice()
+        elif command == ('act',) and picker.choosing.chosen:
+            app._click_sound()
+            self.choice_act()
+        return True
+
+    def choice_act(self):
+        """The list's verb: back on the Episodes page, Delete and Reset ask there first; the job opens the library for
+        itself, and its notice shows there."""
+        from .application import EPISODE_CHOICES
+        app, choice = self.app, self.choice
+        kind, game, chosen = choice.kind, choice.game, set(choice.picker.choosing.chosen)
+        count = f'{len(chosen)} episode{"s" if len(chosen) != 1 else ""}'
+
+        def run():
+            def job(_):
+                with app.opened_library(game) as (library, state):
+                    return getattr(app, kind)(library, chosen)
+            app.start_data_job(EPISODE_CHOICES[kind][3], job, lambda result: self.options.notice(*result))
+        title = GAMES[game].TITLE
+        if kind == 'delete_episodes':
+            ask = ('Delete Episodes?', f'{count} will be deleted from {title}, with their saved games and Decision '
+                   'Trees. Add Episodes brings one back from its file.', ('No', 'Delete'), (None, run))
+        elif kind == 'reset_trees':
+            ask = ('Reset Decision Tree?', f'The Decision Tree of {count} will be cleared, with its saved scenes. Saved '
+                   'games stay.', ('No', 'Reset'), (None, run))
+        else:
+            ask = None
+        self.leave_choice(ask)
+        if ask is None:
+            run()
+
+    def draw_choice(self, app, layer):
+        layer.blit(self.choice.picker.draw(backdrop=False), (0, 0))
 
     def __init__(self, app=None):
         self.card = AppCard()
@@ -695,12 +811,14 @@ class AppScreens:
         self.last = None                # (screen, its last canvas without cards)
         self.slide = None               # (direction, previous canvas, start ms)
         self.options = AppOptions(app) if app is not None else None
+        self.app = app
 
     @staticmethod
     def handles(app):
         """Whether the app's screen is one of these: APP_SCREENS, Options with no library open (the chooser's), and
         the file browser (in either dress)."""
-        return app.screen in APP_SCREENS or app.screen == 'browser' or (app.screen == 'options' and app.library is None)
+        return (app.screen in APP_SCREENS or app.screen in ('browser', 'choice')
+                or (app.screen == 'options' and app.library is None))
 
     browser_scroll = 0.0                # the file list's scroll, in points
     browser_folder = None               # the folder it was scrolled in (a new one starts at the top)

@@ -538,20 +538,22 @@ class Application:
         files = [tree] + (list(scenes.glob('*.json.gz')) if scenes.is_dir() else [])
         return [path for path in files if path.is_file()], None if shared else scenes
 
-    def has_tree(self, record):
-        files, folder = self.tree_files(record)
+    def has_tree(self, record, library=None):
+        files, folder = self.tree_files(record, library)
         return bool(files) or (folder is not None and folder.is_dir())
 
-    def choice_allowed(self, kind):
+    def choice_allowed(self, kind, library=None):
         """The episodes an episode list offers: Delete, the imported ones but the one being played (a built-in one
         would be extracted again); Export, all; Reset Decision Tree, those with a tree."""
-        episodes = self.library.episodes
+        library = library or self.library
+        episodes = library.episodes
         if kind == 'delete_episodes':
-            playing = self.game.session.resources.record['id'] if self.game is not None else None
+            playing = (self.game.session.resources.record['id'] if self.game is not None and library is self.library
+                       else None)
             return {r['id'] for r in episodes if 'file' in r and not r.get('builtin') and r['id'] != playing}
         if kind == 'export_episodes':
             return {r['id'] for r in episodes}
-        return {r['id'] for r in episodes if self.has_tree(r)}
+        return {r['id'] for r in episodes if self.has_tree(r, library)}
 
     def open_choice(self, kind):
         """An episode list of Data Management's Episodes page, in place of its card; Back returns to the page."""
@@ -567,42 +569,8 @@ class Application:
         self.picker.choosing = EpisodeChoice(title, verb, allowed)
         self.choice_kind = kind
 
-    choice_from_chooser = False     # the episode list was opened from the chooser's Data Management (both games)
-
-    def choice_for_game(self, kind, game):
-        """The chooser's Episodes page (both games, owner 2026-10-30): `game`'s library opened onto its main menu (no
-        loading screen or jingle) for its episode list; Back, or the action done, ends on the chooser's Episodes page."""
-        self.choose_game(game)
-        if self.library is None or self.shell is None:
-            self.back_to_chooser()
-            return
-        self.shell.stack.clear()
-        self.shell.enter_main(intro=False)
-        if not self.choice_allowed(kind):
-            self.back_to_chooser(EPISODE_CHOICES[kind][2])
-            return
-        self.choice_from_chooser = True
-        self.open_choice(kind)
-
-    def back_to_chooser(self, notice=None):
-        """The game let go, the chooser's Options on its Data Management > Episodes page (with `notice` there)."""
-        self.choice_from_chooser = False
-        self.picker, self.choice_kind = None, None
-        self.show_game_chooser()
-        if self.app_screens is None:
-            self.app_screens = AppScreens(self)
-        options = self.app_screens.options
-        options.next_screen = 'data:episodes'
-        options.next_ask = (*notice, ('OK',), (None,)) if notice else None
-        self.app_screens.last = None                    # Options enters afresh, even with no frame drawn in between
-        self.history = ['games']
-        self.show('options', remember=False)
-
     def leave_choice(self):
         """Back from an episode list: the list goes (the next one is built afresh) and the Episodes page comes back."""
-        if self.choice_from_chooser:
-            self.back_to_chooser()
-            return
         self.picker, self.choice_kind = None, None
         self.show('main', remember=False)
         self.shell.activate(('options',))
@@ -617,17 +585,6 @@ class Application:
         def run():
             # The work runs under the busy card over the Episodes page (the picker screen has none).
             work = getattr(self, kind)
-            if self.choice_from_chooser:
-                # Back on the chooser the game is let go: the job opens its library for itself.
-                game = self.library.game_id
-                self.back_to_chooser()
-
-                def on_its_own(_):
-                    with self.opened_library(game) as (library, state):
-                        return work(library, chosen)
-                self.start_data_job(EPISODE_CHOICES[kind][3], on_its_own,
-                                    lambda result: self.app_screens.options.notice(*result))
-                return
             self.leave_choice()
             self.start_data_job(EPISODE_CHOICES[kind][3], lambda library: work(library, chosen), self.choice_done)
         if kind == 'delete_episodes':
@@ -1292,9 +1249,10 @@ class Application:
                     y += EPISODE_ROW_HEIGHT
         return rows, y
 
-    def picker_classes(self):
-        """The tile grid and list screens for this library's game: SHS HD's, or the same in CoD's dress."""
-        if getattr(self.library, 'game_id', None) == 'cod':
+    def picker_classes(self, library=None):
+        """The tile grid and list screens for this library's game (or `library`'s): SHS HD's, or the same in CoD's
+        dress."""
+        if getattr(library or self.library, 'game_id', None) == 'cod':
             from .desktop_cod_episodes import CodEpisodeList, CodEpisodePicker
             return CodEpisodePicker, CodEpisodeList
         return HdEpisodePicker, HdEpisodeList
@@ -1677,6 +1635,8 @@ class Application:
             self.leave_choice()
         elif self.app_options_open() and self.app_screens.options.step_back():
             pass                                        # a page, or a window, of the chooser's Options
+        elif self.screen == 'choice' and self.app_screens is not None and self.app_screens.choice is not None:
+            self.app_screens.leave_choice()
         elif self.screen == 'browser' and self.browser_return is not None:
             self.leave_browser()
         elif self.history:
@@ -2547,6 +2507,8 @@ class Application:
             return self.picker_event(event)
         if self.screen == 'main' and self.shell is not None:
             return self.shell_event(event)
+        if self.screen == 'choice' and self.app_screens is not None and self.app_screens.choice is not None:
+            return self.app_screens.choice_event(event)
         if self.app_options_open():
             # The chooser's Options take their own input, as the HD pause menu does (desktop_app_hd.AppOptions).
             return self.app_screens.options.event(event, self.picker_point(event.pos) if hasattr(event, 'pos') else None)
