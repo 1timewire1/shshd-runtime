@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 import re
 import struct
 
+from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.vm import KiwiVM, StopKind, VMError
@@ -35,6 +36,11 @@ MUSIC_BASE = 26980                      # New Rules music index i = MUSIC_BASE +
 # New Rules' UI backdrop (nr_art.Art.backdrop), which the runtime draws over SHS's frame under the location strip
 # instead of black for this pack (shs/profile.py TRANSLATED_FRAME_BACKDROP).
 FRAME_BACKDROP = 26999
+# The New Rules addon (shshd-runtime addons.py): New Rules' backgrounds in every mode, its music and its frame backdrop,
+# shared by every translation that declares it instead of each carrying its own copies (owner, 2026-10-30). Raise the
+# revision when an ID above changes meaning; episodes need at least the revision they were built against.
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 1
+ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
 # The SHS picture each title card (30) shows instead of its stretched New Rules strip, by (download id, script, PC of
 # the call): a shared-bank background, which SHS HD replaces with its own HD copy (owner's picks, 2026-10-25, from the
@@ -341,8 +347,10 @@ def music_resource(index):
 
 
 def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing_dictionary=None, casing_exact=None,
-              twin_games=(), casing_titles=(), hires_art=None, borrow_from=None):
-    """The SHS `.exp` bytes for one New Rules episode. `hires_art`: the X1i jar's parts, for the second, HD-sized
+              twin_games=(), casing_titles=(), hires_art=None, borrow_from=None, addon=None):
+    """The SHS `.exp` bytes for one New Rules episode. `addon`: the resource IDs the New Rules addon holds (its archive's
+    entries), which the episode then leaves out and reads from the addon it declares; None to carry its own copies.
+    `hires_art`: the X1i jar's parts, for the second, HD-sized
     portrait set (HIRES_PORTRAIT_OFFSET), if any. `music`: index -> rendered MP3 bytes (a callable), if any;
     `casing_dictionary`: casing.learn's dictionary, which restores capitals (else the text stays lowercase);
     `casing_exact`: the paired smartphone story's strings by lowercase text, whose casing wins where they match;
@@ -387,9 +395,11 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         bank_of[rid, address] = banks[slots]
     report.looks = len(banks)
     shown_elsewhere = {(rid, pc) for (number, rid, pc) in TITLE_CARD_BACKGROUNDS if number == episode.download_id}
+    held = set(addon or ())                     # resources the addon provides: not rendered here
     for location, mode in sorted(used_scenes(episode, shown_elsewhere)):
-        resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
-    backdrop = art.backdrop()
+        if BACKGROUND_BASE + MODES * location + mode not in held:
+            resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
+    backdrop = art.backdrop() if FRAME_BACKDROP not in held else None
     if backdrop is not None:
         resources[FRAME_BACKDROP] = nr_art.png(backdrop)
     for rid, program in sorted(episode.scripts.items()):
@@ -446,11 +456,32 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         # profile TRANSLATED_WORD_GAME_SOUNDS) play them
         tracks = used_music(episode) | {RIGHT_TRACK, WRONG_TRACK}
         for index in sorted(tracks):
-            resources[MUSIC_BASE + index] = music(index)
+            if MUSIC_BASE + index not in held:
+                resources[MUSIC_BASE + index] = music(index)
         report.music = len(tracks)
+    if addon is not None:
+        resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
     # The tag tells the importer this is a New Rules story, which the picker never hides as its smartphone version.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources), report
+
+
+def build_addon(art, music=None):
+    """The New Rules addon's `.exp` bytes: every location's background in every mode, the frame backdrop and, with
+    `music` (index -> MP3 bytes), every music track, at the IDs the translations use."""
+    resources = {}
+    for location in range(len(nr_art.LOCATIONS)):
+        for mode in range(MODES):
+            resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
+    backdrop = art.backdrop()
+    if backdrop is not None:
+        resources[FRAME_BACKDROP] = nr_art.png(backdrop)
+    if music is not None:
+        for index in range(len(MUSIC_TRACKS)):
+            resources[MUSIC_BASE + index] = music(index)
+    resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
+    resources[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
+    return encode_exp(resources)
 
 
 # -- shims ---------------------------------------------------------------------------------------------------------

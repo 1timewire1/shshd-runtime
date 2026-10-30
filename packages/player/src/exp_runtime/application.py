@@ -1717,7 +1717,9 @@ class Application:
             self.game.menu_open = False
         else:
             if load_path:
-                session = Session.load(self.library.open_episode(episode), load_path)
+                resources = self.library.open_episode(episode)
+                resources.check_addons()
+                session = Session.load(resources, load_path)
                 self.state.process.attach(session, restored=True)
                 self.state.selected = episode
                 self.state.persist()

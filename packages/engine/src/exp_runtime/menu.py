@@ -311,6 +311,8 @@ class MenuState:
 
     def session(self, episode, *, resume=True):
         resources = self.library.open_episode(episode)
+        if hasattr(resources, 'check_addons'):
+            resources.check_addons()            # shshd-runtime: a clear message, not missing art, without its addon
         path = self.resume_path(episode) if resume else None
         session = Session.load(resources, path) if path else Session(resources)
         # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in

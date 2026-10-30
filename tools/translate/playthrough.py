@@ -19,17 +19,19 @@ from exp_runtime.runtime import Session
 from exp_runtime.vm import VMError
 
 
-def session(data, game='shs'):
+def session(data, game='shs', addons=()):
+    """`addons`: the archives (ExpArchive) of the addons the episode declares, whose resources it also has."""
     archive = ExpArchive(data)
     resources = SimpleNamespace(library=SimpleNamespace(game_id=game, directory=Path('.')), record={'titles': ['']},
                                 identity=dict(profile='translate', episode_sha256=digest(data)),
-                                program=archive.programs().__getitem__, exists=lambda key: key in archive.entries)
+                                program=archive.programs().__getitem__,
+                                exists=lambda key: key in archive.entries or any(key in a.entries for a in addons))
     return Session(resources, ephemeral=True)
 
 
-def play(data, answers=(), name='Matt', limit=5000, seed=1):
+def play(data, answers=(), name='Matt', limit=5000, seed=1, addons=()):
     """The record; a VM error ends it with an `error` event."""
-    s, record = session(data), []
+    s, record = session(data, addons=addons), []
     s.engine.random.state = seed                # the native clock seed, fixed so two runs (and two versions) agree
     try:
         steps(s, list(answers), name, limit, record)

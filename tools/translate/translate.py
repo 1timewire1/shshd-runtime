@@ -10,7 +10,8 @@ projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catal
 
 EPISODE can also be `king-of-diss` or `dancing-queen`, the stories built into res_large.pud, or `king-of-diss-lite`, the
 condensed retelling in a Lite Java build (`--lite JAR`); `--downloads DIR` names the .expd folder to learn their
-capitals from.
+capitals from. `addon` writes the New Rules addon (every background, the music and the frame backdrop, which the
+translations share); with `--addon ADDON.exp` the episodes leave those out and declare the addon instead.
 
 It reads the owner's own game files and writes `.exp` files to OUT_DIR. Nothing it reads or writes belongs in the repo.
 `res_large.pud` is New Rules' base pack (`RES_LA~1.005` in its .cab: `expand.exe -F:* CAB DIR`); the X1i jar, if
@@ -46,6 +47,8 @@ def main(argv=None):
     nr.add_argument('--downloads', type=Path,
                     help="the folder of .expd downloads to learn capitals from, for a built-in story (with --library)")
     nr.add_argument('--lite', type=Path, help="a Lite Java build's jar, for king-of-diss-lite")
+    nr.add_argument('--addon', type=Path,
+                    help="the New Rules addon (`addon` writes it): the episodes leave out what it holds and declare it")
     xb = sub.add_parser('x360', help="the cancelled Xbox 360 prototype's new stories (creator projects)")
     xb.add_argument('pak', type=Path, help="the MS4 prototype's data.pak")
     xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'dating-beth', 'all'), default='all')
@@ -87,8 +90,19 @@ def main(argv=None):
                            else midi_render.render_java(data))
                 rendered[index] = midi_render.mp3(samples)
             return rendered[index]
+    addon = None
+    if args.addon:
+        from exp_runtime.exp import ExpArchive
+        addon = set(ExpArchive(args.addon.read_bytes()).entries)
     for path in args.episodes:
         downloads, twin, twin_files, full = args.downloads, None, (), None
+        if str(path) == 'addon':
+            data = newrules.build_addon(art, music)
+            target = args.out / f'{ADDON_FILE}.exp'
+            target.write_bytes(data)
+            print(f'addon: {newrules.ADDON_TITLE!r} revision {newrules.ADDON_REVISION} -> {target} '
+                  f'({len(data) // 1024} KB)')
+            continue
         if str(path) == 'king-of-diss':
             episode = newrules.read_builtin(portraits)
         elif str(path) == 'dancing-queen':
@@ -114,7 +128,7 @@ def main(argv=None):
                 games = pairs.twin_word_games(downloads, args.library, twin)
         data, report = newrules.translate(episode, art, music=music, casing_dictionary=dictionary, casing_exact=exact,
                                           twin_games=games, casing_titles=titles, hires_art=hires_art,
-                                          borrow_from=full)
+                                          borrow_from=full, addon=addon)
         target = args.out / f'NR_{episode.download_id:02d}_{safe(episode.title)}.exp'
         target.write_bytes(data)
         print(f'{path.name}: {episode.title!r} -> {target} ({len(data) // 1024} KB, {report.looks} looks, '
@@ -169,6 +183,7 @@ def translate_x360(args):
 
 # Dancing Queen's smartphone version, Homecoming Queen, as a library holds it: the capitals it learns from.
 DANCING_QUEEN_TWIN = 'Dancing_Queen.exp'
+ADDON_FILE = 'NR_Addon_New_Rules'               # `newrules addon` writes OUT/NR_Addon_New_Rules.exp
 
 
 def safe(title):

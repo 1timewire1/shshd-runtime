@@ -4,6 +4,17 @@
 
 ### Added
 
+- **Addons: shared resource packs for episodes.** An addon is an `.exp` file holding resources several episodes use,
+  such as a translated game's backgrounds and music; each episode declares the addons it reads (resource 4,
+  SCHEMA.md "Addon extension") instead of carrying its own copies.
+  - **Import:** importing an addon files it apart from the episodes, so no picker lists it. A newer revision replaces
+    an older one.
+  - **Lookup:** an episode reads its own art first, then its addons'.
+  - **Missing addon:** an episode without its addon says which one it needs, rather than starting with missing art.
+  - **`tools/translate`:** `newrules addon` writes the New Rules addon (every background in every time of day, the
+    music, the frame backdrop), and `--addon` builds the translations against it. The 50 New Rules episodes shrink
+    from 299 MB to 91 MB in all, the 44 MB addon included; their scripts and every picture and track are unchanged.
+  - **Not yet:** Sync Devices doesn't send addons yet, and the creator doesn't offer them yet.
 - **Cause of Death shows 64 of its backgrounds in HD** when you also have SHS HD. Many CoD locations are SHS HD
   backgrounds at half size. On its first preparation, a CoD library copies them from your own SHS library's HD
   episodes and the linked SHS HD bundle, in about 17 seconds. Where CoD changed a picture, the HD copy gets the
