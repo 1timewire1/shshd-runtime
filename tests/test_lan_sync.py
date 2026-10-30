@@ -38,7 +38,7 @@ class Provider:
         episode = self.root / 'b.exp'
         episode.write_bytes(b'episode b' * 10000)            # a file streamed in blocks
         items = [('progress', 'progress.zip', b'bundle bytes'), ('options', 'options.json', b'{"autoplay": true}')]
-        return items + [('episode', f'{key}.exp', episode) for key in wanted or ()]
+        return items + [('episode', f'{index}/{key}.exp', episode) for index, key in enumerate(wanted or ())]
 
 
 class Host:
@@ -99,7 +99,7 @@ class SyncTests(unittest.TestCase):
         hello, files = host.applied
         self.assertEqual((hello['backup'], hello['game']), (True, 'shs'))
         self.assertEqual(files, {'progress.zip': b'bundle bytes', 'options.json': b'{"autoplay": true}',
-                                 'episodes/b.exp': b'episode b' * 10000})
+                                 'episodes/0/b.exp': b'episode b' * 10000})
 
     def test_a_no_on_either_side_ends_it_for_both_at_once(self):
         for refuser in ('sender', 'receiver'):

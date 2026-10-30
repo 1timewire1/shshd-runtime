@@ -111,7 +111,9 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
                                              ('reset_trees', 'Reset Decision Tree'))),
               ('data:progress', 'Progress', (('back_up', 'Back Up Progress'), ('restore', 'Restore Progress'),
                                              ('backup_folder', 'Backups Folder'), ('reset_names', 'Reset Names'),
-                                             ('delete_saves', 'Delete All Saves'))))
+                                             ('delete_saves', 'Delete All Saves'))),
+              ('data:sync', 'Sync Devices', (('sync_send', 'Send to Another Device'),
+                                             ('sync_receive', 'Receive from Another Device'))))
 DATA_LAST = (('reset_settings', 'Reset Settings'),)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
@@ -267,8 +269,9 @@ class HdPauseMenu:
         self.open(screen)
 
     def show_rows(self, screen, title, rows, parent):
-        """Open a page of action rows the host wrote (Restore Progress's backups): `rows` are (key, label), each a
-        ('pause_action', key); its back step to `parent`."""
+        """Open a page of rows the host wrote (Restore Progress's backups, Sync's pages): `rows` are (key, label), each
+        a ('pause_action', key), or (key, label, kind) for another kind ('switch': its value is `settings[key]`); its
+        back step to `parent`."""
         self.row_pages = dict(self.row_pages, **{screen: (title, tuple(rows), parent)})
         self.open(screen)
 
@@ -723,7 +726,7 @@ class HdPauseMenu:
             return [('cycle' if isinstance(settings[key], str) else 'action', label, key)
                     for key, label in rows if key in settings]
         if category in self.row_pages:
-            return [('action', label, key) for key, label in self.row_pages[category][1]]
+            return [(kind[0] if kind else 'action', label, key) for key, label, *kind in self.row_pages[category][1]]
         return []
 
     def cycle_button(self, layer, box, label, *, pressed=False):

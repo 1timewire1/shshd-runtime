@@ -438,9 +438,17 @@ class ReceiveSession(Session):
         return message
 
     def _target(self, header):
-        kind, name = header.get('kind'), Path(str(header.get('name', ''))).name
-        if kind == 'episode' and name.lower().endswith('.exp') and name not in ('', '.', '..'):
-            return self.stage / 'episodes' / name
+        """Where an item lands in the stage. An episode is named `<n>/<file>.exp`: a folder each, since two episodes
+        may share a file name (an HD and a standard "The_New_Girl.exp")."""
+        kind, name = header.get('kind'), str(header.get('name', ''))
+        if kind == 'episode':
+            folder, _, file = name.rpartition('/')
+            file = Path(file).name
+            if folder.isdigit() and file.lower().endswith('.exp') and file not in ('.exp',):
+                (self.stage / 'episodes' / folder).mkdir(parents=True, exist_ok=True)
+                return self.stage / 'episodes' / folder / file
+            raise SyncError(LOST)
+        name = Path(name).name
         if kind in ('progress', 'options'):
             return self.stage / {'progress': 'progress.zip', 'options': 'options.json'}[kind]
         raise SyncError(LOST)

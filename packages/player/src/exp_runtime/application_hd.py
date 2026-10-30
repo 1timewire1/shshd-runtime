@@ -342,8 +342,11 @@ class HdShell:
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).
         for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
-                    'delete_saves', 'reset_settings', 'back_up', 'restore') + EPISODE_LISTS:
+                    'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive') + EPISODE_LISTS:
             settings[key] = True
+        sync = getattr(self.app, 'sync', None)
+        if sync is not None:
+            settings.update(sync.switches())            # Sync's send page
         if self.app.picker_available():
             settings['rebuild_previews'] = True
         if self.app.hd_art_offered():
@@ -398,6 +401,10 @@ class HdShell:
                 self.app.ui_sound('SOUND_SLIDER_SOUND', when_idle=True)
 
     def toggle(self, which):
+        if which.startswith('sync_'):
+            self.app.sync_flow().toggle(which)          # Sync's send page: what goes (not a saved option)
+            self.app.ui_sound('CLICK_SOUND')
+            return
         if which == 'check_updates':
             self.app.set_update_check(not self.app.settings.check_for_updates)
             self.app.ui_sound('CLICK_SOUND')
@@ -680,6 +687,16 @@ class HdShell:
             self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
         elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
             self.app.open_choice(command[1])
+        elif kind == 'pause_action' and command[1] == 'sync_send':
+            self.app.sync_flow().show_send_page()
+        elif kind == 'pause_action' and command[1] == 'sync_receive':
+            self.app.sync_flow().receive()
+        elif kind == 'pause_action' and command[1] == 'sync_find':
+            self.app.sync_flow().find()
+        elif kind == 'pause_action' and command[1].startswith('sync_device:'):
+            self.app.sync_flow().choose(command[1])
+        elif kind == 'pause_action' and command[1] == 'sync_none':
+            pass                                        # "Looking for receivers...": nothing to press yet
         elif kind == 'pause_action' and command[1] == 'back_up':
             self.app.start_back_up()
         elif kind == 'pause_action' and command[1] == 'restore':

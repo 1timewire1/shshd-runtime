@@ -37,7 +37,8 @@ from .games import GAMES
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
-                   default_library, group_episodes, preference_defaults, remember_library, shared_preference)
+                   SHARED_PREFERENCES, default_library, group_episodes, preference_defaults, remember_library,
+                   shared_preference)
 from .runtime import SaveError, Session
 from .settings import AppSettings
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
@@ -646,16 +647,17 @@ class Application:
         return dict(names=dict(state.names), name_sets={key: dict(table) for key, table in state.name_sets.items()},
                     warp_unlocked=state.warp_unlocked)
 
-    def back_up_progress(self, library, player, note=''):
+    def back_up_progress(self, library, player, note='', **bundle):
         """Back Up Progress: the library's saved games, Decision Trees and names into a new file in backup_folder.
-        Returns (its file, its manifest)."""
+        `bundle` passes write_bundle's keep / options (a sync's backup of what it overwrites). Returns (its file, its
+        manifest)."""
         from datetime import datetime
         from .progress_bundle import write_bundle
         self.progress_text = 'Packing saved games...'
         stamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
-        target = self.backup_folder() / f'{self.game_title} {stamp}{" (before restore)" if note else ""}.zip'
+        target = self.backup_folder() / f'{self.game_title} {stamp}{f" ({note})" if note else ""}.zip'
         titles = {record['id']: record['titles'][0] for record in library.episodes}
-        return target, write_bundle(library.directory, library.game_id, player, titles, target, note=note)
+        return target, write_bundle(library.directory, library.game_id, player, titles, target, note=note, **bundle)
 
     def start_back_up(self):
         player = self.player_data()
@@ -706,7 +708,7 @@ class Application:
         """A backup's row: when it was made, and how many saved games it holds (or that Restore made it)."""
         when = cls.backup_when(manifest, short=True)
         if manifest.get('note'):
-            return f'{when} (before restore)'
+            return f'{when} ({manifest["note"]})'
         count = len(manifest.get('saved', ()))
         return f'{when}: {count} save{"s" if count != 1 else ""}'
 
@@ -727,21 +729,51 @@ class Application:
         when = self.backup_when(read_manifest(path))
 
         def run():
-            player = self.player_data()
-            self.start_data_job('Restoring progress', lambda library: self._restore(library, path, player),
+            player, options = self.player_data(), self.option_values()
+            self.start_data_job('Restoring progress', lambda library: self._restore(library, path, player, options),
                                 self.progress_restored)
         self.shell.confirm('Restore Progress?', f'The saved games, Decision Trees and names of {self.game_title} will '
                            f'be replaced by the backup\'s from {when}. Your current progress is backed up first.',
                            'Restore', run)
 
-    def _restore(self, library, path, player):
-        from .progress_bundle import restore_bundle
-        self.back_up_progress(library, player, note='before restore')
+    def _restore(self, library, path, player, options=None):
+        """Restore's work: the current progress backed up (with the options, when the backup brings options back: a
+        sync's "before sync" one), then the backup's put in place. Returns (manifest, player data, its options)."""
+        from .progress_bundle import bundle_options, restore_bundle
+        restored = bundle_options(path)
+        self.back_up_progress(library, player, note='before restore',
+                              options={key: options[key] for key in restored if key in options}
+                              if restored and options else None)
         self.progress_text = 'Restoring...'
-        return restore_bundle(library.directory, path, library.game_id)
+        return (*restore_bundle(library.directory, path, library.game_id), restored)
+
+    def option_values(self):
+        """The shared options as they are (menu.SHARED_PREFERENCES)."""
+        return {key: getattr(self.state, key) for key in SHARED_PREFERENCES}
+
+    def apply_options(self, options):
+        """Shared options from a sync or a backup: each this app knows, with a value it accepts
+        (menu.shared_preference); the rest are left. Persisted, and the options with effects of their own applied."""
+        for key, value in options.items():
+            if shared_preference(key, value):
+                setattr(self.state, key, value)
+        self.state.persist()
+        self.apply_hires_portraits()
+        self.sync_controller()
+        self.menu_music_changed()
+
+    sync = None                     # LAN sync's flow (sync_flow.SyncFlow), once Sync Devices is used
+
+    def sync_flow(self):
+        if self.sync is None:
+            from .sync_flow import SyncFlow
+            self.sync = SyncFlow(self)
+        return self.sync
 
     def progress_restored(self, result):
-        manifest, player = result
+        manifest, player, options = result
+        if options:
+            self.apply_options(options)
         state = self.state
         names, name_sets = player.get('names'), player.get('name_sets')
         if isinstance(names, dict):
@@ -1994,6 +2026,8 @@ class Application:
     def tick(self, elapsed):
         if getattr(self, 'warp_notice_due', False):
             self.show_warp_notice()
+        if getattr(self, 'sync', None) is not None and self.shell is not None:
+            self.sync.tick()
         if self.job and self.job.done():
             job, kind = self.job, self.job_kind
             self.job = self.job_kind = None
@@ -2423,6 +2457,8 @@ class Application:
 
     def close(self):
         self.updates.cancel()
+        if self.sync is not None:
+            self.sync.stop()
         # Worker must finish its atomic publication before its ZIP is closed.
         self.executor.shutdown(wait=True)
         if self.game and self.screen == 'game':
