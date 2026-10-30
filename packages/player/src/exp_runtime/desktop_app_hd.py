@@ -17,8 +17,8 @@ import pygame
 
 from .app_icon import game_icon_surface, icon_surface
 from .desktop_pause import ease_in_out
-from .desktop_pause_hd import (BACK, BLUE, BORDER, FOOT, HEADER, LABEL_BLUE, PANEL_W, PANEL_X, ROW, ROW_BACKGROUND,
-                               SEPARATOR, HdPauseMenu)
+from .desktop_pause_hd import (BACK, BLUE, BORDER, CYCLE_POINTS, FOOT, HEADER, LABEL_BLUE, PANEL_W, PANEL_X, ROW,
+                               ROW_BACKGROUND, SEPARATOR, HdPauseMenu)
 from .games import GAMES
 from .hd_scale import S
 
@@ -95,8 +95,40 @@ class AppCard(HdPauseMenu):
             layer.blit(surface, surface.get_rect(center=(round((x + w / 2) * S), round((y + h / 2 - 1) * S))))
         return pygame.Rect(box)
 
+    def cycle_button(self, layer, box, label, *, pressed=False):
+        """A value button (Start In, Episode Titles...): HD's orange, as a pill, its label in white."""
+        x, y, w, h = box
+        stops = ORANGE if not pressed else tuple(tuple(round(c * .8) for c in color) for color in ORANGE)
+        layer.blit(self.gradient_box(box, stops, h / 2), (round(x * S), round(y * S)))
+        text = self.font(CYCLE_POINTS).render(label, True, (255, 255, 255))
+        layer.blit(text, text.get_rect(center=(round((x + w / 2) * S), round((y + h / 2 - 1) * S))))
+
+    def speaker(self, layer, x, middle, waves):
+        """A slider's speaker (HD's are art, resource 155): a body and cone, and `waves` sound arcs."""
+        body = [(x, middle - 5), (x + 6, middle - 5), (x + 14, middle - 12), (x + 14, middle + 12), (x + 6, middle + 5),
+                (x, middle + 5)]
+        pygame.draw.polygon(layer, GRAY, [(round(px * S), round(py * S)) for px, py in body])
+        for wave in range(waves):
+            r = 7 + wave * 6
+            rect = pygame.Rect(round((x + 12 - r) * S), round((middle - r) * S), round(2 * r * S), round(2 * r * S))
+            pygame.draw.arc(layer, GRAY, rect, -0.8, 0.8, max(1, round(2 * S)))
+
+    def slider(self, layer, top, value):
+        """A volume row's control line, as HdPauseMenu.slider draws it with shape speakers."""
+        middle = top + 86
+        self.speaker(layer, 112, middle, 0)
+        self.speaker(layer, 618, middle, 2)
+        left, right = 143, 603
+        self.rect(layer, (74, 132, 213), (left, middle - 3, right - left, 6), 3)
+        self.rect(layer, (150, 185, 235), (left, middle - 3, right - left, 2), 1)
+        knob = round((left + (right - left) * value) * S)
+        pygame.draw.circle(layer, (214, 214, 214), (knob, round(middle * S)), round(10.5 * S))
+        pygame.draw.circle(layer, (160, 160, 160), (knob, round(middle * S)), round(10.5 * S), S)
+        pygame.draw.circle(layer, (245, 245, 245), (knob, round((middle - 2) * S)), round(6 * S))
+        return pygame.Rect(left - 10, middle - 22, right - left + 20, 44)
+
     def back_button(self, layer, bottom, *, lit=False):
-        lit = lit or self.pressed == ('back',)
+        lit = lit or self.pressed in (('back',), ('pause_back',))
         left, top = PANEL_X + BACK[0], bottom - BACK[1] - BUTTON_SIZE[1]
         return self.button(layer, (left, top, *BUTTON_SIZE), orange=False, lit=lit, arrow=True)
 
@@ -116,37 +148,253 @@ class AppCard(HdPauseMenu):
         return lines
 
 
+# The HD menu strings the pause menu's layout reads (SHS HD's own words, its resource 15), for a card drawn with no
+# SHS HD app at hand.
+OPTION_STRINGS = {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 13: 'Music Volume', 14: 'Sound FX',
+                  15: 'Sound FX Volume', 20: 'Resume', 120: 'Help & About'}
+LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
+SLIDER = (143, 460)                     # a volume slider's track: its left and width in points (HdShell's)
+
+
+class AppOptionsMenu(AppCard):
+    """The pause menu's Options pages on the app's card."""
+    main_menu = True
+
+    def strings(self):
+        return [OPTION_STRINGS.get(index, '') for index in range(273)]
+
+
+class AppOptions:
+    """The chooser's Options (owner, 2026-10-30): the shared Options (both games share them, menu.SHARED_PREFERENCES)
+    as the HD main menu shows them, from the app's settings.json, since no library is open here. The next game opened
+    takes them: the shared copy wins over its player.json. Input as HdShell's pause menu takes it: taps, a slider's
+    drag, the wheel, keys and a controller (focus); a question or a notice is a window over it (`ask`)."""
+
+    def __init__(self, app):
+        self.app = app
+        self.menu = AppOptionsMenu()
+        self.pressed = self.drag = None
+        self.buttons = []
+        self.ask = None                 # (title, text, labels, actions): a window over the page
+        self.next_screen = None         # the page to open on entering (a folder chosen from Data Management)
+        self.next_ask = None            # and the window to show there
+        self.clock = None
+
+    def enter(self):
+        """Options appears: on its list, or on the page (and with the notice) asked for (`next_screen`, `next_ask`)."""
+        self.menu.reset()
+        self.menu.state.screen = self.next_screen or 'options'
+        self.pressed = self.drag = None
+        self.ask, self.next_screen, self.next_ask = self.next_ask, None, None
+
+    def values(self):
+        from .menu import preference_defaults, shared_preference
+        saved = {key: value for key, value in self.app.settings.preferences.items() if shared_preference(key, value)}
+        return dict(preference_defaults(), **saved)
+
+    def settings(self):
+        """What the pages offer, as HdShell.settings has it for the main menu (less a library's own rows)."""
+        from . import graphics
+        from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, START_IN_NAMES
+        v, app = self.values(), self.app
+        settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'choice_hints', 'skip_minigames',
+                                            'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
+                                            'hd_backdrop', 'hires_portraits', 'skip_sound_prompt')}
+        settings.update(music_volume=v['music_volume'] / 100, sound_volume=v['sound_volume'] / 100,
+                        title_language=LANGUAGE_NAMES.get(v['title_language'], v['title_language']),
+                        check_updates=app.settings.check_for_updates,
+                        start_in=START_IN_NAMES[app.settings.start_in], reset_settings=True)
+        if graphics.supports_vibration():
+            settings['device_vibration'] = v['device_vibration']
+        if graphics.controller_connected():
+            settings['controller_confirm'] = CONFIRM_NAMES[v['controller_confirm']]
+            settings['grid_controls'] = GRID_CONTROLS_NAMES[v['grid_controls']]
+            settings['controller_vibration'] = graphics.vibration_source() == 'controller'
+        if getattr(app, 'file_picker', None) is None:
+            for key in ('backup_folder', 'export_folder'):
+                settings[key] = app.folder_label(key)
+        return settings
+
+    def draw(self, layer):
+        now = time.monotonic() * 1000
+        if self.clock is not None:
+            self.menu.advance(now - self.clock)
+        self.clock = now
+        self.menu.pressed = self.pressed
+        page, self.buttons = self.menu.layout(self.settings())
+        layer.blit(page, (0, 0))
+
+    # -- what a row does ---------------------------------------------------------------------------------------
+
+    def set(self, key, value):
+        self.app.settings.set_preferences({key: value})
+
+    def activate(self, command):
+        from .settings import START_IN
+        from .languages import TITLE_LANGUAGES
+        kind, app, v = command[0], self.app, self.values()
+        if kind == 'pause_open':
+            self.menu.open(command[1])
+        elif kind == 'pause_back':
+            if self.menu.back():
+                app.back()                              # past Options: back to the chooser
+        elif kind == 'pause_toggle':
+            key = command[1]
+            if key == 'check_updates':
+                app.set_update_check(not app.settings.check_for_updates)
+            else:
+                self.set(key, not v[key])
+                if key == 'device_vibration' and not v[key]:
+                    from . import graphics
+                    graphics.vibrate()
+        elif kind == 'pause_cycle':
+            key = command[1]
+            if key == 'start_in':
+                app.settings.set_start_in(START_IN[(START_IN.index(app.settings.start_in) + 1) % len(START_IN)])
+            elif key == 'title_language':
+                self.set(key, TITLE_LANGUAGES[(TITLE_LANGUAGES.index(v[key]) + 1) % len(TITLE_LANGUAGES)])
+            elif key == 'controller_confirm':
+                self.set(key, 'east' if v[key] == 'south' else 'south')
+                app.sync_controller()
+            elif key == 'grid_controls':
+                self.set(key, 'hold' if v[key] == 'tap' else 'tap')
+            elif key in ('backup_folder', 'export_folder'):
+                app.choose_folder(key)
+        elif kind == 'pause_action' and command[1] == 'reset_settings':
+            self.ask = ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
+                        'Check for Updates and the chosen folders too. Saves and names stay.', ('No', 'Reset'),
+                        (None, self.reset))
+
+    def reset(self):
+        """Reset Settings, with no library open: the shared options at their defaults, Start In, the chosen folders
+        and Check for Updates too (Application.reset_settings does the same with one)."""
+        from .menu import preference_defaults
+        from .settings import FOLDERS
+        app = self.app
+        app.settings.set_preferences(preference_defaults())
+        app.settings.set_start_in('auto')
+        for key in FOLDERS:
+            if getattr(app.settings, key, None) is not None:
+                app.settings.set_folder(key, None)
+        if not app.settings.check_for_updates:
+            app.set_update_check(True)
+        app.sync_controller()
+        self.notice('Settings Reset', 'Every option is back to its default.')
+
+    def notice(self, title, text):
+        self.ask = (title, text, ('OK',), (None,))
+
+    def step_back(self):
+        """Escape / Back: close the window, else go up a page; False once past the list (Options is left)."""
+        if self.ask is not None:
+            self.ask = None
+            return True
+        return not self.menu.back()
+
+    def set_volume(self, which, value):
+        self.set('music_volume' if which == 'music' else 'sound_volume', round(min(1., max(0., value)) * 100))
+
+    # -- input -------------------------------------------------------------------------------------------------
+
+    def event(self, event, point):
+        """A window event (`point`: the pointer in frame points, or None)."""
+        if self.ask is not None:
+            return self.ask_event(event, point)
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.menu.state.focus = None                # the pointer takes over from the keys
+            self.pressed = next((command for rect, command in reversed(self.buttons) if rect.collidepoint(point)), None)
+            if self.pressed is not None and self.pressed[0] == 'pause_slider':
+                self.drag = ('slider', self.pressed[1])
+                self.set_volume(self.pressed[1], (point[0] - SLIDER[0]) / SLIDER[1])
+            elif self.pressed is not None and self.pressed[0] == 'pause_scroll':
+                self.drag = ('scroll', self.menu.state.scroll, point[1])
+        elif event.type == pygame.MOUSEMOTION and self.drag is not None:
+            if self.drag[0] == 'slider':
+                self.set_volume(self.drag[1], (point[0] - SLIDER[0]) / SLIDER[1])
+            else:
+                state = self.menu.state
+                state.scroll = min(state.max_scroll, max(0., self.drag[1] - (point[1] - self.drag[2])))
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            pressed, drag, self.pressed, self.drag = self.pressed, self.drag, None, None
+            if pressed is not None and drag is None and any(rect.collidepoint(point) and command == pressed
+                                                            for rect, command in self.buttons):
+                self.app._click_sound()
+                self.activate(pressed)
+        elif event.type == pygame.MOUSEWHEEL:
+            state = self.menu.state
+            state.scroll = min(state.max_scroll, max(0., state.scroll - event.y * 40))
+        elif event.type == pygame.KEYDOWN:
+            command = self.menu.key(event.key)
+            if command is not None and command[0] == 'pause_volume':
+                self.set_volume(command[1], self.settings()[command[1] + '_volume'] + command[2])
+            elif command is not None:
+                self.activate(command)
+        return True
+
+    def ask_event(self, event, point):
+        """The window's buttons; Enter takes the first (No, or OK), Escape closes it."""
+        title, text, labels, actions = self.ask
+        chosen = None
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE,
+                                                          pygame.K_ESCAPE):
+            chosen = 0
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.pressed = next((command for rect, command in self.buttons if rect.collidepoint(point)), None)
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            pressed, self.pressed = self.pressed, None
+            hit = next((command for rect, command in self.buttons if rect.collidepoint(point)), None)
+            if hit is not None and hit == pressed:
+                chosen = hit[1]
+        if chosen is not None:
+            self.ask = None
+            self.app._click_sound()
+            if actions[chosen] is not None:
+                actions[chosen]()
+        return True
+
+
 class AppScreens:
     """Draws APP_SCREENS and their cards into an HD canvas; `buttons` are [(rect in frame points, command)]."""
 
-    def __init__(self):
+    def __init__(self, app=None):
         self.card = AppCard()
         self.buttons = []
         self.icons = {}                 # game -> (library.json's stamp, its app icon at GAME_ICON, or None)
         self.last = None                # (screen, its last canvas without cards)
         self.slide = None               # (direction, previous canvas, start ms)
+        self.options = AppOptions(app) if app is not None else None
+
+    @staticmethod
+    def handles(app):
+        """Whether the app's screen is one of these: APP_SCREENS, and Options with no library open (the chooser's)."""
+        return app.screen in APP_SCREENS or (app.screen == 'options' and app.library is None)
 
     # -- the frame --------------------------------------------------------------------------------------------
 
-    @lru_cache(maxsize=1)
-    def backdrop(self):
+    @lru_cache(maxsize=2)
+    def backdrop(self, kiwi=True):
+        """The dark gradient, with the kiwi above the card (not behind Options' pages, which can run the frame's
+        height)."""
         size = (FRAME[0] * S, FRAME[1] * S)
         surface = pygame.Surface(size)
         top, bottom = BACKDROP
         for y in range(size[1]):
             f = y / (size[1] - 1)
             surface.fill(tuple(round(a + (b - a) * f) for a, b in zip(top, bottom)), (0, y, size[0], 1))
-        kiwi = icon_surface(KIWI * S)
-        surface.blit(kiwi, ((size[0] - kiwi.get_width()) // 2, KIWI_Y * S))
+        if kiwi:
+            icon = icon_surface(KIWI * S)
+            surface.blit(icon, ((size[0] - icon.get_width()) // 2, KIWI_Y * S))
         return surface
 
     def draw(self, app):
         """The screen and, over it, a busy / message / update card; returns the canvas."""
         self.card.pressed = app.pressed
         self.buttons = []
-        layer = self.backdrop().copy()
-        getattr(self, 'draw_' + app.screen)(app, layer)
         screen = app.screen
+        if screen == 'options' and (self.last is None or self.last[0] != 'options'):
+            self.options.enter()                        # Options opens on its list (or the page asked for)
+        layer = self.backdrop(screen != 'options').copy()
+        getattr(self, 'draw_' + screen)(app, layer)
         now = time.monotonic() * 1000
         if self.last is not None and self.last[0] != screen:
             self.slide = (getattr(app, 'transition_direction', 1), self.last[1], now)
@@ -315,6 +563,17 @@ class AppScreens:
         y = self.text(layer, later + hd, y) + 26
         y = self.action(layer, y, 'Choose Game Files', ('browse', 'apk'), 0)
         self.action(layer, y, 'Open Library', ('browse', 'library'), 1)
+
+    def draw_options(self, app, layer):
+        """The chooser's Options (AppOptions): the pause menu's pages, and a question / notice window over them.
+        They take their own input (AppOptions.event), so this screen lists no buttons of its own."""
+        options = self.options
+        options.draw(layer)
+        if options.ask is not None:
+            title, text, labels, _ = options.ask
+            self.card.pressed = options.pressed
+            self.window(layer, title, text, labels, [('ask', index) for index in range(len(labels))])
+            options.buttons, self.buttons = self.buttons, []
 
     # -- cards over a screen -----------------------------------------------------------------------------------
 

@@ -799,5 +799,13 @@ measurements, colours, rows and Arial Bold), and `AppCard` draws the parts that 
 back button and the orange buttons) as shapes. They are drawn in SHS HD's blue on a dark gradient, with the kiwi
 above the card. The chooser shows each imported game's own app icon. The busy card notes that an import can take a
 while. Commands are the SD screens' own; the buttons are listed in frame points (`Application.buttons_in_frame`).
-A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. Still to come: the
-chooser's Options (the shared Options) and the file browser. The standard edition's own SD menus stay as they are.
+The chooser's Options is the HD main menu's Options (`AppOptions`): the pause menu's own pages, controls and
+input, on the same card. Its value buttons and the sliders' speakers are drawn as shapes too. It reads and writes the
+shared options in `settings.json`, since no library is open there; the next game opened takes them, because the
+shared copy wins. Its pages:
+- General, Sound, Controller (with a controller connected) and Extras;
+- Data Management, with the Backups and Exports folders and Reset Settings. Choosing a folder returns to its page
+  with the notice.
+
+A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. Still to come: the file
+browser. The standard edition's own SD menus stay as they are.

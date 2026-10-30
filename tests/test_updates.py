@@ -241,8 +241,11 @@ class ApplicationUpdateTests(unittest.TestCase):
         app = self.app()
         self.future.set_running_or_notify_cancel()
         app.command(('options',)); app.tick(200); app.render()
-        self.assertIn(('toggle_updates',), [command for _, command in app.buttons])
-        app.command(('toggle_updates',))
+        options = app.app_screens.options                                   # the chooser's HD Options
+        options.activate(('pause_open', 'options:general'))
+        options.menu.slide = None; app.render()
+        self.assertIn(('pause_toggle', 'check_updates'), [command for _, command in options.buttons])
+        options.activate(('pause_toggle', 'check_updates'))
         self.future.set_result(release())
         app.command(('back',)); app.tick(200)
         self.assertIsNone(app.update_prompt)

@@ -628,13 +628,22 @@ class Application:
         with a notice."""
         key = next(key for key, (kind, _) in FOLDER_ROWS.items() if kind == self.browser_kind)
         self.settings.set_folder(key, folder)
+        what = 'Backups' if key == 'backup_folder' else 'Exported episodes'
+        where = self.backup_folder() if key == 'backup_folder' else self.export_folder()
+        message = f'{what} will be saved in {self.folder_text(where)}.'
+        if self.library is None and self.app_screens is not None:
+            # From the chooser's Options: back to its Data Management, with the notice there.
+            options = self.app_screens.options
+            options.next_screen = FOLDER_ROWS[key][1]
+            options.next_ask = ('Folder Chosen', message, ('OK',), (None,))
+            self.history = ['games']
+            self.show('options', remember=False)
+            return
         self.history = []
         self.show('main', remember=False)
         self.shell.activate(('options',))
         self.shell.pause.open(FOLDER_ROWS[key][1])
-        what = 'Backups' if key == 'backup_folder' else 'Exported episodes'
-        where = self.backup_folder() if key == 'backup_folder' else self.export_folder()
-        self.shell.notify('Folder Chosen', f'{what} will be saved in {self.folder_text(where)}.')
+        self.shell.notify('Folder Chosen', message)
 
     def export_episodes(self, library, ids):
         """Export Episodes: each chosen episode's EXP file, as imported and under its own name, into export_folder."""
@@ -1447,12 +1456,17 @@ class Application:
             self.show('main', remember=False)
 
     app_screens = None              # this player's own screens in HD (desktop_app_hd.AppScreens), once drawn
+
+    def app_options_open(self):
+        """Whether the chooser's Options (desktop_app_hd.AppOptions) are on the screen."""
+        return (self.screen == 'options' and self.library is None and self.app_screens is not None
+                and not pygame.native())
     buttons_in_frame = False        # `buttons` are in frame points (an HD app screen's), not the SD screens' 320 x 480
 
     def render_app(self):
-        """An HD app screen (desktop_app_hd: the chooser, Bulk Import, Setup) and its card."""
+        """An HD app screen (desktop_app_hd: the chooser, its Options, Bulk Import, Setup) and its card."""
         if self.app_screens is None:
-            self.app_screens = AppScreens()
+            self.app_screens = AppScreens(self)
         canvas = self.app_screens.draw(self)
         self.present_frame(canvas, side_art=False)
         self.buttons = self.app_screens.buttons if self.ready or self.message or self.update_prompt else []
@@ -1574,6 +1588,8 @@ class Application:
             self.shell.close_window()
         elif self.screen == 'picker' and self.choice_kind is not None:
             self.leave_choice()
+        elif self.app_options_open() and self.app_screens.options.step_back():
+            pass                                        # a page, or a window, of the chooser's Options
         elif self.history:
             screen = self.history.pop()
             self.show(screen, remember=False)
@@ -2251,6 +2267,8 @@ class Application:
     def render(self):
         self._sync_menu_music()
         self._fade_menu_music()
+        if self.app_screens is not None and not (AppScreens.handles(self) and not pygame.native()):
+            self.app_screens.last = None                # drawn elsewhere: an app screen comes back afresh
         if self.screen == 'game':
             if self.game.session.episode_ended:
                 self.return_to_menu()
@@ -2263,7 +2281,7 @@ class Application:
         if self.screen == 'main' and self.shell is not None:
             self.render_shell()
             return
-        if self.screen in APP_SCREENS and not pygame.native():
+        if AppScreens.handles(self) and not pygame.native():
             self.render_app()
             return
         self.buttons_in_frame = False
@@ -2411,6 +2429,9 @@ class Application:
             return self.picker_event(event)
         if self.screen == 'main' and self.shell is not None:
             return self.shell_event(event)
+        if self.app_options_open():
+            # The chooser's Options take their own input, as the HD pause menu does (desktop_app_hd.AppOptions).
+            return self.app_screens.options.event(event, self.picker_point(event.pos) if hasattr(event, 'pos') else None)
         if event.type == pygame.TEXTINPUT and self.focus in ('search', 'path'):
             value = ''.join(c for c in event.text if c.isprintable())
             if self.focus == 'search':

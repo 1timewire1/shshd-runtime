@@ -73,6 +73,43 @@ class AppScreenTests(unittest.TestCase):
         self.assertIsNotNone(self.screens.slide)
         self.assertEqual(self.screens.buttons, [])
 
+    def test_the_choosers_options_change_the_shared_settings_and_reset_them(self):
+        from unittest.mock import Mock
+        from exp_runtime.desktop_app_hd import AppOptions
+        from exp_runtime.menu import preference_defaults
+        from exp_runtime.settings import AppSettings
+        settings = AppSettings(Path(self.root) / 'settings.json')
+        host = SimpleNamespace(settings=settings, file_picker=Mock(), back=Mock(), _click_sound=Mock(),
+                               sync_controller=Mock(), choose_folder=Mock(),
+                               set_update_check=lambda on: settings.set_update_check(on))
+        options = AppOptions(host)
+        options.enter()
+        layer = pygame.Surface((768 * options.menu.scale, 1024 * options.menu.scale), pygame.SRCALPHA)
+        options.draw(layer)
+        self.assertEqual([c for _, c in options.buttons][:4], [('pause_open', f'options:{page}')
+                                                               for page in ('general', 'sound', 'extras', 'data')])
+        options.activate(('pause_toggle', 'autoplay'))
+        options.activate(('pause_cycle', 'start_in'))
+        options.activate(('pause_cycle', 'title_language'))
+        options.set_volume('music', .25)
+        stored = AppSettings(Path(self.root) / 'settings.json')
+        self.assertEqual((stored.preferences['autoplay'], stored.start_in, stored.preferences['title_language'],
+                          stored.preferences['music_volume']), (True, 'games', 'fr', 25))
+        options.menu.open('options:general')
+        options.menu.slide = None
+        options.draw(layer)                                                 # every General row has its control
+        self.assertIn(('pause_cycle', 'start_in'), [c for _, c in options.buttons])
+        self.assertTrue(options.step_back())                                # up a page...
+        self.assertEqual(options.menu.state.screen, 'options')
+        self.assertFalse(options.step_back())                               # ...then out of Options
+        options.activate(('pause_action', 'reset_settings'))
+        title, _, labels, actions = options.ask
+        self.assertEqual((title, labels), ('Reset Settings?', ('No', 'Reset')))
+        actions[1]()
+        stored = AppSettings(Path(self.root) / 'settings.json')
+        self.assertEqual({key: stored.preferences[key] for key in preference_defaults()}, preference_defaults())
+        self.assertEqual((stored.start_in, options.ask[0]), ('auto', 'Settings Reset'))
+
     def test_long_text_wraps_inside_the_card(self):
         lines = self.screens.card.wrap('word ' * 60, 26, 300)
         self.assertGreater(len(lines), 3)
