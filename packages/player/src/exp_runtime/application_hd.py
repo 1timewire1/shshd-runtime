@@ -616,7 +616,7 @@ class HdShell:
                 choices[(choices.index(self.app.settings.start_in) + 1) % len(choices)]))
         elif kind == 'pause_action' and command[1] == 'unlock_warp':
             if self.app.unlock_warp():
-                self.stack.queue(WARP_UNLOCKED_MENU)
+                self.open_window(WARP_UNLOCKED_MENU)
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':
@@ -676,6 +676,11 @@ class HdShell:
             callback, self.pending_yes = self.pending_yes, None
             self.stack.clear()
             callback()
+
+    def open_window(self, menu):
+        """Open menu-engine window `menu` with its entrance (it zooms in, as `showInter`'s windows do)."""
+        self.stack.queue(menu)
+        self.window_ms = 0
 
     def confirm_new_game(self, title, callback):
         """Ask "Delete Saved Game?" before starting over an episode that has a save."""

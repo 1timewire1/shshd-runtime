@@ -1127,7 +1127,7 @@ class Application:
         if (self.warp_notice_due and self.screen == 'main' and shell is not None and shell.stage == 'main'
                 and not shell.overlay_active and not shell.pause_open and not shell.fading):
             self.warp_notice_due = False
-            shell.stack.queue(WARP_UNLOCKED_MENU)
+            shell.open_window(WARP_UNLOCKED_MENU)
 
     def return_to_menu(self, pause_box=None):
         # The menu's song the pause menu was playing carries on in the main menu (Desktop.take_pause_song). It is taken
@@ -1875,8 +1875,8 @@ class Application:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=f'{APP_NAME} — play SHS or Cause of Death with your own assets')
     parser.add_argument('--library', type=Path, help='Local content library (default: per-user application data)')
-    parser.add_argument('--game', choices=GAMES, default='shs',
-                        help='The game to open (default: shs)')
+    parser.add_argument('--game', choices=GAMES,
+                        help="The game to open (default: General's Start In, the game chooser until it is set)")
     parser.add_argument('--game-library', nargs=2, action='append', default=[], metavar=('GAME', 'PATH'),
                         help="A game's library for Switch Game, not remembered (repeatable; this fork's option)")
     parser.add_argument('--no-audio', action='store_true')
@@ -1888,9 +1888,11 @@ def main(argv=None):
         library()  # Frozen downloads must include a usable RAR4/RAR5 decoder.
         if runtime_version() == 'development':
             raise RuntimeError('Packaged runtime version is missing')
-        # A packaged-build check must never open or alter the player's library.
+        # A packaged-build check must never open or alter the player's library, nor read or write the player's
+        # settings (Start In would open a game; the shared preferences would be seeded from a library).
         with tempfile.TemporaryDirectory(prefix='exp-setup-test-') as temporary:
-            app = Application(audio=False, check_updates=False)
+            app = Application(audio=False, check_updates=False, library_root=Path(temporary) / 'libraries',
+                              settings_path=Path(temporary) / 'settings.json')
             try:
                 if app.screen != 'games' or app.library is not None:
                     raise RuntimeError('Expected game chooser without game content')
