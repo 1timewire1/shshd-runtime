@@ -15,6 +15,7 @@ every other episode's stay. With Back Up Receiver First, what would be replaced 
 first into the receiver's backups folder, as a "before sync" backup Restore Progress can bring back.
 """
 import logging
+import os
 from pathlib import Path
 import shutil
 import socket
@@ -34,16 +35,25 @@ SEND_PAGE, FIND_PAGE, RECEIVE_PAGE, SYNC_PAGE = 'data:send', 'data:find', 'data:
 
 
 def device_name():
-    """This device's name, as the other device shows it."""
+    """This device's name, as the other device shows it (SHSHD_DEVICE_NAME names it instead: two copies on one
+    computer, play-sync-test.ps1)."""
     from . import graphics
-    name = getattr(graphics, 'device_name', None)
-    name = name() if callable(name) else None
+    name = os.environ.get('SHSHD_DEVICE_NAME')
+    if not name:
+        name = getattr(graphics, 'device_name', None)
+        name = name() if callable(name) else None
     return (name or socket.gethostname() or 'This device')[:40]
 
 
+# SHSHD_SYNC_LOOPBACK=1 keeps sync to this computer's loopback: two copies of the app syncing with each other, with no
+# firewall question (play-sync-test.ps1).
+LOOPBACK = os.environ.get('SHSHD_SYNC_LOOPBACK') == '1'
+
+
 class SyncFlow:
-    # The network the sessions use (a probe on one machine keeps them to its loopback).
-    BIND, BEACON_ADDRESSES, DISCOVERY_PORT, PORT = '0.0.0.0', None, lan_sync.DISCOVERY_PORT, lan_sync.PORT
+    # The network the sessions use (a test on one machine keeps them to its loopback).
+    BIND, BEACON_ADDRESSES = ('127.0.0.1', ['127.0.0.1']) if LOOPBACK else ('0.0.0.0', None)
+    DISCOVERY_PORT, PORT = lan_sync.DISCOVERY_PORT, lan_sync.PORT
 
     def __init__(self, app):
         self.app = app
