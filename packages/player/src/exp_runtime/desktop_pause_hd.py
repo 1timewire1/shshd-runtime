@@ -81,6 +81,14 @@ EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
 TITLE_LANGUAGE_LABEL = 'Episode Titles'
+# General's Start In, also offered by the main menus only (owner, 2026-10-29): which game the app opens in
+# (settings.AppSettings.start_in); `settings['start_in']` is the current choice's name.
+START_IN_LABEL = 'Start In'
+START_IN_NAMES = {'games': 'Choose a Game', 'auto': 'Last Played', 'shs': 'Surviving High School',
+                  'cod': 'Cause of Death'}
+# Extras' Unlock Warping (owner, 2026-10-29): SHS's story-tree lock (`SHSEngine +0x6490a`, cleared by finishing
+# Football Season) undone at once, with the app's own notice (menu 29); offered only while warping is locked.
+UNLOCK_WARP_LABEL = 'Unlock Warping'
 DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another Library'))
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
@@ -569,8 +577,10 @@ class HdPauseMenu:
                                 self.switch_position(key, settings.get(key, False)))
                     buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
                 elif kind == 'cycle':
-                    box = pygame.Rect(PANEL_X + PANEL_W - CONTROL_RIGHT - CYCLE_SIZE[0],
-                                      y + (ROW - CYCLE_SIZE[1]) / 2, *CYCLE_SIZE)
+                    # As wide as its value needs (Start In's "Surviving High School"), at least CYCLE_SIZE.
+                    width = max(CYCLE_SIZE[0], self.font(CYCLE_POINTS).size(settings[key])[0] / self.scale + 28)
+                    box = pygame.Rect(PANEL_X + PANEL_W - CONTROL_RIGHT - width,
+                                      y + (ROW - CYCLE_SIZE[1]) / 2, width, CYCLE_SIZE[1])
                     self.cycle_button(layer, box, settings[key], pressed=self.pressed == ('pause_cycle', key))
                     buttons.append((box, ('pause_cycle', key)))
                 else:
@@ -633,9 +643,14 @@ class HdPauseMenu:
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
             if 'title_language' in settings:
                 rows.append(('cycle', TITLE_LANGUAGE_LABEL, 'title_language'))
+            if 'start_in' in settings:
+                rows.append(('cycle', START_IN_LABEL, 'start_in'))
             return rows
         if category == 'extras':
-            return [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
+            rows = [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
+            if 'unlock_warp' in settings:
+                rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
+            return rows
         if category == 'data':
             return [('action', label, key) for key, label in DATA_ACTIONS if key in settings]
         return []

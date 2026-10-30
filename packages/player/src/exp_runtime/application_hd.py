@@ -24,7 +24,8 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, focus_step
+from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES, focus_step
+from .settings import START_IN
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
 from .pointer import step_focus
@@ -42,6 +43,10 @@ SOUND_MENU, MUSIC_MENU = 7, 8
 PRIVACY_MENU, LEAVE_MENU, DISABLE_MENU, ENABLE_MENU = 16, 17, 19, 20
 DELETE_MENU, CONNECTION_MENU = 12, 41
 END_MENU, MISS_MENU = 23, 24
+# "Options Unlocked" / "Warping feature has been unlocked for Football Season Mega Pack!" (strings 115 / 272): shown by
+# `SHSEngine::setAppMode` on the main menu after Football Season clears the warp lock (its flag +0x6490b), and by
+# Extras' Unlock Warping.
+WARP_UNLOCKED_MENU = 29
 SOUND_DELAY = 0.3                 # seconds the finished loading screen shows before the question
 # Starting an episode (owner, from the original games and a photo of SHS on an iPod touch, 2026-10-22): the story's
 # "Loading / Please wait..." overlay with its running man over the main menu's art (without its buttons); the art fades
@@ -307,6 +312,9 @@ class HdShell:
             settings['title_language'] = self.language_name(state.title_language)
         settings['add_episodes'] = settings['open_library'] = True
         settings['check_updates'] = self.app.settings.check_for_updates
+        settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
+        if self.app.warp_lock_offered():
+            settings['unlock_warp'] = True
         return settings
 
     def translated_titles(self):
@@ -602,6 +610,13 @@ class HdShell:
                                                    % len(TITLE_LANGUAGES)]
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
+        elif kind == 'pause_cycle' and command[1] == 'start_in':
+            choices = START_IN
+            self.app._attempt(lambda: self.app.settings.set_start_in(
+                choices[(choices.index(self.app.settings.start_in) + 1) % len(choices)]))
+        elif kind == 'pause_action' and command[1] == 'unlock_warp':
+            if self.app.unlock_warp():
+                self.stack.queue(WARP_UNLOCKED_MENU)
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':

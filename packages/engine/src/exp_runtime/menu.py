@@ -59,15 +59,39 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
 
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
+# The preferences both games share (owner, 2026-10-29): Options' switches, sliders and the Episode Titles language,
+# kept app-wide (the player's settings.AppSettings) as well as in each library's player.json. Game data stays per
+# library: the selected episode, the name tables, the warp lock (Football Season's progress) and the HD art mode
+# (its twin store is the library's). Each value's check: a type, or the values it may take.
+SHARED_PREFERENCES = dict(
+    music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
+    skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
+    hd_backdrop=bool, hires_portraits=bool, music_volume=range(101), sound_volume=range(101),
+    order=('episode', 'title'), title_language=TITLE_LANGUAGES)
+
+
+def shared_preference(key, value):
+    """Whether `value` is one a shared preference `key` may hold."""
+    check = SHARED_PREFERENCES.get(key)
+    if check is bool:
+        return type(value) is bool
+    if isinstance(check, range):
+        return type(value) is int and value in check
+    return check is not None and value in check
+
 
 class MenuState:
     """Per-library preferences and selection; saves remain content-bound.
 
     Automatic checkpoints have their own file, preserving the player's F5
     slot. Resume uses the newer of those two saves and validates it on load.
+
+    `shared` holds the preferences both games share (an object with a `preferences` dict and
+    `set_preferences(values)`: the player's AppSettings): they override player.json's copies, and saving writes both.
     """
-    def __init__(self, library, *, process=None):
+    def __init__(self, library, *, process=None, shared=None):
         self.library = library
+        self.shared = shared
         self.process = process or RuntimeProcess()
         self.path = library.directory / 'player.json'
         # resume_path's answer for a save whose checkpoint is an ending, by (path, mtime, size): checking it opens the
@@ -165,6 +189,10 @@ class MenuState:
                 self.name_sets.update({key: dict(table) for key, table in sets.items()})
             except (ValueError, OSError) as error:
                 self.warning = f'Could not read preferences: {error}'
+        if shared is not None:
+            for key, value in shared.preferences.items():
+                if shared_preference(key, value):
+                    setattr(self, key, value)
         ids = {e['id'] for e in library.episodes}
         if self.selected not in ids:
             saved = [(self.resume_path(e['id']), e['id']) for e in library.episodes]
@@ -248,6 +276,8 @@ class MenuState:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+        if self.shared is not None:
+            self.shared.set_preferences({key: getattr(self, key) for key in SHARED_PREFERENCES})
 
     def session(self, episode, *, resume=True):
         resources = self.library.open_episode(episode)

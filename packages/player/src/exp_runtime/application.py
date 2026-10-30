@@ -4,6 +4,7 @@ The executable starts here with no game data. A host supplies graphics/input
 primitives; imports run on a worker and publish a validated library atomically.
 """
 import argparse
+import json
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -20,7 +21,7 @@ from .app_icon import icon_surface, set_window_icon
 from .app_info import PROJECT_URL
 from .content import ContentError, ContentLibrary, import_game, is_bundled
 from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
-from .application_hd import HdShell
+from .application_hd import WARP_UNLOCKED_MENU, HdShell
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import FRAME as PICKER_FRAME, HdEpisodePicker
 from .animation_curves import ease_in_out
@@ -35,7 +36,7 @@ from .games import GAMES
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
-                   default_library, group_episodes, remember_library)
+                   default_library, group_episodes, remember_library, shared_preference)
 from .runtime import SaveError, Session
 from .settings import AppSettings
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
@@ -95,6 +96,11 @@ class Application:
         # remembered, so a test setup leaves the player's own launcher.json alone.
         given = {key: Path(path) for key, path in (game_libraries or {}).items()}
         self.library_path = lambda key: given[key] if key in given else located(key)
+        self.seed_shared_preferences()
+        if directory is None and game_key is None:
+            # General's Start In (settings.AppSettings.start_in): a game, or the one last played, when it has a library.
+            game_key = self.settings.boot_game(lambda key: key in GAMES
+                                               and (self.library_path(key) / 'library.json').is_file())
         self.selected_game = game_key
         self.directory = Path(directory) if directory is not None else self.library_path(game_key or default_game)
         self.library = self.state = self.game = None
@@ -189,6 +195,29 @@ class Application:
             self.updates.start()
 
     shell_prompt = ()
+
+    def seed_shared_preferences(self):
+        """The shared preferences (menu.SHARED_PREFERENCES) start as the most recently saved game's player.json had them:
+        before both games shared them, each library kept its own."""
+        if self.settings.preferences:
+            return
+        newest = None
+        for key in GAMES:
+            path = self.library_path(key) / 'player.json'
+            try:
+                found = (path.stat().st_mtime_ns, path)
+            except OSError:
+                continue
+            newest = max(newest, found) if newest is not None else found
+        if newest is None:
+            return
+        try:
+            data = json.loads(newest[1].read_text(encoding='utf-8'))
+            values = {key: value for key, value in data.items() if shared_preference(key, value)}
+            if values:
+                self.settings.set_preferences(values)
+        except (OSError, ValueError, AttributeError) as error:
+            logging.warning('Could not share the preferences in %s: %s', newest[1], error)
 
     def shell_idle(self):
         """Where the update prompt may appear with the HD menus showing: at the end of the launch's loading screen
@@ -363,7 +392,7 @@ class Application:
                                    f'Select {library.game_title} in the game chooser to open it.')
             library.ensure_builtin_episodes()
             process_key = (library.game_id, library.kind)
-            state = MenuState(library, process=self.processes.get(process_key))
+            state = MenuState(library, process=self.processes.get(process_key), shared=self.settings)
             renderer = MenuRenderer(library)
             if self.game:
                 self.state.checkpoint(self.game.session)
@@ -937,6 +966,9 @@ class Application:
             # accidentally reusing the previous episode's cached artwork; the last episode's view and art leave the
             # renderers' method caches with it (episode_thumbnails.release_episode_caches).
             episode_thumbnails.release_episode_caches()
+            settings = getattr(self, 'settings', None)
+            if settings is not None and self.selected_game in GAMES:
+                self._attempt(lambda: settings.set_last_game(self.selected_game))     # Start In's Last Played
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
                                 names=self.state.names_for(session.resources.record),
                                 vibration_enabled=self.state.vibration,
@@ -961,6 +993,8 @@ class Application:
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
         self.game.warp_unlocked = (self.state.warp_unlocked
                                    or self.game.session.resources.record.get('builtin') != 'football-star')
+        self.game.warp_lock_offered = self.warp_lock_offered()      # Extras' Unlock Warping, in any SHS episode
+        self.game.on_unlock_warp = self.unlock_warp
         self.game.on_settings = self.save_game_settings
         self.game.active = self.active
         self.screen, self.history, self.focus = 'game', [], None
@@ -1060,11 +1094,40 @@ class Application:
 
     def unlock_warp_if_football_finished(self):
         """`SHSEngine::invokeEndOfGameMenu`: at the end of the episode with id 0 (Football Season) the tree's lock (+0x6490a) is cleared,
-        for good (it is one of the saved options)."""
+        for good (it is one of the saved options), and the notice saying so is due (+0x6490b: `setAppMode` shows menu 29
+        when the main menu next comes up, show_warp_notice)."""
         record = self.game.session.resources.record
         if (self.game.session.episode_exited and record.get('builtin') == 'football-star' and not self.state.warp_unlocked):
             self.state.warp_unlocked = True
             self._attempt(self.state.persist)
+            self.warp_notice_due = True
+
+    warp_notice_due = False         # Football Season unlocked warping: its notice waits for the main menu
+
+    def warp_lock_offered(self):
+        """Whether Extras offers Unlock Warping: SHS's library (it has Football Season) with warping still locked."""
+        return (self.state is not None and not self.state.warp_unlocked and self.library is not None
+                and any(record.get('builtin') == 'football-star' for record in self.library.episodes))
+
+    def unlock_warp(self):
+        """Extras' Unlock Warping: the lock Football Season clears, cleared now (the caller shows menu 29). False when
+        there was none."""
+        if not self.warp_lock_offered():
+            return False
+        self.state.warp_unlocked = True
+        self._attempt(self.state.persist)
+        self.warp_notice_due = False
+        if self.game is not None:
+            self.game.warp_unlocked, self.game.warp_lock_offered = True, False
+        return True
+
+    def show_warp_notice(self):
+        """The notice Football Season's unlock left due, once the main menu is up with nothing over it."""
+        shell = self.shell
+        if (self.warp_notice_due and self.screen == 'main' and shell is not None and shell.stage == 'main'
+                and not shell.overlay_active and not shell.pause_open and not shell.fading):
+            self.warp_notice_due = False
+            shell.stack.queue(WARP_UNLOCKED_MENU)
 
     def return_to_menu(self, pause_box=None):
         # The menu's song the pause menu was playing carries on in the main menu (Desktop.take_pause_song). It is taken
@@ -1340,6 +1403,8 @@ class Application:
         self.buttons = []
 
     def tick(self, elapsed):
+        if getattr(self, 'warp_notice_due', False):
+            self.show_warp_notice()
         if self.job and self.job.done():
             job, kind = self.job, self.job_kind
             self.job = self.job_kind = None

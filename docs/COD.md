@@ -857,16 +857,25 @@ CoD's colours (`cod/hd_art.positional_frames`).
     games, where a collage exists) and Check for Updates (main menu).
   - **Sound:** Game Music and Sound FX, with their sliders.
   - **Extras** (owner, 2026-10-21): the play aids, Disable Choice Timer, Choice Hints (CoD: Choice & Answer Hints)
-    and Ask to Skip Mini-Games (CoD's word quizzes too).
+    and Ask to Skip Mini-Games (CoD's word quizzes too). SHS adds **Unlock Warping** while its story tree is still
+    locked (owner, 2026-10-29): an action row that clears the lock Football Season clears, shows the app's own
+    notice (menu 29, "Options Unlocked", string 272) and then is gone. Finishing Football Season shows the same
+    notice when the main menu next comes up, as `SHSEngine::setAppMode` does (flag +0x6490b).
   - **On the main menu only:**
     - **Episode Titles** ends General. It is a button (SHS HD's orange footer button; CoD's blue) that steps
       through the title languages. It is offered where some episode has a translated title, so not in CoD (none of
       its 74 has one).
+    - **Start In** follows it in General (owner, 2026-10-29): Choose a Game, Last Played (the game an episode was
+      last started in), Surviving High School or Cause of Death. The app opens there when it is not told a game
+      or library; a game without a library opens the chooser instead.
     - **Data Management:** Add Episodes, Open Another Library.
   - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
-    79 x 27 switch, and the Episode Titles button at 104 x 34 with an 18-point label.
+    79 x 27 switch, and the value buttons at 104 x 34 with an 18-point label, wider where the value needs it.
 
-  Every switch is stored in each game's own `player.json`, not shared between games (yet).
+  Options are shared by both games (owner, 2026-10-29): the switches, the sliders and the Episode Titles language
+  live in the app's `settings.json` (`preferences`, `menu.SHARED_PREFERENCES`) as well as each game's
+  `player.json`, and the shared copy wins. The first launch takes them from the game saved most recently. Game data
+  stays per library: the selected episode, the name tables, the warp lock and the HD art mode.
 - **Left out.** Play My Music: it opens the device's music library, which a desktop doesn't have.
 
 **Help & About.** The pages use SHS HD's page layout (a long title, such as "Episodes On Demand", takes two lines,

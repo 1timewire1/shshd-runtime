@@ -156,6 +156,26 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual([c for _, c in self.commands()], [('pause_action', 'add_episodes'),
                                                            ('pause_action', 'open_library'), ('pause_back',)])
 
+    def test_start_in_cycles_in_general_and_unlock_warping_is_an_extras_action(self):
+        """General's Start In is a value button grown to fit its value; Extras' Unlock Warping is an action row,
+        offered only while the host says the lock is on."""
+        from exp_runtime.desktop_pause_hd import CONTROL_RIGHT, PANEL_W, PANEL_X, START_IN_NAMES
+        state = self.menu.state
+        state.screen = 'options:general'
+        self.settings.update(title_language='English', start_in=START_IN_NAMES['games'])
+        rows = self.commands()
+        self.assertEqual([c for _, c in rows][-3:], [('pause_cycle', 'title_language'), ('pause_cycle', 'start_in'),
+                                                     ('pause_back',)])
+        narrow = rows[-2][0]
+        self.settings['start_in'] = START_IN_NAMES['shs']
+        wide = self.commands()[-2][0]
+        self.assertGreater(wide.width, narrow.width)
+        self.assertEqual((wide.right, wide.height), (PANEL_X + PANEL_W - CONTROL_RIGHT, 34))
+        state.screen = 'options:extras'
+        self.assertNotIn(('pause_action', 'unlock_warp'), [c for _, c in self.commands()])
+        self.settings['unlock_warp'] = True
+        self.assertEqual([c for _, c in self.commands()][-2], ('pause_action', 'unlock_warp'))
+
     def test_back_steps_out_one_screen_at_a_time(self):
         state = self.menu.state
         state.screen = 'controls'
