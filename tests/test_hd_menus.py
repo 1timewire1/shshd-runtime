@@ -598,6 +598,22 @@ class ShellActionTests(unittest.TestCase):
         shell.draw_overlay(canvas)
         self.assertIs(drawn[-1], canvas)
 
+    def test_skip_sound_prompt_goes_on_to_the_flash_with_the_sound_as_set(self):
+        """Sound's Skip Sound Prompt (owner, 2026-10-29): no "Play with sound?"; the launch goes on as an answer would
+        (the EA flash and its jingle), leaving Music and Sound as they were."""
+        from types import SimpleNamespace
+        from exp_runtime.application_hd import JINGLE, LOADING_TIME, SOUND_DELAY
+        shell, played = self.shell, []
+        shell.app.update_holds_launch = lambda seconds: False
+        shell.app.external_music = lambda: False
+        shell.app.play_asset = played.append
+        shell.app.state = SimpleNamespace(skip_sound_prompt=True, music=False, sound=True)
+        shell.fade, shell.pause_open = None, False
+        shell.stage, shell.age = 'loading', LOADING_TIME + SOUND_DELAY
+        shell.tick(0)
+        self.assertEqual((shell.stage, shell.stack.stack, played), ('flash', [], [JINGLE]))
+        self.assertEqual((shell.app.state.music, shell.app.state.sound), (False, True))
+
     def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
         canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))
         canvas.fill((200, 100, 50, 0))

@@ -12,8 +12,9 @@ import tempfile
 
 from .launcher import user_data_directory
 
-# General's Start In: the game chooser, the game an episode was last played in, or one game.
-START_IN = ('games', 'auto', 'shs', 'cod')
+# General's Start In: the game an episode was last played in (the default: the game chooser until there is one; owner,
+# 2026-10-29), the game chooser, or one game.
+START_IN = ('auto', 'games', 'shs', 'cod')
 
 
 class AppSettings:
@@ -21,7 +22,7 @@ class AppSettings:
         self.path = Path(path) if path is not None else user_data_directory() / 'settings.json'
         self.check_for_updates = True
         self.preferences = {}           # shared game preferences (MenuState checks each value as it reads it)
-        self.start_in = 'games'
+        self.start_in = 'auto'
         self.last_game = None
         try:
             data = json.loads(self.path.read_text(encoding='utf-8'))

@@ -188,8 +188,6 @@ class Desktop:
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
     warp_unlocked = True
-    warp_lock_offered = False       # Extras' Unlock Warping (the app's lock is still on: Application.warp_lock_offered)
-    on_unlock_warp = None           # the app's Application.unlock_warp
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
@@ -1975,7 +1973,6 @@ class Desktop:
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    **({'unlock_warp': True} if self.warp_lock_offered else {}),
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}))
 
@@ -2097,14 +2094,6 @@ class Desktop:
         if kind == 'pause_back':
             self.pause_hd.back()
             self._menu_sound()
-            return
-        if kind == 'pause_action' and command[1] == 'unlock_warp':
-            # Extras' Unlock Warping: the app's lock goes, with its notice (menu 29) over the pause menu.
-            if self.on_unlock_warp is not None and self.on_unlock_warp():
-                if self.notice_stack is not None and self.exit_menu == 17:     # SHS HD's menus
-                    self.notice_stack.queue(29)
-                else:
-                    self._notice('Warping unlocked')
             return
         if kind == 'pause_link':
             # A link in a help page's text (an About page's override): behind the game's "Exit Game?" prompt, as the
