@@ -36,7 +36,7 @@ from .games import GAMES
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
-                   default_library, group_episodes, remember_library, shared_preference)
+                   SHARED_PREFERENCES, default_library, group_episodes, remember_library, shared_preference)
 from .runtime import SaveError, Session
 from .settings import AppSettings
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
@@ -244,6 +244,80 @@ class Application:
         self.library.hires_portraits = self.state.hires_portraits
         if self.game:
             self.game.set_hires_portraits(self.state.hires_portraits)
+
+    # -- Sync Devices' groundwork: master's Data Management, carried as far as sync needs it (the rest comes when
+    # Android joins master) --------------------------------------------------------------------------------------
+
+    def start_data_job(self, title, work, done):
+        """A Data Management row's work, `work(library)` off the UI thread under the busy card titled `title` (its
+        progress below it); `done(result)` gets the result back on the UI thread (tick)."""
+        if self.busy:
+            return
+        self.job_kind, self.job_title, self.job_done = 'data', title, done
+        self.progress_text = 'Starting...'
+        self.job = self.executor.submit(work, self.library)
+
+    # Where a phone's backups go: the host's own folder for files a player can reach (Android: the app's external
+    # files folder), else the player's Downloads (else their home folder).
+    USER_FOLDER_ROOT = None
+
+    @classmethod
+    def user_folder(cls, name):
+        """A folder of this app's for files the player keeps: `<APP_NAME> <name>`."""
+        if cls.USER_FOLDER_ROOT is not None:
+            return Path(cls.USER_FOLDER_ROOT) / f'{APP_NAME} {name}'
+        home = Path.home()
+        base = home / 'Downloads' if (home / 'Downloads').is_dir() else home
+        return base / f'{APP_NAME} {name}'
+
+    def chosen_folder(self, key):
+        """The folder the player chose for `key` (settings.FOLDERS; a computer's Backups / Exports Folder), or None."""
+        chosen = getattr(getattr(self, 'settings', None), key, None)
+        return Path(chosen) if chosen else None
+
+    def backup_folder(self):
+        """Where Back Up Progress writes: the chosen folder, else the default."""
+        return self.chosen_folder('backup_folder') or self.user_folder('Backups')
+
+    def player_data(self):
+        """The library's own player.json data a backup carries (taken on the UI thread, before a job starts)."""
+        state = self.state
+        return dict(names=dict(state.names), name_sets={key: dict(table) for key, table in state.name_sets.items()},
+                    warp_unlocked=state.warp_unlocked)
+
+    def back_up_progress(self, library, player, note='', **bundle):
+        """Back Up Progress: the library's saved games, Decision Trees and names into a new file in backup_folder.
+        `bundle` passes write_bundle's keep / options (a sync's backup of what it overwrites). Returns (its file, its
+        manifest)."""
+        from datetime import datetime
+        from .progress_bundle import write_bundle
+        self.progress_text = 'Packing saved games...'
+        stamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
+        target = self.backup_folder() / f'{self.game_title} {stamp}{f" ({note})" if note else ""}.zip'
+        titles = {record['id']: record['titles'][0] for record in library.episodes}
+        return target, write_bundle(library.directory, library.game_id, player, titles, target, note=note, **bundle)
+
+    def option_values(self):
+        """The shared options as they are (menu.SHARED_PREFERENCES)."""
+        return {key: getattr(self.state, key) for key in SHARED_PREFERENCES}
+
+    def apply_options(self, options):
+        """Shared options from a sync or a backup: each this app knows, with a value it accepts
+        (menu.shared_preference); the rest are left. Persisted, and the options with effects of their own applied."""
+        for key, value in options.items():
+            if shared_preference(key, value):
+                setattr(self.state, key, value)
+        self.state.persist()
+        self.apply_hires_portraits()
+        self.menu_music_changed()
+
+    sync = None                     # LAN sync's flow (sync_flow.SyncFlow), once Sync Devices is used
+
+    def sync_flow(self):
+        if self.sync is None:
+            from .sync_flow import SyncFlow
+            self.sync = SyncFlow(self)
+        return self.sync
 
     def set_update_check(self, enabled):
         """The launch update check on or off (settings.json), from the SD Options or the HD General page."""
@@ -794,8 +868,9 @@ class Application:
     def render_shell(self):
         canvas = self.shell.render()
         if self.busy:
-            self.shell.main.draw_busy(canvas, 'Preparing episodes' if self.job_kind == 'previews' else 'Importing content',
-                                      self.progress_text if self.job_kind == 'previews' else 'Checking and copying your files...')
+            title = {'previews': 'Preparing episodes', 'data': self.job_title}.get(self.job_kind, 'Importing content')
+            self.shell.main.draw_busy(canvas, title, self.progress_text if self.job_kind in ('previews', 'data')
+                                      else 'Checking and copying your files...')
         elif self.message:
             # The prompt's card with an OK button: on a phone or an iPad there is no Escape or Enter to dismiss it
             # (the owner's g54 was left on "Added 53 episodes." with no way out).
@@ -1402,6 +1477,8 @@ class Application:
     def tick(self, elapsed):
         if getattr(self, 'warp_notice_due', False):
             self.show_warp_notice()
+        if getattr(self, 'sync', None) is not None and self.shell is not None:
+            self.sync.tick()
         if self.job and self.job.done():
             job, kind = self.job, self.job_kind
             self.job = self.job_kind = None
@@ -1413,6 +1490,8 @@ class Application:
                     self._open_staged(result)
                 elif kind == 'previews':
                     self.picker, self.transition_age = None, 200
+                elif kind == 'data':
+                    self.job_done(result)
                 elif kind == 'music':
                     # Retry the current cue on Resume if its earlier load failed.
                     # Keep the live story and all existing checkpoints intact.
@@ -1817,6 +1896,8 @@ class Application:
 
     def close(self):
         self.updates.cancel()
+        if self.sync is not None:
+            self.sync.stop()
         # Worker must finish its atomic publication before its ZIP is closed.
         self.executor.shutdown(wait=True)
         if self.game and self.screen == 'game':

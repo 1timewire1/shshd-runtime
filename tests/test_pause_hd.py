@@ -152,9 +152,13 @@ class HdPauseTests(unittest.TestCase):
         from exp_runtime.desktop_pause_hd import CONTROL_RIGHT, PANEL_W, PANEL_X
         self.assertEqual((rows[-2][0].width, rows[-2][0].height), (104, 34))          # a little bigger than a switch
         self.assertEqual(rows[-2][0].right, PANEL_X + PANEL_W - CONTROL_RIGHT)          # against the card's right
-        state.screen = 'options:data'
-        self.assertEqual([c for _, c in self.commands()], [('pause_action', 'add_episodes'),
-                                                           ('pause_action', 'open_library'), ('pause_back',)])
+        state.screen = 'options:data'                                       # its pages, those with an offered row
+        self.assertEqual([c for _, c in self.commands()], [('pause_open', 'data:library'),
+                                                           ('pause_open', 'data:episodes'), ('pause_back',)])
+        state.screen = 'data:library'
+        self.assertEqual([c for _, c in self.commands()], [('pause_action', 'open_library'), ('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.assertEqual(state.screen, 'options:data')                      # back to Data Management
 
     def test_start_in_cycles_in_general_and_unlock_warping_is_an_extras_action(self):
         """General's Start In is a value button grown to fit its value; Extras' Unlock Warping is an action row,
@@ -277,8 +281,8 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(menu.key(pygame.K_RETURN), ('pause_open', 'options'))
         state.screen = 'options:sound'
         self.commands()
-        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing here is highlighted yet
-        menu.key(pygame.K_DOWN)
+        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing highlighted: it shows the first
+        self.assertEqual(state.focus, ('pause_toggle', 'music'))
         self.assertEqual(menu.key(pygame.K_SPACE), ('pause_toggle', 'music'))
         menu.key(pygame.K_DOWN)
         self.assertEqual(state.focus[:2], ('pause_slider', 'music'))

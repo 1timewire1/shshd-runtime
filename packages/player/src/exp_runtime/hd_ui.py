@@ -237,6 +237,6 @@ class HdUi:
         pygame.draw.rect(card, (20, 24, 40, 225), card.get_rect(), border_radius=24 * S)
         pygame.draw.rect(card, (*BLUE, 255), card.get_rect(), 3 * S, border_radius=24 * S)
         canvas.blit(card, ((FRAME[0] - 560) // 2 * S, (FRAME[1] - 220) // 2 * S))
-        self.text(canvas, title, 36, 0, 380, outline=False, width=FRAME[0])
+        self.text(canvas, title, 36, 0, (FRAME[1] - 220) // 2 + 24, outline=False, width=FRAME[0])
         for index, line in enumerate(self.wrap(text, 24, 500, 3)):
-            self.text(canvas, line, 24, 0, 450 + index * 30, outline=False, width=FRAME[0])
+            self.text(canvas, line, 24, 0, (FRAME[1] - 220) // 2 + 90 + index * 30, outline=False, width=FRAME[0])

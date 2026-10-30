@@ -73,7 +73,8 @@ CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (up
 # player's own: SHS HD's Options is one page). A row shows when its setting is offered (`layout`'s `settings`), so a
 # game leaves out what does not apply to it.
 # Extras holds the play aids that change how a story plays (owner, 2026-10-21).
-OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('extras', 'Extras'), ('data', 'Data Management'))
+OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 'Controller'), ('extras', 'Extras'),
+                     ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'hires_portraits', 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
@@ -92,7 +93,29 @@ UNLOCK_WARP_LABEL = 'Unlock Warping'
 # Sound's last row on the main menu (owner, 2026-10-29): launch without asking "Play with sound?" (the music and sound
 # switches as set).
 SKIP_SOUND_PROMPT_LABEL = 'Skip Sound Prompt'
-DATA_ACTIONS = (('add_episodes', 'Add Episodes'), ('open_library', 'Open Another Library'))
+# Controller (owner, 2026-10-29), offered while a controller is connected: which face button confirms, the bottom one
+# or the right one (a Nintendo layout; the other face buttons swap with it). Football's plays stay by position.
+CONFIRM_BUTTON_LABEL = 'Confirm Button'
+CONFIRM_NAMES = {'south': 'Bottom', 'east': 'Right'}
+# How a controller draws a word in the word grid: Hold (the default), confirm held drags; Tap, confirm adds the
+# highlighted cell.
+GRID_CONTROLS_LABEL = 'Word Grid Controls'
+GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
+# Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
+# menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
+DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
+                                           ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
+                                           ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'))),
+              ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
+                                             ('export_episodes', 'Export Episodes'), ('export_folder', 'Exports Folder'),
+                                             ('reset_trees', 'Reset Decision Tree'))),
+              ('data:progress', 'Progress', (('back_up', 'Back Up Progress'), ('restore', 'Restore Progress'),
+                                             ('backup_folder', 'Backups Folder'), ('reset_names', 'Reset Names'),
+                                             ('delete_saves', 'Delete All Saves'))),
+              ('data:sync', 'Sync Devices', (('sync_send', 'Send to Another Device'),
+                                             ('sync_receive', 'Receive from Another Device'))))
+DATA_LAST = (('reset_settings', 'Reset Settings'),)
+DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
 CONTROL_RIGHT = 26
@@ -158,6 +181,9 @@ SWITCH_MS = 200
 FOCUS_SHADE, VOLUME_STEP = .85, .1
 KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
 PAGE_KEYS = {pygame.K_UP: -40, pygame.K_DOWN: 40, pygame.K_PAGEUP: -400, pygame.K_PAGEDOWN: 400}
+
+
+DATA_TITLES = {screen: title for screen, title, _ in DATA_PAGES}
 
 
 def focus_step(key):
@@ -236,7 +262,22 @@ class HdPauseMenu:
         """A UIKit control's own label (the switches' ON / OFF): the system bold face, whatever the menu's text face."""
         return HdPauseMenu.font(self, points)
 
+    def show_text(self, screen, title, body, parent):
+        """Open a text page the host wrote (Data Management's Library Info): `title` over `body`, its back step to
+        `parent`."""
+        self.text_pages = dict(self.text_pages, **{screen: (title, body, parent)})      # (the class's stays empty)
+        self.open(screen)
+
+    def show_rows(self, screen, title, rows, parent):
+        """Open a page of rows the host wrote (Restore Progress's backups, Sync's pages): `rows` are (key, label), each
+        a ('pause_action', key), or (key, label, kind) for another kind ('switch': its value is `settings[key]`); its
+        back step to `parent`."""
+        self.row_pages = dict(self.row_pages, **{screen: (title, tuple(rows), parent)})
+        self.open(screen)
+
     def text_lines(self, page):
+        if page in self.text_pages:
+            return self.text_pages[page][:2]
         override = HELP_TEXT_OVERRIDES.get(page)
         if override is not None:
             title, body = override
@@ -248,6 +289,8 @@ class HdPauseMenu:
         return strings[title_id], body
 
     # -- state ----------------------------------------------------------
+    text_pages = {}                 # screen -> (title, body, parent) of the host's own text pages (show_text)
+    row_pages = {}                  # screen -> (title, rows, parent) of the host's own row pages (show_rows)
     slide = None
     shown = None
     drawn = None
@@ -268,8 +311,10 @@ class HdPauseMenu:
         if state.screen == 'pause':
             return True
         leaving = state.screen
-        state.screen = ('help' if state.screen in PAGES else 'options' if state.screen.startswith('options:')
-                        else 'pause')
+        host = self.text_pages.get(state.screen) or self.row_pages.get(state.screen)
+        state.screen = ('help' if state.screen in PAGES else host[2]
+                        if host is not None else 'options:data' if state.screen in DATA_TITLES
+                        else 'options' if state.screen.startswith('options:') else 'pause')
         if self.main_menu and state.screen == 'pause':
             return True
         if self.shown is not None and self.drawn is not None:
@@ -551,16 +596,18 @@ class HdPauseMenu:
                 buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
             bottom_rule = top + height - FOOT
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
-        elif state.screen.startswith('options:'):
+        elif state.screen.startswith('options:') or state.screen in DATA_TITLES or state.screen in self.row_pages:
             # Sound: the app's own Music / Sound switches and sliders. General: in a story, the side panels (a native
             # feature: the device shows them on rotation, so it has no switch or string of its own), then this
             # player's switches (exp-runtime's Options -> Cheats; no native strings, so the labels are this project's).
-            category = state.screen.split(':', 1)[1]
+            category = (state.screen if state.screen in DATA_TITLES or state.screen in self.row_pages
+                        else state.screen.split(':', 1)[1])
             rows = self.option_rows(category, settings, strings)
             sliders = sum(1 for kind, _, _ in rows if kind == 'slider')
             height = HEADER + (len(rows) - sliders) * ROW + sliders * SLIDER_ROW + FOOT
             top = (FRAME[1] - height) / 2
-            title = dict(OPTION_CATEGORIES).get(category, strings[10])
+            title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
+                     or dict(OPTION_CATEGORIES).get(category, strings[10]))
             body = self.panel(layer, top, top + height, title)
             y = body
             for index, (kind, label, key) in enumerate(rows):
@@ -572,7 +619,8 @@ class HdPauseMenu:
                     buttons.append((track, ('pause_slider', key, track)))
                     y += SLIDER_ROW
                     continue
-                command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle'}.get(kind, 'pause_action'), key)
+                command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'),
+                           key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
                          badge=switch_badge(key))
                 if kind == 'switch':
@@ -587,7 +635,7 @@ class HdPauseMenu:
                     self.cycle_button(layer, box, settings[key], pressed=self.pressed == ('pause_cycle', key))
                     buttons.append((box, ('pause_cycle', key)))
                 else:
-                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), ('pause_action', key)))
+                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))     # an action or a page
                 y += ROW
             bottom_rule = top + height - FOOT
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
@@ -629,6 +677,8 @@ class HdPauseMenu:
             state.focus = step_focus(targets, focus, focus_step(key))
         elif key in KEYS_ACTIVATE and focus is not None and focus[0] != 'pause_slider':
             return focus
+        elif key in KEYS_ACTIVATE and focus is None and targets:
+            state.focus = targets[0]        # nothing highlighted: Enter (a controller's confirm) shows where it is
         return None
 
     SWITCH_LABELS = SWITCH_LABELS        # a game's own wording (desktop_cod_pause.CodPauseMenu)
@@ -644,11 +694,22 @@ class HdPauseMenu:
             return [('switch', strings[12], 'music'), ('slider', strings[13], 'music'),
                     ('switch', strings[14], 'sound'), ('slider', strings[15], 'sound')] + vibration + prompt
         if category == 'general':
-            rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings]
+            # General's Vibration is the Controller page's when only a controller vibrates (settings['controller_vibration'])
+            rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings
+                    and not (key == 'device_vibration' and settings.get('controller_vibration'))]
             if 'title_language' in settings:
                 rows.append(('cycle', TITLE_LANGUAGE_LABEL, 'title_language'))
             if 'start_in' in settings:
                 rows.append(('cycle', START_IN_LABEL, 'start_in'))
+            return rows
+        if category == 'controller':
+            if 'controller_confirm' not in settings:
+                return []
+            rows = [('cycle', CONFIRM_BUTTON_LABEL, 'controller_confirm')]
+            if 'grid_controls' in settings:
+                rows.append(('cycle', GRID_CONTROLS_LABEL, 'grid_controls'))
+            if 'device_vibration' in settings and settings.get('controller_vibration'):
+                rows.append(('switch', self.SWITCH_LABELS['device_vibration'], 'device_vibration'))
             return rows
         if category == 'extras':
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
@@ -656,7 +717,16 @@ class HdPauseMenu:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows
         if category == 'data':
-            return [('action', label, key) for key, label in DATA_ACTIONS if key in settings]
+            pages = [('page', title, screen) for screen, title, rows in DATA_PAGES
+                     if any(key in settings for key, _ in rows)]
+            return pages + [('action', label, key) for key, label in DATA_LAST if key in settings]
+        if category in DATA_TITLES:
+            # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it on a value button.
+            rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
+            return [('cycle' if isinstance(settings[key], str) else 'action', label, key)
+                    for key, label in rows if key in settings]
+        if category in self.row_pages:
+            return [(kind[0] if kind else 'action', label, key) for key, label, *kind in self.row_pages[category][1]]
         return []
 
     def cycle_button(self, layer, box, label, *, pressed=False):

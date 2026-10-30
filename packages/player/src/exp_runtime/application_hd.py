@@ -25,6 +25,7 @@ from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES, focus_step
+from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
@@ -315,7 +316,13 @@ class HdShell:
             settings['hires_portraits'] = state.hires_portraits
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
-        settings['add_episodes'] = settings['open_library'] = True
+        # Data Management's rows (main menu only). On this branch: Sync Devices of master's Data Management (the rest
+        # comes when Android joins master).
+        for key in ('add_episodes', 'open_library', 'sync_send', 'sync_receive'):
+            settings[key] = True
+        sync = getattr(self.app, 'sync', None)
+        if sync is not None:
+            settings.update(sync.switches())            # Sync's send page
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
@@ -358,6 +365,10 @@ class HdShell:
                 self.app.ui_sound('SOUND_SLIDER_SOUND', when_idle=True)
 
     def toggle(self, which):
+        if which.startswith('sync_'):
+            self.app.sync_flow().toggle(which)          # Sync's send page: what goes (not a saved option)
+            self.app.ui_sound('CLICK_SOUND')
+            return
         if which == 'check_updates':
             self.app.set_update_check(not self.app.settings.check_for_updates)
             self.app.ui_sound('CLICK_SOUND')
@@ -623,6 +634,16 @@ class HdShell:
         elif kind == 'pause_action' and command[1] == 'unlock_warp':
             if self.app.unlock_warp():
                 self.open_window(WARP_UNLOCKED_MENU)
+        elif kind == 'pause_action' and command[1] == 'sync_send':
+            self.app.sync_flow().show_send_page()
+        elif kind == 'pause_action' and command[1] == 'sync_receive':
+            self.app.sync_flow().receive()
+        elif kind == 'pause_action' and command[1] == 'sync_find':
+            self.app.sync_flow().find()
+        elif kind == 'pause_action' and command[1].startswith('sync_device:'):
+            self.app.sync_flow().choose(command[1])
+        elif kind == 'pause_action' and command[1] == 'sync_none':
+            pass                                        # "Looking for receivers...": nothing to press yet
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':
@@ -638,6 +659,12 @@ class HdShell:
     def perform(self, number):
         """`SHSEngine::doMenuEngineAction` for the actions the menus of this shell use."""
         state = self.app.state
+        if number == self.CONFIRM_ACTION:             # a Data Management confirmation's Yes
+            self.stack.clear()
+            action, self.confirmed = self.confirmed, None
+            if action is not None:
+                self.app._attempt(action)
+            return
         if number == 0:                                   # "Play with sound?" -> No
             state.music = state.sound = False
             state.persist()
@@ -682,6 +709,24 @@ class HdShell:
             callback, self.pending_yes = self.pending_yes, None
             self.stack.clear()
             callback()
+
+    # Data Management's confirmations and notices: windows of this player's own in the shell's menu engine
+    # (menu_engine.MenuEngineData.add_window), drawn as "Delete Saved Game?" is.
+    CONFIRM_MENU, NOTICE_MENU, CONFIRM_ACTION = CUSTOM_MENUS, CUSTOM_MENUS + 1, CUSTOM_MENUS
+    confirmed = None                # what the confirmation window's Yes does
+
+    def confirm(self, title, message, verb, action):
+        """Ask before a Data Management action: `title` and `message`, No and `verb` (orange, as a Yes is); `verb`
+        runs `action`."""
+        self.data.add_window(self.CONFIRM_MENU, title, message, (('No', ((BACK, 0),)),
+                                                                (verb, ((ENGINE, self.CONFIRM_ACTION),))))
+        self.confirmed = action
+        self.open_window(self.CONFIRM_MENU)
+
+    def notify(self, title, message):
+        """A notice with an OK (what a Data Management action did)."""
+        self.data.add_window(self.NOTICE_MENU, title, message, (('OK', ((BACK, 0),)),))
+        self.open_window(self.NOTICE_MENU)
 
     def open_window(self, menu):
         """Open menu-engine window `menu` with its entrance (it zooms in, as `showInter`'s windows do)."""

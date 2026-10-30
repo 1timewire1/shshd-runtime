@@ -155,6 +155,8 @@ class CodShell(HdShell):
 
     def perform(self, number):
         """CoD's `doMenuEngineAction` numbers, run through HdShell's (see the table above)."""
+        if number == self.CONFIRM_ACTION:  # this player's own (a Data Management confirmation): HdShell's
+            return super().perform(number)
         if number == 1:                   # the sound answer is in: no EA flash; the EA screen fades to black, then the menu
             self.stack.clear()
             self.leave(self.arrive, hold=BLACK_HOLD, time=BLACK_FADE)
