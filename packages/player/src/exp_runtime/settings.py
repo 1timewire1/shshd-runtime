@@ -18,6 +18,8 @@ START_IN = ('auto', 'games', 'shs', 'cod')
 # Data Management's folders a player may choose on a computer (owner, 2026-10-30): where Back Up Progress and Export
 # Episodes write. None is the default, a folder of this app's in Downloads.
 FOLDERS = ('backup_folder', 'export_folder')
+# Sync Devices' Legacy Mode (owner, 2026-10-30; on by default for now): sync speaks protocol 1, the one-game sync the
+# Android build has, so a computer and that phone pair until Android is caught up (lan_sync.LEGACY_PROTOCOL).
 
 
 class AppSettings:
@@ -28,6 +30,7 @@ class AppSettings:
         self.start_in = 'auto'
         self.last_game = None
         self.backup_folder = self.export_folder = None
+        self.sync_legacy = True
         try:
             data = json.loads(self.path.read_text(encoding='utf-8'))
             if (not isinstance(data, dict) or data.get('version') != 1
@@ -53,6 +56,8 @@ class AppSettings:
         for key in FOLDERS:
             if isinstance(data.get(key), str) and data[key]:
                 setattr(self, key, data[key])
+        if type(data.get('sync_legacy')) is bool:
+            self.sync_legacy = data['sync_legacy']
 
     def set_update_check(self, enabled):
         if type(enabled) is not bool:
@@ -82,6 +87,11 @@ class AppSettings:
             raise ValueError('Unknown folder setting')
         self._write(**{key: None if folder is None else str(folder)})
 
+    def set_sync_legacy(self, enabled):
+        if type(enabled) is not bool:
+            raise ValueError('Legacy Mode must be a boolean')
+        self._write(sync_legacy=enabled)
+
     def boot_game(self, has_library):
         """The game the app opens in when it is not told one (`has_library(game)`: whether it has a library), or None
         for the game chooser."""
@@ -90,7 +100,7 @@ class AppSettings:
 
     def _write(self, **changes):
         values = dict(check_for_updates=self.check_for_updates, preferences=self.preferences,
-                      start_in=self.start_in, last_game=self.last_game,
+                      start_in=self.start_in, last_game=self.last_game, sync_legacy=self.sync_legacy,
                       **{key: getattr(self, key) for key in FOLDERS})
         values.update(changes)
         self.path.parent.mkdir(parents=True, exist_ok=True)

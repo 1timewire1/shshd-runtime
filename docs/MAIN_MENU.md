@@ -815,7 +815,8 @@ New Rules Hi-Res Portraits and Episode Titles); each game's own Options still ha
   - Progress: Back Up Progress asks Combined (one file holding a bundle per game, `progress_bundle.write_set`; the
     default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
   - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
-    Receiving needs no library at all.
+    Receiving needs no library at all. With Legacy Mode on (the default for now), Send and Receive here show a notice
+    instead: legacy sync is one game, from inside it.
   Open Another Library, Add Episodes and Add APK Music stay per game.
 
 The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,

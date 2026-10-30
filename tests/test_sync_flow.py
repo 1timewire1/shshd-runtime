@@ -91,6 +91,20 @@ class SyncFlowTests(unittest.TestCase):
         with self.assertRaises(OSError):
             host.install('cod', sent)
 
+    def test_the_chooser_explains_legacy_mode_instead_of_syncing(self):
+        from exp_runtime.sync_flow import LEGACY_NOTICE
+        app = app_with(self.root)
+        app.library = app.state = None
+        app.settings = SimpleNamespace(sync_legacy=True)
+        notices = []
+        app.app_screens = SimpleNamespace(options=SimpleNamespace(notice=lambda *notice: notices.append(notice)))
+        flow = SyncFlow(app)
+        flow.show_send_page()
+        flow.receive()
+        self.assertEqual(notices, [LEGACY_NOTICE, LEGACY_NOTICE])
+        self.assertIsNone(flow.receiver)
+        self.assertIsNone(flow.stage)
+
     def test_a_whole_library_sent_is_only_its_own_parts(self):
         from exp_runtime.sync_flow import library_files
         library = self.root / 'shs'

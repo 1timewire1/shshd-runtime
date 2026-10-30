@@ -18,6 +18,10 @@ first into the receiver's backups folder, as a "before sync" backup Restore Prog
 
 A sent game the receiver has no library of (owner, 2026-10-30) is named after the sync, and both people are asked
 again: yes sends the sender's whole library of it (LIBRARY_PARTS), installed where that game's library belongs.
+
+**Legacy Mode** (Sync Devices' switch, on by default for now; owner, 2026-10-30) syncs as the Android build does
+(lan_sync protocol 1): one game, from inside it, with no whole library. The chooser's Send and Receive explain it must
+be off there (LEGACY_NOTICE).
 """
 from contextlib import contextmanager, nullcontext
 import logging
@@ -41,6 +45,9 @@ GAMES_LABEL = 'Games'
 DEVICE_OPTIONS = ('vibration', 'device_vibration', 'controller_confirm', 'grid_controls')
 SEND_PAGE, FIND_PAGE, RECEIVE_PAGE, SYNC_PAGE = 'data:send', 'data:find', 'data:receive', 'data:sync'
 QUESTIONS = ('confirm', 'confirm_full')         # a session's statuses while its people are asked
+LEGACY_NOTICE = ('Legacy Mode Is On', 'Legacy Mode syncs one game at a time, from inside that game. To sync both games '
+                 'at once from here, turn Legacy Mode off on both devices (Sync Devices). Without it, sync works only '
+                 'from computer to computer for now.')
 
 
 def device_name():
@@ -180,9 +187,25 @@ class SyncFlow:
         """The send page's switch values (and the chooser's Games value), for the menu's settings."""
         values = {f'sync_{key}': value for key, value in self.choices.items()}
         values['sync_games'] = 'Both' if self.game is None else GAMES[self.game].TITLE
+        values['sync_legacy'] = self.legacy
         return values
 
+    @property
+    def legacy(self):
+        return self.app.settings.sync_legacy
+
+    def legacy_blocked(self, ui):
+        """The chooser's Send / Receive with Legacy Mode on: the notice why not (protocol 1 is one game, in it)."""
+        if self.legacy and self.app.library is None:
+            ui.notify(*LEGACY_NOTICE)
+            return True
+        return False
+
     def toggle(self, key):
+        if key == 'sync_legacy':
+            self.stop()
+            self.app.settings.set_sync_legacy(not self.legacy)
+            return
         key = key[len('sync_'):]
         self.choices[key] = not self.choices[key]
         self.show_send_page(reopen=False)
@@ -194,6 +217,8 @@ class SyncFlow:
 
     def show_send_page(self, reopen=True):
         ui = self.ui if not reopen else self.pages()
+        if reopen and self.legacy_blocked(ui):
+            return
         rows = []
         if self.app.library is None and len(self.app.games_with_libraries()) > 1:
             rows.append(('sync_games', GAMES_LABEL, 'cycle'))
@@ -213,7 +238,8 @@ class SyncFlow:
         self.stop()
         hold_multicast(True)
         try:
-            self.finder = lan_sync.Finder(port=self.DISCOVERY_PORT, bind=self.BIND)
+            self.finder = lan_sync.Finder(port=self.DISCOVERY_PORT, bind=self.BIND, protocol=(
+                lan_sync.LEGACY_PROTOCOL if self.legacy else lan_sync.PROTOCOL))
         except OSError as error:
             hold_multicast(False)
             logging.warning('Sync: cannot listen for receivers: %s', error)
@@ -243,12 +269,14 @@ class SyncFlow:
         self.provider = SendProvider(self.app, categories, games)
         self.session = lan_sync.SendSession(
             device.address, device.port, name=device_name(), app_version=self.app_version(), games=games,
-            categories=categories, backup=self.choices['backup'], provider=self.provider).start()
+            categories=categories, backup=self.choices['backup'], provider=self.provider, legacy=self.legacy).start()
 
     def receive(self):
         """Receive from Another Device: wait for a sender, on a page saying how to be found."""
         self.stop()
         ui, app = self.pages(), self.app
+        if self.legacy_blocked(ui):
+            return
         # The stage sits by the libraries (a whole library sent is moved from it into its place).
         home = app.library.directory if app.library is not None else app.library_path(next(iter(GAMES))).parent
         home.mkdir(parents=True, exist_ok=True)
@@ -257,7 +285,8 @@ class SyncFlow:
             self.receiver = lan_sync.Receiver(
                 self.stage, name=device_name(), app_version=self.app_version(),
                 game=app.library.game_id if app.library is not None else '', host=ReceiveHost(self), port=self.PORT,
-                bind=self.BIND, beacon_addresses=self.BEACON_ADDRESSES, discovery_port=self.DISCOVERY_PORT)
+                bind=self.BIND, beacon_addresses=self.BEACON_ADDRESSES, discovery_port=self.DISCOVERY_PORT,
+                legacy=self.legacy)
         except OSError as error:
             logging.warning('Sync: cannot wait for a sender: %s', error)
             self.stop()
@@ -292,8 +321,9 @@ class SyncFlow:
             if screen != FIND_PAGE:
                 self.stop()                     # the page was left
                 return
-            # Every receiver is listed: one takes any game, opened for the sync or installed whole.
-            devices = self.finder.devices()
+            # Every receiver is listed: one takes any game, opened for the sync or installed whole. (Legacy Mode's
+            # receivers take only the game they have open.)
+            devices = self.finder.devices(self.app.library.game_id if self.legacy else None)
             if [d.key for d in devices] != [d.key for d in self.devices]:
                 self.devices = devices
                 ui.menu.row_pages = dict(ui.menu.row_pages, **{FIND_PAGE: ('Choose Receiver', tuple(self.device_rows()),

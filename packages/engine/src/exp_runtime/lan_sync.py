@@ -24,6 +24,11 @@ payload when the header names one. The conversation (a sync is of one game or of
     receiver -> result  {ok, message}
 
 `code` (four digits from both nonces) is shown on both screens, so each person can see they paired the right devices.
+
+**Legacy Mode** (owner, 2026-10-30) speaks protocol 1, the one-game sync the Android build has, so a computer and that
+phone still pair until Android is caught up: beacons and hellos say protocol 1, the hello names one `game` (no games,
+no missing), offer / want are plain lists of ids, items are named without their game ("progress.zip", "3/Volume_8.exp"),
+and there is no whole-library round.
 """
 import re
 from dataclasses import dataclass, field
@@ -39,6 +44,7 @@ import threading
 import time
 
 PROTOCOL = 2                    # 2: a sync of both games, and a missing library sent whole
+LEGACY_PROTOCOL = 1             # Legacy Mode's: one game (the Android build's, until it is caught up)
 APP = 'shshd-sync'
 PORT = 47914                    # the receiver's TCP port, when it is free (the address typed by hand needs no port)
 DISCOVERY_PORT = 47915          # the sender's UDP port, for receivers' beacons
@@ -58,6 +64,7 @@ DECLINED = 'The other device said no.'
 CANCELLED = 'Sync was cancelled.'
 CANCELLED_THERE = 'Sync was cancelled on the other device.'
 VERSION = 'The other device has a different version of SHSHD Runtime; update both to the same version.'
+NO_LIBRARY = 'The receiving device has no library of this game.'
 
 
 class SyncError(Exception):
@@ -186,8 +193,8 @@ class Device:
 class Beacon:
     """The receiver's announcement, sent every BEACON_S until stopped."""
 
-    def __init__(self, name, game, port, *, addresses=None, discovery_port=DISCOVERY_PORT):
-        self.message = json.dumps(dict(app=APP, protocol=PROTOCOL, name=name, game=game, port=port)).encode()
+    def __init__(self, name, game, port, *, addresses=None, discovery_port=DISCOVERY_PORT, protocol=PROTOCOL):
+        self.message = json.dumps(dict(app=APP, protocol=protocol, name=name, game=game, port=port)).encode()
         self.addresses = addresses
         self.discovery_port = discovery_port
         self.stopped = threading.Event()
@@ -213,9 +220,11 @@ class Beacon:
 
 
 class Finder:
-    """The sender's ear for beacons: `devices()` are the receivers heard in the last DEVICE_TTL_S."""
+    """The sender's ear for beacons: `devices()` are the receivers heard in the last DEVICE_TTL_S (those speaking
+    `protocol`)."""
 
-    def __init__(self, *, port=DISCOVERY_PORT, bind='0.0.0.0'):
+    def __init__(self, *, port=DISCOVERY_PORT, bind='0.0.0.0', protocol=PROTOCOL):
+        self.protocol = protocol
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((bind, port))
@@ -239,7 +248,7 @@ class Finder:
                     beacon = json.loads(data)
                 except ValueError:
                     continue
-                if (not isinstance(beacon, dict) or beacon.get('app') != APP or beacon.get('protocol') != PROTOCOL
+                if (not isinstance(beacon, dict) or beacon.get('app') != APP or beacon.get('protocol') != self.protocol
                         or not isinstance(beacon.get('port'), int) or not isinstance(beacon.get('name'), str)):
                     continue
                 device = Device(beacon['name'][:40], str(beacon.get('game', '')), address, beacon['port'])
@@ -264,8 +273,10 @@ class Session:
     """One side of a sync, run on its own thread. The app polls `status` ('connecting', 'confirm', 'transfer', 'done',
     'failed'), `peer`, `code`, `progress` (a short line) and `message`, and answers with `confirm(ok)` / `cancel()`."""
 
-    def __init__(self, name, app_version):
+    def __init__(self, name, app_version, legacy=False):
         self.name, self.app_version = name, app_version
+        self.legacy = legacy            # Legacy Mode: protocol 1 (one game)
+        self.protocol = LEGACY_PROTOCOL if legacy else PROTOCOL
         self.status, self.peer, self.code, self.progress, self.message = 'connecting', '', '', '', ''
         self.nonce = secrets.token_hex(8)
         self._answer = None
@@ -363,7 +374,7 @@ class Session:
         return True
 
     def _hello(self, header):
-        if header.get('protocol') != PROTOCOL:
+        if header.get('protocol') != self.protocol:
             raise SyncError(VERSION)
         self.peer = str(header.get('name', ''))[:40] or 'Another device'
 
@@ -374,10 +385,11 @@ class SendSession(Session):
     - `items(games, wanted)`: after both confirmed, [(kind, name, payload bytes or Path)] for `games` (those the
       receiver takes), given {game: the episodes it wants}; each name starts with its game;
     - `library_size(game)` and `library_items(game)` ([(path in the library, file)]): a whole library, for a
-      receiver that lacks it."""
+      receiver that lacks it.
+    Legacy Mode sends the first of `games` only, as protocol 1 does."""
 
-    def __init__(self, address, port, *, name, app_version, games, categories, backup, provider):
-        super().__init__(name, app_version)
+    def __init__(self, address, port, *, name, app_version, games, categories, backup, provider, legacy=False):
+        super().__init__(name, app_version, legacy)
         self.address, self.port = address, port
         self.games, self.categories, self.backup = list(games), list(categories), bool(backup)
         self.provider = provider
@@ -387,6 +399,8 @@ class SendSession(Session):
         sock = socket.create_connection((self.address, self.port), timeout=CONNECT_S)
         sock.settimeout(IDLE_S)
         channel = self.channel = Channel(sock)
+        if self.legacy:
+            return self._run_legacy(channel)
         channel.send(dict(type='hello', protocol=PROTOCOL, app=self.app_version, name=self.name, games=self.games,
                           categories=self.categories, backup=self.backup, nonce=self.nonce))
         reply = channel.expect('hello')
@@ -419,6 +433,27 @@ class SendSession(Session):
                                   for path, file in self.provider.library_items(game)])
         return ' '.join(part for part in (message, str(self.result(channel).get('message', ''))) if part)
 
+    def _run_legacy(self, channel):
+        """Protocol 1: one game, its offer and want plain lists, its items named without the game."""
+        game = self.games[0]
+        channel.send(dict(type='hello', protocol=LEGACY_PROTOCOL, app=self.app_version, name=self.name, game=game,
+                          categories=self.categories, backup=self.backup, nonce=self.nonce))
+        reply = channel.expect('hello')
+        self._hello(reply)
+        if reply.get('error'):
+            raise SyncError(str(reply['error']))
+        self.code = pairing_code(self.nonce, reply.get('nonce', ''))
+        self._confirm(channel)
+        wanted = []
+        if 'episodes' in self.categories:
+            offer = self.provider.offer([game]).get(game, [])
+            channel.send(dict(type='offer', episodes=list(offer)))
+            wanted = [key for key in channel.expect('want').get('episodes', []) if key in set(offer)]
+        self.progress = 'Packing...'
+        items = self.provider.items([game], {game: wanted})
+        self.send_items(channel, [(kind, name.partition('/')[2], payload) for kind, name, payload in items])
+        return str(self.result(channel).get('message', ''))
+
     def send_items(self, channel, items):
         for index, (kind, name, payload) in enumerate(items):
             self.progress = f'Sending {index + 1} of {len(items)}'
@@ -447,8 +482,8 @@ class ReceiveSession(Session):
       <game>/episodes/<n>/<file>.exp); returns the success message;
     - `install(game, folder)`: a whole library arrived in `folder` (its files at their paths); returns the message."""
 
-    def __init__(self, sock, stage, *, name, app_version, host):
-        super().__init__(name, app_version)
+    def __init__(self, sock, stage, *, name, app_version, host, legacy=False):
+        super().__init__(name, app_version, legacy)
         self.sock, self.stage, self.host = sock, Path(stage), host
         self.hello = None
         self.full = None                # (games, bytes) of the whole libraries offered after the sync
@@ -457,11 +492,13 @@ class ReceiveSession(Session):
         self.sock.settimeout(IDLE_S)
         channel = self.channel = Channel(self.sock)
         hello = self.hello = channel.expect('hello')
-        if hello.get('protocol') != PROTOCOL:
-            channel.send(dict(type='hello', protocol=PROTOCOL, app=self.app_version, name=self.name,
+        if hello.get('protocol') != self.protocol:
+            channel.send(dict(type='hello', protocol=self.protocol, app=self.app_version, name=self.name,
                               nonce=self.nonce, error=VERSION))
             raise SyncError(VERSION)
         self._hello(hello)
+        if self.legacy:
+            return self._run_legacy(channel, hello)
         offered = [game for game in hello.get('games', ()) if isinstance(game, str) and GAME.fullmatch(game)]
         error = self.host.check(hello)
         taken, missing = self.host.games(hello) if not error else ([], [])
@@ -494,7 +531,29 @@ class ReceiveSession(Session):
                                                      for game in games))
         return ' '.join(part for part in (message, more) if part)
 
-    def receive_items(self, channel, games, *, library=False):
+    def _run_legacy(self, channel, hello):
+        """Protocol 1: the hello's one game, taken only where this device has its library (no whole library follows).
+        The host is asked as for protocol 2, the hello given that game as its games."""
+        game = hello.get('game')
+        hello = self.hello = dict(hello, games=[game] if isinstance(game, str) and GAME.fullmatch(game) else [])
+        error = self.host.check(hello)
+        if not error:
+            taken, _ = self.host.games(hello)
+            error = None if game in taken else NO_LIBRARY
+        channel.send(dict(type='hello', protocol=LEGACY_PROTOCOL, app=self.app_version, name=self.name,
+                          nonce=self.nonce, **(dict(error=error) if error else {})))
+        if error:
+            raise SyncError(error)
+        self.code = pairing_code(hello.get('nonce', ''), self.nonce)
+        self._confirm(channel)
+        if 'episodes' in hello.get('categories', ()):
+            offered = [key for key in channel.expect('offer').get('episodes', []) if isinstance(key, str)]
+            channel.send(dict(type='want', episodes=list(self.host.want(game, offered))))
+        self.receive_items(channel, [game], prefix=f'{game}/')
+        self.progress = 'Applying...'
+        return self.reply(channel, lambda: self.host.apply(hello, self.stage, [game]))
+
+    def receive_items(self, channel, games, *, library=False, prefix=''):
         while True:
             header = channel.header()
             if header['type'] == 'end':
@@ -504,6 +563,8 @@ class ReceiveSession(Session):
             if header['type'] != 'item' or (header.get('kind') == 'library') != library:
                 raise SyncError(LOST)
             self.progress = f'Receiving {header.get("index", 0) + 1} of {header.get("count", 0)}'
+            if prefix:                          # protocol 1's names lack their game
+                header = dict(header, name=prefix + str(header.get('name', '')))
             channel.payload(header, self._target(header, games))
 
     def reply(self, channel, work, **extra):
@@ -544,8 +605,9 @@ class Receiver:
     (`session`, None until then). Later senders are turned away while a session runs."""
 
     def __init__(self, stage, *, name, app_version, game, host, port=PORT, bind='0.0.0.0', beacon_addresses=None,
-                 discovery_port=DISCOVERY_PORT):
+                 discovery_port=DISCOVERY_PORT, legacy=False):
         self.stage, self.name, self.app_version, self.host = Path(stage), name, app_version, host
+        self.legacy = legacy
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.server.bind((bind, port))
@@ -557,7 +619,8 @@ class Receiver:
         self.address = local_address()
         self.session = None
         self.stopped = threading.Event()
-        self.beacon = Beacon(name, game, self.port, addresses=beacon_addresses, discovery_port=discovery_port)
+        self.beacon = Beacon(name, game, self.port, addresses=beacon_addresses, discovery_port=discovery_port,
+                             protocol=LEGACY_PROTOCOL if legacy else PROTOCOL)
         self.thread = threading.Thread(target=self._run, name='sync-receiver', daemon=True)
         self.thread.start()
 
@@ -575,7 +638,7 @@ class Receiver:
                     continue
                 self.beacon.stop()
                 self.session = ReceiveSession(sock, self.stage, name=self.name, app_version=self.app_version,
-                                              host=self.host).start()
+                                              host=self.host, legacy=self.legacy).start()
         finally:
             self.server.close()
 

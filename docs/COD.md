@@ -909,10 +909,17 @@ CoD's colours (`cod/hd_art.positional_frames`).
         sender's library of it, and both people are asked again. Yes sends that whole library (its
         `LIBRARY_PARTS`), installed where the game's library belongs; no keeps what was already synced.
       - **Result:** both devices show the result, or the short reason it failed.
+      - **Legacy Mode** (owner, 2026-10-30): a switch below Receive, on by default for now. It speaks protocol 1, the
+        one-game sync the Android build has (`lan_sync.LEGACY_PROTOCOL`), so a computer and that phone still pair
+        until Android is caught up. It works from inside a game as before: that game only, to a receiver that has its
+        library, with no whole-library round. From the game chooser, Send and Receive instead explain that Legacy Mode
+        must be off on both devices to sync both games at once, and that this works only computer to computer for
+        now. It is kept in `settings.json` (`sync_legacy`). `tests/fixtures/lan_sync_v1.py` is a frozen copy of the
+        Android build's module, so the tests pair against it both ways; remove it once Android speaks protocol 2.
 
       Discovery is a UDP beacon from the receiver (port 47915), and the transfer runs over TCP (port 47914, or any
-      free port). Protocol 2 (both games, whole libraries) does not talk to builds of protocol 1: each side says the
-      versions differ.
+      free port). Each side lists only receivers of its own protocol, so with Legacy Mode off a phone on protocol 1 is
+      not listed (and the reverse).
 
       **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
       2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add

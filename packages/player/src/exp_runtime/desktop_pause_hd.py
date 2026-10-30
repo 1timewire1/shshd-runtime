@@ -118,8 +118,10 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
                                              ('backup_folder', 'Backups Folder'), ('reset_names', 'Reset Names'),
                                              ('delete_saves', 'Delete All Saves'))),
               ('data:sync', 'Sync Devices', (('sync_send', 'Send to Another Device'),
-                                             ('sync_receive', 'Receive from Another Device'))))
+                                             ('sync_receive', 'Receive from Another Device'),
+                                             ('sync_legacy', 'Legacy Mode'))))
 DATA_LAST = (('reset_settings', 'Reset Settings'),)
+DATA_SWITCHES = ('sync_legacy',)        # Data Management rows that are switches (their setting is True / False)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
@@ -728,8 +730,8 @@ class HdPauseMenu:
         if category in DATA_TITLES:
             # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it on a value button.
             rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
-            return [('cycle' if isinstance(settings[key], str) else 'action', label, key)
-                    for key, label in rows if key in settings]
+            return [('switch' if key in DATA_SWITCHES else 'cycle' if isinstance(settings[key], str) else 'action',
+                     label, key) for key, label in rows if key in settings]
         if category in self.row_pages:
             return [(kind[0] if kind else 'action', label, key) for key, label, *kind in self.row_pages[category][1]]
         return []

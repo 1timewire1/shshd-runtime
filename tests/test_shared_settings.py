@@ -48,6 +48,15 @@ class SharedSettingsTests(unittest.TestCase):
         self.assertEqual(path.stat().st_mtime_ns, 10**9)
         self.assertNotEqual(before, 10**9)
 
+    def test_sync_legacy_mode_starts_on_and_is_kept(self):
+        path = self.root / 'settings.json'
+        settings = AppSettings(path)
+        self.assertTrue(settings.sync_legacy)                               # on by default for now (owner)
+        settings.set_sync_legacy(False)
+        self.assertFalse(AppSettings(path).sync_legacy)
+        with self.assertRaises(ValueError):
+            settings.set_sync_legacy('off')
+
     def test_start_in_opens_a_game_that_has_a_library_else_the_chooser(self):
         settings = AppSettings(self.root / 'settings.json')
         everything, nothing = (lambda game: True), (lambda game: False)

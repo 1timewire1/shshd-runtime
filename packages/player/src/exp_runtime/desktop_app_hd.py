@@ -239,6 +239,7 @@ class AppOptions:
             settings['sync_send'] = True
         # Receiving needs no library: a game the sender has comes whole (owner, 2026-10-30).
         settings['sync_receive'] = True
+        settings['sync_legacy'] = app.settings.sync_legacy
         if getattr(app, 'sync', None) is not None:
             settings.update(app.sync.switches())        # Sync's send page
         return {key: value for key, value in settings.items() if key not in ONE_GAME_OPTIONS}

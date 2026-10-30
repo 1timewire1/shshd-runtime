@@ -345,6 +345,7 @@ class HdShell:
                     'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive',
                     'delete_library') + EPISODE_LISTS:
             settings[key] = True
+        settings['sync_legacy'] = self.app.settings.sync_legacy
         sync = getattr(self.app, 'sync', None)
         if sync is not None:
             settings.update(sync.switches())            # Sync's send page
