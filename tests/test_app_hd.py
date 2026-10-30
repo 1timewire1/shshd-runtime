@@ -90,15 +90,18 @@ class AppScreenTests(unittest.TestCase):
                                                                for page in ('general', 'sound', 'extras', 'data')])
         options.activate(('pause_toggle', 'autoplay'))
         options.activate(('pause_cycle', 'start_in'))
-        options.activate(('pause_cycle', 'title_language'))
         options.set_volume('music', .25)
         stored = AppSettings(Path(self.root) / 'settings.json')
-        self.assertEqual((stored.preferences['autoplay'], stored.start_in, stored.preferences['title_language'],
-                          stored.preferences['music_volume']), (True, 'games', 'fr', 25))
+        self.assertEqual((stored.preferences['autoplay'], stored.start_in, stored.preferences['music_volume']),
+                         (True, 'games', 25))
         options.menu.open('options:general')
         options.menu.slide = None
         options.draw(layer)                                                 # every General row has its control
-        self.assertIn(('pause_cycle', 'start_in'), [c for _, c in options.buttons])
+        general = [c for _, c in options.buttons]
+        self.assertIn(('pause_cycle', 'start_in'), general)
+        for key in ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits'):     # only SHS offers them
+            self.assertNotIn(('pause_toggle', key), general)
+        self.assertNotIn(('pause_cycle', 'title_language'), general)
         self.assertTrue(options.step_back())                                # up a page...
         self.assertEqual(options.menu.state.screen, 'options')
         self.assertFalse(options.step_back())                               # ...then out of Options

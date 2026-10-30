@@ -154,6 +154,10 @@ OPTION_STRINGS = {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 1
                   15: 'Sound FX Volume', 20: 'Resume', 120: 'Help & About'}
 LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 SLIDER = (143, 460)                     # a volume slider's track: its left and width in points (HdShell's)
+# Options only one game offers are not listed before a game is chosen (owner, 2026-10-30): SHS's High School Story ad
+# intros and store plugs (CodPauseMenu leaves both out), its New Rules Hi-Res Portraits (TRANSLATED_PORTRAIT_ART) and
+# translated Episode Titles (no CoD episode has one). Each game's own Options still has them.
+ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'title_language')
 
 
 class AppOptionsMenu(AppCard):
@@ -213,7 +217,7 @@ class AppOptions:
         if getattr(app, 'file_picker', None) is None:
             for key in ('backup_folder', 'export_folder'):
                 settings[key] = app.folder_label(key)
-        return settings
+        return {key: value for key, value in settings.items() if key not in ONE_GAME_OPTIONS}
 
     def draw(self, layer):
         now = time.monotonic() * 1000
