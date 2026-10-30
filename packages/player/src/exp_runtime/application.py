@@ -1590,6 +1590,8 @@ class Application:
             self.leave_choice()
         elif self.app_options_open() and self.app_screens.options.step_back():
             pass                                        # a page, or a window, of the chooser's Options
+        elif self.screen == 'browser' and self.browser_return is not None:
+            self.leave_browser()
         elif self.history:
             screen = self.history.pop()
             self.show(screen, remember=False)
@@ -1906,8 +1908,34 @@ class Application:
             self.file_picker(kind)
             return
         self.browser_kind = kind
+        if self.screen != 'browser':
+            self.browser_return = (self.screen, self.open_page())
         self.show('browser')
         self.read_folder(self.folder)
+
+    browser_return = None           # (screen, its open Options page or None) the file browser was opened from
+
+    def open_page(self):
+        """The Options page open on this screen (the HD menu's options card, the chooser's Options), or None."""
+        if self.screen == 'main' and self.shell is not None and self.shell.pause_open:
+            return self.shell.pause.state.screen
+        if self.app_options_open():
+            return self.app_screens.options.menu.state.screen
+        return None
+
+    def leave_browser(self):
+        """Back from the file browser: to the screen it was opened from, on the Options page that was open there (Data
+        Management's Episodes for Add Episodes, owner 2026-10-30), not the bare main menu."""
+        screen, page = self.browser_return
+        self.browser_return = None
+        if self.history and self.history[-1] == screen:
+            self.history.pop()
+        if screen == 'options' and page is not None and self.library is None and self.app_screens is not None:
+            self.app_screens.options.next_screen = page
+        self.show(screen, remember=False)
+        if screen == 'main' and page is not None and self.shell is not None:
+            self.shell.activate(('options',))           # the main menu's entry closed the card: open it on the page
+            self.shell.pause.open(page)
 
     def read_folder(self, folder):
         folder = Path(folder).expanduser().resolve()

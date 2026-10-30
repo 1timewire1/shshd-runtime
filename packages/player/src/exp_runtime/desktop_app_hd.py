@@ -97,10 +97,12 @@ class AppCard(HdPauseMenu):
         return pygame.Rect(box)
 
     def cycle_button(self, layer, box, label, *, pressed=False):
-        """A value button (Start In, Episode Titles...): HD's orange, as a pill, its label in white."""
+        """A value button (Start In, the browser's Up...): HD's orange, a rounded box as the back button is (owner,
+        2026-10-30), its label in white."""
         x, y, w, h = box
         stops = ORANGE if not pressed else tuple(tuple(round(c * .8) for c in color) for color in ORANGE)
-        layer.blit(self.gradient_box(box, stops, h / 2), (round(x * S), round(y * S)))
+        layer.blit(self.gradient_box(box, stops, 10), (round(x * S), round(y * S)))
+        self.rect(layer, tuple(round(c * .75) for c in stops[-1]), box, 10, 2)
         text = self.font(CYCLE_POINTS).render(label, True, (255, 255, 255))
         layer.blit(text, text.get_rect(center=(round((x + w / 2) * S), round((y + h / 2 - 1) * S))))
 
