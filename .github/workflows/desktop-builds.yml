@@ -104,7 +104,7 @@ jobs:
           - target: linux-x64
             runner: ubuntu-22.04
           - target: macos-arm64
-            runner: macos-14
+            runner: macos-15           # arm64; GitHub retires macos-14 on 2026-11-02 (brownouts before)
           - target: macos-x64
             runner: macos-15-intel
     defaults:
