@@ -276,8 +276,9 @@ class Session:
         self._answered.set()
 
     def cancel(self):
+        """End it from this side: the other side is told why first, then this session's thread lets go (were it let go
+        first, it could close the connection before the message went, and the other side would read a lost one)."""
         self._cancelled.set()
-        self._answered.set()
         channel = self.channel
         if channel is not None:
             try:
@@ -288,6 +289,7 @@ class Session:
                 channel.sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
+        self._answered.set()
 
     @property
     def finished(self):
