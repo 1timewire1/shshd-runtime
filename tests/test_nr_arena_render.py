@@ -155,6 +155,32 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(renderer.focus(action), 0)
         answers = [command for _, command in renderer.targets]
         self.assertEqual(answers, [('arena_answer', 0), ('arena_answer', 1), ('arena_answer', 2)])
+        renderer.draw(None, session, now_ms=0, overlay=False)           # under SHS's choice: no menu of its own
+        self.assertNotIn(('arena_answer', 0), [command for _, command in renderer.targets])
+
+    def test_sequences_items_take_clicks_as_their_slots_number_keys(self):
+        from exp_runtime.nr_arena import NRArena
+        arena = NRArena.opened(False, False)
+        arena.set(-10, 729, 6)
+        arena.item_kind, arena.keypad = 2, True
+        for slot in range(6):
+            arena.set_item(slot, 0)
+        renderer = self.renderer()
+        renderer.draw(None, self.session(arena), now_ms=0)
+        items = [(rect, command) for rect, command in renderer.targets if command[1] >= 48]
+        self.assertEqual(sorted(command[1] for _, command in items[-6:]), list(range(49, 55)))
+        for rect, command in items[-6:]:                    # the items, drawn after the numbers, are hit first
+            self.assertEqual(renderer.hit((rect.centerx * 768 / 489, rect.centery * 1024 / 652)), command)
+        arena.keypad = False                                # a turning game's items take no clicks
+        renderer.draw(None, self.session(arena), now_ms=0)
+        self.assertFalse([command for _, command in renderer.targets if command[1] >= 48])
+
+    def test_a_tap_anywhere_closes_the_info_box(self):
+        from exp_runtime.nr_arena import NRArena
+        renderer = self.renderer()
+        renderer.draw(None, self.session(NRArena.opened(False, False), 'arena_info', text='AB'), now_ms=0)
+        self.assertEqual(renderer.hit((20, 20)), ('arena_answer', 0))
+        self.assertEqual(renderer.hit((700, 1000)), ('arena_answer', 0))
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
@@ -225,6 +251,33 @@ class ArenaKeyTests(unittest.TestCase):
         ui = self.desktop('arena_info', text='')
         self.key(ui, pygame.K_RETURN)
         self.assertEqual(ui.command.call_args.args[0], ('arena_answer', 0))
+
+    def test_a_tap_on_the_arena_is_its_ok_key_and_the_gear_pauses(self):
+        ui = self.desktop('arena_frame')
+        action = ui.session.pending
+        self.assertEqual(ui._arena_tap(action, 400, 100), ('arena_key', -5))
+        self.assertEqual(ui._arena_tap(action, 40, 950), ('menu',))
+        self.assertIsNone(ui._arena_tap(action, 900, 100))                 # outside the frame
+        ui = self.desktop('arena_entrance')
+        self.assertIsNone(ui._arena_tap(ui.session.pending, 400, 100))       # New Rules takes no keys meanwhile
+
+    def test_the_arenas_menu_is_shs_choice(self):
+        from exp_runtime.desktop import arena_menu_prompt
+        self.assertEqual(arena_menu_prompt(dict(title='welcome to the `rhyming` game.  view tutorial?',
+                                                options=['yes', 'no'])),
+                         ('View tutorial?', 'Welcome to the rhyming game.', ['Yes', 'No']))
+        self.assertEqual(arena_menu_prompt(dict(title='play again?', options=['yes'])), ('Play again?', '', ['Yes']))
+        ui = self.desktop('arena_menu', title='welcome to the `sequences` game.  view tutorial?',
+                          options=['yes', 'no'], selected=0)
+        ui.skip_minigames = False
+        ui.session.resources, ui.session.scene, ui.session.answer = SimpleNamespace(read_asset=None), None, Mock()
+        prompt = ui._host_prompt()
+        details = prompt['session'].pending.details
+        self.assertEqual((details['title'], details['text'], details['options']),
+                         ('View tutorial?', 'Welcome to the sequences game.', ['Yes', 'No']))
+        self.assertIs(ui._host_prompt(), prompt)
+        prompt['resolve'](1)
+        ui.session.answer.assert_called_once_with(1)
 
 
 if __name__ == '__main__':

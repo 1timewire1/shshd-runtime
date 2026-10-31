@@ -152,6 +152,21 @@ ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, py
               pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
 ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
                      **{getattr(pygame, f'K_KP{n}'): 48 + n for n in range(10)}}
+
+
+def arena_menu_prompt(details):
+    """(title, text, options) for New Rules' menu shown as SHS's choice: its last sentence, a question ("view
+    tutorial?"), is the title and the rest ("welcome to the `rhyming` game.") the text, without New Rules' font
+    switches and in sentence case, as SHS's own menus are written."""
+    def sentences(string):
+        string = re.sub(r'\s+', ' ', string.replace('`', '').replace('~', '')).strip()
+        return re.sub(r'(^|[.!?] )([a-z])', lambda m: m.group(1) + m.group(2).upper(), string)
+    body = sentences(details.get('title') or '')
+    parts = re.split(r'(?<=[.!])\s+(?=[^.!?]*\?$)', body, maxsplit=1)
+    title, text = (parts[1], parts[0]) if len(parts) == 2 else (body, '')
+    return title, text, [sentences(option) for option in details.get('options', [])]
+
+
 # After New Rules' exit the arena's last picture (the bare frame) fades out over the story's next screen, rather than
 # cutting to it (owner, 2026-10-30; this player's own, as New Rules shows the next screen at once).
 ARENA_HANDOVER_MS = 400
@@ -822,7 +837,18 @@ class Desktop:
             else:
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
                                            self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
+        if (prompt is None and action is not None and action.name == 'arena_menu' and not self.error
+                and hasattr(self.session.resources, 'read_asset')):
+            # shshd-runtime (owner, 2026-10-31): New Rules' menu over the arena (its tutorial offer) is SHS's choice,
+            # drawn over the arena (render's under_layer); the pick goes back to the library as its option's index.
+            title, text, options = arena_menu_prompt(action.details)
+            prompt = self._open_prompt(action, title, text, options,
+                                       lambda index: self._resolve_arena_menu(action, index))
         return prompt
+
+    def _resolve_arena_menu(self, action, index):
+        if self.session.pending is action:
+            self._attempt(lambda: self.session.answer(index))
 
     def _open_prompt(self, action, title, text, options, resolve):
         """A narrator-style choice (no character: the gold theme, no portrait) over `action`; `resolve(index)` runs
@@ -1073,12 +1099,22 @@ class Desktop:
             self.screen_token, self.scroll, self.choice_focus = token, 0, None
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
+        self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
         self.pending_background_alpha = 255
         details = action.details if action else {}
         ask = self._host_prompt()
         closed = self._ui_closed(action)
+        if ask and action.name in ARENA_ACTIONS and not self.error:
+            # The arena's menu as SHS's choice (_host_prompt): the arena, without its own menu, under the choice.
+            try:
+                renderer = self._arena_renderer()
+                renderer.draw(None, self.session, overlay=False)
+                self.under_layer = renderer.canvas
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Panel rendering stopped: %s', error)
         if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input', *ARENA_ACTIONS) and not self.error:
             try:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
@@ -1479,6 +1515,10 @@ class Desktop:
             else:
                 self.window.fill((8, 12, 20))
             self._draw_background_layer(bg_size, self.bg_viewport)
+        under = getattr(self, 'under_layer', None)
+        if under is not None:
+            # A screen under the choice that covers the whole frame (New Rules' arena under its menu).
+            self.window.blit(pygame.transform.smoothscale(under, self.bg_viewport.size), self.bg_viewport)
         ui_layers = []
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
@@ -2458,17 +2498,11 @@ class Desktop:
         asking = self.host_prompt is not None and self.host_prompt['action'] is action
         if (action and action.name in ARENA_ACTIONS and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            # New Rules' arena fills the frame: its on-screen buttons, the number keys around the ring (765) and the
-            # menu's options take clicks; the gear, bottom left, opens the pause menu as on football's frame.
             frame = self.bg_viewport
-            x = (event.pos[0] - frame.x) * 768 / frame.width
-            y = (event.pos[1] - frame.y) * 1024 / frame.height
-            if 0 <= x < 150 and 880 <= y <= 1024:
-                self.command(('menu',))
-            elif 0 <= x <= 768 and 0 <= y <= 1024:
-                command = self.nr_arena_renderer.hit((x, y))
-                if command is not None:
-                    self.command(command)
+            command = self._arena_tap(action, (event.pos[0] - frame.x) * 768 / frame.width,
+                                      (event.pos[1] - frame.y) * 1024 / frame.height)
+            if command is not None:
+                self.command(command)
             return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
@@ -2760,6 +2794,19 @@ class Desktop:
         if viewport is not None:
             self.nr_arena_renderer.target_height = viewport.height
         return self.nr_arena_renderer
+
+    def _arena_tap(self, action, x, y):
+        """The command for a click at (x, y) in frame pixels (768 x 1024) on New Rules' arena: the gear, bottom left,
+        opens the pause menu as on football's frame; Sequences' items (their number keys, 765) and the info box take
+        clicks. Anywhere else a tap is the OK key, the only key the turning games play by (owner, 2026-10-31)."""
+        if 0 <= x < 150 and 880 <= y <= 1024:
+            return ('menu',)
+        if not (0 <= x <= 768 and 0 <= y <= 1024):
+            return None
+        command = self.nr_arena_renderer.hit((x, y))
+        if command is None and action.name == 'arena_frame':
+            command = ('arena_key', -5)
+        return command
 
     def _arena_key(self, event):
         """New Rules' arena by keys (a controller's arrive as these, gamepad.py): Enter / Space (a controller's

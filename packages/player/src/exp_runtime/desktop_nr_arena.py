@@ -444,7 +444,9 @@ class NRArenaRenderer:
             return f'icon/{picture - PICTURE_BASE}'
         return None
 
-    def draw(self, target, session, now_ms=None):
+    def draw(self, target, session, now_ms=None, overlay=True):
+        """The arena into `canvas`; with `overlay` False, without New Rules' menu over it (the player shows SHS's
+        choice there instead)."""
         arena = session.engine.nr_arena
         action = session.pending
         now = pygame.time.get_ticks() if now_ms is None else now_ms
@@ -471,7 +473,7 @@ class NRArenaRenderer:
             surface.blit(skin.static, (OX + origin[0], origin[1]))
         if arena is not None and not moving:
             self._paint(surface, arena, session, now)
-        if action is not None and action.name in ('arena_menu', 'arena_info'):
+        if action is not None and action.name in ('arena_menu', 'arena_info') and overlay:
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
             self._overlay(surface, action, now)
         k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
@@ -704,6 +706,15 @@ class NRArenaRenderer:
                     plate = 1 - 2 * self._depth(a, h) // h
             y = self._row_y(arena, ring, y, slot)
             self._item(surface, arena, arena.slots[slot], arena.item_kind, x, y, plate, arena.tint[slot])
+            if arena.keypad and slot < len(KEYPAD) and arena.slots[slot] != -1:
+                # shshd-runtime (owner, 2026-10-31): with the number keys around the ring (Sequences), a click on an
+                # item presses its slot's key, so the items are picked by touch rather than by their numbers.
+                width, height = self._item_size(arena)
+                name = self._picture_name(arena.slots[slot]) if arena.item_kind == 2 else None
+                if name is not None:
+                    width, height = map(max, (width, height), self.skin().size(name))     # the whole picture
+                self.targets.append((pygame.Rect(x - width // 2, y - height, width, height),
+                                     ('arena_key', 48 + int(KEYPAD[slot]))))
 
     def _item(self, surface, arena, item, kind, x, y, plate, tint):
         """method_444: an item standing at (x, y): its plate (0 or 1, the meter pack's first sequence), then a
@@ -831,7 +842,7 @@ class NRArenaRenderer:
                 self.font(59).draw(surface, option, start + 17, rect.y, width)
             self.targets.append((rect, ('arena_answer', i)))
         if not options:
-            self.targets.append((pygame.Rect(x, y, box_width, height), ('arena_answer', 0)))
+            self.targets.append((pygame.Rect((0, 0), NATIVE), ('arena_answer', 0)))     # a tap anywhere is its OK
 
     # -- input ------------------------------------------------------------------------------------------------------
     def focus(self, action):
