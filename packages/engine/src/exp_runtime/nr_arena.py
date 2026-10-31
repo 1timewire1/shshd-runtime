@@ -367,7 +367,7 @@ class NRArena:
         elif prop == 749:
             self._popup(Popup(POPUP_PICTURE, v1, slot, slot, index=v2, count=v3))
         elif prop == 750:
-            self.popups = [p for p in self.popups if not (v1 == -1 or (p.kind == POPUP_PICTURE and p.value == v1))]
+            self.popups = [p for p in self.popups if not (v1 == -1 or p.kind == v1)]     # by kind (i[n * 9])
         elif prop == 751:
             if 0 <= slot < len(self.slots):
                 self.tint[slot] = ((v1 & 255) << 16 | (v2 & 255) << 8 | v3 & 255) if min(v1, v2, v3) >= 0 else -1

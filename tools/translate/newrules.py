@@ -1276,20 +1276,23 @@ def translate_library(library):
     return rewriter.finish()
 
 
-def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1, entries=LIBRARY_ENTRIES):
+def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1, entries=LIBRARY_ENTRIES,
+                 linked=False):
     """A built-in story from New Rules' res_large.pud (`source`: resources by ID, nr_art.load) as an Episode, its compact
     dialogue streams written out (expand_streams) and the minigame library it calls kept beside it, with its games by
-    entry (`entries`)."""
+    entry (`entries`). `linked`: the episode runs beside the library (an arena build, whose addon links it), so its
+    reads of the library's data stay: the sequence games' tables (King of Diss's beat boxing passes 32427, 32423
+    and 32424, Dancing Queen's dance steps 32426, 32423 and 32424). Otherwise they read 0."""
     library = decode_program(source[LIBRARY]) if LIBRARY in source else None
-    boundary = library.previous_data_count if library is not None else None
+    boundary = library.previous_data_count if library is not None and not linked else None
     return Episode(download_id, title, {rid: expand_streams(decode_program(source[rid]), boundary)
                                         for rid in scripts}, library, entries)
 
 
-def read_dancing_queen(source):
+def read_dancing_queen(source, linked=False):
     """Dancing Queen, built into res_large.pud beside King of Diss: episode 101 of the translated pack (the downloads
     are 2-48, King of Diss 1, its Lite version 100)."""
-    episode = read_builtin(source, DANCING_QUEEN, 'Dancing Queen', 101, DANCING_QUEEN_ENTRIES)
+    episode = read_builtin(source, DANCING_QUEEN, 'Dancing Queen', 101, DANCING_QUEEN_ENTRIES, linked)
     episode.script_offset = DANCING_QUEEN[0] - 25001
     return episode
 
@@ -1546,7 +1549,8 @@ def expand_streams(program, library_data=None):
     out as the New Rules calls it stands for, in a block after the code: the call becomes a jump there, and the block
     drops the call's argument, makes the calls and jumps back after it. The streams are static data, so this is exact.
     New instructions only follow the code, so no address moves. A read of the linked library's data (an address from
-    `library_data`, its first word, on: the team battle passes three of its variables to the library) reads 0."""
+    `library_data`, its first word, on: the team battle passes three of its variables to the library) reads 0; with
+    no `library_data` (the library runs beside the story) it stays."""
     from exp_runtime.decode.bytecode import BytecodeInstruction
     from kiwi_rewrite import word
     code = [(0x1a, 0) if library_data is not None and i.opcode == 0x40 and i.operand >= library_data

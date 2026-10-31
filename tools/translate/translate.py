@@ -111,9 +111,9 @@ def main(argv=None):
                   f'({len(data) // 1024} KB)')
             continue
         if str(path) == 'king-of-diss':
-            episode = newrules.read_builtin(portraits)
+            episode = newrules.read_builtin(portraits, linked=args.arena)
         elif str(path) == 'dancing-queen':
-            episode = newrules.read_dancing_queen(portraits)
+            episode = newrules.read_dancing_queen(portraits, linked=args.arena)
             twin_files = (DANCING_QUEEN_TWIN,)
         elif str(path) == 'king-of-diss-lite':
             if not args.lite:

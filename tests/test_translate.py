@@ -664,6 +664,12 @@ class NewRulesShimTests(unittest.TestCase):
         source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
         self.assertEqual(yields(self.nr.expand_streams(source, library_data=29396)), [(30, (0,))])
 
+    def test_library_reads_stay_where_the_library_runs_beside_the_story(self):
+        # An arena build: the dance steps pass the library's own tables (32426, 32423, 32424) to its sequences game.
+        source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
+        kept = self.nr.expand_streams(source)
+        self.assertEqual((kept.instructions[0].opcode, kept.instructions[0].operand), (0x40, 30000))
+
     def test_a_speed_diss_is_timed_rhyme_choices_until_its_hits_or_misses_run_out(self):
         # The story calls the library (SAVE_RETURN + JUMP past its code) and reads B; here it shows B with 30.
         source = program(0x42, (0x29, 9999), 0x08, call(30, 1), 0x33)

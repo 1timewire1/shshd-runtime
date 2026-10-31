@@ -64,6 +64,17 @@ class ArenaModelTests(unittest.TestCase):
         self.assertEqual(len(arena.slots), 5)
         self.assertTrue(arena.set(0, 718, 0))               # 718 closes it
 
+    def test_750_removes_popups_by_kind(self):
+        # Sequences shows each sequence as a strip of pictures (749) and clears it with 750(3) before the next.
+        arena = NRArena.opened(False, True)
+        for index, picture in enumerate((17, 15, 15)):
+            arena.set(-14, 749, picture, index, 3)
+        arena.set(0, 747, -5, 400, text='+6')
+        arena.set(0, 750, 3)
+        self.assertEqual([p.kind for p in arena.popups], [POPUP_TEXT])
+        arena.set(0, 750, -1)
+        self.assertEqual(arena.popups, [])
+
 
 class ArenaServiceTests(unittest.TestCase):
     def test_a_game_loop_runs_frame_by_frame_and_the_score_comes_back(self):
