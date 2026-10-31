@@ -12,6 +12,7 @@ from .games import GAMES
 
 from .randomness import NativeRandom, Random48, pipe_list
 from .minigames import WordGame
+from .nr_arena import NRArena
 from .game_state import GameState
 from .character_picker import CharacterPicker
 from .scene_badge import SceneBadge
@@ -68,6 +69,13 @@ NATIVE_DEFAULT_YIELDS = frozenset((12, 14, 19, 20, 21, 23, 31, 41, 42, 48, 62, 6
 SHS_HD_YIELDS = NATIVE_DEFAULT_YIELDS | frozenset((
     6, 15, 22, 26, 30, 32, 36, 37, 38, 43, 56, 57, 58, 59, 60, 61, 66, 83, 84, 85, 87, 98,
     *range(101, 121)))
+# shshd-runtime: New Rules' minigame arena (nr_arena.py, reference/Other Games/docs/NR_ARENA.md), the services the
+# translated New Rules stories and their minigame library call in place of New Rules' own (tools/translate
+# newrules.ARENA_SERVICES): the panel (50-57), the frame wait (29), formats (5), the menu and the info box over the
+# panel (9, 10) and the build query (32). Service 70 selector NR_ARENA_QUERY answers 1 where they work.
+NR_ARENA_SERVICES = frozenset(range(200, 213))
+NR_ARENA_QUERY = 200
+NR_BUILD = {1: 2, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}  # New Rules' 32 as the Java (arena) build answers it
 
 
 @dataclass
@@ -75,6 +83,9 @@ class EngineState:
     # Not saved: the HD build's app version when an HD app bundle is imported (Session sets it); switches the
     # few services whose HD handler differs from Android's.
     hd_version = None
+    # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
+    # selector NR_ARENA_QUERY answers 1 only with it on.
+    nr_arena_enabled = False
     # Not saved: the last link a script asked service 100 to open (a no-op in HD; see dispatch), for the host.
     store_link = ''
     vibration_serial = 0
@@ -116,6 +127,7 @@ class EngineState:
     choice_ms: int = 250
     random48: Random48 = field(default_factory=Random48)
     word_game: WordGame | None = None
+    nr_arena: NRArena | None = None     # shshd-runtime: New Rules' minigame arena panel, while open (nr_arena.py)
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -174,7 +186,7 @@ class EngineState:
         self.background_pan.automatic = True  # 0007e59c resets automatic panning.
         self.dialogue_animation = self.scene_badge = self.faceplace_toast = None
         self.dialogue_history = DialogueHistory()
-        self.word_game = self.word_grid = self.football = None
+        self.word_game = self.word_grid = self.football = self.nr_arena = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -381,6 +393,91 @@ class EngineState:
                 first = False
             result.append(chr(byte))
         return ''.join(result)
+
+    def _nr_arena_service(self, vm, request, y, args, need, at_least, complete):
+        """New Rules' arena and the New Rules services its minigame library calls (NR_ARENA_SERVICES), as New Rules'
+        engine answers them. The frame wait, the menu and the info box wait for the session."""
+        arena = self.nr_arena
+        if y == 200:                                            # 50: open (margins, show the score)
+            need(2)
+            self.nr_arena = NRArena.opened(args[0] != 0, args[1] != 0)
+            return complete('nr_arena_open')
+        if y == 208:                                            # 29: wait one frame
+            need(0)
+            return EngineAction('arena_frame', request, False)
+        if y == 209:                                            # 5: format into a string slot
+            at_least(2)
+            return complete('format_string', self._nr_format(vm, args))
+        if y == 210:                                            # 9: a menu over the panel; waits for the answer
+            need(3)
+            options = [option for option in self.read_text(vm, args[1]).split('|')]
+            return EngineAction('arena_menu', request, False, dict(
+                title=self.read_text(vm, args[0]), options=options, selected=max(0, args[2])))
+        if y == 211:                                            # 10: an info box over the panel; waits for OK
+            need(1)
+            return EngineAction('arena_info', request, False, dict(text=self.read_text(vm, args[0])))
+        if y == 212:                                            # 32: the build query
+            need(1)
+            return complete('query_build', NR_BUILD.get(args[0], 0), selector=args[0])
+        if arena is None:
+            raise VMError(f'New Rules arena service {y} without an open arena')
+        if y == 201:                                            # 51: a label
+            need(2)
+            arena.set_label(args[0], None if args[1] == -1 else self.read_text(vm, args[1]))
+            return complete('nr_arena_label')
+        if y == 203:                                            # 53: read a property
+            need(1)
+            return complete('nr_arena_get', signed16(arena.get(args[0])))
+        if y == 204:                                            # 54: a slot's item
+            need(1)
+            return complete('nr_arena_get', signed16(arena.item(args[0])))
+        if y == 205:                                            # 55: put an item in a slot
+            need(2)
+            if arena.item_kind == 3 and args[1] >= 0:
+                arena.set_text_item(args[0], self.read_text(vm, args[1]))
+            else:
+                arena.set_item(args[0], args[1])
+            return complete('nr_arena_item')
+        # 52 (the selected slot), 56 (three values) and 57 (one value): set a property.
+        if y == 202:
+            need(2)
+            slot, prop, values = -10, args[0], (args[1], -1, -1)
+        elif y == 206:
+            at_least(3)
+            slot, prop = args[0], args[1]
+            values = tuple(args[2 + i] if 2 + i < len(args) else -1 for i in range(3))
+        else:
+            need(3)
+            slot, prop, values = args[0], args[1], (args[2], -1, -1)
+        text = None
+        if prop in (762, 763):
+            text = self.read_text(vm, values[0]) if values[0] != -1 else ''
+        elif prop == 747 and values[2] != -1:
+            text = self.read_text(vm, values[2])
+        closed = arena.set(slot, prop, *values, text=text)
+        if closed:
+            self.nr_arena = None
+        return complete('nr_arena_set', prop=prop)
+
+    def _nr_format(self, vm, args):
+        """New Rules' 5: ([-k], format, values...) formats into string slot k-1 (slot 0 without a selector) and returns
+        its handle (0x7FF5 + slot), with %d, %s and %c."""
+        slot, at = (-args[0] - 1, 1) if args[0] < 0 else (0, 0)
+        if not 0 <= slot < len(self.dynamic_strings) - 1:
+            raise VMError('Formatting destination is outside the string slots')
+        pattern, position, argument, out = self.read_text(vm, args[at]), 0, at + 1, ''
+        while position < len(pattern):
+            char = pattern[position]
+            if char == '%' and position + 1 < len(pattern) and pattern[position + 1] in 'cds' and argument < len(args):
+                spec, value = pattern[position + 1], args[argument]
+                char = (self.read_text(vm, value) if spec == 's' else str(signed16(value))
+                        if spec == 'd' else chr(value & 0xff))
+                position += 1
+                argument += 1
+            out += char
+            position += 1
+        self.dynamic_strings[slot] = out
+        return 0x7FF5 + slot
 
     def dispatch(self, vm: KiwiVM, *, resource_exists=None, dialogue_override=None) -> EngineAction:
         request = vm.pending
@@ -876,6 +973,8 @@ class EngineState:
             return EngineAction('word_game', request, False, dict(
                 title=self.read_text(vm, args[0]), text=self.read_text(vm, args[1]),
                 character_id=args[5], portrait_mode=args[6]))
+        if y in NR_ARENA_SERVICES:
+            return self._nr_arena_service(vm, request, y, args, need, at_least, complete)
         if y == 3:
             need(3)
             if self.choice_builder is None:

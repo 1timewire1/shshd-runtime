@@ -561,6 +561,36 @@ other state/panel services, native save/resource extensions, audio and outstandi
 mini-game presentation. The corpus's presence of a service does not prove the
 Android helper matches its original iOS semantics.
 
+## 5.1 New Rules' minigame arena (shshd-runtime services 200–212)
+
+These are not native SHS services. Episodes translated from SHS: New Rules
+(`tools/translate`) call them, as does New Rules' own minigame library, which
+runs beside the story as a linked segment (VM_SPEC.md §2.3). Each stands in for
+one New Rules service and answers as New Rules' engine does. The panel, its
+properties and its clock are decoded in
+`reference/Other Games/docs/NR_ARENA.md` and modelled in `nr_arena.py`.
+
+| Service | New Rules | Arguments | Result |
+| --- | --- | --- | --- |
+| 200 | 50 | margins, show score | Opens the arena panel |
+| 201 | 51 | label id (690–695), text | Sets a label |
+| 202 | 52 | property, value | Sets a property on the selected slot |
+| 203 | 53 | property | The property's value |
+| 204 | 54 | slot | The slot's item |
+| 205 | 55 | slot, item or text | Puts an item in a slot |
+| 206 | 56 | slot, property, v1[, v2[, v3]] | Sets a property; 718 closes the panel |
+| 207 | 57 | slot, property, v | Sets a property |
+| 208 | 29 | — | Waits for the next frame (the session completes it on its next tick) |
+| 209 | 5 | [−k], format, values… | Formats into string slot k−1 (slot 0 without a selector); the slot's handle |
+| 210 | 9 | title, `a\|b…`, selection | A menu over the panel; waits; the chosen index |
+| 211 | 10 | text | An info box over the panel; waits for OK; 0 |
+| 212 | 32 | selector | New Rules' build query as the Java (arena) build answers it |
+
+Service **70 selector 200** answers 1 when the arena plays here: New Rules'
+library is attached and the player's arena switch is on (`Session.nr_arena`).
+Native players and upstream exp-runtime answer 0 to an unknown selector, so a
+translated story takes the word game or timed choices it also carries.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

@@ -73,6 +73,12 @@ def dispatch(self, vm, *, resource_exists=None):
     if y == 70:
         at_least(1)
         selector = args[0]
+        from ..engine import NR_ARENA_QUERY
+        if selector == NR_ARENA_QUERY:
+            # shshd-runtime: whether New Rules' minigame arena plays here (its library attached and the player's
+            # switch on); native players and upstream answer 0, and the story takes its other way.
+            available = getattr(self, 'nr_arena_enabled', False) and vm.linked is not None
+            return complete('query_build', int(available), selector=selector)
         if self.hd_version is not None:
             # SHSScript::syscall case 0x46 (HD): 2 -> 2, 3 -> 6, 6 -> the app version (CFBundleVersion) in host
             # string slot 0, 9 -> 1, 10 -> 2 when the in-app store is available, else 1 (answered as available:

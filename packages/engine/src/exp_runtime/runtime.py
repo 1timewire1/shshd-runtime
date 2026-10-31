@@ -35,6 +35,8 @@ from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
 from .vm import KiwiVM, StopKind, VMError, VMStop, linked_layout, signed16
 
+ARENA_FRAME_CAP_MS = 250                # New Rules' arena: the longest a single frame counts (as the minigames cap theirs)
+
 
 class SaveError(ValueError):
     pass
@@ -145,6 +147,9 @@ class Session:
     # Whether a timed choice's clock runs. The desktop's Disable Choice Timer (this player's option, not native) holds
     # it; `expire_choice` then lets it run out on request. Not saved: the remaining time is kept as it was.
     choice_timer = True
+    # shshd-runtime: whether New Rules' minigame arena plays (nr_arena.py) where a translated story offers it; off, its
+    # story plays the word game or timed choices it carries for apps without the arena. Not saved: read at each call.
+    nr_arena = True
     # shshd-runtime: (the dialogue motion, its two-speaker line's partner ID or -1), so the next line knows whether its
     # partner is new. Not saved: a restore takes it from the restored line.
     _duet_line = None
@@ -603,6 +608,7 @@ class Session:
             request = self.vm.run(remaining)
             if request.kind == StopKind.YIELD:
                 queued_notice = self.engine.next_dialogue_notice
+                self.engine.nr_arena_enabled = self.nr_arena
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name in ('dt_add_node', 'dt_add_result', 'dt_save'):
                     # Real native behavior: every addNode/addResult call
@@ -814,9 +820,23 @@ class Session:
                 if not self._complete_panel():
                     return action
             self.pending = None
+        elif action.name == 'arena_menu':
+            # New Rules' menu over the arena (its 9): the chosen option's index goes back to the library.
+            if type(value) is not int or not 0 <= value < len(action.details['options']):
+                raise ValueError('Choose an option by its zero-based index')
+            self.vm.resume(value)
+            self.pending = None
+        elif action.name == 'arena_info':
+            self.vm.resume(0)                               # New Rules' info box (its 10): OK closes it
+            self.pending = None
         else:
             raise VMError(f'Cannot answer {action.name}; its native contract is not implemented')
         return self.advance()
+
+    def arena_press(self, key_code: int) -> None:
+        """A key press on New Rules' minigame arena (a Nokia key code, nr_arena.KEY_BITS), for its library to read."""
+        if self.engine.nr_arena is not None:
+            self.engine.nr_arena.press(key_code)
 
     def _complete_survey(self, action):
         from .shs.survey import RESPONSE_STEPS, SURVEY_TEXT, script_response
@@ -1003,6 +1023,13 @@ class Session:
                 self.pending = None
                 return self.advance()
             return self.pending
+        if self.engine.nr_arena is not None:
+            # New Rules' arena keeps turning under its own menu and info box; a long gap counts as one capped frame.
+            self.engine.nr_arena.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
+        if self.pending and self.pending.name == 'arena_frame':
+            self.vm.resume(0)                       # the library's frame wait (New Rules' 29): its next pass
+            self.pending = None
+            return self.advance()
         if self.pending and self.pending.name == 'dialogue':
             motion = self.engine.dialogue_animation
             was_complete = motion.complete
@@ -1094,7 +1121,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=29,
+        return dict(format='shs-runtime-save', version=30,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1135,8 +1162,12 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 30):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 31):
                 raise SaveError('Unsupported save format or version')
+            # Version 30 adds New Rules' minigame arena (nr_arena.py); an older save never had one open.
+            if state['version'] < 30 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('nr_arena', None)
             # Version 29 stores an open portrait picker's slot positions (a translated pack may place them its own
             # way); an older one used the native slots.
             if state['version'] < 29 and (state.get('engine') or {}).get('character_picker') is not None:
@@ -1442,6 +1473,11 @@ class Session:
                 raise SaveError('Invalid native random generator state')
             if engine.word_game is not None:
                 engine.word_game.validate()
+            if engine.nr_arena is not None:
+                try:
+                    engine.nr_arena.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
             if not 0 <= engine.choice_ms <= 250:
                 raise SaveError('Invalid choice entrance clock')
             if engine.word_grid is not None:
@@ -1509,7 +1545,8 @@ class Session:
                 allowed = {'choice': (1, 4), 'character_picker': (78,), 'word_game': (71,), 'word_grid': (96,), 'football': (94,), 'dialogue': (13, 65, 15, 37, 76), 'text_input': (17, 40),
                            'presentation': (8,), 'loading': (91,), 'message_panel': (33,), 'download_poll': (9,),
                            'survey_confirmation': (9,), 'episode_exit': (7, 63),
-                           'finished': (None,), 'vm_pause': (None,)}
+                           'finished': (None,), 'vm_pause': (None,),
+                           'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)
