@@ -121,7 +121,12 @@ DROPPED = {10, 29, 36, 37, 38, 39, 44, 45, 46, 58, 59, 62, 64, 66}
 # New Rules' build query (32): selector -> constant.
 BUILD = {1: 1, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}     # the Java build answers 2 to selector 1 (keyboard_guards)
 KEYBOARD_WINDOW = 60                    # keyboard_guards(): how far after a selector-1 query the text entry may be
-ARENA_GUARD_WINDOW = 20                 # arena_code(): how far after a selector-1 query the call to the game may be
+# arena_code(): how far after a selector-1 query the call to the game may be. Most rounds ask "platform 1, or 32(4) is
+# 1?" before calling the round's word game, else go on to the arena (2026-10-31): the arena call then sits 22-31 past
+# the query, so the first window, 20, found 38 of the downloads' 104 guards: the other rounds played as timed choices
+# with the arena on. 40 finds every guarded round in the 47 downloads, each added guard with that shape; 60 adds a
+# spurious one.
+ARENA_GUARD_WINDOW = 40
 
 
 class TranslateError(ValueError):

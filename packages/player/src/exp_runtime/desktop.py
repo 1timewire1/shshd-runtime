@@ -226,6 +226,7 @@ class Desktop:
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
+    _arena_minigames = True         # translated New Rules episodes: the "Minigame Arena" switch (arena_minigames)
     host_prompt = None
     minigame_played = None
     ad_asked = None
@@ -265,7 +266,21 @@ class Desktop:
             session.share_names(self.names)
         session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
         session.choice_timer = not self._disable_choice_timer
+        session.nr_arena = self._arena_minigames
         self._session = session
+
+    @property
+    def arena_minigames(self):
+        """shshd-runtime's Minigame Arena (owner, 2026-10-31): translated New Rules episodes play their minigames in
+        New Rules' arena; off, as the timed choices they carry for players without it. A story asks as each game
+        starts (service 70's arena query), so a game already playing keeps its form."""
+        return self._arena_minigames
+
+    @arena_minigames.setter
+    def arena_minigames(self, value):
+        self._arena_minigames = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.nr_arena = self._arena_minigames
 
     @property
     def disable_choice_timer(self):
@@ -1440,7 +1455,8 @@ class Desktop:
 
     def hires_switch(self):
         """shshd-runtime: whether this episode has a second, hi-res portrait set (the game profile's
-        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something.
+        The "Minigame Arena" switch is offered with it: it too only concerns translated New Rules episodes."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
         packs = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_PORTRAIT_ART', {})
@@ -2080,7 +2096,8 @@ class Desktop:
                     skip_minigames=self.skip_minigames,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
-                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}))
+                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
+                    **({'arena_minigames': self.arena_minigames} if self.hires_switch() else {}))
 
     def pause_box(self):
         if self.pause_hd.available() and not self.error:
@@ -2244,6 +2261,8 @@ class Desktop:
                 self.hd_backdrop = not self.hd_backdrop
             elif command[1] == 'hires_portraits':
                 self.set_hires_portraits(not self.hires_portraits)
+            elif command[1] == 'arena_minigames':
+                self.arena_minigames = not self.arena_minigames
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
                 if self.vibration_enabled and self.audio:

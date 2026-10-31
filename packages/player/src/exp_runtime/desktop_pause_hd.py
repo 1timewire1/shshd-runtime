@@ -55,10 +55,11 @@ DEVICE_VIBRATION_LABEL = 'Vibration'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
+ARENA_MINIGAMES_LABEL = 'Minigame Arena'        # translated New Rules episodes: their arena, else timed choices
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in the SHS profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch).
-SWITCH_BADGES = {'hires_portraits': 'SHSNR'}
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'arena_minigames': 'SHSNR'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
 
 
@@ -77,7 +78,7 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
                      ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'hires_portraits', 'check_updates')
-EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
+EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'arena_minigames')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -132,6 +133,7 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VI
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
+                 'arena_minigames': ARENA_MINIGAMES_LABEL,
                  'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
 # (rms ~2 levels): out = M . (r, g, b) + c.
@@ -555,7 +557,7 @@ class HdPauseMenu:
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'vibration'|'device_vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'),
+        ('pause_toggle', 'vibration'|'device_vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'|'arena_minigames'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""

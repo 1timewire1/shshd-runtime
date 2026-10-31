@@ -338,6 +338,7 @@ class HdShell:
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():
             settings['hires_portraits'] = state.hires_portraits
+            settings['arena_minigames'] = state.arena_minigames     # the same translated New Rules episodes
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).

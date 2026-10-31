@@ -276,6 +276,19 @@ class ArenaKeyTests(unittest.TestCase):
         ui = self.desktop('arena_entrance')
         self.assertIsNone(ui._arena_tap(ui.session.pending, 400, 100))       # New Rules takes no keys meanwhile
 
+    def test_the_minigame_arena_switch_reaches_every_session_and_is_kept(self):
+        # Options' Minigame Arena (on by default): off, translated New Rules episodes play their timed choices
+        # (test_menu keeps it in player.json).
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.menu import preference_defaults
+        ui = self.desktop('dialogue')
+        ui._session = ui.session
+        ui.arena_minigames = False
+        self.assertIs(ui.session.nr_arena, False)
+        Desktop.session.fset(ui, SimpleNamespace(nr_arena=True, share_names=Mock()))
+        self.assertIs(ui.session.nr_arena, False)           # the next episode's session too
+        self.assertIs(preference_defaults()['arena_minigames'], True)
+
     def test_the_arenas_menu_is_shs_choice(self):
         from exp_runtime.desktop import arena_menu_prompt
         self.assertEqual(arena_menu_prompt(dict(title='welcome to the `rhyming` game.  view tutorial?',

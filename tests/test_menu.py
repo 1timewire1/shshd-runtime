@@ -224,6 +224,13 @@ class LibraryMenuTests(unittest.TestCase):
         with ContentLibrary(self.directory) as reopened:
             self.assertEqual(reopened.open_episode('Second').archive.metadata().title, 'Second')
 
+    def test_the_minigame_arena_switch_is_kept_and_on_by_default(self):
+        state = MenuState(self.library)
+        self.assertTrue(state.arena_minigames)
+        state.arena_minigames = False
+        state.persist()
+        self.assertFalse(MenuState(self.library).arena_minigames)
+
     def test_checkpoints_preserve_manual_saves_and_resume_survives_reopen(self):
         state = MenuState(self.library)
         session = state.session(state.selected)
