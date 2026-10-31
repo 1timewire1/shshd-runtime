@@ -20,6 +20,7 @@ DEFAULT_PERIOD_MS = 4000                # 719 when the panel opens
 # the table settles. Meanwhile the panel neither draws nor runs, takes no keys, and the script waits. Leaving (718) runs
 # transition -4 (field_611[3]) backwards, as long: the same tracks out again, before the story goes on.
 ENTRANCE_MS = EXIT_MS = 2000
+TIME_UP_MS = 2000                       # how long "Time's up!" shows before the panel presses its OK (time_up)
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
 # them. The player passes these codes: OK / fire, soft keys, the arrows, and the number keys 0-9.
@@ -103,6 +104,11 @@ class NRArena:
     entrance_ms: int = ENTRANCE_MS      # how far the entrance has run (ENTRANCE_MS: done)
     exit_ms: int = -1                   # how far the exit has run, once 718 has closed the panel (-1: open)
     pictures: list = field(default_factory=list)                        # 767's list (preload hints)
+    # shshd-runtime (owner, 2026-10-31): from the "Time's up!" bubble to "your score" the panel takes no presses, so a
+    # last tap can't skip them; it presses the first bubble's OK itself after TIME_UP_MS. 0 until then (a new timer
+    # resets it), 1 holding, 2 after "your score".
+    time_up: int = 0
+    time_up_ms: int = -1
 
     # -- opening and the clock ---------------------------------------------------------------------------------------
     @classmethod
@@ -178,6 +184,11 @@ class NRArena:
             self.max_ms += dt
         if self.keypad_flash_ms > 0:
             self.keypad_flash_ms = max(0, self.keypad_flash_ms - dt)
+        if self.time_up_ms >= 0:
+            self.time_up_ms += dt
+            if self.time_up_ms >= TIME_UP_MS:
+                self.time_up_ms = -1
+                self.keys.append(KEY_BITS[OK_KEYS[0]])        # the bubble's OK, until "your score" ends the hold
         self.elapsed_ms = min(0x7FFF, self.elapsed_ms + dt)
 
     def slot_under(self) -> int:
@@ -195,7 +206,7 @@ class NRArena:
     def press(self, key_code: int) -> None:
         """A key press (a Nokia key code, KEY_BITS), as the panel takes it (`method_373` case 25)."""
         bits = KEY_BITS.get(key_code)
-        if bits is None:
+        if bits is None or self.time_up == 1:
             return
         button = -1
         if bits in (16, 32):
@@ -312,6 +323,7 @@ class NRArena:
             if v1 > 0:
                 self.timer_ms = self.timer_total_ms = v1 * 1000
                 self.timer_shown = True
+                self.time_up = 0
             else:
                 self.timer_ms, self.timer_shown = -1, False
         elif prop == 712:
@@ -377,6 +389,8 @@ class NRArena:
                 self.blink_clock_ms = BLINK_FREE_MS
         elif prop in (762, 763):
             self.bubbles[prop - 762] = [text, v2, v3] if text else None
+            if text:
+                self._bubble_shown()
         elif prop == 764:
             pass                                    # a picture preload hint
         elif prop == 765:
@@ -396,6 +410,18 @@ class NRArena:
         elif prop == 771:
             self.soft_key = v1 != 0
         return False
+
+    def _bubble_shown(self) -> None:
+        """A bubble has appeared. The first once the timer has run out ("Time's up!") holds the input (TIME_UP_MS);
+        the next ("your score: ...") ends the hold. Both drop the presses queued before them."""
+        if self.timer_ms != 0 or self.timer_total_ms <= 0:
+            return
+        if self.time_up == 0:
+            self.time_up, self.time_up_ms = 1, 0
+            self.keys.clear()
+        elif self.time_up == 1:
+            self.time_up, self.time_up_ms = 2, -1
+            self.keys.clear()
 
     def _set_motion(self, mode: int) -> None:
         """740 (`method_434`): the arrows show in the stepped mode only."""

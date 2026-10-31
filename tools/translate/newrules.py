@@ -488,7 +488,7 @@ def build_addon(art, music=None, library=None, arena_source=None):
     nr_arena_art.build_skin), which the player draws the arena from."""
     resources = {}
     if library is not None:
-        resources[LIBRARY] = translate_library(library).to_bytes()
+        resources[LIBRARY] = translate_library(library, music=music is not None).to_bytes()
     if arena_source is not None:
         import nr_arena_art
         # The arena stands on the dialogue screens' frame (owner, 2026-10-30), without the scene frame's bars.
@@ -944,15 +944,7 @@ def music(rewriter, pc, argc, context):
         done = s.label()
         s.result(0)
         s.arg(2); s.push(MUSIC_PRELOAD); s.emit(0x0a); s.jump_if_nonzero(done)
-        sound = s.label()
-        for track in sorted(SOUND_TRACKS):
-            s.arg(1); s.push(track); s.emit(0x0a); s.jump_if_nonzero(sound)
-        s.arg(1); s.push(MUSIC_BASE); s.emit(0x50); s.push(0)
-        s.call(80, 2)
-        s.jump(done)
-        s.label(sound)
-        s.arg(1); s.push(MUSIC_BASE); s.emit(0x50)
-        s.call(79, 1)
+        play_track(s, index_arg=1)
         s.label(done)
     rewriter.redirect(pc, 'music', build)
 
@@ -1264,15 +1256,64 @@ SPEED_DISS_MS = 3900
 RIGHT_TRACK, WRONG_TRACK = 13, 1                         # FEEDBACK_TRACKS: New Rules' right and wrong jingles
 
 
-def translate_library(library):
+def play_track(s, index_arg=None, index=None):
+    """SHS 79 (a sound effect, SOUND_TRACKS) or 80 (music, once) for New Rules music index argument `index_arg` or
+    the constant `index`, as `music` plays service 7's modes 0 and 2."""
+    def push_index():
+        s.arg(index_arg) if index_arg is not None else s.push(index)
+    if index is not None:
+        if index in SOUND_TRACKS:
+            s.push(MUSIC_BASE + index); s.call(79, 1)
+        else:
+            s.push(MUSIC_BASE + index); s.push(0); s.call(80, 2)
+        return
+    sound, done = s.label(), s.label()
+    for track in sorted(SOUND_TRACKS):
+        push_index(); s.push(track); s.emit(0x0a); s.jump_if_nonzero(sound)
+    push_index(); s.push(MUSIC_BASE); s.emit(0x50); s.push(0); s.call(80, 2)
+    s.jump(done)
+    s.label(sound)
+    push_index(); s.push(MUSIC_BASE); s.emit(0x50); s.call(79, 1)
+    s.label(done)
+
+
+# The minigame library's sound hooks, empty in its WinMo copy (PUSH_FP, SET_FP, LEAVE, RETURN), which its games call
+# where the downloads' own copies of the arena games call their filled-in twins (owner, 2026-10-31: the downloads'
+# games had sounds, the library's none). PRELOAD (index) only loads a track (service 7 mode 1) and stays empty.
+LIBRARY_PRELOAD, LIBRARY_PLAY, LIBRARY_GAME_MUSIC = 28189, 28193, 28197
+# The track the downloads' arena games start (their twin of LIBRARY_GAME_MUSIC plays the word left on the stack where
+# build query 32(270) would have put 8; the player answers 270 with 0, and the round starts track 14).
+GAME_MUSIC_TRACK = 14
+# Where the hooks' shims go: the library's code already ends at the KiWi limit (32767), so they overwrite a function
+# nothing reaches, a list helper of the Java copy's (no jump to it, its address never pushed, no story calls it).
+LIBRARY_ROOM = (29997, 30042)
+
+
+def translate_library(library, music=False):
     """New Rules' minigame library (25200, a linked segment) for shshd-runtime: every host call renamed to the service
-    that answers it (LIBRARY_RENAME), its code and data left where New Rules' stories expect them. Raises
+    that answers it (LIBRARY_RENAME), its code and data left where New Rules' stories expect them; with `music` (the
+    addon holds the tracks) its sound hooks play New Rules' tracks as the downloads' copies do. Raises
     TranslateError for a service with no counterpart."""
-    rewriter = Rewriter(library, zero_gap=True)
+    rewriter = Rewriter(library, zero_gap=True, room=LIBRARY_ROOM if music else None)
     for pc, service, argc in rewriter.calls():
         if service not in LIBRARY_RENAME:
             raise TranslateError(f'the minigame library calls New Rules service {service}, which has no counterpart')
         rewriter.rename(pc, LIBRARY_RENAME[service])
+    if music:
+        # Every track the library plays is one of New Rules' sound effects (its right/wrong jingles, time's up, Fever's
+        # bonus), so the play hook's shim is short: SHS 79 with MUSIC_BASE + the index.
+        constants = {0x5a: 0, 0x5b: 1}
+        for i in library.instructions:
+            if i.opcode == 0x29 and i.operand == LIBRARY_PLAY:
+                push = library.instructions[i.pc - library.previous_instruction_count - 2]
+                track = constants.get(push.opcode, push.operand if push.opcode == 0x1a else None)
+                if track not in SOUND_TRACKS:
+                    raise TranslateError(f'the minigame library plays track {track} at {i.pc}, not a sound effect')
+
+        def play(s):
+            s.arg(1); s.push(MUSIC_BASE); s.emit(0x50); s.call(79, 1)
+        rewriter.replace_function(LIBRARY_PLAY, 'play', play, argc=1)
+        rewriter.replace_function(LIBRARY_GAME_MUSIC, 'game music', lambda s: play_track(s, index=GAME_MUSIC_TRACK))
     return rewriter.finish()
 
 

@@ -158,6 +158,45 @@ class NewRulesShimTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, 'appended'):
             Rewriter(library).words([1])                    # a linked segment can't grow
 
+    def test_the_librarys_sound_hooks_play_new_rules_tracks_with_the_addons_music(self):
+        # The library's games call its empty sound hooks where the downloads' copies play tracks: the play hook with
+        # a sound effect's index (13, right; 1, wrong: 0x5B pushes 1) and the game-music hook. With the addon's music
+        # the hooks play them (79 / 80 at MUSIC_BASE + index). The library's code already reaches the KiWi limit, so
+        # the shims overwrite a function nothing calls (its room); every other instruction stays where it was.
+        from unittest.mock import patch
+        from test_vm_linked import linked
+        nr = self.nr
+        base = nr.LIBRARY_PLAY
+        assert nr.LIBRARY_GAME_MUSIC == base + 4
+        stub = (0x48, 0x4A, 0x22, 0x43)
+        game, room = base + 8, (base + 19, base + 39)
+        source = (*stub, *stub, (0x1A, 13), 0x42, (0x29, base), 0x15, 0x5B, 0x42, (0x29, base), 0x15,
+                  0x42, (0x29, base + 4), 0x43, *(0x43,) * 20, 0x43)
+        library = linked(*source, words=(0,), data_boundary=50, code_boundary=base)
+        story = program(0x42, (0x29, game), 0x33)
+
+        def played(segment):
+            vm = KiwiVM(story, **nr_linked_layout(segment))
+            seen = []
+            while (stop := vm.run()).kind == StopKind.YIELD:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        def code(instructions):
+            return [(i.pc, i.opcode, i.operand) for i in instructions]
+        with patch.object(nr, 'LIBRARY_ROOM', room):
+            out = nr.translate_library(library, music=True)
+            self.assertEqual(played(out), [(79, (nr.MUSIC_BASE + 13,)), (79, (nr.MUSIC_BASE + 1,)),
+                                           (80, (nr.MUSIC_BASE + nr.GAME_MUSIC_TRACK, 0))])
+            self.assertEqual(len(out.instructions), len(library.instructions))
+            self.assertEqual([out.instructions[0].opcode, out.instructions[4].opcode], [0x29, 0x29])
+            self.assertEqual(code(out.instructions[8:19]), code(library.instructions[8:19]))
+            self.assertEqual(code(out.instructions[39:]), code(library.instructions[39:]))
+            self.assertEqual(played(nr.translate_library(library)), [])       # no music in the addon: still empty
+            music = linked(*source[:12], (0x1A, 8), *source[13:], words=(0,), data_boundary=50, code_boundary=base)
+            with self.assertRaisesRegex(nr.TranslateError, 'track 8'):
+                nr.translate_library(music, music=True)                       # a music track would need 80
+
     def test_a_library_call_enters_the_librarys_own_game_where_the_player_has_the_arena(self):
         # The story calls the game at 100 with two arguments; the library leaves 42 in B. With the arena (70(200)
         # answers 1) the shim drops its frame and jumps there, so the story reads the library's own result; without

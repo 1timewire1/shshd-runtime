@@ -75,6 +75,35 @@ class ArenaModelTests(unittest.TestCase):
         arena.set(0, 750, -1)
         self.assertEqual(arena.popups, [])
 
+    def test_times_up_takes_no_presses_until_the_score_shows(self):
+        # Every game ends on two bubbles once its timer has run out, "Time's up!" and "your score: n", each waiting
+        # for OK. A last tap used to skip them; now the panel drops presses until the score shows, and presses the
+        # first one's OK itself after TIME_UP_MS.
+        from exp_runtime.nr_arena import TIME_UP_MS
+        arena = NRArena.opened(False, True)
+        arena.set(0, 762, 0, -1, 0, text='press ok to start')     # before the timer: presses as usual
+        arena.press(-5)
+        self.assertEqual(arena.keys, [16])
+        arena.set(0, 762, 0, -1, 0, text=None)
+        arena.set(0, 710, 2)
+        arena.tick(2000)
+        arena.press(-5)                                     # a tap in flight as time runs out
+        arena.set(0, 762, 0, -1, 0, text="Time's up!")
+        self.assertEqual(arena.keys, [])
+        arena.press(-5)
+        arena.tick(TIME_UP_MS - 33)
+        self.assertEqual(arena.keys, [])
+        arena.tick(33)
+        self.assertEqual(arena.keys, [16])                  # its own OK
+        arena.keys.clear()
+        arena.set(0, 762, 0, -1, 0, text=None)
+        arena.press(-5)                                     # while the score is tallied
+        arena.set(0, 762, 0, -1, 0, text='your score: 3')
+        self.assertEqual(arena.keys, [])
+        arena.press(-5)
+        self.assertEqual(arena.keys, [16])                  # the score takes presses again
+        self.assertEqual(NRArena.from_data(arena.to_data()).time_up, 2)
+
 
 class ArenaServiceTests(unittest.TestCase):
     def test_a_game_loop_runs_frame_by_frame_and_the_score_comes_back(self):

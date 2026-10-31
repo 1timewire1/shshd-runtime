@@ -106,11 +106,14 @@ class Shim:
 
 
 class Rewriter:
-    def __init__(self, program: KiwiProgram, zero_gap=False):
+    def __init__(self, program: KiwiProgram, zero_gap=False, room=None):
         """`zero_gap`: the source engine allocates data as one zeroed array (New Rules' Java `new short[main + gap +
         extra]`, r.java), so its scripts may read gap words they never wrote; the output stores them as zeros.
-        A linked segment (New Rules' minigame library) can only have its calls renamed: its code and data sit at
-        fixed boundaries, so nothing may be appended to it."""
+        A linked segment (New Rules' minigame library) sits at fixed boundaries: its data can't grow (the stories'
+        data and the stack are fixed around it) and it takes no prologue, but shims may follow its code, at addresses
+        from its code boundary. `room` (start, end addresses): dead code the shims overwrite instead, for a program
+        whose code already reaches the KiWi limit."""
+        self.room = room
         self.linked = bool(program.previous_flag)
         self.code_base = program.previous_instruction_count if self.linked else 0
         self.program, self.zero_gap = program, zero_gap
@@ -169,15 +172,19 @@ class Rewriter:
             self.shims[shim_key] = shim
         self.sites[pc] = ('shim', shim_key)
 
-    def replace_function(self, pc, key, build):
-        """Run the shim `key` instead of the function starting at `pc` (its PUSH_FP). The shim has no arguments; it
-        returns to the function's caller (whose SAVE_RETURN is still on the stack) and sets what the caller reads."""
-        opcode, _ = self.code[pc]
-        if opcode != 0x48 or pc >= self.original:
-            raise RewriteError(f'no function starts at {pc}')
+    def replace_function(self, pc, key, build, argc=0):
+        """Run the shim `key` instead of the function starting at `pc` (its PUSH_FP, an address: from the code
+        boundary in a linked segment). The shim reads the caller's `argc` arguments with `arg(i)`, returns to the
+        function's caller (whose SAVE_RETURN is still on the stack), which drops them itself, and sets what the
+        caller reads."""
+        pc -= self.code_base
+        opcode, _ = self.code[pc] if 0 <= pc < self.original else (None, None)
+        if opcode != 0x48:
+            raise RewriteError(f'no function starts at {pc + self.code_base}')
         shim_key = (key, 'function')
         if shim_key not in self.shims:
-            shim = Shim(self, 0)
+            shim = Shim(self, argc)
+            shim.function = True
             build(shim)
             self.shims[shim_key] = shim
         self.sites[pc] = ('function', shim_key)
@@ -204,19 +211,32 @@ class Rewriter:
 
     # -- output ----------------------------------------------------------------------------------------------------
     def finish(self) -> KiwiProgram:
-        if self.linked and (self.shims or self.start is not None
-                            or any(site[0] != 'rename' for site in self.sites.values())):
-            raise RewriteError('a linked segment can only have its calls renamed')
+        if self.linked and self.start is not None:
+            raise RewriteError('a linked segment takes no prologue')
         code = list(self.code)
+        base = self.code_base                   # jumps are addresses; a linked segment's start at its code boundary
+        if self.room and not base <= self.room[0] <= self.room[1] <= base + self.original:
+            raise RewriteError(f'the room {self.room} is not in the code')
+        place = [self.room[0] - base if self.room else len(code)]
+
+        def put(items):
+            """Where `items` (assembled at that address by a callable) go: over the room, or after the code."""
+            start = base + place[0]
+            items = items(start) if callable(items) else items
+            if self.room:
+                if start + len(items) > self.room[1]:
+                    raise RewriteError(f'the shims overflow the room at {self.room[0]}-{self.room[1]}')
+                code[place[0]:place[0] + len(items)] = items
+            else:
+                code.extend(items)
+            place[0] += len(items)
+            return start
         starts = {}
         for key, shim in self.shims.items():
-            starts[key] = len(code)
-            code.extend(_assemble(shim, len(code)))
+            starts[key] = put(lambda start, shim=shim: _assemble(shim, start))
         for pc, site in sorted(self.sites.items()):
             if site[0] == 'shim':
-                trampoline = len(code)
-                code.extend([(0x1a, pc), (0x29, starts[site[1]])])
-                code[pc] = (0x29, trampoline)
+                code[pc] = (0x29, put([(0x1a, base + pc), (0x29, starts[site[1]])]))
             elif site[0] == 'function':
                 code[pc] = (0x29, starts[site[1]])
         if self.start is not None:
@@ -234,8 +254,8 @@ class Rewriter:
             code.extend(_assemble(self.start, block, frame=False))
             code.extend([(first, operand), (0x29, 1)])
             code[0] = (0x29, block)
-        if len(code) > 0x7fff:
-            raise RewriteError(f'{len(code)} instructions exceed the KiWi limit')
+        if base + len(code) > 0x7fff:
+            raise RewriteError(f'{base + len(code)} instructions exceed the KiWi limit')
         instructions = tuple(BytecodeInstruction(self.code_base + pc, 0, opcode, operand)
                              for pc, (opcode, operand) in enumerate(code))
         program = replace(self.program, extra_words=tuple(self.extra), instructions=instructions)
