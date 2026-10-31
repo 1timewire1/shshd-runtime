@@ -670,6 +670,17 @@ class NewRulesShimTests(unittest.TestCase):
         kept = self.nr.expand_streams(source)
         self.assertEqual((kept.instructions[0].opcode, kept.instructions[0].operand), (0x40, 30000))
 
+    def test_the_arena_test_menu_needs_the_arena_and_quits(self):
+        import nr_arena_test
+        rewriter = Rewriter(program(0x33))
+        rewriter.prologue(nr_arena_test.menu)
+        menu = rewriter.finish()
+        # Without the arena (70(200) = 0): a line saying so, then the episode ends (7).
+        self.assertEqual([service for service, _ in yields(menu, [0])], [70, 13, 7])
+        # With it: the first menu (2, three options, 4), whose Quit ends the episode.
+        quit = yields(menu, [1, 0, 0, 0, 0, nr_arena_test.QUIT])
+        self.assertEqual([service for service, _ in quit], [70, 2, 3, 3, 3, 4, 7])
+
     def test_a_speed_diss_is_timed_rhyme_choices_until_its_hits_or_misses_run_out(self):
         # The story calls the library (SAVE_RETURN + JUMP past its code) and reads B; here it shows B with 30.
         source = program(0x42, (0x29, 9999), 0x08, call(30, 1), 0x33)
