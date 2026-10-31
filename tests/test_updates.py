@@ -194,6 +194,21 @@ class ApplicationUpdateTests(unittest.TestCase):
                 app.handle_event(pygame.event.Event(kind, pos=(380, 610), button=1))
         self.assertEqual(app.message, '')
 
+    def test_the_busy_card_draws_for_a_job_that_is_not_data_management(self):
+        """The first launch after an import prepares the new episodes' previews before any Data Management job has run
+        (owner, 2026-10-30): the busy card names that job without a Data Management title."""
+        import pygame
+        app = self.app()
+        app.window = pygame.display.set_mode((768, 1024))
+        drawn = []
+        canvas = pygame.Surface((768, 1024))
+        app.shell = SimpleNamespace(render=lambda: canvas, main=SimpleNamespace(
+            draw_busy=lambda canvas, title, text: drawn.append((title, text))))
+        app.screen, app.job, app.job_kind, app.progress_text = 'main', Mock(), 'previews', '3 of 40'
+        with patch.object(app, 'present_frame'):
+            app.render_shell()
+        self.assertEqual(drawn, [('Preparing episodes', '3 of 40')])
+
     def test_yes_opens_only_the_release_page_then_closes_the_game(self):
         app = self.app()
         opener = app.url_opener = Mock()
