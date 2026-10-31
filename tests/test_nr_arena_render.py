@@ -69,7 +69,7 @@ class ArenaRenderTests(unittest.TestCase):
         return self.module.NRArenaRenderer(self.resources)
 
     def session(self, arena, pending='arena_frame', **details):
-        return SimpleNamespace(engine=SimpleNamespace(nr_arena=arena, read_text=lambda vm, i: None), vm=None,
+        return SimpleNamespace(engine=SimpleNamespace(nr_arena=arena, resolve_text=lambda vm, i: None), vm=None,
                                pending=SimpleNamespace(name=pending, details=details))
 
     def test_a_font_switch_takes_no_room_and_hands_the_next_letters_to_the_other_font(self):

@@ -9,7 +9,7 @@ import sys
 import unittest
 
 from exp_runtime.decode.bytecode import OPERAND_OPCODES, decode_program
-from exp_runtime.vm import KiwiVM, StopKind
+from exp_runtime.vm import KiwiVM, StopKind, linked_layout as nr_linked_layout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translate'))
 from kiwi_rewrite import Rewriter  # noqa: E402
@@ -157,6 +157,65 @@ class NewRulesShimTests(unittest.TestCase):
             nr.translate_library(linked(call(48, 0), 0x43, data_boundary=50, code_boundary=100))
         with self.assertRaisesRegex(Exception, 'appended'):
             Rewriter(library).words([1])                    # a linked segment can't grow
+
+    def test_a_library_call_enters_the_librarys_own_game_where_the_player_has_the_arena(self):
+        # The story calls the game at 100 with two arguments; the library leaves 42 in B. With the arena (70(200)
+        # answers 1) the shim drops its frame and jumps there, so the story reads the library's own result; without
+        # it, the word game plays as before.
+        from test_vm_linked import linked
+        nr = self.nr
+        library = linked((0x1A, 42), 0x04, 0x43, data_boundary=50, code_boundary=100)
+        story = program((0x1A, 7), (0x1A, 0), 0x42, (0x29, 100), (0x19, 2), 0x08, (0x1F, 0x0D01), 0x33,
+                        words=text_words('intro'))
+        rewriter = Rewriter(story, zero_gap=True)
+        for pc, entry, argc in nr.library_calls(story):
+            rewriter.replace_call(pc, ('library', 'rhythm', 0), argc,
+                                  lambda s, entry=entry: nr.library_game(s, 'rhythm', 0, None, True, False, entry))
+        out = rewriter.finish()
+
+        def play(arena):
+            vm = KiwiVM(out, **nr_linked_layout(library))
+            stop = vm.run()
+            self.assertEqual((stop.yield_id, stop.args), (70, (nr.ARENA_QUERY,)))
+            vm.resume(arena)
+            seen = []
+            while (stop := vm.run()).kind == StopKind.YIELD and len(seen) < 20:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        self.assertEqual(play(1), [(13, (42,))])
+        self.assertIn(71, [service for service, _ in play(0)])
+
+    def test_a_downloads_arena_round_is_found_and_its_platform_query_asks_the_player(self):
+        # The download's own arena game (the function at 9 calls a helper at 16 that waits a frame, 29, then opens the
+        # panel, 50) is renamed to the player's arena services; its platform query (32(1)) before the call to the game
+        # answers 2 where the player has the arena, else 1. A query elsewhere still answers 1.
+        nr = self.nr
+        source = program((0x1A, 1), call(32, 1), 0x42, (0x29, 9), 0x33,                       # 0-4: the story
+                         (0x1A, 1), call(32, 1), 0x33, 0x33,                                    # 5-8: another query
+                         0x48, 0x4A, 0x42, (0x29, 16), call(50, 0), 0x22, 0x43,                 # 9-15: the game
+                         call(29, 0), 0x43)
+        pcs, guards = nr.arena_code(source)
+        self.assertEqual(guards, {1})
+        self.assertTrue({13, 16} <= pcs and not {1, 6} & pcs)
+        rewriter = Rewriter(source, zero_gap=True)
+        for pc, service, argc in rewriter.calls():
+            if pc in pcs and service in nr.ARENA_SERVICES:
+                rewriter.rename(pc, nr.ARENA_SERVICES[service])
+            elif service == 32:
+                nr.build_query(rewriter, pc, argc, dict(keyboard_guards=set(), arena_guards=guards))
+        out = rewriter.finish()
+        services = [i.operand >> 8 for i in out.instructions if i.opcode == 0x1f]
+        self.assertIn(200, services)
+        self.assertIn(208, services)
+        self.assertIn(70, services)
+        vm = KiwiVM(out)
+        stop = vm.run()
+        self.assertEqual((stop.yield_id, stop.args), (70, (nr.ARENA_QUERY,)))
+        vm.resume(1)                                                # the query answers 2: the game plays
+        self.assertEqual(vm.run().yield_id, 208)
+        vm.resume(0)
+        self.assertEqual(vm.run().yield_id, 200)
 
     def test_king_of_diss_lite_borrows_the_full_storys_expressions_and_crowd_colour(self):
         # Lite's 40 has no expression word and its crowd lists the offscreen group (gray); a line the full story also

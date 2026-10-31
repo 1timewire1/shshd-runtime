@@ -475,7 +475,7 @@ class NRArenaRenderer:
     @staticmethod
     def _text(session, string_id):
         try:
-            return session.engine.read_text(session.vm, string_id)
+            return session.engine.resolve_text(session.vm, string_id)
         except Exception:                               # a string the library has since dropped
             return None
 

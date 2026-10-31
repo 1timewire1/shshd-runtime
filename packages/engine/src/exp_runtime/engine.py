@@ -396,7 +396,8 @@ class EngineState:
 
     def _nr_arena_service(self, vm, request, y, args, need, at_least, complete):
         """New Rules' arena and the New Rules services its minigame library calls (NR_ARENA_SERVICES), as New Rules'
-        engine answers them. The frame wait, the menu and the info box wait for the session."""
+        engine answers them. The frame wait, the menu and the info box wait for the session. Its text takes the
+        stored substitutions ($keys), as New Rules' own strings do (class_6.method_268)."""
         arena = self.nr_arena
         if y == 200:                                            # 50: open (margins, show the score)
             need(2)
@@ -410,12 +411,12 @@ class EngineState:
             return complete('format_string', self._nr_format(vm, args))
         if y == 210:                                            # 9: a menu over the panel; waits for the answer
             need(3)
-            options = [option for option in self.read_text(vm, args[1]).split('|')]
+            options = [option for option in self.resolve_text(vm, args[1]).split('|')]
             return EngineAction('arena_menu', request, False, dict(
-                title=self.read_text(vm, args[0]), options=options, selected=max(0, args[2])))
+                title=self.resolve_text(vm, args[0]), options=options, selected=max(0, args[2])))
         if y == 211:                                            # 10: an info box over the panel; waits for OK
             need(1)
-            return EngineAction('arena_info', request, False, dict(text=self.read_text(vm, args[0])))
+            return EngineAction('arena_info', request, False, dict(text=self.resolve_text(vm, args[0])))
         if y == 212:                                            # 32: the build query
             need(1)
             return complete('query_build', NR_BUILD.get(args[0], 0), selector=args[0])
@@ -423,7 +424,7 @@ class EngineState:
             raise VMError(f'New Rules arena service {y} without an open arena')
         if y == 201:                                            # 51: a label
             need(2)
-            arena.set_label(args[0], None if args[1] == -1 else self.read_text(vm, args[1]))
+            arena.set_label(args[0], None if args[1] == -1 else self.resolve_text(vm, args[1]))
             return complete('nr_arena_label')
         if y == 203:                                            # 53: read a property
             need(1)
@@ -434,7 +435,7 @@ class EngineState:
         if y == 205:                                            # 55: put an item in a slot
             need(2)
             if arena.item_kind == 3 and args[1] >= 0:
-                arena.set_text_item(args[0], self.read_text(vm, args[1]))
+                arena.set_text_item(args[0], self.resolve_text(vm, args[1]))
             else:
                 arena.set_item(args[0], args[1])
             return complete('nr_arena_item')
@@ -451,9 +452,9 @@ class EngineState:
             slot, prop, values = args[0], args[1], (args[2], -1, -1)
         text = None
         if prop in (762, 763):
-            text = self.read_text(vm, values[0]) if values[0] != -1 else ''
+            text = self.resolve_text(vm, values[0]) if values[0] != -1 else ''
         elif prop == 747 and values[2] != -1:
-            text = self.read_text(vm, values[2])
+            text = self.resolve_text(vm, values[2])
         closed = arena.set(slot, prop, *values, text=text)
         if closed:
             self.nr_arena = None
