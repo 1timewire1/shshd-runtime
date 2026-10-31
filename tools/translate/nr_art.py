@@ -351,8 +351,10 @@ class Art:
         scale = BACKGROUND_SCALE.get(height, 720 // height)
         return fill.convert('RGB').resize((width * scale, height * scale), Image.NEAREST)
 
-    def backdrop(self):
+    def backdrop(self, bars=True):
         """New Rules' UI backdrop (BACKDROP_PACKS) cut to SHS's frame, or None where the background source lacks it.
+        `bars`: with the scene frame's bars around the background strip (the dialogue screens'); without, the minigame
+        arena's copy, which draws its own bands over the same pattern and stripe.
 
         It is drawn at the backgrounds' own density and scale: a background strip is shown BACKGROUND_UNITS wide, so
         the frame is FRAME_UNITS times (strip width / BACKGROUND_UNITS) art pixels. The pattern fills it; the game
@@ -394,7 +396,7 @@ class Art:
         scale = BACKGROUND_SCALE.get(strip.height, 720 // strip.height)
         image = canvas.convert('RGB').resize((width * scale, height * scale), Image.NEAREST)
         bar = frames[SCENE_FRAME_BAR] if SCENE_FRAME_BAR < len(frames) else None
-        if bar is not None:
+        if bar is not None and bars:
             bar = bar.resize((bar.width * scale, bar.height * scale), Image.NEAREST)
             pixels = units * scale                                          # backdrop pixels per frame unit
             half = strip.height * BACKGROUND_UNITS / strip.width / 2        # half the strip's height, in units

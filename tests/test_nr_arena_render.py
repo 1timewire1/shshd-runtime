@@ -9,8 +9,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 
-def skin_files(pygame):
-    """A small skin in the addon's format: one atlas of plain blocks, every node and layout the renderer reads."""
+def skin_files(pygame, frame=None):
+    """A small skin in the addon's format: one atlas of plain blocks, every node and layout the renderer reads, and
+    with `frame` (an RGB colour) a frame picture of that colour."""
     names = ['button/ok', 'button/second', 'button/left', 'button/right', 'meter/0/0', 'meter/0/1', 'dial/0',
              'dial/1', 'menu/bullet', 'icon/0', 'frame/4/22', *(f'timer/{i}' for i in range(17)),
              *(f'menu/arrow/{i}' for i in range(6))]
@@ -25,7 +26,8 @@ def skin_files(pygame):
             x += 7
     atlas = pygame.Surface((x, 10), pygame.SRCALPHA)
     atlas.fill((200, 40, 40, 255))
-    nodes = dict(field=[0, 300, 480, 120], wide=[0, 330, 480, 90], ok=[208, 400, 64, 32], second=[216, 297, 49, 24],
+    nodes = dict(field=[0, 300, 480, 120], wide=[0, 330, 480, 90], band=[0, 98, 480, 74],
+                 bottom_band=[0, 479, 480, 70], table=[-23, 294, 526, 152], ok=[208, 400, 64, 32], second=[216, 297, 49, 24],
                  left=[154, 396, 48, 34], right=[278, 396, 48, 34], hint=[227, 404, 26, 22], timer=[28, 102, 60, 60],
                  meter=[389, 102, 60, 60], meter_frame=[389, 102, 60, 60])
     for box, y in ((0, 106), (1, 345), (2, 486)):
@@ -35,7 +37,7 @@ def skin_files(pygame):
     face = dict(kind=6, flags=6, payload=[], base=[0, 0, 10, 10], relative=[0, 0, 4096, 4096])
     dial = dict(kind=1, flags=17, payload=[4, -1], base=[0, 0, 10, 10], relative=[0, 0, 4096, 4096])
     layouts = {str(i): dict(size=[10, 10], nodes=[fill] if i in (25, 27, 70) else [dial, face])
-               for i in (25, 27, 33, 34, 70)}
+               for i in (11, 25, 27, 33, 34, 66, 67, 70)}
     font = dict(space=4, gap=0, track=-2, height=10, extra=0)
     spec = dict(format='shshd-nr-arena-skin', version=1, screen=[480, 650], nodes=nodes, layouts=layouts,
                 colors=[0x5E3365, 0xFFFFFF, 0, 0xE7A64A, 0x75FC84, 0, 0xE76110], sprites=sprites,
@@ -48,8 +50,13 @@ def skin_files(pygame):
         out = io.BytesIO()
         pygame.image.save(surface, out, 'skin.png')
         return out.getvalue()
-    return {'skin.json': json.dumps(spec).encode(), 'static.png': png(pygame.Surface((480, 650), pygame.SRCALPHA)),
-            'tile.png': png(pygame.Surface((128, 128))), 'atlas.png': png(atlas)}
+    files = {'skin.json': json.dumps(spec).encode(), 'static.png': png(pygame.Surface((480, 650), pygame.SRCALPHA)),
+             'tile.png': png(pygame.Surface((128, 128))), 'atlas.png': png(atlas)}
+    if frame is not None:
+        picture = pygame.Surface((384, 512))
+        picture.fill(frame)
+        files['frame.png'] = png(picture)
+    return files
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
@@ -69,6 +76,9 @@ class ArenaRenderTests(unittest.TestCase):
         return self.module.NRArenaRenderer(self.resources)
 
     def session(self, arena, pending='arena_frame', **details):
+        from exp_runtime.nr_arena import ENTRANCE_MS
+        if arena is not None and pending != 'arena_entrance':
+            arena.entrance_ms = ENTRANCE_MS
         return SimpleNamespace(engine=SimpleNamespace(nr_arena=arena, resolve_text=lambda vm, i: None), vm=None,
                                pending=SimpleNamespace(name=pending, details=details))
 
@@ -105,6 +115,28 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(renderer.hit((379, 655)), ('arena_key', -5))
         self.assertEqual(renderer.hit((280, 650)), ('arena_key', -3))
         self.assertIsNone(renderer.hit((20, 20)))
+
+    def test_the_arena_stands_on_the_dialogue_screens_frame_when_the_skin_has_it(self):
+        from exp_runtime.nr_arena import NRArena
+        files = skin_files(self.pygame, frame=(10, 200, 30))
+        names = {**self.module.SKIN, 'frame.png': self.module.FRAME_PICTURE}
+        by_id = {resource: files[name] for name, resource in names.items()}
+        renderer = self.module.NRArenaRenderer(SimpleNamespace(raw_asset=by_id.__getitem__, exists=by_id.__contains__))
+        renderer.draw(None, self.session(NRArena.opened(False, False)), now_ms=0)
+        # The static screen is clear here, so the frame's picture shows through, scaled to the whole canvas.
+        self.assertEqual(renderer.canvas.get_at((3, 3))[:3], (10, 200, 30))
+        self.assertEqual(renderer.canvas.get_at((renderer.canvas.get_width() - 3, 600))[:3], (10, 200, 30))
+
+    def test_the_entrance_draws_its_moving_layouts_and_takes_no_clicks(self):
+        from exp_runtime.nr_arena import NRArena
+        arena = NRArena.opened(False, True)
+        renderer = self.renderer()
+        for ms in (0, 300, 1000, 1990):
+            arena.entrance_ms = ms
+            renderer.draw(None, self.session(arena, 'arena_entrance'), now_ms=ms)
+            self.assertEqual(renderer.targets, [])
+        self.assertEqual(self.module.eased(5, 720, 800), 105)          # the bands pass their place, then settle
+        self.assertEqual(self.module.eased(6, 1200, 1200), 100)
 
     def test_the_menu_highlights_its_selected_option_and_steps_through_them(self):
         from exp_runtime.nr_arena import NRArena

@@ -40,12 +40,12 @@ FRAME_BACKDROP = 26999
 # The New Rules addon (shshd-runtime addons.py): New Rules' backgrounds in every mode, its music and its frame backdrop,
 # shared by every translation that declares it instead of each carrying its own copies (owner, 2026-10-30). Raise the
 # revision when an ID above changes meaning; episodes need at least the revision they were built against.
-# Revision 2 adds the minigame library and the arena's skin.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 2
+# Revision 2 adds the minigame library and the arena's skin; 3 the arena's copy of the dialogue screens' frame.
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 3
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 # New Rules' minigame arena drawn from the X1i build's art (nr_arena_art.build_skin), after the backgrounds (26000-26173)
 # and below the episodes' own portraits (26200 on): the player's desktop_nr_arena.SKIN names the same IDs.
-ARENA_SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
+ARENA_SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177, 'frame.png': 26178}
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
 # The SHS picture each title card (30) shows instead of its stretched New Rules strip, by (download id, script, PC of
 # the call): a shared-bank background, which SHS HD replaces with its own HD copy (owner's picks, 2026-10-25, from the
@@ -491,7 +491,8 @@ def build_addon(art, music=None, library=None, arena_source=None):
         resources[LIBRARY] = translate_library(library).to_bytes()
     if arena_source is not None:
         import nr_arena_art
-        for name, data in nr_arena_art.build_skin(arena_source).items():
+        # The arena stands on the dialogue screens' frame (owner, 2026-10-30), without the scene frame's bars.
+        for name, data in nr_arena_art.build_skin(arena_source, backdrop=art.backdrop(bars=False)).items():
             resources[ARENA_SKIN[name]] = data
     for location in range(len(nr_art.LOCATIONS)):
         for mode in range(MODES):

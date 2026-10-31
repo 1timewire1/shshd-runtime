@@ -402,7 +402,7 @@ class EngineState:
         if y == 200:                                            # 50: open (margins, show the score)
             need(2)
             self.nr_arena = NRArena.opened(args[0] != 0, args[1] != 0)
-            return complete('nr_arena_open')
+            return EngineAction('arena_entrance', request, False)       # the script waits out the entrance
         if y == 208:                                            # 29: wait one frame
             need(0)
             return EngineAction('arena_frame', request, False)

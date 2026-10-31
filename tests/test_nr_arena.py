@@ -77,7 +77,12 @@ class ArenaServiceTests(unittest.TestCase):
                         *host_call(206, 0, 718, 0, 0, 0), 0x33,             # 16-22: close, halt
                         (0x28, -14), words=words)                           # 23: back to 9
         session = Session(resources(story))
-        action = session.advance()
+        self.assertEqual(session.advance().name, 'arena_entrance')      # New Rules' entrance: the script waits 2 s
+        session.arena_press(-5)                                         # and keys are not taken meanwhile
+        self.assertEqual(session.engine.nr_arena.keys, [])
+        for _ in range(7):
+            self.assertEqual(session.tick(250).name, 'arena_entrance')
+        action = session.tick(250)
         self.assertEqual((action.name, action.details['options']), ('arena_menu', ['yes', 'no']))
         self.assertEqual(session.answer(1).name, 'arena_info')
         self.assertEqual(session.answer().name, 'arena_frame')

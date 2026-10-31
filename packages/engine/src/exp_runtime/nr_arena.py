@@ -16,6 +16,9 @@ FLASH_MS = 3000
 PRESS_MS = 250                          # an on-screen button's highlight after a press
 BLINK_FREE_MS = 100000                  # 713/761's blink clock wraps here (field_558)
 DEFAULT_PERIOD_MS = 4000                # 719 when the panel opens
+# New Rules' entrance (class_13.method_383, transition -3 from the story's screen: field_611[2]): the bands slide in and
+# the table settles. Meanwhile the panel neither draws nor runs, takes no keys, and the script waits.
+ENTRANCE_MS = 2000
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
 # them. The player passes these codes: OK / fire, soft keys, the arrows, and the number keys 0-9.
@@ -96,15 +99,25 @@ class NRArena:
     bubbles: list = field(default_factory=lambda: [None, None])         # 762/763: [text, slot, flags]
     keys: list = field(default_factory=list)                            # queued key bits, at most KEYS
     elapsed_ms: int = 0                 # 721, read and cleared
+    entrance_ms: int = ENTRANCE_MS      # how far the entrance has run (ENTRANCE_MS: done)
     pictures: list = field(default_factory=list)                        # 767's list (preload hints)
 
     # -- opening and the clock ---------------------------------------------------------------------------------------
     @classmethod
     def opened(cls, margins: bool, score: bool) -> 'NRArena':
         """Service 50: a fresh panel (`h.a(boolean, boolean)`)."""
-        arena = cls(open=True, margins=margins, score_display=1 if score else 0)
+        arena = cls(open=True, margins=margins, score_display=1 if score else 0, entrance_ms=0)
         arena._set_motion(0)
         return arena
+
+    @property
+    def entering(self) -> bool:
+        return self.entrance_ms < ENTRANCE_MS
+
+    def enter(self, elapsed_ms: int) -> bool:
+        """The entrance's clock (class_13.method_377); True once it has run its course."""
+        self.entrance_ms = min(ENTRANCE_MS, self.entrance_ms + max(0, elapsed_ms))
+        return not self.entering
 
     def tick(self, elapsed_ms: int) -> None:
         """One frame (h's update, case 25 state 11)."""

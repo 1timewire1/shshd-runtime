@@ -15,6 +15,7 @@ import math
 import pygame
 
 SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
+FRAME_PICTURE = 26178                   # the dialogue screens' frame without its bars (addon revision 3), if present
 FRAME = (768, 1024)
 NATIVE = (489, 652)                     # the X1i's 480 x 650 game area, widened to exactly the frame's 3:4
 OX = 4                                  # where the game area sits in it
@@ -26,6 +27,7 @@ ITEM_FONT = 56                          # field_450 as the arena keeps it (field
 # class_6's boot: font 56 swaps to 59 at '~' and to the score font 61 at '`'; 61 back to 56 at ';' and to 59 at '~';
 # 59 back at ';' and to 61 at '`'.
 FONT_SWITCHES = ((56, '~', 59), (56, '`', 61), (61, ';', 56), (61, '~', 59), (59, ';', 56), (59, '`', 61))
+ENTRANCE_MS = 2000                      # nr_arena.ENTRANCE_MS
 PICTURES, PICTURE_BASE = 29, 8018       # class_6.field_161: picture IDs 0-28 are resources 8018-8046 (the icons)
 HUD_BOXES = ((('hud0_label', 'hud0_label_alt', 'hud0_text'), ('hud0_item', 'hud0_item_alt')),
              (('hud1_label', 'hud1_label_alt', 'hud1_text'), ('hud1_item', 'hud1_item_alt')),
@@ -36,6 +38,39 @@ ANCHORS = {-15: 'meter_frame', -7: 'second', -6: 'ok', -5: 'meter', -4: 'timer'}
 TEXT_TINT = 0x75FC84                    # the text box colour 751's tint replaces (o.a(v, ..., int)'s field_555)
 UNICODE = str.maketrans({'‘': "'", '’': "'", '“': '"', '”': '"', '…': '...',
                          '–': '-', '—': '-'})
+
+
+# class_6.field_154: cos(0, 2, ... 90 degrees) x 1000, for its easing curves' sine (method_179).
+EASING_COS = (1000, 999, 997, 994, 990, 984, 978, 970, 961, 951, 939, 927, 913, 898, 882, 866, 848, 829, 809, 788, 766,
+              743, 719, 694, 669, 642, 615, 587, 559, 529, 500, 469, 438, 406, 374, 342, 309, 275, 241, 207, 173, 139,
+              104, 69, 34, 0)
+
+
+def easing_sine(degrees):
+    """class_6.method_179: sin(degrees) x 1000 in 2-degree steps."""
+    v = (90 - degrees) % 360
+    if v < 90:
+        return EASING_COS[v // 2]
+    if v < 180:
+        return -EASING_COS[(90 - (v - 90)) // 2]
+    if v < 270:
+        return -EASING_COS[(v - 180) // 2]
+    return EASING_COS[(90 - (v - 270)) // 2]
+
+
+def eased(curve, elapsed, duration):
+    """class_6.method_191's progress (0-100, some curves pass 100) `elapsed` ms into a track of `duration`."""
+    if curve == 1:
+        return easing_sine(elapsed * 90 // duration) // 10
+    if curve == 3:
+        return 100 - easing_sine(90 - elapsed * 90 // duration) // 10
+    if curve == 5:                                      # past the end by 5%, then back
+        t = elapsed * 100 // duration
+        return t * 1166 // 1000 if t < 90 else t * -500 // 1000 + 150
+    if curve == 6:                                      # straight there by 90%, then a dip and back
+        t = elapsed * 100 // duration
+        return t * 100 // 90 if t < 90 else 100 - easing_sine((t - 90) * 10 * 180 // 100) * 10 // 1000
+    return elapsed * 100 // duration
 
 
 def sine(degrees):
@@ -185,6 +220,9 @@ class Skin:
             raise ValueError('Unsupported New Rules arena skin')
         self.static = self._image(files['static.png'])
         self.tile = self._image(files['tile.png'])
+        # The whole frame's picture, which the arena stands on in place of its scrolling tile and stripe (the static
+        # screen then leaves its stripe out), so the stripe and pattern match the dialogue screens'.
+        self.frame = self._image(files['frame.png']) if files.get('frame.png') else None
         atlas = self._image(files['atlas.png'])
         self.sprites = {name: (atlas.subsurface(pygame.Rect(sprite['rect'])), tuple(sprite['offset']))
                         for name, sprite in self.spec['sprites'].items()}
@@ -271,6 +309,8 @@ class NRArenaRenderer:
     def __init__(self, resources):
         self.resources = resources
         self.native = pygame.Surface(NATIVE).convert()
+        self.layer = pygame.Surface(NATIVE, pygame.SRCALPHA)     # the arena over the frame's picture
+        self._frame_scaled = None                               # (size, the frame's picture at that size)
         self.target_height = FRAME[1]       # the frame's height in the window (Desktop sets it): the scale to reach
         self.canvas = pygame.Surface((NATIVE[0] * 2, NATIVE[1] * 2)).convert()
         self.hd_layer = True
@@ -282,7 +322,10 @@ class NRArenaRenderer:
     # -- assets -----------------------------------------------------------------------------------------------------
     def skin(self):
         if self._skin is None:
-            self._skin = Skin({name: self.resources.raw_asset(resource) for name, resource in SKIN.items()})
+            files = {name: self.resources.raw_asset(resource) for name, resource in SKIN.items()}
+            if self.resources.exists(FRAME_PICTURE):
+                files['frame.png'] = self.resources.raw_asset(FRAME_PICTURE)
+            self._skin = Skin(files)
         return self._skin
 
     def available(self):
@@ -406,23 +449,71 @@ class NRArenaRenderer:
         action = session.pending
         now = pygame.time.get_ticks() if now_ms is None else now_ms
         skin = self.skin()
-        surface = self.native
         self.targets = []
-        # method_358: the background tile, scrolling a pixel each 100 ms over its 128.
-        step = now // 100 % 128
-        Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, NATIVE[0] + 256, NATIVE[1] + 256))
-        surface.blit(skin.static, (OX, 0))
-        if arena is not None:
+        entering = arena is not None and arena.entering
+        if skin.frame is not None:
+            surface = self.layer
+            surface.fill((0, 0, 0, 0))
+        else:
+            # method_358: the background tile, scrolling a pixel each 100 ms over its 128.
+            surface = self.native
+            step = now // 100 % 128
+            Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, NATIVE[0] + 256, NATIVE[1] + 256))
+        # New Rules draws within its 480 x 650 screen: nothing spills into the frame's few columns either side.
+        surface.set_clip(pygame.Rect(OX, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+        if entering:
+            self._entrance(surface, arena.entrance_ms)
+        else:
+            surface.blit(skin.static, (OX, 0))
+        if arena is not None and not entering:
             self._paint(surface, arena, session, now)
         if action is not None and action.name in ('arena_menu', 'arena_info'):
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
             self._overlay(surface, action, now)
+        surface.set_clip(None)
         k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
         size = (NATIVE[0] * k, NATIVE[1] * k)
         if self.canvas.get_size() != size:
             self.canvas = pygame.Surface(size).convert()
-        pygame.transform.scale(surface, size, self.canvas)
+        if skin.frame is None:
+            pygame.transform.scale(surface, size, self.canvas)
+            return []
+        # The frame's picture is drawn over the whole 3:4 frame as the dialogue screens draw it; the arena's pixel art
+        # goes over it, scaled whole as above.
+        if self._frame_scaled is None or self._frame_scaled[0] != size:
+            self._frame_scaled = (size, pygame.transform.smoothscale(skin.frame, size))
+        self.canvas.blit(self._frame_scaled[1], (0, 0))
+        self.canvas.blit(pygame.transform.scale(surface, size), (0, 0))
         return []
+
+    def _entrance(self, surface, ms):
+        """New Rules' entrance (class_13.method_383, transition -3; class_6.method_191 draws its tracks) over the frame:
+        the bottom band, with the stand, rises from below the screen and the top band drops from above it (0-800 ms,
+        settling past 100%); the table, three times as wide and reaching the screen's bottom, comes down to its own
+        size (400-1600 ms). Each is its layout redrawn in the moving box, so the pictures tile rather than stretch."""
+        skin = self.skin()
+        nodes = {name: pygame.Rect(skin.nodes[name]) for name in ('bottom_band', 'band', 'table')}
+        duration = ENTRANCE_MS * 2 // 5
+        for layout_id, name, offset in (
+                (67, 'bottom_band', (nodes['bottom_band'].bottom * 100 // nodes['bottom_band'].height)),
+                (66, 'band', jdiv(-(nodes['band'].bottom * 100 // nodes['band'].height) * 11, 10))):
+            box = nodes[name]
+            if ms >= duration:
+                progress = 100
+            else:
+                progress = eased(5, ms, duration)
+            box.y += jdiv((100 - progress) * box.height * offset, 10000)
+            skin.layout(surface, layout_id, box)
+        start, end = ENTRANCE_MS // 5, ENTRANCE_MS * 4 // 5
+        if ms >= start:
+            box = nodes['table']
+            progress = 100 if ms >= end else eased(6, ms - start, end - start)
+            tall = (SCREEN_HEIGHT - box.y + box.height // 2) * 100 // box.height
+            width = box.width * (300 + jdiv((100 - 300) * progress, 100)) // 100
+            height = box.height * (tall + jdiv((100 - tall) * progress, 100)) // 100
+            box.x += (box.width - width) // 2
+            box.width, box.height = width, height
+            skin.layout(surface, 11, box)
 
     def _paint(self, surface, arena, session, now):
         self._hud(surface, arena, session, 0, now)

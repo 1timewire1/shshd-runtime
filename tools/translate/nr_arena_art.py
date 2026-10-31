@@ -22,6 +22,7 @@ SLOT_PACKS = {0: (4, None), 1: (106, THEME[4]), 2: (83, THEME[3]), 3: (65, THEME
               10: (140, None), 11: (251, None), 12: (189, None)}
 BACKGROUND_SLOT = 5                     # its frame 0 tiles the screen, scrolling 1 pixel a 100 ms over 128 (method_358)
 ARENA_LAYOUT, BAND_LAYOUT, BAND_NODE = 31, 66, 47
+STRIPE_NODE = 1                         # layout 31's stripe (layout 26) down the middle, behind the table
 TIMER_DIAL, SCORE_DIAL = 33, 34         # layout 66's dials, hidden until the panel shows them
 ITEM_ICONS = 8018                       # the 29 minigame item pictures (o.java's part IDs 0-28 -> 8018-8046)
 METER_PACK, DIAL_PACK = 146, 51         # the meter strip (class_6.field_227) and the dial art (field_203)
@@ -100,14 +101,15 @@ def _count(bank, layout_id):
     return total
 
 
-def compose(source, show=()):
+def compose(source, show=(), hide=()):
     """The arena's static screen (SCREEN, RGBA): layout 31 and the top band, without the scrolling background (the
-    player tiles it underneath). `show`: layout 31's hidden nodes to draw too (node_rect's numbering)."""
+    player tiles it underneath). `show`: layout 31's hidden nodes to draw too (node_rect's numbering); `hide`: its
+    visible ones to leave out (STRIPE_NODE, where the player draws the dialogue screens' frame instead)."""
     bank = LayoutBank.parse(source[LAYOUT_BANK])
     packs = slots(source)
     width, height = SCREEN
     canvas = Image.new('RGBA', SCREEN, (0, 0, 0, 0))
-    draw(canvas, bank, ARENA_LAYOUT, Rect(0, 0, width, height), packs, frozenset(show))
+    draw(canvas, bank, ARENA_LAYOUT, Rect(0, 0, width, height), packs, frozenset(show), frozenset(hide))
     band = node_rect(bank, ARENA_LAYOUT, BAND_NODE, Rect(0, 0, width, height))
     draw(canvas, bank, BAND_LAYOUT, Rect(0, band.y, width, band.height), packs)
     return canvas
@@ -120,9 +122,11 @@ def background_tile(source):
 # -- the skin the player draws from ---------------------------------------------------------------------------------
 # Layouts the player draws itself, at sizes that change: the text item box (25, `o.a(25)`), the bubble (70) and the
 # dials (33 timer, 34 score), with the layouts they nest; 27 is a menu's highlighted row (class_6.method_239).
-DRAWN_LAYOUTS = (25, 27, 33, 34, 70)
+# 11 (the table), 66 (the top band) and 67 (the bottom band, with the stand) for the entrance (class_13.method_383).
+DRAWN_LAYOUTS = (11, 25, 27, 33, 34, 66, 67, 70)
 # Layout 31's nodes the panel places things at (node_rect numbering), and layout 66's.
-ARENA_NODES = {'field': 76, 'wide': 88, 'band': 47, 'ok': 77, 'second': 72, 'left': 78, 'right': 79, 'hint': 87,
+ARENA_NODES = {'field': 76, 'wide': 88, 'band': 47, 'bottom_band': 14, 'table': 69,
+               'ok': 77, 'second': 72, 'left': 78, 'right': 79, 'hint': 87,
                'hud1_label': 82, 'hud1_item': 83, 'hud1_label_alt': 84, 'hud1_item_alt': 85, 'hud1_text': 86,
                'hud2_label': 42, 'hud2_item': 43, 'hud2_label_alt': 44, 'hud2_item_alt': 45, 'hud2_text': 46}
 # The dials are layouts 33 (timer) and 34 (score), drawn into 'timer' and 'meter'.
@@ -198,9 +202,11 @@ def _group_image(pack, index):
     return canvas, (left, top)
 
 
-def build_skin(source):
+def build_skin(source, backdrop=None):
     """The arena skin for the addon: {name: bytes} with 'skin.json' (node rectangles, layouts, sprite table, colours),
-    'static.png', 'tile.png' and 'atlas.png' (every sprite the player draws)."""
+    'static.png', 'tile.png' and 'atlas.png' (every sprite the player draws). With `backdrop` (a picture of the whole 3:4
+    frame: the dialogue screens' backdrop without its bars, nr_art.Art.backdrop), 'frame.png' too, which the player
+    draws behind the arena in place of the scrolling tile, and the static screen leaves out its own stripe."""
     import json
     bank = LayoutBank.parse(source[LAYOUT_BANK])
     packs = slots(source)
@@ -294,5 +300,7 @@ def build_skin(source):
                 background=dict(period=128, step_ms=100), fonts=fonts, item_fonts=list(ITEM_FONTS),
                 score_font=SCORE_FONT, info_font=INFO_FONT)
     return {'skin.json': json.dumps(skin, separators=(',', ':')).encode('utf-8'),
-            'static.png': nr_art.png(compose(source)), 'tile.png': nr_art.png(background_tile(source)),
+            'static.png': nr_art.png(compose(source, hide=() if backdrop is None else (STRIPE_NODE,))),
+            'tile.png': nr_art.png(background_tile(source)),
+            **({'frame.png': nr_art.png(backdrop)} if backdrop is not None else {}),
             'atlas.png': nr_art.png(atlas)}
