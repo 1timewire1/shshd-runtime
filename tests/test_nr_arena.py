@@ -104,6 +104,19 @@ class ArenaModelTests(unittest.TestCase):
         self.assertEqual(arena.keys, [16])                  # the score takes presses again
         self.assertEqual(NRArena.from_data(arena.to_data()).time_up, 2)
 
+    def test_a_ring_turning_backwards_survives_a_save(self):
+        # Every library and download game turns its ring with 740 = -1 (backwards) at some point; saves made then
+        # were refused as corrupt (owner, 2026-10-31).
+        arena = NRArena.opened(False, True)
+        arena.set(0, 729, 6)
+        arena.set(0, 740, -1)
+        arena.set(0, 719, 6000)
+        arena.tick(1000)
+        restored = NRArena.from_data(arena.to_data())
+        self.assertEqual((restored.motion, restored.direction, restored.angle), (-1, -1, 300))
+        with self.assertRaises(ValueError):
+            NRArena.from_data(dict(arena.to_data(), motion=3))
+
 
 class ArenaServiceTests(unittest.TestCase):
     def test_a_game_loop_runs_frame_by_frame_and_the_score_comes_back(self):

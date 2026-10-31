@@ -20,7 +20,8 @@ DEFAULT_PERIOD_MS = 4000                # 719 when the panel opens
 # the table settles. Meanwhile the panel neither draws nor runs, takes no keys, and the script waits. Leaving (718) runs
 # transition -4 (field_611[3]) backwards, as long: the same tracks out again, before the story goes on.
 ENTRANCE_MS = EXIT_MS = 2000
-TIME_UP_MS = 2000                       # how long "Time's up!" shows before the panel presses its OK (time_up)
+MOTIONS = (-1, 0, 1, 2)                 # 740's modes; -1, 0 and 1 are also the ring's direction (_set_motion)
+TIME_UP_MS = 2000                      # how long "Time's up!" shows before the panel presses its OK (time_up)
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
 # them. The player passes these codes: OK / fire, soft keys, the arrows, and the number keys 0-9.
@@ -68,7 +69,7 @@ class NRArena:
     angle: int = 0                      # ae: the ring's turn, degrees
     turn_carry_ms: int = 0              # field_587: time not yet worth a whole degree
     direction: int = 0                  # field_575: 1, -1 or 0
-    motion: int = 0                     # 740: 0 stepped, 1 turning, 2 still
+    motion: int = 0                     # 740: 0 stepped, 1 turning, -1 turning the other way, 2 still
     target_slot: int = 0                # field_576 (mode 0's left/right)
     target_angle: int = 0               # field_577 (af)
     selected: int = 0                   # 725
@@ -483,6 +484,7 @@ class NRArena:
                 or len(self.moves) != count or len(self.labels) != LABELS or len(self.flash_ms) != 3
                 or len(self.hud) != 3 or any(len(box) != 6 for box in self.hud)
                 or len(self.popups) > POPUPS or len(self.keys) > KEYS or len(self.bubbles) != 2
-                or not 0 <= self.angle < 360 or self.direction not in (-1, 0, 1) or self.motion not in (0, 1, 2)
-                or self.item_kind not in (PORTRAIT, PICTURE, TEXT)):
+                or not 0 <= self.angle < 360 or self.direction not in (-1, 0, 1) or self.motion not in MOTIONS
+                or self.item_kind not in (PORTRAIT, PICTURE, TEXT) or self.time_up not in (0, 1, 2)
+                or self.time_up_ms < -1):
             raise ValueError('Invalid New Rules arena state')
