@@ -314,7 +314,7 @@ class NRArenaRenderer:
         self.target_height = FRAME[1]       # the frame's height in the window (Desktop sets it): the scale to reach
         self.canvas = pygame.Surface((NATIVE[0] * 2, NATIVE[1] * 2)).convert()
         self.hd_layer = True
-        self.edge_bar = 'gear'
+        self.edge_bar = 'bar'               # the gear on its bar, as on the story's screens (owner, 2026-10-31)
         self.menu_focus = None            # (the action, the focused option) on New Rules' menu
         self._skin = None
         self.targets = []                 # (native rect, command) for clicks, from the last frame
