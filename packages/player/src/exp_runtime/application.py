@@ -239,6 +239,7 @@ class Application:
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='exp-content')
         self.job = None
         self.job_kind = None
+        self.job_title = ''                 # a Data Management job's busy card title (start_data_job)
         self.progress_text = ''
         self.picker = None
         self.picker_style = None
@@ -1552,7 +1553,10 @@ class Application:
     def render_shell(self):
         canvas = self.shell.render()
         if self.busy:
-            title = {'previews': 'Preparing episodes', 'data': self.job_title}.get(self.job_kind, 'Importing content')
+            # Only a Data Management job has a title of its own; the others (the first run's episode previews, an
+            # import) are named here.
+            title = (self.job_title if self.job_kind == 'data'
+                     else {'previews': 'Preparing episodes'}.get(self.job_kind, 'Importing content'))
             self.shell.main.draw_busy(canvas, title, self.progress_text if self.job_kind in ('previews', 'data')
                                       else 'Checking and copying your files. This can take a while: keep the '
                                            'app open.')
