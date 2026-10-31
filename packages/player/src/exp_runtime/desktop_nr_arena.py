@@ -468,7 +468,9 @@ class NRArenaRenderer:
             self._entrance(surface, ENTRANCE_MS - arena.exit_ms, table_curve=1)
         elif moving:
             self._entrance(surface, arena.entrance_ms)
-        else:
+        elif arena is not None:
+            # With the panel closed (the library waits a frame or two after its exit) only the frame shows: the
+            # exit took the rest away, and that picture fades out over the next screen (owner, 2026-10-31).
             origin = skin.spec.get('static_origin', (0, 0))
             surface.blit(skin.static, (OX + origin[0], origin[1]))
         if arena is not None and not moving:

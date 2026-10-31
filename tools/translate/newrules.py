@@ -1298,7 +1298,8 @@ LIBRARY_ROOM = ((29997, 30042), (27221, 27243))
 # site is given. The copies are the same games compiled into each download, so only their addresses differ: every
 # shape matches once in each copy holding that game (all 47 downloads, 2026-10-31).
 #   (name, library site, shape, addition: a track played as a sound effect, or SHAKE for 500 ms)
-SWAP_TRACK = 6                          # a swap item, in Rhythm and DJ Fever (owner's pick, 2026-10-31)
+SWAP_TRACK = 11                         # a swap item, in Rhythm and DJ Fever: Fever's bonus noise (owner, 2026-10-31,
+                                        # after trying #06)
 ARENA_ADDITIONS = (
     ('rhythm good note', 30998, '29:* 28:73 1a:708 5b 1f:13314 62 40:* 3e 15 40:* 1a:* 53', 13),
     ('rhythm swap', 30941, '5c:27393 28:130 5f 5a 3e 15 5f 3f 1a:* 0e 2b:46 60', SWAP_TRACK),

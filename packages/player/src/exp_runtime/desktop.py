@@ -154,11 +154,21 @@ ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
                      **{getattr(pygame, f'K_KP{n}'): 48 + n for n in range(10)}}
 
 
+# New Rules' text is all lowercase (its fonts had only capitals); a game's name in its menus, word by word, where
+# capitalising the word isn't enough (owner, 2026-10-31: "welcome to the dj fever game").
+ARENA_GAME_WORDS = {'dj': 'DJ'}
+
+
 def arena_menu_prompt(details):
     """(title, text, options) for New Rules' menu shown as SHS's choice: its last sentence, a question ("view
     tutorial?"), is the title and the rest ("welcome to the `rhyming` game.") the text, without New Rules' font
-    switches and in sentence case, as SHS's own menus are written."""
+    switches and in sentence case, as SHS's own menus are written. The words it highlights (between backticks) are
+    the game's name, written as a name (ARENA_GAME_WORDS: "DJ Fever")."""
+    def name(match):
+        return ' '.join(ARENA_GAME_WORDS.get(word, word.capitalize()) for word in match.group(1).split())
+
     def sentences(string):
+        string = re.sub(r'`([^`]*)`', name, string)
         string = re.sub(r'\s+', ' ', string.replace('`', '').replace('~', '')).strip()
         return re.sub(r'(^|[.!?] )([a-z])', lambda m: m.group(1) + m.group(2).upper(), string)
     body = sentences(details.get('title') or '')

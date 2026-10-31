@@ -142,6 +142,21 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(self.module.eased(5, 720, 800), 105)          # the bands pass their place, then settle
         self.assertEqual(self.module.eased(6, 1200, 1200), 100)
 
+    def test_after_the_exit_only_the_frame_shows(self):
+        # The library waits a frame after closing the panel; that frame (which then fades out over the next screen)
+        # is the bare frame, not the arena's table and bands back again (owner, 2026-10-31).
+        from exp_runtime.nr_arena import NRArena
+        files = skin_files(self.pygame, frame=(10, 200, 30))
+        names = {**self.module.SKIN, 'frame.png': self.module.FRAME_PICTURE}
+        by_id = {resource: files[name] for name, resource in names.items()}
+        renderer = self.module.NRArenaRenderer(SimpleNamespace(raw_asset=by_id.__getitem__, exists=by_id.__contains__))
+        skin = renderer.skin()
+        skin.static.fill((200, 40, 40, 255))                # a static screen that covers the frame
+        renderer.draw(None, self.session(NRArena.opened(False, False)), now_ms=0)
+        self.assertEqual(renderer.canvas.get_at((300, 300))[:3], (200, 40, 40))
+        renderer.draw(None, self.session(None), now_ms=0)
+        self.assertEqual(renderer.canvas.get_at((300, 300))[:3], (10, 200, 30))
+
     def test_the_menu_highlights_its_selected_option_and_steps_through_them(self):
         from exp_runtime.nr_arena import NRArena
         renderer = self.renderer()
@@ -265,7 +280,9 @@ class ArenaKeyTests(unittest.TestCase):
         from exp_runtime.desktop import arena_menu_prompt
         self.assertEqual(arena_menu_prompt(dict(title='welcome to the `rhyming` game.  view tutorial?',
                                                 options=['yes', 'no'])),
-                         ('View tutorial?', 'Welcome to the rhyming game.', ['Yes', 'No']))
+                         ('View tutorial?', 'Welcome to the Rhyming game.', ['Yes', 'No']))
+        self.assertEqual(arena_menu_prompt(dict(title='welcome to the `dj fever` game.  view tutorial?',
+                                                options=['yes', 'no']))[1], 'Welcome to the DJ Fever game.')
         self.assertEqual(arena_menu_prompt(dict(title='play again?', options=['yes'])), ('Play again?', '', ['Yes']))
         ui = self.desktop('arena_menu', title='welcome to the `sequences` game.  view tutorial?',
                           options=['yes', 'no'], selected=0)
@@ -274,7 +291,7 @@ class ArenaKeyTests(unittest.TestCase):
         prompt = ui._host_prompt()
         details = prompt['session'].pending.details
         self.assertEqual((details['title'], details['text'], details['options']),
-                         ('View tutorial?', 'Welcome to the sequences game.', ['Yes', 'No']))
+                         ('View tutorial?', 'Welcome to the Sequences game.', ['Yes', 'No']))
         self.assertIs(ui._host_prompt(), prompt)
         prompt['resolve'](1)
         ui.session.answer.assert_called_once_with(1)
