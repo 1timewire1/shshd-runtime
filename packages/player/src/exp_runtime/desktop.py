@@ -146,7 +146,7 @@ class _UntimedChoice:
 
 
 # New Rules' minigame arena (desktop_nr_arena.py): its frames, its menu and its info box draw over it.
-ARENA_ACTIONS = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info')
+ARENA_ACTIONS = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
 # Keys as New Rules' Nokia key codes (nr_arena.KEY_BITS): OK / fire, the joystick, the right soft key.
 ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, pygame.K_UP: -1, pygame.K_DOWN: -2,
               pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
@@ -2746,7 +2746,7 @@ class Desktop:
                 or self.host_prompt is not None):
             return False
         key = event.key
-        if action.name == 'arena_entrance':
+        if action.name in ('arena_entrance', 'arena_exit'):
             return key in ARENA_KEYS or key in ARENA_NUMBER_KEYS          # New Rules takes no keys meanwhile
         if action.name == 'arena_frame':
             code = ARENA_KEYS.get(key)

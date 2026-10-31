@@ -17,8 +17,9 @@ PRESS_MS = 250                          # an on-screen button's highlight after 
 BLINK_FREE_MS = 100000                  # 713/761's blink clock wraps here (field_558)
 DEFAULT_PERIOD_MS = 4000                # 719 when the panel opens
 # New Rules' entrance (class_13.method_383, transition -3 from the story's screen: field_611[2]): the bands slide in and
-# the table settles. Meanwhile the panel neither draws nor runs, takes no keys, and the script waits.
-ENTRANCE_MS = 2000
+# the table settles. Meanwhile the panel neither draws nor runs, takes no keys, and the script waits. Leaving (718) runs
+# transition -4 (field_611[3]) backwards, as long: the same tracks out again, before the story goes on.
+ENTRANCE_MS = EXIT_MS = 2000
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
 # them. The player passes these codes: OK / fire, soft keys, the arrows, and the number keys 0-9.
@@ -100,6 +101,7 @@ class NRArena:
     keys: list = field(default_factory=list)                            # queued key bits, at most KEYS
     elapsed_ms: int = 0                 # 721, read and cleared
     entrance_ms: int = ENTRANCE_MS      # how far the entrance has run (ENTRANCE_MS: done)
+    exit_ms: int = -1                   # how far the exit has run, once 718 has closed the panel (-1: open)
     pictures: list = field(default_factory=list)                        # 767's list (preload hints)
 
     # -- opening and the clock ---------------------------------------------------------------------------------------
@@ -118,6 +120,15 @@ class NRArena:
         """The entrance's clock (class_13.method_377); True once it has run its course."""
         self.entrance_ms = min(ENTRANCE_MS, self.entrance_ms + max(0, elapsed_ms))
         return not self.entering
+
+    @property
+    def leaving(self) -> bool:
+        return self.exit_ms >= 0
+
+    def leave(self, elapsed_ms: int) -> bool:
+        """The exit's clock; True once it has run its course."""
+        self.exit_ms = min(EXIT_MS, max(0, self.exit_ms) + max(0, elapsed_ms))
+        return self.exit_ms >= EXIT_MS
 
     def tick(self, elapsed_ms: int) -> None:
         """One frame (h's update, case 25 state 11)."""

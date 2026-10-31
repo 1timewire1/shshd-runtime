@@ -135,6 +135,10 @@ class ArenaRenderTests(unittest.TestCase):
             arena.entrance_ms = ms
             renderer.draw(None, self.session(arena, 'arena_entrance'), now_ms=ms)
             self.assertEqual(renderer.targets, [])
+        for ms in (0, 700, 1500, 1990):                                 # the exit: the same tracks backwards
+            arena.exit_ms = ms
+            renderer.draw(None, self.session(arena, 'arena_exit'), now_ms=ms)
+            self.assertEqual(renderer.targets, [])
         self.assertEqual(self.module.eased(5, 720, 800), 105)          # the bands pass their place, then settle
         self.assertEqual(self.module.eased(6, 1200, 1200), 100)
 

@@ -457,7 +457,8 @@ class EngineState:
             text = self.resolve_text(vm, values[2])
         closed = arena.set(slot, prop, *values, text=text)
         if closed:
-            self.nr_arena = None
+            arena.exit_ms = 0                   # New Rules' exit plays before the script goes on (nr_arena.py)
+            return EngineAction('arena_exit', request, False)
         return complete('nr_arena_set', prop=prop)
 
     def _nr_format(self, vm, args):

@@ -93,8 +93,12 @@ class ArenaServiceTests(unittest.TestCase):
         for machine in (session, restored):
             self.assertEqual(machine.tick(33).name, 'arena_frame')      # no key: another frame
             machine.arena_press(-5)
-            machine.tick(33)
-            self.assertIsNone(machine.engine.nr_arena)                  # OK: closed
+            self.assertEqual(machine.tick(33).name, 'arena_exit')       # OK: closed; New Rules' exit plays
+            self.assertTrue(machine.engine.nr_arena.leaving)
+            for _ in range(7):
+                self.assertEqual(machine.tick(250).name, 'arena_exit')
+            machine.tick(250)
+            self.assertIsNone(machine.engine.nr_arena)                  # then the script goes on
             self.assertTrue(machine.vm.pending.kind.name == 'HALT')
 
     def test_the_arena_query_needs_the_library_and_the_switch(self):

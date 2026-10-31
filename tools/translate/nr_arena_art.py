@@ -60,10 +60,11 @@ def _walk(bank, layout_id, index, rect):
 
 
 def draw(canvas, bank, layout_id, rect, packs, show=frozenset(), hide=frozenset(), _first=1):
-    """A layout's nodes into `rect` as `w.a(v, ...)` draws them (class_0.method_14): image nodes (kind 1: slot, frame)
-    tiled over their rectangles (from the right with flag 0x40, the bottom with 0x80), colour fills (kinds 2-4: the
-    bank's colour, its low 24 bits), outlines (kind 5) and nested layouts (kind 7). A node shows with flag 0x10, or when
-    its index (node_rect's numbering) is in `show`, unless it is in `hide`. Returns how many nodes it numbered."""
+    """A layout's nodes into `rect` as `w.a(v, ...)` draws them (class_0.method_14): image nodes (kind 1: slot,
+    frame or composite) tiled over their rectangles (from the right with flag 0x40, the bottom with 0x80), colour fills
+    (kinds 2-4: the bank's colour, its low 24 bits), outlines (kind 5) and nested layouts (kind 7). A node shows with
+    flag 0x10, or when its index (node_rect's numbering) is in `show`, unless it is in `hide`. Returns how many nodes
+    it numbered."""
     from PIL import ImageDraw
     layout = bank.layouts[layout_id]
     index = _first
@@ -78,9 +79,11 @@ def draw(canvas, bank, layout_id, rect, packs, show=frozenset(), hide=frozenset(
             continue
         if visible and child.width > 0 and child.height > 0:
             if node.kind == 1 and node.payload[0] in packs:
-                frames = packs[node.payload[0]].frames
-                if 0 <= node.payload[1] < len(frames):
-                    nr_art.tile(canvas, frames[node.payload[1]], (child.x, child.y, child.width, child.height),
+                # A frame, or a composite (-k-1, such as the table's base and legs) tiled by its bounding box
+                # (class_4.method_106 draws each copy with method_109(..., false)).
+                found = _group_image(packs[node.payload[0]], node.payload[1])
+                if found is not None:
+                    nr_art.tile(canvas, found[0], (child.x, child.y, child.width, child.height),
                                 bool(node.flags & 64), bool(node.flags & 128))
             elif node.kind in (2, 3, 4, 5) and 0 <= node.payload[0] < len(bank.colors):
                 colour = bank.colors[node.payload[0]] & 0xFFFFFF
@@ -135,13 +138,14 @@ BAND_NODES = {'hud0_label': 11, 'hud0_item': 12, 'hud0_label_alt': 13, 'hud0_ite
 # Where a marker sits on the score dial for each meter value (class_13's static tables), X1i pixels.
 MARKER_X = (43, 50, 51, 45, 32, 20, 9, 9, 16, 29)
 MARKER_Y = (11, 21, 36, 46, 52, 50, 38, 20, 11, 7)
-# A button's fill under its picture (class_13's paint): while pressed, OK's and the second's feedback (708) green or red;
-# else orange in the alternate style (buttons bit 0), or light purple while pressed and dark when not.
+# A button's fill under its picture (class_13's paint): while pressed, OK's and the second's feedback (708) green or
+# red; else orange in the alternate style (buttons bit 0), or light purple while pressed and dark when not.
 BUTTON_COLOURS = dict(right=0x33FF33, wrong=0xFF3333, pressed=0x9966FF, idle=0x6600CC, alternate=0xFF9933)
 METER_SLOT, TIMER_SLOT = 4, 2           # pack 146 (meter, markers, plates, hint) and pack 83 (the timer's 17 steps)
 MENU_SLOT = 0                           # pack 4 (class_6.field_202): a menu's arrow and bullets
 BUBBLE_SLOT = 8                         # pack 123 (class_6.field_209): the bubble's frame and its pointer sequences
-# The panel's fonts (class_6's boot sequence: t.a(InputStream, extra)), resource -> the extra pixels each glyph advances.
+# The panel's fonts (class_6's boot sequence: t.a(InputStream, extra)), resource -> the extra pixels each glyph
+# advances.
 # 56 is field_229 and, after the boot swaps it in, field_231 too; 61 is field_232 (the score digits); 59 is field_230;
 # 57 is field_234 (the info box). An item's font byte picks 0 -> 56, 1 -> 61, 2 -> 59, 3 -> 56 (o.a(t)).
 FONTS = {56: 0, 57: 0, 59: 1, 61: 0}
@@ -204,8 +208,8 @@ def _group_image(pack, index):
 
 def build_skin(source, backdrop=None):
     """The arena skin for the addon: {name: bytes} with 'skin.json' (node rectangles, layouts, sprite table, colours),
-    'static.png', 'tile.png' and 'atlas.png' (every sprite the player draws). With `backdrop` (a picture of the whole 3:4
-    frame: the dialogue screens' backdrop without its bars, nr_art.Art.backdrop), 'frame.png' too, which the player
+    'static.png', 'tile.png' and 'atlas.png' (every sprite the player draws). With `backdrop` (a picture of the whole
+    3:4 frame: the dialogue screens' backdrop without its bars, nr_art.Art.backdrop), 'frame.png' too, which the player
     draws behind the arena in place of the scrolling tile, and the static screen leaves out its own stripe."""
     import json
     bank = LayoutBank.parse(source[LAYOUT_BANK])

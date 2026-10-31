@@ -835,8 +835,9 @@ class Session:
 
     def arena_press(self, key_code: int) -> None:
         """A key press on New Rules' minigame arena (a Nokia key code, nr_arena.KEY_BITS), for its library to read."""
-        if self.engine.nr_arena is not None and not self.engine.nr_arena.entering:     # none during the entrance
-            self.engine.nr_arena.press(key_code)
+        arena = self.engine.nr_arena
+        if arena is not None and not arena.entering and not arena.leaving:   # none while it comes or goes
+            arena.press(key_code)
 
     def _complete_survey(self, action):
         from .shs.survey import RESPONSE_STEPS, SURVEY_TEXT, script_response
@@ -1020,6 +1021,14 @@ class Session:
             details['elapsed_ms'] += elapsed_ms
             if details['elapsed_ms'] >= POLL_WAIT_MS:
                 self.vm.resume(0)                   # `finishPollDownload(false)`: the script gets 0
+                self.pending = None
+                return self.advance()
+            return self.pending
+        if self.pending and self.pending.name == 'arena_exit':
+            # New Rules' exit: the panel has closed; its bands and table leave before the script goes on.
+            if self.engine.nr_arena is None or self.engine.nr_arena.leave(min(elapsed_ms, ARENA_FRAME_CAP_MS)):
+                self.engine.nr_arena = None
+                self.vm.resume(0)
                 self.pending = None
                 return self.advance()
             return self.pending
@@ -1554,7 +1563,7 @@ class Session:
                            'survey_confirmation': (9,), 'episode_exit': (7, 63),
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
-                           'arena_entrance': (200,)}
+                           'arena_entrance': (200,), 'arena_exit': (202, 206, 207)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

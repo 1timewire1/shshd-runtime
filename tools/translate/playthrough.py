@@ -113,7 +113,7 @@ def steps(s, answers, name, limit, record):
             action = s.pending
 
 
-ARENA = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info')
+ARENA = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
 ARENA_FRAME_MS = 33
 ARENA_OK_EVERY = 6                      # frames between the bot's OK presses
 ARENA_FRAMES = 20000                    # about 11 minutes of play, more than any game runs

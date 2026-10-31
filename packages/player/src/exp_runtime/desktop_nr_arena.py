@@ -450,7 +450,7 @@ class NRArenaRenderer:
         now = pygame.time.get_ticks() if now_ms is None else now_ms
         skin = self.skin()
         self.targets = []
-        entering = arena is not None and arena.entering
+        moving = arena is not None and (arena.entering or arena.leaving)
         if skin.frame is not None:
             surface = self.layer
             surface.fill((0, 0, 0, 0))
@@ -461,11 +461,14 @@ class NRArenaRenderer:
             Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, NATIVE[0] + 256, NATIVE[1] + 256))
         # New Rules draws within its 480 x 650 screen: nothing spills into the frame's few columns either side.
         surface.set_clip(pygame.Rect(OX, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
-        if entering:
+        if moving and arena.leaving:
+            # Leaving is transition -4 run backwards: the entrance's tracks from their end, the table on curve 1.
+            self._entrance(surface, ENTRANCE_MS - arena.exit_ms, table_curve=1)
+        elif moving:
             self._entrance(surface, arena.entrance_ms)
         else:
             surface.blit(skin.static, (OX, 0))
-        if arena is not None and not entering:
+        if arena is not None and not moving:
             self._paint(surface, arena, session, now)
         if action is not None and action.name in ('arena_menu', 'arena_info'):
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
@@ -486,11 +489,12 @@ class NRArenaRenderer:
         self.canvas.blit(pygame.transform.scale(surface, size), (0, 0))
         return []
 
-    def _entrance(self, surface, ms):
+    def _entrance(self, surface, ms, table_curve=6):
         """New Rules' entrance (class_13.method_383, transition -3; class_6.method_191 draws its tracks) over the frame:
         the bottom band, with the stand, rises from below the screen and the top band drops from above it (0-800 ms,
         settling past 100%); the table, three times as wide and reaching the screen's bottom, comes down to its own
-        size (400-1600 ms). Each is its layout redrawn in the moving box, so the pictures tile rather than stretch."""
+        size (400-1600 ms). Each is its layout redrawn in the moving box, so the pictures tile rather than stretch.
+        The exit (transition -4) draws the same tracks with `ms` running back from the end."""
         skin = self.skin()
         nodes = {name: pygame.Rect(skin.nodes[name]) for name in ('bottom_band', 'band', 'table')}
         duration = ENTRANCE_MS * 2 // 5
@@ -507,7 +511,7 @@ class NRArenaRenderer:
         start, end = ENTRANCE_MS // 5, ENTRANCE_MS * 4 // 5
         if ms >= start:
             box = nodes['table']
-            progress = 100 if ms >= end else eased(6, ms - start, end - start)
+            progress = 100 if ms >= end else eased(table_curve, ms - start, end - start)
             tall = (SCREEN_HEIGHT - box.y + box.height // 2) * 100 // box.height
             width = box.width * (300 + jdiv((100 - 300) * progress, 100)) // 100
             height = box.height * (tall + jdiv((100 - tall) * progress, 100)) // 100
