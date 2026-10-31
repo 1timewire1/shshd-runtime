@@ -66,7 +66,7 @@ def dispatch(self, vm, *, resource_exists=None):
         if not self.loading.blocking:
             # Compact calls retain their count in bytecode. Register-count
             # calls lose it on completion; keep nonlegacy counts for saves.
-            if vm.program.instructions[request.pc].opcode == 0x1e and len(args) != 1:
+            if vm.instruction_at(request.pc).opcode == 0x1e and len(args) != 1:
                 details['argument_count'] = len(args)
             vm.resume(0)  # The call completes, but host +0x118 still gates execution.
         return EngineAction('loading', request, False, details)

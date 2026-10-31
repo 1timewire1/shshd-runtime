@@ -33,7 +33,7 @@ from .loading import loading_waits, retained_word
 from .minigames import MINIGAMES
 from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
-from .vm import KiwiVM, StopKind, VMError, VMStop, signed16
+from .vm import KiwiVM, StopKind, VMError, VMStop, linked_layout, signed16
 
 
 class SaveError(ValueError):
@@ -155,7 +155,9 @@ class Session:
         # An ephemeral session (a preview capture) never writes the library's shared tree file.
         self.ephemeral = ephemeral
         self.scene = start_script
-        self.vm = KiwiVM(resources.program(start_script))
+        # shshd-runtime: a linked segment beside the scripts (New Rules' minigame library, from its addon), if any.
+        linked = resources.linked_program() if hasattr(resources, 'linked_program') else None
+        self.vm = KiwiVM(resources.program(start_script), **linked_layout(linked))
         self.engine = EngineState()
         self._set_build()
         self.engine.game_key = game_id(resources)
@@ -1393,7 +1395,7 @@ class Session:
             session = cls(resources, start_script=state['scene'])
             if state['script_sha256'] != digest(session.vm.program.to_bytes()):
                 raise SaveError('Saved script does not match the loaded script')
-            session.vm = KiwiVM.from_snapshot(session.vm.program, state['vm'])
+            session.vm = KiwiVM.from_snapshot(session.vm.program, state['vm'], linked=session.vm.linked)
             library_view = session.engine.dt_view          # the library's own tree, read when the session was made
             engine_state = dict(state['engine'])
             saved_view = dict(engine_state['dt_view'])
@@ -1483,9 +1485,9 @@ class Session:
                     # completed call is recoverable from the program and stack
                     # backing without inventing a suspended VM frame.
                     pc = session.vm.pc - 1
-                    if request is not None or not 0 <= pc < len(session.vm.program.instructions):
+                    if request is not None or pc < 0:
                         raise SaveError('Invalid completed loading call')
-                    instruction = session.vm.program.instructions[pc]
+                    instruction = session.vm.instruction_at(pc)
                     if (not ((instruction.opcode == 0x1f and instruction.operand >> 8 == 91)
                              or (instruction.opcode == 0x1e and instruction.operand == 91))
                             or session.vm.result != 0
@@ -1535,7 +1537,7 @@ class Session:
                 elif name == 'loading':
                     expected_details = {}
                     if (engine.loading and not engine.loading.blocking and len(request.args) != 1
-                            and session.vm.program.instructions[request.pc].opcode == 0x1e):
+                            and session.vm.instruction_at(request.pc).opcode == 0x1e):
                         expected_details['argument_count'] = len(request.args)
                     if (engine.loading is None or details != expected_details
                             or engine.loading.blocking != loading_waits(session.vm, request)):

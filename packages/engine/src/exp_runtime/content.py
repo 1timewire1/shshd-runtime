@@ -1417,6 +1417,27 @@ class EpisodeResources:
             return self.archive if resource_id in self.archive.entries else None
         return next((archive for archive in self._addons() if resource_id in archive.entries), None)
 
+    # New Rules loads its minigame library (25200) beside whichever story runs: a linked segment (VM_SPEC.md §2.3).
+    LINKED_SCRIPT = 25200
+
+    def linked_program(self):
+        """shshd-runtime: the linked segment the scripts run beside, or None: resource LINKED_SCRIPT in the episode or
+        one of its addons, when its header marks it linked (an ordinary script there stays an ordinary script)."""
+        if not hasattr(self, '_linked'):
+            self._linked = None
+            program = self.programs.get(self.LINKED_SCRIPT)
+            if program is None and hasattr(self.archive, 'entries'):
+                archive = next((a for a in self._addons() if self.LINKED_SCRIPT in a.entries), None) \
+                    if self.required_addons else None
+                if archive is not None:
+                    try:
+                        program = decode_program(archive.read(self.LINKED_SCRIPT))
+                    except ValueError as error:
+                        raise ContentError(f'Cannot load the linked script: {error}') from error
+            if program is not None and program.previous_flag:
+                self._linked = program
+        return self._linked
+
     def _bank_read(self, resource_id):
         if not hasattr(self.archive, 'entries'):            # a stand-in archive that only reads
             return self.archive.read(resource_id)
