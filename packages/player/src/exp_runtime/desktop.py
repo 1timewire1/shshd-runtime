@@ -51,7 +51,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
-from .choice_hints import word_game_outcomes
+from .choice_hints import ARENA_RESULTS, arena_outcomes, word_game_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -110,6 +110,16 @@ def word_game_options(outcomes):
                       else f'Score {low} to {high}')
         scores.append(32767 if index == 0 else low)
     return (*labels, 'Play'), tuple(scores)
+
+
+def arena_skip_options(outcomes):
+    """(option labels, the result each hands the story) for a New Rules arena game's skip prompt, as word_game_options
+    labels them (Win / Lose, Skip, or the result ranges), then "Play" (labels only). Each outcome hands its lowest
+    result: every result in it leads the same way to the episode's end (checked on all 50 episodes, 2026-10-31)."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None:
+        return labels, (ARENA_RESULTS - 1, 0)
+    return labels, tuple(low for low, _ in reversed(outcomes))
 
 
 class _PromptEngine:
@@ -213,7 +223,7 @@ class Desktop:
     # before a football game or word grid (Win, Lose or Play), and whether to skip the High School Story ad intros.
     # {'action', 'session', 'options', 'resolve'} while it is up (`session` stands in for the real one when drawing it).
     # `minigame_played` is the game the player chose to play and `ad_asked` the ad choice already asked about.
-    skip_minigames = False
+    _skip_minigames = False
     skip_ad_intros = False
     # Autoplay Dialogue (this player's option): dialogue, title cards and message panels take no taps; once their text
     # is out they wait AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS) and advance by themselves (owner's
@@ -267,7 +277,20 @@ class Desktop:
         session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
         session.choice_timer = not self._disable_choice_timer
         session.nr_arena = self._arena_minigames
+        session.skip_arena = self._skip_minigames
         self._session = session
+
+    @property
+    def skip_minigames(self):
+        """Ask to Skip Mini-Games: football, the word grid and the word quiz first ask Win, Lose or Play, and so do
+        New Rules' arena games (Session.skip_arena: their stories wait at service 213)."""
+        return self._skip_minigames
+
+    @skip_minigames.setter
+    def skip_minigames(self, value):
+        self._skip_minigames = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.skip_arena = self._skip_minigames
 
     @property
     def arena_minigames(self):
@@ -862,6 +885,16 @@ class Desktop:
             else:
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
                                            self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
+        if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
+            if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
+                # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
+                # the results 0-15): most two, a few three.
+                outcomes = arena_outcomes(self.session)
+                options, results = arena_skip_options(outcomes)
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._arena_summary(outcomes), options,
+                                           lambda index: self._resolve_arena_skip(action, results, index))
+            else:
+                self._attempt(lambda: self.session.answer(-1))     # switched off meanwhile: it plays
         if (prompt is None and action is not None and action.name == 'arena_menu' and not self.error
                 and hasattr(self.session.resources, 'read_asset')):
             # shshd-runtime (owner, 2026-10-31): New Rules' menu over the arena (its tutorial offer) is SHS's choice,
@@ -870,6 +903,23 @@ class Desktop:
             prompt = self._open_prompt(action, title, text, options,
                                        lambda index: self._resolve_arena_menu(action, index))
         return prompt
+
+    @staticmethod
+    def _arena_summary(outcomes):
+        """What the arena game about to start decides, for its skip prompt."""
+        game = 'A New Rules minigame, in its arena.'
+        if outcomes is None or len(outcomes) == 2:
+            passed = f' (a result of {outcomes[1][0]} or more)' if outcomes else ''
+            return f'{game} Win passes it{passed}; Lose fails it.'
+        if len(outcomes) == 1:
+            return f'{game} Its result changes nothing that follows.'
+        return f'{game} Its story goes {len(outcomes)} ways, by result.'
+
+    def _resolve_arena_skip(self, action, results, index):
+        """The arena game's skip prompt: an outcome hands its story that result instead of the game; Play plays it."""
+        if self.session.pending is action:
+            value = results[index] if index < len(results) else -1
+            self._attempt(lambda: self.session.answer(value))
 
     def _resolve_arena_menu(self, action, index):
         if self.session.pending is action:

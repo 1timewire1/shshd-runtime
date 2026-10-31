@@ -112,7 +112,13 @@ def menu(s):
                 s.text(arg[1])
             else:
                 s.emit(0x40, arg[1])
+        play, skipped, out = s.label(), s.label(), s.label()
+        newrules.arena_skip(s, play, skipped)           # Ask to Skip Mini-Games, as the stories ask
+        s.label(skipped)
+        s.emit(0x19, len(args)); s.jump(out)
+        s.label(play)
         call_function(s, entry, len(args))
+        s.label(out)
         show_result(s)
         s.jump(library)
 
@@ -137,7 +143,11 @@ def round_script(program, function):
     rewriter = Rewriter(program)
 
     def build(s):
+        play, out = s.label(), s.label()
+        newrules.arena_skip(s, play, out)               # Ask to Skip Mini-Games, as the stories ask
+        s.label(play)
         call_function(s, function)
+        s.label(out)
         show_result(s)
         s.push(MENU_SCRIPT); s.push(0); s.call(10, 2); s.emit(0x33)
     rewriter.prologue(build)

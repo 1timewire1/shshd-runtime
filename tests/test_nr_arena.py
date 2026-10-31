@@ -172,6 +172,29 @@ class ArenaServiceTests(unittest.TestCase):
             self.assertIsNone(machine.engine.nr_arena)                  # then the script goes on
             self.assertTrue(machine.vm.pending.kind.name == 'HALT')
 
+    def test_ask_to_skip_waits_before_an_arena_game_and_hands_the_story_its_answer(self):
+        # 213 (the translator puts it before each arena game): -1 plays the game. Without Ask to Skip Mini-Games it
+        # answers that at once; with it the story waits on 'arena_skip' (saved like the arena's other screens) for
+        # the result to read instead.
+        words, _ = text_words('x')
+        store = [(0x1A, 9), 0x21, (0x1F, 54 << 8 | 2)]                      # global 9 = the answer
+        story = program(*host_call(213), *store, 0x33, words=words)
+
+        def answer(session):
+            return session.engine.numbers.get(session.engine.number_key(0, 9), 0)
+        session = Session(resources(story))
+        session.advance()
+        self.assertEqual(answer(session), -1)
+        session = Session(resources(story))
+        session.skip_arena = True
+        self.assertEqual(session.advance().name, 'arena_skip')
+        restored = Session.from_snapshot(resources(story), json.loads(json.dumps(session.snapshot())))
+        self.assertEqual(restored.pending.name, 'arena_skip')
+        with self.assertRaises(ValueError):
+            restored.answer(-2)
+        restored.answer(5)
+        self.assertEqual(answer(restored), 5)
+
     def test_the_arena_query_needs_the_library_and_the_switch(self):
         words, _ = text_words('x')
         store = [(0x1A, 9), 0x21, (0x1F, 54 << 8 | 2)]                      # global 9 = the answer

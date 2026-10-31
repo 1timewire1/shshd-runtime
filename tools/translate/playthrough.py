@@ -96,6 +96,9 @@ def steps(s, answers, name, limit, record):
             action = s.tick(4000)
             if s.pending is not None and s.pending.name == kind and kind != 'loading':
                 action = s.answer()
+        elif kind == 'arena_skip':
+            record.append(dict(kind='arena_skip'))
+            action = s.answer(arena_skip_answer(s))
         elif kind in ARENA:
             action = arena_game(s, record)
         elif kind in ('word_game', 'football', 'word_grid'):
@@ -114,6 +117,12 @@ def steps(s, answers, name, limit, record):
 
 
 ARENA = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
+
+
+def arena_skip_answer(s):
+    """The answer to an arena game's skip question (a session with skip_arena on): -1 plays it. Checks replace this to
+    finish the game with a result instead."""
+    return -1
 ARENA_FRAME_MS = 33
 ARENA_OK_EVERY = 6                      # frames between the bot's OK presses
 ARENA_FRAMES = 20000                    # about 11 minutes of play, more than any game runs

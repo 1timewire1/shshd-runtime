@@ -429,6 +429,8 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         for start, game in rounds.items():
             rewriter.replace_function(start, ('word_game', start), lambda s, game=game: word_game(s, program, game, twin_games, player))
             report.word_games += 1
+        for pc, target in sorted(arena_calls(program).items()) if arena_pcs else ():
+            rewriter.replace_call(pc, ('arena entry', target), 0, lambda s, target=target: arena_entry(s, target))
         for pc, entry, argc in library_calls(program):
             kind = (episode.library_entries or LIBRARY_ENTRIES).get(entry)
             if kind is None or episode.library is None:
@@ -1081,6 +1083,17 @@ def arena_code(program):
     function the game reaches from the one opening the panel (50), whose New Rules arena services are renamed to the
     player's (ARENA_SERVICES); `guards`, the platform queries (32(1)) that choose between the game and its round
     function: a query followed within ARENA_GUARD_WINDOW instructions by a call to a function that reaches the game."""
+    pcs, guards, _ = _arena_parts(program)
+    return pcs, guards
+
+
+def arena_calls(program):
+    """The JUMPs (after a SAVE_RETURN) by which a download's story enters its arena game: those following a guard
+    (arena_code) within ARENA_GUARD_WINDOW instructions, to a function that reaches the game, as {PC: target}."""
+    return _arena_parts(program)[2]
+
+
+def _arena_parts(program):
     instructions = program.instructions
     edges, starts = functions(program)
     roots = {function_of(starts, i.pc) for i in instructions if i.opcode == 0x1f and i.operand >> 8 == 50}
@@ -1099,12 +1112,16 @@ def arena_code(program):
                 reaching.add(caller)
                 grew = True
     pcs = frozenset(i.pc for i in instructions if function_of(starts, i.pc) in game)
-    guards = frozenset(
-        i.pc for i in instructions
-        if i.opcode == 0x1f and i.operand >> 8 == 32 and i.pc not in pcs and pushed_values(program, i.pc, 1)[0] == 1
-        and any(j.opcode == 0x42 and j.pc + 1 < len(instructions) and instructions[j.pc + 1].operand in reaching
-                for j in instructions[i.pc:i.pc + ARENA_GUARD_WINDOW]))
-    return pcs, guards
+    guards, calls = set(), {}
+    for i in instructions:
+        if i.opcode == 0x1f and i.operand >> 8 == 32 and i.pc not in pcs and pushed_values(program, i.pc, 1)[0] == 1:
+            entries = [instructions[j.pc + 1] for j in instructions[i.pc:i.pc + ARENA_GUARD_WINDOW]
+                       if j.opcode == 0x42 and j.pc + 1 < len(instructions) and instructions[j.pc + 1].opcode == 0x29
+                       and instructions[j.pc + 1].operand in reaching]
+            if entries:
+                guards.add(i.pc)
+                calls[entries[0].pc] = entries[0].operand
+    return frozenset(pcs), frozenset(guards), calls
 
 
 @dataclass
@@ -1232,6 +1249,24 @@ ARENA_SERVICES = {50: 200, 51: 201, 52: 202, 53: 203, 54: 204, 55: 205, 56: 206,
                   29: 208, 5: 209, 9: 210, 10: 211, 32: 212}
 LIBRARY_RENAME = {**ARENA_SERVICES, 6: 27, 15: 54, 16: 55}
 ARENA_QUERY = 200                       # SHS service 70 selector: 1 when the player has the arena
+ARENA_SKIP = 213                        # shshd-runtime: before an arena game, -1 plays it, else its result (arena_skip)
+
+
+def arena_skip(s, play, out):
+    """Ask to Skip Mini-Games before an arena game: shshd-runtime's 213 answers -1 to play it (on to `play`), or the
+    result the story reads instead, which goes in B as the game would leave it (on to `out`)."""
+    s.call(ARENA_SKIP, 0); s.push_result(); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(play)
+    s.push_result(); s.emit(0x04); s.jump(out)
+
+
+def arena_entry(s, target):
+    """The body replacing a download story's call into its arena game (arena_calls): arena_skip, then the game: the
+    shim drops its frame, so the stack holds the return address as the call left it, and jumps there."""
+    play, out = s.label(), s.label()
+    arena_skip(s, play, out)
+    s.label(play)
+    s.emit(0x22); s.jump(target)
+    s.label(out)
 LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
 RHYME_PROMPT = '`%s` rhymes with...'    # the library string before its rhyme pairs' words
 RHYME_END = 'rhyming'                   # and the one after them
@@ -1802,15 +1837,20 @@ def library_game(s, kind, index, library, player=True, music=False, entry=None):
     """The body replacing a call into the minigame library, then B = the result, as the library leaves it (a score, or
     the face's index): the speed disses as the Lite builds play theirs (speed_diss), Rhythm and beat boxing as SHS's
     word game (71), the face picker as SHS's portrait picker (78). With `entry`, a player that has the arena (SHS
-    70(ARENA_QUERY)) plays the library's own game instead: the shim drops its frame, so the stack holds the story's
-    arguments and return address as the call left them, and jumps to the entry in the linked library."""
+    70(ARENA_QUERY)) plays the library's own game instead, unless the player skips it (arena_skip): the shim drops its
+    frame, so the stack holds the story's arguments and return address as the call left them, and jumps to the entry
+    in the linked library."""
+    out = s.label()
     if entry is not None:
-        own = s.label()
+        own, play = s.label(), s.label()
         s.push(ARENA_QUERY); s.call(70, 1); s.push_result(); s.jump_if_zero(own)
+        arena_skip(s, play, out)
+        s.label(play)
         s.emit(0x22); s.jump(entry)
         s.label(own)
     if kind == 'rhyme':
         speed_diss(s, rhyme_rounds(library, index), player, music)
+        s.label(out)
         return
     if kind == 'faces':
         # (title, subtitle, prompt, count, candidate characters, flag): the candidates' looks are the faces offered.
@@ -1831,6 +1871,7 @@ def library_game(s, kind, index, library, player=True, music=False, entry=None):
         s.push(1); s.push(WORD_GAME_REFRESH_MS)
         s.call(71, 8)
     s.push_result(); s.emit(0x04)                           # B, which the caller reads
+    s.label(out)
 
 
 def rhyme_rounds(library, index):

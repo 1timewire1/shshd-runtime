@@ -73,7 +73,9 @@ SHS_HD_YIELDS = NATIVE_DEFAULT_YIELDS | frozenset((
 # translated New Rules stories and their minigame library call in place of New Rules' own (tools/translate
 # newrules.ARENA_SERVICES): the panel (50-57), the frame wait (29), formats (5), the menu and the info box over the
 # panel (9, 10) and the build query (32). Service 70 selector NR_ARENA_QUERY answers 1 where they work.
-NR_ARENA_SERVICES = frozenset(range(200, 213))
+# 213 is this player's own, called before an arena game: -1 plays it, another value is the result the story reads
+# instead (Ask to Skip Mini-Games, Session.skip_arena; NR_ARENA.md §7).
+NR_ARENA_SERVICES = frozenset(range(200, 214))
 NR_ARENA_QUERY = 200
 NR_BUILD = {1: 2, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}  # New Rules' 32 as the Java (arena) build answers it
 
@@ -86,6 +88,8 @@ class EngineState:
     # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
     # selector NR_ARENA_QUERY answers 1 only with it on.
     nr_arena_enabled = False
+    # Not saved: whether service 213 asks before an arena game (Session.skip_arena sets it); else it plays at once.
+    nr_arena_skip = False
     # Not saved: the last link a script asked service 100 to open (a no-op in HD; see dispatch), for the host.
     store_link = ''
     vibration_serial = 0
@@ -420,6 +424,11 @@ class EngineState:
         if y == 212:                                            # 32: the build query
             need(1)
             return complete('query_build', NR_BUILD.get(args[0], 0), selector=args[0])
+        if y == 213:                                            # this player's: play the arena game, or skip it
+            need(0)
+            if not self.nr_arena_skip:
+                return complete('arena_play', -1)
+            return EngineAction('arena_skip', request, False)
         if arena is None:
             raise VMError(f'New Rules arena service {y} without an open arena')
         if y == 201:                                            # 51: a label

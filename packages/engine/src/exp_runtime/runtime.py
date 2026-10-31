@@ -150,6 +150,9 @@ class Session:
     # shshd-runtime: whether New Rules' minigame arena plays (nr_arena.py) where a translated story offers it; off, its
     # story plays the word game or timed choices it carries for apps without the arena. Not saved: read at each call.
     nr_arena = True
+    # shshd-runtime: Ask to Skip Mini-Games for New Rules' arena: service 213 waits (an 'arena_skip' screen) for the
+    # result to give the story instead, or -1 to play. Off, it plays at once. Not saved: read at each call.
+    skip_arena = False
     # shshd-runtime: (the dialogue motion, its two-speaker line's partner ID or -1), so the next line knows whether its
     # partner is new. Not saved: a restore takes it from the restored line.
     _duet_line = None
@@ -609,6 +612,7 @@ class Session:
             if request.kind == StopKind.YIELD:
                 queued_notice = self.engine.next_dialogue_notice
                 self.engine.nr_arena_enabled = self.nr_arena
+                self.engine.nr_arena_skip = self.skip_arena
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name in ('dt_add_node', 'dt_add_result', 'dt_save'):
                     # Real native behavior: every addNode/addResult call
@@ -828,6 +832,12 @@ class Session:
             self.pending = None
         elif action.name == 'arena_info':
             self.vm.resume(0)                               # New Rules' info box (its 10): OK closes it
+            self.pending = None
+        elif action.name == 'arena_skip':
+            # Before an arena game (213): -1 plays it; another value is the result its story reads instead.
+            if type(value) is not int or not -1 <= value <= 0x7FFF:
+                raise ValueError('Skip an arena game with its result, or -1 to play it')
+            self.vm.resume(value)
             self.pending = None
         else:
             raise VMError(f'Cannot answer {action.name}; its native contract is not implemented')
@@ -1563,7 +1573,7 @@ class Session:
                            'survey_confirmation': (9,), 'episode_exit': (7, 63),
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
-                           'arena_entrance': (200,), 'arena_exit': (202, 206, 207)}
+                           'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

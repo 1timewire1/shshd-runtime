@@ -289,6 +289,31 @@ class ArenaKeyTests(unittest.TestCase):
         self.assertIs(ui.session.nr_arena, False)           # the next episode's session too
         self.assertIs(preference_defaults()['arena_minigames'], True)
 
+    def test_ask_to_skip_offers_each_route_of_an_arena_game(self):
+        # The skip question before an arena game (213): an option per route its story takes (arena_outcomes), each
+        # handing the story its lowest result, then Play (-1). Switched off, the game plays at once.
+        from unittest.mock import patch
+        from exp_runtime.desktop import arena_skip_options
+        self.assertEqual(arena_skip_options([(0, 4), (5, None)]), (('Win', 'Lose', 'Play'), (5, 0)))
+        self.assertEqual(arena_skip_options([(0, 4), (5, 5), (6, None)]),
+                         (('Score 6 or more', 'Score 5', 'Score 0 to 4', 'Play'), (6, 5, 0)))
+        self.assertEqual(arena_skip_options([(0, None)]), (('Skip', 'Play'), (0,)))
+        self.assertEqual(arena_skip_options(None), (('Win', 'Lose', 'Play'), (15, 0)))
+        ui = self.desktop('arena_skip')
+        ui.session.resources, ui.session.scene, ui.session.answer = SimpleNamespace(read_asset=None), None, Mock()
+        ui._skip_minigames = True
+        with patch('exp_runtime.desktop.arena_outcomes', return_value=[(0, 4), (5, None)]):
+            prompt = ui._host_prompt()
+        self.assertEqual(prompt['options'], ('Win', 'Lose', 'Play'))
+        prompt['resolve'](0)
+        ui.session.answer.assert_called_with(5)
+        prompt['resolve'](2)
+        ui.session.answer.assert_called_with(-1)
+        ui = self.desktop('arena_skip')
+        ui.session.resources, ui.session.answer = SimpleNamespace(read_asset=None), Mock()
+        self.assertIsNone(ui._host_prompt())                # Ask to Skip off: it plays
+        ui.session.answer.assert_called_once_with(-1)
+
     def test_the_arenas_menu_is_shs_choice(self):
         from exp_runtime.desktop import arena_menu_prompt
         self.assertEqual(arena_menu_prompt(dict(title='welcome to the `rhyming` game.  view tutorial?',
