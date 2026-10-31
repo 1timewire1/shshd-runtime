@@ -22,6 +22,9 @@ DEFAULT_PERIOD_MS = 4000                # 719 when the panel opens
 ENTRANCE_MS = EXIT_MS = 2000
 MOTIONS = (-1, 0, 1, 2)                 # 740's modes; -1, 0 and 1 are also the ring's direction (_set_motion)
 SHAKE = 790                             # shshd-runtime's own property: shake the ring for v1 ms (New Rules' end at 772)
+# The sound as "Time's up!" appears (owner, 2026-10-31): the New Rules addon's track #02 (translator MUSIC_BASE + 2),
+# before the score's own jingle (#05, the library's).
+TIME_UP_SOUND = 26982
 TIME_UP_MS = 2000                     # how long "Time's up!" shows before the panel presses its OK (time_up)
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
@@ -111,6 +114,7 @@ class NRArena:
     # resets it), 1 holding, 2 after "your score".
     time_up: int = 0
     time_up_ms: int = -1
+    sounds: list = field(default_factory=list)          # sound effects the panel asks for, which the engine takes
     # shshd-runtime (owner, 2026-10-31): SHAKE shakes the ring as Rhythm's frame loop does, for the games whose loop
     # has no shake of its own (the translator adds it to Rhyme's wrong answers).
     shake_ms: int = 0
@@ -441,6 +445,7 @@ class NRArena:
         if self.time_up == 0:
             self.time_up, self.time_up_ms = 1, 0
             self.keys.clear()
+            self.sounds.append(TIME_UP_SOUND)
         elif self.time_up == 1:
             self.time_up, self.time_up_ms = 2, -1
             self.keys.clear()
@@ -504,7 +509,7 @@ class NRArena:
         if (not 1 <= count <= SLOTS or len(self.blink) != count or len(self.tint) != count
                 or len(self.moves) != count or len(self.labels) != LABELS or len(self.flash_ms) != 3
                 or len(self.hud) != 3 or any(len(box) != 6 for box in self.hud)
-                or len(self.popups) > POPUPS or len(self.keys) > KEYS or len(self.bubbles) != 2
+                or len(self.popups) > POPUPS or len(self.keys) > KEYS or len(self.bubbles) != 2 or len(self.sounds) > 4
                 or not 0 <= self.angle < 360 or self.direction not in (-1, 0, 1) or self.motion not in MOTIONS
                 or self.item_kind not in (PORTRAIT, PICTURE, TEXT) or self.time_up not in (0, 1, 2)
                 or self.time_up_ms < -1 or self.shake_ms < 0 or self.shake_base < 3):

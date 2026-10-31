@@ -456,6 +456,9 @@ class EngineState:
         elif prop == 747 and values[2] != -1:
             text = self.resolve_text(vm, values[2])
         closed = arena.set(slot, prop, *values, text=text)
+        for asset in arena.sounds:                      # the panel's own (time's up)
+            self.request_sound(asset)
+        arena.sounds.clear()
         if closed:
             arena.exit_ms = 0                   # New Rules' exit plays before the script goes on (nr_arena.py)
             return EngineAction('arena_exit', request, False)

@@ -1298,10 +1298,12 @@ LIBRARY_ROOM = ((29997, 30042), (27221, 27243))
 # site is given. The copies are the same games compiled into each download, so only their addresses differ: every
 # shape matches once in each copy holding that game (all 47 downloads, 2026-10-31).
 #   (name, library site, shape, addition: a track played as a sound effect, or SHAKE for 500 ms)
+SWAP_TRACK = 6                          # a swap item, in Rhythm and DJ Fever (owner's pick, 2026-10-31)
 ARENA_ADDITIONS = (
     ('rhythm good note', 30998, '29:* 28:73 1a:708 5b 1f:13314 62 40:* 3e 15 40:* 1a:* 53', 13),
-    ('rhythm swap', 30941, '5c:27393 28:130 5f 5a 3e 15 5f 3f 1a:* 0e 2b:46 60', 11),
+    ('rhythm swap', 30941, '5c:27393 28:130 5f 5a 3e 15 5f 3f 1a:* 0e 2b:46 60', SWAP_TRACK),
     ('fever good note', 29671, '2e:231 28:274 1a:708 5b 1f:13314 1a:* 05 3f 25 15 1a:692 1a:*', 13),
+    ('fever swap', 29851, '15 28:94 5f 5a 3e 15 5f 3f 40:* 0e 2b:38 23:65533', SWAP_TRACK),
     ('sequences wrong picture', 29297, '1f:14341 28:39 1a:* 5b 3e 15 40:* 41:5 50 3f 1a:* 0d', 1),
     ('sequences empty slot', 29451, '15 28:32 1a:* 5b 3e 15 41:5 1a:748 1a:* 1a:* 1f:14340 23:6', 1),
     ('sequences time out', 29150, '0d 2b:26 40:* 2b:15 1a:* 05 3f 26 15 40:* 5a 0e', 1),
