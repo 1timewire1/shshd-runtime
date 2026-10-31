@@ -27,6 +27,8 @@ from dataclasses import replace
 from exp_runtime.decode.bytecode import BytecodeInstruction, KiwiProgram, OPERAND_OPCODES, decode_program
 
 STACK_BASE = 0x7bf5                     # the VM's stack starts here; data must stay below it
+# Instructions whose effect depends on their own address (relative branches, SAVE_RETURN, the register-A switch).
+RELATIVE = frozenset((0x28, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x42, 0x5c))
 
 
 class RewriteError(ValueError):
@@ -111,9 +113,9 @@ class Rewriter:
         extra]`, r.java), so its scripts may read gap words they never wrote; the output stores them as zeros.
         A linked segment (New Rules' minigame library) sits at fixed boundaries: its data can't grow (the stories'
         data and the stack are fixed around it) and it takes no prologue, but shims may follow its code, at addresses
-        from its code boundary. `room` (start, end addresses): dead code the shims overwrite instead, for a program
-        whose code already reaches the KiWi limit."""
-        self.room = room
+        from its code boundary. `room` ((start, end) address ranges): dead code the shims overwrite instead, in
+        order, for a program whose code already reaches the KiWi limit."""
+        self.room = list(room or ())
         self.linked = bool(program.previous_flag)
         self.code_base = program.previous_instruction_count if self.linked else 0
         self.program, self.zero_gap = program, zero_gap
@@ -204,6 +206,18 @@ class Rewriter:
             self.shims[shim_key] = shim
         self.sites[pc] = ('function', shim_key)
 
+    def insert(self, pc, build):
+        """Run `build`'s code (no arguments, no frame; it must leave the stack as it found it) just before the
+        instruction at address `pc`, which moves to the end of that block. The instruction can't be one that depends
+        on where it sits: a relative branch, a SAVE_RETURN or a computed jump."""
+        pc -= self.code_base
+        opcode = self.code[pc][0] if 0 <= pc < self.original else None
+        if opcode is None or opcode in RELATIVE or pc in self.sites:
+            raise RewriteError(f'nothing can be inserted before {pc + self.code_base}')
+        shim = Shim(self, 0)
+        build(shim)
+        self.sites[pc] = ('insert', shim)
+
     def prologue(self, build):
         """Code that runs once before the program's first instruction (built like a shim body, without arguments)."""
         self.start = Shim(self, 0)
@@ -215,28 +229,37 @@ class Rewriter:
             raise RewriteError('a linked segment takes no prologue')
         code = list(self.code)
         base = self.code_base                   # jumps are addresses; a linked segment's start at its code boundary
-        if self.room and not base <= self.room[0] <= self.room[1] <= base + self.original:
-            raise RewriteError(f'the room {self.room} is not in the code')
-        place = [self.room[0] - base if self.room else len(code)]
+        placing = self.shims or any(site[0] in ('shim', 'insert') for site in self.sites.values())
+        for start, end in self.room if placing else ():
+            if not base <= start <= end <= base + self.original:
+                raise RewriteError(f'the room {start}-{end} is not in the code')
+        rooms = [list(r) for r in self.room]            # [next free address, end] of each
 
         def put(items):
-            """Where `items` (assembled at that address by a callable) go: over the room, or after the code."""
-            start = base + place[0]
-            items = items(start) if callable(items) else items
-            if self.room:
-                if start + len(items) > self.room[1]:
-                    raise RewriteError(f'the shims overflow the room at {self.room[0]}-{self.room[1]}')
-                code[place[0]:place[0] + len(items)] = items
-            else:
-                code.extend(items)
-            place[0] += len(items)
-            return start
+            """Where `items` (assembled at that address by a callable) go: over the first room they fit in, or after
+            the code."""
+            if not self.room:
+                start = base + len(code)
+                code.extend(items(start) if callable(items) else items)
+                return start
+            for free in rooms:
+                start = free[0]
+                placed = items(start) if callable(items) else items
+                if start + len(placed) <= free[1]:
+                    code[start - base:start - base + len(placed)] = placed
+                    free[0] += len(placed)
+                    return start
+            raise RewriteError(f'the shims overflow the room {self.room}')
         starts = {}
         for key, shim in self.shims.items():
             starts[key] = put(lambda start, shim=shim: _assemble(shim, start))
         for pc, site in sorted(self.sites.items()):
             if site[0] == 'shim':
                 code[pc] = (0x29, put([(0x1a, base + pc), (0x29, starts[site[1]])]))
+            elif site[0] == 'insert':
+                displaced = code[pc]
+                code[pc] = (0x29, put(lambda start, shim=site[1], displaced=displaced, pc=pc:
+                                      _assemble(shim, start, frame=False) + [displaced, (0x29, base + pc + 1)]))
             elif site[0] == 'function':
                 code[pc] = (0x29, starts[site[1]])
         if self.start is not None:

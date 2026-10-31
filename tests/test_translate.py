@@ -184,7 +184,7 @@ class NewRulesShimTests(unittest.TestCase):
             return seen
         def code(instructions):
             return [(i.pc, i.opcode, i.operand) for i in instructions]
-        with patch.object(nr, 'LIBRARY_ROOM', room):
+        with patch.object(nr, 'LIBRARY_ROOM', (room,)):
             out = nr.translate_library(library, music=True)
             self.assertEqual(played(out), [(79, (nr.MUSIC_BASE + 13,)), (79, (nr.MUSIC_BASE + 1,)),
                                            (80, (nr.MUSIC_BASE + nr.GAME_MUSIC_TRACK, 0))])
@@ -196,6 +196,37 @@ class NewRulesShimTests(unittest.TestCase):
             music = linked(*source[:12], (0x1A, 8), *source[13:], words=(0,), data_boundary=50, code_boundary=base)
             with self.assertRaisesRegex(nr.TranslateError, 'track 8'):
                 nr.translate_library(music, music=True)                       # a music track would need 80
+
+    def test_arena_additions_find_their_code_by_its_shape_and_run_before_it(self):
+        # A download's copy of Rhythm (its good-note branch, entered by the jump at 0) and of Rhyme (its wrong answer,
+        # entered at 13): each site is found by its code's shape, addresses aside, and its addition runs first, the
+        # right jingle (79) and the shake (202 with SHAKE), then the code that was there (52: 708 = 1 or 2).
+        nr = self.nr
+        rhythm = [(0x29, 2), (0x28, 73), (0x1A, 708), 0x5B, (0x1F, 0x3402), 0x62, (0x40, 5), 0x3E, 0x15, (0x40, 6),
+                  (0x1A, 1500), 0x53, 0x33]
+        rhyme = [(0x29, 16), 0x15, (0x28, 19), (0x1A, 708), (0x1A, 2), (0x1F, 0x3402), 0x5B, 0x42, (0x29, 40), 0x15,
+                 0x61, (0x1A, 4000), 0x3E, 0x33]
+        source = program(*rhythm, *rhyme, words=(0,) * 8)
+        rewriter = Rewriter(source, zero_gap=True)
+        made = nr.arena_additions(rewriter, source, music=True)
+        self.assertEqual(made, [('rhythm good note', 2), ('rhyme wrong answer', 16)])
+        out = rewriter.finish()
+        self.assertEqual(len([i for i in out.instructions if i.pc < len(source.instructions)]),
+                         len(source.instructions))
+
+        def first_calls(start):
+            vm = KiwiVM(out)
+            vm.pc = start
+            seen = []
+            while len(seen) < 2 and (stop := vm.run()).kind == StopKind.YIELD:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        self.assertEqual(first_calls(0), [(79, (nr.MUSIC_BASE + 13,)), (52, (708, 1))])
+        from exp_runtime.nr_arena import SHAKE
+        self.assertEqual(first_calls(13), [(202, (SHAKE, nr.ARENA_SHAKE_MS)), (52, (708, 2))])
+        self.assertEqual([name for name, _ in nr.arena_additions(Rewriter(source), source, music=False)],
+                         ['rhyme wrong answer'])                    # no music: the shake alone
 
     def test_a_library_call_enters_the_librarys_own_game_where_the_player_has_the_arena(self):
         # The story calls the game at 100 with two arguments; the library leaves 42 in B. With the arena (70(200)

@@ -21,7 +21,8 @@ DEFAULT_PERIOD_MS = 4000                # 719 when the panel opens
 # transition -4 (field_611[3]) backwards, as long: the same tracks out again, before the story goes on.
 ENTRANCE_MS = EXIT_MS = 2000
 MOTIONS = (-1, 0, 1, 2)                 # 740's modes; -1, 0 and 1 are also the ring's direction (_set_motion)
-TIME_UP_MS = 2000                      # how long "Time's up!" shows before the panel presses its OK (time_up)
+SHAKE = 790                             # shshd-runtime's own property: shake the ring for v1 ms (New Rules' end at 772)
+TIME_UP_MS = 2000                     # how long "Time's up!" shows before the panel presses its OK (time_up)
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
 # them. The player passes these codes: OK / fire, soft keys, the arrows, and the number keys 0-9.
@@ -110,6 +111,11 @@ class NRArena:
     # resets it), 1 holding, 2 after "your score".
     time_up: int = 0
     time_up_ms: int = -1
+    # shshd-runtime (owner, 2026-10-31): SHAKE shakes the ring as Rhythm's frame loop does, for the games whose loop
+    # has no shake of its own (the translator adds it to Rhyme's wrong answers).
+    shake_ms: int = 0
+    shake_base: int = 100               # 722 as the library set it; the ring's size between shakes
+    shake_seed: int = 1
 
     # -- opening and the clock ---------------------------------------------------------------------------------------
     @classmethod
@@ -185,6 +191,15 @@ class NRArena:
             self.max_ms += dt
         if self.keypad_flash_ms > 0:
             self.keypad_flash_ms = max(0, self.keypad_flash_ms - dt)
+        if self.shake_ms > 0:
+            self.shake_ms = max(0, self.shake_ms - dt)
+            if self.shake_ms == 0:
+                self.ring_size = self.shake_base
+            else:
+                # Rhythm's own shake (its frame loop): 722 = 100 - (random(30) - 15) each frame, here round the
+                # ring's size and from the panel's own generator (it only moves the picture).
+                self.shake_seed = (self.shake_seed * 1103515245 + 12345) & 0x7FFFFFFF
+                self.ring_size = max(3, self.shake_base - ((self.shake_seed >> 16) % 30 - 15))
         if self.time_up_ms >= 0:
             self.time_up_ms += dt
             if self.time_up_ms >= TIME_UP_MS:
@@ -253,7 +268,7 @@ class NRArena:
             elapsed, self.elapsed_ms = self.elapsed_ms, 0
             return elapsed
         if prop == 722:
-            return self.ring_size
+            return self.shake_base if self.shake_ms > 0 else self.ring_size
         if prop == 723:
             return self.item_kind
         if prop == 724:
@@ -352,6 +367,12 @@ class NRArena:
                 self.buttons |= 1 | (512 if v1 < 0 else 0)
         elif prop == 722:
             self.ring_size = max(3, v1)
+            if self.shake_ms > 0:
+                self.shake_base = self.ring_size
+        elif prop == SHAKE:
+            if self.shake_ms <= 0:
+                self.shake_base = self.ring_size
+            self.shake_ms = max(0, v1)
         elif prop == 723:
             self.item_kind = v1
         elif prop == 724:
@@ -486,5 +507,5 @@ class NRArena:
                 or len(self.popups) > POPUPS or len(self.keys) > KEYS or len(self.bubbles) != 2
                 or not 0 <= self.angle < 360 or self.direction not in (-1, 0, 1) or self.motion not in MOTIONS
                 or self.item_kind not in (PORTRAIT, PICTURE, TEXT) or self.time_up not in (0, 1, 2)
-                or self.time_up_ms < -1):
+                or self.time_up_ms < -1 or self.shake_ms < 0 or self.shake_base < 3):
             raise ValueError('Invalid New Rules arena state')

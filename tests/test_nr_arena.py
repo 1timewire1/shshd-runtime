@@ -104,6 +104,22 @@ class ArenaModelTests(unittest.TestCase):
         self.assertEqual(arena.keys, [16])                  # the score takes presses again
         self.assertEqual(NRArena.from_data(arena.to_data()).time_up, 2)
 
+    def test_the_shake_jitters_the_rings_size_and_puts_it_back(self):
+        # SHAKE (shshd-runtime's, for Rhyme's wrong answers) shakes the ring as Rhythm's loop does: its size within
+        # 15% of the library's own each frame, the library's own read back meanwhile, and put back after.
+        from exp_runtime.nr_arena import SHAKE
+        arena = NRArena.opened(False, True)
+        arena.set(0, 722, 80)
+        arena.set(0, SHAKE, 500)
+        sizes = set()
+        for _ in range(14):
+            arena.tick(33)
+            sizes.add(arena.ring_size)
+            self.assertEqual(arena.get(722), 80)
+        self.assertTrue(len(sizes) > 3 and all(65 <= size <= 95 for size in sizes))
+        arena.tick(100)
+        self.assertEqual((arena.ring_size, arena.shake_ms), (80, 0))
+
     def test_a_ring_turning_backwards_survives_a_save(self):
         # Every library and download game turns its ring with 740 = -1 (backwards) at some point; saves made then
         # were refused as corrupt (owner, 2026-10-31).

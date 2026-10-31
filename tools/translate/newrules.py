@@ -16,6 +16,7 @@ import struct
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+from exp_runtime.nr_arena import SHAKE
 from exp_runtime.vm import KiwiVM, StopKind, VMError
 
 from kiwi_rewrite import Rewriter
@@ -161,6 +162,7 @@ class Report:
     protagonist: int = PLAYER                               # the primary speaker chosen (protagonist())
     word_games: int = 0                                     # minigame rounds played as SHS word games
     library_games: dict = field(default_factory=dict)       # a built-in story's library calls by game (LIBRARY_ENTRIES)
+    arena_additions: dict = field(default_factory=dict)     # ARENA_ADDITIONS made to the downloads' arena games
     borrowed: int = 0                                       # lines given their full story's expression (King of Diss Lite)
 
 
@@ -458,6 +460,9 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
             else:
                 report.unmapped[key] = report.unmapped.get(key, 0) + 1
                 rewriter.redirect(pc, ('unmapped', service), lambda s: s.result(0))
+        if arena_pcs:
+            for name, _ in arena_additions(rewriter, program, arena_pcs, music is not None):
+                report.arena_additions[name] = report.arena_additions.get(name, 0) + 1
         if rid - episode.script_offset == 25001:
             rewriter.prologue(lambda s: (s.push(NARRATOR), s.call(75, 1), set_player(s, players.get('start', primary)),
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
@@ -1284,21 +1289,74 @@ LIBRARY_PRELOAD, LIBRARY_PLAY, LIBRARY_GAME_MUSIC = 28189, 28193, 28197
 # The track the downloads' arena games start (their twin of LIBRARY_GAME_MUSIC plays the word left on the stack where
 # build query 32(270) would have put 8; the player answers 270 with 0, and the round starts track 14).
 GAME_MUSIC_TRACK = 14
-# Where the hooks' shims go: the library's code already ends at the KiWi limit (32767), so they overwrite a function
-# nothing reaches, a list helper of the Java copy's (no jump to it, its address never pushed, no story calls it).
-LIBRARY_ROOM = (29997, 30042)
+# Where the hooks' and additions' shims go: the library's code already ends at the KiWi limit (32767), so they
+# overwrite functions nothing reaches (no jump to them, their addresses never pushed, no story calls them): a list
+# helper and a table reset of the Java copy's.
+LIBRARY_ROOM = ((29997, 30042), (27221, 27243))
+# shshd-runtime's additions to the arena games (owner, 2026-10-31), in the library and in every download's own copy.
+# Each site is found by the shape of its code (arena_shape) from 2 instructions before it to 10 after; the library's
+# site is given. The copies are the same games compiled into each download, so only their addresses differ: every
+# shape matches once in each copy holding that game (all 47 downloads, 2026-10-31).
+#   (name, library site, shape, addition: a track played as a sound effect, or SHAKE for 500 ms)
+ARENA_ADDITIONS = (
+    ('rhythm good note', 30998, '29:* 28:73 1a:708 5b 1f:13314 62 40:* 3e 15 40:* 1a:* 53', 13),
+    ('rhythm swap', 30941, '5c:27393 28:130 5f 5a 3e 15 5f 3f 1a:* 0e 2b:46 60', 11),
+    ('fever good note', 29671, '2e:231 28:274 1a:708 5b 1f:13314 1a:* 05 3f 25 15 1a:692 1a:*', 13),
+    ('sequences wrong picture', 29297, '1f:14341 28:39 1a:* 5b 3e 15 40:* 41:5 50 3f 1a:* 0d', 1),
+    ('sequences empty slot', 29451, '15 28:32 1a:* 5b 3e 15 41:5 1a:748 1a:* 1a:* 1f:14340 23:6', 1),
+    ('sequences time out', 29150, '0d 2b:26 40:* 2b:15 1a:* 05 3f 26 15 40:* 5a 0e', 1),
+    ('rhyme wrong answer', 32010, '15 28:19 1a:708 1a:* 1f:13314 5b 42 29:* 15 61 1a:* 3e', 'shake'),
+)
+ARENA_SHAKE_MS = 500                    # as Rhythm shakes on a bent note
+
+
+def arena_shape(instruction):
+    """An instruction as ARENA_ADDITIONS writes it, hex opcode and operand, the operand '*' where copies differ:
+    addresses (jumps, loads, pushed data and text addresses) and pushed constants other than arena properties
+    (690-780) and negative numbers."""
+    op, arg = instruction.opcode, instruction.operand
+    if arg is None:
+        return f'{op:02x}'
+    if op in (0x29, 0x40) or (op in (0x1a, 0x1b) and not (690 <= arg <= 780 or arg >= 0xF000)):
+        return f'{op:02x}:*'
+    return f'{op:02x}:{arg}'
+
+
+def arena_additions(rewriter, program, pcs=None, music=True):
+    """Make ARENA_ADDITIONS where their shapes match in `program` (New Rules' code: the library, or a download's script
+    with `pcs` its arena code), before the renames; the sounds only with `music`. Returns (name, PC) of each made."""
+    shapes = [arena_shape(i) for i in program.instructions]
+    made = []
+    for name, _, shape, addition in ARENA_ADDITIONS:
+        if addition != 'shake' and not music:
+            continue
+        tokens = shape.split()
+        for k in range(2, len(shapes) - len(tokens) + 3):
+            pc = program.instructions[k].pc
+            if (pcs is None or pc in pcs) and shapes[k - 2:k - 2 + len(tokens)] == tokens:
+                if addition == 'shake':
+                    build = lambda s: (s.push(SHAKE), s.push(ARENA_SHAKE_MS), s.call(ARENA_SERVICES[52], 2))
+                else:
+                    build = lambda s, track=addition: (s.push(MUSIC_BASE + track), s.call(79, 1))
+                rewriter.insert(pc, build)
+                made.append((name, pc))
+    return made
 
 
 def translate_library(library, music=False):
     """New Rules' minigame library (25200, a linked segment) for shshd-runtime: every host call renamed to the service
-    that answers it (LIBRARY_RENAME), its code and data left where New Rules' stories expect them; with `music` (the
-    addon holds the tracks) its sound hooks play New Rules' tracks as the downloads' copies do. Raises
-    TranslateError for a service with no counterpart."""
-    rewriter = Rewriter(library, zero_gap=True, room=LIBRARY_ROOM if music else None)
+    that answers it (LIBRARY_RENAME), its code and data left where New Rules' stories expect them, with
+    ARENA_ADDITIONS; with `music` (the addon holds the tracks) its sound hooks play New Rules' tracks as the downloads'
+    copies do. Raises TranslateError for a service with no counterpart."""
+    rewriter = Rewriter(library, zero_gap=True, room=LIBRARY_ROOM)
     for pc, service, argc in rewriter.calls():
         if service not in LIBRARY_RENAME:
             raise TranslateError(f'the minigame library calls New Rules service {service}, which has no counterpart')
         rewriter.rename(pc, LIBRARY_RENAME[service])
+    sites = {name: site for name, site, _, _ in ARENA_ADDITIONS}
+    for name, pc in arena_additions(rewriter, library, music=music):
+        if pc != sites[name]:
+            raise TranslateError(f'the minigame library has its {name} at {pc}, not {sites[name]}')
     if music:
         # Every track the library plays is one of New Rules' sound effects (its right/wrong jingles, time's up, Fever's
         # bonus), so the play hook's shim is short: SHS 79 with MUSIC_BASE + the index.
