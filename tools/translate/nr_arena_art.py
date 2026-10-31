@@ -14,6 +14,7 @@ from exp_runtime.ui_assets import LayoutBank, Rect
 
 LAYOUT_BANK = 2
 SCREEN = (480, 650)                     # the X1i game area: 480 wide, above its 150-pixel soft-key bar (layout 86)
+STATIC_BELOW = 54                       # rows of the static screen below it, for the base's added row (_extend_base)
 # The UI packs in the layout bank's image slots (class_6.method_185, method_247 and the boot sequence), with the RGB565
 # tint each is loaded with: New Rules' default theme (method_184(true); King of Diss never changes it, service 38).
 THEME = (15154, -166, -2416, -2416, -567, -342)
@@ -29,8 +30,77 @@ METER_PACK, DIAL_PACK = 146, 51         # the meter strip (class_6.field_227) an
 
 
 def slots(source):
-    return {slot: nr_art.Pack(source[rid], source, tint=tint) for slot, (rid, tint) in SLOT_PACKS.items()
-            if rid in source}
+    packs = {slot: nr_art.Pack(source[rid], source, tint=tint) for slot, (rid, tint) in SLOT_PACKS.items()
+             if rid in source}
+    if BASE_SLOT in packs:
+        _extend_base(packs[BASE_SLOT])
+    return packs
+
+
+# The table's base (slot 7's composite -1) ends at row 626, where the X1i's soft-key bar began; the frame here goes on
+# below. Its legs are rows of 54-pixel slices: each row the outer edge (frames 0 and 3) moves 27 pixels out and the
+# inner one (the last of frames 1 and 2) 18, one slice more filling between. One more row continuing both edges (owner,
+# 2026-10-30), and the fills under it as long, reach the bottom.
+BASE_SLOT, BASE_ROWS_ADDED = 7, 1
+LEGS = ((0, 1, min, max), (3, 2, max, min))     # each leg: (outer frame, inner frame, its outer side, its inner side)
+
+
+def _extend_base(pack):
+    """The base composite with BASE_ROWS_ADDED more rows: each leg's outer slice and its inner slices again, as far on
+    as each edge moved from the row before, with a slice more at the inner edge."""
+    parts = pack.groups[0]
+    rows = sorted({dy for _, _, dy in parts})
+    if len(rows) < 2:
+        return
+    before, last = rows[-2], rows[-1]
+    height = last - before
+
+    def xs(frame, dy):
+        return [x for f, x, y in parts if f == frame and y == dy]
+    added, shifts = [], []
+    for outer, inner, out_side, in_side in LEGS:
+        if not (xs(outer, last) and xs(outer, before) and xs(inner, last) and xs(inner, before)):
+            return
+        out_shift = out_side(xs(outer, last)) - out_side(xs(outer, before))
+        in_shift = in_side(xs(inner, last)) - in_side(xs(inner, before))
+        shifts.append(out_shift)
+        for k in range(1, BASE_ROWS_ADDED + 1):
+            dy = last + k * height
+            added += [(outer, x + k * out_shift, dy) for x in xs(outer, last)]
+            slices = {x + k * out_shift for x in xs(inner, last)} | {in_side(xs(inner, last)) + k * in_shift}
+            # From the outside in, as the composite lists them: each slice covers the lit edge of the one before.
+            added += [(inner, x, dy) for x in sorted(slices, reverse=in_side is min)]
+    pack.groups[0] = parts + added
+    pack.base_extension = (shifts[0] * BASE_ROWS_ADDED, shifts[1] * BASE_ROWS_ADDED, height * BASE_ROWS_ADDED)
+
+
+def extended_bank(source, packs):
+    """The layout bank with the base's node grown to hold _extend_base's rows (its box as much wider each side and
+    taller as the composite's bounding box grew), and each fill that ends with it continued below in a fill of its
+    own, set out as far as the legs move, so the box between them widens with them. The added nodes renumber the ones
+    after them (node_rect), so node boxes are looked up in the original bank; this one is for drawing."""
+    from dataclasses import replace
+    bank = LayoutBank.parse(source[LAYOUT_BANK])
+    left, right, taller = getattr(packs.get(BASE_SLOT), 'base_extension', (0, 0, 0))
+    if not taller:
+        return bank
+    layouts = list(bank.layouts)
+    for i, layout in enumerate(layouts):
+        base = next((n for n in layout.nodes if n.kind == 1 and tuple(n.payload) == (BASE_SLOT, -1)), None)
+        if base is None:
+            continue
+        bottom = base.base[3]
+        nodes = []
+        for n in layout.nodes:
+            if n is base:
+                x1, y1, x2, y2 = n.base
+                n = replace(n, base=(x1 + left, y1, x2 + right, y2 + taller))
+            nodes.append(n)
+            if n.kind in (2, 3, 4) and n.base[3] == bottom:
+                x1, _, x2, y2 = n.base
+                nodes.append(replace(n, base=(x1 + left, y2, x2 + right, y2 + taller)))
+        layouts[i] = replace(layout, nodes=tuple(nodes))
+    return replace(bank, layouts=tuple(layouts))
 
 
 def node_rect(bank, layout_id, index, rect):
@@ -105,15 +175,16 @@ def _count(bank, layout_id):
 
 
 def compose(source, show=(), hide=()):
-    """The arena's static screen (SCREEN, RGBA): layout 31 and the top band, without the scrolling background (the
-    player tiles it underneath). `show`: layout 31's hidden nodes to draw too (node_rect's numbering); `hide`: its
-    visible ones to leave out (STRIPE_NODE, where the player draws the dialogue screens' frame instead)."""
-    bank = LayoutBank.parse(source[LAYOUT_BANK])
+    """The arena's static screen (SCREEN and STATIC_BELOW rows under it, RGBA): layout 31 and the top band, without
+    the scrolling background (the player tiles it underneath). `show`: layout 31's hidden nodes to draw too; `hide`: its
+    visible ones to leave out (STRIPE_NODE, where the player draws the dialogue screens' frame instead). Both are
+    numbered in the extended bank (extended_bank), the same as node_rect's up to the table's base."""
     packs = slots(source)
+    bank = extended_bank(source, packs)
     width, height = SCREEN
-    canvas = Image.new('RGBA', SCREEN, (0, 0, 0, 0))
+    canvas = Image.new('RGBA', (width, height + STATIC_BELOW), (0, 0, 0, 0))
     draw(canvas, bank, ARENA_LAYOUT, Rect(0, 0, width, height), packs, frozenset(show), frozenset(hide))
-    band = node_rect(bank, ARENA_LAYOUT, BAND_NODE, Rect(0, 0, width, height))
+    band = node_rect(LayoutBank.parse(source[LAYOUT_BANK]), ARENA_LAYOUT, BAND_NODE, Rect(0, 0, width, height))
     draw(canvas, bank, BAND_LAYOUT, Rect(0, band.y, width, band.height), packs)
     return canvas
 
@@ -212,14 +283,15 @@ def build_skin(source, backdrop=None):
     3:4 frame: the dialogue screens' backdrop without its bars, nr_art.Art.backdrop), 'frame.png' too, which the player
     draws behind the arena in place of the scrolling tile, and the static screen leaves out its own stripe."""
     import json
-    bank = LayoutBank.parse(source[LAYOUT_BANK])
     packs = slots(source)
+    bank = extended_bank(source, packs)
+    original = LayoutBank.parse(source[LAYOUT_BANK])     # node numbering: the extension's fills renumber the rest
     width, height = SCREEN
     screen = Rect(0, 0, width, height)
-    band = node_rect(bank, ARENA_LAYOUT, BAND_NODE, screen)
+    band = node_rect(original, ARENA_LAYOUT, BAND_NODE, screen)
     band_rect = Rect(0, band.y, width, band.height)
-    nodes = {name: node_rect(bank, ARENA_LAYOUT, index, screen) for name, index in ARENA_NODES.items()}
-    nodes.update({name: node_rect(bank, BAND_LAYOUT, index, band_rect) for name, index in BAND_NODES.items()})
+    nodes = {name: node_rect(original, ARENA_LAYOUT, index, screen) for name, index in ARENA_NODES.items()}
+    nodes.update({name: node_rect(original, BAND_LAYOUT, index, band_rect) for name, index in BAND_NODES.items()})
     sprites, images = {}, []
 
     def add(name, found):

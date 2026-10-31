@@ -459,8 +459,9 @@ class NRArenaRenderer:
             surface = self.native
             step = now // 100 % 128
             Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, NATIVE[0] + 256, NATIVE[1] + 256))
-        # New Rules draws within its 480 x 650 screen: nothing spills into the frame's few columns either side.
-        surface.set_clip(pygame.Rect(OX, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+        # New Rules draws within its 480-pixel screen: nothing spills into the frame's few columns either side. (The
+        # table's base runs on to the frame's bottom, past the X1i's 650 rows: nr_arena_art._extend_base.)
+        surface.set_clip(pygame.Rect(OX, 0, SCREEN_WIDTH, NATIVE[1]))
         if moving and arena.leaving:
             # Leaving is transition -4 run backwards: the entrance's tracks from their end, the table on curve 1.
             self._entrance(surface, ENTRANCE_MS - arena.exit_ms, table_curve=1)
