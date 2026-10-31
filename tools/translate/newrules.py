@@ -466,10 +466,14 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
     return encode_exp(resources), report
 
 
-def build_addon(art, music=None):
+def build_addon(art, music=None, library=None):
     """The New Rules addon's `.exp` bytes: every location's background in every mode, the frame backdrop and, with
-    `music` (index -> MP3 bytes), every music track, at the IDs the translations use."""
+    `music` (index -> MP3 bytes), every music track, at the IDs the translations use; with `library` (New Rules'
+    minigame library, a KiwiProgram) its translation (translate_library) at LIBRARY, which the runtime runs beside
+    every story declaring the addon."""
     resources = {}
+    if library is not None:
+        resources[LIBRARY] = translate_library(library).to_bytes()
     for location in range(len(nr_art.LOCATIONS)):
         for mode in range(MODES):
             resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
@@ -1148,6 +1152,13 @@ LIBRARY_ENTRIES = {32611: 'rhyme', 31473: 'rhythm', 28903: 'beat boxing', 28201:
 # dancer level + 2 in practice, 7 - the level at the dance-off.
 DANCING_QUEEN = range(25101, 25107)
 DANCING_QUEEN_ENTRIES = {**LIBRARY_ENTRIES, 28903: 'dance steps', 30244: 'dj fever'}
+# New Rules' arena (docs NR_ARENA.md): its services and the other New Rules services the minigame library calls, as
+# shshd-runtime's New Rules arena services (200-212), which the runtime answers as New Rules' engine does. Random and
+# the global numbers are SHS's own.
+ARENA_SERVICES = {50: 200, 51: 201, 52: 202, 53: 203, 54: 204, 55: 205, 56: 206, 57: 207,
+                  29: 208, 5: 209, 9: 210, 10: 211, 32: 212}
+LIBRARY_RENAME = {**ARENA_SERVICES, 6: 27, 15: 54, 16: 55}
+ARENA_QUERY = 200                       # SHS service 70 selector: 1 when the player has the arena
 LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
 RHYME_PROMPT = '`%s` rhymes with...'    # the library string before its rhyme pairs' words
 RHYME_END = 'rhyming'                   # and the one after them
@@ -1180,6 +1191,18 @@ SPEED_DISS_HITS, SPEED_DISS_MISSES = 10, 3
 SPEED_DISS_ROUNDS = SPEED_DISS_HITS + SPEED_DISS_MISSES - 1
 SPEED_DISS_MS = 3900
 RIGHT_TRACK, WRONG_TRACK = 13, 1                         # FEEDBACK_TRACKS: New Rules' right and wrong jingles
+
+
+def translate_library(library):
+    """New Rules' minigame library (25200, a linked segment) for shshd-runtime: every host call renamed to the service
+    that answers it (LIBRARY_RENAME), its code and data left where New Rules' stories expect them. Raises
+    TranslateError for a service with no counterpart."""
+    rewriter = Rewriter(library, zero_gap=True)
+    for pc, service, argc in rewriter.calls():
+        if service not in LIBRARY_RENAME:
+            raise TranslateError(f'the minigame library calls New Rules service {service}, which has no counterpart')
+        rewriter.rename(pc, LIBRARY_RENAME[service])
+    return rewriter.finish()
 
 
 def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1, entries=LIBRARY_ENTRIES):

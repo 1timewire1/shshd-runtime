@@ -142,6 +142,22 @@ class NewRulesShimTests(unittest.TestCase):
                 borrowed_themes=borrowed_themes or {}))
         return rewriter.finish(), report
 
+    def test_the_minigame_library_keeps_its_place_and_calls_the_arena_services(self):
+        # New Rules' library 25200 is a linked segment (VM_SPEC.md 2.3): its calls are renamed (arena 50-57, the frame
+        # wait 29, formats 5... to 200-212; random and globals to SHS's), and nothing moves.
+        from test_vm_linked import linked
+        nr = self.nr
+        library = linked((0x1A, 3), call(6, 1), (0x1A, 707), call(53, 1), call(29, 0), (0x1A, 1900), call(16, 1), 0x43,
+                         words=(1, 2), data_boundary=50, code_boundary=100)
+        out = nr.translate_library(library)
+        self.assertEqual((out.previous_instruction_count, out.previous_data_count), (100, 50))
+        self.assertEqual(out.instructions[0].pc, 100)
+        self.assertEqual([i.operand >> 8 for i in out.instructions if i.opcode == 0x1f], [27, 203, 208, 55])
+        with self.assertRaisesRegex(nr.TranslateError, 'service 48'):
+            nr.translate_library(linked(call(48, 0), 0x43, data_boundary=50, code_boundary=100))
+        with self.assertRaisesRegex(Exception, 'appended'):
+            Rewriter(library).words([1])                    # a linked segment can't grow
+
     def test_king_of_diss_lite_borrows_the_full_storys_expressions_and_crowd_colour(self):
         # Lite's 40 has no expression word and its crowd lists the offscreen group (gray); a line the full story also
         # has takes its expression (Hector standing in for Kim, whom Lite leaves out), and its crowd the full colour.

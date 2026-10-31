@@ -97,7 +97,7 @@ def main(argv=None):
     for path in args.episodes:
         downloads, twin, twin_files, full = args.downloads, None, (), None
         if str(path) == 'addon':
-            data = newrules.build_addon(art, music)
+            data = newrules.build_addon(art, music, library=newrules.decode_program(portraits[newrules.LIBRARY]))
             target = args.out / f'{ADDON_FILE}.exp'
             target.write_bytes(data)
             print(f'addon: {newrules.ADDON_TITLE!r} revision {newrules.ADDON_REVISION} -> {target} '

@@ -108,9 +108,11 @@ class Shim:
 class Rewriter:
     def __init__(self, program: KiwiProgram, zero_gap=False):
         """`zero_gap`: the source engine allocates data as one zeroed array (New Rules' Java `new short[main + gap +
-        extra]`, r.java), so its scripts may read gap words they never wrote; the output stores them as zeros."""
-        if program.previous_flag:
-            raise RewriteError('linked KiWi segments are not supported')
+        extra]`, r.java), so its scripts may read gap words they never wrote; the output stores them as zeros.
+        A linked segment (New Rules' minigame library) can only have its calls renamed: its code and data sit at
+        fixed boundaries, so nothing may be appended to it."""
+        self.linked = bool(program.previous_flag)
+        self.code_base = program.previous_instruction_count if self.linked else 0
         self.program, self.zero_gap = program, zero_gap
         self.code = [(i.opcode, i.operand) for i in program.instructions]
         self.original = len(self.code)
@@ -121,6 +123,8 @@ class Rewriter:
     # -- data ------------------------------------------------------------------------------------------------------
     def words(self, values):
         """Append words after the extra bank; returns the first one's address."""
+        if self.linked:
+            raise RewriteError('nothing can be appended to a linked segment')
         address = len(self.program.main_words) + self.program.gap_count + len(self.extra)
         self.extra.extend(word(v) for v in values)
         if address + len(values) >= STACK_BASE:
@@ -200,6 +204,9 @@ class Rewriter:
 
     # -- output ----------------------------------------------------------------------------------------------------
     def finish(self) -> KiwiProgram:
+        if self.linked and (self.shims or self.start is not None
+                            or any(site[0] != 'rename' for site in self.sites.values())):
+            raise RewriteError('a linked segment can only have its calls renamed')
         code = list(self.code)
         starts = {}
         for key, shim in self.shims.items():
@@ -229,7 +236,8 @@ class Rewriter:
             code[0] = (0x29, block)
         if len(code) > 0x7fff:
             raise RewriteError(f'{len(code)} instructions exceed the KiWi limit')
-        instructions = tuple(BytecodeInstruction(pc, 0, opcode, operand) for pc, (opcode, operand) in enumerate(code))
+        instructions = tuple(BytecodeInstruction(self.code_base + pc, 0, opcode, operand)
+                             for pc, (opcode, operand) in enumerate(code))
         program = replace(self.program, extra_words=tuple(self.extra), instructions=instructions)
         if self.zero_gap:
             program = replace(program, main_words=program.main_words + (0,) * program.gap_count, gap_count=0)
