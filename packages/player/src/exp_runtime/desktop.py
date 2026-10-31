@@ -1072,7 +1072,7 @@ class Desktop:
                     'message_panel': message, 'survey_confirmation': message,
                     'presentation': self._title_renderer,
                     'text_input': lambda: self.input_renderer,
-                    **{name: (lambda: self.nr_arena_renderer) for name in ARENA_ACTIONS},
+                    **{name: self._arena_renderer for name in ARENA_ACTIONS},
                 }
                 renderer = selectors[action.name]()
                 options = (dict(error=self.input_error,
@@ -2729,6 +2729,13 @@ class Desktop:
                 return
             self.notice_focus = None
             self.notice_stack.press(self.notice_data.action((focus or targets[0])[1]))
+
+    def _arena_renderer(self):
+        """New Rules' arena, told how tall the frame is in the window so it scales its pixel art up to there."""
+        viewport = getattr(self, 'bg_viewport', None)
+        if viewport is not None:
+            self.nr_arena_renderer.target_height = viewport.height
+        return self.nr_arena_renderer
 
     def _arena_key(self, event):
         """New Rules' arena by keys (a controller's arrive as these, gamepad.py): Enter / Space (a controller's

@@ -95,7 +95,12 @@ class ArenaRenderTests(unittest.TestCase):
         renderer = self.renderer()
         self.assertTrue(renderer.available())
         renderer.draw(None, self.session(arena), now_ms=1234)
-        self.assertEqual(renderer.canvas.get_size(), (768, 1024))
+        # The game area scaled up whole (nearest-neighbour) past the frame's height in the window, at exactly 3:4.
+        self.assertEqual(renderer.canvas.get_size(), (489 * 2, 652 * 2))
+        renderer.target_height = 1500
+        renderer.draw(None, self.session(arena), now_ms=1234)
+        self.assertEqual(renderer.canvas.get_size(), (489 * 3, 652 * 3))
+        self.assertEqual(renderer.canvas.get_width() * 4, renderer.canvas.get_height() * 3)
         # The OK button (208, 400, 64 x 32 in the X1i's game area, 4 px in) is at about (379, 655) in the frame.
         self.assertEqual(renderer.hit((379, 655)), ('arena_key', -5))
         self.assertEqual(renderer.hit((280, 650)), ('arena_key', -3))

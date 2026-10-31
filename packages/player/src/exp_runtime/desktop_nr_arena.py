@@ -4,7 +4,9 @@ The skin (tools/translate/nr_arena_art.py, resources SKIN in the addon) is the X
 (layout 31 and the top band), the scrolling background tile, and an atlas of every sprite the panel draws, with the
 node rectangles, the two variable-size layouts (25, the text item's box; 70, the bubble), the bitmap fonts and the
 colours. This module is a port of the Java panel's paint (`class_13.method_356` case 25, X1i names) onto that skin:
-it draws at the X1i's 480 x 650 game area and scales the result into HD's 768 x 1024 frame, like the football HD layer.
+it draws at the X1i's 480 x 650 game area, then scales that up by a whole number with nearest-neighbour pixels, as
+the translator scales New Rules' backgrounds and portraits, so the player's last smoothing step down to the window
+keeps the pixel art sharp. Its layer is the whole 3:4 frame, like the football HD layer.
 Coordinates in comments and code are X1i pixels. Unverified or approximate parts are listed in NR_ARENA.md §6.
 """
 import json
@@ -14,9 +16,9 @@ import pygame
 
 SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
 FRAME = (768, 1024)
-NATIVE = (488, 650)                     # the X1i's 480 x 650 game area, widened to the frame's 3:4
+NATIVE = (489, 652)                     # the X1i's 480 x 650 game area, widened to exactly the frame's 3:4
 OX = 4                                  # where the game area sits in it
-SCREEN_WIDTH = 480
+SCREEN_WIDTH, SCREEN_HEIGHT = 480, 650     # the game area (class_6.field_325 / field_326)
 # class_13.field_618: sin(0..90 degrees) x 65536, truncated, with the table's own three roundings.
 SINE = tuple({30: 32768, 47: 47930, 90: 65535}.get(d, int(math.sin(math.radians(d)) * 65536)) for d in range(91))
 KEYPAD = '541236'                       # field_617: the number keys around the ring (765), slot order
@@ -268,8 +270,9 @@ class Skin:
 class NRArenaRenderer:
     def __init__(self, resources):
         self.resources = resources
-        self.canvas = pygame.Surface(FRAME).convert()
         self.native = pygame.Surface(NATIVE).convert()
+        self.target_height = FRAME[1]       # the frame's height in the window (Desktop sets it): the scale to reach
+        self.canvas = pygame.Surface((NATIVE[0] * 2, NATIVE[1] * 2)).convert()
         self.hd_layer = True
         self.edge_bar = 'gear'
         self.menu_focus = None            # (the action, the focused option) on New Rules' menu
@@ -365,7 +368,7 @@ class NRArenaRenderer:
             if variant in (1, 2):
                 return skin.nodes[items[variant - 1]]
             return skin.nodes[labels[min(variant, 2)]]
-        return pygame.Rect(OX, 0, SCREEN_WIDTH, NATIVE[1])
+        return pygame.Rect(OX, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
 
     def _point(self, arena, ring, place, vertical=1, x_from=0, y_from=0):
         """method_462: a slot's point, or an anchor's (its centre, its bottom with vertical 1)."""
@@ -376,7 +379,7 @@ class NRArenaRenderer:
         if place == -12:
             return x_from, 0
         if place == -11:
-            return x_from, NATIVE[1] - 22
+            return x_from, SCREEN_HEIGHT - 22
         rect = self._anchor(arena, place)
         y = rect.y + (rect.height if vertical == 1 else rect.height // 2 if vertical == 0 else 0)
         return rect.x + rect.width // 2, y
@@ -414,7 +417,11 @@ class NRArenaRenderer:
         if action is not None and action.name in ('arena_menu', 'arena_info'):
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
             self._overlay(surface, action, now)
-        pygame.transform.smoothscale(surface, FRAME, self.canvas)
+        k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
+        size = (NATIVE[0] * k, NATIVE[1] * k)
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+        pygame.transform.scale(surface, size, self.canvas)
         return []
 
     def _paint(self, surface, arena, session, now):
@@ -466,7 +473,7 @@ class NRArenaRenderer:
         if flash is not None and arena.flash_ms[box] > 0:
             text = flash if arena.flash_ms[box] // 350 % 2 else None
         if text:
-            rect.height = min(rect.height, NATIVE[1] - rect.y)
+            rect.height = min(rect.height, SCREEN_HEIGHT - rect.y)
             clip = surface.get_clip()
             surface.set_clip(rect)
             self.font(ITEM_FONT).draw_box(surface, text, rect, 26)
@@ -669,22 +676,21 @@ class NRArenaRenderer:
                 self._item(surface, arena, popup.value, arena.item_kind, x, y, -1, popup.tint)
 
     def _bubble(self, surface, arena, ring, text, slot, flags, now):
-        """method_449: a bubble (layout 70) centred, or by a slot (flags 1) below it, above it with 2, and with 4 a
-        pointer at the slot."""
+        """method_449: a bubble (layout 70) centred, or by a slot or a layout anchor (flags 1: method_462, as for a
+        popup's ends) below it, above it with 2, and with 4 a pointer at it."""
         font = self.font(ITEM_FONT)
         width = min(SCREEN_WIDTH - 36 - 30, 340)
         lines = font.lines(text, width)
         height = font.block_height(len(lines)) + 33
         box_width = max((font.line_width(line) for line in lines), default=0) + 30
         x = OX + (SCREEN_WIDTH - box_width) // 2
-        y = (NATIVE[1] - height) // 2
+        y = (SCREEN_HEIGHT - height) // 2
         pointer, above = bool(flags & 4), bool(flags & 2)
         slot_x = 0
-        if flags & 1 and 0 <= slot < len(arena.slots):
+        if flags & 1 and (slot < 0 or slot < len(arena.slots)):
             gap = 6 + (34 - (4 if above else 0) if pointer else 0)
-            _, slot_y = self._slot_point(arena, ring, slot, vertical=2 if above else 1)
+            slot_x, slot_y = self._point(arena, ring, slot, vertical=2 if above else 1)
             y = slot_y - height - gap if above else slot_y + gap
-            slot_x, _ = self._slot_point(arena, ring, slot)
             if pointer:
                 if slot_x - 18 < x + 24:
                     x = slot_x - 18 - 24
@@ -708,7 +714,7 @@ class NRArenaRenderer:
         row = font.height + font.gap                       # method_88
         height = font.block_height(len(lines)) + 33 + (len(options) * row + 8 if options else 0)
         box_width = width + 30
-        x, y = OX + (SCREEN_WIDTH - box_width) // 2, (NATIVE[1] - height) // 2
+        x, y = OX + (SCREEN_WIDTH - box_width) // 2, (SCREEN_HEIGHT - height) // 2
         self.skin().layout(surface, 70, pygame.Rect(x, y, box_width, height))
         font.draw(surface, title or '', x + 15, y + 17, width, 3)
         top = y + 17 + font.block_height(len(lines)) + 8
