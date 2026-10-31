@@ -762,6 +762,19 @@ class CasingTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_NUMPY, 'tools/translate/midi_render.py needs numpy')
+@unittest.skipUnless(HAS_PIL, 'Pillow is not installed')
+class ArenaSkinTests(unittest.TestCase):
+    def test_a_new_rules_font_reads_its_metrics_and_glyphs(self):
+        import nr_arena_art
+        # space 8, gap 1, track -2, two characters (A, B) 12 high; two colours; A is 2 x 1 (clear, red), B empty.
+        data = (bytes([8, 1, 0xFE]) + struct.pack('>h', 2) + bytes([12]) + b'AB' + struct.pack('>h', 2)
+                + bytes([0, 0, 0, 255, 0, 0]) + struct.pack('>h', 2) + bytes([2, 1, 0, 1, 0]))
+        font = nr_arena_art.read_font(data)
+        self.assertEqual((font['space'], font['gap'], font['track'], font['height']), (8, 1, -2, 12))
+        self.assertEqual(sorted(font['glyphs']), [ord('A')])
+        self.assertEqual(list(font['glyphs'][ord('A')].getdata()), [(0, 0, 0, 0), (255, 0, 0, 255)])
+
+
 class MidiTests(unittest.TestCase):
     def test_notes_and_tempo(self):
         import midi_render

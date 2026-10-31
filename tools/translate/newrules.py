@@ -42,7 +42,7 @@ FRAME_BACKDROP = 26999
 ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 1
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 # New Rules' minigame arena drawn from the X1i build's art (nr_arena_art.build_skin), after the backgrounds (26000-26173)
-# and below the episodes' own portraits (26200 on): the shs profile's NR_ARENA_SKIN names the same IDs.
+# and below the episodes' own portraits (26200 on): the player's desktop_nr_arena.SKIN names the same IDs.
 ARENA_SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
 # The SHS picture each title card (30) shows instead of its stretched New Rules strip, by (download id, script, PC of

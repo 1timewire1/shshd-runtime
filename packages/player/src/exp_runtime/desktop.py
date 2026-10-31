@@ -30,6 +30,7 @@ except ImportError:
     HdFootballRenderer = HdWordRenderer = None
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
+from .desktop_nr_arena import NRArenaRenderer
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -144,6 +145,13 @@ class _UntimedChoice:
         return getattr(self.real_session, name)
 
 
+# New Rules' minigame arena (desktop_nr_arena.py): its frames, its menu and its info box draw over it.
+ARENA_ACTIONS = ('arena_frame', 'arena_menu', 'arena_info')
+# Keys as New Rules' Nokia key codes (nr_arena.KEY_BITS): OK / fire, the joystick, the right soft key.
+ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, pygame.K_UP: -1, pygame.K_DOWN: -2,
+              pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
+ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
+                     **{getattr(pygame, f'K_KP{n}'): 48 + n for n in range(10)}}
 # Football's nine plays (football.py SLOTS: three rows of three, top left first) by controller position (owner,
 # 2026-10-29): the face buttons are the edges' middles, the triggers the top corners, the bumpers the bottom corners
 # and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
@@ -301,6 +309,7 @@ class Desktop:
             self.football_renderer = FootballRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
+        self.nr_arena_renderer = NRArenaRenderer(session.resources)
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
         self.tree_fling, self.wall_fling = momentum.Fling(momentum.RATE_FAST), momentum.Fling()
@@ -1049,7 +1058,7 @@ class Desktop:
         details = action.details if action else {}
         ask = self._host_prompt()
         closed = self._ui_closed(action)
-        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
+        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input', *ARENA_ACTIONS) and not self.error:
             try:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
                 # reads and (pre-caching) re-decompressed an HD resource -- for the one the dict ends up
@@ -1063,6 +1072,7 @@ class Desktop:
                     'message_panel': message, 'survey_confirmation': message,
                     'presentation': self._title_renderer,
                     'text_input': lambda: self.input_renderer,
+                    **{name: (lambda: self.nr_arena_renderer) for name in ARENA_ACTIONS},
                 }
                 renderer = selectors[action.name]()
                 options = (dict(error=self.input_error,
@@ -2268,6 +2278,10 @@ class Desktop:
                     self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
+            elif kind == 'arena_key' and action and action.name == 'arena_frame':
+                self.session.arena_press(command[1])
+            elif kind == 'arena_answer' and action and action.name in ('arena_menu', 'arena_info'):
+                self._attempt(lambda: self.session.answer(command[1]))
         self._sync_text_input()
 
     def _continue_guarded(self, action):
@@ -2350,7 +2364,7 @@ class Desktop:
             return True                         # the menu is zooming out after Resume: input waits for the story
         if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
             return True
-        if event.type == pygame.KEYDOWN and (self._football_key(event) or self._grid_key(event)):
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2418,6 +2432,20 @@ class Desktop:
                         self.command(('choose', index))
             return True
         asking = self.host_prompt is not None and self.host_prompt['action'] is action
+        if (action and action.name in ARENA_ACTIONS and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            # New Rules' arena fills the frame: its on-screen buttons, the number keys around the ring (765) and the
+            # menu's options take clicks; the gear, bottom left, opens the pause menu as on football's frame.
+            frame = self.bg_viewport
+            x = (event.pos[0] - frame.x) * 768 / frame.width
+            y = (event.pos[1] - frame.y) * 1024 / frame.height
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                command = self.nr_arena_renderer.hit((x, y))
+                if command is not None:
+                    self.command(command)
+            return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             if self._football().__class__ is HdFootballRenderer:
@@ -2701,6 +2729,32 @@ class Desktop:
                 return
             self.notice_focus = None
             self.notice_stack.press(self.notice_data.action((focus or targets[0])[1]))
+
+    def _arena_key(self, event):
+        """New Rules' arena by keys (a controller's arrive as these, gamepad.py): Enter / Space (a controller's
+        confirm) are its OK, the arrows its joystick, Backspace its right soft key and 0-9 its number keys; on its menu
+        the arrows move the highlight and Enter picks. Escape stays the pause menu. True when the key was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ARENA_ACTIONS or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        key = event.key
+        if action.name == 'arena_frame':
+            code = ARENA_KEYS.get(key)
+            if code is None:
+                code = ARENA_NUMBER_KEYS.get(key)
+            if code is None:
+                return False
+            self.command(('arena_key', code))
+            return True
+        if action.name == 'arena_menu' and key in (pygame.K_UP, pygame.K_DOWN):
+            self.nr_arena_renderer.move_focus(action, -1 if key == pygame.K_UP else 1)
+            return True
+        if key in KEYS_ACTIVATE:
+            focus = self.nr_arena_renderer.focus(action)
+            self.command(('arena_answer', focus if focus is not None else 0))
+            return True
+        return False
 
     def _football_input(self):
         action = self.session.pending

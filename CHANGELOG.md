@@ -15,6 +15,9 @@
     music, the frame backdrop), and `--addon` builds the translations against it. The 50 New Rules episodes shrink
     from 299 MB to 91 MB in all, the 44 MB addon included; their scripts and every picture and track are unchanged.
   - **Not yet:** Sync Devices doesn't send addons yet, and the creator doesn't offer them yet.
+- **New Rules' minigame arena (in progress, local branch).** The arena panel runs New Rules' own minigame library
+  beside the story, and the player draws it from the New Rules addon's skin: the X1i build's own art, fonts and
+  layouts (`desktop_nr_arena.py`). Keys, a controller and clicks play it. No translated story calls it yet.
 - **Cause of Death shows 64 of its backgrounds in HD** when you also have SHS HD. Many CoD locations are SHS HD
   backgrounds at half size. On its first preparation, a CoD library copies them from your own SHS library's HD
   episodes and the linked SHS HD bundle, in about 17 seconds. Where CoD changed a picture, the HD copy gets the

@@ -119,8 +119,8 @@ def background_tile(source):
 
 # -- the skin the player draws from ---------------------------------------------------------------------------------
 # Layouts the player draws itself, at sizes that change: the text item box (25, `o.a(25)`), the bubble (70) and the
-# dials (33 timer, 34 score), with the layouts they nest.
-DRAWN_LAYOUTS = (25, 33, 34, 70)
+# dials (33 timer, 34 score), with the layouts they nest; 27 is a menu's highlighted row (class_6.method_239).
+DRAWN_LAYOUTS = (25, 27, 33, 34, 70)
 # Layout 31's nodes the panel places things at (node_rect numbering), and layout 66's.
 ARENA_NODES = {'field': 76, 'wide': 88, 'band': 47, 'ok': 77, 'second': 72, 'left': 78, 'right': 79, 'hint': 87,
                'hud1_label': 82, 'hud1_item': 83, 'hud1_label_alt': 84, 'hud1_item_alt': 85, 'hud1_text': 86,
@@ -131,8 +131,47 @@ BAND_NODES = {'hud0_label': 11, 'hud0_item': 12, 'hud0_label_alt': 13, 'hud0_ite
 # Where a marker sits on the score dial for each meter value (class_13's static tables), X1i pixels.
 MARKER_X = (43, 50, 51, 45, 32, 20, 9, 9, 16, 29)
 MARKER_Y = (11, 21, 36, 46, 52, 50, 38, 20, 11, 7)
-BUTTON_COLOURS = dict(right=0x33FF33, wrong=0xFF3333, idle=0x9966FF, pressed=0x66CCCC, alternate=0xFFA033)
+# A button's fill under its picture (class_13's paint): while pressed, OK's and the second's feedback (708) green or red;
+# else orange in the alternate style (buttons bit 0), or light purple while pressed and dark when not.
+BUTTON_COLOURS = dict(right=0x33FF33, wrong=0xFF3333, pressed=0x9966FF, idle=0x6600CC, alternate=0xFF9933)
 METER_SLOT, TIMER_SLOT = 4, 2           # pack 146 (meter, markers, plates, hint) and pack 83 (the timer's 17 steps)
+MENU_SLOT = 0                           # pack 4 (class_6.field_202): a menu's arrow and bullets
+BUBBLE_SLOT = 8                         # pack 123 (class_6.field_209): the bubble's frame and its pointer sequences
+# The panel's fonts (class_6's boot sequence: t.a(InputStream, extra)), resource -> the extra pixels each glyph advances.
+# 56 is field_229 and, after the boot swaps it in, field_231 too; 61 is field_232 (the score digits); 59 is field_230;
+# 57 is field_234 (the info box). An item's font byte picks 0 -> 56, 1 -> 61, 2 -> 59, 3 -> 56 (o.a(t)).
+FONTS = {56: 0, 57: 0, 59: 1, 61: 0}
+ITEM_FONTS = (56, 61, 59, 56)
+SCORE_FONT, INFO_FONT = 61, 57
+
+
+def read_font(data):
+    """A New Rules bitmap font (t.a(InputStream, int)): the space width, line gap, tracking (signed), glyph height and
+    {character code: RGBA glyph} (palette index 0 is clear)."""
+    import struct
+    space, gap, track, count, height = struct.unpack_from('>BBbhB', data, 0)
+    at = 6
+    chars = data[at:at + count]
+    at += count
+    (colours,) = struct.unpack_from('>h', data, at)
+    palette = data[at + 2:at + 2 + colours * 3]
+    at += 2 + colours * 3
+    (total,) = struct.unpack_from('>h', data, at)
+    at += 2
+    glyphs = {}
+    for code in chars[:total]:
+        width = data[at]
+        at += 1
+        if width == 0:
+            continue
+        rows = data[at]
+        pixels = data[at + 1:at + 1 + width * rows]
+        at += 1 + width * rows
+        image = Image.new('RGBA', (width, rows), (0, 0, 0, 0))
+        image.putdata([(0, 0, 0, 0) if i == 0 else (palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2], 255)
+                       for i in pixels])
+        glyphs[code] = image
+    return dict(space=space, gap=gap, track=track, height=height, glyphs=glyphs)
 
 
 def _group_image(pack, index):
@@ -214,6 +253,25 @@ def build_skin(source):
             add(f'slot/{slot}/{frame}', _group_image(packs[slot], frame))
     for name, node in (('ok', 1), ('second', 0), ('left', 2), ('right', 5)):
         add(f'button/{name}', _group_image(packs[6], node))
+    menu = packs[MENU_SLOT]
+    for step, index in enumerate(menu.sequences[0] if menu.sequences else ()):
+        add(f'menu/arrow/{step}', _group_image(menu, index))       # the highlighted option's arrow, 200 ms a step
+    add('menu/bullet', _group_image(menu, 0))                       # the other options' square
+    dials = nr_art.Pack(source[DIAL_PACK], source)
+    for f in range(min(2, len(dials.frames))):
+        add(f'dial/{f}', _group_image(dials, f))       # 0 the score dial's face, 1 the timer's
+    bubble = packs[BUBBLE_SLOT]
+    for s, sequence in enumerate(bubble.sequences[:2]):
+        for step, index in enumerate(sequence):
+            add(f'pointer/{s}/{step}', _group_image(bubble, index))
+    fonts = {}
+    for resource, extra in FONTS.items():
+        if resource not in source:
+            continue
+        font = read_font(source[resource])
+        for code, image in font.pop('glyphs').items():
+            add(f'font/{resource}/{code}', (image, (0, 0)))
+        fonts[str(resource)] = dict(font, extra=extra)
     atlas_width = 1024
     x = y = row = 0
     placed = []
@@ -233,7 +291,8 @@ def build_skin(source):
                 nodes={name: [r.x, r.y, r.width, r.height] for name, r in nodes.items() if r is not None},
                 layouts={str(k): v for k, v in layouts.items()}, colors=[c & 0xFFFFFF for c in bank.colors],
                 sprites=sprites, markers=[list(MARKER_X), list(MARKER_Y)], buttons=BUTTON_COLOURS,
-                background=dict(period=128, step_ms=100))
+                background=dict(period=128, step_ms=100), fonts=fonts, item_fonts=list(ITEM_FONTS),
+                score_font=SCORE_FONT, info_font=INFO_FONT)
     return {'skin.json': json.dumps(skin, separators=(',', ':')).encode('utf-8'),
             'static.png': nr_art.png(compose(source)), 'tile.png': nr_art.png(background_tile(source)),
             'atlas.png': nr_art.png(atlas)}
