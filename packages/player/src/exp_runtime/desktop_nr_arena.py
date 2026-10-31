@@ -459,22 +459,21 @@ class NRArenaRenderer:
             surface = self.native
             step = now // 100 % 128
             Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, NATIVE[0] + 256, NATIVE[1] + 256))
-        # New Rules draws within its 480-pixel screen: nothing spills into the frame's few columns either side. (The
-        # table's base runs on to the frame's bottom, past the X1i's 650 rows: nr_arena_art._extend_base.)
-        surface.set_clip(pygame.Rect(OX, 0, SCREEN_WIDTH, NATIVE[1]))
+        # The table and the bands run on past New Rules' 480 x 650 screen to the frame's edges (its few columns either
+        # side, and the base's added row: nr_arena_art._extend_base), rather than stopping short of them.
         if moving and arena.leaving:
             # Leaving is transition -4 run backwards: the entrance's tracks from their end, the table on curve 1.
             self._entrance(surface, ENTRANCE_MS - arena.exit_ms, table_curve=1)
         elif moving:
             self._entrance(surface, arena.entrance_ms)
         else:
-            surface.blit(skin.static, (OX, 0))
+            origin = skin.spec.get('static_origin', (0, 0))
+            surface.blit(skin.static, (OX + origin[0], origin[1]))
         if arena is not None and not moving:
             self._paint(surface, arena, session, now)
         if action is not None and action.name in ('arena_menu', 'arena_info'):
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
             self._overlay(surface, action, now)
-        surface.set_clip(None)
         k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
         size = (NATIVE[0] * k, NATIVE[1] * k)
         if self.canvas.get_size() != size:

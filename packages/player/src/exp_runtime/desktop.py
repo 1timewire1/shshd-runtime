@@ -152,6 +152,9 @@ ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, py
               pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
 ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
                      **{getattr(pygame, f'K_KP{n}'): 48 + n for n in range(10)}}
+# After New Rules' exit the arena's last picture (the bare frame) fades out over the story's next screen, rather than
+# cutting to it (owner, 2026-10-30; this player's own, as New Rules shows the next screen at once).
+ARENA_HANDOVER_MS = 400
 # Football's nine plays (football.py SLOTS: three rows of three, top left first) by controller position (owner,
 # 2026-10-29): the face buttons are the edges' middles, the triggers the top corners, the bumpers the bottom corners
 # and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
@@ -988,6 +991,24 @@ class Desktop:
         ms = pygame.time.get_ticks() - fade['since']
         self._draw_cover(fade['kind'], scene_fade.coverage(fade['kind'], fade['phase'], ms))
 
+    def _draw_arena_handover(self):
+        """The arena's last picture fading out over the screen that follows it (ARENA_HANDOVER_MS)."""
+        handover = getattr(self, 'arena_handover', None)
+        action = self.session.pending
+        if (handover is None or (action is not None and action.name in ARENA_ACTIONS)
+                or not hasattr(self, 'bg_viewport')):
+            return
+        now = pygame.time.get_ticks()
+        if handover['since'] is None:
+            handover['since'] = now
+        ms = now - handover['since']
+        if ms >= ARENA_HANDOVER_MS or self.capture:
+            self.arena_handover = None
+            return
+        if handover['scaled'] is None or handover['scaled'].get_size() != self.bg_viewport.size:
+            handover['scaled'] = pygame.transform.smoothscale(handover['layer'], self.bg_viewport.size)
+        self.window.blit(faded(handover['scaled'], round(255 * (1 - ms / ARENA_HANDOVER_MS))), self.bg_viewport)
+
     def _draw_transition(self):
         """The session's queued transition over the frame (fade_transition.FadeTransition; Android's has no layers)."""
         transition = self.session.engine.scene_transition
@@ -1096,6 +1117,8 @@ class Desktop:
                                             self.session, **options)
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
+                if action.name in ARENA_ACTIONS:
+                    self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
                 self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
                 self.pending_background_alpha = getattr(renderer, 'pending_background_alpha', 255)
@@ -1536,6 +1559,7 @@ class Desktop:
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
+        self._draw_arena_handover()
         self._draw_transition()
         if self.fade:
             self._draw_fade()

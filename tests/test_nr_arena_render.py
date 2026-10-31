@@ -193,6 +193,29 @@ class ArenaKeyTests(unittest.TestCase):
         self.key(ui, pygame.K_ESCAPE)                       # Escape still pauses
         self.assertEqual(ui.command.call_args.args[0], ('menu',))
 
+    def test_the_arenas_last_picture_fades_out_over_the_next_screen(self):
+        import pygame
+        from unittest.mock import patch
+        from exp_runtime.desktop import ARENA_HANDOVER_MS
+        ui = self.desktop('dialogue')
+        ui.capture = False
+        ui.window = pygame.Surface((200, 200))
+        ui.bg_viewport = pygame.Rect(50, 0, 100, 200)
+        layer = pygame.Surface((489, 652))
+        layer.fill((255, 255, 255))
+        ui.arena_handover = dict(layer=layer, since=None, scaled=None)
+        with patch('pygame.time.get_ticks', return_value=1000):
+            ui._draw_arena_handover()
+        self.assertGreater(ui.window.get_at((100, 100))[0], 200)       # just begun: the arena's picture still shows
+        self.assertEqual(ui.window.get_at((10, 100))[:3], (0, 0, 0))     # only over the frame
+        ui.window.fill((0, 0, 0))
+        with patch('pygame.time.get_ticks', return_value=1000 + ARENA_HANDOVER_MS * 3 // 4):
+            ui._draw_arena_handover()
+        self.assertLess(ui.window.get_at((100, 100))[0], 100)
+        with patch('pygame.time.get_ticks', return_value=1000 + ARENA_HANDOVER_MS):
+            ui._draw_arena_handover()
+        self.assertIsNone(ui.arena_handover)
+
     def test_the_menu_takes_the_arrows_and_enter_and_the_info_box_enter(self):
         import pygame
         ui = self.desktop('arena_menu', title='', options=['a', 'b'], selected=0)

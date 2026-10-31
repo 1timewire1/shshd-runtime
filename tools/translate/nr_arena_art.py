@@ -15,6 +15,9 @@ from exp_runtime.ui_assets import LayoutBank, Rect
 LAYOUT_BANK = 2
 SCREEN = (480, 650)                     # the X1i game area: 480 wide, above its 150-pixel soft-key bar (layout 86)
 STATIC_BELOW = 54                       # rows of the static screen below it, for the base's added row (_extend_base)
+# Columns of the static screen either side of it: the table and the bottom band reach past New Rules' 480 pixels, and
+# the player's frame is a few wider, so they run on to its edges rather than stopping short (owner, 2026-10-30).
+STATIC_MARGIN = 8
 # The UI packs in the layout bank's image slots (class_6.method_185, method_247 and the boot sequence), with the RGB565
 # tint each is loaded with: New Rules' default theme (method_184(true); King of Diss never changes it, service 38).
 THEME = (15154, -166, -2416, -2416, -567, -342)
@@ -175,17 +178,19 @@ def _count(bank, layout_id):
 
 
 def compose(source, show=(), hide=()):
-    """The arena's static screen (SCREEN and STATIC_BELOW rows under it, RGBA): layout 31 and the top band, without
+    """The arena's static screen (SCREEN, with STATIC_MARGIN columns each side and STATIC_BELOW rows under it, RGBA;
+    the screen's origin at (STATIC_MARGIN, 0)): layout 31 and the top band, without
     the scrolling background (the player tiles it underneath). `show`: layout 31's hidden nodes to draw too; `hide`: its
     visible ones to leave out (STRIPE_NODE, where the player draws the dialogue screens' frame instead). Both are
     numbered in the extended bank (extended_bank), the same as node_rect's up to the table's base."""
     packs = slots(source)
     bank = extended_bank(source, packs)
     width, height = SCREEN
-    canvas = Image.new('RGBA', (width, height + STATIC_BELOW), (0, 0, 0, 0))
-    draw(canvas, bank, ARENA_LAYOUT, Rect(0, 0, width, height), packs, frozenset(show), frozenset(hide))
-    band = node_rect(LayoutBank.parse(source[LAYOUT_BANK]), ARENA_LAYOUT, BAND_NODE, Rect(0, 0, width, height))
-    draw(canvas, bank, BAND_LAYOUT, Rect(0, band.y, width, band.height), packs)
+    m = STATIC_MARGIN
+    canvas = Image.new('RGBA', (width + 2 * m, height + STATIC_BELOW), (0, 0, 0, 0))
+    draw(canvas, bank, ARENA_LAYOUT, Rect(m, 0, width, height), packs, frozenset(show), frozenset(hide))
+    band = node_rect(LayoutBank.parse(source[LAYOUT_BANK]), ARENA_LAYOUT, BAND_NODE, Rect(m, 0, width, height))
+    draw(canvas, bank, BAND_LAYOUT, Rect(m, band.y, width, band.height), packs)
     return canvas
 
 
@@ -373,7 +378,8 @@ def build_skin(source, backdrop=None):
                 nodes={name: [r.x, r.y, r.width, r.height] for name, r in nodes.items() if r is not None},
                 layouts={str(k): v for k, v in layouts.items()}, colors=[c & 0xFFFFFF for c in bank.colors],
                 sprites=sprites, markers=[list(MARKER_X), list(MARKER_Y)], buttons=BUTTON_COLOURS,
-                background=dict(period=128, step_ms=100), fonts=fonts, item_fonts=list(ITEM_FONTS),
+                background=dict(period=128, step_ms=100), fonts=fonts,
+                static_origin=[-STATIC_MARGIN, 0], item_fonts=list(ITEM_FONTS),
                 score_font=SCORE_FONT, info_font=INFO_FONT)
     return {'skin.json': json.dumps(skin, separators=(',', ':')).encode('utf-8'),
             'static.png': nr_art.png(compose(source, hide=() if backdrop is None else (STRIPE_NODE,))),
