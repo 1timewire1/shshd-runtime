@@ -41,6 +41,9 @@ FRAME_BACKDROP = 26999
 # revision when an ID above changes meaning; episodes need at least the revision they were built against.
 ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 1
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
+# New Rules' minigame arena drawn from the X1i build's art (nr_arena_art.build_skin), after the backgrounds (26000-26173)
+# and below the episodes' own portraits (26200 on): the shs profile's NR_ARENA_SKIN names the same IDs.
+ARENA_SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
 # The SHS picture each title card (30) shows instead of its stretched New Rules strip, by (download id, script, PC of
 # the call): a shared-bank background, which SHS HD replaces with its own HD copy (owner's picks, 2026-10-25, from the
@@ -466,14 +469,19 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
     return encode_exp(resources), report
 
 
-def build_addon(art, music=None, library=None):
+def build_addon(art, music=None, library=None, arena_source=None):
     """The New Rules addon's `.exp` bytes: every location's background in every mode, the frame backdrop and, with
     `music` (index -> MP3 bytes), every music track, at the IDs the translations use; with `library` (New Rules'
     minigame library, a KiwiProgram) its translation (translate_library) at LIBRARY, which the runtime runs beside
-    every story declaring the addon."""
+    every story declaring the addon; with `arena_source` (the X1i jar's resources) the arena's skin (ARENA_SKIN,
+    nr_arena_art.build_skin), which the player draws the arena from."""
     resources = {}
     if library is not None:
         resources[LIBRARY] = translate_library(library).to_bytes()
+    if arena_source is not None:
+        import nr_arena_art
+        for name, data in nr_arena_art.build_skin(arena_source).items():
+            resources[ARENA_SKIN[name]] = data
     for location in range(len(nr_art.LOCATIONS)):
         for mode in range(MODES):
             resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))

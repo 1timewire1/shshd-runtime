@@ -140,12 +140,12 @@ class Pack:
         if flags & 64:
             small = r.u8() != 0
             atlas = [r.u8() if small else r.s16() for _ in range(nframes * 4)]
+        self.sequences = []                 # animations: frame (or group) indices, as q.a(v, sequence, step, x, y) draws
         sequences = r.s8()
         if sequences > 0:
-            r.s16(); r.s16()
+            base = r.s16(); r.s16()
             for _ in range(sequences):
-                for _ in range(r.s8()):
-                    r.s16() if flags & 4 else r.s8()
+                self.sequences.append([base + (r.s16() if flags & 4 else r.s8()) for _ in range(r.s8())])
         ngroups = r.s16(); r.s16()
         self.groups = []
         for _ in range(ngroups):
