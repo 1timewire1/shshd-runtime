@@ -935,10 +935,11 @@ class Desktop:
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
                                            self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_slot'
-                and self.minigame_played is not action and not self.error):
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             # shshd-runtime: the X360's slot machine offers each outcome its story has.
             outcomes = x360_slot_outcomes(self.session)
             options, points = arena_skip_options(outcomes)
+            options = tuple(option.replace(' or more', '') for option in options)       # (5 is all there is)
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
                                        lambda index: self._resolve_x360_slot(action, points, index))
         if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
@@ -983,6 +984,7 @@ class Desktop:
             return
         if index >= len(points):
             self.minigame_played = action
+            self.session.engine.x360_slot.start()       # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_x360_slot(points[index]))
 

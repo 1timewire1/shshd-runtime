@@ -105,7 +105,7 @@ def steps(s, answers, name, limit, record):
             record.append(dict(kind=kind))
             while s.pending is not None and s.pending.name == kind:      # takes every bulb it sees
                 game = s.engine.x360_slot
-                if game.focus == game.slot and game.option == 0:
+                if game.phase == 'ready' or (game.focus == game.slot and game.option == 0):
                     s.answer(None)
                 action = s.tick(33)
         elif kind in ('word_game', 'football', 'word_grid'):

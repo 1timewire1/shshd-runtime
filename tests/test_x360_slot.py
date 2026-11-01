@@ -16,7 +16,8 @@ from test_vm import program
 
 def running():
     game = SlotMachine()
-    game.tick(slot.OPENING_MS)                  # the opening's over and the clock starts...
+    game.tick(slot.OPENING_MS)                  # the opening's over...
+    game.press()                                # ...the player says go and the clock starts...
     game.tick(1)                                # ...and slot 1 comes into focus
     return game
 
@@ -32,14 +33,31 @@ class RulesTests(unittest.TestCase):
     def test_each_slot_cycles_faster_as_ms3_has_it(self):
         self.assertEqual([slot.period_ms(n) for n in range(1, 6)], [500, 357, 255, 182, 130])
 
-    def test_it_opens_for_half_a_second_before_the_clock_starts_and_presses_do_nothing_then(self):
+    def test_it_opens_for_half_a_second_and_presses_do_nothing_then(self):
         game = SlotMachine()
-        self.assertFalse(game.press())
+        self.assertFalse(game.press())                          # (one left over from the dialogue can't start it)
         game.tick(499)
-        self.assertEqual((game.phase, game.clock_ms), (slot.OPENING, 0))
+        self.assertEqual((game.phase, game.started), (slot.OPENING, False))
         game.tick(1)
-        self.assertEqual(game.phase, slot.RUNNING)
-        self.assertEqual(game.sounds, [slot.SOUND_TIMER])       # the clock's tick starts with it
+        self.assertEqual(game.phase, slot.READY)
+
+    def test_the_clock_waits_for_a_press_however_long_it_takes(self):
+        game = SlotMachine()
+        game.tick(slot.OPENING_MS)
+        self.assertFalse(run(game, 60000, 250))
+        self.assertEqual((game.phase, game.clock_ms, game.focus, game.sounds), (slot.READY, 0, -1, []))
+        self.assertTrue(game.press())
+        self.assertEqual((game.phase, game.points, game.sounds), (slot.RUNNING, 0, [slot.SOUND_TIMER]))
+        game.tick(1)
+        self.assertEqual((game.clock_ms, game.focus, game.option), (1, 1, slot.BULB))
+
+    def test_the_skip_prompts_play_is_its_go_ahead(self):
+        game = SlotMachine()
+        self.assertTrue(game.start())
+        self.assertEqual(game.phase, slot.OPENING)
+        game.tick(slot.OPENING_MS)
+        self.assertEqual((game.phase, game.sounds), (slot.RUNNING, [slot.SOUND_TIMER]))
+        self.assertFalse(game.start())
 
     def test_the_slot_in_focus_cycles_bulb_cross_question(self):
         game = running()
@@ -50,7 +68,7 @@ class RulesTests(unittest.TestCase):
         self.assertEqual(seen, [slot.BULB, slot.CROSS, slot.QUESTION, slot.BULB, slot.CROSS])
         self.assertEqual(game.shown[1:], [slot.OFF] * 4)
 
-    def test_a_bulb_scores_and_moves_on_a_cross_loses_and_moves_on_a_question_stays(self):
+    def test_a_bulb_scores_and_moves_on_a_cross_just_moves_on_a_question_stays(self):
         game = running()
         self.assertTrue(game.press())                           # a bulb
         self.assertEqual((game.points, game.slot, game.sounds[-1]), (1, 2, slot.SOUND_SUCCESS))
@@ -58,7 +76,7 @@ class RulesTests(unittest.TestCase):
         run(game, 510)
         self.assertEqual(game.option, slot.CROSS)
         game.press()
-        self.assertEqual((game.points, game.slot, game.sounds[-1]), (-1, 2, slot.SOUND_MISS))
+        self.assertEqual((game.points, game.slot, game.sounds[-1]), (0, 2, slot.SOUND_MISS))
         game = running()
         run(game, 1010)
         self.assertEqual(game.option, slot.QUESTION)
@@ -115,11 +133,16 @@ class RulesTests(unittest.TestCase):
         run(game, slot.TIMER_LOOP_MS * 3 + 10)
         self.assertEqual(game.sounds, [slot.SOUND_TIMER] * 3)
 
-    def test_crosses_can_take_it_below_zero(self):
-        game = running()
-        run(game, 510)
-        game.press()
-        self.assertEqual(game.result, -1)
+    def test_any_score_can_be_reached_by_finishing(self):
+        # MS3's -1 for a cross left only odd totals (owner, 2026-11-01).
+        for bulbs in range(slot.SLOTS + 1):
+            game = running()
+            for taken in range(slot.SLOTS):
+                while game.focus != game.slot or game.option != (slot.BULB if taken < bulbs else slot.CROSS):
+                    game.tick(1)
+                game.press()
+            self.assertFalse(run(game, 700))
+            self.assertEqual((game.phase, game.result), (slot.CLOSING, bulbs))
 
 
 def resources(code):
@@ -142,6 +165,7 @@ class ServiceTests(unittest.TestCase):
         session = self.play()
         session.tick(250)
         session.tick(250)                                       # (a long gap counts as 250 ms)
+        session.answer(None)                                    # the go-ahead
         session.tick(1)
         session.answer(None)
         self.assertEqual(session.engine.x360_slot.points, 1)
@@ -150,6 +174,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_it_ends_and_the_story_goes_on_without_it(self):
         session = self.play()
+        session.engine.x360_slot.start()
         for _ in range(800):
             if session.pending is None or session.pending.name != 'x360_slot':
                 break
@@ -161,6 +186,7 @@ class ServiceTests(unittest.TestCase):
         session = self.play()
         session.tick(250)
         session.tick(250)
+        session.answer(None)
         session.tick(1)
         session.answer(None)
         session.tick(240)
@@ -181,6 +207,11 @@ class ServiceTests(unittest.TestCase):
     def test_the_skip_hands_the_story_those_points(self):
         session = self.play()
         self.assertTrue(session.minigame_unstarted)
+        session.engine.x360_slot.tick(slot.OPENING_MS)
+        self.assertTrue(session.minigame_unstarted)             # still, while it waits for the go-ahead
+        session.answer(None)
+        self.assertFalse(session.minigame_unstarted)
+        session = self.play()
         session.skip_x360_slot(3)
         self.assertIsNone(session.engine.x360_slot)
         session = self.play()
@@ -229,9 +260,13 @@ class PlayerTests(unittest.TestCase):
         renderer.draw(session)
         self.assertEqual(renderer.canvas.get_size(), FRAME)      # the 3:4 layer Desktop._present lays over the frame
         game.tick(slot.OPENING_MS)
+        renderer.draw(session)
+        waiting = renderer.canvas.get_bounding_rect()
+        game.press()
         game.tick(1)
         renderer.draw(session)
         self.assertGreater(renderer.canvas.get_bounding_rect().height, 300)
+        self.assertLess(waiting.top, renderer.canvas.get_bounding_rect().top)   # the prompt sits above the title
         self.assertIsNone(renderer.alpha(game))
         game.phase, game.phase_ms = slot.TIME_UP, 1500
         renderer.draw(session)
@@ -282,7 +317,11 @@ class PlayerTests(unittest.TestCase):
             ui.bg_viewport = frame = pygame.Rect(100, 20, 384, 512)     # (where the story last drew)
             game = session.engine.x360_slot
             for _ in range(3):
-                session.tick(250)                               # the opening's over and slot 1 is in focus
+                session.tick(250)                               # the opening's over and it waits for a press
+            self.assertEqual(game.phase, slot.READY)
+            ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=frame.center))
+            self.assertEqual(game.phase, slot.RUNNING)
+            session.tick(1)
             self.assertEqual(game.focus, 1)
             ui.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=frame.center))
             self.assertEqual((game.points, game.slot), (1, 2))
@@ -309,6 +348,8 @@ class PlayerTests(unittest.TestCase):
             game = session.engine.x360_slot
             for _ in range(3):
                 session.tick(250)
+            ui.handle_event(key_event(menu_key('south', 'south'), 'south'))
+            session.tick(1)
             ui.handle_event(key_event(menu_key('south', 'south'), 'south'))
             self.assertEqual((game.points, game.slot), (1, 2))
 

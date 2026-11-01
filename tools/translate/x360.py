@@ -179,7 +179,7 @@ BUTTON_SMASH = {'good': ['(Got it.)', '(Nice grip, dude!)'], 'bad': ['(Ow my fin
                 'duration_ms': 15000, 'refresh_ms': 1400, 'result': 'leash'}
 # The word game in 15 s makes the X360's scores too easy (owner, 2026-10-27), so its score is mapped onto the
 # script's: 5 or better is the slot machine's best (choice 3: the pound), 3-4 its middle (2: the river), less fails
-# (0); the leash is held at 5 or better.
+# (0); the leash is held at 5 or better. The real slot machine's bulbs are mapped the same way (owner, 2026-11-01).
 SLOT_MACHINE_LEVELS = ((5, 3), (3, 2))  # (word game score at least, the script's choice points)
 BUTTON_SMASH_WIN = 5                    # the leash held: this score or better
 
@@ -725,21 +725,21 @@ class Builder:
 
     def minigame(self, name):
         """Dating Beth's slot machine and leash power bar, as SHS word games (SLOT_MACHINE, BUTTON_SMASH), whose
-        score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS, the leash won (1) at
-        BUTTON_SMASH_WIN or better."""
+        score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS (the real one's bulbs too,
+        where the player has it and its switch is on), the leash won (1) at BUTTON_SMASH_WIN or better."""
         real = []
         if name == 'gameSHS.RunSlotMachineMinigame':
             game, levels, below = SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0
-            # The real one where the player has it and its switch is on; its points are the script's own.
             self.add('minigames_available', params={'result': 'real_minigames'})
             test = self.add('branch', params={'expression': '(real_minigames == 1)'})
             self.pending = [(test.id, 'next')]
-            self.add('x360_slot', params={'result': 'choice'})
+            self.add('x360_slot', params={'result': game['result']})
             real = self.pending
             self.pending = [(test.id, 'otherwise')]
         else:
             game, levels, below = BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0
         self.add('word_game', params=dict(game))
+        self.pending += real
         ends = []
         for least, points in levels:            # the first level the score reaches
             test = self.add('branch', params={'expression': f"({game['result']} >= {least})"})
@@ -748,7 +748,7 @@ class Builder:
             ends += self.pending
             self.pending = [(test.id, 'otherwise')]
         self.add('set', variable='choice', params={'expression': str(below)})
-        self.pending += ends + real
+        self.pending += ends
 
     def dialogue_closed(self):
         """CLOSE_SOUND, once a dialogue that said something closes. A notice after it still goes ahead of the line."""

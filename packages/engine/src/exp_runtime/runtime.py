@@ -383,7 +383,7 @@ class Session:
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
         if action.name == 'x360_slot':
-            return game.clock_ms == 0 and game.phase == 'opening' and game.points == 0
+            return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
     def start_minigame(self):

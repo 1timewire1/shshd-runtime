@@ -8,7 +8,8 @@ import math
 
 from . import graphics as pygame
 from .desktop_nr_arena_x360 import BMFont, addon_skin
-from .x360_games import CLOSING, CROSS, BULB, FLASH_MS, OFF, OPENING, OPENING_MS, QUESTION, SLOTS, TIME_UP, DURATION_MS
+from .x360_games import (BULB, CLOSING, CROSS, DURATION_MS, FLASH_MS, OFF, OPENING, OPENING_MS, QUESTION, READY, SLOTS,
+                         TIME_UP)
 
 FRAME = (768, 1024)
 PANEL = (20, 590, 728, 328)
@@ -18,6 +19,7 @@ WINDOW = (120, 144)
 CLOCK_CENTRE, CLOCK_SIZE, CLOCK_FACE = (705, 592), 92, 31
 CLOCK_FACE_DROP = 3                     # the ring's centre sits below its picture's, under the crown
 TITLE, TITLE_Y, TITLE_HEIGHT = 'Hit the light bulbs!', 556, 40
+START_TEXT, START_Y, START_HEIGHT = 'Press OK to start', 480, 52   # Diss Practice's words, here for the clock's wait
 TIME_UP_TEXT, TIME_UP_Y, TIME_UP_HEIGHT = "Time's Up!", 420, 70
 TIME_UP_PULSE_MS = 800                  # bubbles/minigames/timeup: 1.5 to 2 and back, 0.4 s each way
 ENTER_MS, ENTER_RISE = OPENING_MS, 420  # choice/enter_from_bottom
@@ -91,6 +93,9 @@ class X360SlotRenderer:
         self._clock(surface, spec, game, rise)
         title = self.text(spec, TITLE, TITLE_HEIGHT)
         surface.blit(title, title.get_rect(center=(FRAME[0] // 2, TITLE_Y + rise)))
+        if game.phase == READY:
+            start = self.text(spec, START_TEXT, START_HEIGHT)
+            surface.blit(start, start.get_rect(center=(FRAME[0] // 2, START_Y)))
         if game.phase == TIME_UP:
             into = (3000 - game.phase_ms) % TIME_UP_PULSE_MS / TIME_UP_PULSE_MS
             size = 1.5 + 0.5 * (1 - abs(1 - 2 * into))

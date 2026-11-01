@@ -209,8 +209,8 @@ def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
 
 
 def x360_slot_outcomes(session, *, max_steps=6000, max_panels=30):
-    """shshd-runtime: the outcomes of the X360 slot machine about to start, for its skip prompt: its points 0 to 5 (below
-    0 goes the way 0 does in the one story that has it). Dating Beth's has three, passing at 2 and at 3."""
+    """shshd-runtime: the outcomes of the X360 slot machine about to start, for its skip prompt: its points 0 to 5. Dating Beth's has
+    three, parting at 3 and at 5."""
     if not session.pending or session.pending.name != 'x360_slot':
         return None
 

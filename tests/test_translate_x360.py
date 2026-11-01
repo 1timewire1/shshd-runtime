@@ -248,6 +248,16 @@ QuitGame()
         self.assertIn('word_game', [event['kind'] for event in timed])
         self.assertNotIn('x360_slot', [event['kind'] for event in timed])
         self.assertIn('Oh well...', [event.get('text') for event in timed])    # the word game runs out at 0
+        # Its bulbs part where the word game's score does: 5, 3-4, and 2 or fewer.
+        from exp_runtime.choice_hints import x360_slot_outcomes
+        from playthrough import session as start
+        s = start(data)
+        action = s.advance()
+        for _ in range(50):
+            if action.name == 'x360_slot':
+                break
+            action = s.tick(1000)
+        self.assertEqual([outcome[0] for outcome in x360_slot_outcomes(s)], [0, 3, 5])
 
     def audio_art(self):
         class Art:
