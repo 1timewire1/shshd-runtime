@@ -16,7 +16,7 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 FORMAT, VERSION = 'shshd-arena-skin-x360', 1
 SPEC = 26300
-SKIN_IDS = range(26300, 26420)
+SKIN_IDS = range(26300, 26500)
 PICTURE_BASE = 26301                    # PICTURES then New Rules' outlined items, in order
 FONT_PAGE_BASE = 26360
 SOUND_BASE = 26380
@@ -34,6 +34,10 @@ DIGIT_SLOTS, DIGITS = 8, 10
 # rectangle were matched to the owner's Xenia screenshot of the title.
 TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
 PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
+SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
+# Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.
+SLOT_ICONS = (('bulb', 1), ('cross', 0), ('question', 3), ('off', 2))
+SLOT_SOUNDS = ('data/sound/gui/success.wav', 'data/sound/gui/miss.wav', 'data/sound/gui/timer.wav')
 GUI = 'data/art/gui/'
 TITLE_SIZE = (1280, 720)                # the sky and the front as stored (the textures are 512 to 1024 square)
 TITLE_CLOUDS = dict(opacity=0.35, speed=0.01)   # shader gui/menus/images/sky_clouds: ShifterSpeed 0.01 0 a second
@@ -280,6 +284,29 @@ def deck_parts(folder, parts):
                            arm=dict(atlas=PARTS_BASE + 4, frames=frames, push=arm['push']))
 
 
+def slot(files, pcm_wav):
+    """{resource ID: bytes} and the spec's `slot` entry: the slot machine's icons, panel, focus window, clock ring,
+    sounds (at x360_games.SOUND_SUCCESS...) and its labels' font, which names no page the pak has: bleeker_black."""
+    icons = _picture(files, 'data/art/hud/icons.jpg', 'data/art/hud/icons_a.jpg', None)
+    resources, entry = {}, dict(icons={})
+    for i, (name, cell) in enumerate(SLOT_ICONS):
+        left = cell % 4 * 64
+        resources[SLOT_BASE + i] = _png(icons.crop((left, cell // 4 * 64, left + 64, cell // 4 * 64 + 64)))
+        entry['icons'][name] = SLOT_BASE + i
+    for i, (name, path, alpha) in enumerate((('panel', 'data/art/hud/narrator.png', None),
+                                             ('window', 'data/art/hud/slot_window.png', None),
+                                             ('clock', 'data/art/hud/clock.jpg', 'data/art/hud/clock_a.jpg'))):
+        resources[SLOT_BASE + 4 + i] = _png(_picture(files, path, alpha, None))
+        entry[name] = SLOT_BASE + 4 + i
+    for i, path in enumerate(SLOT_SOUNDS):
+        resources[SLOT_BASE + 7 + i] = pcm_wav(files[path])
+    font, _ = read_font(files['data/art/fonts/bleeker.fnt'].decode('utf-8'))
+    font['pages'] = [SLOT_BASE + 10]
+    resources[SLOT_BASE + 10] = _png(Image.open(io.BytesIO(files['data/art/fonts/bleeker_black.png'])).convert('RGBA'))
+    entry['font'] = font
+    return resources, entry
+
+
 def title(files):
     """{resource ID: bytes} and the spec's `title` entry: the title screen's layers (TITLE_BASE). Boxes are fractions
     of the 16:9 screen; a ray glint is white, its mask as alpha, cut to what shows and packed into one atlas."""
@@ -369,6 +396,9 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
     if music:
         resources[MUSIC] = ogg_mp3(files[MUSIC_FILE])
         spec['music_track'][str(MUSIC_TRACK)] = MUSIC
+    if 'data/art/hud/narrator.png' in files:
+        made, spec['slot'] = slot(files, pcm_wav)
+        resources.update(made)
     if booth_folder is not None:
         shot, spec['booth'] = booth(booth_folder)
         resources.update(shot)

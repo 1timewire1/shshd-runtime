@@ -350,7 +350,7 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(restored.vm.snapshot(), original.vm.snapshot())
         self.assertEqual(restored.pending.details['speaker'], '')
         self.assertEqual(restored.pending.details['presentation_mode'], 4)
-        self.assertEqual(restored.snapshot()['version'], 30)
+        self.assertEqual(restored.snapshot()['version'], 31)
         self.assertEqual(restored.answer().name, 'finished')
 
 

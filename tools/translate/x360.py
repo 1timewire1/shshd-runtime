@@ -41,7 +41,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 1
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 2
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog')    # at PORTRAIT_BASE + 5 x index
@@ -727,8 +727,16 @@ class Builder:
         """Dating Beth's slot machine and leash power bar, as SHS word games (SLOT_MACHINE, BUTTON_SMASH), whose
         score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS, the leash won (1) at
         BUTTON_SMASH_WIN or better."""
+        real = []
         if name == 'gameSHS.RunSlotMachineMinigame':
             game, levels, below = SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0
+            # The real one where the player has it and its switch is on; its points are the script's own.
+            self.add('minigames_available', params={'result': 'real_minigames'})
+            test = self.add('branch', params={'expression': '(real_minigames == 1)'})
+            self.pending = [(test.id, 'next')]
+            self.add('x360_slot', params={'result': 'choice'})
+            real = self.pending
+            self.pending = [(test.id, 'otherwise')]
         else:
             game, levels, below = BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0
         self.add('word_game', params=dict(game))
@@ -740,7 +748,7 @@ class Builder:
             ends += self.pending
             self.pending = [(test.id, 'otherwise')]
         self.add('set', variable='choice', params={'expression': str(below)})
-        self.pending += ends
+        self.pending += ends + real
 
     def dialogue_closed(self):
         """CLOSE_SOUND, once a dialogue that said something closes. A notice after it still goes ahead of the line."""

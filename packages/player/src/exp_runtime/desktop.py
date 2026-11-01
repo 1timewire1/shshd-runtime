@@ -33,6 +33,7 @@ from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
 from .desktop_nr_arena_x360 import X360ArenaRenderer
+from .desktop_x360_slot import X360SlotRenderer
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -53,7 +54,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
-from .choice_hints import ARENA_RESULTS, arena_outcomes, word_game_outcomes
+from .choice_hints import ARENA_RESULTS, arena_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -380,6 +381,7 @@ class Desktop:
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
         self.nr_arena_renderer = NRArenaRenderer(session.resources)
         self.x360_arena_renderer = X360ArenaRenderer(session.resources)
+        self.x360_slot_renderer = X360SlotRenderer(session.resources)
         self._x360_arena = None             # whether the X360 addon's arena skin is there (x360_arena_switch)
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
@@ -932,6 +934,13 @@ class Desktop:
             else:
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
                                            self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_slot'
+                and self.minigame_played is not action and not self.error):
+            # shshd-runtime: the X360's slot machine offers each outcome its story has.
+            outcomes = x360_slot_outcomes(self.session)
+            options, points = arena_skip_options(outcomes)
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
+                                       lambda index: self._resolve_x360_slot(action, points, index))
         if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
             if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
                 # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
@@ -967,6 +976,15 @@ class Desktop:
         if self.session.pending is action:
             value = results[index] if index < len(results) else -1
             self._attempt(lambda: self.session.answer(value))
+
+    def _resolve_x360_slot(self, action, points, index):
+        """The slot machine's skip prompt: an outcome hands its story those points; Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(points):
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_x360_slot(points[index]))
 
     def _resolve_arena_menu(self, action, index):
         if self.session.pending is action:
@@ -1350,6 +1368,23 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
+        if action and action.name == 'x360_slot' and not ask and not closed and not self.error:
+            try:
+                engine = self.session.engine
+                renderer = self.x360_slot_renderer
+                renderer.draw(self.session)
+                self.story_layer = renderer.canvas
+                self.panel_alpha = renderer.alpha(engine.x360_slot)
+                self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed)
+                self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',))]
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Slot machine rendering stopped: %s', error)
         if closed and not self.error:
             # An answered menu, entry or picker under the closing blinds: the scene and the bottom bar alone.
             engine = self.session.engine
@@ -2572,7 +2607,7 @@ class Desktop:
             return True                         # the menu is zooming out after Resume: input waits for the story
         if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
             return True
-        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._football_key(event) or self._grid_key(event)):
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2647,6 +2682,16 @@ class Desktop:
                                       (event.pos[1] - frame.y) * 1024 / frame.height)
             if command is not None:
                 self.command(command)
+            return True
+        if (action and action.name == 'x360_slot' and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            frame = self.bg_viewport
+            x = (event.pos[0] - frame.x) * 768 / frame.width
+            y = (event.pos[1] - frame.y) * 1024 / frame.height
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                self._attempt(lambda: self.session.answer(None))
             return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
@@ -2987,6 +3032,15 @@ class Desktop:
         action = self.session.pending
         return (action is not None and action.name == 'football' and not self.menu_open and not self.error
                 and self.host_prompt is None)
+
+    def _slot_key(self, event):
+        """The slot machine takes one input: Enter, Space or a controller's confirm. True when the key was one."""
+        action = self.session.pending
+        if (action is None or action.name != 'x360_slot' or self.menu_open or self.error
+                or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
+            return False
+        self._attempt(lambda: self.session.answer(None))
+        return True
 
     def _football_key(self, event):
         """A play picked by its position (FOOTBALL_BUTTONS, FOOTBALL_KEYPAD); True when the key was one."""

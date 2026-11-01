@@ -206,6 +206,49 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
                                  music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
         self.assertFalse({a.id for a in project.assets} & {x360.MUSIC_INTRO, x360.MUSIC_LOOP})
 
+    def test_the_slot_machine_plays_real_where_the_switch_is_on_and_as_timed_choices_where_not(self):
+        # Service 70's query picks. The real one's points are the script's own; the word game's map onto them.
+        import x360
+        from exp_runtime.creator import compile_project
+        from playthrough import play
+        self.EVENTS = '''<Tongas project="t">
+    <object key="_a" type="EVENTCONFIGMASTER" name="t/one" version="1"><properties key="_a">
+    <p k="_a" n="LocationName">lot</p><p k="_a" n="Script" l="lua"><![CDATA[
+gameStats = {}
+gameStats.choice = 0
+gameSHS.RunSlotMachineMinigame("g", "e", "t", 0.5, 15, 1.4)
+if gameStats.choice >= 3 then
+    gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+    gameSHS.SetDialogText("t/won",20)
+    gameSHS.CloseDialog("bubbles/exit_from_left")
+end
+if gameStats.choice <= 1 then
+    gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+    gameSHS.SetDialogText("t/sad",20)
+    gameSHS.CloseDialog("bubbles/exit_from_left")
+end
+QuitGame()
+]]></p></properties></object></Tongas>'''
+
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        data = compile_project(x360.translate(self.prototype(), story, Art()))
+        real = play(data)                                       # (the bot takes every bulb)
+        self.assertIn('x360_slot', [event['kind'] for event in real])
+        self.assertNotIn('word_game', [event['kind'] for event in real])
+        self.assertIn('You scored.', [event.get('text') for event in real])
+        timed = play(data, arena=False)
+        self.assertIn('word_game', [event['kind'] for event in timed])
+        self.assertNotIn('x360_slot', [event['kind'] for event in timed])
+        self.assertIn('Oh well...', [event.get('text') for event in timed])    # the word game runs out at 0
+
     def audio_art(self):
         class Art:
             def background(self, location, mode):
@@ -562,7 +605,7 @@ QuitGame()
         builder = x360.Builder(self.prototype(), story)
         builder.minigame('gameSHS.RunSlotMachineMinigame')
         self.assertEqual([n.params['expression'] for n in builder.nodes if n.kind == 'branch'],
-                         ['(idea >= 5)', '(idea >= 3)'])
+                         ['(real_minigames == 1)', '(idea >= 5)', '(idea >= 3)'])
         self.assertEqual([n.params['expression'] for n in builder.nodes if n.kind == 'set'], ['3', '2', '0'])
         record = play(compile_project(project), [1])              # the word game runs out at 0: the leash is lost
         self.assertEqual([e['text'] for e in record if e['kind'] == 'line'],
@@ -812,6 +855,36 @@ class X360SkinTests(unittest.TestCase):
         atlas = Image.open(io.BytesIO(resources[entry['arm']['atlas']]))
         self.assertEqual(atlas.size, (7, 7))
         self.assertEqual(atlas.getpixel((0, 4)), (20, 0, 0, 255))
+
+    def test_the_slot_machines_art_comes_from_the_hud_with_its_labels_font(self):
+        import io
+        import x360_arena_art as art
+        from PIL import Image
+        from exp_runtime import x360_games
+
+        def png(size=(64, 64), mode='RGBA'):
+            out = io.BytesIO()
+            Image.new(mode, size, 'white').save(out, 'PNG')
+            return out.getvalue()
+        sheet = Image.new('RGB', (256, 256), (0, 0, 0))
+        sheet.paste((200, 0, 0), (0, 0, 64, 64))                # cell 0: the cross
+        out = io.BytesIO()
+        sheet.save(out, 'PNG')
+        files = {'data/art/hud/icons.jpg': out.getvalue(), 'data/art/hud/icons_a.jpg': png((256, 256), 'L'),
+                 'data/art/hud/narrator.png': png((512, 256)), 'data/art/hud/slot_window.png': png(),
+                 'data/art/hud/clock.jpg': png(), 'data/art/hud/clock_a.jpg': png(mode='L'),
+                 'data/art/fonts/bleeker.fnt': b'info face="B" size=50\ncommon lineHeight=50 base=39 pages=1\n'
+                                               b'page id=0 file="bleeker_00.png"\n'
+                                               b'char id=65 x=0 y=0 width=9 height=9 xoffset=0 yoffset=0 xadvance=9 page=0\n',
+                 'data/art/fonts/bleeker_black.png': png(),
+                 **{path: path.encode() for path in art.SLOT_SOUNDS}}
+        resources, entry = art.slot(files, lambda data: data + b' pcm')
+        self.assertTrue(all(i in art.SKIN_IDS for i in resources))
+        cross = Image.open(io.BytesIO(resources[entry['icons']['cross']])).convert('RGBA')
+        self.assertEqual((cross.size, cross.getpixel((5, 5))), ((64, 64), (200, 0, 0, 255)))
+        self.assertEqual(entry['font']['pages'], [art.SLOT_BASE + 10])
+        for path, resource in zip(art.SLOT_SOUNDS, (x360_games.SOUND_SUCCESS, x360_games.SOUND_MISS, x360_games.SOUND_TIMER)):
+            self.assertEqual(resources[resource], path.encode() + b' pcm')
 
     def test_the_title_screens_layers_make_the_backdrop(self):
         import io

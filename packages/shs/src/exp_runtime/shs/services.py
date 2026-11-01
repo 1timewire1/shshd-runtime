@@ -79,6 +79,11 @@ def dispatch(self, vm, *, resource_exists=None):
             # switch on); native players and upstream answer 0, and the story takes its other way.
             available = getattr(self, 'nr_arena_enabled', False) and vm.linked is not None
             return complete('query_build', int(available), selector=selector)
+        from ..x360_games import X360_MINIGAMES_QUERY
+        if selector == X360_MINIGAMES_QUERY:
+            # shshd-runtime: whether the X360 translations' real minigames play here (the same switch); others take
+            # the timed choice the story carries.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
         if self.hd_version is not None:
             # SHSScript::syscall case 0x46 (HD): 2 -> 2, 3 -> 6, 6 -> the app version (CFBundleVersion) in host
             # string slot 0, 9 -> 1, 10 -> 2 when the in-app store is available, else 1 (answered as available:

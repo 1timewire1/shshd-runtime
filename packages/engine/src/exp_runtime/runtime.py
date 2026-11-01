@@ -31,6 +31,7 @@ from .story_labels import prepare_labels, story_labels
 from .title_screen import TitleScreen
 from .loading import loading_waits, retained_word
 from .minigames import MINIGAMES
+from .x360_games import SLOTS
 from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
 from .vm import KiwiVM, StopKind, VMError, VMStop, linked_layout, signed16
@@ -381,6 +382,8 @@ class Session:
             return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
+        if action.name == 'x360_slot':
+            return game.clock_ms == 0 and game.phase == 'opening' and game.points == 0
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
     def start_minigame(self):
@@ -408,6 +411,8 @@ class Session:
             # Explicit success/failure, including tutorial grids with target 0
             # that ordinary play cannot fail. No raw grid score escapes the UI.
             return self._complete_minigame(result=int(success))
+        elif kind == 'x360_slot':
+            return self._complete_minigame(result=SLOTS if success else 0)
         else:
             # Preserve starting scores where possible, adding enough points for
             # the requested side to win by a touchdown without signed overflow.
@@ -416,6 +421,14 @@ class Session:
             winner = min(32767, max(winner, loser + 7))
             game.home, game.away = (winner, loser) if success else (loser, winner)
         return self._complete_minigame()
+
+    @_sound_batch
+    def skip_x360_slot(self, points: int):
+        """shshd-runtime: finish the pending slot machine with `points`, the skip prompt's outcome."""
+        if not self.pending or self.pending.name != 'x360_slot' or self.transitioning:
+            raise ValueError('There is no skippable slot machine')
+        self.start_minigame()
+        return self._complete_minigame(result=points)
 
     @_sound_batch
     def skip_word_game(self, score: int):
@@ -770,6 +783,12 @@ class Session:
             game.tap(value, self.engine.random)
             self._game_sound(game, before)
             return action
+        elif action.name == 'x360_slot':
+            if value is not None:
+                raise ValueError('The slot machine takes a press')
+            self.engine.x360_slot.press()
+            self._slot_sounds()
+            return action
         elif action.name == 'text_input':
             validate_name(value, **self.name_input_metrics())
             if not self._complete_text_input(value):
@@ -963,6 +982,12 @@ class Session:
         if game.sound_serial != before:
             self.engine.request_sound(*game.sound_ids)
 
+    def _slot_sounds(self):
+        game = self.engine.x360_slot
+        if game.sounds:
+            self.engine.request_sound(*game.sounds)
+            game.sounds.clear()
+
     @_sound_batch
     def grid_pointer(self, phase, index=None):
         """Feed a down/move/up/cancel event to the pending original grid."""
@@ -1098,6 +1123,10 @@ class Session:
             if finished:
                 return self._complete_minigame()  # FUN_000add90, mode 2.
             return self.pending
+        if self.pending and self.pending.name == 'x360_slot':
+            finished = self.engine.x360_slot.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
+            self._slot_sounds()
+            return self._complete_minigame() if finished else self.pending
         if self.pending and self.pending.name in ('word_grid', 'football'):
             kind = self.pending.name
             game = getattr(self.engine, kind)
@@ -1147,7 +1176,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=30,
+        return dict(format='shs-runtime-save', version=31,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1188,8 +1217,12 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 31):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 32):
                 raise SaveError('Unsupported save format or version')
+            # Version 31 adds the X360 translations' slot machine (x360_games.py); an older save never had one open.
+            if state['version'] < 31 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_slot', None)
             # Version 30 adds New Rules' minigame arena (nr_arena.py); an older save never had one open.
             if state['version'] < 30 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
@@ -1504,6 +1537,11 @@ class Session:
                     engine.nr_arena.validate()
                 except ValueError as error:
                     raise SaveError(str(error)) from error
+            if engine.x360_slot is not None:
+                try:
+                    engine.x360_slot.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
             if not 0 <= engine.choice_ms <= 250:
                 raise SaveError('Invalid choice entrance clock')
             if engine.word_grid is not None:
@@ -1573,7 +1611,8 @@ class Session:
                            'survey_confirmation': (9,), 'episode_exit': (7, 63),
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
-                           'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,)}
+                           'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
+                           'x360_slot': (214,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

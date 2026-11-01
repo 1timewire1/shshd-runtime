@@ -20,7 +20,7 @@ SCORE_NOTICES = frozenset(('Score Up!', 'Detective Score Up!'))
 # player"). Track notices (Approval/Athleticism/Order/Chaos...) still say nothing about better or worse.
 SCORE_NOTICE_VALUES = {**{text: 1 for text in SCORE_NOTICES}, 'Score Way Up!': 1, 'Detective Score Down!': -1}
 DECISIONS = frozenset(('choice', 'character_picker', 'text_input', 'word_game',
-                       'word_grid', 'football', 'finished', 'episode_exit'))
+                       'word_grid', 'football', 'x360_slot', 'finished', 'episode_exit'))
 PANELS = frozenset(('dialogue', 'presentation', 'message_panel', 'survey_confirmation',
                     'loading', 'vm_pause'))
 
@@ -206,6 +206,17 @@ def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
         preview._complete_choice(game.score)                # a queued transition finishes in the preview's loop
         preview.engine.word_game = None
     return _outcomes(session, finish, range(WORD_GAME_SCORES), max_steps, max_panels)
+
+
+def x360_slot_outcomes(session, *, max_steps=6000, max_panels=30):
+    """shshd-runtime: the outcomes of the X360 slot machine about to start, for its skip prompt: its points 0 to 5 (below
+    0 goes the way 0 does in the one story that has it). Dating Beth's has three, passing at 2 and at 3."""
+    if not session.pending or session.pending.name != 'x360_slot':
+        return None
+
+    def finish(preview, points):
+        preview._complete_minigame(result=points)
+    return _outcomes(session, finish, range(6), max_steps, max_panels, numbers=False)
 
 
 def arena_outcomes(session, *, max_steps=40000, max_panels=30):

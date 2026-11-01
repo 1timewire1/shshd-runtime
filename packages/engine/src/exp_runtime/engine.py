@@ -13,6 +13,7 @@ from .games import GAMES
 from .randomness import NativeRandom, Random48, pipe_list
 from .minigames import WordGame
 from .nr_arena import NRArena
+from .x360_games import SlotMachine, X360_SLOT
 from .game_state import GameState
 from .character_picker import CharacterPicker
 from .scene_badge import SceneBadge
@@ -132,6 +133,7 @@ class EngineState:
     random48: Random48 = field(default_factory=Random48)
     word_game: WordGame | None = None
     nr_arena: NRArena | None = None     # shshd-runtime: New Rules' minigame arena panel, while open (nr_arena.py)
+    x360_slot: SlotMachine | None = None        # shshd-runtime: the X360 translations' slot machine (x360_games.py)
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -190,7 +192,7 @@ class EngineState:
         self.background_pan.automatic = True  # 0007e59c resets automatic panning.
         self.dialogue_animation = self.scene_badge = self.faceplace_toast = None
         self.dialogue_history = DialogueHistory()
-        self.word_game = self.word_grid = self.football = self.nr_arena = None
+        self.word_game = self.word_grid = self.football = self.nr_arena = self.x360_slot = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -989,6 +991,10 @@ class EngineState:
                 character_id=args[5], portrait_mode=args[6]))
         if y in NR_ARENA_SERVICES:
             return self._nr_arena_service(vm, request, y, args, need, at_least, complete)
+        if y == X360_SLOT:                                      # asked for only where service 70 said it plays
+            need(0)
+            self.x360_slot = SlotMachine()
+            return EngineAction('x360_slot', request, False)
         if y == 3:
             need(3)
             if self.choice_builder is None:

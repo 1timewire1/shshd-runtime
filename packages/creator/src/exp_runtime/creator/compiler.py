@@ -10,6 +10,7 @@ import struct
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
+from exp_runtime.x360_games import X360_MINIGAMES_QUERY, X360_SLOT
 from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
 from .model import (EMOTICONS, Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record,
                     validate_structure)
@@ -85,7 +86,7 @@ def variable_names(project):
     names = {n.variable for n in project.nodes if n.kind in ('set', 'branch') and n.variable}
     for node in project.nodes:
         p = parameters(node)
-        if node.kind in ('random', 'word_game', 'football', 'grid', 'relationship', 'score', 'picker'):
+        if node.kind in ('random', 'minigames_available', 'x360_slot', 'word_game', 'football', 'grid', 'relationship', 'score', 'picker'):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
@@ -166,7 +167,8 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
         raise ProjectError(f'{label}: choose a reusable character')
-    if node.kind in ('random', 'word_game', 'football', 'grid', 'input', 'relationship', 'score') and not p['result'].strip():
+    if node.kind in ('random', 'minigames_available', 'x360_slot', 'word_game', 'football', 'grid', 'input', 'relationship',
+                     'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
@@ -721,6 +723,10 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'close_dialogue': asm.call(39)
             elif kind == 'random':
                 asm.call(27, p['bound']); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'minigames_available':
+                asm.call(70, X360_MINIGAMES_QUERY); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'x360_slot':
+                asm.call(X360_SLOT); asm.emit(0x21); store_variable(p['result'])
             elif kind in ('word_game', 'football', 'grid'):
                 localized = deepcopy(p)
                 for field in ('good', 'bad', 'instructions'):
