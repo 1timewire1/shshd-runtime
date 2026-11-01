@@ -33,6 +33,9 @@ COMBO_RED = (220, 24, 16)               # Diss Practice's "x13" on the record's 
 TUTORIAL_CARDS = {20: 'tutorial_1', 17: 'tutorial_1', 19: 'tutorial_1', 18: 'tutorial_2', 28: 'tutorial_3'}
 COUNTDOWN = ((3, 500), (2, 750), (1, 1000))     # Diss Practice's 3-2-1 (ms each, scaling up and back; silent)
 START_PROMPT = 'press ok to start'
+SCORE_PROMPT = 'your score'             # the end's "your score: n" bubble, where the X360 music stops (Desktop)
+MUSIC_FADE_MS = 1000
+BUBBLE_TEXT_WIDTH = 380                 # a bubble's or the info box's lines, native pixels
 SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300), (38, 1900), (66, 2500))
 
 
@@ -73,6 +76,7 @@ class BMFont:
     font (the white Casual and Badaboom) keeps its own colours."""
 
     def __init__(self, spec, pages, colour=None):
+        self.two_tone = colour is None              # the white Casual and Badaboom: a white fill, a black edge
         self.line_height, self.base = spec['line_height'], spec['base']
         self.chars = {int(k): v for k, v in spec['chars'].items()}
         self.glyphs = {}
@@ -106,8 +110,11 @@ class BMFont:
                 if glyph is not None:
                     if colour is not None:
                         glyph = glyph.copy()
-                        glyph.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
-                        glyph.fill((*colour, 0), special_flags=pygame.BLEND_RGBA_ADD)
+                        if self.two_tone:               # the fill takes the colour, the black edge stays
+                            glyph.fill((*colour, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                        else:
+                            glyph.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                            glyph.fill((*colour, 0), special_flags=pygame.BLEND_RGBA_ADD)
                     out.blit(glyph, (x + char[4], char[5] + 4))
                 x += char[6]
         return out
@@ -227,6 +234,26 @@ class X360ArenaRenderer(NRArenaRenderer):
             self._texts[key] = found
         return found
 
+    def wrapped(self, font, text, height, width, colour=None, emphasis=None):
+        """`text` in lines no wider than `width` native pixels, broken at spaces (and at its own line breaks), as
+        text_surface images: New Rules' tutorials run to two long sentences."""
+        face = self.bmfont(font, colour)
+        scale = height / face.line_height
+        lines = []
+        for paragraph in text.replace('\r', '').split('\n'):
+            line = ''
+            for word in paragraph.split(' '):
+                candidate = f'{line} {word}' if line else word
+                plain = ''.join(part for part, _ in plain_runs(candidate)).upper()
+                if line and face.width(plain) * scale > width:
+                    lines.append(line)
+                    line = word
+                else:
+                    line = candidate
+            if line.strip():
+                lines.append(line)
+        return [self.text_surface(font, line, height, colour, emphasis) for line in lines]
+
     # -- geometry ---------------------------------------------------------------------------------------------------
     def _deck(self):
         """(scale, record centre x, y, record half-width, half-height) in native pixels: the booth's camera frame onto
@@ -305,8 +332,11 @@ class X360ArenaRenderer(NRArenaRenderer):
         arena = session.engine.nr_arena
         action = session.pending
         now = pygame.time.get_ticks() if now_ms is None else now_ms
-        self.k = max(FRAME[1], self.target_height) / NATIVE[1]
-        size = (round(NATIVE[0] * self.k), round(NATIVE[1] * self.k))
+        # Exactly 3:4 (a height a multiple of 4), as the player places a layer over the whole frame only then: a
+        # pixel off and it took the canvas for the story's 320 x 480 column (owner, 2026-10-31).
+        height = max(4, round(max(FRAME[1], self.target_height) / 4) * 4)
+        size = (height * 3 // 4, height)
+        self.k = height / NATIVE[1]
         if self.canvas.get_size() != size:
             self.canvas = pygame.Surface(size).convert()
         surface = self.canvas
@@ -354,14 +384,17 @@ class X360ArenaRenderer(NRArenaRenderer):
         # round it; a size held takes over within half that), within the shake's 15 %.
         self._sizes = [(t, s) for t, s in self._sizes if now - t < 800 and t <= now] + [(now, arena.ring_size)]
         rest = max(1, sorted(s for _, s in self._sizes)[len(self._sizes) // 2])
-        changes = sum(1 for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600)
-        size = min(1.15, max(0.85, arena.ring_size / rest)) if changes >= 3 else 1     # a shake changes each frame
+        # A shake swings back and forth; the library's easing a ring in or out moves one way: only the first (two
+        # turns within 0.6 s) moves the deck.
+        steps = [b - a for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600]
+        turns = sum(1 for d, e in zip(steps, steps[1:]) if (d > 0) != (e > 0))
+        size = min(1.15, max(0.85, arena.ring_size / rest)) if turns >= 2 else 1
         deck = booth['pieces']['deck']
         x, y, w, h = self._to_native(deck['box'])
         self.blit(surface, self.image(deck['id']), cx + (x - cx) * size, cy + (y - cy) * size + deck_dy, w * size,
                   h * size)
         if moving:
-            self._hud_x360(surface, arena, session, now, hud_dy)
+            self._hud_x360(surface, arena, session, now, hud_dy, deck_dy)
             return
         ring = self._field(arena)
         self._buttons_x360(arena, ring)
@@ -382,11 +415,11 @@ class X360ArenaRenderer(NRArenaRenderer):
         self._countdown(surface, arena, ring, now, prompt)
 
     # The HUD: score, time, meter, the labels and the HUD boxes' pictures.
-    def _hud_x360(self, surface, arena, session, now, dy):
+    def _hud_x360(self, surface, arena, session, now, dy, deck_dy=0):
         if arena.score_display == 1 or (arena.score_display == 2 and arena.blink_clock_ms // 500 % 2 == 1):
             self._score_x360(surface, arena, now, dy)
         if arena.timer_shown:
-            self._time_x360(surface, arena, now)
+            self._time_x360(surface, arena, now, deck_dy)            # on the deck: it moves with it
         if arena.score_display or arena.meter >= 0:
             self._meter_x360(surface, arena, dy)
         for box in (0, 2):
@@ -419,11 +452,12 @@ class X360ArenaRenderer(NRArenaRenderer):
                                                   SCORE_BOX[1] + (box[1] - top) * u + dy,
                                                   (box[2] - box[0]) * u, (box[3] - box[1]) * u), now)
 
-    def _time_x360(self, surface, arena, now):
+    def _time_x360(self, surface, arena, now, dy=0):
         digits = self.x360()[0]['booth']['digits']
         seconds = max(0, min(99, -(-max(0, arena.timer_ms) // 1000)))
         for slot, ch in zip(digits['time'], f'{seconds:02d}'):
-            self._digit(surface, slot, int(ch), self._to_native(digits['slots'][slot][int(ch)]['box']), now)
+            x, y, w, h = self._to_native(digits['slots'][slot][int(ch)]['box'])
+            self._digit(surface, slot, int(ch), (x, y + dy, w, h), now)
 
     def _meter_x360(self, surface, arena, dy):
         """The 0-10 meter as the X360's power bar: green once the target is met (or at max), blue past the second
@@ -487,12 +521,24 @@ class X360ArenaRenderer(NRArenaRenderer):
             else:                                           # along the bottom, centred
                 image = self.text_surface('badaboom_white', line, 34, None, EMPHASIS)
                 x, y = LABEL_BOTTOM.centerx, LABEL_BOTTOM.y + 4 + line_no * 32
-            if image.get_width() / self.k > SCREEN_WIDTH - 20:
-                ratio = (SCREEN_WIDTH - 20) * self.k / image.get_width()
-                self.blit(surface, image, x, y, image.get_width() / self.k * ratio, image.get_height() / self.k * ratio,
-                          anchor='midtop')
-            else:
-                self.blit(surface, image, x, y, anchor='midtop')
+            w, h = image.get_width() / self.k, image.get_height() / self.k
+            if w > SCREEN_WIDTH - 20:
+                ratio = (SCREEN_WIDTH - 20) / w
+                w, h = w * ratio, h * ratio
+            if box != 1:                                    # a soft dark plate: white text over the light steps
+                self._plate(surface, x - w / 2 - 6, y + h * 0.12, w + 12, h * 0.72)
+            self.blit(surface, image, x, y, w, h, anchor='midtop')
+
+    def _plate(self, surface, x, y, w, h):
+        k = self.k
+        rect = pygame.Rect(round(x * k), round(y * k), max(1, round(w * k)), max(1, round(h * k)))
+        key = ('plate', rect.size)
+        plate = self._scaled.get(key)
+        if plate is None:
+            plate = pygame.Surface(rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(plate, (12, 14, 24, 150), plate.get_rect(), border_radius=max(2, round(8 * k)))
+            self._scaled[key] = plate
+        surface.blit(plate, rect)
 
     def _item_picture(self, surface, item, x, bottom, height, alpha=255):
         """New Rules' item picture `item` in the X360 look (its counterpart, or New Rules' own outlined), standing at
@@ -653,12 +699,11 @@ class X360ArenaRenderer(NRArenaRenderer):
     def _bubble_x360(self, surface, arena, ring, text, slot, flags, now):
         """A bubble in the X360's speech bubble, where New Rules puts it (method_449's placing); in Rhythm's tutorial
         the Diss Practice card for the item it points at (decision 4)."""
-        lines = [line for line in text.replace('\r', '').split('\n')]
-        images = [self.text_surface('casual', line, 21, (20, 20, 30), (190, 20, 20)) for line in lines if line.strip()]
+        images = self.wrapped('casual', text, 24, BUBBLE_TEXT_WIDTH, (20, 20, 30), (190, 20, 20))
         k = self.k
         inner_w = max((im.get_width() for im in images), default=0) / k
-        inner_h = sum(im.get_height() / k - 6 for im in images)
-        w, h = min(SCREEN_WIDTH - 20, inner_w + 36), inner_h + 30
+        inner_h = sum(im.get_height() / k - 8 for im in images)
+        w, h = min(SCREEN_WIDTH - 12, inner_w + 40), inner_h + 44         # the tail rises over the top edge
         x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
         above = bool(flags & 2)
         card = None
@@ -671,10 +716,10 @@ class X360ArenaRenderer(NRArenaRenderer):
                 card = TUTORIAL_CARDS.get(int(name.split('/')[1])) if name else None
         y = min(max(4, y), NATIVE[1] - 70 - h)
         self._nine(surface, self.trimmed("bubble"), x, y, w, h, 22)
-        top = y + 12
+        top = y + 24
         for image in images:
             self.blit(surface, image, x + w / 2, top, anchor='midtop')
-            top += image.get_height() / k - 6
+            top += image.get_height() / k - 8
         if card is not None:
             image = self.picture(card)
             cw = 190
@@ -712,17 +757,16 @@ class X360ArenaRenderer(NRArenaRenderer):
         is_menu = action.name == 'arena_menu'
         title = (details.get('title') if is_menu else details.get('text')) or ''
         options = details.get('options', []) if is_menu else []
-        images = [self.text_surface('casual', line, 21, (20, 20, 30), (190, 20, 20)) for line in title.split('\n')
-                  if line.strip()]
+        images = self.wrapped('casual', title, 24, BUBBLE_TEXT_WIDTH, (20, 20, 30), (190, 20, 20))
         k = self.k
-        w = min(SCREEN_WIDTH - 20, max((im.get_width() / k for im in images), default=200) + 50)
-        h = sum(im.get_height() / k - 6 for im in images) + 40 + len(options) * 30
+        w = min(SCREEN_WIDTH - 12, max((im.get_width() / k for im in images), default=200) + 50)
+        h = sum(im.get_height() / k - 8 for im in images) + 40 + len(options) * 30
         x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
         self._nine(surface, self.trimmed("info_box"), x, y, w, h, 18)
         top = y + 18
         for image in images:
             self.blit(surface, image, x + w / 2, top, anchor='midtop')
-            top += image.get_height() / k - 6
+            top += image.get_height() / k - 8
         focus = self.focus(action)
         for i, option in enumerate(options):
             colour = (190, 20, 20) if i == focus else (20, 20, 30)

@@ -665,6 +665,7 @@ class Desktop:
                     stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open)
             else:
                 stream.stop(engine.music_stop_ms, now)
+        self._end_x360_music(stream, engine, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
                       paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
         self._sync_pause_song(now)
@@ -769,6 +770,24 @@ class Desktop:
             self.buzz_sound.play()
         except pygame.error as error:
             logging.warning('Vibration buzz cannot be played: %s', error)
+
+    def _end_x360_music(self, stream, engine, now):
+        """The X360 look's game music fades out as the game ends, at its "your score" bubble or once the arena is gone
+        (owner, 2026-10-31): Diss Practice's music belongs to the game, and the story doesn't stop it."""
+        from .desktop_nr_arena_x360 import MUSIC_FADE_MS, SCORE_PROMPT
+        current = stream.current
+        if current is None or stream.fade is not None or getattr(self, '_x360_arena', None) is not True:
+            return                          # (the addon's skin is known to be there once the switch was offered)
+        try:
+            music = set(self.x360_arena_renderer.x360()[0].get('music_track', {}).values())
+        except ValueError:
+            return
+        if current['id'] not in music:
+            return
+        arena = engine.nr_arena
+        if arena is None or any(bubble and bubble[0] and bubble[0].strip().casefold().startswith(SCORE_PROMPT)
+                                for bubble in arena.bubbles):
+            stream.stop(MUSIC_FADE_MS, now)
 
     def _x360_swaps(self):
         """While the arena is open in the X360 look: ({New Rules sound: [X360 sounds]}, {New Rules music: X360 music},

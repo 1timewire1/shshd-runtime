@@ -155,6 +155,52 @@ class X360ArenaTests(unittest.TestCase):
         self.assertEqual(self.module.plain_runs('`rap` rhymes~ with;'), [('rap', True), (' rhymes', False),
                                                                           (' with', False)])
 
+    def test_the_canvas_is_exactly_3_by_4_so_the_player_lays_it_over_the_whole_frame(self):
+        # Desktop._present lays a layer over the whole frame only at exactly 3:4; a pixel off, it took the canvas for
+        # the story's 320 x 480 column and the backdrop showed inside the frame's window (owner, 2026-10-31).
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        for height in (1024, 1057, 1081, 1500):
+            renderer.target_height = height
+            renderer.draw(None, self.session(self.arena()), now_ms=0)
+            w, h = renderer.canvas.get_size()
+            self.assertEqual(w * 512, h * 384, (height, w, h))
+
+    def test_long_bubble_text_wraps_and_an_emphasised_word_keeps_its_edge(self):
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        renderer.draw(None, self.session(self.arena()), now_ms=0)
+        lines = renderer.wrapped('casual', 'AAAA BBBB CCCC DDDD\nEE', 12, 85)
+        self.assertEqual(len(lines), 3)                 # 9 a letter: two words a line, then its own break
+        self.assertTrue(all(line.get_width() / renderer.k <= 85 + 12 for line in lines))
+        # Two-tone (white fill, black edge) text keeps its black edge when a word takes the emphasis colour.
+        face = renderer.bmfont('casual_white')
+        glyph = face.render([('A', (255, 214, 64))])
+        colours = {glyph.get_at((x, y))[:3] for x in range(glyph.get_width()) for y in range(glyph.get_height())
+                   if glyph.get_at((x, y))[3] > 0}
+        self.assertEqual(colours, {(0, 0, 0)})          # the stand-in page is all black: it stays black
+
+    def test_the_deck_ignores_a_ring_easing_in_and_follows_a_shake(self):
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        arena = self.arena()
+        session = self.session(arena)
+        drawn = []
+        real = renderer.blit
+        deck = renderer.image(renderer.x360()[0]['booth']['pieces']['deck']['id'])
+
+        def blit(surface, image, x, y, w=None, h=None, **k):
+            if image is deck:
+                drawn.append(w)
+            return real(surface, image, x, y, w, h, **k)
+        renderer.blit = blit
+        for now, size in enumerate(range(40, 100, 4)):          # easing in: one way only
+            arena.ring_size = size
+            renderer._paint_x360(renderer.canvas, arena, session, now * 33, 0, 0, False)
+        self.assertEqual(len(set(round(w, 3) for w in drawn)), 1)
+        drawn.clear()
+        for now, size in enumerate((100, 112, 90, 110, 92, 108)):      # a shake: back and forth
+            arena.ring_size = size
+            renderer._paint_x360(renderer.canvas, arena, session, 2000 + now * 33, 0, 0, False)
+        self.assertGreater(len(set(round(w, 3) for w in drawn)), 1)
+
     def test_the_countdown_runs_once_press_ok_to_start_closes(self):
         renderer = self.module.X360ArenaRenderer(self.resources())
         arena = self.arena()
@@ -216,6 +262,26 @@ class X360SwitchTests(unittest.TestCase):
         ui = self.desktop(arena=False)
         ui.arena_skin = True
         self.assertIsNone(ui._x360_swaps())                                 # a word game's jingles stay New Rules'
+
+    def test_the_x360_music_fades_out_at_your_score_and_new_rules_music_is_left_alone(self):
+        from exp_runtime.nr_arena import NRArena
+        ui = self.desktop()
+        ui.arena_skin = True
+        self.assertTrue(ui.x360_arena_switch())
+        arena = NRArena.opened(False, True)
+        engine = SimpleNamespace(nr_arena=arena)
+        stream = SimpleNamespace(current=dict(id=26390), fade=None, stop=Mock())
+        ui._end_x360_music(stream, engine, 100)
+        stream.stop.assert_not_called()                     # the game is on
+        arena.bubbles[0] = ['Your score: 57', 0, 0]
+        ui._end_x360_music(stream, engine, 200)
+        stream.stop.assert_called_once()
+        stream = SimpleNamespace(current=dict(id=26994), fade=None, stop=Mock())       # New Rules' own track
+        ui._end_x360_music(stream, SimpleNamespace(nr_arena=None), 300)
+        stream.stop.assert_not_called()
+        stream = SimpleNamespace(current=dict(id=26390), fade=None, stop=Mock())       # the arena already gone
+        ui._end_x360_music(stream, SimpleNamespace(nr_arena=None), 300)
+        stream.stop.assert_called_once()
 
     def test_the_look_is_new_rules_by_default_and_kept(self):
         from exp_runtime.menu import preference_defaults
