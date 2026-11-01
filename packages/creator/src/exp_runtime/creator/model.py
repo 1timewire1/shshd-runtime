@@ -23,7 +23,7 @@ KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 
          'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
          'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
          'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
-         'open_url', 'survey', 'minigames_available', 'x360_slot', 'end', 'native')
+         'open_url', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 

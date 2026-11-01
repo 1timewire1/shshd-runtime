@@ -13,11 +13,22 @@ the machine has opened, unless the skip prompt's Play has already said so; MS3 s
 
 Its Lua's order is kept, oddities included: a press sets the option back to the first while the period's `Wait` is still
 running, and when that ends the option steps on, so the next slot opens on the cross.
+
+The leash is MS3's and MS4's `gameSHS.RunSmashButtonMinigame` with Dating Beth's arguments (event4), the same in both, and
+their native `IsButtonSmashPressed` with the shake check at the end of the game manager's update. The level starts at 50
+and the game ends at 100 (won) or 0 (lost). A frame with a shake adds 7; any other loses 12 a second. The wanted shake
+starts left and right and swaps with up and down every 2 to 5 seconds, picked once for the game. A shake is a new
+direction on the same axis as the last, reached within 0.1 s of that last one; any new direction restarts the 0.1 s.
+
+Changes from the prototype (owner, 2026-11-01): the clock waits for a press as the slot machine's does. A controller's stick
+keeps the 0.1 s; a D-pad, keys and a drag have SHAKE_WINDOW_MS, since the player has no stick to flick there. The
+animations that the level's turns play on the 3D Zack, doberman and collar are not here.
 """
 from dataclasses import dataclass, field
 
 X360_MINIGAMES_QUERY = 201
 X360_SLOT = 214
+X360_LEASH = 215
 
 BULB, CROSS, QUESTION = 0, 1, 2
 OFF = -1                                # a slot not reached: menus/icons/bulb_off
@@ -35,6 +46,17 @@ TIMER_LOOP_MS = 926                     # gui/timer.wav, looping while the clock
 # The sounds, in the X360 addon (tools/translate/x360_arena_art.py SLOT_SOUNDS).
 SOUND_SUCCESS, SOUND_MISS, SOUND_TIMER = 26427, 26428, 26429
 OPENING, READY, RUNNING, CLOSING, TIME_UP = 'opening', 'ready', 'running', 'closing', 'time_up'
+
+LEFT, RIGHT, UP, DOWN = 'left', 'right', 'up', 'down'
+LEFT_RIGHT, UP_DOWN = 0, 1
+AXIS = {LEFT: LEFT_RIGHT, RIGHT: LEFT_RIGHT, UP: UP_DOWN, DOWN: UP_DOWN}
+LEVEL_FULL = 100000                     # the level in thousandths: 0 to 100
+LEVEL_START = 50000
+LEVEL_GAIN = 7000                       # increaseValue
+LEVEL_DRAIN_PER_MS = 12                 # decreaseRate, 12 a second
+SHAKE_WINDOW_STICK_MS = 100             # the native check's 0.1 s
+SHAKE_WINDOW_MS = 250
+CLOSING_LEASH_MS = 300                  # (the prototype closes at once: the full or empty bar shows, then fades)
 
 
 def period_ms(slot):
@@ -137,3 +159,181 @@ class SlotMachine:
                 or not 1 <= self.slot <= SLOTS + 1 or not 0 <= self.option < OPTIONS or len(self.shown) != SLOTS
                 or any(picture not in (OFF, BULB, CROSS, QUESTION) for picture in self.shown)):
             raise ValueError('Invalid slot machine state')
+
+
+@dataclass
+class LeashGame:
+    swap_ms: int                        # math.random(2,5), picked once: how long each wanted shake lasts
+    phase: str = OPENING
+    phase_ms: int = OPENING_MS          # what's left of the opening or the closing fade
+    started: bool = False               # the player has said go: it runs once the opening is over
+    level: int = LEVEL_START
+    wanted: int = LEFT_RIGHT            # currentOption
+    swap_left_ms: int = 0               # until the wanted shake swaps; set as it starts running
+    last: str | None = None             # the last direction reached
+    since_ms: int = 0                   # how long since the last direction was reached
+    shook: bool = False                 # a shake this frame: it doesn't drain
+    anim_ms: int = 0                    # the joystick icon's flipbook
+
+    @property
+    def result(self):
+        """The story's `gameStats.choice`: dog_control/win's 1, dog_control/lose's 0."""
+        return int(self.level >= LEVEL_FULL)
+
+    def press(self):
+        """OK: the go-ahead while it waits for one, and nothing else. As the slot machine's, it does nothing during the
+        opening, so one left over from the dialogue before can't start it unseen."""
+        return self.phase == READY and self.start()
+
+    def start(self):
+        """The go-ahead: from the player's press, or from the skip prompt's Play."""
+        if self.started:
+            return False
+        self.started = True
+        if self.phase == READY:
+            self._run()
+        return True
+
+    def _run(self):
+        self.phase = RUNNING
+        self.swap_left_ms = self.swap_ms
+
+    def shake(self, direction, window_ms=SHAKE_WINDOW_MS):
+        """The input has reached `direction`. True if that scored: the native check, with the input's own window."""
+        if self.phase != RUNNING or direction == self.last:
+            return False
+        last, self.last = self.last, direction
+        within, self.since_ms = self.since_ms < window_ms, 0
+        if not within or last is None or AXIS[last] != AXIS[direction] or AXIS[direction] != self.wanted:
+            return False
+        self.level = min(LEVEL_FULL, self.level + LEVEL_GAIN)
+        self.shook = True
+        self._ended()
+        return True
+
+    def _ended(self):
+        if not 0 < self.level < LEVEL_FULL:
+            self.phase, self.phase_ms = CLOSING, CLOSING_LEASH_MS
+
+    def tick(self, elapsed_ms):
+        """One frame; True when the game has finished and the story goes on."""
+        self.anim_ms = (self.anim_ms + elapsed_ms) % 60000
+        if self.phase == OPENING:
+            self.phase_ms -= elapsed_ms
+            if self.phase_ms <= 0:
+                if self.started:
+                    self._run()
+                else:
+                    self.phase = READY
+            return False
+        if self.phase == READY:
+            return False
+        if self.phase == CLOSING:
+            self.phase_ms -= elapsed_ms
+            return self.phase_ms <= 0
+        self.since_ms = min(60000, self.since_ms + elapsed_ms)
+        if self.shook:
+            self.shook = False
+        else:
+            self.level = max(0, self.level - LEVEL_DRAIN_PER_MS * elapsed_ms)
+            self._ended()
+        self.swap_left_ms -= elapsed_ms
+        if self.swap_left_ms <= 0:
+            self.wanted = 1 - self.wanted
+            self.swap_left_ms = self.swap_ms
+        return False
+
+    def validate(self):
+        if (self.phase not in (OPENING, READY, RUNNING, CLOSING) or not 0 <= self.level <= LEVEL_FULL
+                or self.wanted not in (LEFT_RIGHT, UP_DOWN) or self.last not in (None, *AXIS) or self.swap_ms <= 0
+                or self.since_ms < 0):
+            raise ValueError('Invalid leash game state')
+
+
+@dataclass
+class LeashGame:
+    swap_ms: int                        # math.random(2,5), picked once: how long each wanted shake lasts
+    phase: str = OPENING
+    phase_ms: int = OPENING_MS          # what's left of the opening or the closing fade
+    started: bool = False               # the player has said go: it runs once the opening is over
+    level: int = LEVEL_START
+    wanted: int = LEFT_RIGHT            # currentOption
+    swap_left_ms: int = 0               # until the wanted shake swaps; set as it starts running
+    last: str | None = None             # the last direction reached
+    since_ms: int = 0                   # how long since the last direction was reached
+    shook: bool = False                 # a shake this frame: it doesn't drain
+    anim_ms: int = 0                    # the joystick icon's flipbook
+
+    @property
+    def result(self):
+        """The story's `gameStats.choice`: dog_control/win's 1, dog_control/lose's 0."""
+        return int(self.level >= LEVEL_FULL)
+
+    def press(self):
+        """OK: the go-ahead while it waits for one, and nothing else. As the slot machine's, it does nothing during the
+        opening, so one left over from the dialogue before can't start it unseen."""
+        return self.phase == READY and self.start()
+
+    def start(self):
+        """The go-ahead: from the player's press, or from the skip prompt's Play."""
+        if self.started:
+            return False
+        self.started = True
+        if self.phase == READY:
+            self._run()
+        return True
+
+    def _run(self):
+        self.phase = RUNNING
+        self.swap_left_ms = self.swap_ms
+
+    def shake(self, direction, window_ms=SHAKE_WINDOW_MS):
+        """The input has reached `direction`. True if that scored: the native check, with the input's own window."""
+        if self.phase != RUNNING or direction == self.last:
+            return False
+        last, self.last = self.last, direction
+        within, self.since_ms = self.since_ms < window_ms, 0
+        if not within or last is None or AXIS[last] != AXIS[direction] or AXIS[direction] != self.wanted:
+            return False
+        self.level = min(LEVEL_FULL, self.level + LEVEL_GAIN)
+        self.shook = True
+        self._ended()
+        return True
+
+    def _ended(self):
+        if not 0 < self.level < LEVEL_FULL:
+            self.phase, self.phase_ms = CLOSING, CLOSING_LEASH_MS
+
+    def tick(self, elapsed_ms):
+        """One frame; True when the game has finished and the story goes on."""
+        self.anim_ms = (self.anim_ms + elapsed_ms) % 60000
+        if self.phase == OPENING:
+            self.phase_ms -= elapsed_ms
+            if self.phase_ms <= 0:
+                if self.started:
+                    self._run()
+                else:
+                    self.phase = READY
+            return False
+        if self.phase == READY:
+            return False
+        if self.phase == CLOSING:
+            self.phase_ms -= elapsed_ms
+            return self.phase_ms <= 0
+        self.since_ms = min(60000, self.since_ms + elapsed_ms)
+        if self.shook:
+            self.shook = False
+        else:
+            self.level = max(0, self.level - LEVEL_DRAIN_PER_MS * elapsed_ms)
+            self._ended()
+        self.swap_left_ms -= elapsed_ms
+        if self.swap_left_ms <= 0:
+            self.wanted = 1 - self.wanted
+            self.swap_left_ms = self.swap_ms
+        return False
+
+    def validate(self):
+        if (self.phase not in (OPENING, READY, RUNNING, CLOSING) or not 0 <= self.level <= LEVEL_FULL
+                or self.wanted not in (LEFT_RIGHT, UP_DOWN) or self.last not in (None, *AXIS) or self.swap_ms <= 0
+                or self.since_ms < 0):
+            raise ValueError('Invalid leash game state')

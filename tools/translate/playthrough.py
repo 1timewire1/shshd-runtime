@@ -108,6 +108,17 @@ def steps(s, answers, name, limit, record):
                 if game.phase == 'ready' or (game.focus == game.slot and game.option == 0):
                     s.answer(None)
                 action = s.tick(33)
+        elif kind == 'x360_leash':
+            record.append(dict(kind=kind))
+            turn = 0
+            while s.pending is not None and s.pending.name == kind:      # shakes the way it's asked to, every 100 ms
+                game = s.engine.x360_leash
+                if game.phase == 'ready':
+                    s.answer(None)
+                turn += 1
+                if turn % 3 == 0:
+                    game.shake((('left', 'right'), ('up', 'down'))[game.wanted][turn // 3 % 2])
+                action = s.tick(33)
         elif kind in ('word_game', 'football', 'word_grid'):
             record.append(dict(kind=kind))
             for _ in range(1000):

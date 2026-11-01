@@ -34,6 +34,7 @@ DIGIT_SLOTS, DIGITS = 8, 10
 # rectangle were matched to the owner's Xenia screenshot of the title.
 TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
 PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
+LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
 # Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.
 SLOT_ICONS = (('bulb', 1), ('cross', 0), ('question', 3), ('off', 2))
@@ -307,6 +308,22 @@ def slot(files, pcm_wav):
     return resources, entry
 
 
+def leash(files):
+    """{resource ID: bytes} and the spec's `leash` entry: the leash game's power-bar fill, the two arrows from the icons'
+    sheet (hud/icons/leftright and updown) and the joystick flipbooks over them. The bar's frame is `power_bar`."""
+    fill = _picture(files, 'data/art/hud/power_bar_fl.jpg', 'data/art/hud/power_bar_fl_a.jpg', None)
+    icons = _picture(files, 'data/art/hud/icons.jpg', 'data/art/hud/icons_a.jpg', None)
+    resources = {LEASH_BASE: _png(fill)}
+    entry = dict(fill=LEASH_BASE, arrows={}, stick={})
+    for i, (name, flipbook) in enumerate((('leftright', 'stick_shake_side'), ('updown', 'stick_shake_frontback'))):
+        resources[LEASH_BASE + 1 + i] = _png(icons.crop((i * 64, 64, i * 64 + 64, 128)))
+        entry['arrows'][name] = LEASH_BASE + 1 + i
+        resources[LEASH_BASE + 3 + i] = _png(_picture(files, f'data/art/hud/{flipbook}.jpg',
+                                                      f'data/art/hud/{flipbook}_a.jpg', None))
+        entry['stick'][name] = LEASH_BASE + 3 + i
+    return resources, entry
+
+
 def title(files):
     """{resource ID: bytes} and the spec's `title` entry: the title screen's layers (TITLE_BASE). Boxes are fractions
     of the 16:9 screen; a ray glint is white, its mask as alpha, cut to what shows and packed into one atlas."""
@@ -398,6 +415,9 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
         spec['music_track'][str(MUSIC_TRACK)] = MUSIC
     if 'data/art/hud/narrator.png' in files:
         made, spec['slot'] = slot(files, pcm_wav)
+        resources.update(made)
+    if 'data/art/hud/stick_shake_side.jpg' in files:
+        made, spec['leash'] = leash(files)
         resources.update(made)
     if booth_folder is not None:
         shot, spec['booth'] = booth(booth_folder)

@@ -206,6 +206,47 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
                                  music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
         self.assertFalse({a.id for a in project.assets} & {x360.MUSIC_INTRO, x360.MUSIC_LOOP})
 
+    def test_the_leash_plays_real_where_the_switch_is_on_and_as_timed_choices_where_not(self):
+        import x360
+        from exp_runtime.creator import compile_project
+        from playthrough import play
+        self.EVENTS = '''<Tongas project="t">
+    <object key="_a" type="EVENTCONFIGMASTER" name="t/one" version="1"><properties key="_a">
+    <p k="_a" n="LocationName">lot</p><p k="_a" n="Script" l="lua"><![CDATA[
+gameStats = {}
+gameStats.choice = 0
+gameSHS.RunSmashButtonMinigame("g", 50, 7, 12, math.random(2,5), 13, "w", "l", "i", "d")
+if gameStats.choice == 1 then
+    gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+    gameSHS.SetDialogText("t/won",20)
+    gameSHS.CloseDialog("bubbles/exit_from_left")
+else
+    gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+    gameSHS.SetDialogText("t/sad",20)
+    gameSHS.CloseDialog("bubbles/exit_from_left")
+end
+QuitGame()
+]]></p></properties></object></Tongas>'''
+
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        data = compile_project(x360.translate(self.prototype(), story, Art()))
+        real = play(data)                                       # (the bot shakes as it's asked)
+        self.assertIn('x360_leash', [event['kind'] for event in real])
+        self.assertNotIn('word_game', [event['kind'] for event in real])
+        self.assertIn('You scored.', [event.get('text') for event in real])
+        timed = play(data, arena=False)
+        self.assertIn('word_game', [event['kind'] for event in timed])
+        self.assertNotIn('x360_leash', [event['kind'] for event in timed])
+        self.assertIn('Oh well...', [event.get('text') for event in timed])
+
     def test_the_slot_machine_plays_real_where_the_switch_is_on_and_as_timed_choices_where_not(self):
         # Service 70's query picks. The real one's points are the script's own; the word game's map onto them.
         import x360
@@ -617,7 +658,7 @@ QuitGame()
         self.assertEqual([n.params['expression'] for n in builder.nodes if n.kind == 'branch'],
                          ['(real_minigames == 1)', '(idea >= 5)', '(idea >= 3)'])
         self.assertEqual([n.params['expression'] for n in builder.nodes if n.kind == 'set'], ['3', '2', '0'])
-        record = play(compile_project(project), [1])              # the word game runs out at 0: the leash is lost
+        record = play(compile_project(project), [1], arena=False)  # the word game runs out at 0: the leash is lost
         self.assertEqual([e['text'] for e in record if e['kind'] == 'line'],
                          ['(Glad you said yes.)', 'Hi from the phone'])
         self.assertEqual(record[-1]['kind'], 'exit')
@@ -865,6 +906,30 @@ class X360SkinTests(unittest.TestCase):
         atlas = Image.open(io.BytesIO(resources[entry['arm']['atlas']]))
         self.assertEqual(atlas.size, (7, 7))
         self.assertEqual(atlas.getpixel((0, 4)), (20, 0, 0, 255))
+
+    def test_the_leashs_art_comes_from_the_hud(self):
+        import io
+        import x360_arena_art as art
+        from PIL import Image
+
+        def picture(size, mode='RGB', colour='white'):
+            out = io.BytesIO()
+            Image.new(mode, size, colour).save(out, 'PNG')
+            return out.getvalue()
+        sheet = Image.new('RGB', (256, 256), (0, 0, 0))
+        sheet.paste((0, 200, 0), (0, 64, 64, 128))              # the second row's first cell: left and right
+        out = io.BytesIO()
+        sheet.save(out, 'PNG')
+        hud = 'data/art/hud/'
+        files = {hud + 'icons.jpg': out.getvalue(), hud + 'icons_a.jpg': picture((256, 256), 'L'),
+                 **{hud + f'{name}.jpg': picture((64, 64)) for name in ('power_bar_fl', 'stick_shake_side', 'stick_shake_frontback')},
+                 **{hud + f'{name}_a.jpg': picture((64, 64), 'L') for name in ('power_bar_fl', 'stick_shake_side', 'stick_shake_frontback')}}
+        resources, entry = art.leash(files)
+        self.assertTrue(all(i in art.SKIN_IDS for i in resources))
+        arrows = Image.open(io.BytesIO(resources[entry['arrows']['leftright']])).convert('RGBA')
+        self.assertEqual((arrows.size, arrows.getpixel((5, 5))), ((64, 64), (0, 200, 0, 255)))
+        self.assertEqual(set(entry['stick']), {'leftright', 'updown'})
+        self.assertLess(art.SLOT_BASE + 10, art.LEASH_BASE)     # clear of the slot machine's
 
     def test_the_slot_machines_art_comes_from_the_hud_with_its_labels_font(self):
         import io

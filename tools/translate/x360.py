@@ -41,7 +41,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 2
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 3
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog')    # at PORTRAIT_BASE + 5 x index
@@ -179,7 +179,8 @@ BUTTON_SMASH = {'good': ['(Got it.)', '(Nice grip, dude!)'], 'bad': ['(Ow my fin
                 'duration_ms': 15000, 'refresh_ms': 1400, 'result': 'leash'}
 # The word game in 15 s makes the X360's scores too easy (owner, 2026-10-27), so its score is mapped onto the
 # script's: 5 or better is the slot machine's best (choice 3: the pound), 3-4 its middle (2: the river), less fails
-# (0); the leash is held at 5 or better. The real slot machine's bulbs are mapped the same way (owner, 2026-11-01).
+# (0); the leash is held at 5 or better. The real slot machine's bulbs are mapped the same way (owner, 2026-11-01);
+# the real leash game's win or loss is the script's own choice.
 SLOT_MACHINE_LEVELS = ((5, 3), (3, 2))  # (word game score at least, the script's choice points)
 BUTTON_SMASH_WIN = 5                    # the leash held: this score or better
 
@@ -726,21 +727,22 @@ class Builder:
     def minigame(self, name):
         """Dating Beth's slot machine and leash power bar, as SHS word games (SLOT_MACHINE, BUTTON_SMASH), whose
         score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS (the real one's bulbs too,
-        where the player has it and its switch is on), the leash won (1) at BUTTON_SMASH_WIN or better."""
-        real = []
-        if name == 'gameSHS.RunSlotMachineMinigame':
-            game, levels, below = SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0
-            self.add('minigames_available', params={'result': 'real_minigames'})
-            test = self.add('branch', params={'expression': '(real_minigames == 1)'})
-            self.pending = [(test.id, 'next')]
-            self.add('x360_slot', params={'result': game['result']})
-            real = self.pending
-            self.pending = [(test.id, 'otherwise')]
-        else:
-            game, levels, below = BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0
+        where the player has it and its switch is on), the leash won (1) at BUTTON_SMASH_WIN or better (the real one
+        sets it for itself)."""
+        slot = name == 'gameSHS.RunSlotMachineMinigame'
+        game, levels, below = ((SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0) if slot
+                               else (BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0))
+        self.add('minigames_available', params={'result': 'real_minigames'})
+        test = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(test.id, 'next')]
+        self.add('x360_slot' if slot else 'x360_leash', params={'result': game['result'] if slot else 'choice'})
+        real = self.pending
+        self.pending = [(test.id, 'otherwise')]
         self.add('word_game', params=dict(game))
-        self.pending += real
-        ends = []
+        if slot:
+            self.pending += real
+            real = []
+        ends = real
         for least, points in levels:            # the first level the score reaches
             test = self.add('branch', params={'expression': f"({game['result']} >= {least})"})
             self.pending = [(test.id, 'next')]

@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 
 
-MINIGAMES = frozenset(('word_game', 'word_grid', 'football', 'x360_slot'))
+MINIGAMES = frozenset(('word_game', 'word_grid', 'football', 'x360_slot', 'x360_leash'))
 
 
 @dataclass

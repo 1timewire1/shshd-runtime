@@ -33,7 +33,9 @@ from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
 from .desktop_nr_arena_x360 import X360ArenaRenderer
+from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
 from .desktop_x360_slot import X360SlotRenderer
+from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -161,6 +163,8 @@ class _UntimedChoice:
 # New Rules' minigame arena (desktop_nr_arena.py): its frames, its menu and its info box draw over it.
 ARENA_ACTIONS = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
 # Keys as New Rules' Nokia key codes (nr_arena.KEY_BITS): OK / fire, the joystick, the right soft key.
+LEASH_KEYS = {pygame.K_LEFT: LEFT, pygame.K_RIGHT: RIGHT, pygame.K_UP: UP, pygame.K_DOWN: DOWN,
+              pygame.K_a: LEFT, pygame.K_d: RIGHT, pygame.K_w: UP, pygame.K_s: DOWN}
 ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, pygame.K_UP: -1, pygame.K_DOWN: -2,
               pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
 ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
@@ -382,6 +386,8 @@ class Desktop:
         self.nr_arena_renderer = NRArenaRenderer(session.resources)
         self.x360_arena_renderer = X360ArenaRenderer(session.resources)
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
+        self.x360_leash_renderer = X360LeashRenderer(session.resources)
+        self.leash_anchor = None        # where a drag last turned, in frame units, while one is shaking the leash
         self._x360_arena = None             # whether the X360 addon's arena skin is there (x360_arena_switch)
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
@@ -942,6 +948,10 @@ class Desktop:
             options = tuple(option.replace(' or more', '') for option in options)       # (5 is all there is)
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
                                        lambda index: self._resolve_x360_slot(action, points, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_x360_leash(action, index))
         if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
             if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
                 # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
@@ -987,6 +997,16 @@ class Desktop:
             self.session.engine.x360_slot.start()       # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_x360_slot(points[index]))
+
+    def _resolve_x360_leash(self, action, index):
+        """The leash game's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            self.session.engine.x360_leash.start()      # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
 
     def _resolve_arena_menu(self, action, index):
         if self.session.pending is action:
@@ -1370,13 +1390,13 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
-        if action and action.name == 'x360_slot' and not ask and not closed and not self.error:
+        if action and action.name in ('x360_slot', 'x360_leash') and not ask and not closed and not self.error:
             try:
                 engine = self.session.engine
-                renderer = self.x360_slot_renderer
+                renderer = self.x360_leash_renderer if action.name == 'x360_leash' else self.x360_slot_renderer
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
-                self.panel_alpha = renderer.alpha(engine.x360_slot)
+                self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
                 self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed)
@@ -1386,7 +1406,7 @@ class Desktop:
                 return
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
-                logging.error('Slot machine rendering stopped: %s', error)
+                logging.error('Minigame rendering stopped: %s', error)
         if closed and not self.error:
             # An answered menu, entry or picker under the closing blinds: the scene and the bottom bar alone.
             engine = self.session.engine
@@ -2609,7 +2629,7 @@ class Desktop:
             return True                         # the menu is zooming out after Resume: input waits for the story
         if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
             return True
-        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._football_key(event) or self._grid_key(event)):
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._leash_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2694,6 +2714,11 @@ class Desktop:
                 self.command(('menu',))
             elif 0 <= x <= 768 and 0 <= y <= 1024:
                 self._attempt(lambda: self.session.answer(None))
+            return True
+        if (action and action.name == 'x360_leash' and not self.menu_open and not self.error and not asking
+                and (event.type == pygame.MOUSEMOTION
+                     or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
+            self._leash_pointer(event)
             return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
@@ -3044,6 +3069,57 @@ class Desktop:
         self._attempt(lambda: self.session.answer(None))
         return True
 
+    def _leash_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'x360_leash' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _leash_key(self, event):
+        """The leash game: OK starts it; the arrows, WASD and a controller's D-pad shake it. A controller's stick reads as
+        arrows too, but _leash_stick reads it for itself. True when the key was one."""
+        if not self._leash_ready():
+            return False
+        if event.key in KEYS_ACTIVATE:
+            self._attempt(lambda: self.session.answer(None))
+            return True
+        direction = LEASH_KEYS.get(event.key)
+        if direction is None:
+            return False
+        button = getattr(event, 'controller', None)
+        if button is None or pygame.gamepads().holding(button):
+            self.session.engine.x360_leash.shake(direction)
+        return True
+
+    def _leash_stick(self):
+        """The leash game, each frame: a controller's stick, read as the prototype reads it."""
+        if not self._leash_ready():
+            self.leash_anchor = None
+            return
+        pads = pygame.gamepads()
+        for x, y in pads.sticks.values() if pads is not None else ():
+            direction = stick_direction(x, y)
+            if direction is not None:
+                self.session.engine.x360_leash.shake(direction, SHAKE_WINDOW_STICK_MS)
+
+    def _leash_pointer(self, event):
+        """The leash game's mouse and touch: a press is OK, or the gear; holding it and dragging back and forth shakes."""
+        frame = self.bg_viewport
+        x = (event.pos[0] - frame.x) * 768 / frame.width
+        y = (event.pos[1] - frame.y) * 1024 / frame.height
+        if event.type == pygame.MOUSEBUTTONUP:
+            self.leash_anchor = None
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                self.leash_anchor = (x, y)
+                self._attempt(lambda: self.session.answer(None))
+        elif self.leash_anchor is not None:
+            direction = drag_direction(self.leash_anchor, x, y)
+            if direction is not None:
+                self.leash_anchor = (x, y)
+                self.session.engine.x360_leash.shake(direction)
+
     def _football_key(self, event):
         """A play picked by its position (FOOTBALL_BUTTONS, FOOTBALL_KEYPAD); True when the key was one."""
         if not self._football_input():
@@ -3267,6 +3343,7 @@ class Desktop:
         if self.active:
             self._coast_panels()
             self._grid_hold(elapsed_ms)
+            self._leash_stick()
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)
