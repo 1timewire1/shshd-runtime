@@ -57,7 +57,12 @@ PICTURES = (
     ('smoke', FX + 'smoke.jpg', None, None),
     ('deck_texture', 'data/art/minigame/soundhwheel.jpg', None, None),   # the turntable's texture
 )
-DERIVED = ('note_double', 'note_fire')  # composed from the above (_derived), after them
+# Composed from the above (_derived), after them: the good-note tiers, and the hit effects' sprites (white, their
+# brightness as alpha, so the player tints them as Diss Practice's emitters do).
+SPARK_CELLS = ((64, 0), (0, 64))        # big_particles' two flares (64-pixel cells): eat_good_note
+PUFF_CELLS = ((0, 0), (64, 0), (0, 64)) # smoke's three puffs: eat_bad_note
+DERIVED = ('note_double', 'note_fire', *(f'fx_spark_{i}' for i in range(len(SPARK_CELLS))),
+           *(f'fx_puff_{i}' for i in range(len(PUFF_CELLS))))
 # Diss Practice's good-note tiers as New Rules' good-note pictures (NR_ARENA_X360_SKIN.md §3); the other X360
 # counterparts. Every other item is New Rules' own, outlined.
 ITEMS = {20: 'note', 17: 'note_double', 19: 'note_fire', 18: 'note_broken', 28: 'remix', 21: 'cross', 23: 'stamp_pow'}
@@ -118,7 +123,19 @@ def _derived(pictures):
     fire = Image.new('RGBA', flames.size, (0, 0, 0, 0))
     fire.paste(flames, (0, 0), grey.point(lambda v: min(255, v * 2)))
     fire.alpha_composite(note, ((fire.width - note.width) // 2, fire.height - note.height))
-    return {'note_double': red, 'note_fire': fire}
+    out = {'note_double': red, 'note_fire': fire}
+    for name, sheet, cells in (('fx_spark', 'big_particles', SPARK_CELLS), ('fx_puff', 'smoke', PUFF_CELLS)):
+        for i, (x, y) in enumerate(cells):
+            out[f'{name}_{i}'] = sprite(pictures[sheet].crop((x, y, x + 64, y + 64)))
+    return out
+
+
+def sprite(cell):
+    """A particle texture's cell (light on black, which the X360 adds or blends by brightness) as a white sprite
+    whose alpha is that brightness."""
+    white = Image.new('RGBA', cell.size, (255, 255, 255, 0))
+    white.putalpha(cell.convert('L'))
+    return white
 
 
 def outlined(image):

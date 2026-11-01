@@ -564,6 +564,15 @@ class X360SkinTests(unittest.TestCase):
         self.assertEqual(row[last_red + 2], x360_arena_art.INK + (255,))
         self.assertTrue(0 < row[last_red + 2 + x360_arena_art.OUTLINE][3] < 255)    # then the soft shadow
 
+    def test_an_effect_sprite_is_white_with_its_brightness_as_alpha(self):
+        import x360_arena_art
+        from PIL import Image
+        cell = Image.new('RGB', (4, 4), (0, 0, 0))
+        cell.putpixel((1, 1), (200, 200, 200))
+        out = x360_arena_art.sprite(cell)
+        self.assertEqual(out.getpixel((1, 1)), (255, 255, 255, 200))
+        self.assertEqual(out.getpixel((0, 0))[3], 0)
+
     def test_the_skin_stays_in_its_ids_and_replaces_new_rules_sounds_and_music(self):
         import x360_arena_art as art
         self.assertTrue(all(i in art.SKIN_IDS for i in (art.SPEC, art.PICTURE_BASE, art.FONT_PAGE_BASE,

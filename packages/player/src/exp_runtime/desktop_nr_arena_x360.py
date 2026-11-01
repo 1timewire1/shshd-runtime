@@ -11,6 +11,7 @@ window rather than at New Rules' 480 x 650 scaled up by a whole number. Coordina
 import io
 import json
 import math
+import random
 
 import pygame
 
@@ -34,6 +35,17 @@ TUTORIAL_CARDS = {20: 'tutorial_1', 17: 'tutorial_1', 19: 'tutorial_1', 18: 'tut
 COUNTDOWN = ((3, 500), (2, 750), (1, 1000))     # Diss Practice's 3-2-1 (ms each, scaling up and back; silent)
 START_PROMPT = 'press ok to start'
 MUSIC_FADE_MS = 1000
+# Diss Practice's hit effects (templates particleemitter.wxr: minigame/bps/eat_good_note, eat_bad_note), in its world
+# units: sizes at FX_SIZE native pixels a unit, speeds and gravity at FX_SPEED (a note there is about 0.15 units; the
+# owner's recording shows the burst about a deck's eighth across). A good note: 8 flares shot out at 3-8 units/s, red to orange, falling
+# (gravity 12), shrinking to nothing over 0.5 s. A bad note: 10 smoke puffs, dark green, rising (gravity 2) at
+# 0.5-1 units/s, turning +-45 degrees/s and growing 5 times over 1 s.
+FX_SIZE, FX_SPEED = 180, 45
+FX = {'good': dict(count=8, life=500, speed=(3, 8), colours=((255, 0, 0), (255, 128, 0)), size=(0.1, 0.4),
+                   gravity=12, grow=0, spin=0, sprites='fx_spark'),
+      # The X360's own greens (62 74 53 to 17 47 44) are lost on the black record here: the same hues, lighter.
+      'bad': dict(count=10, life=1000, speed=(0.5, 1), colours=((150, 176, 128), (70, 130, 120)), size=(0.1, 0.4),
+                  gravity=-2, grow=5, spin=45, sprites='fx_puff')}
 BUBBLE_TEXT_WIDTH = 430                 # a bubble's or the info box's lines at most, native pixels (balanced: wrapped)
 EDGE_SCALE = 0.6                        # native pixels a pixel of a nine-sliced picture's edge
 SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300), (38, 1900), (66, 2500))
@@ -155,6 +167,8 @@ class X360ArenaRenderer(NRArenaRenderer):
         self.countdown = None               # (start ms) once "press ok to start" closes
         self._prompt_seen = False
         self._sizes = []                    # (ms, the ring's size) over the last 0.8 s
+        self.effects = []                   # hit effects playing: (kind, x, y, start ms, particles)
+        self._fx_pressed, self._fx_held, self._fx_flash_ms = False, -1, 0
         self._stickers = {}
 
     # -- the skin ---------------------------------------------------------------------------------------------------
@@ -193,11 +207,13 @@ class X360ArenaRenderer(NRArenaRenderer):
         tail, which rises above the box at the right, so a taller bubble doesn't stretch it into the text."""
         found = self._images.get('bubble art')
         if found is None:
-            image = self.trimmed('bubble').copy()
+            # Opaque by laying it over itself (plain pygame: the player has no numpy): its half-alpha body reaches
+            # full alpha in three layers, its colours unchanged.
+            source = self.trimmed('bubble')
+            image = source.copy()
+            for _ in range(3):
+                image.blit(source, (0, 0))
             w, h = image.get_size()
-            alpha = pygame.surfarray.pixels_alpha(image)
-            alpha[alpha >= 96] = 255
-            del alpha
             column = [image.get_at((w // 4, y))[3] for y in range(h)]
             row = [image.get_at((x, h // 2))[3] for x in range(w)]
             top = next((y for y, a in enumerate(column) if a > 128), 0)
@@ -445,6 +461,7 @@ class X360ArenaRenderer(NRArenaRenderer):
         self._ring_x360(surface, arena, ring, 0, count // 2)
         self._label_x360(surface, arena, session, 1, now)
         self._ring_x360(surface, arena, ring, count // 2, count)
+        self._hit_effects(surface, arena, ring, now)
         self._hud_x360(surface, arena, session, now, 0)
         self._popups_x360(surface, arena, ring)
         prompt = False
@@ -708,6 +725,100 @@ class X360ArenaRenderer(NRArenaRenderer):
         for r in range(radius, 0, -max(1, radius // 8)):
             pygame.draw.circle(glow, (*colour, round(150 * (1 - r / radius)) + 20), (radius, radius), r)
         surface.blit(glow, (round(ring.centerx * k) - radius, round(ring.bottom * k) - radius))
+
+    def _hit_effects(self, surface, arena, ring, now):
+        """Diss Practice's hit effects (FX), where the X360 shows them on a note it eats: on OK's feedback (708: 1
+        right, 2 wrong) at the item under the selector, or, in a game played by number keys (Sequences), at the item
+        whose key flashes (766). Drawn only: nothing the game sees changes."""
+        # A new press: OK's 250 ms highlight starts (or restarts, under presses faster than it lasts).
+        held = arena.button_ms[0]
+        if held == -1 or held > self._fx_held:
+            self._fx_pressed = False
+        self._fx_held = held
+        if held != -1 and not self._fx_pressed and arena.feedback in (1, 2):
+            self._fx_pressed = True
+            slot = arena.slot_under() if len(arena.slots) else -1
+            if 0 <= slot < len(arena.slots) and arena.slots[slot] != -1:
+                x, y = self._slot_point(arena, ring, slot, vertical=0)
+            else:
+                x, y = ring.centerx, ring.bottom
+            self._spawn('good' if arena.feedback == 1 else 'bad', x, y, now)
+        if arena.keypad and arena.keypad_flash_ms > self._fx_flash_ms and 0 <= arena.keypad_flash < len(arena.slots):
+            # Sequences gives no OK feedback; its "+n" / "-n" popup, thrown as the key is taken, says which.
+            x, y = self._slot_point(arena, ring, arena.keypad_flash, vertical=0)
+            sign = self._fresh_popup_sign(arena)
+            self._spawn('bad' if sign == '-' or (sign is None and arena.feedback == 2) else 'good', x, y, now)
+        self._fx_flash_ms = arena.keypad_flash_ms
+        self.effects = [e for e in self.effects if 0 <= now - e[3] < FX[e[0]]['life']]
+        for effect in self.effects:
+            self._draw_effect(surface, effect, now)
+
+    @staticmethod
+    def _fresh_popup_sign(arena):
+        """'+' or '-' from a text popup (747) only just thrown, or None."""
+        for popup in arena.popups:
+            if popup.kind == 1 and popup.elapsed_ms < 150 and 0 <= popup.value < len(arena.strings):
+                text = (arena.strings[popup.value] or '').strip().lstrip('`~')
+                if text[:1] in '+-' and text[:1]:
+                    return text[0]
+        return None
+
+    def _spawn(self, kind, x, y, now):
+        sprites = [name for name in self.x360()[0]['pictures'] if name.startswith(FX[kind]['sprites'] + '_')]
+        if not sprites:
+            return                          # a skin from before the effects' sprites: none
+        spec, rng = FX[kind], random.Random(now * 31 + round(x) * 7 + round(y))       # the same frames each run
+        particles = []
+        for _ in range(spec['count']):
+            angle = rng.uniform(0, 2 * math.pi)
+            speed = rng.uniform(*spec['speed']) * FX_SPEED
+            particles.append((math.cos(angle) * speed, math.sin(angle) * speed * 0.6, rng.uniform(*spec['size']),
+                              rng.choice(sprites), rng.uniform(-spec['spin'], spec['spin']), rng.uniform(0, 360)))
+        self.effects.append((kind, x, y, now, particles))
+        if len(self.effects) > 12:
+            self.effects = self.effects[-12:]
+
+    def _draw_effect(self, surface, effect, now):
+        kind, x0, y0, start, particles = effect
+        spec = FX[kind]
+        t = (now - start) / spec['life']
+        seconds = (now - start) / 1000
+        (r0, g0, b0), (r1, g1, b1) = spec['colours']
+        colour = (round(r0 + (r1 - r0) * t), round(g0 + (g1 - g0) * t), round(b0 + (b1 - b0) * t))
+        k = self.k
+        for vx, vy, size, name, spin, turn in particles:
+            x = x0 + vx * seconds
+            y = y0 + vy * seconds + 0.5 * spec['gravity'] * FX_SPEED * seconds * seconds
+            scale = (1 - t) if not spec['grow'] else 1 + (spec['grow'] - 1) * t
+            side = max(1, round(size * FX_SIZE * scale * k))
+            image = self._tinted(name, colour, side, additive=kind == 'good')
+            if kind == 'good':                  # the flares glow over what's under them, as the X360 adds them
+                surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))),
+                             special_flags=pygame.BLEND_RGB_ADD)
+                continue
+            if spec['spin']:
+                image = pygame.transform.rotate(image, turn + spin * seconds)
+            if kind == 'bad':
+                image = image.copy()
+                image.set_alpha(round(255 * (1 - t)))
+            surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))))
+
+    def _tinted(self, name, colour, side, additive=False):
+        """An effect sprite (white, its brightness as alpha) in `colour`, `side` pixels square; kept, by colour step.
+        `additive`: premultiplied on black, for adding (BLEND_RGB_ADD), so only its light is added."""
+        step = tuple(c // 16 * 16 for c in colour)
+        key = ('fx', name, step, side, additive)
+        found = self._scaled.get(key)
+        if found is None:
+            found = pygame.transform.smoothscale(self.picture(name), (side, side))
+            found.fill((*step, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            if additive:
+                light = pygame.Surface((side, side))
+                light.fill((0, 0, 0))
+                light.blit(found, (0, 0))
+                found = light
+            self._scaled[key] = found
+        return found
 
     def _keypad_x360(self, surface, arena, ring):
         from .desktop_nr_arena import KEYPAD

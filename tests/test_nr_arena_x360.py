@@ -14,7 +14,7 @@ from test_nr_arena_render import skin_files
 PICTURES = ('note', 'note_broken', 'remix', 'beamed', 'cross', 'stamp_pow', 'stamp_yeah', 'stamp_ooops', 'power_bar',
             'power_fill_green', 'power_fill_yellow', 'power_fill_blue', 'bubble', 'info_box', 'sticker', 'tutorial_1',
             'tutorial_2', 'tutorial_3', 'particles', 'big_particles', 'flames', 'smoke', 'deck_texture', 'note_double',
-            'note_fire')
+            'note_fire', 'fx_spark_0', 'fx_puff_0')
 FONTS = ('casual', 'casual_white', 'badaboom', 'badaboom_white', 'turntablz')
 
 
@@ -220,6 +220,30 @@ class X360ArenaTests(unittest.TestCase):
         x, bottom = tall[arena.slots[0]]
         frame = (x * 768 / 489, (bottom - 75) * 1024 / 652)            # near the top of the drawn picture
         self.assertEqual(renderer.hit(frame), ('arena_key', 48 + int(self.nr.KEYPAD[0])))
+
+    def test_hits_burst_sparks_when_right_and_smoke_when_wrong_once_a_press(self):
+        from exp_runtime.nr_arena import POPUP_TEXT, Popup
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        arena = self.arena()
+        session = self.session(arena)
+        renderer.draw(None, session, now_ms=0)
+        self.assertEqual(renderer.effects, [])
+        arena.button_ms[0], arena.feedback = 250, 1                 # OK pressed on a good note
+        renderer.draw(None, session, now_ms=33)
+        arena.button_ms[0] = 217                                    # the same press, still lit
+        renderer.draw(None, session, now_ms=66)
+        self.assertEqual([e[0] for e in renderer.effects], ['good'])
+        arena.button_ms[0], arena.feedback = 250, 2                 # pressed again before the light went out: wrong
+        renderer.draw(None, session, now_ms=99)
+        self.assertEqual([e[0] for e in renderer.effects], ['good', 'bad'])
+        renderer.draw(None, session, now_ms=5000)                   # both over
+        self.assertEqual(renderer.effects, [])
+        # Sequences: no OK feedback; the key's flash and its "-3" popup say a wrong pick, at that item.
+        arena.button_ms[0], arena.feedback = -1, 0
+        arena.keypad, arena.keypad_flash, arena.keypad_flash_ms = True, 2, 500
+        arena.popups.append(Popup(POPUP_TEXT, arena.text_index('-3'), 2, -5, duration_ms=500))
+        renderer.draw(None, session, now_ms=6000)
+        self.assertEqual([e[0] for e in renderer.effects], ['bad'])
 
     def test_the_countdown_runs_once_press_ok_to_start_closes(self):
         renderer = self.module.X360ArenaRenderer(self.resources())
