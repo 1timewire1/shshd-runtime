@@ -215,6 +215,25 @@ class X360ArenaTests(unittest.TestCase):
                    if glyph.get_at((x, y))[3] > 0}
         self.assertEqual(colours, {(0, 0, 0)})          # the stand-in page is all black: it stays black
 
+    def test_bubbles_sit_on_the_slot_machines_panel_or_a_speech_bubble_with_an_older_addon(self):
+        def drawn(renderer):
+            renderer.draw(None, self.session(self.arena()), now_ms=0)
+            renderer._nine = Mock()
+            renderer._bubble_x360(renderer.canvas, self.arena(), None, 'HI', -1, 0, 0)
+            return renderer._nine.call_args.args
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        renderer.draw(None, self.session(self.arena()), now_ms=0)
+        self.assertIsNone(renderer.panel_art())                 # (an addon of revision 1)
+        self.assertIs(drawn(renderer)[1], renderer.bubble_art()[0])
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        spec = renderer.x360()[0]
+        spec['slot'] = dict(panel=spec['pictures']['info_box'])
+        args = drawn(renderer)
+        art, edges, _, _, narrowest = renderer.panel_art()
+        self.assertIs(args[1], art)
+        self.assertEqual(args[6], edges)
+        self.assertGreaterEqual(args[4], narrowest)             # a short line keeps both flourishes whole
+
     def test_the_deck_ignores_a_ring_easing_in_and_follows_a_shake(self):
         renderer = self.module.X360ArenaRenderer(self.resources())
         arena = self.arena()

@@ -49,6 +49,7 @@ FX = {'good': dict(count=8, life=500, speed=(3, 8), colours=((255, 0, 0), (255, 
                   gravity=-2, grow=5, spin=45, sprites='fx_puff')}
 BUBBLE_TEXT_WIDTH = 430                 # a bubble's or the info box's lines at most, native pixels (balanced: wrapped)
 EDGE_SCALE = 0.6                        # native pixels a pixel of a nine-sliced picture's edge
+PANEL_FLOURISH = 170                    # the slot panel's ends, kept whole: its ink flourishes at top left, bottom right
 TITLE_X = 1.0                           # the 3:4 frame's place across the title's 16:9 screen (0 left, 1 right)
 SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300), (38, 1900), (66, 2500))
 
@@ -207,19 +208,44 @@ class X360ArenaRenderer(NRArenaRenderer):
     def picture(self, name):
         return self.image(self.x360()[0]['pictures'][name])
 
+    @staticmethod
+    def _opaque(source):
+        """Opaque by laying it over itself (plain pygame: the player has no numpy): a half-alpha body reaches full alpha
+        in three layers, its colours unchanged. The X360 lays these at half alpha over its 3D scene; here items would
+        show through the text."""
+        image = source.copy()
+        for _ in range(3):
+            image.blit(source, (0, 0))
+        return image
+
+    def panel_art(self):
+        """The slot machine's panel for a bubble (owner, 2026-11-01): (picture, (left, top, right, bottom) edges for
+        _nine, where its box starts below the top in native pixels, native pixels below the text, the narrowest it
+        goes). The edges take in its flourishes, so a wider or taller panel doesn't stretch them. None with an addon
+        from before the slot machine (revision 1), whose bubbles stay speech bubbles."""
+        found = self._images.get('panel art')
+        if found is None:
+            spec = self.x360()[0].get('slot')
+            if spec is None:
+                return None
+            source = self.image(spec['panel'])
+            image = self._opaque(source.subsurface(source.get_bounding_rect(min_alpha=8)).copy())
+            w, h = image.get_size()
+            column = [image.get_at((w // 2, y))[3] for y in range(h)]   # (the flourishes stop short of the middle)
+            top = next((y for y, a in enumerate(column) if a > 128), 0)
+            bottom = h - next((y for y, a in enumerate(reversed(column)) if a > 128), 0)
+            flourish = min(PANEL_FLOURISH, (w - 2) // 2)
+            found = self._images['panel art'] = (image, (flourish, top + 10, flourish, h - bottom + 10), top * EDGE_SCALE,
+                                                 (h - bottom) * EDGE_SCALE + 16, 2 * flourish * EDGE_SCALE + 10)
+        return found
+
     def bubble_art(self):
-        """The X360's speech bubble for a bubble: (picture, (left, top, right, bottom) edges for _nine, where its box
-        starts below the top in native pixels). The picture is cut to what shows and its body made opaque (the X360
-        lays it at half alpha over its 3D scene; here items would show through the text). The top edge takes in the
-        tail, which rises above the box at the right, so a taller bubble doesn't stretch it into the text."""
+        """The X360's speech bubble for a bubble, as panel_art has it. The picture is cut to what shows and its body made
+        opaque. The top edge takes in the tail, which rises above the box at the right, so a taller bubble doesn't
+        stretch it into the text."""
         found = self._images.get('bubble art')
         if found is None:
-            # Opaque by laying it over itself (plain pygame: the player has no numpy): its half-alpha body reaches
-            # full alpha in three layers, its colours unchanged.
-            source = self.trimmed('bubble')
-            image = source.copy()
-            for _ in range(3):
-                image.blit(source, (0, 0))
+            image = self._opaque(self.trimmed('bubble'))
             w, h = image.get_size()
             column = [image.get_at((w // 4, y))[3] for y in range(h)]
             row = [image.get_at((x, h // 2))[3] for x in range(w)]
@@ -228,7 +254,7 @@ class X360ArenaRenderer(NRArenaRenderer):
             left = next((x for x, a in enumerate(row) if a > 128), 0)
             right = w - 1 - next((x for x, a in enumerate(reversed(row)) if a > 128), 0)
             edges = (left + 10, top + 10, w - right + 10, h - bottom + 10)
-            found = self._images['bubble art'] = (image, edges, top * EDGE_SCALE)
+            found = self._images['bubble art'] = (image, edges, top * EDGE_SCALE, 20, 0)
         return found
 
     def trimmed(self, name):
@@ -1026,14 +1052,15 @@ class X360ArenaRenderer(NRArenaRenderer):
                 self._item_x360(surface, arena, popup.value, arena.item_kind, x, y, popup.tint)
 
     def _bubble_x360(self, surface, arena, ring, text, slot, flags, now):
-        """A bubble in the X360's speech bubble, where New Rules puts it (method_449's placing); in Rhythm's tutorial
+        """A bubble on the slot machine's panel, where New Rules puts it (method_449's placing); in Rhythm's tutorial
         the Diss Practice card for the item it points at (decision 4)."""
         images = self.wrapped('casual', text, 24, BUBBLE_TEXT_WIDTH, (20, 20, 30), (190, 20, 20))
         k = self.k
-        art, edges, box_top = self.bubble_art()
+        art, edges, box_top, below, narrowest = self.panel_art() or self.bubble_art()
         inner_w = max((im.get_width() for im in images), default=0) / k
         inner_h = sum(im.get_height() / k - 8 for im in images)
-        w, h = min(SCREEN_WIDTH - 8, inner_w + 36), box_top + inner_h + 20     # the tail above the box, then text
+        w = min(SCREEN_WIDTH - 8, max(narrowest, inner_w + 36))
+        h = box_top + inner_h + below                       # the flourish or tail above the box, then text
         x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
         above = bool(flags & 2)
         card = None
@@ -1092,10 +1119,10 @@ class X360ArenaRenderer(NRArenaRenderer):
         images = self.wrapped('casual', title, 24, BUBBLE_TEXT_WIDTH, (20, 20, 30), (190, 20, 20))
         k = self.k
         w = min(SCREEN_WIDTH - 12, max((im.get_width() / k for im in images), default=200) + 50)
-        h = sum(im.get_height() / k - 8 for im in images) + 40 + len(options) * 30
+        h = sum(im.get_height() / k - 8 for im in images) + 46 + len(options) * 30      # (dark text vanishes on its ink)
         x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
         self._nine(surface, self.trimmed("info_box"), x, y, w, h, 18)
-        top = y + 18
+        top = y + 14
         for image in images:
             self.blit(surface, image, x + w / 2, top, anchor='midtop')
             top += image.get_height() / k - 8
