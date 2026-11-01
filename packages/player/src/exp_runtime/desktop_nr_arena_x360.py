@@ -24,6 +24,7 @@ FORMAT, VERSION = 'shshd-arena-skin-x360', 1
 # Where the X360 pieces go in the arena's native frame (489 x 652; the gear's bar covers below about 560).
 DECK_WIDTH = 469                        # the deck centred, 10 pixels in from each edge
 RECORD_Y = 380                          # the record's centre: the New Rules ring's height, a little lower
+SEAM_STEP = 3                           # degrees between the kept pictures of the record's seams
 SCORE_BOX = (250, 104, 229)             # the score's six digits: left, top, width (top right, as in Diss Practice)
 METER_BOX = pygame.Rect(14, 112, 190, 30)
 LABEL_TOP = pygame.Rect(14, 150, 230, 52)       # HUD box 0's label (New Rules' top band), under the meter
@@ -173,6 +174,8 @@ class X360ArenaRenderer(NRArenaRenderer):
         self._stickers = {}
         self._title = None                  # the title backdrop's layers at the frame's size (_title_layers)
         self._title_surface = None
+        self._seams = {}                    # the record's seams by turn and size (_record_seams)
+        self._arm_held, self._arm_start, self._now = -1, None, 0     # the tone arm's swing (_arm_frame)
 
     # -- the skin ---------------------------------------------------------------------------------------------------
     def x360(self):
@@ -505,6 +508,7 @@ class X360ArenaRenderer(NRArenaRenderer):
     def _paint_x360(self, surface, arena, session, now, hud_dy, deck_dy, moving):
         u, cx, cy, rx, ry, record_cx, record_cy = self._deck()
         booth = self.x360()[0]['booth']
+        self._now = now
         # The deck keeps its size when a game sets another ring size (Fever, Sequences, a tutorial) and follows only the
         # shake: its scale is the ring's size against where it rests, the median of the last 0.8 s (a shake swings
         # round it; a size held takes over within half that), within the shake's 15 %.
@@ -515,10 +519,11 @@ class X360ArenaRenderer(NRArenaRenderer):
         steps = [b - a for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600]
         turns = sum(1 for d, e in zip(steps, steps[1:]) if (d > 0) != (e > 0))
         size = min(1.15, max(0.85, arena.ring_size / rest)) if turns >= 2 else 1
-        deck = booth['pieces']['deck']
-        x, y, w, h = self._to_native(deck['box'])
-        self.blit(surface, self.image(deck['id']), cx + (x - cx) * size, cy + (y - cy) * size + deck_dy, w * size,
-                  h * size)
+        if 'parts' in booth:
+            self._deck_parts(surface, arena, booth['parts'], size, deck_dy, now)
+        else:
+            self._deck_piece(surface, self.image(booth['pieces']['deck']['id']), booth['pieces']['deck']['box'], size,
+                             deck_dy)
         if moving:
             self._hud_x360(surface, arena, session, now, hud_dy, deck_dy)
             return
@@ -541,6 +546,72 @@ class X360ArenaRenderer(NRArenaRenderer):
                 prompt = prompt or bubble[0].strip().casefold().rstrip('.!') == START_PROMPT
                 self._bubble_x360(surface, arena, ring, bubble[0], bubble[2], bubble[1], now)
         self._countdown(surface, arena, ring, now, prompt)
+
+    def _deck_piece(self, surface, image, box, size, deck_dy):
+        """A piece of the deck at its booth `box`, following the deck's shake (`size`) and rise."""
+        u, cx, cy, _, _, _, _ = self._deck()
+        x, y, w, h = self._to_native(box)
+        self.blit(surface, image, cx + (x - cx) * size, cy + (y - cy) * size + deck_dy, w * size, h * size)
+
+    def _deck_parts(self, surface, arena, parts, size, deck_dy, now):
+        """The deck in its parts, as the X360 has them: the record turns with the panel's angle, so the items stay on it,
+        under a light that stays (only its seams move), and the tone arm swings on OK."""
+        self._deck_piece(surface, self.image(parts['body']['id']), parts['body']['box'], size, deck_dy)
+        self._deck_piece(surface, self.image(parts['record']['id']), parts['record']['box'], size, deck_dy)
+        self._record_seams(surface, arena, parts['seams'], size, deck_dy)
+        self._deck_piece(surface, self.image(parts['spindle']['id']), parts['spindle']['box'], size, deck_dy)
+        frame = self._arm_frame(arena, parts['arm'], now)
+        self._deck_piece(surface, self._arm_cell(parts['arm'], frame), frame['box'], size, deck_dy)
+
+    def _record_seams(self, surface, arena, seams, size, deck_dy):
+        """The label's seams at the record's turn: turned, then squashed to the record's ellipse, about the hole. Two
+        lines through it look the same half a turn on, so SEAM_STEP-degree steps of half a turn are kept."""
+        u, cx, cy, _, _, _, _ = self._deck()
+        hx, hy, _, _ = self._to_native(seams['centre'] * 2)
+        k = self.k
+        width = max(1, round(2 * seams['radius'] * u * size * k))
+        height = max(1, round(width / seams['squash']))
+        # The ring's angles run clockwise on screen; pygame's rotate, anticlockwise.
+        turn = round(arena.angle / SEAM_STEP) * SEAM_STEP % 180
+        key = (turn, width, height)
+        found = self._seams.get(key)
+        if found is None:
+            if len(self._seams) > 2 * 180 // SEAM_STEP:
+                self._seams.clear()
+            image = self.image(seams['id'])
+            turned = pygame.transform.rotate(image, -turn)
+            found = pygame.transform.smoothscale(turned, (max(1, round(width * turned.get_width() / image.get_width())),
+                                                          max(1, round(height * turned.get_height() / image.get_height()))))
+            self._seams[key] = found
+        x = (cx + (hx - cx) * size) * k
+        y = (cy + (hy - cy) * size + deck_dy) * k
+        surface.blit(found, found.get_rect(center=(round(x), round(y))))
+
+    def _arm_frame(self, arena, arm, now):
+        """The tone arm's frame now: PUSH from each press of OK (it restarts on a press during it, as the X360's does),
+        at rest otherwise."""
+        held = arena.button_ms[0]
+        if held != -1 and (self._arm_held == -1 or held > self._arm_held):
+            self._arm_start = now
+        self._arm_held = held
+        angle = 0
+        if self._arm_start is not None:
+            elapsed, push = now - self._arm_start, arm['push']
+            if 0 <= elapsed < push[-1][0]:
+                for (t0, a0), (t1, a1) in zip(push, push[1:]):
+                    if elapsed < t1:
+                        angle = a0 + (a1 - a0) * (elapsed - t0) / (t1 - t0) if t1 > t0 else a1
+                        break
+            else:
+                self._arm_start = None
+        return min(arm['frames'], key=lambda frame: abs(frame['angle'] - angle))
+
+    def _arm_cell(self, arm, frame):
+        key = ('arm', frame['angle'])
+        found = self._images.get(key)
+        if found is None:
+            found = self._images[key] = self.image(arm['atlas']).subsurface(pygame.Rect(frame['rect'])).copy()
+        return found
 
     # The HUD: score, time, meter, the labels and the HUD boxes' pictures.
     def _hud_x360(self, surface, arena, session, now, dy, deck_dy=0):
@@ -784,17 +855,25 @@ class X360ArenaRenderer(NRArenaRenderer):
                 self.targets.append((pygame.Rect(self.skin().nodes[name]), ('arena_key', BUTTON_KEYS[name])))
 
     def _needle(self, surface, arena, ring):
-        """OK's feedback at the needle (the selector): a glow while it's pressed, green for right, red for wrong
-        (708), white otherwise (in place of the tone arm's PUSH, which the booth didn't catch)."""
+        """OK's feedback at the needle (the selector): a glow while it's pressed, green for right, red for wrong (708).
+        The needle follows the tone arm where the deck has one, whose swing is itself the press; a deck in one piece
+        shows a white glow for a press with no feedback."""
         if arena.button_ms[0] == -1:
             return
-        colour = {1: (60, 255, 80), 2: (255, 60, 50)}.get(arena.feedback, (255, 255, 230))
+        parts = self.x360()[0]['booth'].get('parts')
+        colour = {1: (60, 255, 80), 2: (255, 60, 50)}.get(arena.feedback, None if parts else (255, 255, 230))
+        if colour is None:
+            return
         k = self.k
         radius = round(16 * k)
         glow = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
         for r in range(radius, 0, -max(1, radius // 8)):
             pygame.draw.circle(glow, (*colour, round(150 * (1 - r / radius)) + 20), (radius, radius), r)
-        surface.blit(glow, (round(ring.centerx * k) - radius, round(ring.bottom * k) - radius))
+        x, y = ring.centerx, ring.bottom
+        if parts:
+            frame = self._arm_frame(arena, parts['arm'], self._now)
+            x, y, _, _ = self._to_native(frame['tip'] * 2)
+        surface.blit(glow, (round(x * k) - radius, round(y * k) - radius))
 
     def _hit_effects(self, surface, arena, ring, now):
         """Diss Practice's hit effects (FX), where the X360 shows them on a note it eats: on OK's feedback (708: 1

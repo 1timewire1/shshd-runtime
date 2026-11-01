@@ -18,7 +18,7 @@ PICTURES = ('note', 'note_broken', 'remix', 'beamed', 'cross', 'stamp_pow', 'sta
 FONTS = ('casual', 'casual_white', 'badaboom', 'badaboom_white', 'turntablz')
 
 
-def x360_skin(pygame, title=True):
+def x360_skin(pygame, title=True, parts=False):
     """{resource: bytes} of a small X360 skin in the addon's format (tools/translate/x360_arena_art.py)."""
     def png(colour, size=(16, 16)):
         surface = pygame.Surface(size, pygame.SRCALPHA)
@@ -59,6 +59,26 @@ def x360_skin(pygame, title=True):
                                                      table=dict(id=26401, box=[370, 570, 1470, 970]),
                                                      record=dict(id=26402, box=[520, 570, 1190, 862])),
         digits=dict(atlas=atlas, slots=slots, score=list(range(6)), time=[6, 7]))
+    if parts:
+        # The deck split: a blue body, a green record, a white seam from the hole to the right, a yellow spindle, and
+        # three arm frames: magenta boxes side by side (the atlas's rows) whose boxes step along the deck's front.
+        resources[26414] = png((0, 0, 200, 255), (110, 40))
+        resources[26415] = png((0, 120, 0, 255), (67, 28))
+        seam = pygame.Surface((64, 64), pygame.SRCALPHA)
+        seam.fill((255, 255, 255, 255), (32, 30, 32, 4))
+        out = io.BytesIO()
+        pygame.image.save(seam, out, 'x.png')
+        resources[26416] = out.getvalue()
+        resources[26417] = png((255, 255, 0, 255), (4, 8))
+        resources[26418] = png((255, 0, 255, 255), (20, 30))
+        spec['booth']['parts'] = dict(
+            body=dict(id=26414, box=[370, 570, 1470, 970]), record=dict(id=26415, box=[520, 570, 1190, 862]),
+            seams=dict(id=26416, centre=[855, 700], radius=180, squash=2.5),
+            spindle=dict(id=26417, box=[840, 650, 870, 700]),
+            arm=dict(atlas=26418, push=[[0, 0], [100, -10], [400, 20], [1000, 0]], frames=[
+                dict(angle=-10, rect=[0, 0, 20, 10], box=[1000, 900, 1100, 950], tip=[1000, 950]),
+                dict(angle=0, rect=[0, 10, 20, 10], box=[800, 900, 900, 950], tip=[800, 900]),
+                dict(angle=20, rect=[0, 20, 20, 10], box=[600, 800, 700, 850], tip=[600, 800])]))
     if title:
         # The title backdrop: a red sky, clouds clear but for a white band (source x 24-28 of 32), two green glints
         # (the whole screen, then its right fifth) and a front black along the bottom quarter.
@@ -217,6 +237,99 @@ class X360ArenaTests(unittest.TestCase):
             arena.ring_size = size
             renderer._paint_x360(renderer.canvas, arena, session, 2000 + now * 33, 0, 0, False)
         self.assertGreater(len(set(round(w, 3) for w in drawn)), 1)
+
+    def split_deck(self):
+        resources = self.resources()
+        resources.library = library(x360_skin(self.pygame, parts=True))
+        renderer = self.module.X360ArenaRenderer(resources)
+        renderer.k = 1
+        return renderer, renderer.x360()[0]['booth']['parts']
+
+    def test_the_tone_arm_swings_through_push_from_a_press_and_rests_otherwise(self):
+        renderer, parts = self.split_deck()
+        arena = self.arena()
+        angle = lambda now: renderer._arm_frame(arena, parts['arm'], now)['angle']      # noqa: E731
+        arena.button_ms[0] = -1
+        self.assertEqual(angle(0), 0)
+        arena.button_ms[0] = 250                            # the press
+        self.assertEqual(angle(1000), 0)                    # PUSH's first key
+        arena.button_ms[0] = 200
+        self.assertEqual(angle(1100), -10)                  # back, away from the record
+        arena.button_ms[0] = 100
+        self.assertEqual(angle(1400), 20)                   # then in, over it
+        arena.button_ms[0] = -1
+        self.assertEqual(angle(1800), 0)                    # easing back; the 250 ms highlight is long over
+        self.assertEqual(angle(2000), 0)
+        arena.button_ms[0] = 250                            # another press in the swing starts it again
+        self.assertEqual(angle(3000), 0)
+        self.assertEqual(angle(3400), 20)
+        arena.button_ms[0] = 240
+        self.assertEqual(angle(3400), 20)
+        arena.button_ms[0] = 250
+        self.assertEqual(angle(3500), 0)
+
+    def test_the_records_seams_turn_with_the_panels_angle_about_the_hole_and_the_rest_stays(self):
+        import pygame
+        renderer, parts = self.split_deck()
+        arena = self.arena()
+        surface = pygame.Surface((700, 900))
+
+        def bright(angle):
+            surface.fill((0, 0, 0))
+            arena.angle = angle
+            renderer._record_seams(surface, arena, parts['seams'], 1, 0)
+            return {(x, y) for x in range(700) for y in range(900) if surface.get_at((x, y))[0] > 100}
+        at_0 = bright(0)
+        u, _, _, _, _, _, _ = renderer._deck()
+        hx, hy, _, _ = renderer._to_native([855, 700, 855, 700])
+        reach = 180 * u
+        self.assertTrue(at_0)
+        self.assertGreater(max(x for x, _ in at_0), hx + reach * 0.8)   # to the right, from the hole
+        self.assertLess(max(abs(y - hy) for _, y in at_0), reach / 2.5 * 0.2)
+        at_90 = bright(90)                                  # clockwise on screen, as the ring's angles run: down
+        self.assertGreater(max(y for _, y in at_90), hy + reach / 2.5 * 0.8)
+        self.assertLess(max(abs(x - hx) for x, _ in at_90), reach * 0.2)
+        self.assertEqual(at_0, bright(1))                   # a step of SEAM_STEP degrees, kept
+
+    def test_a_split_deck_is_drawn_in_order_and_follows_the_shake_and_the_rise(self):
+        renderer, parts = self.split_deck()
+        arena = self.arena()
+        session = self.session(arena)
+        drawn = []
+        real = renderer.blit
+
+        def blit(surface, image, x, y, w=None, h=None, **k):
+            drawn.append((image, x, y, w))
+            return real(surface, image, x, y, w, h, **k)
+        renderer.blit = blit
+        renderer._paint_x360(renderer.canvas, arena, session, 0, 0, 0, False)
+        order = [renderer.image(parts[name]['id']) for name in ('body', 'record', 'spindle')]
+        seen = [row for row in drawn if row[0] in order or row[0] is renderer._arm_cell(parts['arm'], parts['arm']['frames'][1])]
+        self.assertEqual([row[0] for row in seen[:3]], order)
+        self.assertIs(seen[3][0], renderer._arm_cell(parts['arm'], parts['arm']['frames'][1]))    # at rest
+        rested = {id(row[0]): row for row in seen}
+        drawn.clear()
+        renderer._paint_x360(renderer.canvas, arena, session, 40, 0, 100, True)
+        for row in drawn:
+            if id(row[0]) in rested and row[0] in order:
+                self.assertAlmostEqual(row[2], rested[id(row[0])][2] + 100)
+
+    def test_a_press_glows_at_the_needle_only_with_feedback_on_a_split_deck(self):
+        import pygame
+        renderer, parts = self.split_deck()
+        arena = self.arena()
+        ring = pygame.Rect(0, 0, 300, 120)
+        surface = pygame.Surface((800, 900))
+        arena.button_ms[0] = 250
+        arena.feedback = 0
+        renderer._needle(surface, arena, ring)
+        self.assertEqual(surface.get_at((400, 400))[:3], (0, 0, 0))
+        self.assertEqual(max(surface.get_at((x, y))[1] for x in range(0, 800, 4) for y in range(0, 900, 4)), 0)
+        arena.feedback = 1
+        renderer._now = 0
+        renderer._needle(surface, arena, ring)
+        x, y, _, _ = renderer._to_native([800, 900, 800, 900])       # the resting frame's tip
+        self.assertGreater(surface.get_at((round(x), round(y)))[1], 100)
 
     def test_a_sequences_item_takes_clicks_over_its_whole_drawn_picture(self):
         # The X360 pictures stand taller than New Rules' item cell (61 x 31): a click on the top of a note missed

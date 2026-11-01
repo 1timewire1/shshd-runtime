@@ -33,6 +33,7 @@ DIGIT_SLOTS, DIGITS = 8, 10
 # still front layers merged into one. Each layer fills the 16:9 screen; placements, the clouds' opacity and the school's
 # rectangle were matched to the owner's Xenia screenshot of the title.
 TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
+PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
 GUI = 'data/art/gui/'
 TITLE_SIZE = (1280, 720)                # the sky and the front as stored (the textures are 512 to 1024 square)
 TITLE_CLOUDS = dict(opacity=0.35, speed=0.01)   # shader gui/menus/images/sky_clouds: ShifterSpeed 0.01 0 a second
@@ -249,7 +250,31 @@ def booth(folder):
         Image.open(folder / 'places' / f'{name}.png').convert('RGB').save(out, 'JPEG', quality=90)
         resources[BOOTH_BASE + len(BOOTH_PIECES) + 1 + k] = out.getvalue()
         entry['places'][name] = BOOTH_BASE + len(BOOTH_PIECES) + 1 + k
+    if 'parts' in info:
+        resources_parts, entry['parts'] = deck_parts(folder, info['parts'])
+        resources.update(resources_parts)
     return resources, entry
+
+
+def deck_parts(folder, parts):
+    """{resource ID: bytes} and the spec's `parts` entry: the deck split so its record can turn and its tone arm swing
+    (reference tools x360_dbparm.py). The arm's frames are packed into one atlas, and `push` is its angle over time."""
+    resources = {PARTS_BASE + i: (folder / f'{name}.png').read_bytes()
+                 for i, name in enumerate(('body', 'record_base', 'record_seams', 'spindle'))}
+    arm = parts['arm']
+    cells = [Image.open(folder / 'arm' / f'{k}.png').convert('RGBA') for k in range(len(arm['frames']))]
+    atlas = Image.new('RGBA', (max(c.width for c in cells), sum(c.height for c in cells)), (0, 0, 0, 0))
+    frames, y = [], 0
+    for cell, frame in zip(cells, arm['frames']):
+        atlas.paste(cell, (0, y))
+        frames.append(dict(angle=frame['angle'], rect=[0, y, cell.width, cell.height], box=frame['box'], tip=frame['tip']))
+        y += cell.height
+    resources[PARTS_BASE + 4] = _png(atlas)
+    return resources, dict(body=dict(id=PARTS_BASE, box=parts['body']),
+                           record=dict(id=PARTS_BASE + 1, box=parts['record_base']),
+                           seams=dict(id=PARTS_BASE + 2, **parts['seams']),
+                           spindle=dict(id=PARTS_BASE + 3, box=parts['spindle']),
+                           arm=dict(atlas=PARTS_BASE + 4, frames=frames, push=arm['push']))
 
 
 def title(files):

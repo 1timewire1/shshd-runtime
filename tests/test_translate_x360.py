@@ -615,6 +615,34 @@ class X360SkinTests(unittest.TestCase):
         self.assertEqual(atlas.getpixel((x, y)), (200, 3, 2, 255))
         self.assertEqual(entry['places']['school_front_diss_002'], art.BOOTH_BASE + 4)   # the practice's own view first
 
+    def test_the_split_decks_arm_frames_go_in_one_atlas_with_their_places(self):
+        import io
+        import tempfile
+        import x360_arena_art as art
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'arm').mkdir()
+            for name in ('body', 'record_base', 'record_seams', 'spindle'):
+                Image.new('RGBA', (8, 8), (1, 2, 3, 255)).save(folder / f'{name}.png')
+            Image.new('RGBA', (5, 4), (10, 0, 0, 255)).save(folder / 'arm' / '0.png')
+            Image.new('RGBA', (7, 3), (20, 0, 0, 255)).save(folder / 'arm' / '1.png')
+            parts = dict(body=[1, 2, 3, 4], record_base=[5, 6, 7, 8], spindle=[9, 9, 9, 9],
+                         seams=dict(centre=[50, 60], radius=30, squash=2.5),
+                         arm=dict(push=[[0, 0], [100, 20]], frames=[dict(angle=0, box=[0, 0, 5, 4], tip=[1, 1]),
+                                                                    dict(angle=20, box=[2, 2, 9, 5], tip=[3, 3])]))
+            resources, entry = art.deck_parts(folder, parts)
+        self.assertEqual(sorted(resources), list(range(art.PARTS_BASE, art.PARTS_BASE + 5)))
+        self.assertTrue(all(i in art.SKIN_IDS for i in resources))
+        self.assertEqual(entry['record'], dict(id=art.PARTS_BASE + 1, box=[5, 6, 7, 8]))
+        self.assertEqual(entry['seams'], dict(id=art.PARTS_BASE + 2, centre=[50, 60], radius=30, squash=2.5))
+        self.assertEqual(entry['arm']['push'], [[0, 0], [100, 20]])
+        frame = entry['arm']['frames'][1]
+        self.assertEqual((frame['angle'], frame['box'], frame['tip'], frame['rect']), (20, [2, 2, 9, 5], [3, 3], [0, 4, 7, 3]))
+        atlas = Image.open(io.BytesIO(resources[entry['arm']['atlas']]))
+        self.assertEqual(atlas.size, (7, 7))
+        self.assertEqual(atlas.getpixel((0, 4)), (20, 0, 0, 255))
+
     def test_the_title_screens_layers_make_the_backdrop(self):
         import io
         import x360_arena_art as art
