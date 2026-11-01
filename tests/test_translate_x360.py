@@ -571,6 +571,40 @@ class X360SkinTests(unittest.TestCase):
         self.assertLessEqual(art.PICTURE_BASE + len(art.PICTURES) + len(art.DERIVED) + art.NR_ITEMS, art.FONT_PAGE_BASE)
         self.assertEqual(set(art.SOUND_TRACKS), {13, 1, 11})        # right, wrong, Fever's bonus noise (the swaps)
         self.assertEqual(art.MUSIC_TRACK, 14)                       # the games' music
+        self.assertIn(art.BOOTH_BASE + len(art.BOOTH_PIECES) + len(art.PLACES), art.SKIN_IDS)
+
+    def test_the_booths_shots_keep_their_place_in_the_camera_frame(self):
+        import io
+        import json
+        import tempfile
+        import x360_arena_art as art
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'digits').mkdir()
+            (folder / 'places').mkdir()
+            boxes = {}
+            for k, name in enumerate(art.BOOTH_PIECES):
+                Image.new('RGBA', (30, 10), (k, 0, 0, 255)).save(folder / f'{name}.png')
+                boxes[name] = [100, 200, 130, 210]
+            for i in range(art.DIGIT_SLOTS):
+                for n in range(art.DIGITS):
+                    Image.new('RGBA', (4 + n, 6 + i), (200, n, i, 255)).save(folder / 'digits' / f'slot_{i}_{n}.png')
+                    boxes[f'slot_{i}_{n}'] = [10 * i, 5 * n, 10 * i + 4 + n, 5 * n + 6 + i]
+            for name in art.PLACES:
+                Image.new('RGB', (16, 9), (1, 2, 3)).save(folder / 'places' / f'{name}.png')
+            (folder / 'booth.json').write_text(json.dumps(dict(frame=[1848, 1040], camera='cameras/diss_002',
+                                                               boxes=boxes)), encoding='utf-8')
+            resources, entry = art.booth(folder)
+        self.assertEqual(sorted(resources), list(range(art.BOOTH_BASE, art.BOOTH_BASE + 4 + len(art.PLACES))))
+        self.assertEqual(entry['pieces']['record'], dict(id=art.BOOTH_BASE + 2, box=[100, 200, 130, 210]))
+        cell = entry['digits']['slots'][2][3]                         # slot 2 showing 3
+        self.assertEqual(cell['box'], [20, 15, 27, 23])
+        atlas = Image.open(io.BytesIO(resources[entry['digits']['atlas']]))
+        x, y, w, h = cell['rect']
+        self.assertEqual((w, h), (7, 8))
+        self.assertEqual(atlas.getpixel((x, y)), (200, 3, 2, 255))
+        self.assertEqual(entry['places']['school_front_diss_002'], art.BOOTH_BASE + 4)   # the practice's own view first
 
 
 if __name__ == '__main__':

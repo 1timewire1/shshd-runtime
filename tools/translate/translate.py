@@ -76,6 +76,9 @@ def main(argv=None):
     xb.add_argument('--backgrounds', type=Path,
                     help="a folder of the prototype's own backgrounds (x360_bgshots.py cuts: <location>.jpg, "
                          "<location>_<who>.jpg for a talk); those locations use them instead of New Rules art")
+    xb.add_argument('--dbp', type=Path,
+                    help="with --story addon: the Diss Practice booth's shots (Additional Resources/x360-dbp-booth: "
+                         "the deck, the record, the digits and the practice places) for the arena's X360 skin")
     xb.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -207,7 +210,7 @@ def translate_x360(args):
     if args.story == 'addon':
         import x360_arena_art
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
-                                         pcm_wav=x360.pcm_wav)
+                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp)
         data = x360.build_addon(stories, skin)
         target = args.out / f'{x360.ADDON_FILE}.exp'
         target.write_bytes(data)

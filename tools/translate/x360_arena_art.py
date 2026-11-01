@@ -16,11 +16,18 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 FORMAT, VERSION = 'shshd-arena-skin-x360', 1
 SPEC = 26300
-SKIN_IDS = range(26300, 26400)
+SKIN_IDS = range(26300, 26420)
 PICTURE_BASE = 26301                    # PICTURES then New Rules' outlined items, in order
 FONT_PAGE_BASE = 26360
 SOUND_BASE = 26380
 MUSIC = 26390
+# Shot in Xenia (reference tools x360_dbpbooth.py / x360_dbpcut.py; Additional Resources/x360-dbp-booth): the deck, the
+# record, every digit in every slot as one atlas, and Diss Practice's places, people taken out.
+BOOTH_BASE = 26400
+BOOTH_PIECES = ('deck', 'table', 'record')              # 26400-26402; the digit atlas 26403; the places from 26404
+PLACES = ('school_front_diss_002', 'school_hallway_b_diss_001', 'josh_house_in_diss_001', 'school_front_diss_001',
+          'school_hallway_b_diss_002')                  # each practice's own view first
+DIGIT_SLOTS, DIGITS = 8, 10
 HUD = 'data/art/hud/'
 FX = 'data/art/fx/'
 # (name, file, its alpha file or None, the 64-pixel cell to cut or None for the whole picture). A cut is trimmed to
@@ -184,10 +191,45 @@ def ogg_wav(data):
     return result.stdout
 
 
-def build_skin(files, items_source=None, *, pcm_wav, music=True):
+def booth(folder):
+    """{resource ID: bytes} and the spec's `booth` entry from a Diss Practice booth folder (booth.json, the deck pieces,
+    digits/slot_<i>_<n>.png, places/<name>.png). Every piece keeps its box in the booth's camera frame, so the player
+    can place them as the game's camera saw them; the digits are packed into one atlas, slot by slot."""
+    from pathlib import Path
+    folder = Path(folder)
+    info = json.loads((folder / 'booth.json').read_text(encoding='utf-8'))
+    resources, entry = {}, dict(frame=info['frame'], camera=info['camera'], pieces={}, places={})
+    for i, name in enumerate(BOOTH_PIECES):
+        resources[BOOTH_BASE + i] = (folder / f'{name}.png').read_bytes()
+        entry['pieces'][name] = dict(id=BOOTH_BASE + i, box=info['boxes'][name])
+    cells = [[Image.open(folder / 'digits' / f'slot_{i}_{n}.png').convert('RGBA') for n in range(DIGITS)]
+             for i in range(DIGIT_SLOTS)]
+    width = max(sum(c.width for c in row) for row in cells)
+    atlas = Image.new('RGBA', (width, sum(max(c.height for c in row) for row in cells)), (0, 0, 0, 0))
+    slots, y = [], 0
+    for i, row in enumerate(cells):
+        x, placed = 0, []
+        for n, cell in enumerate(row):
+            atlas.paste(cell, (x, y))
+            placed.append(dict(rect=[x, y, cell.width, cell.height], box=info['boxes'][f'slot_{i}_{n}']))
+            x += cell.width
+        slots.append(placed)
+        y += max(c.height for c in row)
+    resources[BOOTH_BASE + len(BOOTH_PIECES)] = _png(atlas)
+    entry['digits'] = dict(atlas=BOOTH_BASE + len(BOOTH_PIECES), slots=slots, score=list(range(6)), time=[6, 7])
+    for k, name in enumerate(PLACES):
+        out = io.BytesIO()
+        Image.open(folder / 'places' / f'{name}.png').convert('RGB').save(out, 'JPEG', quality=90)
+        resources[BOOTH_BASE + len(BOOTH_PIECES) + 1 + k] = out.getvalue()
+        entry['places'][name] = BOOTH_BASE + len(BOOTH_PIECES) + 1 + k
+    return resources, entry
+
+
+def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None):
     """{resource ID: bytes} for the X360 skin from the prototype's files (x360.Prototype.files); `items_source` (the
     New Rules X1i jar's resources, nr_art.load) adds New Rules' item pictures outlined; `pcm_wav` is the translator's
-    IMA ADPCM decoder (x360.pcm_wav); `music` False leaves the music out (no ffmpeg)."""
+    IMA ADPCM decoder (x360.pcm_wav); `music` False leaves the music out (no ffmpeg); `booth_folder` adds what the
+    Xenia booth shot (booth)."""
     import nr_art
     resources, spec = {}, dict(format=FORMAT, version=VERSION, pictures={}, items={}, fonts={}, sounds={},
                                sound_tracks={}, music_track={})
@@ -230,6 +272,9 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True):
     if music:
         resources[MUSIC] = ogg_wav(files[MUSIC_FILE])
         spec['music_track'][str(MUSIC_TRACK)] = MUSIC
+    if booth_folder is not None:
+        shot, spec['booth'] = booth(booth_folder)
+        resources.update(shot)
     resources[SPEC] = json.dumps(spec, sort_keys=True, separators=(',', ':')).encode('utf-8')
     assert all(i in SKIN_IDS for i in resources)
     return resources
