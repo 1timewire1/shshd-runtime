@@ -122,7 +122,10 @@ PRESENTATION_RECORD = True
 # view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`
 # places an episode by another position than its id: New Rules' second built-in story, Dancing Queen (101), follows
 # King of Diss (1), ahead of the downloads (2-48); King of Diss Lite (100) stays last, as the alternative version.
-LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5})}
+# The cancelled Xbox 360 prototype's translations (tools/translate/x360.py TITLE_SUFFIX) are tagged "X360" in the Xbox
+# 360's green, under their own category (owner, 2026-10-31); their old place was Now Airing's "Date Unknown".
+LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
+                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360')}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

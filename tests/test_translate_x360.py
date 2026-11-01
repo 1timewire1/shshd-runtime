@@ -193,12 +193,18 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
             def backdrop(self):
                 return None
 
-        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a',
+                           own_music=True)
         project = x360.translate(self.prototype(), story, Art(),
                                  music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
         self.assertEqual([n.params for n in project.nodes if n.kind == 'music'],
                          [{'resource': x360.MUSIC_INTRO, 'loop': True}])
         self.assertEqual({a.id for a in project.assets} >= {x360.MUSIC_INTRO, x360.MUSIC_LOOP}, True)
+        # A story without music of its own (Puzzle Test, Dating Beth) leaves the files out, built alongside.
+        story.own_music = False
+        project = x360.translate(self.prototype(), story, Art(),
+                                 music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
+        self.assertFalse({a.id for a in project.assets} & {x360.MUSIC_INTRO, x360.MUSIC_LOOP})
 
     def test_an_objective_notice_and_its_sound_come_ahead_of_the_line_it_follows(self):
         # SHS shows a notice with the next line; the X360 checks an objective off after a talk's last line, and the
@@ -282,21 +288,29 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
             def backdrop(self):
                 return None
 
-        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        # Andy wears Kim's render here (as Puzzle Test's "Josh" wears Josh's): its IDs are the render's own in every
+        # story (RENDERS, so the X360 addon holds each once), whatever the cast's order.
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a',
+                           renders={'a': 'kim'})
         with tempfile.TemporaryDirectory() as folder:
-            (Path(folder) / 'a').mkdir()
+            (Path(folder) / 'kim').mkdir()
             for i, emotion in enumerate(x360.RENDERED_EMOTIONS):
-                Image.new('RGBA', (226, 256), (i * 40, 0, 0, 255)).save(Path(folder) / 'a' / f'a_{emotion}.png')
+                Image.new('RGBA', (226, 256), (i * 40, 0, 0, 255)).save(Path(folder) / 'kim' / f'kim_{emotion}.png')
             rendered = x360.rendered_portraits(folder, story)
         self.assertEqual(list(rendered), ['a'])
         project = x360.translate(self.prototype(), story, Art(), rendered=rendered)
         andy = next(c for c in project.characters if c.id == 'a')
-        self.assertEqual(andy.expressions, [x360.PORTRAIT_BASE + i for i in range(5)])    # not the SHS bank
+        base = x360.PORTRAIT_BASE + 5 * x360.RENDERS.index('kim')
+        self.assertEqual(andy.expressions, [base + i for i in range(5)])                   # not the SHS bank
         assets = {a.id: a for a in project.assets}
-        sd = Image.open(io.BytesIO(assets[x360.PORTRAIT_BASE + 2].data))
-        hd = Image.open(io.BytesIO(assets[x360.PORTRAIT_BASE + x360.HIRES_PORTRAIT_OFFSET + 2].data))
+        sd = Image.open(io.BytesIO(assets[base + 2].data))
+        hd = Image.open(io.BytesIO(assets[base + x360.HIRES_PORTRAIT_OFFSET + 2].data))
         self.assertEqual((sd.size, hd.size), ((113, 128), (226, 256)))
         self.assertEqual(hd.getpixel((5, 5))[:3], (80, 0, 0))                              # happy, slot 2
+        # A render with no ID is refused rather than given one that another story may use for someone else.
+        story.renders = {'a': 'stranger'}
+        with self.assertRaises(x360.TranslateError):
+            x360.translate(self.prototype(), story, Art(), rendered=rendered)
 
     def test_the_prototypes_own_background_replaces_the_new_rules_one(self):
         # scene_backgrounds: <location>.jpg (and <location>_<who>.jpg for a talk); a covered location gets no New
@@ -319,9 +333,13 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
             Image.new('RGB', (960, 1440), (7, 8, 9)).save(Path(folder) / 'elsewhere.jpg')
             backgrounds = x360.scene_backgrounds(folder, story)
         self.assertEqual(sorted(backgrounds), ['lot', 'lot_a'])
-        project = x360.translate(self.prototype(), story, Art(), backgrounds=backgrounds)
+        from unittest import mock
+        with mock.patch.object(x360, 'SCENES', ('lot_a', 'lot')):                           # each its fixed ID
+            project = x360.translate(self.prototype(), story, Art(), backgrounds=backgrounds)
         first = next(n for n in project.nodes if n.kind == 'background')
-        self.assertEqual(first.asset, x360.SCENE_BACKGROUND_BASE)                          # 'lot', sorted first
+        self.assertEqual(first.asset, x360.SCENE_BACKGROUND_BASE + 1)                      # 'lot'
+        with self.assertRaises(x360.TranslateError):                                        # 'lot' has no ID
+            x360.translate(self.prototype(), story, Art(), backgrounds=backgrounds)
         sizes = {a.id: Image.open(io.BytesIO(a.data)).size for a in project.assets if a.id in (first.asset,)}
         self.assertEqual(sizes, {first.asset: (960, 1440)})
         self.assertFalse(any(x360.BACKGROUND_BASE <= a.id < x360.SCENE_BACKGROUND_BASE for a in project.assets))
@@ -461,6 +479,98 @@ class EmoticonEffectTests(unittest.TestCase):
         line.details['presentation_mode'] = 1
         session.resources.record = dict(pack_id=5)                              # another pack: never
         self.assertIsNone(Session.portrait_effect(session))
+
+
+class X360AddonTests(unittest.TestCase):
+    """The X360 addon (shsx360): what the three stories share, held once, and the stories built without it."""
+
+    @staticmethod
+    def story(extra=None):
+        from exp_runtime.exp import Metadata, encode_exp
+        resources = {1: Metadata(31400, 1, ('A story (SHSX360)',) * 5).to_bytes(), 25001: b'script',
+                     26000: b'a New Rules strip', 26100: b'diss battle', 26200: b'josh'}
+        resources.update(extra or {})
+        return encode_exp(resources)
+
+    def test_renders_and_backgrounds_have_one_id_in_every_story(self):
+        import x360
+        # Day of Diss keeps the IDs it was first imported with; Puzzle Test's and Dating Beth's moved to these.
+        self.assertEqual(x360.RENDERS[:5], ('josh', 'kim', 'ryan', 'nicole', 'hector'))
+        self.assertEqual(x360.SCENES[:6], ('diss_battle', 'parking_lot', 'parking_lot_hector', 'parking_lot_kim',
+                                           'parking_lot_nicole', 'parking_lot_ryan'))
+        held = (26100, 26109, 26200, 26239, 27200, 27239, 26900, 26901, 26985, 26990, 26999, 26300, 26390)
+        self.assertTrue(all(x360.addon_holds(i) for i in held))
+        # New Rules' location strips and looks stay in the story that uses them.
+        self.assertFalse(any(x360.addon_holds(i) for i in (1, 25001, 26000, 26110, 26250, 27250)))
+
+    def test_the_addon_holds_the_shared_resources_and_a_story_declares_it(self):
+        import x360
+        from exp_runtime.addons import addon_record
+        from exp_runtime.exp import ExpArchive
+        first = self.story({26990: b'emoticon'})
+        second = self.story()
+        addon = ExpArchive(x360.build_addon([first, second], {26300: b'{}'}))
+        self.assertEqual(addon_record(addon)[0], 'provides')
+        self.assertEqual(sorted(i for i in addon.entries if i >= 26000), [26100, 26200, 26300, 26990])
+        stripped, left_out = x360.strip_addon(first, addon)
+        self.assertEqual(left_out, [26100, 26200, 26990])
+        archive = ExpArchive(stripped)
+        self.assertEqual(sorted(archive.entries), [1, 4, 25001, 26000])
+        self.assertEqual(addon_record(archive), ('requires', ((x360.ADDON_ID, x360.ADDON_REVISION),)))
+        # Stories built from other art can't share the addon.
+        with self.assertRaises(x360.TranslateError):
+            x360.build_addon([first, self.story({26100: b'another battle'})])
+        with self.assertRaises(x360.TranslateError):
+            x360.strip_addon(self.story({26200: b'another josh'}), addon)
+
+    def test_the_stories_are_tagged_for_the_pickers_x360_badge(self):
+        import x360
+        from exp_runtime.content import legacy_fields
+        from exp_runtime.shs.profile import LEGACY_GAMES
+        fields = legacy_fields(['Day of Diss' + x360.TITLE_SUFFIX], 'shs', 1)
+        self.assertEqual(fields, dict(titles=['Day of Diss'], legacy='SHSX360', category='Xbox 360'))
+        self.assertEqual(LEGACY_GAMES['SHSX360']['badge'], 'X360')
+
+
+@unittest.skipUnless(HAS_PIL, 'x360_arena_art.py draws with Pillow')
+class X360SkinTests(unittest.TestCase):
+    def test_a_bmfont_descriptor_is_read(self):
+        import x360_arena_art
+        spec, pages = x360_arena_art.read_font(
+            'info face="Blambot Casual" size=50 bold=1\ncommon lineHeight=50 base=41 scaleW=512 scaleH=512 pages=2\n'
+            'page id=0 file="casual_00.png"\npage id=1 file="casual_01.png"\nchars count=2\n'
+            'char id=65   x=1     y=2     width=30    height=40    xoffset=-6    yoffset=3     xadvance=24   page=1  chnl=15\n'
+            'char id=32   x=495   y=162   width=13    height=12    xoffset=-6    yoffset=44    xadvance=12   page=0  chnl=15\n'
+            'kerning first=65 second=86 amount=-2\n')
+        self.assertEqual(pages, ['casual_00.png', 'casual_01.png'])
+        self.assertEqual((spec['line_height'], spec['base']), (50, 41))
+        self.assertEqual(spec['chars']['65'], [1, 2, 30, 40, -6, 3, 24, 1])
+        self.assertEqual(spec['kerning'], {'65,86': -2})
+        with self.assertRaises(x360_arena_art.SkinError):
+            x360_arena_art.read_font('info face="x"\n')
+
+    def test_a_new_rules_item_is_enlarged_and_outlined(self):
+        import x360_arena_art
+        from PIL import Image
+        item = Image.new('RGBA', (10, 6), (0, 0, 0, 0))
+        item.paste((200, 40, 40, 255), (2, 1, 8, 5))
+        out = x360_arena_art.outlined(item)
+        # twice the size, with a solid ink line OUTLINE pixels wide just outside it, and a shadow beyond
+        self.assertGreater(out.width, 12 + 2 * x360_arena_art.OUTLINE)
+        row = [out.getpixel((x, out.height // 2 - 2)) for x in range(out.width)]
+        first_red = next(x for x, p in enumerate(row) if p[0] > 150)        # the smooth enlargement blends its edge
+        self.assertEqual(row[first_red - 2], x360_arena_art.INK + (255,))
+        last_red = max(x for x, p in enumerate(row) if p[0] > 150)
+        self.assertEqual(row[last_red + 2], x360_arena_art.INK + (255,))
+        self.assertTrue(0 < row[last_red + 2 + x360_arena_art.OUTLINE][3] < 255)    # then the soft shadow
+
+    def test_the_skin_stays_in_its_ids_and_replaces_new_rules_sounds_and_music(self):
+        import x360_arena_art as art
+        self.assertTrue(all(i in art.SKIN_IDS for i in (art.SPEC, art.PICTURE_BASE, art.FONT_PAGE_BASE,
+                                                        art.SOUND_BASE + len(art.SOUNDS) - 1, art.MUSIC)))
+        self.assertLessEqual(art.PICTURE_BASE + len(art.PICTURES) + len(art.DERIVED) + art.NR_ITEMS, art.FONT_PAGE_BASE)
+        self.assertEqual(set(art.SOUND_TRACKS), {13, 1, 11})        # right, wrong, Fever's bonus noise (the swaps)
+        self.assertEqual(art.MUSIC_TRACK, 14)                       # the games' music
 
 
 if __name__ == '__main__':

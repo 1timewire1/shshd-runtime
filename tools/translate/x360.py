@@ -38,6 +38,18 @@ BACKGROUND_BASE = 26000                 # five IDs apart, as the creator allocat
 SCENE_BACKGROUND_BASE = 26100           # the prototype's own backgrounds (scene_backgrounds), one ID each
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
 HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rules translation stores it
+# The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
+# the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
+# stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 1
+ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
+ADDON_FILE = 'X360_Addon_Xbox_360'
+RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog')    # at PORTRAIT_BASE + 5 x index
+SCENES = ('diss_battle', 'parking_lot', 'parking_lot_hector', 'parking_lot_kim', 'parking_lot_nicole',
+          'parking_lot_ryan', 'beths_room', 'zachs_room', 'beths_house_out', 'dogpound')   # SCENE_BACKGROUND_BASE + index
+LOOK_PORTRAIT_BASE = 26250              # a cast member drawn in a New Rules look (no render): per story, in the episode
+# The stories' title tag (shs/profile.py LEGACY_GAMES): the picker's X360 badge, and its own category.
+TITLE_SUFFIX = ' (SHSX360)'
 FRAME_BACKDROP = 26999                  # New Rules' UI backdrop under the strips (shs/profile.py TRANSLATED_FRAME_BACKDROP)
 # Line emoticons (shs/profile.py TRANSLATED_PORTRAIT_EFFECTS, emoticon_effects): the global number set around a line,
 # the six cells of the X360's 4x4 emoticon sheet (effect n = cell n - 1), and the sounds its effects play.
@@ -106,13 +118,16 @@ class Story:
     # An off-screen line (no speaker: a phone call, a voice from outside) in a cast member's text colour
     # ("R G B" of its leading &:R G B;) is theirs: SHS has no off-screen bubble, so it shows them speaking.
     voices: dict = field(default_factory=dict)
+    # Plays the prototype's own music where it is given (translate's music_files): Day of Diss's (owner, 2026-10-26).
+    # The other two were imported without it.
+    own_music: bool = False
 
 
 # The New Rules looks King of Diss gives these characters (nr_looks.json; its $josh's first look).
 DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
     Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
     Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016')],
-    {'parking_lot': 23, 'diss_battle': 23}, player='josh')
+    {'parking_lot': 23, 'diss_battle': 23}, player='josh', own_music=True)
 # The test's hero is the zach model, called Josh in its text, so he wears Josh's render (owner, 2026-10-27: MS3's
 # Josh stood in with Zack's model, and the test was never updated); Moondog's look is Dancing Queen's.
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [
@@ -894,9 +909,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     rendered = rendered or {}
     backgrounds = backgrounds or {}
     music = dict(music or {})
-    assets, chained = music_assets(music_files or {}, music)
+    assets, chained = music_assets(music_files if story.own_music and music_files else {}, music)
     builder = Builder(proto, story, music, chained)
-    project = Project(title=story.title, game='shs', pack_id=PACK_ID, episode_id=story.episode_id, nodes=[])
+    project = Project(title=story.title + TITLE_SUFFIX, game='shs', pack_id=PACK_ID, episode_id=story.episode_id,
+                      nodes=[])
     project.assets.extend(assets)
     # New Rules backgrounds only for the locations the prototype's own don't cover
     uncovered = sorted({number for name, number in story.locations.items() if name not in backgrounds})
@@ -904,8 +920,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
         asset_id = BACKGROUND_BASE + 5 * k
         project.assets.append(Asset(asset_id, f'location {location}', nr_art.jpeg(art.background(location, 0))))
         builder.backgrounds[location] = asset_id
-    for k, (key, picture) in enumerate(sorted(backgrounds.items())):
-        asset_id = SCENE_BACKGROUND_BASE + k
+    for key, picture in sorted(backgrounds.items()):
+        if key not in SCENES:
+            raise TranslateError(f'background {key!r} has no ID: add it to SCENES')
+        asset_id = SCENE_BACKGROUND_BASE + SCENES.index(key)
         project.assets.append(Asset(asset_id, f'scene {key}', nr_art.jpeg(picture)))
         builder.scene_backgrounds[key] = asset_id
     backdrop = art.backdrop()
@@ -923,7 +941,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     for k, cast in enumerate(story.cast):
         if cast.id in rendered:                 # before the SHS bank too: Beth's renders replace SHS's own Beth
             from PIL import Image
-            base = PORTRAIT_BASE + 5 * k
+            render = story.renders.get(cast.id, cast.id)
+            if render not in RENDERS:
+                raise TranslateError(f'render {render!r} has no ID: add it to RENDERS')
+            base = PORTRAIT_BASE + 5 * RENDERS.index(render)
             for i, picture in enumerate(rendered[cast.id]):
                 sd = picture.resize((picture.width // 2, picture.height // 2), Image.LANCZOS)
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', nr_art.png(sd)))
@@ -934,7 +955,7 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
             for i in range(5):
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', None))
         else:
-            base = PORTRAIT_BASE + 5 * k
+            base = LOOK_PORTRAIT_BASE + 5 * k
             slots = looks[cast.look]['slots']
             for i, picture in enumerate(art.portrait_bank(list(slots), EXPRESSIONS)):
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', nr_art.png(picture)))
@@ -961,3 +982,60 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     for i, node in enumerate(project.nodes):
         node.x, node.y = 40 + 320 * (i % 12), 80 + 140 * (i // 12)
     return project
+
+
+# -- the X360 addon -------------------------------------------------------------------------------------------------
+def addon_holds(resource_id):
+    """Whether a story's resource is one the addon carries: the scene backgrounds, the renders (both sizes), the
+    prototype's music, the emoticons and their sounds, the objective sound and the frame backdrop (26900-26999), and
+    the arena skin (x360_arena_art.SKIN_IDS). New Rules' location strips and looks stay in the story that uses them."""
+    import x360_arena_art
+    renders = range(PORTRAIT_BASE, PORTRAIT_BASE + 5 * len(RENDERS))
+    return (SCENE_BACKGROUND_BASE <= resource_id < SCENE_BACKGROUND_BASE + len(SCENES) or resource_id in renders
+            or resource_id - HIRES_PORTRAIT_OFFSET in renders or 26900 <= resource_id <= 26999
+            or resource_id in x360_arena_art.SKIN_IDS)
+
+
+def build_addon(stories, skin=None):
+    """The X360 addon's `.exp` bytes from the stories' exported `.exp` bytes (every story, built with the renders,
+    backgrounds and music they are to share): each resource addon_holds, which every story holding it must hold
+    alike; with `skin` (x360_arena_art.build_skin's {id: bytes}) the arena's X360 skin too."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+    from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+    resources = {}
+    for data in stories:
+        archive = ExpArchive(data)
+        for resource_id in sorted(archive.entries):
+            if not addon_holds(resource_id):
+                continue
+            payload = archive.read(resource_id)
+            if resources.setdefault(resource_id, payload) != payload:
+                raise TranslateError(f'resource {resource_id} differs between the stories')
+    for resource_id, payload in (skin or {}).items():
+        if resources.setdefault(resource_id, payload) != payload:
+            raise TranslateError(f'skin resource {resource_id} is already a story resource')
+    resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
+    resources[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
+    return encode_exp(resources)
+
+
+def strip_addon(data, addon):
+    """A story's `.exp` bytes without what the addon (its ExpArchive) holds, declaring the addon instead (resource 4).
+    Every resource left out must be the addon's own byte for byte: a story built from other art needs the addon
+    rebuilt with it. Returns (bytes, the IDs left out)."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, requires_bytes
+    from exp_runtime.exp import ExpArchive, encode_exp
+    archive = ExpArchive(data)
+    resources, left_out = {}, []
+    for resource_id in sorted(archive.entries):
+        payload = archive.read(resource_id)
+        if resource_id in addon.entries and resource_id >= 26000:
+            if addon.read(resource_id) != payload:
+                raise TranslateError(f'resource {resource_id} differs from the addon\'s: rebuild the addon')
+            left_out.append(resource_id)
+            continue
+        resources[resource_id] = payload
+    if ADDON_RECORD in resources:
+        raise TranslateError('the story already declares addons')
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+    return encode_exp(resources), left_out

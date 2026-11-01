@@ -55,7 +55,12 @@ def main(argv=None):
                          "--addon: the addon holds the minigame library and the arena's art)")
     xb = sub.add_parser('x360', help="the cancelled Xbox 360 prototype's new stories (creator projects)")
     xb.add_argument('pak', type=Path, help="the MS4 prototype's data.pak")
-    xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'dating-beth', 'all'), default='all')
+    xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'dating-beth', 'all', 'addon'), default='all',
+                    help="a story, all three, or `addon`: the X360 addon (what the stories share, with the arena's "
+                         "X360 skin), built from all three with the same art and music arguments")
+    xb.add_argument('--addon', type=Path,
+                    help="the X360 addon (`--story addon` writes it): the stories leave out what it holds and declare "
+                         "it")
     xb.add_argument('--pud', type=Path, required=True)
     xb.add_argument('--x1i', type=Path)
     xb.add_argument('--looks', type=Path, required=True,
@@ -152,10 +157,15 @@ def main(argv=None):
 
 
 def translate_x360(args):
-    """Writes each story's .expproj (editable in the creator) and its exported .exp."""
+    """Writes each story's .expproj (editable in the creator) and its exported .exp; with `--story addon`, the X360
+    addon instead."""
     import json
-    from exp_runtime.creator import export_project, save_project
+    from exp_runtime.creator import compile_project, save_project
+    from exp_runtime.exp import ExpArchive
     import x360
+    if args.addon and args.story == 'addon':
+        raise SystemExit('--addon is for the stories; --story addon writes the addon')
+    addon = ExpArchive(args.addon.read_bytes()) if args.addon else None
     proto = x360.Prototype(args.pak.read_bytes())
     art = nr_art.Art(nr_art.load(args.pud), nr_art.load(args.x1i) if args.x1i else None)
     hires_art = nr_art.Art(nr_art.load(args.x1i), nr_art.load(args.x1i)) if args.x1i else None
@@ -168,24 +178,41 @@ def translate_x360(args):
     for item in args.music_file:
         cue, _, path = item.partition('=')
         music_files[cue] = Path(path).read_bytes()
-    names = list(x360.STORIES) if args.story == 'all' else [args.story]
+    names = list(x360.STORIES) if args.story in ('all', 'addon') else [args.story]
+    stories = []
     for name in names:
         story = x360.STORIES[name]
         rendered = x360.rendered_portraits(args.portraits, story) if args.portraits else {}
         backgrounds = x360.scene_backgrounds(args.backgrounds, story) if args.backgrounds else {}
         project = x360.translate(proto, story, art, hires_art, looks, music, music_files, rendered, backgrounds)
+        data = compile_project(project)
+        if args.story == 'addon':
+            stories.append(data)
+            continue
         if rendered:
             print(f'{name}: rendered portraits for {", ".join(sorted(rendered))}')
         if backgrounds:
             print(f'{name}: own backgrounds {", ".join(sorted(backgrounds))}')
+        left_out = []
+        if addon is not None:
+            data, left_out = x360.strip_addon(data, addon)
         stem = args.out / f'X360_{story.episode_id:02d}_{safe(story.title)}'
         save_project(project, stem.with_suffix('.expproj'))
-        export_project(project, stem.with_suffix('.exp'))
+        stem.with_suffix('.exp').write_bytes(data)
         kinds = {}
         for node in project.nodes:
             kinds[node.kind] = kinds.get(node.kind, 0) + 1
-        print(f'{name}: {story.title!r} -> {stem}.exp ({stem.with_suffix(".exp").stat().st_size // 1024} KB, '
-              f'{len(project.nodes)} nodes: {dict(sorted(kinds.items()))})')
+        print(f'{name}: {story.title!r} -> {stem}.exp ({len(data) // 1024} KB, {len(project.nodes)} nodes: '
+              f'{dict(sorted(kinds.items()))}' + (f', {len(left_out)} resources from the addon' if addon else '') + ')')
+    if args.story == 'addon':
+        import x360_arena_art
+        skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
+                                         pcm_wav=x360.pcm_wav)
+        data = x360.build_addon(stories, skin)
+        target = args.out / f'{x360.ADDON_FILE}.exp'
+        target.write_bytes(data)
+        print(f'addon: {x360.ADDON_TITLE!r} revision {x360.ADDON_REVISION} -> {target} ({len(data) // 1024} KB, '
+              f'{len(ExpArchive(data).entries)} resources, {len(skin)} of them the arena skin)')
 
 
 # Dancing Queen's smartphone version, Homecoming Queen, as a library holds it: the capitals it learns from.
