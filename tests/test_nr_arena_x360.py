@@ -578,6 +578,72 @@ class X360SwitchTests(unittest.TestCase):
         ui._end_x360_music(stream, SimpleNamespace(nr_arena=None), 300)
         stream.stop.assert_called_once()
 
+    def tutorial(self, title='welcome to the `rhyming` game.  view tutorial?', skin=True):
+        from exp_runtime.nr_arena import NRArena
+        ui = self.desktop()
+        ui.arena_skin = skin
+        action = SimpleNamespace(details=dict(title=title, options=['yes', 'no']))
+        ui.session.pending = action
+        ui.session.answer = Mock()
+        ui.session.engine = SimpleNamespace(nr_arena=NRArena.opened(False, True), music_serial=4)
+        ui._attempt = lambda work: work()
+        ui.x360_arena_renderer.x360()[0]['tutorial_music'] = 26391
+        ui.x360_arena_renderer.x360()[1].read = Mock(return_value=b'mp3')
+        ui.music_enabled, ui.menu_open = True, False
+        return ui, action
+
+    def test_a_yes_to_view_tutorial_starts_the_tutorial_until_the_games_music_request(self):
+        ui, action = self.tutorial()
+        ui._resolve_arena_menu(action, 0)
+        ui.session.answer.assert_called_once_with(0)
+        self.assertTrue(ui._in_x360_tutorial())
+        ui.session.engine.music_serial = 5                  # the game's own track
+        self.assertFalse(ui._in_x360_tutorial())
+        self.assertIsNone(ui.x360_tutorial)
+
+    def test_no_tutorial_comes_from_a_no_or_another_menu_or_new_rules_own_look(self):
+        ui, action = self.tutorial()
+        ui._resolve_arena_menu(action, 1)
+        self.assertFalse(ui._in_x360_tutorial())
+        ui, action = self.tutorial(title='play again?')
+        ui._resolve_arena_menu(action, 0)
+        self.assertFalse(ui._in_x360_tutorial())
+        ui, action = self.tutorial(skin=False)
+        ui._resolve_arena_menu(action, 0)
+        self.assertFalse(ui._in_x360_tutorial())
+
+    def test_a_tutorial_loops_its_own_music_and_the_games_track_or_its_end_takes_over(self):
+        ui, action = self.tutorial()
+        stream = SimpleNamespace(current=None, fade=None, play=Mock(), stop=Mock())
+        ui._x360_tutorial_music(stream, 100)
+        stream.play.assert_not_called()                     # not before the yes
+        ui._resolve_arena_menu(action, 0)
+        ui._x360_tutorial_music(stream, 100)
+        args = stream.play.call_args
+        self.assertEqual(args.args[:2], (26391, True))
+        self.assertEqual(args.args[2](26391), (b'mp3', 0))
+        ui.music_enabled = False
+        stream.play.reset_mock()
+        ui._x360_tutorial_music(stream, 110)
+        stream.play.assert_not_called()                     # Music off stays off
+        stream.current = dict(id=26391)
+        ui.session.engine.nr_arena = None                   # the arena gone before its game: nothing else stops it
+        ui._end_x360_music(stream, ui.session.engine, 120)
+        stream.stop.assert_called_once()
+
+    def test_a_tutorials_hits_play_the_games_sounds_but_the_games_own_are_left_to_it(self):
+        ui, action = self.tutorial()
+        ui._play_sounds = Mock()
+        ui.x360_arena_renderer.hits = ['good']
+        ui._x360_tutorial_sounds()
+        ui._play_sounds.assert_not_called()                 # the game's: its own script plays them
+        ui._resolve_arena_menu(action, 0)
+        self.assertEqual(ui.x360_arena_renderer.hits, [])   # (and they don't carry over)
+        ui.x360_arena_renderer.hits = ['good', 'bad']
+        ui._x360_tutorial_sounds()
+        ui._play_sounds.assert_called_once_with([26980 + 13, 26980 + 1])
+        self.assertEqual(ui.x360_arena_renderer.hits, [])
+
     def test_the_look_is_new_rules_by_default_and_kept(self):
         from exp_runtime.menu import preference_defaults
         self.assertIs(preference_defaults()['arena_skin'], False)

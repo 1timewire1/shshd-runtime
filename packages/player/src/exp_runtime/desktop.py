@@ -244,6 +244,7 @@ class Desktop:
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
+    x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Arena Look" switch (x360_arena_switch)
     host_prompt = None
     minigame_played = None
@@ -673,6 +674,7 @@ class Desktop:
                     stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open)
             else:
                 stream.stop(engine.music_stop_ms, now)
+        self._x360_tutorial_music(stream, now)
         self._end_x360_music(stream, engine, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
                       paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
@@ -788,14 +790,43 @@ class Desktop:
         if current is None or stream.fade is not None or getattr(self, '_x360_arena', None) is not True:
             return                          # (the addon's skin is known to be there once the switch was offered)
         try:
-            music = set(self.x360_arena_renderer.x360()[0].get('music_track', {}).values())
+            spec = self.x360_arena_renderer.x360()[0]
         except ValueError:
             return
+        music = {*spec.get('music_track', {}).values(), spec.get('tutorial_music')}
         if current['id'] not in music:
             return
         arena = engine.nr_arena
         if arena is None or arena.time_up:
             stream.stop(MUSIC_FADE_MS, now)
+
+    def _in_x360_tutorial(self):
+        """Whether a tutorial is running in the X360 look: from a yes to "view tutorial?" until the game's own music
+        request, which comes as the game starts. Not kept in a save: a tutorial resumed from one plays as New Rules' does."""
+        if self.x360_tutorial is None:
+            return False
+        engine = self.session.engine
+        if engine.music_serial != self.x360_tutorial or self._x360_swaps() is None:
+            self.x360_tutorial = None
+            return False
+        return True
+
+    def _x360_tutorial_music(self, stream, now):
+        """New Rules plays no music in a tutorial; the X360 look plays the tutorials' own (owner, 2026-11-01)."""
+        if not self.music_enabled or not self._in_x360_tutorial():
+            return
+        spec, archive = self.x360_arena_renderer.x360()
+        resource = spec.get('tutorial_music')
+        if resource is not None:
+            stream.play(resource, True, lambda _id: (archive.read(resource), 0), now, held=self.menu_open)
+
+    def _x360_tutorial_sounds(self):
+        """New Rules plays no sound in a tutorial's practice; the X360 look plays the game's for each hit effect there."""
+        if self._in_x360_tutorial() and self.x360_arena_renderer.hits:
+            from .desktop_nr_arena_x360 import HIT_TRACKS, NR_TRACK_BASE
+            hits = self.x360_arena_renderer.hits
+            self._play_sounds([NR_TRACK_BASE + HIT_TRACKS[kind] for kind in hits])
+            hits.clear()
 
     def _x360_swaps(self):
         """While the arena is open in the X360 look: ({New Rules sound: [X360 sounds]}, {New Rules music: X360 music},
@@ -1010,6 +1041,12 @@ class Desktop:
 
     def _resolve_arena_menu(self, action, index):
         if self.session.pending is action:
+            details = action.details
+            taken = ('view tutorial' in (details.get('title') or '').casefold()
+                     and details['options'][index].casefold() == 'yes' and self._x360_swaps() is not None)
+            self.x360_tutorial = self.session.engine.music_serial if taken else None
+            if taken:
+                self.x360_arena_renderer.hits.clear()   # (the game before's)
             self._attempt(lambda: self.session.answer(index))
 
     def _open_prompt(self, action, title, text, options, resolve):
@@ -3344,6 +3381,7 @@ class Desktop:
             self._coast_panels()
             self._grid_hold(elapsed_ms)
             self._leash_stick()
+            self._x360_tutorial_sounds()
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)

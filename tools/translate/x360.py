@@ -41,7 +41,8 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 3
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 4
+STORY_ADDON_REVISION = 3                # what the stories need; revision 4 only adds the arena tutorials' music
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog')    # at PORTRAIT_BASE + 5 x index
@@ -1207,5 +1208,5 @@ def strip_addon(data, addon):
         resources[resource_id] = payload
     if ADDON_RECORD in resources:
         raise TranslateError('the story already declares addons')
-    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, STORY_ADDON_REVISION)])
     return encode_exp(resources), left_out

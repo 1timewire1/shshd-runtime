@@ -36,6 +36,7 @@ TUTORIAL_CARDS = {20: 'tutorial_1', 17: 'tutorial_1', 19: 'tutorial_1', 18: 'tut
 COUNTDOWN = ((3, 500), (2, 750), (1, 1000))     # Diss Practice's 3-2-1 (ms each, scaling up and back; silent)
 START_PROMPT = 'press ok to start'
 MUSIC_FADE_MS = 1000
+HIT_TRACKS = {'good': 13, 'bad': 1}     # the New Rules track each hit effect's moment plays in the game
 # Diss Practice's hit effects (templates particleemitter.wxr: minigame/bps/eat_good_note, eat_bad_note), in its world
 # units: sizes at FX_SIZE native pixels a unit, speeds and gravity at FX_SPEED (a note there is about 0.15 units; the
 # owner's recording shows the burst about a deck's eighth across). A good note: 8 flares shot out at 3-8 units/s, red to orange, falling
@@ -171,6 +172,7 @@ class X360ArenaRenderer(NRArenaRenderer):
         self._prompt_seen = False
         self._sizes = []                    # (ms, the ring's size) over the last 0.8 s
         self.effects = []                   # hit effects playing: (kind, x, y, start ms, particles)
+        self.hits = []                      # the latest ones' kinds, for Desktop: a tutorial's practice has no sounds
         self._fx_pressed, self._fx_held, self._fx_flash_ms = False, -1, 0
         self._stickers = {}
         self._title = None                  # the title backdrop's layers at the frame's size (_title_layers)
@@ -953,6 +955,7 @@ class X360ArenaRenderer(NRArenaRenderer):
         return None
 
     def _spawn(self, kind, x, y, now):
+        self.hits = [*self.hits[-3:], kind]
         sprites = [name for name in self.x360()[0]['pictures'] if name.startswith(FX[kind]['sprites'] + '_')]
         if not sprites:
             return                          # a skin from before the effects' sprites: none

@@ -21,6 +21,7 @@ PICTURE_BASE = 26301                    # PICTURES then New Rules' outlined item
 FONT_PAGE_BASE = 26360
 SOUND_BASE = 26380
 MUSIC = 26390
+TUTORIAL_MUSIC = 26391
 # Shot in Xenia (reference tools x360_dbpbooth.py / x360_dbpcut.py; Additional Resources/x360-dbp-booth): the deck, the
 # record, every digit in every slot as one atlas, and Diss Practice's places, people taken out.
 BOOTH_BASE = 26400
@@ -100,6 +101,9 @@ SOUND_TRACKS = {13: ('whoosh_1', 'whoosh_2', 'whoosh_3'), 1: ('fail',), 11: ('sw
 # The practice maps' music cue (music/dbp_bg_music_001, looping), in place of the games' track 14 (owner, 2026-10-31).
 MUSIC_FILE, MUSIC_TRACK = 'data/sound/music/dbp_bg_music.ogg', 14
 MUSIC_BITRATE = '128k'                  # mono, as the source
+# The tutorials' music (owner, 2026-11-01): New Rules plays none until the game starts. Brought down to the practice
+# music's level: its RMS is -8.0 dB against dbp_bg_music's -13.1.
+TUTORIAL_MUSIC_FILE, TUTORIAL_MUSIC_GAIN_DB = 'data/sound/music/diss_001.ogg', -5
 
 
 class SkinError(ValueError):
@@ -215,13 +219,14 @@ def _fields(rest):
     return out
 
 
-def ogg_mp3(data):
+def ogg_mp3(data, gain_db=0):
     """The music as an MP3 (ffmpeg), a sixth of its size as a WAV. Its loop comes 29 ms later than the source's (the
     encoder's delay), and the games end before its 92.5 s are up. No Xing frame: it would count as playing time."""
     ffmpeg = shutil.which('ffmpeg')
     if ffmpeg is None:
         raise SkinError("the skin's music needs ffmpeg on PATH")
-    result = subprocess.run([ffmpeg, '-v', 'error', '-i', 'pipe:0', '-f', 'mp3', '-acodec', 'libmp3lame', '-b:a', MUSIC_BITRATE,
+    gain = ['-af', f'volume={gain_db}dB'] if gain_db else []
+    result = subprocess.run([ffmpeg, '-v', 'error', '-i', 'pipe:0', *gain, '-f', 'mp3', '-acodec', 'libmp3lame', '-b:a', MUSIC_BITRATE,
                              '-write_xing', '0', '-id3v2_version', '0', 'pipe:1'], input=data, capture_output=True,
                             check=True)
     return result.stdout
@@ -413,6 +418,9 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
     if music:
         resources[MUSIC] = ogg_mp3(files[MUSIC_FILE])
         spec['music_track'][str(MUSIC_TRACK)] = MUSIC
+        if TUTORIAL_MUSIC_FILE in files:
+            resources[TUTORIAL_MUSIC] = ogg_mp3(files[TUTORIAL_MUSIC_FILE], TUTORIAL_MUSIC_GAIN_DB)
+            spec['tutorial_music'] = TUTORIAL_MUSIC
     if 'data/art/hud/narrator.png' in files:
         made, spec['slot'] = slot(files, pcm_wav)
         resources.update(made)

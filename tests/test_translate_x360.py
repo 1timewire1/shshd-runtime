@@ -766,7 +766,7 @@ class X360AddonTests(unittest.TestCase):
         self.assertEqual(left_out, [26100, 26200, 26990])
         archive = ExpArchive(stripped)
         self.assertEqual(sorted(archive.entries), [1, 4, 25001, 26000])
-        self.assertEqual(addon_record(archive), ('requires', ((x360.ADDON_ID, x360.ADDON_REVISION),)))
+        self.assertEqual(addon_record(archive), ('requires', ((x360.ADDON_ID, x360.STORY_ADDON_REVISION),)))
         # Stories built from other art can't share the addon.
         with self.assertRaises(x360.TranslateError):
             x360.build_addon([first, self.story({26100: b'another battle'})])
@@ -906,6 +906,18 @@ class X360SkinTests(unittest.TestCase):
         atlas = Image.open(io.BytesIO(resources[entry['arm']['atlas']]))
         self.assertEqual(atlas.size, (7, 7))
         self.assertEqual(atlas.getpixel((0, 4)), (20, 0, 0, 255))
+
+    def test_the_tutorials_music_is_brought_down_to_the_practice_musics_level(self):
+        import x360_arena_art as art
+        self.assertEqual(art.TUTORIAL_MUSIC_FILE, 'data/sound/music/diss_001.ogg')
+        self.assertIn(art.TUTORIAL_MUSIC, art.SKIN_IDS)
+        self.assertNotEqual(art.TUTORIAL_MUSIC, art.MUSIC)
+        from unittest.mock import patch
+        with patch.object(art.subprocess, 'run') as run, patch.object(art.shutil, 'which', return_value='ffmpeg'):
+            art.ogg_mp3(b'ogg', art.TUTORIAL_MUSIC_GAIN_DB)
+            self.assertIn('volume=-5dB', run.call_args.args[0])
+            art.ogg_mp3(b'ogg')
+            self.assertFalse([a for a in run.call_args.args[0] if str(a).startswith('volume')])
 
     def test_the_leashs_art_comes_from_the_hud(self):
         import io
