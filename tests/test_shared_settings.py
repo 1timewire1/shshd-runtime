@@ -149,7 +149,7 @@ class UnlockWarpingTests(unittest.TestCase):
         self.assertNotIn('unlock_warp', Desktop._pause_settings(SimpleNamespace(
             vibration_enabled=False, music_enabled=True, sound_enabled=True, music_volume=1, sound_volume=1,
             panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
-            backdrop_switch=lambda: False, hires_switch=lambda: False)))
+            backdrop_switch=lambda: False, hires_switch=lambda: False, minigames_switch=lambda: False)))
 
 if __name__ == '__main__':
     unittest.main()

@@ -17,7 +17,7 @@ from . import graphics as pygame
 from .app_icon import set_window_icon
 from .content import ContentError, presentation_feature
 from .audio import music_cue
-from .games import GAMES, game_id
+from .games import GAMES, game_id, has_translated_minigames
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -238,7 +238,7 @@ class Desktop:
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
-    _arena_minigames = True         # translated New Rules episodes: the "Minigame Arena" switch (arena_minigames)
+    _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Arena Look" switch (x360_arena_switch)
     host_prompt = None
     minigame_played = None
@@ -297,9 +297,9 @@ class Desktop:
 
     @property
     def arena_minigames(self):
-        """shshd-runtime's Minigame Arena (owner, 2026-10-31): translated New Rules episodes play their minigames in
-        New Rules' arena; off, as the timed choices they carry for players without it. A story asks as each game
-        starts (service 70's arena query), so a game already playing keeps its form."""
+        """shshd-runtime's "Use Translated Mini-Games" (owner, 2026-10-31, as Minigame Arena): translated episodes play
+        their minigames for real, New Rules' in its arena; off, as the timed choices they carry for players without it.
+        A story asks as each game starts (service 70's arena query), so a game already playing keeps its form."""
         return self._arena_minigames
 
     @arena_minigames.setter
@@ -1551,13 +1551,18 @@ class Desktop:
         return self.backdrop_collage() is not None
 
     def hires_switch(self):
-        """shshd-runtime: whether this episode has a second, hi-res portrait set (the game profile's
-        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something.
-        The "Minigame Arena" switch is offered with it: it too only concerns translated New Rules episodes."""
+        """shshd-runtime: whether this episode has a second, hi-res portrait set to choose (the game profile's
+        HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
-        packs = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_PORTRAIT_ART', {})
-        return record.get('pack_id') in packs
+        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'HIRES_SWITCH_PACKS', ())
+
+    def minigames_switch(self):
+        """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
+        profile's TRANSLATED_MINIGAMES)."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return has_translated_minigames(GAMES.get(game_id(resources)), record)
 
     def set_hires_portraits(self, enabled):
         """shshd-runtime: the "Hi-Res Portraits" switch, from either Options page. The library reads the other set
@@ -2194,12 +2199,13 @@ class Desktop:
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
-                    **({'arena_minigames': self.arena_minigames} if self.hires_switch() else {}),
+                    **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
     def x360_arena_switch(self):
         """shshd-runtime: whether the "Arena Look" switch is offered: in a translated New Rules episode (hires_switch)
-        with Minigame Arena on, and the X360 addon's arena skin imported (desktop_nr_arena_x360; owner, 2026-10-31)."""
+        with Use Translated Mini-Games on, and the X360 addon's arena skin imported (desktop_nr_arena_x360; owner,
+        2026-10-31)."""
         if not (self.hires_switch() and self.arena_minigames):
             return False
         if self._x360_arena is None:

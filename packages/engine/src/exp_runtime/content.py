@@ -1512,12 +1512,14 @@ class EpisodeResources:
 
     def _hires_portrait(self, resource_id):
         """shshd-runtime: the resource holding the hi-res copy of a translated episode's portrait, when the player
-        wants them (library.hires_portraits) and the episode has one: the game profile's TRANSLATED_PORTRAIT_ART,
-        pack -> (first, end, offset), moves portraits in [first, end) by offset. Else None."""
-        if not getattr(self.library, 'hires_portraits', False):
-            return None
+        wants them (library.hires_portraits, for the packs the switch concerns: HIRES_SWITCH_PACKS) and the episode has
+        one: the game profile's TRANSLATED_PORTRAIT_ART, pack -> (first, end, offset), moves portraits in [first, end)
+        by offset. Else None."""
         profile = GAMES.get(getattr(self.library, 'game_id', None))
-        span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(self.record.get('pack_id'))
+        pack = self.record.get('pack_id')
+        if not getattr(self.library, 'hires_portraits', False) and pack in getattr(profile, 'HIRES_SWITCH_PACKS', ()):
+            return None
+        span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(pack)
         if span is None or not span[0] <= resource_id < span[1]:
             return None
         hires = resource_id + span[2]

@@ -165,8 +165,8 @@ EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees')
 SHORT_TITLES = {'shs': 'SHS', 'cod': 'CoD'}     # a backup's row names its game short
 SLIDER = (143, 460)                     # a volume slider's track: its left and width in points (HdShell's)
 # Options only one game offers are not listed before a game is chosen (owner, 2026-10-30): SHS's High School Story ad
-# intros and store plugs (CodPauseMenu leaves both out), its New Rules Hi-Res Portraits and Minigame Arena
-# (TRANSLATED_PORTRAIT_ART) and translated Episode Titles (no CoD episode has one). Each game's own Options still has
+# intros and store plugs (CodPauseMenu leaves both out), its New Rules Hi-Res Portraits (HIRES_SWITCH_PACKS), Use
+# Translated Minigames (TRANSLATED_MINIGAMES) and translated Episode Titles (no CoD episode has one). Each game's own Options still has
 # them.
 ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'arena_minigames', 'arena_skin',
                     'title_language')

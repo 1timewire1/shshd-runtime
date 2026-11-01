@@ -338,7 +338,8 @@ class HdShell:
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():
             settings['hires_portraits'] = state.hires_portraits
-            settings['arena_minigames'] = state.arena_minigames     # the same translated New Rules episodes
+        if self.app.minigames_offered():
+            settings['arena_minigames'] = state.arena_minigames
         if self.app.arena_skin_offered() and state.arena_minigames:
             settings['arena_skin'] = state.arena_skin               # ...with the X360 addon
         if self.translated_titles():

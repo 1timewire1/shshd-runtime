@@ -34,7 +34,7 @@ from .episode_picker import PickerModel
 from . import episode_thumbnails, frame_log
 from .languages import TITLE_LANGUAGES
 from .launcher import APP_NAME
-from .games import GAMES
+from .games import GAMES, has_translated_minigames
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
@@ -967,10 +967,17 @@ class Application:
         return (self.updates.future is not None or self.updates.available is not None) and waited < UPDATE_WAIT
 
     def hires_portraits_offered(self):
-        """Whether the library has an episode with a second, hi-res portrait set (the game profile's
-        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
-        packs = getattr(GAMES.get(self.library.game_id), 'TRANSLATED_PORTRAIT_ART', {}) if self.library else {}
+        """Whether the library has an episode with a second, hi-res portrait set to choose (the game profile's
+        HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        packs = getattr(GAMES.get(self.library.game_id), 'HIRES_SWITCH_PACKS', ()) if self.library else ()
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+
+    def minigames_offered(self):
+        """Whether the library has an episode the "Use Translated Mini-Games" switch changes (TRANSLATED_MINIGAMES)."""
+        if not self.library:
+            return False
+        profile = GAMES.get(self.library.game_id)
+        return any(has_translated_minigames(profile, record) for record in self.library.episodes)
 
     def arena_skin_offered(self):
         """Whether the "Arena Look" switch changes something: translated New Rules episodes (their arena) and the X360

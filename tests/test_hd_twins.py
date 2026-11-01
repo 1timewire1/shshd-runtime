@@ -244,6 +244,13 @@ class HiresPortraitTests(unittest.TestCase):
         self.library.hires_portraits = False
         self.assertEqual(image_size(self.resources().read_asset(26200)), (200, 240))
 
+    def test_an_x360_episode_keeps_its_larger_render_whatever_the_new_rules_switch_says(self):
+        # Its two sizes are one render (the owner, 2026-11-01: the switch is New Rules', and hidden in its episodes), so
+        # switching New Rules to its WinMo faces must not shrink the X360's.
+        self.library.hires_portraits = False
+        self.assertEqual(self.resources(pack=31400).read_asset(26200), self.x1i)
+        self.assertEqual(self.resources(pack=31400).standard_portrait(26200), self.winmo)
+
     def test_a_save_loads_with_whichever_portrait_set_is_current(self):
         # A save names the portrait the story set (26200), never the hi-res copy (+1000) the switch reads, and the
         # switch is not part of the save's content identity: a save made with either set opens under the other, and

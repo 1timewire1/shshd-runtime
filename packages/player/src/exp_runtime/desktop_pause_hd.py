@@ -55,12 +55,12 @@ DEVICE_VIBRATION_LABEL = 'Vibration'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
-ARENA_MINIGAMES_LABEL = 'Minigame Arena'        # translated New Rules episodes: their arena, else timed choices
+ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
 ARENA_SKIN_LABEL = 'X360 Arena Look'            # ...that arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in the SHS profile's LEGACY_GAMES. The switch itself is offered only when such episodes
-# are there (application.hires_portraits_offered, Desktop.hires_switch).
-SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'arena_minigames': 'SHSNR', 'arena_skin': 'SHSX360'}
+# are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'arena_skin': 'SHSX360'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
 
 
