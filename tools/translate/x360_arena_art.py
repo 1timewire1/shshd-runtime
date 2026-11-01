@@ -16,7 +16,7 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 FORMAT, VERSION = 'shshd-arena-skin-x360', 1
 SPEC = 26300
-SKIN_IDS = range(26300, 26500)
+SKIN_IDS = range(26300, 26900)
 PICTURE_BASE = 26301                    # PICTURES then New Rules' outlined items, in order
 FONT_PAGE_BASE = 26360
 SOUND_BASE = 26380

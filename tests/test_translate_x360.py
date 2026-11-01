@@ -961,7 +961,7 @@ class X360SkinTests(unittest.TestCase):
         self.assertEqual(x360_puzzle.SOUND_DRAG, art.PUZZLE_BASE + 5)
         self.assertEqual(x360_puzzle.SOUND_CLEAR, art.PUZZLE_BASE + 6)
         self.assertGreater(art.PUZZLE_BASE, art.LEASH_BASE + 4)
-        self.assertIn(art.PUZZLE_JEWELS + 5 * 8 - 1, art.SKIN_IDS)
+        self.assertIn(art.PUZZLE_JEWELS + 5 * 60 - 1, art.SKIN_IDS)
 
     def test_the_leashs_art_comes_from_the_hud(self):
         import io

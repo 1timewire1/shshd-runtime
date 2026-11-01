@@ -28,6 +28,7 @@ HINT_TEXT, START_TEXT = 'Slide the rows to join 4 or more!', 'Press OK to start'
 TIME_UP_TEXT, CONTINUE_TEXT = "Time's Up!", 'Press OK to continue'
 PARTICLES = 5                           # destroy_piece_00N
 PARTICLE_MS = 500
+WARM_FRAMES = 12                        # shine frames scaled each frame while it waits to start
 
 
 def cell_at(x, y):
@@ -60,9 +61,24 @@ class X360PuzzleRenderer(X360SlotRenderer):
         key = ('puzzle', resource)
         found = self._scaled.get(key)
         if found is None:
+            import io
             size = (max(1, round((box[2] - box[0]) * CELL)), max(1, round((box[3] - box[1]) * CELL)))
-            found = self._scaled[key] = pygame.transform.smoothscale(self.image(resource), size)
+            # (Only the scaled copy is kept: there are 300 frames of shine.)
+            source = pygame.image.load(io.BytesIO(self._spec()[1].read(resource)), 'x360.png').convert_alpha()
+            found = self._scaled[key] = pygame.transform.smoothscale(source, size)
         return found
+
+    def _warm(self, spec):
+        """Scale some of the shine's frames while it waits to start, so play doesn't have to."""
+        placed = spec['placed']['jewels']
+        left = WARM_FRAMES
+        for kind, frames in spec['jewels'].items():
+            for resource in frames:
+                if ('puzzle', resource) not in self._scaled:
+                    self._placed(resource, placed[kind])
+                    left -= 1
+                    if not left:
+                        return
 
     def _glow(self, kind):
         """The selected jewel's soft light, in its colour: premultiplied on black, for adding."""
@@ -85,6 +101,8 @@ class X360PuzzleRenderer(X360SlotRenderer):
             self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
         surface = self.canvas
         surface.fill((0, 0, 0, 0))
+        if game.phase in (OPENING, READY):
+            self._warm(spec)
         self._board(surface, spec, game)
         self._jewels(surface, spec, game)
         self._cleared(surface, game)
@@ -98,7 +116,7 @@ class X360PuzzleRenderer(X360SlotRenderer):
         if game.phase == READY:
             self._lines(surface, words, ((HINT_TEXT, 330, 40), (START_TEXT, 410, 56)))
         elif game.phase == TIME_UP:
-            self._lines(surface, words, ((TIME_UP_TEXT, 380, 80),))
+            self._lines(surface, words, ((TIME_UP_TEXT, 380, 80),), veil=False)     # (the board is still clearing)
         elif game.phase == SHOWING_SCORE or game.phase == CLOSING:
             self._lines(surface, words, ((f'Your score: {game.score}', 340, 64), (CONTINUE_TEXT, 430, 44)))
 
@@ -210,11 +228,12 @@ class X360PuzzleRenderer(X360SlotRenderer):
                 surface.blit(image, (round(x + (step - image.get_width()) / 2), DIGIT_Y))
                 x += step
 
-    def _lines(self, surface, words, lines):
+    def _lines(self, surface, words, lines, veil=True):
         if self._veil is None:
             self._veil = pygame.Surface((SIZE * CELL, SIZE * CELL), pygame.SRCALPHA)
             self._veil.fill((0, 0, 0, 150))
-        surface.blit(self._veil, (GRID_LEFT, GRID_TOP))
+        if veil:
+            surface.blit(self._veil, (GRID_LEFT, GRID_TOP))
         for text, y, height in lines:
             line = self.text(words, text, height)
             surface.blit(line, line.get_rect(center=(FRAME[0] // 2, y)))

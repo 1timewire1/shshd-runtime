@@ -282,6 +282,57 @@ class EndTests(unittest.TestCase):
         self.assertTrue(run(game, x.CLOSING_MS))
 
 
+    def test_after_the_clock_everything_selected_clears_and_whatever_that_sets_off_before_the_score(self):
+        game = laid_out(GROUP)
+        game.total_time = 1
+        run(game, 900, step=100)
+        self.assertEqual(game.phase, games.RUNNING)
+        game.check_pieces()                                      # selected with 0.1 s on the clock
+        run(game, 200, step=100)
+        self.assertEqual(game.phase, games.TIME_UP)
+        self.assertEqual(game._at(1, 1)['state'], x.SELECTED)
+        self.assertFalse(game.move(x.UP))                        # no more moves
+        run(game, x.TIME_UP_MS, step=100)
+        self.assertEqual((game.phase, game.score), (games.TIME_UP, 0))      # still going: three seconds to clear
+        run(game, 400, step=100)
+        self.assertEqual(game.score, 4)
+        self.assertEqual(game.total_time, 0)                     # and the clock doesn't go below
+        run(game, 500, step=100)
+        self.assertEqual(game.phase, x.SHOWING_SCORE)
+        self.assertFalse(game.in_chain)
+
+    def test_a_group_a_fall_makes_after_the_clock_clears_too(self):
+        game = laid_out(GROUP)
+        game.total_time = 0
+        game.phase, game.phase_ms = games.TIME_UP, 100
+        game.check_pieces()
+        # New jewels are forced to make another group as they land on the top row's neighbours.
+        real = game._fall
+
+        def fall(random):
+            real(random)
+            game.pieces = [[] for _ in range(x.KINDS)]
+            for j in range(1, 5):
+                game._at(1, j)['index'] = 2
+            for i in range(1, 9):
+                for j in range(1, 9):
+                    game.pieces[game._at(i, j)['index'] - 1].append([i, j])
+            game._fall = real
+        game._fall = fall
+        run(game, 3000 + x.FALL_WAIT_MS + 50, step=50)
+        self.assertEqual(game.phase, games.TIME_UP)              # the second group is selected, and it waits for that
+        self.assertTrue(any(p['state'] == x.SELECTED for row in game.board for p in row))
+        run(game, 1500, step=50)
+        self.assertEqual(game.phase, x.SHOWING_SCORE)
+        self.assertEqual(game.score, 4 + 15)                     # the second group's five, in a chain: +3 each
+
+    def test_a_settled_board_goes_straight_on_after_times_up(self):
+        game = laid_out(STRIPES)
+        game.phase, game.phase_ms = games.TIME_UP, x.TIME_UP_MS
+        run(game, x.TIME_UP_MS)
+        self.assertEqual(game.phase, x.SHOWING_SCORE)
+
+
 class PointerTests(unittest.TestCase):
     def test_hovering_points_the_cursor_only_with_the_button_up(self):
         game = laid_out(STRIPES)

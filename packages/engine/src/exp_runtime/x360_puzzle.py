@@ -9,7 +9,8 @@ unless a move breaks the group first. The jewels above fall in, new ones come in
 
 Changes from MS4 (owner, 2026-11-01), which leaves the game unfinished:
 - It waits behind a press to start, where MS4 waits 3 s.
-- At the end it says Time's Up! and shows the score, then goes on. MS4 just stops taking input.
+- At the end it says Time's Up! while everything selected clears, and whatever that sets off, then shows the score and goes
+  on. MS4 just stops everything.
 - Sounds, which MS4's scripts never play: a drag plays fx/move.wav and a clearing fx/move3.wav, both unused in MS4.
 - A mouse or finger can grab any jewel and drag (grab, drag, let_go), and a hovering mouse can point the cursor.
 """
@@ -52,6 +53,7 @@ class JewelPuzzle:
     phase_ms: int = OPENING_MS
     started: bool = False
     now_ms: int = 0                                 # GetGameTotalTime
+    frame_ms: int = 0                               # this frame's time
     cursor_i: int = 8                               # currentCursorPosI
     cursor_j: int = 1                               # currentCursorPosJ
     button: bool = False                            # ButtonPressed
@@ -342,6 +344,7 @@ class JewelPuzzle:
     def tick(self, elapsed_ms, random):
         """One frame; True when the game has finished and the story goes on."""
         self.now_ms += elapsed_ms
+        self.frame_ms = elapsed_ms
         for row in self.board:
             for piece in row:
                 if piece['anim'] > 0:
@@ -357,36 +360,21 @@ class JewelPuzzle:
             return False
         if self.phase in (READY, SHOWING_SCORE):
             return False
-        if self.phase == TIME_UP:
-            self.phase_ms -= elapsed_ms
-            if self.phase_ms <= 0:
-                self.phase = SHOWING_SCORE
-            return False
         if self.phase == CLOSING:
             self.phase_ms -= elapsed_ms
             return self.phase_ms <= 0
+        if self.phase == TIME_UP:
+            self.phase_ms = max(0, self.phase_ms - elapsed_ms)
+            if self._step_board(random):
+                self._step_chain()
+            if self.phase_ms == 0 and self._settled():
+                self.phase, self.in_chain = SHOWING_SCORE, False
+            return False
         self.moving_ms = max(0, self.moving_ms - elapsed_ms)
         self._follow()
-        if self.fall_wait_ms > 0:                   # Grid:Step's Wait: nothing below runs under it
-            self.fall_wait_ms -= elapsed_ms
-            if self.fall_wait_ms > 0:
-                return False
-            self._fall(random)
-            self.check_pieces()
-        else:
-            went = [self._step_piece(piece) for row in self.board for piece in row]
-            if any(went):
-                self.sounds.append(SOUND_CLEAR)
-            if self.check_falling:
-                self.in_chain, self.chain_time, self.prev_chain_ms = True, 0, self.now_ms   # PuzzleGame:SetChainState
-                self.fall_wait_ms = FALL_WAIT_MS
-                return False
-        if self.in_chain:
-            if self.now_ms - self.prev_chain_ms >= 1000:
-                self.chain_time += 1
-                self.prev_chain_ms = self.now_ms
-            if self.chain_time == CHAIN_SECONDS:
-                self.in_chain = False
+        if not self._step_board(random):
+            return False
+        self._step_chain()
         if self.now_ms - self.prev_total_ms >= 1000:
             self.total_time -= 1
             self.prev_total_ms = self.now_ms
@@ -394,6 +382,37 @@ class JewelPuzzle:
             self.phase, self.phase_ms = TIME_UP, TIME_UP_MS
             self.button, self.target, self.lock = False, None, ''
         return False
+
+    def _step_board(self, random):
+        """Grid:Step. False under its Wait, when nothing after it in the frame runs."""
+        if self.fall_wait_ms > 0:
+            self.fall_wait_ms -= self.frame_ms
+            if self.fall_wait_ms > 0:
+                return False
+            self._fall(random)
+            self.check_pieces()
+            return True
+        went = [self._step_piece(piece) for row in self.board for piece in row]
+        if any(went):
+            self.sounds.append(SOUND_CLEAR)
+        if self.check_falling:
+            self.in_chain, self.chain_time, self.prev_chain_ms = True, 0, self.now_ms   # PuzzleGame:SetChainState
+            self.fall_wait_ms = FALL_WAIT_MS
+            return False
+        return True
+
+    def _settled(self):
+        """Nothing selected and nothing falling: the board has finished after the clock."""
+        return (not self.check_falling and self.fall_wait_ms <= 0
+                and not any(piece['state'] == SELECTED for row in self.board for piece in row))
+
+    def _step_chain(self):
+        if self.in_chain:
+            if self.now_ms - self.prev_chain_ms >= 1000:
+                self.chain_time += 1
+                self.prev_chain_ms = self.now_ms
+            if self.chain_time == CHAIN_SECONDS:
+                self.in_chain = False
 
     def validate(self):
         kinds_ok = len(self.board) == SIZE and all(len(row) == SIZE for row in self.board) and len(self.pieces) == KINDS
