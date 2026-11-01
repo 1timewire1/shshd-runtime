@@ -206,6 +206,136 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
                                  music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
         self.assertFalse({a.id for a in project.assets} & {x360.MUSIC_INTRO, x360.MUSIC_LOOP})
 
+    def audio_art(self):
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+        return Art()
+
+    def test_a_levels_track_starts_on_arrival_if_the_pak_has_its_files(self):
+        from unittest.mock import patch
+        import x360
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a',
+                           level_music={'lot': 'freedom'})
+        project = x360.translate(self.prototype(), story, self.audio_art())     # no files: no cue, nothing embedded
+        self.assertFalse([n for n in project.nodes if n.kind == 'music'])
+        proto = self.prototype()
+        proto.files['data/sound/music/freedom.ogg'] = b'ogg'
+        with patch.object(x360, 'mix_track', return_value=b'mp3') as mix:
+            project = x360.translate(proto, story, self.audio_art())
+        mix.assert_called_once_with(proto.files, 'freedom')
+        self.assertEqual([n.params for n in project.nodes if n.kind == 'music'],
+                         [{'resource': x360.MIXES['freedom'][0], 'loop': True}] * 2)    # t/two is the same place: SHS
+        self.assertEqual({a.id: a.data for a in project.assets}[x360.MIXES['freedom'][0]], b'mp3')  # plays it on
+
+    def test_a_script_cue_takes_over_from_the_pair_and_the_loop_comes_back_after_it(self):
+        from unittest.mock import patch
+        import x360
+        self.EVENTS = self.EVENTS.replace('OpenDialog("a",0)', 'scene.level.Resources[0] = "SNFX:music/dont_trust_me"\n'
+                                          'OpenDialog("a",0)', 1).replace(
+            'OpenDialog("a",1)', 'scene.level.Resources[1] = "SNFX:music/jumparound"\nOpenDialog("a",1)', 1).replace(
+            'DialogText("t/glad")\n    CloseDialog()',
+            'DialogText("t/glad")\n    CloseDialog()\n    scene.level.Resources[1] = "SNFX:music/dont_trust_me_loop"', 1)
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a',
+                           own_music=True, script_music={'jumparound': 'jumparound'})
+        proto = self.prototype()
+        for path, _ in x360.MIXES['jumparound'][1]:
+            proto.files[path] = b'x'
+        with patch.object(x360, 'mix_track', return_value=b'mp3'):
+            project = x360.translate(proto, story, self.audio_art(),
+                                     music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
+        self.assertEqual([n.params['resource'] for n in project.nodes if n.kind == 'music'],
+                         [x360.MUSIC_INTRO, x360.MIXES['jumparound'][0], x360.MUSIC_LOOP])
+
+    def test_a_level_or_camera_effect_that_is_a_sound_plays_and_others_dont(self):
+        from unittest.mock import patch
+        import x360
+        self.EVENTS = self.EVENTS.replace('OpenDialog("a",0)', 'scene.level.CreateFx("sound/whip")\n'
+                                          'camera.CreateFx("generic/disaster")\nscene.level.CreateFx("sound/bubble")\n'
+                                          'OpenDialog("a",0)', 1)
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        proto = self.prototype()
+        proto.files['data/sound/fx/whip.wav'] = b'whip'
+        with patch.object(x360, 'pcm_wav', side_effect=lambda data: data + b' pcm'):
+            project = x360.translate(proto, story, self.audio_art())
+        resource = x360.SCRIPT_SOUNDS['sound/whip'][1]
+        self.assertEqual([n.params['resource'] for n in project.nodes if n.kind == 'sound'], [resource])
+        self.assertEqual({a.id: a.data for a in project.assets}[resource], b'whip pcm')
+        self.assertNotIn(x360.SCRIPT_SOUNDS['generic/disaster'][1], {a.id for a in project.assets})
+
+    def test_every_track_and_sound_is_one_the_addon_carries(self):
+        import x360
+        for resource, _ in x360.MIXES.values():
+            self.assertTrue(x360.addon_holds(resource))
+            self.assertLess(resource, x360.MUSIC_OTHER)
+        for _, resource in x360.SCRIPT_SOUNDS.values():
+            self.assertTrue(x360.addon_holds(resource))
+
+    @unittest.skipUnless(__import__('shutil').which('ffmpeg'), 'ffmpeg is not installed')
+    def test_a_track_sets_its_level_from_the_music_and_the_ambience_repeats_under_it(self):
+        # Decoded real audio: the music alone comes up to MIX_RMS, and the same gain carries the ambience over it.
+        import wave
+        import numpy as np
+        import x360
+
+        def tone(seconds, level, hz):
+            t = np.arange(int(seconds * 44100)) / 44100
+            out = io.BytesIO()
+            with wave.open(out, 'wb') as clip:
+                clip.setnchannels(1); clip.setsampwidth(2); clip.setframerate(44100)
+                clip.writeframes((np.sin(2 * np.pi * hz * t) * level * 32767).astype('<i2').tobytes())
+            return out.getvalue()
+        x360._mix_cache.clear()
+        self.addCleanup(x360._mix_cache.clear)
+        files = {'data/sound/music/freedom.ogg': tone(2, 0.5, 440), 'data/sound/ambient/suburban.ogg': tone(0.5, 0.5, 880),
+                 'data/sound/ambient/dog_pound.ogg': tone(0.5, 0.25, 880)}
+        alone = x360.decoded(x360.mix_track(files, 'freedom'), 44100, 2)
+        mixed = x360.decoded(x360.mix_track(files, 'freedom_suburban'), 44100, 2)
+        self.assertAlmostEqual(np.sqrt((alone ** 2).mean()), x360.MIX_RMS, delta=0.015)
+        self.assertLess(np.abs(mixed).max(), x360.MIX_PEAK + 0.03)
+        self.assertAlmostEqual(len(mixed) / 44100, 2.0, delta=0.1)               # the music's length
+        tail = mixed[int(1.2 * 44100):int(1.8 * 44100)]
+        self.assertGreater(np.abs(tail).max(), np.abs(alone).max() * 1.5)        # the ambience still there past its 0.5 s
+
+    def test_the_limiter_leaves_the_music_and_rounds_off_only_the_peaks(self):
+        import numpy as np
+        import x360
+        out = x360.limited(np.array([[0.5, -0.69], [1.5, -3.0]]))
+        self.assertEqual(out[0].tolist(), [0.5, -0.69])
+        self.assertTrue(x360.MIX_KNEE < out[1, 0] < x360.MIX_PEAK)
+        self.assertTrue(-x360.MIX_PEAK <= out[1, 1] < -x360.MIX_KNEE)
+
+    def test_the_pair_takes_its_ambience_running_on_from_the_intro_into_the_loop(self):
+        import wave
+        import numpy as np
+        import x360
+        from unittest.mock import patch
+
+        def clip(samples):
+            out = io.BytesIO()
+            with wave.open(out, 'wb') as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(1000)
+                w.writeframes((samples * 32767).astype('<i2').tobytes())
+            return out.getvalue()
+
+        def read(data):
+            with wave.open(io.BytesIO(data)) as w:
+                return np.frombuffer(w.readframes(w.getnframes()), '<i2') / 32768
+        layer = np.linspace(0, 0.1, 150).reshape(-1, 1)
+        with patch.object(x360, 'decoded', return_value=layer):
+            a, b = x360.with_ambience(clip(np.zeros(100)), clip(np.zeros(100)), clip(np.zeros(100)), b'crowd', 1.0)
+        self.assertEqual((read(a).max(), read(b).max()), (0.0, 0.0))              # gain from silence: no ambience
+        with patch.object(x360, 'decoded', return_value=layer):
+            a, b = x360.with_ambience(clip(np.full(100, 0.5)), clip(np.zeros(100)), clip(np.full(100, 0.25)), b'crowd', 1.0)
+        a, b = read(a), read(b)                                                   # the evening halved the loop: so the crowd
+        self.assertAlmostEqual(a[99], layer[99, 0] * 0.5, delta=0.001)
+        self.assertAlmostEqual(b[0], 0.25 + layer[100, 0] * 0.5, delta=0.001)     # on from where the intro left it
+        self.assertAlmostEqual(b[60], 0.25 + layer[10, 0] * 0.5, delta=0.001)     # and round again past its end
+
     def test_an_objective_notice_and_its_sound_come_ahead_of_the_line_it_follows(self):
         # SHS shows a notice with the next line; the X360 checks an objective off after a talk's last line, and the
         # hub's choice comes next. The notice and the success sound go ahead of that last line instead.

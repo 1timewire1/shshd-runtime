@@ -13,9 +13,9 @@ What carries over: every line, speaker, choice (with its enable condition), nume
 *Dialogs flags), condition, scene jump and the hub's min/max gating, as the scripts have them, including the
 prototype's unfinished hub (five talks among four people, so someone is talked to twice). An answer's preview
 emotion (AddChoices' third argument) becomes the speaker's expression on that answer's branch. Objectives the
-selection post-it checks off become notices. What is dropped: cameras, 3D animation, waits, sound effects, emoticon
-effects, the presentation card and the skip button. Music is the X360's placeholder tracks (licensed songs), so the
-translation plays none unless a cue is mapped (`music`).
+selection post-it checks off become notices. What is dropped: cameras, 3D animation, waits, the bubbles' own sound,
+emoticon effects, the presentation card and the skip button. A level's music and ambience play as one track (MIXES),
+and script cues and sounds as they come (script_music, SCRIPT_SOUNDS); a story's own music comes with `music_files`.
 
 Art: the King of Diss cast wears its New Rules looks (nr_art), as the New Rules translation of King of Diss does;
 the puzzle test's Beth is the SHS shared-bank Beth. Backgrounds are New Rules' location strips.
@@ -62,7 +62,22 @@ OBJECTIVE_SOUND = ('data/sound/fx/success.wav', 26988)
 SING_TYPE, SING_MARK = 6, '{'           # OpenDialog type 6 is the X360's sing bubble; '{' is SHS's music note
 # The prototype's own music, when the translation is given its files (music_assets): an intro and the loop it runs
 # into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
-MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26902
+MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26910
+# What the maps and scripts play, as one track each: SHS has one music stream, and a level layers its music and ambience.
+# (file, its SOUNDMASTER Volume), the music first, whose length the track takes; the ambience repeats under it. The gain
+# comes from the music alone (mix_track), so it doesn't change level from place to place.
+MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
+         'freedom_suburban': (26903, (('data/sound/music/freedom.ogg', 40), ('data/sound/ambient/suburban.ogg', 96))),
+         'freedom_dog_pound': (26904, (('data/sound/music/freedom.ogg', 40), ('data/sound/ambient/dog_pound.ogg', 96))),
+         'diss_battle': (26905, (('data/sound/music/diss_001.ogg', 40), ('data/sound/ambient/crowd.wav', 127))),
+         'jumparound': (26906, (('data/sound/music/jumparound.ogg', 90), ('data/sound/ambient/crowd.wav', 127)))}
+MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
+# The lot's crowd under Day of Diss's music, at their Volumes (127 against the loop's 150).
+PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 127 / 150)
+# `CreateFx` on the level or camera that only plays a sound (fx.wxr). "sound/bubble", every dialogue's close, is the
+# X360's bubble and stays with it.
+SCRIPT_SOUNDS = {'generic/disaster': ('data/sound/fx/dbp_fail.wav', 26982), 'sound/whip': ('data/sound/fx/whip.wav', 26983),
+                 'sound/step_dust': ('data/sound/fx/step_dust.wav', 26984)}
 EXPRESSIONS = (1, 4, 2, 3, 5)           # New Rules faces in SHS slots 0-4: neutral, angry, happy, sad, surprised
 # The prototype's own emotions rendered for those slots (reference/Other Games/tools/x360_portrait.py)
 RENDERED_EMOTIONS = ('neutral', 'angry', 'happy', 'sad', 'excited')
@@ -121,25 +136,35 @@ class Story:
     # Plays the prototype's own music where it is given (translate's music_files): Day of Diss's (owner, 2026-10-26).
     # The other two were imported without it.
     own_music: bool = False
+    # X360 LocationName -> the track its level plays (MIXES), started as the story arrives there.
+    level_music: dict = field(default_factory=dict)
+    # A script's music cue -> its track (MIXES); it runs until the script's next cue.
+    script_music: dict = field(default_factory=dict)
+    # The own music's intro and loop take this ambience (PAIR_AMBIENCE).
+    pair_ambience: bool = False
 
 
 # The New Rules looks King of Diss gives these characters (nr_looks.json; its $josh's first look).
 DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
     Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
     Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016')],
-    {'parking_lot': 23, 'diss_battle': 23}, player='josh', own_music=True)
+    {'parking_lot': 23, 'diss_battle': 23}, player='josh', own_music=True, level_music={'diss_battle': 'diss_battle'},
+    script_music={'jumparound': 'jumparound'}, pair_ambience=True)
 # The test's hero is the zach model, called Josh in its text, so he wears Josh's render (owner, 2026-10-27: MS3's
 # Josh stood in with Zack's model, and the test was never updated); Moondog's look is Dancing Queen's.
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [
     Cast('zach', 'Josh', 1, '0020'), Cast('moondog', 'Moondog', 1, '0214'), Cast('beth', 'Beth', 2, bank=2050)],
-    {'zachs_room': 5, 'beths_room': 4}, player='zach', renders={'zach': 'josh'})
+    {'zachs_room': 5, 'beths_room': 4}, player='zach', renders={'zach': 'josh'},
+    level_music={'zachs_room': 'freedom', 'beths_room': 'freedom'})
 # BREW '08 "Dogged Pursuit" as the X360 retold it (episode1, titled "Dating Beth" in MS3's textbank): here the zach
 # model is Zack. The house and the pound have no New Rules picture of their own (the prototype's own backgrounds
 # are used: --backgrounds); the lot stands in.
 DATING_BETH = Story('Dating Beth', 3, ['episode1/event1'], [
     Cast('zach', 'Zack', 1, '0020'), Cast('beth', 'Beth', 2, bank=2050), Cast('moondog', 'Moondog', 1, '0214')],
     {'zachs_room': 5, 'beths_room': 4, 'beths_house_out': 23, 'dogpound': 23}, player='zach',
-    renders={'zach': 'zack'}, voices={'250 140 200': 'beth'})      # Beth's pink; Zack's dad (uncoloured) has no model
+    renders={'zach': 'zack'}, voices={'250 140 200': 'beth'},      # Beth's pink; Zack's dad (uncoloured) has no model
+    level_music={'zachs_room': 'freedom', 'beths_room': 'freedom', 'beths_house_out': 'freedom_suburban',
+                 'dogpound': 'freedom_dog_pound'})
 STORIES = {'day-of-diss': DAY_OF_DISS, 'puzzle-test': PUZZLE_TEST, 'dating-beth': DATING_BETH}
 # Dating Beth's two minigames as the SHS word game, with BREW Dogged Pursuit's own words for them (its catch
 # minigames "Think!" and "Catch Rex"). The slot machine (bulbs +1, crosses -1, 15 s) and the leash's power bar
@@ -388,6 +413,8 @@ class Builder:
         self.thought = False            # the open dialogue is a think bubble
         self.effects = []               # (character, emoticon effect) waiting for the next line
         self.effects_skipped = 0
+        self.mixes_used, self.sounds_used = set(), set()    # what translate() embeds (MIXES, SCRIPT_SOUNDS)
+        self.left_chain = False         # a script cue has taken over from the intro-and-loop pair
         self.sounds = {}                # effect -> its embedded sound's ID (translate() fills it)
         self.objective_sound = None     # OBJECTIVE_SOUND's ID, when embedded
         self.line_start = None          # the first node of the latest line (its effect's score node, or the line)
@@ -465,7 +492,14 @@ class Builder:
                 'scene.level.Resources':
             cue = value[1] if value[0] == 'str' else ''
             if cue.startswith('SNFX:music/') and cue[11:] in self.chained:
-                return                      # the runtime runs the intro into this loop by itself
+                if self.left_chain:         # back from another cue; otherwise the runtime runs the intro into this loop
+                    self.left_chain = False
+                    self.add('music', params={'resource': MUSIC_LOOP, 'loop': True})
+                return
+            if cue.startswith('SNFX:music/') and cue[11:] in self.story.script_music:
+                if self.play_mix(self.story.script_music[cue[11:]]):
+                    self.left_chain = True
+                return
             if cue.startswith('SNFX:music/') and cue[11:] in self.music:
                 self.add('music', params={'resource': self.music[cue[11:]], 'loop': True})
             return
@@ -605,10 +639,25 @@ class Builder:
 
     collecting = False
 
+    def play_mix(self, key):
+        """Starts a track of MIXES if the pak has its files; whether it did."""
+        resource, layers = MIXES[key]
+        if not all(path in self.proto.files for path, _ in layers):
+            return False
+        self.mixes_used.add(key)
+        self.add('music', params={'resource': resource, 'loop': True})
+        return True
+
     def call(self, expr):
         if expr[0] == 'method':
             return
         name, args = call_name(expr), expr[2]
+        if name in ('scene.level.CreateFx', 'camera.CreateFx'):
+            sound = SCRIPT_SOUNDS.get(string_arg(args, 0))
+            if sound is not None and sound[0] in self.proto.files:
+                self.sounds_used.add(sound)
+                self.add('sound', params={'resource': sound[1]})
+            return
         effect = re.fullmatch(r'scene\.(\w+)\.CreateFx', name or '')
         if effect:                              # an emoticon over a character, shown with their next line
             fx = (string_arg(args, 0) or '').rpartition('hud/emoticon/')[2]
@@ -795,6 +844,8 @@ class Builder:
         node = self.scene_background(location) or self.add(
             'background', asset=self.backgrounds[self.story.locations[location]], params={'variant': 0})
         self.event_starts[name] = node.id
+        if location in self.story.level_music:
+            self.play_mix(self.story.level_music[location])
         self.block(script)
 
 
@@ -841,12 +892,96 @@ def even_level(intro, loop, window_s=2.0, settle_s=4.0, peak=0.89):
     return write(a * shared, a_params), write(b * shared, b_params)
 
 
-def music_assets(files, music):
+def decoded(data, rate, channels):
+    """Audio bytes (anything ffmpeg reads) as floats, (frames, channels)."""
+    import numpy as np
+    pcm = _ffmpeg(['-i', 'pipe:0', '-f', 's16le', '-acodec', 'pcm_s16le', '-ar', str(rate), '-ac', str(channels), 'pipe:1'], data)
+    return (np.frombuffer(pcm, '<i2').astype(np.float64) / 32768).reshape(-1, channels)
+
+
+def _ffmpeg(arguments, data):
+    import shutil
+    import subprocess
+    ffmpeg = shutil.which('ffmpeg')
+    if ffmpeg is None:
+        raise TranslateError('the X360 stories\' mixed music needs ffmpeg on PATH')
+    return subprocess.run([ffmpeg, '-v', 'error', *arguments], input=data, capture_output=True, check=True).stdout
+
+
+_mix_cache = {}
+
+
+def mix_track(files, key):
+    """MIXES[key] as an MP3: its layers at their Volumes, the ambience repeating under the music, all brought up by what
+    puts the music alone at MIX_RMS or MIX_PEAK, whichever comes first (at their literal Volumes `freedom` was far under
+    the player's other music). The same files always give the same bytes (the stories share them in the addon)."""
+    import numpy as np
+
+    def layered(layers):
+        music = None
+        for path, volume in layers:
+            samples = decoded(files[path], MIX_RATE, 2) * (volume / 127)
+            if music is None:
+                music = samples
+            else:
+                music = music + np.resize(samples, music.shape)     # (repeats whole frames: both have two channels)
+        return music
+    if key not in _mix_cache:
+        layers = MIXES[key][1]
+        music = layered(layers[:1])
+        gain = min(MIX_PEAK / max(np.abs(music).max(), 1e-9), MIX_RMS / max(np.sqrt((music ** 2).mean()), 1e-9))
+        pcm = (limited(layered(layers) * gain) * 32767).astype('<i2').tobytes()
+        _mix_cache[key] = _ffmpeg(['-f', 's16le', '-ar', str(MIX_RATE), '-ac', '2', '-i', 'pipe:0', '-f', 'mp3',
+                                   '-acodec', 'libmp3lame', '-b:a', MIX_BITRATE, '-write_xing', '0',
+                                   '-id3v2_version', '0', 'pipe:1'], pcm)
+    return _mix_cache[key]
+
+
+def limited(samples):
+    """Peaks over MIX_KNEE rounded off below MIX_PEAK; everything under it untouched (a dog's bark over the music)."""
+    import numpy as np
+    over = np.abs(samples) > MIX_KNEE
+    room = MIX_PEAK - MIX_KNEE
+    out = samples.copy()
+    out[over] = np.sign(samples[over]) * (MIX_KNEE + room * np.tanh((np.abs(samples[over]) - MIX_KNEE) / room))
+    return out
+
+
+def with_ambience(before, intro, loop, ambience, volume):
+    """An evened intro and loop (WAV bytes) with an ambience repeating under both, running on from the intro into the
+    loop. It takes the gain even_level gave the music (`before`: the loop as it was, for that); the music keeps its level
+    and the sum's peaks are rounded off (limited)."""
+    import io
+    import wave
+    import numpy as np
+
+    def read(data):
+        with wave.open(io.BytesIO(data)) as clip:
+            params = clip.getparams()
+            samples = np.frombuffer(clip.readframes(params.nframes), '<i2').astype(np.float64) / 32768
+        return samples.reshape(-1, params.nchannels), params
+
+    def write(samples, params):
+        out = io.BytesIO()
+        with wave.open(out, 'wb') as clip:
+            clip.setparams(params)
+            clip.writeframes((np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes())
+        return out.getvalue()
+    a, a_params = read(intro)
+    b, b_params = read(loop)
+    was, _ = read(before)
+    gain = np.abs(b).max() / max(np.abs(was).max(), 1e-9)
+    layer = decoded(ambience, a_params.framerate, a_params.nchannels) * volume * gain
+    over = np.resize(layer, (len(a) + len(b), a_params.nchannels))
+    return write(limited(a + over[:len(a)]), a_params), write(limited(b + over[len(a):]), b_params)
+
+
+def music_assets(files, music, ambience=None):
     """Assets for the prototype's own music (cue -> bytes), each cue mapped in `music` to its resource. A cue with a
     `<cue>_loop` file is an intro the runtime runs into that loop without a gap (MUSIC_INTRO into MUSIC_LOOP, shs
     profile TRANSLATED_MUSIC_LOOPS): only the intro is started, and the prototype's later switch to the loop cue is
-    left to the runtime (the returned `chained` cues). A WAV pair is brought to one level first (even_level). Any other
-    cue takes the next ID from MUSIC_OTHER."""
+    left to the runtime (the returned `chained` cues). A WAV pair is brought to one level first (even_level), and
+    takes `ambience` ((bytes, volume)) under it. Any other cue takes the next ID from MUSIC_OTHER."""
     assets, chained, other = [], set(), MUSIC_OTHER
     for cue, data in sorted(files.items()):
         if cue.endswith('_loop') and cue[:-5] in files:
@@ -856,7 +991,10 @@ def music_assets(files, music):
                 raise TranslateError('only one intro and loop pair has IDs of its own (MUSIC_INTRO, MUSIC_LOOP)')
             loop = files[cue + '_loop']
             if data[:4] == b'RIFF' and loop[:4] == b'RIFF':
+                before = loop
                 data, loop = even_level(data, loop)            # the WAVs, at one level
+                if ambience is not None:
+                    data, loop = with_ambience(before, data, loop, *ambience)
             assets += [Asset(MUSIC_INTRO, f'music {cue}', data), Asset(MUSIC_LOOP, f'music {cue}_loop', loop)]
             music[cue] = MUSIC_INTRO
             chained.add(cue + '_loop')
@@ -909,7 +1047,9 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     rendered = rendered or {}
     backgrounds = backgrounds or {}
     music = dict(music or {})
-    assets, chained = music_assets(music_files if story.own_music and music_files else {}, music)
+    under = (proto.files[PAIR_AMBIENCE[0]], PAIR_AMBIENCE[1]) if story.pair_ambience and PAIR_AMBIENCE[0] in proto.files \
+        else None
+    assets, chained = music_assets(music_files if story.own_music and music_files else {}, music, under)
     builder = Builder(proto, story, music, chained)
     project = Project(title=story.title + TITLE_SUFFIX, game='shs', pack_id=PACK_ID, episode_id=story.episode_id,
                       nodes=[])
@@ -977,6 +1117,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
         builder.add('end')
     if any(n.kind == 'notice' for n in builder.nodes) and builder.objective_sound is not None:
         project.assets.append(Asset(OBJECTIVE_SOUND[1], 'objective sound', pcm_wav(proto.files[OBJECTIVE_SOUND[0]])))
+    for key in sorted(builder.mixes_used):
+        project.assets.append(Asset(MIXES[key][0], f'music {key}', mix_track(proto.files, key)))
+    for path, resource in sorted(builder.sounds_used):
+        project.assets.append(Asset(resource, f'sound {Path(path).stem}', pcm_wav(proto.files[path])))
     project.nodes = builder.nodes
     project.start = builder.nodes[0].id
     for i, node in enumerate(project.nodes):
