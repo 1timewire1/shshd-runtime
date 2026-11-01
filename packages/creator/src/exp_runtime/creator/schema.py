@@ -6,7 +6,7 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash'))
+                      'tree_result', 'loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle'))
 
 
 FIELDS = {
@@ -87,6 +87,8 @@ NOTES = {
                  'addon; stores the points (the bulbs taken, 0 to 5) in result.',
     'x360_leash': "shshd-runtime only, behind minigames_available. The X360 prototype's leash game, drawn from its "
                   'addon; stores in result whether it was won (1) or lost (0).',
+    'x360_puzzle': "shshd-runtime only, behind minigames_available. The X360 prototype's jewel puzzle, drawn from its "
+                   'addon; stores the score in result (0 if skipped).',
     'music': 'Music IDs are 8201–8232 in SHS and 8201–8209 in CoD, or an embedded MP3 (asset_import_audio). '
              'Some SHS IDs select offsets in another audio asset. SHS only: params.then_loop names an embedded MP3/WAV '
              'the track runs into without a gap after playing once (-1 none); other apps play the track alone, '

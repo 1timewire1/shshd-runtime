@@ -35,6 +35,7 @@ DIGIT_SLOTS, DIGITS = 8, 10
 # rectangle were matched to the owner's Xenia screenshot of the title.
 TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
 PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
+PUZZLE_BASE = 26436                     # the jewel puzzle (Puzzle Test; exp_runtime.x360_puzzle, desktop_x360_puzzle)
 LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
 # Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.
@@ -329,6 +330,39 @@ def leash(files):
     return resources, entry
 
 
+PUZZLE_FILLS = (('fill_red', 'red_bar_fl.jpg'), ('fill_purple', 'purple_bar_fl.jpg'))
+PUZZLE_SOUNDS = ('data/sound/fx/move.wav', 'data/sound/fx/move3.wav')       # at x360_puzzle.SOUND_DRAG, SOUND_CLEAR
+PUZZLE_JEWELS = PUZZLE_BASE + 14                                            # then each jewel's shine frames
+
+
+def puzzle(files, pcm_wav, folder):
+    """{resource ID: bytes} and the spec's `puzzle` entry: the jewels, cursor and boards shot from above in Xenia
+    (reference tools x360_puzzlebooth.py; `folder`: Additional Resources/x360-puzzle-booth, with puzzle.json placing each
+    in cell units), the two bars the skin hasn't got, and the two sounds."""
+    from pathlib import Path
+    folder = Path(folder)
+    entry = json.loads((folder / 'puzzle.json').read_text(encoding='utf-8'))
+    placed = dict(jewels=entry['jewels'], cursor=entry['cursor'], board=entry['board'])
+    spec = dict(placed=placed, shine_ms=entry['shine_ms'], jewels={})
+    resources = {}
+    for n, name in enumerate(('cursor', 'board', 'board_metal')):
+        resources[PUZZLE_BASE + n] = (folder / f'{name}.png').read_bytes()
+        spec[name] = PUZZLE_BASE + n
+    for n, (name, path) in enumerate(PUZZLE_FILLS):
+        resources[PUZZLE_BASE + 3 + n] = _png(_picture(files, HUD + path, HUD + 'power_bar_fl_a.jpg', None))
+        spec[name] = PUZZLE_BASE + 3 + n
+    for n, path in enumerate(PUZZLE_SOUNDS):
+        resources[PUZZLE_BASE + 5 + n] = pcm_wav(files[path])
+    next_id = PUZZLE_JEWELS
+    for kind in sorted(entry['jewels']):
+        spec['jewels'][kind] = []
+        for phase in range(entry['phases']):
+            resources[next_id] = (folder / f'jewel_{kind}_{phase}.png').read_bytes()
+            spec['jewels'][kind].append(next_id)
+            next_id += 1
+    return resources, spec
+
+
 def title(files):
     """{resource ID: bytes} and the spec's `title` entry: the title screen's layers (TITLE_BASE). Boxes are fractions
     of the 16:9 screen; a ray glint is white, its mask as alpha, cut to what shows and packed into one atlas."""
@@ -371,7 +405,7 @@ def title(files):
     return resources, entry
 
 
-def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None):
+def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None, puzzle_folder=None):
     """{resource ID: bytes} for the X360 skin from the prototype's files (x360.Prototype.files); `items_source` (the
     New Rules X1i jar's resources, nr_art.load) adds New Rules' item pictures outlined; `pcm_wav` is the translator's
     IMA ADPCM decoder (x360.pcm_wav); `music` False leaves the music out (no ffmpeg); `booth_folder` adds what the
@@ -426,6 +460,9 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
         resources.update(made)
     if 'data/art/hud/stick_shake_side.jpg' in files:
         made, spec['leash'] = leash(files)
+        resources.update(made)
+    if puzzle_folder is not None:
+        made, spec['puzzle'] = puzzle(files, pcm_wav, puzzle_folder)
         resources.update(made)
     if booth_folder is not None:
         shot, spec['booth'] = booth(booth_folder)

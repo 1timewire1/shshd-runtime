@@ -20,7 +20,7 @@ SCORE_NOTICES = frozenset(('Score Up!', 'Detective Score Up!'))
 # player"). Track notices (Approval/Athleticism/Order/Chaos...) still say nothing about better or worse.
 SCORE_NOTICE_VALUES = {**{text: 1 for text in SCORE_NOTICES}, 'Score Way Up!': 1, 'Detective Score Down!': -1}
 DECISIONS = frozenset(('choice', 'character_picker', 'text_input', 'word_game',
-                       'word_grid', 'football', 'x360_slot', 'x360_leash', 'finished', 'episode_exit'))
+                       'word_grid', 'football', 'x360_slot', 'x360_leash', 'x360_puzzle', 'finished', 'episode_exit'))
 PANELS = frozenset(('dialogue', 'presentation', 'message_panel', 'survey_confirmation',
                     'loading', 'vm_pause'))
 

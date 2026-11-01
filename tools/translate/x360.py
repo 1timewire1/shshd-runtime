@@ -41,8 +41,9 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 4
-STORY_ADDON_REVISION = 3                # what the stories need; revision 4 only adds the arena tutorials' music
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 5
+STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
+                                        # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog')    # at PORTRAIT_BASE + 5 x index
@@ -145,6 +146,10 @@ class Story:
     script_music: dict = field(default_factory=dict)
     # The own music's intro and loop take this ambience (PAIR_AMBIENCE).
     pair_ambience: bool = False
+    # The jewel puzzle plays after this event, where the player has it (owner, 2026-11-01). The prototype's scenes aren't
+    # linked and never reach it; other players go straight on.
+    puzzle_after: str = ''
+    addon_revision: int = STORY_ADDON_REVISION
 
 
 # The New Rules looks King of Diss gives these characters (nr_looks.json; its $josh's first look).
@@ -158,7 +163,7 @@ DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [
     Cast('zach', 'Josh', 1, '0020'), Cast('moondog', 'Moondog', 1, '0214'), Cast('beth', 'Beth', 2, bank=2050)],
     {'zachs_room': 5, 'beths_room': 4}, player='zach', renders={'zach': 'josh'},
-    level_music={'zachs_room': 'freedom', 'beths_room': 'freedom'})
+    level_music={'zachs_room': 'freedom', 'beths_room': 'freedom'}, puzzle_after='prototype/puzzle/event1', addon_revision=5)
 # BREW '08 "Dogged Pursuit" as the X360 retold it (episode1, titled "Dating Beth" in MS3's textbank): here the zach
 # model is Zack. The house and the pound have no New Rules picture of their own (the prototype's own backgrounds
 # are used: --backgrounds); the lot stands in.
@@ -725,6 +730,14 @@ class Builder:
         else:
             raise TranslateError(f'call {name}')
 
+    def jewel_puzzle(self):
+        """The jewel puzzle where the player has it and its switch is on. Nothing in the story reads its score."""
+        self.add('minigames_available', params={'result': 'real_minigames'})
+        test = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(test.id, 'next')]
+        self.add('x360_puzzle', params={'result': 'puzzle_score'})
+        self.pending += [(test.id, 'otherwise')]
+
     def minigame(self, name):
         """Dating Beth's slot machine and leash power bar, as SHS word games (SLOT_MACHINE, BUTTON_SMASH), whose
         score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS (the real one's bulbs too,
@@ -1140,6 +1153,8 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
                                                                 'hide': True, 'result': f'badge_{cast.id}'})
     for name in story.events:
         builder.run_event(name)
+        if name == story.puzzle_after:
+            builder.jewel_puzzle()
     if builder.pending:
         builder.add('end')
     if any(n.kind == 'notice' for n in builder.nodes) and builder.objective_sound is not None:
@@ -1190,7 +1205,7 @@ def build_addon(stories, skin=None):
     return encode_exp(resources)
 
 
-def strip_addon(data, addon):
+def strip_addon(data, addon, revision=STORY_ADDON_REVISION):
     """A story's `.exp` bytes without what the addon (its ExpArchive) holds, declaring the addon instead (resource 4).
     Every resource left out must be the addon's own byte for byte: a story built from other art needs the addon
     rebuilt with it. Returns (bytes, the IDs left out)."""
@@ -1208,5 +1223,5 @@ def strip_addon(data, addon):
         resources[resource_id] = payload
     if ADDON_RECORD in resources:
         raise TranslateError('the story already declares addons')
-    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, STORY_ADDON_REVISION)])
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, revision)])
     return encode_exp(resources), left_out

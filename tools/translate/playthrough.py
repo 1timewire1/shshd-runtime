@@ -108,6 +108,20 @@ def steps(s, answers, name, limit, record):
                 if game.phase == 'ready' or (game.focus == game.slot and game.option == 0):
                     s.answer(None)
                 action = s.tick(33)
+        elif kind == 'x360_puzzle':
+            record.append(dict(kind=kind))
+            turn = 0
+            while s.pending is not None and s.pending.name == kind:      # drags about, then lets the clock run out
+                game = s.engine.x360_puzzle
+                if game.phase in ('ready', 'score'):
+                    s.answer(None)
+                elif game.phase == 'running':
+                    turn += 1
+                    if turn == 5:
+                        game.press()
+                    if turn % 3 == 0:
+                        game.move(('up', 'right', 'down', 'left')[turn // 3 % 4])
+                action = s.tick(33)
         elif kind == 'x360_leash':
             record.append(dict(kind=kind))
             turn = 0

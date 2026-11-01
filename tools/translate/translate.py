@@ -79,6 +79,9 @@ def main(argv=None):
     xb.add_argument('--dbp', type=Path,
                     help="with --story addon: the Diss Practice booth's shots (Additional Resources/x360-dbp-booth: "
                          "the deck, the record, the digits and the practice places) for the arena's X360 skin")
+    xb.add_argument('--puzzle', type=Path,
+                    help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
+                         'cursor and boards')
     xb.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -198,7 +201,7 @@ def translate_x360(args):
             print(f'{name}: own backgrounds {", ".join(sorted(backgrounds))}')
         left_out = []
         if addon is not None:
-            data, left_out = x360.strip_addon(data, addon)
+            data, left_out = x360.strip_addon(data, addon, story.addon_revision)
         stem = args.out / f'X360_{story.episode_id:02d}_{safe(story.title)}'
         save_project(project, stem.with_suffix('.expproj'))
         stem.with_suffix('.exp').write_bytes(data)
@@ -210,7 +213,7 @@ def translate_x360(args):
     if args.story == 'addon':
         import x360_arena_art
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
-                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp)
+                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle)
         data = x360.build_addon(stories, skin)
         target = args.out / f'{x360.ADDON_FILE}.exp'
         target.write_bytes(data)

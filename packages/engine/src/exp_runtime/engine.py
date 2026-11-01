@@ -14,6 +14,7 @@ from .randomness import NativeRandom, Random48, pipe_list
 from .minigames import WordGame
 from .nr_arena import NRArena
 from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
+from .x360_puzzle import JewelPuzzle, X360_PUZZLE
 from .game_state import GameState
 from .character_picker import CharacterPicker
 from .scene_badge import SceneBadge
@@ -135,6 +136,7 @@ class EngineState:
     nr_arena: NRArena | None = None     # shshd-runtime: New Rules' minigame arena panel, while open (nr_arena.py)
     x360_slot: SlotMachine | None = None        # shshd-runtime: the X360 translations' slot machine (x360_games.py)
     x360_leash: LeashGame | None = None         # shshd-runtime: and their leash game
+    x360_puzzle: JewelPuzzle | None = None      # shshd-runtime: and their jewel puzzle
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -194,6 +196,7 @@ class EngineState:
         self.dialogue_animation = self.scene_badge = self.faceplace_toast = None
         self.dialogue_history = DialogueHistory()
         self.word_game = self.word_grid = self.football = self.nr_arena = self.x360_slot = self.x360_leash = None
+        self.x360_puzzle = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -1000,6 +1003,10 @@ class EngineState:
             need(0)
             self.x360_leash = LeashGame(swap_ms=(2 + self.random.below(4)) * 1000)      # math.random(2,5)
             return EngineAction('x360_leash', request, False)
+        if y == X360_PUZZLE:                                    # (likewise)
+            need(0)
+            self.x360_puzzle = JewelPuzzle.dealt(self.random)
+            return EngineAction('x360_puzzle', request, False)
         if y == 3:
             need(3)
             if self.choice_builder is None:

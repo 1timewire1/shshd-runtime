@@ -206,6 +206,42 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
                                  music_files={'dont_trust_me': b'intro', 'dont_trust_me_loop': b'loop'})
         self.assertFalse({a.id for a in project.assets} & {x360.MUSIC_INTRO, x360.MUSIC_LOOP})
 
+    def test_the_puzzle_plays_after_its_event_where_the_switch_is_on_and_is_skipped_where_not(self):
+        import x360
+        from exp_runtime.creator import compile_project
+        from playthrough import play
+        self.EVENTS = '''<Tongas project="t">
+    <object key="_a" type="EVENTCONFIGMASTER" name="t/one" version="1"><properties key="_a">
+    <p k="_a" n="LocationName">lot</p><p k="_a" n="Script" l="lua"><![CDATA[
+gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+gameSHS.SetDialogText("t/glad",20)
+gameSHS.CloseDialog("bubbles/exit_from_left")
+]]></p></properties></object>
+    <object key="_b" type="EVENTCONFIGMASTER" name="t/two" version="1"><properties key="_b">
+    <p k="_b" n="LocationName">lot</p><p k="_b" n="Script" l="lua"><![CDATA[
+gameSHS.OpenDialog("a","bubbles/talk/left","bubbles/enter_from_left")
+gameSHS.SetDialogText("t/won",20)
+gameSHS.CloseDialog("bubbles/exit_from_left")
+QuitGame()
+]]></p></properties></object></Tongas>'''
+
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+
+        story = x360.Story('Test', 1, ['t/one', 't/two'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a',
+                           puzzle_after='t/one')
+        data = compile_project(x360.translate(self.prototype(), story, Art()))
+        real = [event for event in play(data) if event['kind'] in ('line', 'x360_puzzle')]
+        self.assertEqual([event.get('text', event['kind']) for event in real],
+                         ['Glad you said yes.', 'x360_puzzle', 'You scored.'])
+        timed = [event for event in play(data, arena=False) if event['kind'] in ('line', 'x360_puzzle')]
+        self.assertEqual([event.get('text', event['kind']) for event in timed], ['Glad you said yes.', 'You scored.'])
+
     def test_the_leash_plays_real_where_the_switch_is_on_and_as_timed_choices_where_not(self):
         import x360
         from exp_runtime.creator import compile_project
@@ -918,6 +954,14 @@ class X360SkinTests(unittest.TestCase):
             self.assertIn('volume=-5dB', run.call_args.args[0])
             art.ogg_mp3(b'ogg')
             self.assertFalse([a for a in run.call_args.args[0] if str(a).startswith('volume')])
+
+    def test_the_puzzles_art_and_sounds_keep_to_their_ids(self):
+        import x360_arena_art as art
+        from exp_runtime import x360_puzzle
+        self.assertEqual(x360_puzzle.SOUND_DRAG, art.PUZZLE_BASE + 5)
+        self.assertEqual(x360_puzzle.SOUND_CLEAR, art.PUZZLE_BASE + 6)
+        self.assertGreater(art.PUZZLE_BASE, art.LEASH_BASE + 4)
+        self.assertIn(art.PUZZLE_JEWELS + 5 * 8 - 1, art.SKIN_IDS)
 
     def test_the_leashs_art_comes_from_the_hud(self):
         import io

@@ -34,7 +34,9 @@ from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
 from .desktop_nr_arena_x360 import X360ArenaRenderer
 from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
+from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
+from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
@@ -388,6 +390,9 @@ class Desktop:
         self.x360_arena_renderer = X360ArenaRenderer(session.resources)
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
+        self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
+        self.puzzle_key = None          # the jewel puzzle: (key, direction, ms to its next repeat) of a held direction key
+        self.puzzle_pad = False         # OK came from a controller's confirm, and is held
         self.leash_anchor = None        # where a drag last turned, in frame units, while one is shaking the leash
         self._x360_arena = None             # whether the X360 addon's arena skin is there (x360_arena_switch)
         self.pause_hd = HdPauseMenu(session.resources)
@@ -983,6 +988,10 @@ class Desktop:
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
                                        self.SKIP_OPTIONS, lambda index: self._resolve_x360_leash(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'A jewel puzzle. Its score changes nothing that follows.',
+                                       ('Skip', 'Play'), lambda index: self._resolve_x360_puzzle(action, index))
         if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
             if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
                 # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
@@ -1038,6 +1047,16 @@ class Desktop:
             self.session.engine.x360_leash.start()      # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_x360_puzzle(self, action, index):
+        """The jewel puzzle's skip prompt: Skip goes straight on, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 1:
+            self.minigame_played = action
+            self.session.engine.x360_puzzle.start()     # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(False))
 
     def _resolve_arena_menu(self, action, index):
         if self.session.pending is action:
@@ -1427,10 +1446,11 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
-        if action and action.name in ('x360_slot', 'x360_leash') and not ask and not closed and not self.error:
+        if action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle') and not ask and not closed and not self.error:
             try:
                 engine = self.session.engine
-                renderer = self.x360_leash_renderer if action.name == 'x360_leash' else self.x360_slot_renderer
+                renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
+                            'x360_slot': self.x360_slot_renderer}[action.name]
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
@@ -2666,7 +2686,9 @@ class Desktop:
             return True                         # the menu is zooming out after Resume: input waits for the story
         if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
             return True
-        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._leash_key(event) or self._football_key(event) or self._grid_key(event)):
+        if event.type == pygame.KEYUP:
+            self._puzzle_key_up(event)
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2756,6 +2778,11 @@ class Desktop:
                 and (event.type == pygame.MOUSEMOTION
                      or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
             self._leash_pointer(event)
+            return True
+        if (action and action.name == 'x360_puzzle' and not self.menu_open and not self.error and not asking
+                and (event.type == pygame.MOUSEMOTION
+                     or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
+            self._puzzle_pointer(event)
             return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
@@ -3157,6 +3184,82 @@ class Desktop:
                 self.leash_anchor = (x, y)
                 self.session.engine.x360_leash.shake(direction)
 
+    def _puzzle_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'x360_puzzle' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _puzzle_key(self, event):
+        """The jewel puzzle: OK starts it, is held to drag, and goes on past the score; the arrows, WASD and a controller's
+        D-pad or stick move the cursor, repeating while held. True when the key was one."""
+        if not self._puzzle_ready():
+            return False
+        if event.key in KEYS_ACTIVATE:
+            self.puzzle_pad = getattr(event, 'controller', None) is not None
+            self._attempt(lambda: self.session.answer(None))
+            return True
+        direction = LEASH_KEYS.get(event.key)
+        if direction is None:
+            return False
+        self.session.engine.x360_puzzle.move(direction)
+        if getattr(event, 'controller', None) is None:          # (a controller's direction repeats by itself)
+            self.puzzle_key = (event.key, direction, REPEAT_DELAY_MS)
+        return True
+
+    def _puzzle_key_up(self, event):
+        if self.puzzle_key is not None and self.puzzle_key[0] == event.key:
+            self.puzzle_key = None
+        action = self.session.pending
+        if event.key in KEYS_ACTIVATE and action is not None and action.name == 'x360_puzzle':
+            self.session.engine.x360_puzzle.release()
+
+    def _puzzle_frame(self, elapsed_ms):
+        """The jewel puzzle, each frame: a held key's repeats, and a controller's confirm let go."""
+        action = self.session.pending
+        if action is None or action.name != 'x360_puzzle':
+            self.puzzle_key, self.puzzle_pad = None, False
+            return
+        game = self.session.engine.x360_puzzle
+        if not self._puzzle_ready():
+            game.let_go()
+            self.puzzle_key, self.puzzle_pad = None, False
+            return
+        if self.puzzle_pad:
+            pads = pygame.gamepads()
+            if pads is None or not pads.holding('confirm'):
+                game.release()
+                self.puzzle_pad = False
+        if self.puzzle_key is not None:
+            key, direction, left = self.puzzle_key
+            left -= elapsed_ms
+            if left <= 0:
+                game.move(direction)
+                left = REPEAT_MS
+            self.puzzle_key = (key, direction, left)
+
+    def _puzzle_pointer(self, event):
+        """The jewel puzzle's mouse and touch: a press on a jewel holds it and a drag takes its row or column along; off
+        the board a press is OK, or the gear; a mouse over the board with its button up points the cursor."""
+        frame = self.bg_viewport
+        x = (event.pos[0] - frame.x) * 768 / frame.width
+        y = (event.pos[1] - frame.y) * 1024 / frame.height
+        game = self.session.engine.x360_puzzle
+        if event.type == pygame.MOUSEBUTTONUP:
+            game.let_go()
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif on_board(x, y) and game.phase == 'running':
+                game.grab(*cell_at(x, y))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                self._attempt(lambda: self.session.answer(None))
+                if game.button:                                 # (not a hold of its own: nothing to let go of)
+                    game.release()
+        elif game.target is not None:
+            game.drag(*cell_at(x, y))
+        elif on_board(x, y):
+            game.point(*cell_at(x, y))
+
     def _football_key(self, event):
         """A play picked by its position (FOOTBALL_BUTTONS, FOOTBALL_KEYPAD); True when the key was one."""
         if not self._football_input():
@@ -3381,6 +3484,7 @@ class Desktop:
             self._coast_panels()
             self._grid_hold(elapsed_ms)
             self._leash_stick()
+            self._puzzle_frame(elapsed_ms)
             self._x360_tutorial_sounds()
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
