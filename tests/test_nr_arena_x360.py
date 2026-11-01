@@ -245,28 +245,92 @@ class X360ArenaTests(unittest.TestCase):
         renderer.k = 1
         return renderer, renderer.x360()[0]['booth']['parts']
 
-    def test_the_tone_arm_swings_through_push_from_a_press_and_rests_otherwise(self):
+    def arm(self, motion=1):
+        """A split deck's renderer, a turning arena, and `frame(now)`: a frame of drawing, giving the arm's angle."""
         renderer, parts = self.split_deck()
         arena = self.arena()
-        angle = lambda now: renderer._arm_frame(arena, parts['arm'], now)['angle']      # noqa: E731
-        arena.button_ms[0] = -1
-        self.assertEqual(angle(0), 0)
-        arena.button_ms[0] = 250                            # the press
-        self.assertEqual(angle(1000), 0)                    # PUSH's first key
+        arena.motion = motion
+
+        def frame(now):
+            renderer._arm_press(arena, now)
+            return renderer._arm_frame(parts['arm'], now)['angle']
+        frame(0)                                            # the frame before any press
+        return renderer, arena, frame
+
+    def test_the_tone_arm_swings_through_push_from_a_press_in_play_and_rests_otherwise(self):
+        _, arena, frame = self.arm()
+        self.assertEqual(frame(1), 0)
+        arena.button_ms[0] = 250                            # the press, the key taken
+        self.assertEqual(frame(1000), 0)                    # PUSH's first key
         arena.button_ms[0] = 200
-        self.assertEqual(angle(1100), -10)                  # back, away from the record
+        self.assertEqual(frame(1100), -10)                  # back, away from the record
         arena.button_ms[0] = 100
-        self.assertEqual(angle(1400), 20)                   # then in, over it
+        self.assertEqual(frame(1400), 20)                   # then in, over it
         arena.button_ms[0] = -1
-        self.assertEqual(angle(1800), 0)                    # easing back; the 250 ms highlight is long over
-        self.assertEqual(angle(2000), 0)
+        self.assertEqual(frame(1800), 0)                    # easing back; the 250 ms highlight is long over
+        self.assertEqual(frame(2000), 0)
         arena.button_ms[0] = 250                            # another press in the swing starts it again
-        self.assertEqual(angle(3000), 0)
-        self.assertEqual(angle(3400), 20)
+        self.assertEqual(frame(3000), 0)
+        self.assertEqual(frame(3400), 20)
         arena.button_ms[0] = 240
-        self.assertEqual(angle(3400), 20)
+        self.assertEqual(frame(3400), 20)
         arena.button_ms[0] = 250
-        self.assertEqual(angle(3500), 0)
+        self.assertEqual(frame(3500), 0)
+        self.assertEqual(frame(3900), 20)
+
+    def assert_no_swing(self, arena, frame):
+        arena.button_ms[0] = 250
+        for now in (1000, 1100, 1400):
+            self.assertEqual(frame(now), 0)
+
+    def test_closing_a_prompt_doesnt_swing_the_arm_though_the_bubble_is_gone_by_the_next_frame(self):
+        for text in ('press ok to start', "Time's up!", 'your score: 57', 'press ok to finish tutorial.'):
+            with self.subTest(text):
+                _, arena, frame = self.arm()
+                arena.bubbles[0] = [text, 0, 0]
+                frame(1)                                    # the prompt drawn
+                arena.bubbles[0] = None                     # the press closes it, before the next frame
+                self.assert_no_swing(arena, frame)
+
+    def test_the_arm_stays_still_once_time_is_up_and_before_a_game_and_in_the_number_keys_game(self):
+        for name, change in (('time up', dict(timer_ms=0)), ('held', dict(time_up=1)), ('still', dict(motion=2)),
+                             ('before the ring is set', dict(motion=0, timer_ms=-1)), ('keypad', dict(keypad=True))):
+            with self.subTest(name):
+                _, arena, frame = self.arm()
+                for key, value in change.items():
+                    setattr(arena, key, value)
+                frame(1)
+                self.assert_no_swing(arena, frame)
+
+    def test_a_tutorials_practice_with_the_turntable_swings_the_arm_but_a_gap_between_its_bubbles_doesnt(self):
+        _, arena, frame = self.arm()
+        arena.timer_ms = -1                                 # no timer yet: "press ok when the green item..."
+        frame(1)
+        arena.button_ms[0] = 250
+        self.assertEqual(frame(1000), 0)
+        arena.button_ms[0] = 200
+        self.assertEqual(frame(1100), -10)
+        _, arena, frame = self.arm()
+        arena.keys.append(16)                               # the library isn't reading keys here
+        frame(1)
+        self.assert_no_swing(arena, frame)
+
+    def test_a_press_waits_for_the_library_to_take_it_and_feedback_is_play_whatever_came_before(self):
+        _, arena, frame = self.arm()
+        frame(1)
+        arena.keys.append(16)
+        arena.button_ms[0] = 250
+        self.assertEqual(frame(1000), 0)
+        arena.keys.clear()                                  # taken 100 ms on: PUSH starts then
+        arena.button_ms[0] = 150
+        self.assertEqual(frame(1100), 0)
+        self.assertEqual(frame(1200), -10)
+        _, arena, frame = self.arm(motion=2)
+        frame(1)
+        arena.button_ms[0] = 250
+        arena.feedback = 1
+        self.assertEqual(frame(1000), 0)
+        self.assertEqual(frame(1100), -10)
 
     def test_the_records_seams_turn_with_the_panels_angle_about_the_hole_and_the_rest_stays(self):
         import pygame

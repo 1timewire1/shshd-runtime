@@ -175,7 +175,8 @@ class X360ArenaRenderer(NRArenaRenderer):
         self._title = None                  # the title backdrop's layers at the frame's size (_title_layers)
         self._title_surface = None
         self._seams = {}                    # the record's seams by turn and size (_record_seams)
-        self._arm_held, self._arm_start, self._now = -1, None, 0     # the tone arm's swing (_arm_frame)
+        self._arm_held, self._arm_start, self._now = -1, None, 0     # the tone arm's swing (_arm_press, _arm_frame)
+        self._arm_clear, self._arm_waiting, self._arm_taken = False, False, False
 
     # -- the skin ---------------------------------------------------------------------------------------------------
     def x360(self):
@@ -560,7 +561,8 @@ class X360ArenaRenderer(NRArenaRenderer):
         self._deck_piece(surface, self.image(parts['record']['id']), parts['record']['box'], size, deck_dy)
         self._record_seams(surface, arena, parts['seams'], size, deck_dy)
         self._deck_piece(surface, self.image(parts['spindle']['id']), parts['spindle']['box'], size, deck_dy)
-        frame = self._arm_frame(arena, parts['arm'], now)
+        self._arm_press(arena, now)
+        frame = self._arm_frame(parts['arm'], now)
         self._deck_piece(surface, self._arm_cell(parts['arm'], frame), frame['box'], size, deck_dy)
 
     def _record_seams(self, surface, arena, seams, size, deck_dy):
@@ -587,13 +589,25 @@ class X360ArenaRenderer(NRArenaRenderer):
         y = (cy + (hy - cy) * size + deck_dy) * k
         surface.blit(found, found.get_rect(center=(round(x), round(y))))
 
-    def _arm_frame(self, arena, arm, now):
-        """The tone arm's frame now: PUSH from each press of OK (it restarts on a press during it, as the X360's does),
-        at rest otherwise."""
+    def _arm_press(self, arena, now):
+        """Starts the tone arm's PUSH on a press of OK that plays (it restarts on one during it, as the X360's does), not
+        one that closes a prompt (owner, 2026-11-01). Decided by the frame before the press, since closing a bubble takes
+        it away before the next is drawn: nothing showing, time left, not the number keys' game and the ring turning,
+        which takes in a tutorial's practice with the turntable. Then the library must take the key: between a tutorial's
+        bubbles it leaves it queued. OK's feedback (right or wrong) is play in any case."""
         held = arena.button_ms[0]
-        if held != -1 and (self._arm_held == -1 or held > self._arm_held):
-            self._arm_start = now
+        if held > 0 and held > self._arm_held:              # 0 is the press itself, before the panel's next tick
+            self._arm_waiting, self._arm_taken = self._arm_clear, False
         self._arm_held = held
+        if held == -1:
+            self._arm_waiting = False
+        elif not self._arm_taken and (arena.feedback in (1, 2) or (self._arm_waiting and not arena.keys)):
+            self._arm_start, self._arm_taken, self._arm_waiting = now, True, False
+        self._arm_clear = (not any(arena.bubbles) and arena.time_up == 0 and arena.timer_ms != 0 and not arena.keypad
+                           and arena.motion in (-1, 1))
+
+    def _arm_frame(self, arm, now):
+        """The tone arm's frame now: PUSH while it runs (_arm_press), at rest otherwise."""
         angle = 0
         if self._arm_start is not None:
             elapsed, push = now - self._arm_start, arm['push']
@@ -871,7 +885,7 @@ class X360ArenaRenderer(NRArenaRenderer):
             pygame.draw.circle(glow, (*colour, round(150 * (1 - r / radius)) + 20), (radius, radius), r)
         x, y = ring.centerx, ring.bottom
         if parts:
-            frame = self._arm_frame(arena, parts['arm'], self._now)
+            frame = self._arm_frame(parts['arm'], self._now)
             x, y, _, _ = self._to_native(frame['tip'] * 2)
         surface.blit(glow, (round(x * k) - radius, round(y * k) - radius))
 
