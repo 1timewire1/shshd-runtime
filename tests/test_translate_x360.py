@@ -615,6 +615,20 @@ class X360SkinTests(unittest.TestCase):
         self.assertEqual(atlas.getpixel((x, y)), (200, 3, 2, 255))
         self.assertEqual(entry['places']['school_front_diss_002'], art.BOOTH_BASE + 4)   # the practice's own view first
 
+    def test_the_skins_music_is_an_mp3_with_nothing_counted_as_playing_time_but_its_frames(self):
+        from unittest.mock import Mock, patch
+        import x360_arena_art as art
+        with patch.object(art.shutil, 'which', return_value='ffmpeg'), \
+                patch.object(art.subprocess, 'run', return_value=Mock(stdout=b'mp3')) as run:
+            self.assertEqual(art.ogg_mp3(b'ogg'), b'mp3')
+        command = run.call_args.args[0]
+        self.assertEqual(run.call_args.kwargs['input'], b'ogg')
+        for option, value in (('-f', 'mp3'), ('-acodec', 'libmp3lame'), ('-b:a', art.MUSIC_BITRATE), ('-write_xing', '0'),
+                              ('-id3v2_version', '0')):
+            self.assertEqual(command[command.index(option) + 1], value)
+        with patch.object(art.shutil, 'which', return_value=None), self.assertRaises(art.SkinError):
+            art.ogg_mp3(b'ogg')
+
     def test_the_split_decks_arm_frames_go_in_one_atlas_with_their_places(self):
         import io
         import tempfile

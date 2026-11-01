@@ -94,6 +94,7 @@ SOUNDS = (('whoosh_1', 'data/sound/fx/whoosh_001.wav'), ('whoosh_2', 'data/sound
 SOUND_TRACKS = {13: ('whoosh_1', 'whoosh_2', 'whoosh_3'), 1: ('fail',), 11: ('swap',)}
 # The practice maps' music cue (music/dbp_bg_music_001, looping), in place of the games' track 14 (owner, 2026-10-31).
 MUSIC_FILE, MUSIC_TRACK = 'data/sound/music/dbp_bg_music.ogg', 14
+MUSIC_BITRATE = '128k'                  # mono, as the source
 
 
 class SkinError(ValueError):
@@ -209,13 +210,15 @@ def _fields(rest):
     return out
 
 
-def ogg_wav(data):
-    """The music as a 16-bit PCM WAV (ffmpeg), which loops without a gap as Day of Diss's own music does."""
+def ogg_mp3(data):
+    """The music as an MP3 (ffmpeg), a sixth of its size as a WAV. Its loop comes 29 ms later than the source's (the
+    encoder's delay), and the games end before its 92.5 s are up. No Xing frame: it would count as playing time."""
     ffmpeg = shutil.which('ffmpeg')
     if ffmpeg is None:
-        raise SkinError('the skin\'s music needs ffmpeg on PATH')
-    result = subprocess.run([ffmpeg, '-v', 'error', '-i', 'pipe:0', '-f', 'wav', '-acodec', 'pcm_s16le', 'pipe:1'],
-                            input=data, capture_output=True, check=True)
+        raise SkinError("the skin's music needs ffmpeg on PATH")
+    result = subprocess.run([ffmpeg, '-v', 'error', '-i', 'pipe:0', '-f', 'mp3', '-acodec', 'libmp3lame', '-b:a', MUSIC_BITRATE,
+                             '-write_xing', '0', '-id3v2_version', '0', 'pipe:1'], input=data, capture_output=True,
+                            check=True)
     return result.stdout
 
 
@@ -364,7 +367,7 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
     for track, names in SOUND_TRACKS.items():
         spec['sound_tracks'][str(track)] = [spec['sounds'][n] for n in names]
     if music:
-        resources[MUSIC] = ogg_wav(files[MUSIC_FILE])
+        resources[MUSIC] = ogg_mp3(files[MUSIC_FILE])
         spec['music_track'][str(MUSIC_TRACK)] = MUSIC
     if booth_folder is not None:
         shot, spec['booth'] = booth(booth_folder)
