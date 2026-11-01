@@ -972,6 +972,12 @@ class Application:
         packs = getattr(GAMES.get(self.library.game_id), 'TRANSLATED_PORTRAIT_ART', {}) if self.library else {}
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
 
+    def arena_skin_offered(self):
+        """Whether the "Arena Look" switch changes something: translated New Rules episodes (their arena) and the X360
+        addon's arena skin (desktop_nr_arena_x360; owner, 2026-10-31) are both in the library."""
+        from .desktop_nr_arena_x360 import library_has_skin
+        return self.hires_portraits_offered() and library_has_skin(self.library)
+
     def apply_hires_portraits(self):
         """The "Hi-Res Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
         self.library.hires_portraits = self.state.hires_portraits
@@ -1767,6 +1773,7 @@ class Application:
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.hires_portraits = self.state.hires_portraits
         self.game.arena_minigames = self.state.arena_minigames
+        self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
         self.game.warp_unlocked = (self.state.warp_unlocked
                                    or self.game.session.resources.record.get('builtin') != 'football-star')
@@ -1866,6 +1873,7 @@ class Application:
         self.state.hd_backdrop = self.game.hd_backdrop
         self.state.hires_portraits = self.game.hires_portraits
         self.state.arena_minigames = self.game.arena_minigames
+        self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)
         self.state.sound_volume = round(self.game.sound_volume * 100)
         self.state.persist()
@@ -2120,7 +2128,7 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'arena_minigames'):
+                               'hires_portraits', 'arena_minigames', 'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -2141,6 +2149,7 @@ class Application:
                     self.game.autoplay = self.state.autoplay
                     self.game.disable_choice_timer = self.state.disable_choice_timer
                     self.game.arena_minigames = self.state.arena_minigames
+                    self.game.arena_skin = self.state.arena_skin
                     self.game._sync_music()
             elif kind in ('save', 'load') and self.paused_menu:
                 self.game.command((kind,))

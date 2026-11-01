@@ -5,6 +5,7 @@ from io import BytesIO
 from copy import deepcopy
 import logging
 import os
+import random
 import re
 from types import SimpleNamespace
 import webbrowser
@@ -31,6 +32,7 @@ except ImportError:
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
+from .desktop_nr_arena_x360 import X360ArenaRenderer
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -237,6 +239,7 @@ class Desktop:
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     _arena_minigames = True         # translated New Rules episodes: the "Minigame Arena" switch (arena_minigames)
+    arena_skin = False              # ...drawn in the X360 prototype's look: the "Arena Look" switch (x360_arena_switch)
     host_prompt = None
     minigame_played = None
     ad_asked = None
@@ -376,6 +379,8 @@ class Desktop:
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
         self.nr_arena_renderer = NRArenaRenderer(session.resources)
+        self.x360_arena_renderer = X360ArenaRenderer(session.resources)
+        self._x360_arena = None             # whether the X360 addon's arena skin is there (x360_arena_switch)
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
         self.tree_fling, self.wall_fling = momentum.Fling(momentum.RATE_FAST), momentum.Fling()
@@ -650,7 +655,14 @@ class Desktop:
             self.music_token = token
             if engine.music_id >= 0:
                 if self.music_enabled:               # playMusic ignores requests while Music is off
-                    stream.play(engine.music_id, engine.music_flag, self._open_cue, now, held=self.menu_open)
+                    music_id, opener = engine.music_id, self._open_cue
+                    swaps = self._x360_swaps()
+                    if swaps is not None and music_id in swaps[1]:
+                        # The X360 look's own music for the games' track (owner, 2026-10-31), under its own ID, so
+                        # a later request for New Rules' track isn't taken for it.
+                        archive, music_id = swaps[2], swaps[1][music_id]
+                        opener = lambda _id: (archive.read(music_id), 0)       # noqa: E731
+                    stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open)
             else:
                 stream.stop(engine.music_stop_ms, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
@@ -758,12 +770,28 @@ class Desktop:
         except pygame.error as error:
             logging.warning('Vibration buzz cannot be played: %s', error)
 
+    def _x360_swaps(self):
+        """While the arena is open in the X360 look: ({New Rules sound: [X360 sounds]}, {New Rules music: X360 music},
+        the X360 addon's archive), from its skin's spec (owner, 2026-10-31: right, wrong and the swaps' bonus noise,
+        and the games' track, Diss Practice's); else None. Nothing the script sees changes."""
+        if not (self.arena_skin and self.session.engine.nr_arena is not None and self.x360_arena_switch()):
+            return None
+        from .desktop_nr_arena_x360 import NR_TRACK_BASE
+        spec, archive = self.x360_arena_renderer.x360()
+        return ({NR_TRACK_BASE + int(track): ids for track, ids in spec.get('sound_tracks', {}).items()},
+                {NR_TRACK_BASE + int(track): music for track, music in spec.get('music_track', {}).items()}, archive)
+
     def _play_sounds(self, assets):
         if not self.sound_enabled:
             return
+        swaps = self._x360_swaps()
         try:
             for asset in assets:
-                sound = pygame.mixer.Sound(file=BytesIO(self.session.resources.read_asset(asset)))
+                if swaps is not None and swaps[0].get(asset):
+                    data = swaps[2].read(random.choice(swaps[0][asset]))     # one of the X360's, as it picks
+                else:
+                    data = self.session.resources.read_asset(asset)
+                sound = pygame.mixer.Sound(file=BytesIO(data))
                 sound.set_volume(self.sound_volume)
                 sound.play()
         except (ContentError, pygame.error) as error:
@@ -2147,7 +2175,17 @@ class Desktop:
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
-                    **({'arena_minigames': self.arena_minigames} if self.hires_switch() else {}))
+                    **({'arena_minigames': self.arena_minigames} if self.hires_switch() else {}),
+                    **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
+
+    def x360_arena_switch(self):
+        """shshd-runtime: whether the "Arena Look" switch is offered: in a translated New Rules episode (hires_switch)
+        with Minigame Arena on, and the X360 addon's arena skin imported (desktop_nr_arena_x360; owner, 2026-10-31)."""
+        if not (self.hires_switch() and self.arena_minigames):
+            return False
+        if self._x360_arena is None:
+            self._x360_arena = self.x360_arena_renderer.available()
+        return self._x360_arena
 
     def pause_box(self):
         if self.pause_hd.available() and not self.error:
@@ -2313,6 +2351,8 @@ class Desktop:
                 self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'arena_minigames':
                 self.arena_minigames = not self.arena_minigames
+            elif command[1] == 'arena_skin':
+                self.arena_skin = not self.arena_skin
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
                 if self.vibration_enabled and self.audio:
@@ -2868,11 +2908,14 @@ class Desktop:
             self.notice_stack.press(self.notice_data.action((focus or targets[0])[1]))
 
     def _arena_renderer(self):
-        """New Rules' arena, told how tall the frame is in the window so it scales its pixel art up to there."""
+        """New Rules' arena, told how tall the frame is in the window so it scales its art up to there: in the X360
+        look where the "Arena Look" switch is on and the X360 addon is imported, else New Rules' own."""
+        renderer = (self.x360_arena_renderer if self.arena_skin and self.x360_arena_switch()
+                    else self.nr_arena_renderer)
         viewport = getattr(self, 'bg_viewport', None)
         if viewport is not None:
-            self.nr_arena_renderer.target_height = viewport.height
-        return self.nr_arena_renderer
+            renderer.target_height = viewport.height
+        return renderer
 
     def _arena_tap(self, action, x, y):
         """The command for a click at (x, y) in frame pixels (768 x 1024) on New Rules' arena: the gear, bottom left,
@@ -2882,7 +2925,7 @@ class Desktop:
             return ('menu',)
         if not (0 <= x <= 768 and 0 <= y <= 1024):
             return None
-        command = self.nr_arena_renderer.hit((x, y))
+        command = self._arena_renderer().hit((x, y))
         if command is None and action.name == 'arena_frame':
             command = ('arena_key', -5)
         return command
@@ -2907,10 +2950,10 @@ class Desktop:
             self.command(('arena_key', code))
             return True
         if action.name == 'arena_menu' and key in (pygame.K_UP, pygame.K_DOWN):
-            self.nr_arena_renderer.move_focus(action, -1 if key == pygame.K_UP else 1)
+            self._arena_renderer().move_focus(action, -1 if key == pygame.K_UP else 1)
             return True
         if key in KEYS_ACTIVATE:
-            focus = self.nr_arena_renderer.focus(action)
+            focus = self._arena_renderer().focus(action)
             self.command(('arena_answer', focus if focus is not None else 0))
             return True
         return False

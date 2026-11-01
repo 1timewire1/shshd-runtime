@@ -339,6 +339,8 @@ class HdShell:
         if self.app.hires_portraits_offered():
             settings['hires_portraits'] = state.hires_portraits
             settings['arena_minigames'] = state.arena_minigames     # the same translated New Rules episodes
+        if self.app.arena_skin_offered() and state.arena_minigames:
+            settings['arena_skin'] = state.arena_skin               # ...with the X360 addon
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).
