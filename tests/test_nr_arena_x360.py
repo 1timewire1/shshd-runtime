@@ -283,7 +283,7 @@ class X360SwitchTests(unittest.TestCase):
         ui.arena_skin = True
         self.assertIsNone(ui._x360_swaps())                                 # a word game's jingles stay New Rules'
 
-    def test_the_x360_music_fades_out_at_your_score_and_new_rules_music_is_left_alone(self):
+    def test_the_x360_music_fades_out_at_times_up_and_new_rules_music_is_left_alone(self):
         from exp_runtime.nr_arena import NRArena
         ui = self.desktop()
         ui.arena_skin = True
@@ -293,7 +293,12 @@ class X360SwitchTests(unittest.TestCase):
         stream = SimpleNamespace(current=dict(id=26390), fade=None, stop=Mock())
         ui._end_x360_music(stream, engine, 100)
         stream.stop.assert_not_called()                     # the game is on
-        arena.bubbles[0] = ['Your score: 57', 0, 0]
+        arena.bubbles[0] = ['Get ready!', 0, 0]              # another bubble: still playing
+        ui._end_x360_music(stream, engine, 150)
+        stream.stop.assert_not_called()
+        arena.timer_ms, arena.timer_total_ms, arena.time_up = 0, 40000, 0
+        arena.set(-10, 762, 0, text="Time's up!")            # the timer out, its bubble shows: time_up
+        self.assertEqual(arena.time_up, 1)
         ui._end_x360_music(stream, engine, 200)
         stream.stop.assert_called_once()
         stream = SimpleNamespace(current=dict(id=26994), fade=None, stop=Mock())       # New Rules' own track

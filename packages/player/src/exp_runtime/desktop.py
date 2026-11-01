@@ -772,9 +772,10 @@ class Desktop:
             logging.warning('Vibration buzz cannot be played: %s', error)
 
     def _end_x360_music(self, stream, engine, now):
-        """The X360 look's game music fades out as the game ends, at its "your score" bubble or once the arena is gone
-        (owner, 2026-10-31): Diss Practice's music belongs to the game, and the story doesn't stop it."""
-        from .desktop_nr_arena_x360 import MUSIC_FADE_MS, SCORE_PROMPT
+        """The X360 look's game music fades out as the game ends: as "Time's up!" appears (the panel's time_up; owner,
+        2026-11-01, at first "your score"), or once the arena is gone. Diss Practice's music belongs to the game, and
+        the story doesn't stop it."""
+        from .desktop_nr_arena_x360 import MUSIC_FADE_MS
         current = stream.current
         if current is None or stream.fade is not None or getattr(self, '_x360_arena', None) is not True:
             return                          # (the addon's skin is known to be there once the switch was offered)
@@ -785,8 +786,7 @@ class Desktop:
         if current['id'] not in music:
             return
         arena = engine.nr_arena
-        if arena is None or any(bubble and bubble[0] and bubble[0].strip().casefold().startswith(SCORE_PROMPT)
-                                for bubble in arena.bubbles):
+        if arena is None or arena.time_up:
             stream.stop(MUSIC_FADE_MS, now)
 
     def _x360_swaps(self):

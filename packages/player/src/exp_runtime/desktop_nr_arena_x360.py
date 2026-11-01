@@ -33,7 +33,6 @@ COMBO_RED = (220, 24, 16)               # Diss Practice's "x13" on the record's 
 TUTORIAL_CARDS = {20: 'tutorial_1', 17: 'tutorial_1', 19: 'tutorial_1', 18: 'tutorial_2', 28: 'tutorial_3'}
 COUNTDOWN = ((3, 500), (2, 750), (1, 1000))     # Diss Practice's 3-2-1 (ms each, scaling up and back; silent)
 START_PROMPT = 'press ok to start'
-SCORE_PROMPT = 'your score'             # the end's "your score: n" bubble, where the X360 music stops (Desktop)
 MUSIC_FADE_MS = 1000
 BUBBLE_TEXT_WIDTH = 430                 # a bubble's or the info box's lines at most, native pixels (balanced: wrapped)
 EDGE_SCALE = 0.6                        # native pixels a pixel of a nine-sliced picture's edge
