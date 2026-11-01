@@ -3,6 +3,8 @@ import importlib.util
 from io import BytesIO
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -22,6 +24,91 @@ def silent_wav(seconds, rate=1000):
         clip.setnchannels(1); clip.setsampwidth(2); clip.setframerate(rate)
         clip.writeframes(b'\0\0' * round(seconds * rate))
     return out.getvalue()
+
+
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class CueFileTests(unittest.TestCase):
+    def test_pausing_a_wav_cue_never_hangs_the_player(self):
+        # The owner's hang, 2026-11-01: a stream read through Python holds SDL's audio lock waiting for the interpreter,
+        # and pygame's `music.pause` waits for that lock holding the interpreter. From memory, this hung every run.
+        script = '''
+import os, sys, time
+os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+import pygame
+from exp_runtime.music_stream import MusicStream
+pygame.mixer.init(22050, -16, 2, 1024)
+data = open(sys.argv[1], 'rb').read()
+stream = MusicStream()
+stream.play(1, 1, lambda music_id: (data, 0), 0)
+assert pygame.mixer.music.get_busy()
+for _ in range(60):
+    end = time.monotonic() + 0.02
+    while time.monotonic() < end:
+        sum(i * i for i in range(2000))
+    stream._pause_stream(True)
+    time.sleep(0.002)
+    stream._pause_stream(False)
+stream.reset()
+print('played', flush=True)
+os._exit(0)
+'''
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cue.wav'
+            path.write_bytes(silent_wav(30, 22050))
+            env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p),
+                       TMPDIR=folder, TEMP=folder, TMP=folder)      # its cue files go with this folder
+            try:
+                result = subprocess.run([sys.executable, '-c', script, str(path)], capture_output=True, text=True,
+                                        timeout=30, env=env)
+            except subprocess.TimeoutExpired:
+                self.fail('music.pause hung')
+        self.assertIn('played', result.stdout, result.stderr)
+
+    def test_pygames_stream_takes_a_file_and_a_hosts_mixer_the_bytes(self):
+        from exp_runtime.music_stream import CueFiles, cue_source
+        import exp_runtime.music_stream as module
+        with tempfile.TemporaryDirectory() as folder, patch.object(module, '_cue_files', CueFiles(folder)):
+            source = cue_source(SimpleNamespace(__name__='pygame.mixer_music'), b'RIFFcue')
+            self.assertEqual(Path(source).read_bytes(), b'RIFFcue')
+            self.assertEqual(cue_source(SimpleNamespace(load=None), b'RIFFcue').getvalue(), b'RIFFcue')
+            self.assertEqual(cue_source(Mock(), b'RIFFcue').getvalue(), b'RIFFcue')
+
+    def test_a_cue_without_a_file_still_plays_from_memory(self):
+        from exp_runtime.music_stream import CueFiles, cue_source
+        import exp_runtime.music_stream as module
+        with tempfile.TemporaryDirectory() as folder:
+            files = CueFiles(Path(folder) / 'missing')
+            with patch.object(module, '_cue_files', files):
+                source = cue_source(SimpleNamespace(__name__='pygame.mixer_music'), b'RIFFcue')
+        self.assertEqual(source.getvalue(), b'RIFFcue')
+
+    def test_cue_files_are_shared_kept_for_an_intro_and_its_loop_and_cleared_after(self):
+        from exp_runtime.music_stream import CueFiles
+        with tempfile.TemporaryDirectory() as folder:
+            files = CueFiles(folder)
+            first = files.path(b'first')
+            self.assertEqual(files.path(b'first'), first)
+            second = files.path(b'second')
+            self.assertTrue(Path(first).exists() and Path(second).exists())    # the intro, and its loop
+            third = files.path(b'third')
+            self.assertFalse(Path(first).exists())
+            self.assertEqual(sorted(p.name for p in Path(third).parent.iterdir()),
+                             sorted((Path(second).name, Path(third).name)))
+            self.assertEqual(files.path(b'first'), first)                      # asked again: written again
+            self.assertEqual(Path(first).read_bytes(), b'first')
+
+    def test_a_folder_a_killed_run_left_is_cleared_a_days_later_but_not_a_running_ones(self):
+        from exp_runtime.music_stream import CUE_FOLDER_PREFIX, STALE_CUE_FOLDER_S, CueFiles
+        with tempfile.TemporaryDirectory() as folder:
+            old, new = Path(folder) / (CUE_FOLDER_PREFIX + 'old'), Path(folder) / (CUE_FOLDER_PREFIX + 'new')
+            for path in (old, new):
+                path.mkdir()
+                (path / 'x.cue').write_bytes(b'x')
+            when = old.stat().st_mtime - STALE_CUE_FOLDER_S - 60
+            os.utime(old, (when, when))
+            CueFiles(folder).path(b'cue')
+            self.assertFalse(old.exists())
+            self.assertTrue((new / 'x.cue').exists())
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
