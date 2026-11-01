@@ -69,15 +69,17 @@ MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26910
 MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
          'freedom_suburban': (26903, (('data/sound/music/freedom.ogg', 40), ('data/sound/ambient/suburban.ogg', 96))),
          'freedom_dog_pound': (26904, (('data/sound/music/freedom.ogg', 40), ('data/sound/ambient/dog_pound.ogg', 96))),
-         'diss_battle': (26905, (('data/sound/music/diss_001.ogg', 40), ('data/sound/ambient/crowd.wav', 127))),
-         'jumparound': (26906, (('data/sound/music/jumparound.ogg', 90), ('data/sound/ambient/crowd.wav', 127)))}
+         # The crowd is 127 in the X360; here 16 dB under each music, as it drowned the music out (owner, 2026-11-01).
+         'diss_battle': (26905, (('data/sound/music/diss_001.ogg', 40), ('data/sound/ambient/crowd.wav', 75))),
+         'jumparound': (26906, (('data/sound/music/jumparound.ogg', 90), ('data/sound/ambient/crowd.wav', 99)))}
 MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
-# The lot's crowd under Day of Diss's music, at their Volumes (127 against the loop's 150).
-PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 127 / 150)
-# `CreateFx` on the level or camera that only plays a sound (fx.wxr). "sound/bubble", every dialogue's close, is the
-# X360's bubble and stays with it.
-SCRIPT_SOUNDS = {'generic/disaster': ('data/sound/fx/dbp_fail.wav', 26982), 'sound/whip': ('data/sound/fx/whip.wav', 26983),
-                 'sound/step_dust': ('data/sound/fx/step_dust.wav', 26984)}
+# The lot's crowd under Day of Diss's music: its loudness (RMS) against the loop's, 16 dB under (see MIXES).
+PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 10 ** (-16 / 20))
+# `CreateFx` on the level or camera that only plays a sound (fx.wxr). Day of Diss's `sound/step_dust` and `sound/whip`
+# belong to its opening cutscene, not translated yet, and wait for it.
+SCRIPT_SOUNDS = {'generic/disaster': ('data/sound/fx/dbp_fail.wav', 26982)}
+# `gameSHS.CloseDialog`'s `sound/bubble`: every dialogue's close (owner, 2026-11-01: trying it).
+CLOSE_SOUND = ('data/sound/fx/zip.wav', 26981)
 EXPRESSIONS = (1, 4, 2, 3, 5)           # New Rules faces in SHS slots 0-4: neutral, angry, happy, sad, surprised
 # The prototype's own emotions rendered for those slots (reference/Other Games/tools/x360_portrait.py)
 RENDERED_EMOTIONS = ('neutral', 'angry', 'happy', 'sad', 'excited')
@@ -415,6 +417,7 @@ class Builder:
         self.effects_skipped = 0
         self.mixes_used, self.sounds_used = set(), set()    # what translate() embeds (MIXES, SCRIPT_SOUNDS)
         self.left_chain = False         # a script cue has taken over from the intro-and-loop pair
+        self.spoke = False              # a line since the last dialogue closed (dialogue_closed)
         self.sounds = {}                # effect -> its embedded sound's ID (translate() fills it)
         self.objective_sound = None     # OBJECTIVE_SOUND's ID, when embedded
         self.line_start = None          # the first node of the latest line (its effect's score node, or the line)
@@ -671,6 +674,7 @@ class Builder:
             self.bubble = int(args[1][1]) if len(args) > 1 and args[1][0] == 'num' else 0
         elif name == 'CloseDialog':
             self.speaker = None
+            self.dialogue_closed()
         elif name == 'DialogText':
             self.line(self.speaker, string_arg(args, 0))
         elif name == 'Dialog':
@@ -678,11 +682,13 @@ class Builder:
             self.thought = '/think/' in (string_arg(args, 1) or '')
             self.line(string_arg(args, 0), string_arg(args, 3))
             self.thought = False
+            self.dialogue_closed()
         elif name == 'gameSHS.OpenDialog':      # MS3's form (Dating Beth): (who, bubble group, entrance[, ...])
             self.speaker, self.bubble = string_arg(args, 0), 0
             self.thought = '/think/' in (string_arg(args, 1) or '')
         elif name == 'gameSHS.CloseDialog':
             self.speaker, self.thought = None, False
+            self.dialogue_closed()
         elif name == 'gameSHS.SetDialogText':
             self.line(self.speaker, string_arg(args, 0))
         elif name in MINIGAME_CALLS:
@@ -736,7 +742,20 @@ class Builder:
         self.add('set', variable='choice', params={'expression': str(below)})
         self.pending += ends
 
+    def dialogue_closed(self):
+        """CLOSE_SOUND, once a dialogue that said something closes. A notice after it still goes ahead of the line."""
+        if not self.spoke or CLOSE_SOUND[0] not in self.proto.files:
+            self.spoke = False
+            return
+        self.spoke = False
+        after_line = self.pending == self.line_exit
+        self.sounds_used.add(CLOSE_SOUND)
+        self.add('sound', params={'resource': CLOSE_SOUND[1]})
+        if after_line:
+            self.line_exit = self.pending
+
     def line(self, who, key):
+        self.spoke = True
         raw = self.proto.text(key)
         colour = re.match(r'&:(\d+ \d+ \d+);', raw)
         if not who and colour and colour.group(1) in self.story.voices:
@@ -947,10 +966,9 @@ def limited(samples):
     return out
 
 
-def with_ambience(before, intro, loop, ambience, volume):
+def with_ambience(intro, loop, ambience, level):
     """An evened intro and loop (WAV bytes) with an ambience repeating under both, running on from the intro into the
-    loop. It takes the gain even_level gave the music (`before`: the loop as it was, for that); the music keeps its level
-    and the sum's peaks are rounded off (limited)."""
+    loop, its loudness `level` times the loop's. The music keeps its level; the sum's peaks are rounded off (limited)."""
     import io
     import wave
     import numpy as np
@@ -969,9 +987,8 @@ def with_ambience(before, intro, loop, ambience, volume):
         return out.getvalue()
     a, a_params = read(intro)
     b, b_params = read(loop)
-    was, _ = read(before)
-    gain = np.abs(b).max() / max(np.abs(was).max(), 1e-9)
-    layer = decoded(ambience, a_params.framerate, a_params.nchannels) * volume * gain
+    layer = decoded(ambience, a_params.framerate, a_params.nchannels)
+    layer = layer * level * np.sqrt((b ** 2).mean()) / max(np.sqrt((layer ** 2).mean()), 1e-9)
     over = np.resize(layer, (len(a) + len(b), a_params.nchannels))
     return write(limited(a + over[:len(a)]), a_params), write(limited(b + over[len(a):]), b_params)
 
@@ -991,10 +1008,9 @@ def music_assets(files, music, ambience=None):
                 raise TranslateError('only one intro and loop pair has IDs of its own (MUSIC_INTRO, MUSIC_LOOP)')
             loop = files[cue + '_loop']
             if data[:4] == b'RIFF' and loop[:4] == b'RIFF':
-                before = loop
                 data, loop = even_level(data, loop)            # the WAVs, at one level
                 if ambience is not None:
-                    data, loop = with_ambience(before, data, loop, *ambience)
+                    data, loop = with_ambience(data, loop, *ambience)
             assets += [Asset(MUSIC_INTRO, f'music {cue}', data), Asset(MUSIC_LOOP, f'music {cue}_loop', loop)]
             music[cue] = MUSIC_INTRO
             chained.add(cue + '_loop')

@@ -259,13 +259,38 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
                                           'OpenDialog("a",0)', 1)
         story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
         proto = self.prototype()
-        proto.files['data/sound/fx/whip.wav'] = b'whip'
+        proto.files['data/sound/fx/dbp_fail.wav'] = b'fail'
+        proto.files['data/sound/fx/whip.wav'] = b'whip'             # the opening's, which waits for its cutscene
         with patch.object(x360, 'pcm_wav', side_effect=lambda data: data + b' pcm'):
             project = x360.translate(proto, story, self.audio_art())
-        resource = x360.SCRIPT_SOUNDS['sound/whip'][1]
+        resource = x360.SCRIPT_SOUNDS['generic/disaster'][1]
         self.assertEqual([n.params['resource'] for n in project.nodes if n.kind == 'sound'], [resource])
-        self.assertEqual({a.id: a.data for a in project.assets}[resource], b'whip pcm')
-        self.assertNotIn(x360.SCRIPT_SOUNDS['generic/disaster'][1], {a.id for a in project.assets})
+        self.assertEqual({a.id: a.data for a in project.assets}[resource], b'fail pcm')
+
+    def test_a_dialogue_closing_plays_the_zip_once_and_a_notice_still_goes_ahead_of_its_last_line(self):
+        from unittest.mock import patch
+        import x360
+        story = x360.Story('Test', 1, ['t/one'], [x360.Cast('a', 'Andy', 1, bank=2050)], {'lot': 23}, player='a')
+        self.EVENTS = self.EVENTS.replace('DialogText("t/hello")\nCloseDialog()',
+                                          'DialogText("t/hello")\nCloseDialog()\nOpenDialog("a",0)\nCloseDialog()\n'
+                                          'gameStats.check1 = true', 1)
+        proto = self.prototype()
+        project = x360.translate(proto, story, self.audio_art())                # no file: no sound
+        self.assertFalse([n for n in project.nodes if n.kind == 'sound'
+                          and n.params['resource'] == x360.CLOSE_SOUND[1]])
+        proto.files[x360.CLOSE_SOUND[0]] = b'zip'
+        with patch.object(x360, 'pcm_wav', side_effect=lambda data: data):
+            project = x360.translate(proto, story, self.audio_art())
+        nodes = {n.id: n for n in project.nodes}
+        zips = [n for n in project.nodes if n.kind == 'sound' and n.params['resource'] == x360.CLOSE_SOUND[1]]
+        self.assertEqual(len(zips), 4)                  # hello, glad, sad and won; not the empty dialogue
+        self.assertEqual({a.id: a.data for a in project.assets}[x360.CLOSE_SOUND[1]], b'zip')
+        kinds, at = [], project.start
+        while at in nodes and len(kinds) < 40 and nodes[at].kind != 'choice':
+            kinds.append(nodes[at].kind)
+            at = nodes[at].next
+        self.assertLess(kinds.index('notice'), kinds.index('dialogue'))
+        self.assertLess(kinds.index('dialogue'), max(i for i, k in enumerate(kinds) if k == 'sound'))
 
     def test_every_track_and_sound_is_one_the_addon_carries(self):
         import x360
@@ -327,14 +352,15 @@ GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:t/end]")
                 return np.frombuffer(w.readframes(w.getnframes()), '<i2') / 32768
         layer = np.linspace(0, 0.1, 150).reshape(-1, 1)
         with patch.object(x360, 'decoded', return_value=layer):
-            a, b = x360.with_ambience(clip(np.zeros(100)), clip(np.zeros(100)), clip(np.zeros(100)), b'crowd', 1.0)
-        self.assertEqual((read(a).max(), read(b).max()), (0.0, 0.0))              # gain from silence: no ambience
+            a, b = x360.with_ambience(clip(np.zeros(100)), clip(np.zeros(100)), b'crowd', 0.5)
+        self.assertEqual((read(a).max(), read(b).max()), (0.0, 0.0))              # relative to silence: no ambience
         with patch.object(x360, 'decoded', return_value=layer):
-            a, b = x360.with_ambience(clip(np.full(100, 0.5)), clip(np.zeros(100)), clip(np.full(100, 0.25)), b'crowd', 1.0)
-        a, b = read(a), read(b)                                                   # the evening halved the loop: so the crowd
-        self.assertAlmostEqual(a[99], layer[99, 0] * 0.5, delta=0.001)
-        self.assertAlmostEqual(b[0], 0.25 + layer[100, 0] * 0.5, delta=0.001)     # on from where the intro left it
-        self.assertAlmostEqual(b[60], 0.25 + layer[10, 0] * 0.5, delta=0.001)     # and round again past its end
+            a, b = x360.with_ambience(clip(np.zeros(100)), clip(np.full(100, 0.25)), b'crowd', 0.5)
+        a, b = read(a), read(b)                                                   # half the loop's loudness
+        scale = 0.5 * 0.25 / np.sqrt((layer ** 2).mean())
+        self.assertAlmostEqual(a[99], layer[99, 0] * scale, delta=0.001)
+        self.assertAlmostEqual(b[0], 0.25 + layer[100, 0] * scale, delta=0.001)   # on from where the intro left it
+        self.assertAlmostEqual(b[60], 0.25 + layer[10, 0] * scale, delta=0.001)   # and round again past its end
 
     def test_an_objective_notice_and_its_sound_come_ahead_of_the_line_it_follows(self):
         # SHS shows a notice with the next line; the X360 checks an objective off after a talk's last line, and the
