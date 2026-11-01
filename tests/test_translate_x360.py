@@ -615,6 +615,52 @@ class X360SkinTests(unittest.TestCase):
         self.assertEqual(atlas.getpixel((x, y)), (200, 3, 2, 255))
         self.assertEqual(entry['places']['school_front_diss_002'], art.BOOTH_BASE + 4)   # the practice's own view first
 
+    def test_the_title_screens_layers_make_the_backdrop(self):
+        import io
+        import x360_arena_art as art
+        from PIL import Image
+
+        def image(mode, size, colour, fmt='JPEG'):
+            out = io.BytesIO()
+            Image.new(mode, size, colour).save(out, fmt)
+            return out.getvalue()
+        files = {art.GUI + 'background.jpg': image('RGB', (32, 32), (0, 0, 200)),
+                 art.GUI + 'clouds.jpg': image('RGB', (16, 8), (255, 255, 255)),
+                 art.GUI + 'clouds_a.jpg': image('L', (16, 8), 128),
+                 art.GUI + 'stain_clouds.png': image('RGBA', (16, 16), (0, 0, 0, 0), 'PNG'),
+                 art.GUI + 'school_building.jpg': image('RGB', (8, 8), (10, 10, 10)),
+                 art.GUI + 'school_building_a.jpg': image('L', (8, 8), 255),
+                 art.GUI + 'city.jpg': image('RGB', (16, 16), (0, 0, 0)),
+                 art.GUI + 'city_a.jpg': image('L', (16, 16), 0),
+                 art.GUI + 'black_line_a.jpg': image('L', (16, 16), 0)}
+        for i in range(art.TITLE_RAYS):
+            mask = Image.new('L', (64, 64), 0)
+            mask.paste(255, (8 * i, 4, 8 * i + 4, 60))         # glint i: a stripe further right each time
+            out = io.BytesIO()
+            mask.save(out, 'JPEG', quality=95)
+            files[f'{art.GUI}raylight_{i + 1}_a.jpg'] = out.getvalue()
+        resources, entry = art.title(files)
+        self.assertEqual(sorted(resources), list(range(art.TITLE_BASE, art.TITLE_BASE + 4)))
+        self.assertTrue(all(i in art.SKIN_IDS for i in resources))
+        self.assertEqual(Image.open(io.BytesIO(resources[entry['sky']])).size, art.TITLE_SIZE)
+        self.assertEqual(entry['clouds'], dict(id=art.TITLE_BASE + 1, opacity=0.35, speed=0.01))
+        self.assertEqual((entry['rays']['ms'], entry['rays']['every']), (50, 3000))
+        frames = entry['rays']['frames']
+        self.assertEqual(len(frames), art.TITLE_RAYS)
+        # Each glint cut to its stripe (past the JPEG's noise), its box a fraction of the screen
+        left, top, right, bottom = frames[2]['box']
+        self.assertAlmostEqual(left, 16 / 64, delta=0.05)
+        self.assertAlmostEqual(right, 20 / 64, delta=0.05)
+        atlas = Image.open(io.BytesIO(resources[entry['rays']['atlas']]))
+        x, y, w, h = frames[2]['rect']
+        self.assertEqual(atlas.getpixel((x + w // 2, y + h // 2)), (255, 255, 255, 255))
+        # The front: the school where it rests, over the clear stain layer
+        front = Image.open(io.BytesIO(resources[entry['front']]))
+        sx, sy, sw, sh = art.TITLE_SCHOOL
+        w, h = art.TITLE_SIZE
+        self.assertEqual(front.getpixel((round((sx + sw / 4) * w), round((sy + sh / 4) * h)))[3], 255)
+        self.assertEqual(front.getpixel((10, 10))[3], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

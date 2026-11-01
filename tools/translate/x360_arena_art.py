@@ -4,8 +4,8 @@ New Rules' item pictures with an ink outline and a drop shadow, so they sit with
 
 The skin is data only: a JSON spec (SPEC) naming every picture, font, sound and the music by resource ID, all within
 SKIN_IDS. The player reads it straight from the imported addon (ContentLibrary.addon), so New Rules' episodes need no
-rebuild. The turntable deck, the location backdrops and the score digits (3D models in the prototype) are rendered
-separately and aren't part of this first set.
+rebuild. The turntable deck, Diss Practice's places and the score digits (3D models in the prototype) come from a Xenia
+booth (booth); the title screen's layers make the arena's backdrop (title).
 """
 import io
 import json
@@ -28,6 +28,16 @@ BOOTH_PIECES = ('deck', 'table', 'record')              # 26400-26402; the digit
 PLACES = ('school_front_diss_002', 'school_hallway_b_diss_001', 'josh_house_in_diss_001', 'school_front_diss_001',
           'school_hallway_b_diss_002')                  # each practice's own view first
 DIGIT_SLOTS, DIGITS = 8, 10
+# The title screen's layered background (templates guigroup.wxr menus/splash/main), the arena's backdrop in place of a
+# place, whatever the episode's location (owner, 2026-11-01): the sky, its clouds (scrolling), the ray glints, and the
+# still front layers merged into one. Each layer fills the 16:9 screen; placements, the clouds' opacity and the school's
+# rectangle were matched to the owner's Xenia screenshot of the title.
+TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
+GUI = 'data/art/gui/'
+TITLE_SIZE = (1280, 720)                # the sky and the front as stored (the textures are 512 to 1024 square)
+TITLE_CLOUDS = dict(opacity=0.35, speed=0.01)   # shader gui/menus/images/sky_clouds: ShifterSpeed 0.01 0 a second
+TITLE_SCHOOL = (0.53, 0.451, 0.48, 0.575)       # x, y, width, height in the screen, at rest after sliding in
+TITLE_RAYS, TITLE_RAY_MS, TITLE_RAY_EVERY = 7, 50, 3000     # raylights' OnStep: each shown 0.05 s, every 3 s
 HUD = 'data/art/hud/'
 FX = 'data/art/fx/'
 # (name, file, its alpha file or None, the 64-pixel cell to cut or None for the whole picture). A cut is trimmed to
@@ -242,6 +252,48 @@ def booth(folder):
     return resources, entry
 
 
+def title(files):
+    """{resource ID: bytes} and the spec's `title` entry: the title screen's layers (TITLE_BASE). Boxes are fractions
+    of the 16:9 screen; a ray glint is white, its mask as alpha, cut to what shows and packed into one atlas."""
+    def layer(rgb, alpha=None, colour=None):
+        mask = Image.open(io.BytesIO(files[GUI + alpha])).convert('L') if alpha else None
+        image = (Image.open(io.BytesIO(files[GUI + rgb])).convert('RGBA') if rgb
+                 else Image.new('RGBA', mask.size, colour + (255,)))
+        if mask is not None:
+            image = image.resize(mask.size)
+            image.putalpha(mask)
+        return image
+    resources = {}
+    sky = io.BytesIO()
+    layer('background.jpg').convert('RGB').resize(TITLE_SIZE, Image.LANCZOS).save(sky, 'JPEG', quality=90)
+    resources[TITLE_BASE] = sky.getvalue()
+    resources[TITLE_BASE + 1] = _png(layer('clouds.jpg', 'clouds_a.jpg'))
+    masks = [Image.open(io.BytesIO(files[f'{GUI}raylight_{i + 1}_a.jpg'])).convert('L') for i in range(TITLE_RAYS)]
+    boxes = [mask.point(lambda v: 255 if v > 12 else 0).getbbox() for mask in masks]     # past the JPEG's noise
+    cuts = [(mask.crop(box), box, mask.size) for mask, box in zip(masks, boxes)]
+    atlas = Image.new('RGBA', (sum(c.width for c, _, _ in cuts), max(c.height for c, _, _ in cuts)), (255, 255, 255, 0))
+    frames, x = [], 0
+    for cut, box, size in cuts:
+        atlas.paste(Image.new('RGBA', cut.size, (255, 255, 255, 255)), (x, 0), cut)
+        frames.append(dict(rect=[x, 0, cut.width, cut.height],
+                           box=[round(v / size[i % 2], 5) for i, v in enumerate(box)]))
+        x += cut.width
+    resources[TITLE_BASE + 2] = _png(atlas)
+    w, h = TITLE_SIZE
+    front = layer('stain_clouds.png').resize(TITLE_SIZE, Image.LANCZOS)
+    sx, sy, sw, sh = TITLE_SCHOOL
+    school = layer('school_building.jpg', 'school_building_a.jpg').resize((round(sw * w), round(sh * h)), Image.LANCZOS)
+    left, top = round(sx * w), round(sy * h)
+    front.alpha_composite(school.crop((0, 0, min(school.width, w - left), min(school.height, h - top))), (left, top))
+    front.alpha_composite(layer('city.jpg', 'city_a.jpg').resize(TITLE_SIZE, Image.LANCZOS))
+    front.alpha_composite(layer(None, 'black_line_a.jpg', (0, 0, 0)).resize(TITLE_SIZE, Image.LANCZOS))
+    resources[TITLE_BASE + 3] = _png(front)
+    entry = dict(sky=TITLE_BASE, clouds=dict(id=TITLE_BASE + 1, **TITLE_CLOUDS),
+                 rays=dict(atlas=TITLE_BASE + 2, frames=frames, ms=TITLE_RAY_MS, every=TITLE_RAY_EVERY),
+                 front=TITLE_BASE + 3)
+    return resources, entry
+
+
 def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None):
     """{resource ID: bytes} for the X360 skin from the prototype's files (x360.Prototype.files); `items_source` (the
     New Rules X1i jar's resources, nr_art.load) adds New Rules' item pictures outlined; `pcm_wav` is the translator's
@@ -292,6 +344,8 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
     if booth_folder is not None:
         shot, spec['booth'] = booth(booth_folder)
         resources.update(shot)
+    shot, spec['title'] = title(files)
+    resources.update(shot)
     resources[SPEC] = json.dumps(spec, sort_keys=True, separators=(',', ':')).encode('utf-8')
     assert all(i in SKIN_IDS for i in resources)
     return resources

@@ -18,7 +18,7 @@ PICTURES = ('note', 'note_broken', 'remix', 'beamed', 'cross', 'stamp_pow', 'sta
 FONTS = ('casual', 'casual_white', 'badaboom', 'badaboom_white', 'turntablz')
 
 
-def x360_skin(pygame):
+def x360_skin(pygame, title=True):
     """{resource: bytes} of a small X360 skin in the addon's format (tools/translate/x360_arena_art.py)."""
     def png(colour, size=(16, 16)):
         surface = pygame.Surface(size, pygame.SRCALPHA)
@@ -59,6 +59,23 @@ def x360_skin(pygame):
                                                      table=dict(id=26401, box=[370, 570, 1470, 970]),
                                                      record=dict(id=26402, box=[520, 570, 1190, 862])),
         digits=dict(atlas=atlas, slots=slots, score=list(range(6)), time=[6, 7]))
+    if title:
+        # The title backdrop: a red sky, clouds clear but for a white band (source x 24-28 of 32), two green glints
+        # (the whole screen, then its right fifth) and a front black along the bottom quarter.
+        resources[26410] = png((200, 0, 0, 255), (64, 36))
+        clouds = pygame.Surface((32, 16), pygame.SRCALPHA)
+        clouds.fill((255, 255, 255, 255), (24, 0, 4, 16))
+        resources[26412] = png((0, 255, 0, 255), (16, 8))
+        front = pygame.Surface((64, 36), pygame.SRCALPHA)
+        front.fill((0, 0, 0, 255), (0, 27, 64, 9))
+        for resource, surface in ((26411, clouds), (26413, front)):
+            out = io.BytesIO()
+            pygame.image.save(surface, out, 'x.png')
+            resources[resource] = out.getvalue()
+        spec['title'] = dict(sky=26410, clouds=dict(id=26411, opacity=0.5, speed=0.01), front=26413,
+                             rays=dict(atlas=26412, ms=50, every=3000,
+                                       frames=[dict(rect=[0, 0, 8, 8], box=[0, 0, 1, 1]),
+                                               dict(rect=[8, 0, 8, 8], box=[0.8, 0, 1, 1])]))
     resources[26300] = json.dumps(spec).encode()
     return resources
 
@@ -244,6 +261,39 @@ class X360ArenaTests(unittest.TestCase):
         arena.popups.append(Popup(POPUP_TEXT, arena.text_index('-3'), 2, -5, duration_ms=500))
         renderer.draw(None, session, now_ms=6000)
         self.assertEqual([e[0] for e in renderer.effects], ['bad'])
+
+    def test_the_backdrop_is_the_title_screen_with_drifting_clouds_and_a_glint_every_3_s(self):
+        pygame = self.pygame
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        surface = pygame.Surface((48, 64)).convert()
+        # 64 high: the title's 16:9 screen is 114 wide, the frame its right 48 (TITLE_X 1). The clouds' band (114 *
+        # 24/32 = 85.5 to 99.75 across the screen) shows at 19.5-33.75 in the frame, half white over the red sky.
+        renderer._backdrop(surface, 1, 200)
+        self.assertEqual(surface.get_at((5, 5))[:3], (200, 0, 0))
+        self.assertEqual(surface.get_at((26, 5))[:3], (228, 128, 128))
+        self.assertEqual(surface.get_at((24, 60))[:3], (0, 0, 0))                 # the front's city over all
+        # Ten seconds on the clouds have slid left a tenth of the screen (11 pixels), wrapping.
+        renderer._backdrop(surface, 1, 10200)
+        self.assertEqual(surface.get_at((15, 5))[:3], (228, 128, 128))
+        self.assertEqual(surface.get_at((30, 5))[:3], (200, 0, 0))
+        # The glints sweep over the first 50 ms of every 3 s, one at a time.
+        renderer._backdrop(surface, 1, 3010)
+        self.assertEqual(surface.get_at((5, 5))[:3], (0, 255, 0))
+        renderer._backdrop(surface, 1, 3060)
+        self.assertEqual(surface.get_at((5, 5))[:3], (200, 0, 0))                  # the second: the right fifth only
+        self.assertEqual(surface.get_at((40, 5))[:3], (0, 255, 0))
+        # Fading in with the arena: the whole backdrop at the given alpha over what's there.
+        surface.fill((0, 0, 0))
+        renderer._backdrop(surface, 0.5, 200)
+        self.assertEqual(surface.get_at((5, 5))[:3], (100, 0, 0))
+
+    def test_a_skin_without_the_title_keeps_diss_practices_place(self):
+        resources = self.resources()
+        resources.library = library(x360_skin(self.pygame, title=False))
+        renderer = self.module.X360ArenaRenderer(resources)
+        surface = self.pygame.Surface((48, 64)).convert()
+        renderer._backdrop(surface, 1, 200)
+        self.assertEqual(surface.get_at((24, 5))[:3], (150, 150, 140))
 
     def test_the_countdown_runs_once_press_ok_to_start_closes(self):
         renderer = self.module.X360ArenaRenderer(self.resources())

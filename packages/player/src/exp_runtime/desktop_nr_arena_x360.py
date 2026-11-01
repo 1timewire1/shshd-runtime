@@ -48,6 +48,7 @@ FX = {'good': dict(count=8, life=500, speed=(3, 8), colours=((255, 0, 0), (255, 
                   gravity=-2, grow=5, spin=45, sprites='fx_puff')}
 BUBBLE_TEXT_WIDTH = 430                 # a bubble's or the info box's lines at most, native pixels (balanced: wrapped)
 EDGE_SCALE = 0.6                        # native pixels a pixel of a nine-sliced picture's edge
+TITLE_X = 1.0                           # the 3:4 frame's place across the title's 16:9 screen (0 left, 1 right)
 SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300), (38, 1900), (66, 2500))
 
 
@@ -170,6 +171,8 @@ class X360ArenaRenderer(NRArenaRenderer):
         self.effects = []                   # hit effects playing: (kind, x, y, start ms, particles)
         self._fx_pressed, self._fx_held, self._fx_flash_ms = False, -1, 0
         self._stickers = {}
+        self._title = None                  # the title backdrop's layers at the frame's size (_title_layers)
+        self._title_surface = None
 
     # -- the skin ---------------------------------------------------------------------------------------------------
     def x360(self):
@@ -408,7 +411,7 @@ class X360ArenaRenderer(NRArenaRenderer):
         if arena is None:
             return []                       # the panel closed: the bare frame, which fades out over the next screen
         ms = (ENTRANCE_MS - arena.exit_ms) if arena.leaving else arena.entrance_ms if arena.entering else ENTRANCE_MS
-        self._backdrop(surface, min(1, ms / 600) if moving else 1)
+        self._backdrop(surface, min(1, ms / 600) if moving else 1, now)
         drop = 0 if ms >= 800 else (1 - ms / 800) ** 2          # the HUD drops in over the first 800 ms
         rise = 0 if ms >= 1600 else 1 if ms <= 400 else (1 - (ms - 400) / 1200) ** 2   # the deck rises 400-1600 ms
         self._paint_x360(surface, arena, session, now, drop * -200, rise * 420, moving)
@@ -417,7 +420,74 @@ class X360ArenaRenderer(NRArenaRenderer):
             self._overlay_x360(surface, action, now)
         return []
 
-    def _backdrop(self, surface, alpha):
+    def _backdrop(self, surface, alpha, now=0):
+        """The title screen's background behind the deck, whatever the episode's place (owner, 2026-11-01): its sky,
+        the clouds drifting at the title's own speed, a sweep of ray glints every 3 s, the city and the school, cut
+        from its 16:9 screen to the 3:4 frame at TITLE_X. A skin without it has Diss Practice's own place."""
+        title = self.x360()[0].get('title')
+        if title is None:
+            self._place_backdrop(surface, alpha)
+            return
+        width, height = size = surface.get_size()
+        layers = self._title_layers(title, size)
+        if alpha < 1:
+            if self._title_surface is None or self._title_surface.get_size() != size:
+                self._title_surface = pygame.Surface(size).convert()
+            target = self._title_surface
+        else:
+            target = surface
+        target.blit(layers['sky'], (0, 0))
+        clouds, title_w, left = layers['clouds'], layers['width'], layers['left']
+        # The shader's UV shift: the texture slides left, wrapping, `speed` of its width a second.
+        x = -left - round(now / 1000 * title['clouds']['speed'] * title_w) % title_w
+        while x < width:
+            target.blit(clouds, (x, 0))
+            x += title_w
+        rays = title['rays']
+        k = (now % rays['every']) // rays['ms']
+        if k < len(rays['frames']):
+            target.blit(self._title_ray(title, size, k), (0, 0))
+        target.blit(layers['front'], (0, 0))
+        if target is not surface:
+            target.set_alpha(round(255 * alpha))
+            surface.blit(target, (0, 0))
+            target.set_alpha(None)
+
+    def _title_layers(self, title, size):
+        """The title's layers at the frame's height: the sky and the front cut to the frame, the clouds whole (they
+        wrap) at their opacity."""
+        found = self._title
+        if found is None or found['size'] != size:
+            width, height = size
+            title_w = round(height * 16 / 9)
+            left = round((title_w - width) * TITLE_X)
+
+            def cut(image):
+                return pygame.transform.smoothscale(image, (title_w, height)).subsurface(
+                    (left, 0, width, height)).copy()
+            clouds = pygame.transform.smoothscale(self.image(title['clouds']['id']), (title_w, height))
+            clouds.fill((255, 255, 255, round(255 * title['clouds']['opacity'])), special_flags=pygame.BLEND_RGBA_MULT)
+            found = self._title = dict(size=size, width=title_w, left=left, sky=cut(self.image(title['sky'])).convert(),
+                                       clouds=clouds, front=cut(self.image(title['front'])), rays={})
+        return found
+
+    def _title_ray(self, title, size, k):
+        """Ray glint `k` cut to the frame (made the first time it shows)."""
+        layers = self._title_layers(title, size)
+        found = layers['rays'].get(k)
+        if found is None:
+            frame = title['rays']['frames'][k]
+            atlas = self.image(title['rays']['atlas'])
+            x0, y0, x1, y1 = frame['box']
+            title_w, height = layers['width'], size[1]
+            glint = pygame.transform.smoothscale(atlas.subsurface(frame['rect']),
+                                                 (max(1, round((x1 - x0) * title_w)), max(1, round((y1 - y0) * height))))
+            found = pygame.Surface(size, pygame.SRCALPHA)
+            found.blit(glint, (round(x0 * title_w) - layers['left'], round(y0 * height)))
+            layers['rays'][k] = found
+        return found
+
+    def _place_backdrop(self, surface, alpha):
         """Diss Practice's own place behind the deck: the school front's steps (decision 1), cut to the 3:4 frame
         round the deck as the game's camera saw it."""
         booth = self.x360()[0]['booth']
