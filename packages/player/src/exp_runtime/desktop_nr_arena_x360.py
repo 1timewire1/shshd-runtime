@@ -35,7 +35,8 @@ COUNTDOWN = ((3, 500), (2, 750), (1, 1000))     # Diss Practice's 3-2-1 (ms each
 START_PROMPT = 'press ok to start'
 SCORE_PROMPT = 'your score'             # the end's "your score: n" bubble, where the X360 music stops (Desktop)
 MUSIC_FADE_MS = 1000
-BUBBLE_TEXT_WIDTH = 380                 # a bubble's or the info box's lines, native pixels
+BUBBLE_TEXT_WIDTH = 430                 # a bubble's or the info box's lines at most, native pixels (balanced: wrapped)
+EDGE_SCALE = 0.6                        # native pixels a pixel of a nine-sliced picture's edge
 SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300), (38, 1900), (66, 2500))
 
 
@@ -186,6 +187,28 @@ class X360ArenaRenderer(NRArenaRenderer):
     def picture(self, name):
         return self.image(self.x360()[0]['pictures'][name])
 
+    def bubble_art(self):
+        """The X360's speech bubble for a bubble: (picture, (left, top, right, bottom) edges for _nine, where its box
+        starts below the top in native pixels). The picture is cut to what shows and its body made opaque (the X360
+        lays it at half alpha over its 3D scene; here items would show through the text). The top edge takes in the
+        tail, which rises above the box at the right, so a taller bubble doesn't stretch it into the text."""
+        found = self._images.get('bubble art')
+        if found is None:
+            image = self.trimmed('bubble').copy()
+            w, h = image.get_size()
+            alpha = pygame.surfarray.pixels_alpha(image)
+            alpha[alpha >= 96] = 255
+            del alpha
+            column = [image.get_at((w // 4, y))[3] for y in range(h)]
+            row = [image.get_at((x, h // 2))[3] for x in range(w)]
+            top = next((y for y, a in enumerate(column) if a > 128), 0)
+            bottom = h - 1 - next((y for y, a in enumerate(reversed(column)) if a > 128), 0)
+            left = next((x for x, a in enumerate(row) if a > 128), 0)
+            right = w - 1 - next((x for x, a in enumerate(reversed(row)) if a > 128), 0)
+            edges = (left + 10, top + 10, w - right + 10, h - bottom + 10)
+            found = self._images['bubble art'] = (image, edges, top * EDGE_SCALE)
+        return found
+
     def trimmed(self, name):
         """A picture cut to what shows (the X360's bubble has a wide clear margin round it)."""
         key = ('trim', name)
@@ -236,22 +259,31 @@ class X360ArenaRenderer(NRArenaRenderer):
 
     def wrapped(self, font, text, height, width, colour=None, emphasis=None):
         """`text` in lines no wider than `width` native pixels, broken at spaces (and at its own line breaks), as
-        text_surface images: New Rules' tutorials run to two long sentences."""
+        text_surface images: New Rules' tutorials run to two long sentences. Each paragraph's lines are balanced:
+        the narrowest width that still takes as few lines, so no word is left alone on the last."""
         face = self.bmfont(font, colour)
         scale = height / face.line_height
-        lines = []
-        for paragraph in text.replace('\r', '').split('\n'):
-            line = ''
+
+        def broken(paragraph, limit):
+            out, line = [], ''
             for word in paragraph.split(' '):
                 candidate = f'{line} {word}' if line else word
                 plain = ''.join(part for part, _ in plain_runs(candidate)).upper()
-                if line and face.width(plain) * scale > width:
-                    lines.append(line)
+                if line and face.width(plain) * scale > limit:
+                    out.append(line)
                     line = word
                 else:
                     line = candidate
-            if line.strip():
-                lines.append(line)
+            return out + [line] if line.strip() else out
+        lines = []
+        for paragraph in text.replace('\r', '').split('\n'):
+            best, limit = broken(paragraph, width), width
+            while len(best) > 1 and limit > 60:
+                trial = broken(paragraph, limit - 10)
+                if len(trial) != len(best):
+                    break
+                best, limit = trial, limit - 10
+            lines += best
         return [self.text_surface(font, line, height, colour, emphasis) for line in lines]
 
     # -- geometry ---------------------------------------------------------------------------------------------------
@@ -286,6 +318,13 @@ class X360ArenaRenderer(NRArenaRenderer):
         return pygame.Rect(round(left), round(top), round(max(b[0] + b[2] for b in boxes) - left),
                            round(max(b[1] + b[3] for b in boxes) - top))
 
+    def _score_rect(self):
+        """Where the score's six digits are, native pixels."""
+        digits = self.x360()[0]['booth']['digits']
+        u, left, top = self._score_transform()
+        bottom = max(digits['slots'][i][0]['box'][3] for i in digits['score'])
+        return pygame.Rect(SCORE_BOX[0], SCORE_BOX[1], SCORE_BOX[2], round((bottom - top) * u))
+
     def _score_transform(self):
         """The score's six digits as a group: their booth boxes scaled to SCORE_BOX's width, at its corner."""
         digits = self.x360()[0]['booth']['digits']
@@ -299,7 +338,9 @@ class X360ArenaRenderer(NRArenaRenderer):
         """New Rules' anchors moved to where the X360 look shows those things."""
         if anchor == -4:
             return self._time_rect()
-        if anchor in (-5, -15):
+        if anchor == -5:                    # New Rules' score dial: here the score's digits (where "+3" flies)
+            return self._score_rect()
+        if anchor == -15:                   # the dial's frame, with the meter round it: here the power bar
             return pygame.Rect(METER_BOX)
         if anchor in (-6, -7):
             ring = self._field(arena)
@@ -410,7 +451,8 @@ class X360ArenaRenderer(NRArenaRenderer):
         prompt = False
         for bubble in arena.bubbles:
             if bubble is not None and bubble[0]:
-                prompt = prompt or bubble[0].strip().casefold().startswith(START_PROMPT)
+                # The 3-2-1 is before the game itself: "press ok to start", not "...start practice." (tutorial)
+                prompt = prompt or bubble[0].strip().casefold().rstrip('.!') == START_PROMPT
                 self._bubble_x360(surface, arena, ring, bubble[0], bubble[2], bubble[1], now)
         self._countdown(surface, arena, ring, now, prompt)
 
@@ -578,18 +620,24 @@ class X360ArenaRenderer(NRArenaRenderer):
                 x = fx + (x - fx) * elapsed / total
                 y = fy + (y - fy) * elapsed / total
             y = self._row_y(arena, ring, y, slot) - (6 if arena.plates else 0)
-            self._item_x360(surface, arena, arena.slots[slot], arena.item_kind, x, y, arena.tint[slot])
+            drawn = self._item_x360(surface, arena, arena.slots[slot], arena.item_kind, x, y, arena.tint[slot])
             if arena.keypad and slot < 6 and arena.slots[slot] != -1:
+                # The item's whole picture as drawn takes the click (Sequences: its slot's number key), a little
+                # beyond it; New Rules' item size is smaller than the X360 pictures (owner, 2026-11-01).
                 from .desktop_nr_arena import KEYPAD
                 width, height = self._item_size(arena)
-                self.targets.append((pygame.Rect(x - width // 2, y - height, width, height),
-                                     ('arena_key', 48 + int(KEYPAD[slot]))))
+                area = pygame.Rect(round(x - width / 2), round(y - height), width, height)
+                if drawn is not None:
+                    area.union_ip(pygame.Rect(drawn.x / self.k, drawn.y / self.k, drawn.width / self.k,
+                                              drawn.height / self.k))
+                self.targets.append((area.inflate(10, 10), ('arena_key', 48 + int(KEYPAD[slot]))))
 
     def _item_x360(self, surface, arena, item, kind, x, y, tint, alpha=255):
+        """An item standing at (x, y): the rect drawn, in canvas pixels, or None."""
         if item == -1:
-            return
+            return None
         if kind == 2:
-            self._item_picture(surface, item, x, y, 58, alpha)
+            return self._item_picture(surface, item, x, y, 58, alpha)
         elif kind == 3 and 0 <= item < len(arena.strings):
             # A tinted box (751: the library's colour for the words, GOOD and BAD) takes the tint, its text white
             # with a black edge; an untinted one stays the X360's beige sticker with dark text.
@@ -608,20 +656,28 @@ class X360ArenaRenderer(NRArenaRenderer):
                 self._stickers[tint] = sticker
             self._nine(surface, sticker, x - w / 2, y - h, w, h, 10, alpha)
             self.blit(surface, image, x, y - h / 2, anchor='center')
+            return pygame.Rect(round((x - w / 2) * self.k), round((y - h) * self.k), round(w * self.k),
+                               round(h * self.k))
+        return None
 
     def _nine(self, surface, image, x, y, w, h, border, alpha=255):
-        """`image` stretched over (x, y, w, h) native pixels with its `border`-pixel edge kept (nine slices)."""
+        """`image` stretched over (x, y, w, h) native pixels with its edges kept (nine slices): `border` pixels of
+        the picture on every side, or (left, top, right, bottom). An edge is drawn at EDGE_SCALE native pixels a
+        picture pixel."""
         iw, ih = image.get_size()
-        b = max(1, min(border, iw // 3, ih // 3))           # a picture smaller than its edges keeps a third
+        edges = (border,) * 4 if isinstance(border, int) else tuple(border)
+        bl, bt, br, bb = (max(1, min(e, (iw if i % 2 == 0 else ih) // 3 if isinstance(border, int)
+                                     else (iw if i % 2 == 0 else ih) - 2)) for i, e in enumerate(edges))
         k = self.k
-        db = max(1, round(b * k * 0.6))
-        X, Y, W, H = round(x * k), round(y * k), max(2 * db + 1, round(w * k)), max(2 * db + 1, round(h * k))
-        key = ('nine', id(image), W, H, db)
+        dl, dt, dr, db = (max(1, round(e * k * EDGE_SCALE)) for e in (bl, bt, br, bb))
+        X, Y = round(x * k), round(y * k)
+        W, H = max(dl + dr + 1, round(w * k)), max(dt + db + 1, round(h * k))
+        key = ('nine', id(image), W, H, dl, dt, dr, db)
         found = self._scaled.get(key)
         if found is None:
             found = pygame.Surface((W, H), pygame.SRCALPHA)
-            cols = ((0, b, 0, db), (b, iw - 2 * b, db, W - 2 * db), (iw - b, b, W - db, db))
-            rows = ((0, b, 0, db), (b, ih - 2 * b, db, H - 2 * db), (ih - b, b, H - db, db))
+            cols = ((0, bl, 0, dl), (bl, iw - bl - br, dl, W - dl - dr), (iw - br, br, W - dr, dr))
+            rows = ((0, bt, 0, dt), (bt, ih - bt - bb, dt, H - dt - db), (ih - bb, bb, H - db, db))
             for sx, sw, dx, dw in cols:
                 for sy, sh, dy, dh in rows:
                     if sw > 0 and sh > 0 and dw > 0 and dh > 0:
@@ -701,9 +757,10 @@ class X360ArenaRenderer(NRArenaRenderer):
         the Diss Practice card for the item it points at (decision 4)."""
         images = self.wrapped('casual', text, 24, BUBBLE_TEXT_WIDTH, (20, 20, 30), (190, 20, 20))
         k = self.k
+        art, edges, box_top = self.bubble_art()
         inner_w = max((im.get_width() for im in images), default=0) / k
         inner_h = sum(im.get_height() / k - 8 for im in images)
-        w, h = min(SCREEN_WIDTH - 12, inner_w + 40), inner_h + 44         # the tail rises over the top edge
+        w, h = min(SCREEN_WIDTH - 8, inner_w + 36), box_top + inner_h + 20     # the tail above the box, then text
         x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
         above = bool(flags & 2)
         card = None
@@ -714,9 +771,11 @@ class X360ArenaRenderer(NRArenaRenderer):
             if 0 <= slot < len(arena.slots) and arena.item_kind == 2:
                 name = self._picture_name(arena.slots[slot])
                 card = TUTORIAL_CARDS.get(int(name.split('/')[1])) if name else None
-        y = min(max(4, y), NATIVE[1] - 70 - h)
-        self._nine(surface, self.trimmed("bubble"), x, y, w, h, 22)
-        top = y + 24
+        # Clear of the bottom label (box 2's: "bling rhymes with...") when it shows, else of the gear's bar.
+        bottom = LABEL_BOTTOM.y - 4 if arena.labels[2] else NATIVE[1] - 70
+        y = min(max(4, y), bottom - h)
+        self._nine(surface, art, x, y, w, h, edges)
+        top = y + box_top + 6
         for image in images:
             self.blit(surface, image, x + w / 2, top, anchor='midtop')
             top += image.get_height() / k - 8

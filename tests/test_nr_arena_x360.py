@@ -201,6 +201,26 @@ class X360ArenaTests(unittest.TestCase):
             renderer._paint_x360(renderer.canvas, arena, session, 2000 + now * 33, 0, 0, False)
         self.assertGreater(len(set(round(w, 3) for w in drawn)), 1)
 
+    def test_a_sequences_item_takes_clicks_over_its_whole_drawn_picture(self):
+        # The X360 pictures stand taller than New Rules' item cell (61 x 31): a click on the top of a note missed
+        # (owner, 2026-11-01). The target is the picture as drawn.
+        import pygame
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        arena = self.arena()
+        arena.keypad = True
+        tall = {}
+
+        def picture(surface, item, x, bottom, height, alpha=255):
+            rect = pygame.Rect(round((x - 20) * renderer.k), round((bottom - 80) * renderer.k), round(40 * renderer.k),
+                               round(80 * renderer.k))
+            tall[item] = (x, bottom)
+            return rect
+        renderer._item_picture = picture
+        renderer.draw(None, self.session(arena), now_ms=0)
+        x, bottom = tall[arena.slots[0]]
+        frame = (x * 768 / 489, (bottom - 75) * 1024 / 652)            # near the top of the drawn picture
+        self.assertEqual(renderer.hit(frame), ('arena_key', 48 + int(self.nr.KEYPAD[0])))
+
     def test_the_countdown_runs_once_press_ok_to_start_closes(self):
         renderer = self.module.X360ArenaRenderer(self.resources())
         arena = self.arena()
