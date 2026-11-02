@@ -457,8 +457,8 @@ def opening(files, pcm_wav, folder):
     k = size[0] / OPENING_CLIMB_WINDOW
     shots = [dict(image=first, start=0, end=3800, **{'from': [travel, 0, *size], 'to': whole}),
              dict(image=lot, start=3800, end=7800, **{'from': whole, 'to': [travel, 0, *size]}),
-             dict(image=low, start=7800, end=11700, **{'from': whole, 'to': [travel, 0, *size]}),
-             dict(image=climb, start=11700, end=OPENING_WHIP, ease='out',
+             dict(image=low, start=7800, end=10700, **{'from': whole, 'to': [travel, 0, *size]}),
+             dict(image=climb, start=10700, end=OPENING_WHIP, ease='out',
                   **{'from': [tall.width - size[0], tall.height - size[1], *size], 'to': [round(221 * k), round(145 * k), *size]}),
              dict(image=back_id, start=OPENING_WHIP, end=OPENING_WHIP, **{'from': whole, 'to': whole})]
     middle = 300, 690                   # the name's centre, clear of his face

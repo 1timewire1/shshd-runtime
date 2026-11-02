@@ -1198,6 +1198,7 @@ class OpeningTests(unittest.TestCase):
         self.assertEqual(spec['music'], x360.MUSIC_INTRO)
         self.assertEqual(spec['shots'][-1]['start'], 14510)
         self.assertEqual(spec['shots'][-2]['end'], 14510)
+        self.assertEqual((spec['shots'][2]['end'], spec['shots'][3]['start']), (10700, 10700))     # owner: the low shot, shorter
         for shot in spec['shots']:
             size = Image.open(io.BytesIO(out[shot['image']])).size
             for box in (shot['from'], shot['to']):
