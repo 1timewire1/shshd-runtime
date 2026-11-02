@@ -251,6 +251,18 @@ class HiresPortraitTests(unittest.TestCase):
         self.assertEqual(self.resources(pack=31400).read_asset(26200), self.x1i)
         self.assertEqual(self.resources(pack=31400).standard_portrait(26200), self.winmo)
 
+    def test_the_ms3_switch_shows_the_april_look_where_there_is_one(self):
+        april = picture((150, 180), (200, 10, 10, 255))
+        assets = {26200: self.winmo, 27200: self.x1i, 28200: april, 26235: self.winmo, 27235: self.x1i}
+        self.assertEqual(self.resources(31400, assets).read_asset(26200), self.x1i)     # off by default
+        self.library.ms3_characters = True
+        resources = self.resources(31400, assets)
+        self.assertEqual(resources.read_asset(26200), april)
+        self.assertEqual(resources.standard_portrait(26200), self.winmo)                # the player sizes it to this
+        self.assertEqual(resources.read_asset(26235), self.x1i)                         # the rest of the cast stays
+        self.assertEqual(self.resources(31400, {26200: self.winmo, 27200: self.x1i}).read_asset(26200), self.x1i)
+        self.assertEqual(self.resources(31300, assets).read_asset(26200), self.x1i)     # New Rules has no April
+
     def test_a_save_loads_with_whichever_portrait_set_is_current(self):
         # A save names the portrait the story set (26200), never the hi-res copy (+1000) the switch reads, and the
         # switch is not part of the save's content identity: a save made with either set opens under the other, and

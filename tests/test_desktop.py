@@ -1014,6 +1014,34 @@ class DesktopTests(unittest.TestCase):
             ui.command(('pause_toggle', 'hires_portraits'))
             self.assertEqual((ui.hires_portraits, resources.library.hires_portraits), (True, True))
 
+    def test_the_ms3_characters_switch_shows_in_x360_episodes_and_swaps_at_once(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import MS3_CHARACTERS_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            resources.library.ms3_characters = False
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('ms3_characters', ui._pause_settings())            # an ordinary episode
+            resources.record = dict(resources.record, pack_id=31300)
+            self.assertNotIn('ms3_characters', ui._pause_settings())            # New Rules
+            for episode in (1, 2, 3, 4):                                        # all four X360 episodes
+                resources.record = dict(resources.record, pack_id=31400, episode_id=episode)
+                self.assertIs(ui._pause_settings()['ms3_characters'], False)
+            saved = []
+            ui.on_settings = lambda: saved.append(ui.ms3_characters)
+            ui.images[26200] = None
+            ui.command(('pause_toggle', 'ms3_characters'))
+            self.assertEqual((ui.ms3_characters, resources.library.ms3_characters, saved), (True, True, [True]))
+            self.assertEqual(len(ui.images), 0)
+        self.assertEqual(MS3_CHARACTERS_LABEL, 'MS3 Characters')
+        self.assertIsNotNone(switch_badge('ms3_characters'))
+
     def test_the_x360_episodes_offer_the_minigames_switch_where_they_have_minigames_and_never_hi_res(self):
         # The Hi-Res switch is New Rules' (owner, 2026-11-01); Use Translated Mini-Games goes where there's something to
         # switch: every New Rules episode, and the X360's but Day of Diss.

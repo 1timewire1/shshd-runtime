@@ -246,6 +246,7 @@ class Desktop:
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
+    ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Arena Look" switch (x360_arena_switch)
@@ -1688,6 +1689,13 @@ class Desktop:
         record = getattr(resources, 'record', None) or {}
         return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'HIRES_SWITCH_PACKS', ())
 
+    def ms3_switch(self):
+        """shshd-runtime: whether this episode has the April build's looks to choose (MS3_CHARACTER_ART: translated X360
+        episodes), so the "MS3 Characters" switch changes something."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'MS3_CHARACTER_ART', ())
+
     def minigames_switch(self):
         """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
         profile's TRANSLATED_MINIGAMES)."""
@@ -1704,6 +1712,18 @@ class Desktop:
         library = getattr(self.session.resources, 'library', None)
         if library is not None:
             library.hires_portraits = enabled
+        self._drop_portraits()
+
+    def set_ms3_characters(self, enabled):
+        """shshd-runtime: the "MS3 Characters" switch, as set_hires_portraits: the next portrait drawn is the other set's,
+        and a save names the standard portraits, so it needs nothing of its own."""
+        self.ms3_characters = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.ms3_characters = enabled
+        self._drop_portraits()
+
+    def _drop_portraits(self):
         self.images.clear()
         cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
                   CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
@@ -2330,6 +2350,7 @@ class Desktop:
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
+                    **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
@@ -2505,6 +2526,8 @@ class Desktop:
                 self.hd_backdrop = not self.hd_backdrop
             elif command[1] == 'hires_portraits':
                 self.set_hires_portraits(not self.hires_portraits)
+            elif command[1] == 'ms3_characters':
+                self.set_ms3_characters(not self.ms3_characters)
             elif command[1] == 'arena_minigames':
                 self.arena_minigames = not self.arena_minigames
             elif command[1] == 'arena_skin':

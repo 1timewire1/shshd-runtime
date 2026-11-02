@@ -770,6 +770,7 @@ class ContentLibrary:
         # shshd-runtime: translated New Rules episodes carry two portrait sets; True shows the X1i jar's redrawn,
         # higher-resolution ones (the game profile's TRANSLATED_PORTRAIT_ART), False New Rules' WinMo ones.
         self.hires_portraits = True
+        self.ms3_characters = False     # translated X360 episodes: the April build's looks (MS3_CHARACTER_ART)
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
         self._hd_resource_cache = {}
@@ -1522,6 +1523,10 @@ class EpisodeResources:
         span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(pack)
         if span is None or not span[0] <= resource_id < span[1]:
             return None
+        offset = getattr(profile, 'MS3_CHARACTER_ART', {}).get(pack)
+        if offset is not None and getattr(self.library, 'ms3_characters', False):
+            if self._bank_archive(resource_id + offset) is not None:
+                return resource_id + offset
         hires = resource_id + span[2]
         return hires if self._bank_archive(hires) is not None else None
 

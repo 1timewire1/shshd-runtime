@@ -215,7 +215,7 @@ def translate_x360(args):
         import x360_arena_art
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
                                          pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle)
-        data = x360.build_addon(stories, skin)
+        data = x360.build_addon(stories, {**skin, **x360.ms3_portraits(args.portraits)})
         target = args.out / f'{x360.ADDON_FILE}.exp'
         target.write_bytes(data)
         print(f'addon: {x360.ADDON_TITLE!r} revision {x360.ADDON_REVISION} -> {target} ({len(data) // 1024} KB, '

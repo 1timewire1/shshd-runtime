@@ -92,6 +92,9 @@ TRANSLATED_PORTRAIT_ART = {31300: (26200, 26980, 1000), 31400: (26200, 26980, 10
 # Whose two sets the "Hi-Res Portraits" switch chooses between: New Rules' WinMo and X1i art. The X360's are two sizes of
 # one render, so it always shows the larger (owner, 2026-11-01: the switch doesn't belong in its episodes).
 HIRES_SWITCH_PACKS = (31300,)
+# shshd-runtime: the "MS3 Characters" switch (ContentLibrary.ms3_characters): pack -> how far above a portrait's ID its
+# April 2009 look is (tools/translate x360.MS3_LOOKS). A portrait with none stays as it is.
+MS3_CHARACTER_ART = {31400: 2000}
 # shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
 # them. Day of Diss (31400's episode 1) has no minigame.
 TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4)}

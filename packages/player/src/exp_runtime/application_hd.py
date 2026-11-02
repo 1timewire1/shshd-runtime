@@ -338,6 +338,8 @@ class HdShell:
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():
             settings['hires_portraits'] = state.hires_portraits
+        if self.app.ms3_characters_offered():
+            settings['ms3_characters'] = state.ms3_characters
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
         if self.app.arena_skin_offered() and state.arena_minigames:
@@ -420,6 +422,8 @@ class HdShell:
         state.persist()
         if which == 'hires_portraits':
             self.app.apply_hires_portraits()
+        if which == 'ms3_characters':
+            self.app.apply_ms3_characters()
         self.app.menu_music_changed(switched=which == 'music')
         if which == 'vibration' and state.vibration:
             self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on

@@ -962,6 +962,36 @@ QuitGame()
             other = x360.Story('T', 1, [], [x360.Cast('spike', 'Spike', 1)], {})
             self.assertEqual(x360.rendered_portraits(folder, other), {})
 
+    def test_andy_is_spike_at_an_id_of_his_own(self):
+        import x360
+        self.assertEqual(x360.MONDAY_PLANNER.renders, {'spike': 'andy'})
+        self.assertEqual(x360.RENDERS[-1], 'andy')          # new ones at the end: the others' IDs are kept
+        taken = {x360.render_base(render) for render in x360.RENDERS}
+        self.assertEqual(len(taken), len(x360.RENDERS))
+        self.assertTrue(x360.addon_holds(x360.render_base('andy')))
+        self.assertTrue(x360.addon_holds(x360.render_base('andy') + x360.HIRES_PORTRAIT_OFFSET))
+
+    def test_the_ms3_set_is_the_looks_the_switch_changes_at_the_offset_the_profile_names(self):
+        import tempfile
+        import x360
+        from exp_runtime.shs.profile import MS3_CHARACTER_ART
+        from PIL import Image
+        self.assertEqual(MS3_CHARACTER_ART[x360.PACK_ID], x360.MS3_PORTRAIT_OFFSET)
+        self.assertEqual(set(x360.MS3_LOOKS), {'josh', 'zack', 'kim', 'ryan', 'hector'})
+        self.assertEqual(x360.MS3_LOOKS['josh'], x360.MS3_LOOKS['zack'])    # MS3's Josh wears Zack's model
+        with tempfile.TemporaryDirectory() as folder:
+            for look in set(x360.MS3_LOOKS.values()):
+                (Path(folder) / look).mkdir()
+                for emotion in x360.RENDERED_EMOTIONS:
+                    Image.new('RGBA', (4, 4)).save(Path(folder) / look / f'{look}_{emotion}.png')
+            portraits = x360.ms3_portraits(folder)
+        self.assertEqual(len(portraits), 5 * len(x360.MS3_LOOKS))
+        for render in x360.MS3_LOOKS:
+            for i in range(5):
+                self.assertIn(x360.render_base(render) + x360.MS3_PORTRAIT_OFFSET + i, portraits)
+        self.assertFalse(set(portraits) & {x360.render_base(render) + x360.HIRES_PORTRAIT_OFFSET + i
+                                           for render in x360.RENDERS for i in range(5)})
+
     def test_the_planners_edits_fit_nothing_the_other_stories_use(self):
         import x360
         for story in (x360.DAY_OF_DISS, x360.PUZZLE_TEST, x360.DATING_BETH):

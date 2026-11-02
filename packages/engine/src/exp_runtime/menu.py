@@ -66,7 +66,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    hd_backdrop=bool, hires_portraits=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES)
 
@@ -149,6 +149,8 @@ class MenuState:
                     self.hd_backdrop = data['hd_backdrop']
                 if type(data.get('hires_portraits')) is bool:
                     self.hires_portraits = data['hires_portraits']
+                if type(data.get('ms3_characters')) is bool:
+                    self.ms3_characters = data['ms3_characters']
                 if type(data.get('arena_minigames')) is bool:
                     self.arena_minigames = data['arena_minigames']
                 if type(data.get('arena_skin')) is bool:
@@ -222,6 +224,7 @@ class MenuState:
         self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
         self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
+        self.ms3_characters = False    # translated X360 episodes: the April build's looks, else the May build's (ContentLibrary)
         # translated New Rules episodes: their minigames in New Rules' own arena (desktop_nr_arena.py); off, the timed
         # choices the translations carry for players without it (owner, 2026-10-31: the arena by default)
         self.arena_minigames = True
@@ -299,6 +302,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
+                    ms3_characters=self.ms3_characters,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls,

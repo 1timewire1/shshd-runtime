@@ -44,13 +44,20 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 11
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 12
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog',     # at PORTRAIT_BASE + 5 x index
-           'mrpibb', 'mom_ryan', 'mrsfaulkner', 'spike', 'spud', 'dexter')              # from LATER_RENDER_BASE
+           'mrpibb', 'mom_ryan', 'mrsfaulkner', 'spike', 'spud', 'dexter', 'andy')      # from LATER_RENDER_BASE
+# The "MS3 Characters" switch (owner, 2026-11-02; shs/profile.py MS3_CHARACTER_ART): the renders the April build drew
+# differently, MS3_PORTRAIT_OFFSET above their usual IDs, only at the larger size, in the addon alone. Everyone else stays
+# as they are. MS3's Josh wears Zack's model. Its Kim, Ryan and Hector are MS4's old models, as `old ryan` has them, and
+# its Zack keeps MS4's neutral pose (reference tools x360_ms3_zack.py), so the portraits all share one pose.
+MS3_PORTRAIT_OFFSET = 2000
+MS3_LOOKS = {'josh': 'zack_ms3_standard', 'zack': 'zack_ms3_standard', 'kim': 'old_kim', 'ryan': 'old_ryan',
+             'hector': 'old_hector'}
 SCENES = ('diss_battle', 'parking_lot', 'parking_lot_hector', 'parking_lot_kim', 'parking_lot_nicole',
           'parking_lot_ryan', 'beths_room', 'zachs_room', 'beths_house_out', 'dogpound',   # SCENE_BACKGROUND_BASE + index
           'hallway_a', 'front_morning', 'front_afternoon', 'math', 'ryan_house', 'hallway_b', 'english', 'old_lot',
@@ -277,7 +284,9 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
     {location: 23 for location in ('school_hallway_a', 'school_front', 'math_classroom', 'ryan_house_out', 'school_hallway_b',
                                    'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
     player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
-    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=11,
+    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=12,
+    # Andy is fully modelled and nobody's in the prototype (its `andy` template wears Moondog): he's Spike (owner, 2026-11-02).
+    renders={'spike': 'andy'},
     keep_state=frozenset({'tod'}), diss_rounds=True,
     # One background per place, as most SHS episodes have; the school front and Josh's room by scene (owner, 2026-11-01).
     event_scenes={'episode3/monday_morning': 'hallway_a', 'episode3/practice_diss_001': 'front_morning',
@@ -1305,6 +1314,17 @@ def rendered_portraits(folder, story):
             if story.event_scenes and paths[0].exists():
                 out[cast.id] = [Image.open(paths[0]).convert('RGBA')] * len(paths)
                 break
+    return out
+
+
+def ms3_portraits(folder):
+    """{resource ID: bytes} of the MS3 Characters set (MS3_LOOKS), from the catalogue's layout."""
+    from PIL import Image
+    out = {}
+    for render, look in MS3_LOOKS.items():
+        for i, emotion in enumerate(RENDERED_EMOTIONS):
+            picture = Image.open(Path(folder) / look / f'{look}_{emotion}.png').convert('RGBA')
+            out[render_base(render) + MS3_PORTRAIT_OFFSET + i] = nr_art.png(picture)
     return out
 
 
