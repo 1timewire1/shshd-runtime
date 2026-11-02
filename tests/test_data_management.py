@@ -87,6 +87,42 @@ class LibraryActionTests(unittest.TestCase):
         self.assertNotIn('a', app.shot_cache)
         self.assertTrue((app.library.directory / 'dtview_tree.json').exists())
 
+    def live_game(self, episode):
+        """The game a player left for the main menu: it stays alive behind it, and counts as saved."""
+        return SimpleNamespace(session=SimpleNamespace(resources=SimpleNamespace(record={'id': episode}), episode_ended=False))
+
+    def test_delete_save_lets_go_of_that_episodes_live_game_too(self):
+        # Or Continue would resume it, as if nothing was deleted, and its next autosave would bring the save back.
+        app = self.app()
+        app.game = self.live_game('a')
+        app.refresh_saves()
+        self.assertEqual(app.saved, {'a', 'b'})
+        app.delete_save('a')
+        self.assertIsNone(app.game)
+        self.assertEqual(app.saved, {'b'})
+
+    def test_delete_save_leaves_another_episodes_live_game_alone(self):
+        app = self.app()
+        app.game = game = self.live_game('b')
+        app.delete_save('a')
+        self.assertIs(app.game, game)
+        self.assertEqual(app.saved, {'b'})
+
+    def test_delete_all_saves_lets_go_of_the_live_game_too(self):
+        app = self.app()
+        app.game = self.live_game('a')
+        app.delete_all_saves()
+        self.assertIsNone(app.game)
+        self.assertEqual(app.saved, set())
+
+    def test_delete_all_saves_of_another_library_leaves_this_ones_live_game_alone(self):
+        app = self.app()
+        app.game = game = self.live_game('a')
+        other = SimpleNamespace(directory=self.root / 'other', game_id='cod')
+        (other.directory / 'saves').mkdir(parents=True)
+        app.delete_all_saves(other, SimpleNamespace(ended_saves=set()))
+        self.assertIs(app.game, game)
+
     def test_delete_all_saves_takes_every_save_and_every_tree(self):
         app = self.app()
         title, message = app.delete_all_saves()

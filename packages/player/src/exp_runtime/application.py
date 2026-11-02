@@ -372,6 +372,7 @@ class Application:
         (directory / 'dtview_tree.json').unlink(missing_ok=True)
         state.ended_saves.clear()
         if library is self.library:
+            self.game = None                                    # (a game left for the main menu: see delete_save)
             self.shot_cache.clear()
             self.refresh_saves()
             self.picker = None                                  # the picker's saved-game marks and pictures
@@ -386,6 +387,10 @@ class Application:
         record = self.library.select(episode)
         for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
             (self.library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
+        # A game left for the main menu stays alive behind it, and counts as saved (refresh_saves): Continue would resume
+        # it as if nothing was deleted, and its next autosave would bring the save back.
+        if self.game is not None and self.game.session.resources.record['id'] == record['id']:
+            self.game = None
         self.state.ended_saves.clear()
         self.shot_cache.pop(record['id'], None)
         self.refresh_saves()
