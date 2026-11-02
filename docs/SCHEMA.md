@@ -406,6 +406,10 @@ The record holds exactly one of:
 | `provides` | `{id, title, revision}` | An addon: its short name (`[a-z0-9-]`, at most 32), a display title and its resource layout's revision (1–65535) |
 | `requires` | `[{id, revision}, ...]` | An episode: the addons it reads, each at least that revision |
 
+`provides` may also list `supersedes`, `[{id, revision}, ...]`: addons this one holds everything of, under the same IDs. Importing
+it removes them, episodes requiring them read it instead (at the revision listed), and importing one of them later is ignored
+unless it's newer than that.
+
 **Import.** The library recognises an addon by its `provides` record and lists
 it under the manifest's `addons`, apart from `episodes`, so no picker shows it.
 It keeps one addon per id:

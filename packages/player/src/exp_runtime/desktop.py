@@ -247,6 +247,8 @@ class Desktop:
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
+    ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits" switch (set_ch_portraits)
+    ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Arena Look" switch (x360_arena_switch)
@@ -1649,11 +1651,14 @@ class Desktop:
     def _window_backdrop(self, size):
         """While the "SHS HD Backdrop" switch is on, SHS HD's faded main-menu collage around the frame
         (hd_ui.window_backdrop), else None (the dark fill)."""
-        key = size, self.hd_backdrop
+        key = size, self.hd_backdrop, self.ch_backdrop
         if self._backdrop[0] != key:
             surface = None
             try:
-                collage = self.backdrop_collage() if self.hd_backdrop else None
+                if self.ch_backdrop and self.ch_switch():
+                    from .desktop_cod_main import addon_backdrop
+                    surface = addon_backdrop(self.session.resources.library, size)
+                collage = self.backdrop_collage() if self.hd_backdrop and surface is None else None
                 if collage is not None:
                     from .hd_ui import window_backdrop
                     surface = window_backdrop(collage, size)
@@ -1696,6 +1701,13 @@ class Desktop:
         record = getattr(resources, 'record', None) or {}
         return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'MS3_CHARACTER_ART', ())
 
+    def ch_switch(self):
+        """shshd-runtime: whether the library has the game's optional portrait addon (PORTRAIT_ADDON), so the CH
+        switches change something."""
+        library = getattr(self.session.resources, 'library', None)
+        addon = getattr(GAMES.get(game_id(self.session.resources)), 'PORTRAIT_ADDON', None)
+        return addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None
+
     def minigames_switch(self):
         """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
         profile's TRANSLATED_MINIGAMES)."""
@@ -1721,6 +1733,14 @@ class Desktop:
         library = getattr(self.session.resources, 'library', None)
         if library is not None:
             library.ms3_characters = enabled
+        self._drop_portraits()
+
+    def set_ch_portraits(self, enabled):
+        """shshd-runtime: the CH "HD Portraits" switch, as set_hires_portraits."""
+        self.ch_portraits = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.ch_portraits = enabled
         self._drop_portraits()
 
     def _drop_portraits(self):
@@ -2351,6 +2371,7 @@ class Desktop:
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
                     **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
+                    **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
@@ -2528,6 +2549,10 @@ class Desktop:
                 self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'ms3_characters':
                 self.set_ms3_characters(not self.ms3_characters)
+            elif command[1] == 'ch_portraits':
+                self.set_ch_portraits(not self.ch_portraits)
+            elif command[1] == 'ch_backdrop':
+                self.ch_backdrop = not self.ch_backdrop
             elif command[1] == 'arena_minigames':
                 self.arena_minigames = not self.arena_minigames
             elif command[1] == 'arena_skin':

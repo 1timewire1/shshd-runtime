@@ -7,6 +7,8 @@ first, then from each addon in the order listed. Native players and upstream exp
 
 - `provides`: {id, title, revision}: what the addon is. `id` is a short name ([a-z0-9-], at most 32), `revision` the
   addon's resource layout (1-65535): an addon of a higher revision serves every episode of a lower one.
+  It may also list `supersedes`, [{id, revision}, ...]: addons it holds everything of, at those revisions. Importing it
+  deletes them, and episodes that require them read it instead.
 - `requires`: [{id, revision}, ...]: the addons an episode needs, each at least that revision.
 """
 import json
@@ -34,38 +36,54 @@ def _identifier(value):
     return value
 
 
+def _addon_list(items, what):
+    """((id, revision), ...) of a list of {id, revision}. Raises ValueError."""
+    result = []
+    for item in items:
+        if not isinstance(item, dict) or set(item) != {'id', 'revision'}:
+            raise ValueError(f'each {what} addon must be {{id, revision}}')
+        result.append((_identifier(item['id']), _revision(item['revision'])))
+    if len({name for name, _ in result}) != len(result):
+        raise ValueError(f'an addon is {what} twice')
+    return tuple(result)
+
+
 def normalize(record):
-    """The record in the runtime's form: ('provides', {id, title, revision}) or ('requires', ((id, revision), ...)).
-    Raises ValueError."""
+    """The record in the runtime's form: ('provides', {id, title, revision[, supersedes]}) or ('requires', ((id,
+    revision), ...)). Raises ValueError."""
     if not isinstance(record, dict) or record.get('format') != FORMAT or record.get('version') != VERSION:
         raise ValueError('unsupported addon record version')
     members = set(record) - {'format', 'version'}
     if members == {'provides'}:
         provides = record['provides']
-        if not isinstance(provides, dict) or set(provides) != {'id', 'title', 'revision'}:
-            raise ValueError('provides must be {id, title, revision}')
+        if not isinstance(provides, dict) or not {'id', 'title', 'revision'} <= set(provides) <= {
+                'id', 'title', 'revision', 'supersedes'}:
+            raise ValueError('provides must be {id, title, revision[, supersedes]}')
         title = provides['title']
         if not isinstance(title, str) or not 0 < len(title) <= TITLE_LIMIT:
             raise ValueError(f'an addon title must be 1 to {TITLE_LIMIT} characters')
-        return 'provides', dict(id=_identifier(provides['id']), title=title, revision=_revision(provides['revision']))
+        result = dict(id=_identifier(provides['id']), title=title, revision=_revision(provides['revision']))
+        if 'supersedes' in provides:
+            if not isinstance(provides['supersedes'], list) or not provides['supersedes']:
+                raise ValueError('supersedes must list at least one addon')
+            result['supersedes'] = _addon_list(provides['supersedes'], 'superseded')
+            if result['id'] in (name for name, _ in result['supersedes']):
+                raise ValueError('an addon cannot supersede itself')
+        return 'provides', result
     if members == {'requires'}:
         requires = record['requires']
         if not isinstance(requires, list) or not requires:
             raise ValueError('requires must list at least one addon')
-        result = []
-        for item in requires:
-            if not isinstance(item, dict) or set(item) != {'id', 'revision'}:
-                raise ValueError('each required addon must be {id, revision}')
-            result.append((_identifier(item['id']), _revision(item['revision'])))
-        if len({name for name, _ in result}) != len(result):
-            raise ValueError('an addon is required twice')
-        return 'requires', tuple(result)
+        return 'requires', _addon_list(requires, 'required')
     raise ValueError('an addon record holds either provides or requires')
 
 
-def provides_bytes(addon_id, title, revision):
-    """Resource 4's payload for an addon."""
-    record = dict(format=FORMAT, version=VERSION, provides=dict(id=addon_id, title=title, revision=revision))
+def provides_bytes(addon_id, title, revision, supersedes=()):
+    """Resource 4's payload for an addon; `supersedes`: [(id, revision), ...], the addons it replaces."""
+    provides = dict(id=addon_id, title=title, revision=revision)
+    if supersedes:
+        provides['supersedes'] = [dict(id=name, revision=held) for name, held in supersedes]
+    record = dict(format=FORMAT, version=VERSION, provides=provides)
     normalize(record)
     return MAGIC + json.dumps(record, separators=(',', ':')).encode('utf-8')
 

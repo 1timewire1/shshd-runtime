@@ -404,6 +404,7 @@ class Application:
             self.set_update_check(True)
         self.apply_hires_portraits()
         self.apply_ms3_characters()
+        self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
         return 'Settings Reset', 'Every option is back to its default.'
@@ -877,6 +878,7 @@ class Application:
         self.state.persist()
         self.apply_hires_portraits()
         self.apply_ms3_characters()
+        self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
 
@@ -980,6 +982,12 @@ class Application:
         packs = getattr(GAMES.get(self.library.game_id), 'MS3_CHARACTER_ART', ()) if self.library else ()
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
 
+    def portrait_addon_offered(self):
+        """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
+        change something."""
+        addon = getattr(GAMES.get(self.library.game_id), 'PORTRAIT_ADDON', None) if self.library else None
+        return addon is not None and self.library.addon(addon[0]) is not None
+
     def minigames_offered(self):
         """Whether the library has an episode the "Use Translated Mini-Games" switch changes (TRANSLATED_MINIGAMES)."""
         if not self.library:
@@ -1004,6 +1012,12 @@ class Application:
         self.library.ms3_characters = self.state.ms3_characters
         if self.game:
             self.game.set_ms3_characters(self.state.ms3_characters)
+
+    def apply_ch_portraits(self):
+        """The CH "HD Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
+        self.library.ch_portraits = self.state.ch_portraits
+        if self.game:
+            self.game.set_ch_portraits(self.state.ch_portraits)
 
     def set_update_check(self, enabled):
         """The launch update check on or off (settings.json), from the SD Options or the HD General page."""
@@ -1173,6 +1187,7 @@ class Application:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
+        library.ch_portraits = state.ch_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
         self.picker, self.shot_cache = None, {}
@@ -1795,6 +1810,7 @@ class Application:
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.hires_portraits = self.state.hires_portraits
         self.game.ms3_characters = self.state.ms3_characters
+        self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -1896,6 +1912,7 @@ class Application:
         self.state.hd_backdrop = self.game.hd_backdrop
         self.state.hires_portraits = self.game.hires_portraits
         self.state.ms3_characters = self.game.ms3_characters
+        self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)
@@ -2152,7 +2169,8 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'arena_minigames', 'arena_skin'):
+                               'hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames',
+                               'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -2165,6 +2183,8 @@ class Application:
                     self.apply_hires_portraits()
                 if key == 'ms3_characters':
                     self.apply_ms3_characters()
+                if key == 'ch_portraits':
+                    self.apply_ch_portraits()
                 if self.game:
                     self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
                     self.game.vibration_enabled = self.state.vibration

@@ -56,12 +56,15 @@ AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (th
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
 MS3_CHARACTERS_LABEL = 'MS3 Characters'         # translated X360 episodes: the April build's looks, else the May build's
+CH_PORTRAITS_LABEL = 'HD Portraits'             # CoD with its portrait addon: Claire Hart's sharper originals
+CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
 ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
 ARENA_SKIN_LABEL = 'X360 Arena Look'            # ...that arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
-SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'arena_skin': 'SHSX360'}
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'arena_skin': 'SHSX360', 'ch_portraits': 'CHC',
+                 'ch_backdrop': 'CHC'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
 
 
@@ -85,7 +88,7 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
-ADDON_KEYS = ('hires_portraits', 'ms3_characters', 'arena_minigames', 'arena_skin')
+ADDON_KEYS = ('hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -140,7 +143,8 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VI
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
-                 'ms3_characters': MS3_CHARACTERS_LABEL,
+                 'ms3_characters': MS3_CHARACTERS_LABEL, 'ch_portraits': CH_PORTRAITS_LABEL,
+                 'ch_backdrop': CH_BACKDROP_LABEL,
                  'arena_minigames': ARENA_MINIGAMES_LABEL, 'arena_skin': ARENA_SKIN_LABEL,
                  'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins

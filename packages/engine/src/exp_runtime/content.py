@@ -692,7 +692,8 @@ class ContentLibrary:
                     or not isinstance(record.get('name'), str) or not isinstance(record.get('title'), str)
                     or not isinstance(record.get('addon'), str) or not ADDON_IDENTIFIER.fullmatch(record['addon'])
                     or type(record.get('revision')) is not int or not 1 <= record['revision'] <= 65535
-                    or sum(1 for other in m['addons'] if other.get('addon') == record['addon']) != 1):
+                    or sum(1 for other in m['addons'] if other.get('addon') == record['addon']) != 1
+                    or not isinstance(record.get('supersedes', {}), dict)):
                 raise ContentError('Invalid addon entry in content library manifest')
             seen.add(record['id'])
         self.addons = m.get('addons', [])
@@ -771,6 +772,8 @@ class ContentLibrary:
         # higher-resolution ones (the game profile's TRANSLATED_PORTRAIT_ART), False New Rules' WinMo ones.
         self.hires_portraits = True
         self.ms3_characters = False     # translated X360 episodes: the April build's looks (MS3_CHARACTER_ART)
+        self.ch_portraits = True        # CoD with its portrait addon (PORTRAIT_ADDON): Claire Hart's sharper originals
+        self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
         self._hd_resource_cache = {}
@@ -981,11 +984,22 @@ class ContentLibrary:
         record = self.select(selector)
         return EpisodeResources(self, record, ExpArchive(self.episode_bytes(record)))
 
+    def portrait_addon_map(self, addon):
+        """The map in the game's portrait addon (`addon`: the profile's PORTRAIT_ADDON), read once per file."""
+        record, archive = self.addon(addon[0])
+        if self._portrait_addon_map[0] != record['id']:
+            self._portrait_addon_map = record['id'], json.loads(archive.read(addon[1]))
+        return self._portrait_addon_map[1]
+
     def addon(self, addon_id: str):
-        """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None."""
+        """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None. An addon that
+        supersedes it stands in, its record's revision the one it stands in at."""
         record = next((a for a in self.addons if a['addon'] == addon_id), None)
         if record is None:
-            return None
+            record = next((a for a in self.addons if addon_id in a.get('supersedes', {})), None)
+            if record is None:
+                return None
+            record = dict(record, revision=record['supersedes'][addon_id])
         cached = self._addon_archives.get(record['id'])
         if cached is None:
             data = self._content_file(record, '.exp').read_bytes()
@@ -1245,6 +1259,8 @@ class ContentLibrary:
                         (stage / (sha + '.exp')).write_bytes(data)
                         addons[addon['addon']] = addon
                         addon_additions.append(addon)
+                        for superseded in addon.get('supersedes', ()):
+                            addons.pop(superseded, None)
                     continue
                 if sha in records:
                     records[sha] = _with_episode_alias(records[sha], name)
@@ -1317,8 +1333,13 @@ class ContentLibrary:
         held = addons.get(provides['id'])
         if held is not None and (held['sha256'] == sha or held['revision'] > provides['revision']):
             return False
-        return dict(id=sha, sha256=sha, name=name, addon=provides['id'], title=provides['title'],
-                    revision=provides['revision'], file=f'content/{sha}.exp')
+        if any(provides['revision'] <= a.get('supersedes', {}).get(provides['id'], 0) for a in addons.values()):
+            return False                                # what a held addon already stands in for
+        entry = dict(id=sha, sha256=sha, name=name, addon=provides['id'], title=provides['title'],
+                     revision=provides['revision'], file=f'content/{sha}.exp')
+        if 'supersedes' in provides:
+            entry['supersedes'] = dict(provides['supersedes'])
+        return entry
 
     def close(self):
         self.apk.close()
@@ -1367,6 +1388,7 @@ class EpisodeResources:
         self._presentation = False
         self._addon_archives = None
         self._required_addons = None
+        self._addon_pictures = {}
 
     @property
     def required_addons(self):
@@ -1388,6 +1410,9 @@ class EpisodeResources:
         missing = []
         for addon_id, revision in self.required_addons:
             held = next((a for a in getattr(self.library, 'addons', ()) if a['addon'] == addon_id), None)
+            if held is None:
+                stand_in = next((a for a in getattr(self.library, 'addons', ()) if addon_id in a.get('supersedes', {})), None)
+                held = None if stand_in is None else dict(revision=stand_in['supersedes'][addon_id])
             if held is None or held['revision'] < revision:
                 missing.append((addon_id, revision))
         return missing
@@ -1484,6 +1509,9 @@ class EpisodeResources:
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
+        sharper = self._addon_portrait(resource_id)
+        if sharper is not None:
+            return sharper
         hires = self._hires_portrait(resource_id)
         if hires is not None:
             return self._bank_read(hires)       # already HD-sized: no twin store fill on top
@@ -1509,7 +1537,31 @@ class EpisodeResources:
     def standard_portrait(self, resource_id):
         """The episode's own portrait (raw bytes) that `read_asset`'s hi-res copy stands in for, so the player can
         show the copy at the size the original fills; None when `read_asset` returns no hi-res copy."""
-        return None if self._hires_portrait(resource_id) is None else self.raw_asset(resource_id)
+        if self._hires_portrait(resource_id) is None and self._addon_portrait(resource_id) is None:
+            return None
+        return self.raw_asset(resource_id)
+
+    def _addon_portrait(self, resource_id):
+        """shshd-runtime: a sharper copy of this picture from the game's optional portrait addon (the profile's
+        PORTRAIT_ADDON: its id, and the resource holding its map), while the player wants them (library.ch_portraits). No
+        episode declares that addon, and a portrait has a different ID in each episode, so the map goes by a hash of the
+        picture's bytes; an entry for the hash and the resource comes first, where one picture serves two expressions and
+        the addon has one for only one of them. Else None."""
+        addon = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'PORTRAIT_ADDON', None)
+        if addon is None or not getattr(self.library, 'ch_portraits', False) or not hasattr(self.library, 'addon'):
+            return None
+        found = self.library.addon(addon[0])
+        if found is None:
+            return None
+        if resource_id not in self._addon_pictures:
+            spec = self.library.portrait_addon_map(addon)
+            try:
+                key = hashlib.sha1(self.raw_asset(resource_id)).hexdigest()[:20]
+            except (ContentError, KeyError, OSError):
+                key = None
+            self._addon_pictures[resource_id] = spec['resources'].get(f'{key}:{resource_id}', spec['portraits'].get(key))
+        target = self._addon_pictures[resource_id]
+        return None if target is None else found[1].read(target)
 
     def _hires_portrait(self, resource_id):
         """shshd-runtime: the resource holding the hi-res copy of a translated episode's portrait, when the player

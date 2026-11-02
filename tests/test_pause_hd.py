@@ -373,7 +373,8 @@ class CodPauseTests(unittest.TestCase):
 
     def test_the_add_ons_page_holds_the_translated_games_switches(self):
         from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
-        self.assertEqual(ADDON_KEYS, ('hires_portraits', 'ms3_characters', 'arena_minigames', 'arena_skin'))
+        self.assertEqual(ADDON_KEYS, ('hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames',
+                                      'arena_skin'))
         self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
         self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
         self.settings.update(ms3_characters=False, arena_minigames=True)
@@ -382,11 +383,9 @@ class CodPauseTests(unittest.TestCase):
                          [('switch', 'MS3 Characters', 'ms3_characters'), ('switch', 'Use Translated Mini-Games', 'arena_minigames')])
 
     def test_a_cod_translations_tag_is_claire_harts_dark_green_ch(self):
-        from unittest.mock import patch
         from exp_runtime import desktop_pause_hd
         from exp_runtime.cod.profile import LEGACY_GAMES
-        with patch.dict(desktop_pause_hd.SWITCH_BADGES, {'example': 'CHC'}):
-            self.assertEqual(desktop_pause_hd.switch_badge('example'), ('CH', LEGACY_GAMES['CHC']['color']))
+        self.assertEqual(desktop_pause_hd.switch_badge('ch_backdrop'), ('CH', LEGACY_GAMES['CHC']['color']))
         red, green, blue = LEGACY_GAMES['CHC']['color']
         self.assertTrue(green > red and green > blue and green < 128)
 
