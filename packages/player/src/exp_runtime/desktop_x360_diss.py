@@ -56,6 +56,7 @@ class X360DissRenderer(X360Deck):
         self._dancer = None
         self._dance_from = None
         self._josh_frame = None, None
+        self._josh_atlas = None
 
     def x360(self):
         if self._x360 is None:
@@ -171,9 +172,15 @@ class X360DissRenderer(X360Deck):
         on the front's steps. The hallway's and his room's marks are off this frame's deck, so he stays on this side there,
         at the size their backgrounds need (the spec's `places`, by background: scale, about his feet, and where those
         are). The loop's jump where it wraps is the game's."""
-        dance = self.x360()[0]['booth'].get('dance')
+        booth = self.x360()[0]['booth']
+        dance = booth.get('dance')
+        if getattr(getattr(self.resources, 'library', None), 'ms3_characters', False):
+            dance = booth.get('dance_ms3', dance)       # the April build's Josh, in Zack's model and his own dance
         if dance is None:                               # an addon from before he danced
             return
+        if self._josh_atlas != dance['atlas']:          # the switch: the other one's frames aren't needed now
+            self._images.pop(self._josh_atlas, None)
+            self._josh_atlas = dance['atlas']
         ms = self._dance_ms(game)
         if ms is None:
             cell = dance['stand']
@@ -194,7 +201,7 @@ class X360DissRenderer(X360Deck):
 
     def _josh_scaled(self, dance, cell, scale):
         """A frame at a place's size, kept for the draws it stays up: only the last one, as 171 of them would be a lot."""
-        key = cell['rect'][0], cell['rect'][1], scale
+        key = dance['atlas'], cell['rect'][0], cell['rect'][1], scale
         if self._josh_frame[0] != key:
             image = self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect']))
             size = round(image.get_width() * scale), round(image.get_height() * scale)

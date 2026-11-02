@@ -44,7 +44,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 12
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 13
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
@@ -284,7 +284,7 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
     {location: 23 for location in ('school_hallway_a', 'school_front', 'math_classroom', 'ryan_house_out', 'school_hallway_b',
                                    'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
     player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
-    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=12,
+    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=13,
     # Andy is fully modelled and nobody's in the prototype (its `andy` template wears Moondog): he's Spike (owner, 2026-11-02).
     renders={'spike': 'andy'},
     keep_state=frozenset({'tod'}), diss_rounds=True,

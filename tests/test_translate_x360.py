@@ -1107,6 +1107,21 @@ class X360AddonTests(unittest.TestCase):
 
 @unittest.skipUnless(HAS_PIL, 'x360_arena_art.py draws with Pillow')
 class DanceAtlasTests(unittest.TestCase):
+    def test_ms3s_dance_is_the_next_atlas_in_its_own_folder(self):
+        import tempfile
+        from PIL import Image
+        import x360_arena_art
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'dance_ms3').mkdir()
+            for name in ('stand', '0'):
+                Image.new('RGBA', (4, 4), (1, 2, 3, 255)).save(folder / 'dance_ms3' / f'{name}.png')
+            _, entry = x360_arena_art.dance_atlas(folder, dict(period_ms=70, stand=[0, 0, 1, 1], frames=[[0, 0, 1, 1]], places={'7': {'scale': 2}}),
+                                                  'dance_ms3', x360_arena_art.DANCE_BASE + 1)
+        self.assertEqual(entry['atlas'], x360_arena_art.DANCE_BASE + 1)
+        self.assertEqual((entry['period_ms'], entry['places']), (70, {'7': {'scale': 2}}))
+        self.assertIn(entry['atlas'], x360_arena_art.SKIN_IDS)
+
     def test_every_frame_lands_in_the_atlas_with_its_box(self):
         import tempfile
         from PIL import Image

@@ -411,6 +411,23 @@ class DrawingTests(unittest.TestCase):
         self.assertAlmostEqual(moved[1] + moved[3], 200 * k, delta=1)
         self.assertAlmostEqual(moved[0] + moved[2] / 2, 20 * k, delta=4)
 
+    def test_the_ms3_switch_changes_the_dancer_at_once_and_lets_the_other_go(self):
+        dance = self._with_dance()
+        spec = self.renderer.x360()[0]
+        strip = self.pygame.Surface((30, 20), self.pygame.SRCALPHA)
+        strip.fill((255, 0, 255, 255))
+        self.renderer._images[26795] = strip
+        spec['booth']['dance_ms3'] = dict(dance, atlas=26795, period_ms=4000)
+        game = DissPractice.opened(False)
+        self.assertEqual(self._josh_colour(game), (0, 0, 255))
+        self.renderer.resources.library.ms3_characters = True
+        self.assertEqual(self._josh_colour(game), (255, 0, 255))
+        self.assertNotIn(26794, self.renderer._images)
+        del spec['booth']['dance_ms3']                              # an addon from before MS3's
+        self.renderer._images[26794] = strip
+        self.assertEqual(self._josh_colour(game), (255, 0, 255))
+        self.renderer.resources.library.ms3_characters = False
+
     def test_an_addon_without_the_dance_still_draws(self):
         self.assertNotIn('dance', self.renderer.x360()[0]['booth'])
         self.draw(DissPractice.opened(False))
