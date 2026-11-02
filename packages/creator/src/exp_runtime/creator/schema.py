@@ -6,7 +6,7 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss'))
+                      'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss'))
 
 
 FIELDS = {
@@ -83,6 +83,10 @@ NOTES = {
     'random': 'bound must be positive. Stores an actual native random draw in result.',
     'minigames_available': "shshd-runtime only. Stores in result whether the player plays a translated story's real "
                            'minigames: 1 where its switch is on, 0 on any other player, which should take a word game.',
+    'cutscene_available': "shshd-runtime only. Stores in result whether the player draws storyboard cutscenes: 1 where it "
+                          'does, 0 on any other player, which should go straight on.',
+    'cutscene': "shshd-runtime only, behind cutscene_available. Plays the storyboard whose JSON spec is resource `spec`, in the "
+                'project or an addon it requires (see CREATOR.md). It waits at the spec\'s hold for a press.',
     'x360_slot': "shshd-runtime only, behind minigames_available. The X360 prototype's slot machine, drawn from its "
                  'addon; stores the points (the bulbs taken, 0 to 5) in result.',
     'x360_leash': "shshd-runtime only, behind minigames_available. The X360 prototype's leash game, drawn from its "

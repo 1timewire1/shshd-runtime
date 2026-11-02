@@ -35,6 +35,12 @@ DIGIT_SLOTS, DIGITS = 8, 10
 # rectangle were matched to the owner's Xenia screenshot of the title.
 TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
 PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
+OPENING_BASE = 26796                    # Day of Diss's opening (opening): its spec, then its pictures and whip, 10 in all
+OPENING_FRAME = 768, 1024
+OPENING_ART = 'data/art/hud/characters_presentation/josh/'
+OPENING_SUBTITLE = "King of Diss '08"   # (guilabel hud/characters_presentation/josh/subtitle)
+OPENING_WHIP = 14510                    # the card and its whip, in the music
+OPENING_CLIMB_WINDOW = 978              # of josh_tall's 1440 wide: the width that lines his face up with the card's
 NOTES_BASE = 26790                      # Diss Practice's notes (the Monday Planner; desktop_x360_diss), past the later renders
 NOTE_KINDS = ('note', 'bad', 'swap', 'double')
 DANCE_BASE, DANCE_ATLAS_WIDTH = 26794, 2048     # Josh's dance behind that deck, one atlas; MS3's the next
@@ -396,6 +402,81 @@ def puzzle(files, pcm_wav, folder):
             spec['jewels'][kind].append(next_id)
             next_id += 1
     return resources, spec
+
+
+def opening(files, pcm_wav, folder):
+    """{resource ID: bytes} of Day of Diss's opening, a storyboard cutscene (exp_runtime.cutscene; owner, 2026-11-02). `folder`
+    (Additional Resources/x360-opening; reference tools x360_opening_booth*.py) holds a still per camera move, 2560 x 1440, and
+    josh_tall, 1440 x 2560: Josh from the place of the camera the card is painted over, on its side, hair to shoes. All are stored at
+    the frame's scale, so a window is a blit. The cuts and pans follow the prototype's, against the music, and the whip is where the
+    prototype's fires against it, measured from a slowed capture (music 14.51 s, 0.3 s before its drop). The card then holds, as the
+    episode's title card."""
+    from pathlib import Path
+    folder = Path(folder)
+    size = OPENING_FRAME
+    spec_id, *pictures = range(OPENING_BASE, OPENING_BASE + 10)
+    first, lot, low, climb, back_id, stains_id, name_id, subtitle_id, whip_id = pictures
+
+    def still(name, scale, target):
+        image = Image.open(folder / f'{name}.jpg').convert('RGB')
+        image = image.resize((round(image.width * scale), round(image.height * scale)), Image.LANCZOS)
+        buffer = io.BytesIO()
+        image.save(buffer, 'JPEG', quality=88, optimize=True)
+        resources[target] = buffer.getvalue()
+        return image
+
+    def layered(name):
+        image = Image.open(io.BytesIO(files[OPENING_ART + name + '.jpg'])).convert('RGB')
+        image.putalpha(Image.open(io.BytesIO(files[OPENING_ART + name + '_a.jpg'])).convert('L').resize(image.size))
+        return image
+
+    resources = {}
+    sweep = size[1] / 1440
+    for name, target in (('sweep_first', first), ('sweep_lot', lot), ('sweep_low', low)):
+        travel = still(name, sweep, target).width - size[0]
+    tall = still('josh_tall', size[0] / OPENING_CLIMB_WINDOW, climb)
+    # The card: the art keeps the shape the X360 stretches its square texture to, with the window on Josh.
+    art = Image.open(io.BytesIO(files[OPENING_ART + 'background.jpg'])).convert('RGB').resize((1772, size[1]), Image.LANCZOS)
+    buffer = io.BytesIO()
+    art.crop((950, 0, 950 + size[0], size[1])).save(buffer, 'JPEG', quality=90, optimize=True)
+    resources[back_id] = buffer.getvalue()
+    resources[stains_id], resources[name_id] = _png(layered('yellow_stains')), _png(layered('name'))
+    font, _ = read_font(files['data/art/fonts/blambot_badaboom_white.fnt'].decode('utf-8'))
+    page = Image.open(io.BytesIO(files['data/art/fonts/blambot_badaboom_white_00.png'])).convert('RGBA')
+    glyphs = [font['chars'][str(ord(c))] for c in OPENING_SUBTITLE]
+    line = Image.new('RGBA', (sum(g[6] for g in glyphs), font['line_height']), (0, 0, 0, 0))
+    x = 0
+    for g in glyphs:
+        line.alpha_composite(page.crop((g[0], g[1], g[0] + g[2], g[1] + g[3])), (x + g[4], g[5]))
+        x += g[6]
+    line = line.resize((round(line.width * 1.25), round(line.height * 1.25)), Image.LANCZOS)
+    resources[subtitle_id] = _png(line)
+    resources[whip_id] = pcm_wav(files['data/sound/fx/whip.wav'])
+    whole = [0, 0, *size]
+    # The climb ends where his eyes and green headphone land on the card's, read off both pictures.
+    k = size[0] / OPENING_CLIMB_WINDOW
+    shots = [dict(image=first, start=0, end=3800, **{'from': [travel, 0, *size], 'to': whole}),
+             dict(image=lot, start=3800, end=7800, **{'from': whole, 'to': [travel, 0, *size]}),
+             dict(image=low, start=7800, end=11700, **{'from': whole, 'to': [travel, 0, *size]}),
+             dict(image=climb, start=11700, end=OPENING_WHIP, ease='out',
+                  **{'from': [tall.width - size[0], tall.height - size[1], *size], 'to': [round(221 * k), round(145 * k), *size]}),
+             dict(image=back_id, start=OPENING_WHIP, end=OPENING_WHIP, **{'from': whole, 'to': whole})]
+    middle = 300, 690                   # the name's centre, clear of his face
+    name_w, name_h = 614, 346
+    w, h = 768, 820
+    overlays = [
+        # The X360's hud/characters_presentation/josh: the stains shrink in over 0.2 s; 0.1 s on, the name does and the subtitle
+        # slides in. Its places against each other are the X360's, at this scale.
+        dict(image=stains_id, start=OPENING_WHIP, end=OPENING_WHIP + 200,
+             **{'from': [middle[0] - 72, middle[1] + 78, w * 4, round(h / 1.9 * 4.9)], 'to': [middle[0] - 72, middle[1] + 78, w, h]}),
+        dict(image=name_id, start=OPENING_WHIP + 100, end=OPENING_WHIP + 300,
+             **{'from': [*middle, round(name_w * 1.75), round(name_h * 1.75)], 'to': [*middle, name_w, name_h]}),
+        dict(image=subtitle_id, start=OPENING_WHIP + 100, end=OPENING_WHIP + 300,
+             **{'from': [-line.width / 2, 818, line.width, line.height], 'to': [middle[0] + 110, 818, line.width, line.height]})]
+    resources[spec_id] = json.dumps(dict(format='shshd-cutscene', version=1, size=list(size), music=26900, hold=OPENING_WHIP + 300,
+                                         skip=OPENING_WHIP, shots=shots, overlays=overlays,
+                                         sounds=[dict(at=OPENING_WHIP, sound=whip_id)])).encode('utf-8')
+    return resources
 
 
 def title(files):

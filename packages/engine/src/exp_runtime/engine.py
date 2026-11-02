@@ -16,6 +16,7 @@ from .nr_arena import NRArena
 from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
 from .x360_diss import DissPractice, X360_DISS
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
+from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
 from .character_picker import CharacterPicker
 from .scene_badge import SceneBadge
@@ -91,6 +92,7 @@ class EngineState:
     # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
     # selector NR_ARENA_QUERY answers 1 only with it on.
     nr_arena_enabled = False
+    cutscenes_enabled = False       # shshd-runtime: service 70 selector CUTSCENE_QUERY (Session.cutscenes)
     # Not saved: whether service 213 asks before an arena game (Session.skip_arena sets it); else it plays at once.
     nr_arena_skip = False
     # Not saved: the last link a script asked service 100 to open (a no-op in HD; see dispatch), for the host.
@@ -138,6 +140,7 @@ class EngineState:
     x360_slot: SlotMachine | None = None        # shshd-runtime: the X360 translations' slot machine (x360_games.py)
     x360_leash: LeashGame | None = None         # shshd-runtime: and their leash game
     x360_puzzle: JewelPuzzle | None = None      # shshd-runtime: and their jewel puzzle
+    cutscene: Cutscene | None = None            # shshd-runtime: a storyboard cutscene
     x360_diss: DissPractice | None = None       # shshd-runtime: and their Diss Practice
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
@@ -199,6 +202,7 @@ class EngineState:
         self.dialogue_history = DialogueHistory()
         self.word_game = self.word_grid = self.football = self.nr_arena = self.x360_slot = self.x360_leash = None
         self.x360_puzzle = None
+        self.cutscene = None
         self.x360_diss = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
@@ -1010,6 +1014,9 @@ class EngineState:
             need(0)
             self.x360_puzzle = JewelPuzzle.dealt(self.random)
             return EngineAction('x360_puzzle', request, False)
+        if y == CUTSCENE:                                       # (likewise); the session reads its spec (`args[0]`)
+            need(1)
+            return EngineAction('cutscene', request, False, dict(spec=args[0]))
         if y == X360_DISS:                                      # (likewise), its argument: show its tutorial first
             need(1)
             self.x360_diss = DissPractice.opened(bool(args[0]))

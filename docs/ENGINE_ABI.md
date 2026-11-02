@@ -610,6 +610,16 @@ also carries ([X360.md](X360.md#minigames)).
 | 216 | Jewel puzzle | — | The score |
 | 217 | Diss Practice | show the tutorial first | The score, at most 32767 |
 
+## 5.3 Storyboard cutscenes (shshd-runtime service 218)
+
+Service **218** (`spec`) plays the storyboard whose JSON spec is resource `spec`, and
+completes with 0 after its last press. A story asks **70 selector 202** first, which
+answers 1 only on a player that draws them (`Session.cutscenes`). Native players and
+upstream exp-runtime answer 0 to an unknown selector, so a story goes straight on.
+
+The spec is described in `cutscene.py`. A service 16 before it runs when its last press
+ends it, with the last picture up under the closing blinds.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

@@ -996,7 +996,7 @@ QuitGame()
         import x360
         for story in (x360.DAY_OF_DISS, x360.PUZZLE_TEST, x360.DATING_BETH):
             self.assertFalse(story.diss_rounds or story.script_edits or story.event_scenes)
-        self.assertEqual(x360.MONDAY_PLANNER.addon_revision, x360.ADDON_REVISION)
+        self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), x360.ADDON_REVISION)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
 
@@ -1153,6 +1153,63 @@ class DanceAtlasTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_PIL, 'x360_arena_art.py draws with Pillow')
+class OpeningTests(unittest.TestCase):
+    def art(self, folder):
+        from PIL import Image
+        import io
+
+        def bytes_of(image, kind):
+            buffer = io.BytesIO()
+            image.save(buffer, kind)
+            return buffer.getvalue()
+        for name in ('sweep_first', 'sweep_lot', 'sweep_low'):
+            Image.new('RGB', (2560, 1440), (10, 20, 30)).save(Path(folder) / f'{name}.jpg')
+        Image.new('RGB', (1440, 2560), (40, 50, 60)).save(Path(folder) / 'josh_tall.jpg')
+        base = 'data/art/hud/characters_presentation/josh/'
+        files = {base + 'background.jpg': bytes_of(Image.new('RGB', (1024, 1024)), 'JPEG')}
+        for name in ('yellow_stains', 'name'):
+            files[base + name + '.jpg'] = bytes_of(Image.new('RGB', (512, 256)), 'JPEG')
+            files[base + name + '_a.jpg'] = bytes_of(Image.new('L', (512, 256)), 'JPEG')
+        chars = ''.join(f'char id={ord(c)} x=0 y=0 width=8 height=8 xoffset=0 yoffset=0 xadvance=8 page=0 chnl=15\n'
+                        for c in set("King of Diss '08"))
+        files['data/art/fonts/blambot_badaboom_white.fnt'] = f'common lineHeight=12 base=8\npage id=0 file="a.png"\n{chars}'.encode()
+        files['data/art/fonts/blambot_badaboom_white_00.png'] = bytes_of(Image.new('RGBA', (16, 16), (255, 255, 255, 255)), 'PNG')
+        files['data/sound/fx/whip.wav'] = b'whip'
+        return files
+
+    def test_the_opening_is_a_valid_cutscene_stored_at_the_frames_scale(self):
+        import io
+        import tempfile
+        import x360
+        import x360_arena_art as art
+        from PIL import Image
+        from exp_runtime.cutscene import read_spec
+        with tempfile.TemporaryDirectory() as folder:
+            out = art.opening(self.art(folder), lambda data: data, folder)
+        spec = read_spec(out[art.OPENING_BASE])
+        self.assertEqual(x360.DAY_OF_DISS.opening, art.OPENING_BASE)
+        self.assertEqual(sorted(out), list(range(art.OPENING_BASE, art.OPENING_BASE + 10)))
+        self.assertTrue(all(resource in art.SKIN_IDS and x360.addon_holds(resource) for resource in out))
+        self.assertTrue(set(range(art.NOTES_BASE, art.NOTES_BASE + 6)).isdisjoint(out))
+        # The whip and the card land together, where the prototype's whip falls in the music, and it holds there.
+        self.assertEqual(spec['sounds'], [dict(at=14510, sound=art.OPENING_BASE + 9)])
+        self.assertEqual(spec['skip'], 14510)
+        self.assertEqual(spec['hold'], 14810)
+        self.assertEqual(spec['music'], x360.MUSIC_INTRO)
+        self.assertEqual(spec['shots'][-1]['start'], 14510)
+        self.assertEqual(spec['shots'][-2]['end'], 14510)
+        for shot in spec['shots']:
+            size = Image.open(io.BytesIO(out[shot['image']])).size
+            for box in (shot['from'], shot['to']):
+                self.assertEqual(box[2:], [768, 1024])              # a blit
+                self.assertTrue(0 <= box[0] <= size[0] - 768 and 0 <= box[1] <= size[1] - 1024, (shot, size))
+
+    def test_day_of_diss_needs_the_addon_that_holds_its_opening(self):
+        import x360
+        self.assertEqual(x360.DAY_OF_DISS.addon_revision, 14)
+        self.assertLessEqual(x360.MONDAY_PLANNER.addon_revision, x360.ADDON_REVISION)
+
+
 class X360SkinTests(unittest.TestCase):
     def test_a_bmfont_descriptor_is_read(self):
         import x360_arena_art

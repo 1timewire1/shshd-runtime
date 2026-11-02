@@ -17,7 +17,8 @@ What carries over: every line, speaker, choice (with its enable condition), nume
 prototype's unfinished hub (five talks among four people, so someone is talked to twice). An answer's preview
 emotion (AddChoices' third argument) becomes the speaker's expression on that answer's branch. Objectives the
 selection post-it checks off become notices. What is dropped: cameras, 3D animation, waits, the bubbles' own sound,
-emoticon effects, the presentation card and the skip button. A level's music and ambience play as one track (MIXES),
+emoticon effects and the skip button; Day of Diss's camera moves and presentation card become a storyboard
+(Story.opening). A level's music and ambience play as one track (MIXES),
 and script cues and sounds as they come (script_music, SCRIPT_SOUNDS); a story's own music comes with `music_files`.
 
 Art: the King of Diss cast wears its New Rules looks (nr_art), as the New Rules translation of King of Diss does;
@@ -44,7 +45,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 13
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 14
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
@@ -112,8 +113,8 @@ MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
 MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
 # The lot's crowd under Day of Diss's music: its loudness (RMS) against the loop's, 16 dB under (see MIXES).
 PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 10 ** (-16 / 20))
-# `CreateFx` on the level or camera that only plays a sound (fx.wxr). Day of Diss's `sound/step_dust` and `sound/whip`
-# belong to its opening cutscene, not translated yet, and wait for it.
+# `CreateFx` on the level or camera that only plays a sound (fx.wxr). Day of Diss's `sound/whip` is in its opening's timeline
+# (x360_arena_art.opening); `sound/step_dust` is left out with Josh's steps (owner, 2026-11-02).
 SCRIPT_SOUNDS = {'generic/disaster': ('data/sound/fx/dbp_fail.wav', 26982)}
 # A sound played at its SOUNDMASTER Volume, where playing it whole stands out from the rest (owner, 2026-11-02: the record
 # scratch, at 64 of 127).
@@ -188,6 +189,8 @@ class Story:
     # linked and never reach it; other players go straight on.
     puzzle_after: str = ''
     addon_revision: int = STORY_ADDON_REVISION
+    # The storyboard cutscene's spec (x360_arena_art.opening) to play before the hub opens, where the player draws them.
+    opening: int = 0
     # GUI_STATE this story's scripts decide by.
     keep_state: frozenset = frozenset()
     # X360 event -> the prototype's own background (SCENES) it uses, for a story with one per scene rather than location.
@@ -210,7 +213,7 @@ DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
     Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
     Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016')],
     {'parking_lot': 23, 'diss_battle': 23}, player='josh', own_music=True, level_music={'diss_battle': 'diss_battle'},
-    script_music={'jumparound': 'jumparound'}, pair_ambience=True)
+    script_music={'jumparound': 'jumparound'}, pair_ambience=True, opening=26796, addon_revision=14)
 # The test's hero is the zach model, called Josh in its text, so he wears Josh's render (owner, 2026-10-27: MS3's
 # Josh stood in with Zack's model, and the test was never updated); Moondog's look is Dancing Queen's.
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [
@@ -1084,6 +1087,13 @@ class Builder:
         if self.hub is not None:
             self.link(self.hub)
             return
+        if self.story.opening:
+            self.add('cutscene_available', params={'result': 'real_cutscene'})
+            test = self.add('branch', params={'expression': '(real_cutscene == 1)'})
+            self.pending = [(test.id, 'next')]
+            self.add('transition', params={'selector': SCENE_TRANSITION})       # (runs as its last press ends it)
+            self.add('cutscene', params={'spec': self.story.opening})
+            self.pending += [(test.id, 'otherwise')]
         labels = [story_text(self.proto.labels[key]) for key in OBJECTIVE_LABELS]
         self.add('message', text='\n'.join(f'- {label}' for label in labels), params={'title': 'Objectives',
                                                                                     'flag': 0})

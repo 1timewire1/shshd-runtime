@@ -426,7 +426,7 @@ class ServiceTests(unittest.TestCase):
         session.engine.x360_puzzle.move(x.UP)
         session.tick(16)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 34)
+        self.assertEqual(state['version'], 35)
         again = Session.from_snapshot(resources(), state)
         self.assertEqual(again.engine.x360_puzzle, session.engine.x360_puzzle)
         self.assertEqual(again.pending.name, 'x360_puzzle')

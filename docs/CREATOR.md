@@ -58,6 +58,7 @@ The selected choice connects to two dialogue paths. Its inspector sets a
 | Set variable, condition | Signed-word arithmetic, comparisons, boolean conditions and increments such as `points + 1`; game-state reads `prop`, `bit` and `art` |
 | Property flag | Set or clear one bit of a numeric property (50); read it with `bit(owner, key, n)` |
 | Random variable | Native service 27 with an exclusive positive upper bound; save result for branches |
+| Cutscenes?, storyboard cutscene | SHS, shshd-runtime only: whether the player draws them, then a timeline of panned pictures, overlays and sounds from a JSON spec resource (format in `cutscene.py`), which holds for a press. Put a screen transition before it to fade out of it. Each is an ordinary node in project format 3 |
 | Text input, text answer condition | Native name/input panel, stored `{variable}` or shared `$KEY` substitution and native string comparison |
 | Set text, text default | Store a text under `{name}` or `$KEY` (46), or only while it is empty (47), as the original stories do for `$ZOE` |
 | Default expression, character art, rename character | Mid-episode character changes: the expression used by default (5), a new portrait base (72), a new name that may contain `$KEY` (49) |

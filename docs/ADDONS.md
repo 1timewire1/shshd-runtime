@@ -99,7 +99,7 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 13, about 52 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 14, about 53 MB.
 
 | Resources | What |
 | --- | --- |
@@ -113,13 +113,14 @@ Required by the four [X360](X360.md) stories, and read optionally for New Rules'
 | 26420–26435 | The slot machine and leash game |
 | 26436–26749 | The jewel puzzle |
 | 26790–26795 | Diss Practice's notes and Josh's dance |
+| 26796–26805 | Day of Diss's opening: its timeline, stills, card and whip |
 | 26900–26914 | Music, each track mixed with its ambience |
 | 26982–26995 | Sound effects and emoticons |
 | 26999 | The frame backdrop |
 
 ```sh
 python tools/translate/translate.py x360 DATA_PAK --story addon --pud RES_LARGE_PUD --x1i X1I_JAR --looks NR_LOOKS_JSON \
-    --portraits PORTRAIT_CATALOG --backgrounds BACKGROUNDS --dbp DECK_SHOTS --puzzle PUZZLE_SHOTS --out OUT_DIR
+    --portraits PORTRAIT_CATALOG --backgrounds BACKGROUNDS --dbp DECK_SHOTS --puzzle PUZZLE_SHOTS --opening OPENING_STILLS --out OUT_DIR
 ```
 
 ### `chslim`: Claire Hart (Slim)

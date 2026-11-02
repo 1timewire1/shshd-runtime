@@ -35,6 +35,7 @@ from .desktop_nr_arena import NRArenaRenderer
 from .desktop_nr_arena_x360 import X360ArenaRenderer
 from .desktop_x360_diss import X360DissRenderer
 from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
+from .desktop_cutscene import CutsceneRenderer
 from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
@@ -293,6 +294,7 @@ class Desktop:
         session.choice_timer = not self._disable_choice_timer
         session.nr_arena = self._arena_minigames
         session.skip_arena = self._skip_minigames
+        session.cutscenes = True            # (this player draws them: desktop_cutscene)
         self._session = session
 
     @property
@@ -395,6 +397,7 @@ class Desktop:
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
+        self.cutscene_renderer = CutsceneRenderer(session.resources)
         self.x360_diss_renderer = X360DissRenderer(session.resources)
         self.puzzle_key = None          # the jewel puzzle: (key, direction, ms to its next repeat) of a held direction key
         self.puzzle_pad = False         # OK came from a controller's confirm, and is held
@@ -1230,14 +1233,29 @@ class Desktop:
                 ready = engine.message_panel is not None and engine.message_panel.ready
             elif action.name == 'presentation':
                 ready = engine.title_screen is not None and engine.title_screen.ready
+            elif action.name == 'cutscene':
+                ready = engine.cutscene is not None and engine.cutscene.held
         if not ready:
             self.autoplay_ms = 0
             return
         self.autoplay_ms += elapsed_ms
-        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name == 'presentation' else self.AUTOPLAY_WAIT_MS
+        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name in ('presentation', 'cutscene') else self.AUTOPLAY_WAIT_MS
         if self.autoplay_ms >= wait:
             self.autoplay_ms = 0
             self._answer()
+
+    def _sync_cutscene(self):
+        """A cutscene that names a track runs on that track's position, so its sounds land on their beats. With Music off, or
+        once a press has jumped, it runs on the session's clock."""
+        action = self.session.pending
+        if action is None or action.name != 'cutscene':
+            return
+        stream = self.music_stream
+        if stream.current is None or stream.paused:
+            return
+        game = self.session.engine.cutscene
+        if game is not None and stream.current['id'] == game.music:
+            game.sync(round(stream.position() * 1000))
 
     def _tick_fade(self, elapsed_ms):
         fade = self.fade
@@ -1465,6 +1483,22 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
+        if action and action.name == 'cutscene' and not ask and not closed and not self.error:
+            try:
+                engine = self.session.engine
+                self.cutscene_renderer.draw(self.session)
+                self.story_layer = self.cutscene_renderer.canvas
+                self.panel_alpha = None
+                self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                self.edge_layer = None              # it has the whole frame
+                self.buttons = [(pygame.Rect(0, 0, *SIZE), ('continue',))]
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Cutscene rendering stopped: %s', error)
         if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss') and not ask and not closed
                 and not self.error):
             try:
@@ -2656,7 +2690,7 @@ class Desktop:
             elif kind == 'choose' and action and action.name == 'word_game':
                 self._answer(command[1])
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
-                                                                     'survey_confirmation'):
+                                                                     'survey_confirmation', 'cutscene'):
                 if not self.autoplay and not self._continue_guarded(action):   # Autoplay: `_tick_autoplay`
                     if (action.name == 'message_panel' and self.dialogue_renderer.game_id() == 'cod'
                             and self.session.engine.message_panel is not None
@@ -3608,6 +3642,7 @@ class Desktop:
                 self.choice_closing = dict(action=pending, index=None, ms=SELECT_MS)
             else:
                 self._attempt(lambda: self.session.tick(elapsed_ms))
+                self._sync_cutscene()
             if self.session.pending is not None and (self.session.pending.name in ('choice', 'word_game')
                                                      or self.host_prompt is not None):
                 self.choice_renderer.age_ms += elapsed_ms     # the HD panel's fade-in and its labels' fly-on

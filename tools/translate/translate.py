@@ -80,6 +80,8 @@ def main(argv=None):
     xb.add_argument('--dbp', type=Path,
                     help="with --story addon: the Diss Practice booth's shots (Additional Resources/x360-dbp-booth: "
                          "the deck, the record, the digits and the practice places) for the arena's X360 skin")
+    xb.add_argument('--opening', type=Path,
+                    help="with --story addon: Day of Diss's opening stills (Additional Resources/x360-opening)")
     xb.add_argument('--puzzle', type=Path,
                     help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
                          'cursor and boards')
@@ -172,6 +174,8 @@ def translate_x360(args):
     import x360
     if args.addon and args.story == 'addon':
         raise SystemExit('--addon is for the stories; --story addon writes the addon')
+    if args.story == 'addon' and not args.opening:
+        raise SystemExit("--story addon needs --opening: Day of Diss's opening reads its stills from the addon")
     addon = ExpArchive(args.addon.read_bytes()) if args.addon else None
     proto = x360.Prototype(args.pak.read_bytes())
     art = nr_art.Art(nr_art.load(args.pud), nr_art.load(args.x1i) if args.x1i else None)
@@ -215,7 +219,8 @@ def translate_x360(args):
         import x360_arena_art
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
                                          pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle)
-        data = x360.build_addon(stories, {**skin, **x360.ms3_portraits(args.portraits)})
+        opening = x360_arena_art.opening(proto.files, x360.pcm_wav, args.opening)
+        data = x360.build_addon(stories, {**skin, **opening, **x360.ms3_portraits(args.portraits)})
         target = args.out / f'{x360.ADDON_FILE}.exp'
         target.write_bytes(data)
         print(f'addon: {x360.ADDON_TITLE!r} revision {x360.ADDON_REVISION} -> {target} ({len(data) // 1024} KB, '

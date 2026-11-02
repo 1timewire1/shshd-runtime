@@ -31,6 +31,7 @@ from .story_labels import prepare_labels, story_labels
 from .title_screen import TitleScreen
 from .loading import loading_waits, retained_word
 from .minigames import MINIGAMES
+from .cutscene import Cutscene
 from .x360_diss import PASS_SCORE
 from .x360_games import SLOTS
 from .text_input import input_fonts, validate_name
@@ -152,6 +153,7 @@ class Session:
     # shshd-runtime: whether New Rules' minigame arena plays (nr_arena.py) where a translated story offers it; off, its
     # story plays the word game or timed choices it carries for apps without the arena. Not saved: read at each call.
     nr_arena = True
+    cutscenes = False           # shshd-runtime: whether a player draws storyboard cutscenes (desktop_cutscene)
     # shshd-runtime: Ask to Skip Mini-Games for New Rules' arena: service 213 waits (an 'arena_skip' screen) for the
     # result to give the story instead, or -1 to play. Off, it plays at once. Not saved: read at each call.
     skip_arena = False
@@ -633,7 +635,13 @@ class Session:
                 queued_notice = self.engine.next_dialogue_notice
                 self.engine.nr_arena_enabled = self.nr_arena
                 self.engine.nr_arena_skip = self.skip_arena
+                self.engine.cutscenes_enabled = self.cutscenes
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
+                if action.name == 'cutscene':
+                    try:
+                        self.engine.cutscene = Cutscene.opened(action.details['spec'], self.resources.read_asset(action.details['spec']))
+                    except ValueError as error:
+                        raise VMError(str(error)) from error
                 if action.name in ('dt_add_node', 'dt_add_result', 'dt_save'):
                     # Real native behavior: every addNode/addResult call
                     # auto-saves its own tree_<serial>.sav immediately, not
@@ -801,6 +809,15 @@ class Session:
                 raise ValueError('The leash game takes a press')
             self.engine.x360_leash.press()
             return action
+        elif action.name == 'cutscene':
+            if value is not None:
+                raise ValueError('A cutscene takes a press')
+            self.engine.cutscene.press()
+            if not self.engine.cutscene.finished:
+                return action
+            if self._queue_transition(0):           # service 16 before it: it stays up under the closing blinds
+                return action
+            return self._complete_minigame(result=0)
         elif action.name == 'x360_puzzle':
             if value is not None:
                 raise ValueError('The jewel puzzle takes a press')
@@ -963,7 +980,7 @@ class Session:
             self.engine.title_screen = None
         elif kind == 'message_panel':
             self.engine.message_panel = None
-        elif kind in ('character_picker', 'word_game'):
+        elif kind in ('character_picker', 'word_game', 'cutscene'):
             setattr(self.engine, kind, None)
         # A VM pause or debugger stop can occur before the next UI is ready.
         # Retain native phase 1 so a later tick/advance cannot return twice.
@@ -1159,6 +1176,13 @@ class Session:
                 self.engine.request_sound(*game.sounds)
                 game.sounds.clear()
             return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'cutscene':
+            game = self.engine.cutscene
+            game.tick(elapsed_ms)
+            if game.sounds:
+                self.engine.request_sound(*game.sounds)
+                game.sounds.clear()
+            return self.pending
         if self.pending and self.pending.name == 'x360_puzzle':
             game = self.engine.x360_puzzle
             finished = game.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
@@ -1215,7 +1239,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=34,
+        return dict(format='shs-runtime-save', version=35,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1256,8 +1280,12 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 35):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 36):
                 raise SaveError('Unsupported save format or version')
+            # Version 35 adds a storyboard cutscene (cutscene.py); an older save never had one.
+            if state['version'] < 35 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('cutscene', None)
             # Version 34 adds the X360 translations' Diss Practice (x360_diss.py); an older save never had one.
             if state['version'] < 34 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
@@ -1598,6 +1626,11 @@ class Session:
                     engine.x360_leash.validate()
                 except ValueError as error:
                     raise SaveError(str(error)) from error
+            if engine.cutscene is not None:
+                try:
+                    engine.cutscene.validate()
+                except (ValueError, TypeError) as error:
+                    raise SaveError(str(error)) from error
             if engine.x360_puzzle is not None:
                 try:
                     engine.x360_puzzle.validate()
@@ -1678,7 +1711,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,)}
+                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)
