@@ -5,6 +5,7 @@ their native services; a character's ID may name their owner. Arithmetic uses th
 truncating division.
 """
 import ast
+import itertools
 from .model import ProjectError
 
 BINARY = {ast.Add: 0x50, ast.Sub: 0x51, ast.Mult: 0x52, ast.FloorDiv: 0x53, ast.Mod: 0x54}
@@ -85,6 +86,8 @@ def characters(tree):
 
 def emit(asm, tree, read_variable, character=None):
     """`character(id)` gives the native number of a character named as an owner."""
+    serials = itertools.count()
+
     def walk(tree):
         if isinstance(tree, ast.Call):
             service, count = FUNCTIONS[tree.func.id]
@@ -113,7 +116,9 @@ def emit(asm, tree, read_variable, character=None):
             walk(tree.left); walk(tree.right)
             asm.emit(BINARY[type(tree.op)])
         elif isinstance(tree, ast.BoolOp):
-            stop, end = ('boolean', len(asm.code), 0), ('boolean', len(asm.code), 1)
+            # The code position alone won't do: an and/or whose first value is another starts where that one does.
+            serial = next(serials)
+            stop, end = ('boolean', len(asm.code), serial, 0), ('boolean', len(asm.code), serial, 1)
             conjunction = isinstance(tree.op, ast.And)
             for value in tree.values:
                 walk(value)

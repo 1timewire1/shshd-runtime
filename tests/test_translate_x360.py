@@ -835,11 +835,11 @@ QuitGame()
                 action = s.pending
         return lines, prompts, games
 
-    def test_a_round_passes_at_the_level_plus_three_says_so_and_goes_on_by_the_time_of_day(self):
+    def test_a_round_passes_at_its_levels_goal_says_so_and_goes_on_by_the_time_of_day(self):
         from exp_runtime.creator import compile_project
         data = compile_project(self.project(['t/start']))
         comments = [f'Comment {n}' for n in range(1, 6)]
-        lines, _, games = self.drive(data, scores=(3, 4, 5))
+        lines, _, games = self.drive(data, scores=(8, 10, 13))
         self.assertEqual(games, 3)
         self.assertIn(lines[0], comments)
         self.assertEqual(lines[1:], ['Level 2', 'Level 2b', 'Level 2c', 'Level 2d', 'Afternoon', 'Level 3', 'Evening',
@@ -849,10 +849,23 @@ QuitGame()
         from exp_runtime.creator import compile_project
         data = compile_project(self.project(['t/start']))
         ouch = "Ouch. You couldn't quite move up to the next level of diss battling..."
-        lines, _, _ = self.drive(data, scores=(2, 3, 3))
-        # The first fails (2 < 3), the second passes (3), the third fails: the target is now 4.
+        lines, _, _ = self.drive(data, scores=(7, 8, 9))
+        # The first fails (7 < 8), the second passes (8), the third fails: the goal is now 10.
         self.assertEqual(lines[1:], [ouch, 'Afternoon', 'Level 2', 'Level 2b', 'Level 2c', 'Level 2d', 'Evening', ouch,
                                      'The end'])
+
+    def test_a_sound_can_play_at_its_volume(self):
+        import io
+        import struct
+        import wave
+        import x360
+        out = io.BytesIO()
+        with wave.open(out, 'wb') as writer:
+            writer.setnchannels(1); writer.setsampwidth(2); writer.setframerate(22050)
+            writer.writeframes(struct.pack('<2h', 12700, -12700))
+        with wave.open(io.BytesIO(x360.at_volume(out.getvalue(), 64))) as reader:
+            self.assertEqual(struct.unpack('<2h', reader.readframes(2)), (6400, -6400))
+            self.assertEqual((reader.getframerate(), reader.getnchannels()), (22050, 1))
 
     def test_every_comment_can_be_said(self):
         project = self.project(['t/start'])

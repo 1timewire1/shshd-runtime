@@ -44,7 +44,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 7
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 8
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
@@ -80,7 +80,7 @@ OBJECTIVE_SOUND = ('data/sound/fx/success.wav', 26988)
 SING_TYPE, SING_MARK = 6, '{'           # OpenDialog type 6 is the X360's sing bubble; '{' is SHS's music note
 # The prototype's own music, when the translation is given its files (music_assets): an intro and the loop it runs
 # into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
-MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26911
+MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26912
 # What the maps and scripts play, as one track each: SHS has one music stream, and a level layers its music and ambience.
 # (file, its SOUNDMASTER Volume), the music first, whose length the track takes; the ambience repeats under it. The gain
 # comes from the music alone (mix_track), so it doesn't change level from place to place.
@@ -95,6 +95,9 @@ MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
          'chilled': (26908, (('data/sound/music/chilled.ogg', 40), ('data/sound/fx/crowdindoor.wav', 68))),
          'diss_001': (26909, (('data/sound/music/diss_001.ogg', 40), ('data/sound/fx/crowdindoor.wav', 127))),
          'lazy': (26910, (('data/sound/music/lazy.ogg', 40),)),
+         # After school, where the map has none (owner, 2026-11-02). No sound master names this file, and its passing
+         # traffic sets its level, as a track's peak does.
+         'city_street': (26911, (('data/sound/ambient/city_street.wav', 127),)),
          'dbp': (26907, (('data/sound/music/dbp_bg_music.ogg', 127),))}
 MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
 # The lot's crowd under Day of Diss's music: its loudness (RMS) against the loop's, 16 dB under (see MIXES).
@@ -102,6 +105,9 @@ PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 10 ** (-16 / 20))
 # `CreateFx` on the level or camera that only plays a sound (fx.wxr). Day of Diss's `sound/step_dust` and `sound/whip`
 # belong to its opening cutscene, not translated yet, and wait for it.
 SCRIPT_SOUNDS = {'generic/disaster': ('data/sound/fx/dbp_fail.wav', 26982)}
+# A sound played at its SOUNDMASTER Volume, where playing it whole stands out from the rest (owner, 2026-11-02: the record
+# scratch, at 64 of 127).
+SOUND_VOLUMES = {'data/sound/fx/dbp_fail.wav': 64}
 # `gameSHS.CloseDialog`'s `sound/bubble`: every dialogue's close (owner, 2026-11-01: trying it).
 CLOSE_SOUND = ('data/sound/fx/zip.wav', 26981)
 EXPRESSIONS = (1, 4, 2, 3, 5)           # New Rules faces in SHS slots 0-4: neutral, angry, happy, sad, surprised
@@ -213,10 +219,15 @@ DATING_BETH = Story('Dating Beth', 3, ['episode1/event1'], [
 # What MS4's Diss Practice does as it ends (minigames/dissbattlepractice/game.lua, DBP:EndGame), here as an event would.
 # The script names a level's line whatever the score, so a failed second round would repeat "level 2": each is said on
 # passing, and a fail has New Rules' own line, without its "try again later" (owner, 2026-11-01). Three slots make
-# level 4 the most a player can reach, so "level 5" (dialog_003) is left out. Passing is the word game's, King of Diss's
-# target of the level + 3.
+# level 4 the most a player can reach, so "level 5" (dialog_003) is left out.
+# The word game's goals (owner, 2026-11-02: King of Diss's level + 3, read as words, was far too easy): what New Rules'
+# Rhythm asks of that target. Its grades 3, 4 and 5 in 40 s are scores of 50, 90 and 150, which are 10, 13 and 17 straight
+# good notes on its speed ladder; for 30 s, three quarters of that. The HD word game fits about 18 picks in 30 s.
+PRACTICE_TARGETS = (8, 10, 13)
+_PASSED = ' or '.join(f'(gameStats.disslevel == {level} and gameStats.diss_score >= {target})'
+                      for level, target in enumerate(PRACTICE_TARGETS))
 _NARRATION = 'Dialog("","bubbles/narrator/left","bubbles/enter_from_bottom","episode3/diss_battle_practice/%s",20,"x")\n'
-PRACTICE_END = ('if gameStats.diss_score >= gameStats.disslevel + 3 then\n'
+PRACTICE_END = (f'if {_PASSED} then\n'
                 'gameStats.disslevel = gameStats.disslevel + 1\n'
                 'if gameStats.disslevel == 1 then\n'
                 + ''.join(_NARRATION % f'dialog_000{c}' for c in ('', 'b', 'c', 'd')) +
@@ -262,7 +273,7 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
     {location: 23 for location in ('school_hallway_a', 'school_front', 'math_classroom', 'ryan_house_out', 'school_hallway_b',
                                    'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
     player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
-    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=7,
+    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=8,
     keep_state=frozenset({'tod'}), diss_rounds=True,
     # One background per place, as most SHS episodes have; the school front and Josh's room by scene (owner, 2026-11-01).
     event_scenes={'episode3/monday_morning': 'hallway_a', 'episode3/practice_diss_001': 'front_morning',
@@ -272,12 +283,12 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
                   'episode3/diss_battle_001': 'old_lot', 'episode3/memory_lane_002': 'old_lot',
                   'episode3/monday_evening': 'josh_room', 'episode3/practice_diss_003': 'josh_practice',
                   'episode3/talk_kim_001': 'kim_room', 'episode3/talk_kim_001b': 'kim_room'},
-    # The levels' music where their scene has no cue of its own; a level with none is silent. A practice map's cue is
-    # Diss Practice's. Memory lane and back at Kim's run on from Kim's.
+    # The levels' music where their scene has no cue of its own. A practice map's cue is Diss Practice's. Memory lane and
+    # back at Kim's run on from Kim's.
     event_music={'episode3/practice_diss_001': 'dbp', 'episode3/practice_diss_002': 'dbp',
                  'episode3/practice_diss_003': 'dbp', 'episode3/talk_teachers': 'freedom',
                  'episode3/talk_teachers_002': 'freedom', 'episode3/talk_mom_001': 'freedom_suburban',
-                 'episode3/talk_mom_002': 'freedom_suburban', 'episode3/monday_afternoon': '',
+                 'episode3/talk_mom_002': 'freedom_suburban', 'episode3/monday_afternoon': 'city_street',
                  'episode3/diss_battle_001': 'freedom', 'episode3/talk_kim_001': 'freedom'},
     script_sounds={'sound/whoosh': WHOOSH_SOUND, 'sound/scratch': FAIL_SOUND,
                    'SNFX:fx/doorbell.wav': ('data/sound/fx/doorbell.wav', 26984),
@@ -1090,6 +1101,22 @@ class Builder:
         self.block(script)
 
 
+def at_volume(wav, volume):
+    """A 16-bit PCM WAVE (pcm_wav's) at a SOUNDMASTER Volume; what isn't one as it is, as pcm_wav leaves it."""
+    import io
+    import wave
+    import numpy as np
+    if wav[:4] != b'RIFF':
+        return wav
+    with wave.open(io.BytesIO(wav)) as reader:
+        params, frames = reader.getparams(), reader.readframes(reader.getnframes())
+    out = io.BytesIO()
+    with wave.open(out, 'wb') as writer:
+        writer.setparams(params)
+        writer.writeframes((np.frombuffer(frames, '<i2') * (volume / 127)).astype('<i2').tobytes())
+    return out.getvalue()
+
+
 def even_level(intro, loop, window_s=2.0, settle_s=4.0, peak=0.89):
     """(intro, loop) 16-bit WAV bytes at one level (owner, 2026-10-26: Day of Diss's dont_trust_me opens loud, scoring
     the prototype's cutscene, then settles at the loop's level). The intro is turned down, never up, wherever its
@@ -1367,7 +1394,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     for key in sorted(builder.mixes_used):
         project.assets.append(Asset(MIXES[key][0], f'music {key}', mix_track(proto.files, key)))
     for path, resource in sorted(builder.sounds_used):
-        project.assets.append(Asset(resource, f'sound {Path(path).stem}', pcm_wav(proto.files[path])))
+        data = pcm_wav(proto.files[path])
+        if path in SOUND_VOLUMES:
+            data = at_volume(data, SOUND_VOLUMES[path])
+        project.assets.append(Asset(resource, f'sound {Path(path).stem}', data))
     project.nodes = builder.nodes
     project.start = builder.nodes[0].id
     for i, node in enumerate(project.nodes):
