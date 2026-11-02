@@ -1427,6 +1427,9 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
                     project.assets.append(Asset(base + HIRES_PORTRAIT_OFFSET + i, f'{cast.name} HD {i}',
                                                 nr_art.png(picture)))
         project.characters.append(Character(cast.id, cast.name, base, cast.theme, [base + i for i in range(5)]))
+    if story.opening:
+        project.assets.append(Asset(story.opening, 'Opening', None, ADDON_ID))
+        project.addons = [dict(id=ADDON_ID, revision=story.addon_revision)]
     builder.add('speakers', params={'player': story.player, 'narrator': ''})
     # No SHS relationship badges (the owner's call, 2026-10-26): the X360 shows none, and its own emoticons take the
     # portrait's corner. Property 629 = 1 hides a character's badge; the relationship (407) is left as it is.
@@ -1498,6 +1501,7 @@ def strip_addon(data, addon, revision=STORY_ADDON_REVISION):
     from exp_runtime.exp import ExpArchive, encode_exp
     archive = ExpArchive(data)
     resources, left_out = {}, []
+    # (A story with an opening already declares the addon its spec is in.)
     for resource_id in sorted(archive.entries):
         payload = archive.read(resource_id)
         if resource_id in addon.entries and resource_id >= 26000:
@@ -1506,7 +1510,13 @@ def strip_addon(data, addon, revision=STORY_ADDON_REVISION):
             left_out.append(resource_id)
             continue
         resources[resource_id] = payload
-    if ADDON_RECORD in resources:
-        raise TranslateError('the story already declares addons')
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, revision)])
     return encode_exp(resources), left_out
+
+
+def use_addon(project, left_out, revision=STORY_ADDON_REVISION):
+    """The project takes `left_out` (strip_addon's) from the addon, so that its `.expproj` and what compiles from it say so."""
+    project.addons = [dict(id=ADDON_ID, revision=revision)]
+    for asset in project.assets:
+        if asset.id in left_out:
+            asset.data, asset.addon = None, ADDON_ID

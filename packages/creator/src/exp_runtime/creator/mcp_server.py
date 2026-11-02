@@ -104,10 +104,15 @@ def create_server(root):
 
     @read_tool(name='asset_list')
     def library_assets(library: str, episode: str | None = None, kind: str | None = None,
-                       query: str = '', offset: int = 0, limit: int = 50) -> dict:
+                       query: str = '', offset: int = 0, limit: int = 50, addon: str | None = None) -> dict:
         """Browse supplied resources with type, dimensions and audio duration. Offset >=0; limit 1–200. Numeric IDs are not invented names."""
         from .catalog import library_assets
-        return library_assets(workspace, library, episode=episode, kind=kind, query=query, offset=offset, limit=limit)
+        return library_assets(workspace, library, episode=episode, kind=kind, query=query, offset=offset, limit=limit, addon=addon)
+
+    @edit_tool(name='asset_use_addon')
+    def use_addon(path: str, revision: str, library: str, addon: str, resource: int, copy: bool = False) -> dict:
+        """Take a picture, sound or cutscene from a library's add-on by reference, keeping its ID and declaring the add-on; or, with copy, embed a picture or sound so that no add-on is needed."""
+        return workspace.addon_asset(path, revision, library, addon, resource, copy)
 
     @edit_tool(name='asset_import_library_image')
     def add_library_image(path: str, revision: str, library: str,
@@ -289,7 +294,7 @@ def create_server(root):
         graph.page(offset, limit)
         project, revision = workspace.read(path)
         assets = [a for a in project.assets if query.casefold() in f'{a.id} {a.name}'.casefold()]
-        return dict(revision=revision, assets=[dict(id=a.id, name=a.name, embedded=a.data is not None,
+        return dict(revision=revision, addons=project.addons, assets=[dict(id=a.id, name=a.name, embedded=a.data is not None, addon=a.addon,
             **(inspect_asset(a.data) if a.data is not None else dict(type='image', library=project.library)))
             for a in assets[offset:offset + limit]], total=len(assets),
             next_offset=offset + limit if offset + limit < len(assets) else None)
@@ -306,7 +311,7 @@ def create_server(root):
             project, revision = workspace.read(path)
             asset = next((a for a in project.assets if a.id == resource), None)
             if asset is None: raise ProjectError('Unknown project asset')
-            data = asset.data if asset.data is not None else read_asset(workspace, project.library, resource)
+            data = (asset.data if asset.data is not None else read_asset(workspace, project.library, resource, addon=asset.addon))
         else: data = read_asset(workspace, library, resource, episode)
         png, metadata = thumbnail(data, frame=frame, size=size)
         return media_result(png, 'image/png', dict(resource=resource, **metadata))

@@ -97,6 +97,7 @@ def story():
                        Node('f', 'transition', params={'selector': 20}), Node('c', 'cutscene', params={'spec': SPEC_ID}, next='after'),
                        Node('after', text='After'))
     project.assets.append(Asset(SPEC_ID, 'spec', encoded()))
+    project.assets += [Asset(resource, 'art', b'\x89PNG\r\n\x1a\n') for resource in (RED, BLUE, STAMP, WHIP, WHIP + 1)]
     return project
 
 

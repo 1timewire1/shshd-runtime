@@ -105,6 +105,8 @@ class Asset:
     # None is an exact reference into the selected game's original base bank.
     # Embedded assets are owned by this document, never by an external path.
     data: bytes | None = None
+    # shshd-runtime: with no data, the addon (Project.addons) that holds this ID (creator/addons.py).
+    addon: str = ''
 
 
 @dataclass
@@ -135,6 +137,8 @@ class Project:
     native: dict = field(default_factory=dict)
     # shshd-runtime: the image of each emoticon (EMOTICONS), None for one the project doesn't use (version 3).
     emoticons: list[int | None] = field(default_factory=lambda: [None] * len(EMOTICONS))
+    # shshd-runtime: the addons the export declares, {id, revision} each (version 3; docs/ADDONS.md).
+    addons: list[dict] = field(default_factory=list)
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -145,6 +149,21 @@ class Project:
             raise ProjectError('Choose an MP3 or WAV file')
         if len(data) > MAX_ASSET_BYTES:
             raise ProjectError('Audio exceeds the EXP resource size limit')
+        used = {asset.id for asset in self.assets}
+        resource = next((i for i in range(26000, 32768) if i not in used), None)
+        if resource is None:
+            raise ProjectError('No free episode resource IDs remain')
+        asset = Asset(resource, name, data)
+        self.assets.append(asset)
+        return asset
+
+    def add_cutscene(self, name: str, data: bytes) -> Asset:
+        """Embed a storyboard cutscene's spec (exp_runtime.cutscene) at the next free episode ID."""
+        from exp_runtime.cutscene import read_spec
+        try:
+            read_spec(data)
+        except ValueError as error:
+            raise ProjectError(str(error)) from error
         used = {asset.id for asset in self.assets}
         resource = next((i for i in range(26000, 32768) if i not in used), None)
         if resource is None:
@@ -184,7 +203,20 @@ def _string(value, label, limit=60000):
         raise ProjectError(f'Invalid Unicode in {label}') from error
 
 
+def _validate_addons(project):
+    from exp_runtime.addons import requires_bytes
+    if not isinstance(project.addons, list):
+        raise ProjectError('Invalid add-on list')
+    if not project.addons:
+        return
+    try:
+        requires_bytes([(entry['id'], entry['revision']) for entry in project.addons])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ProjectError(f'Invalid add-on: {error}') from error
+
+
 def validate_structure(project: Project):
+    _validate_addons(project)
     """Check data types and sizes, while allowing unfinished stories to save."""
     _string(project.title, 'episode title', 1000)
     _string(project.start, 'start node ID', 100)
@@ -279,7 +311,12 @@ def validate_structure(project: Project):
         if asset.id in ids:
             raise ProjectError(f'Duplicate asset ID: {asset.id}')
         ids.add(asset.id)
-        if asset.data is None:
+        if asset.addon:
+            if asset.data is not None or asset.id < 26000:
+                raise ProjectError(f'{asset.name}: an add-on\'s asset holds no data of its own and an episode ID')
+            if asset.addon not in {entry['id'] for entry in project.addons}:
+                raise ProjectError(f'{asset.name}: the project doesn\'t declare the {asset.addon} add-on')
+        elif asset.data is None:
             if asset.id >= 25000:
                 raise ProjectError('Only base-bank images may be external references')
         else:
@@ -376,6 +413,10 @@ def project_from_record(data):
                     option['condition'] = ''
         if version < 3:
             data['emoticons'] = [None] * len(EMOTICONS)
+        # shshd-runtime: added within version 3, which hasn't been in a release: a project saved before them has neither.
+        data.setdefault('addons', [])
+        for asset in data['assets']:
+            asset.setdefault('addon', '')
         nodes = []
         for record in data['nodes']:
             node = _construct(Node, record)

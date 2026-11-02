@@ -14,6 +14,7 @@ from exp_runtime.x360_games import X360_LEASH, X360_MINIGAMES_QUERY, X360_SLOT
 from exp_runtime.x360_diss import X360_DISS
 from exp_runtime.x360_puzzle import X360_PUZZLE
 from exp_runtime.cutscene import CUTSCENE, CUTSCENE_QUERY
+from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
 from .model import (EMOTICONS, Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record,
                     validate_structure)
@@ -162,7 +163,7 @@ def validate_node(project, node, nodes, assets, characters):
         if project.game != 'shs':
             raise ProjectError(f'{label}: an intro running into a loop is SHS presentation; CoD has none')
         loop = assets.get(p['then_loop'])
-        if loop is None or loop.data is None or not is_audio(loop.data):
+        if loop is None or not loop.addon and (loop.data is None or not is_audio(loop.data)):
             raise ProjectError(f'{label}: the loop after the intro must be an embedded MP3 or WAV')
         if p['then_loop'] == p['resource']:
             raise ProjectError(f'{label}: the loop must be another track than the intro')
@@ -173,8 +174,8 @@ def validate_node(project, node, nodes, assets, characters):
     if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'input', 'relationship',
                      'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
-    if node.kind == 'cutscene' and (type(p['spec']) is not int or not 0 <= p['spec'] <= 65535):
-        raise ProjectError(f'{label}: enter the resource ID of the cutscene\'s spec')
+    if node.kind == 'cutscene':
+        validate_cutscene(label, p, assets)
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
     if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
@@ -183,11 +184,13 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError('Audio resource IDs must be nonnegative')
     music = range(8201, 8210 if project.game == 'cod' else 8233)
     embedded = assets[p['resource']].data if node.kind in ('music', 'sound') and p['resource'] in assets else None
-    if node.kind == 'music' and p['resource'] not in music and not (embedded and is_audio(embedded)):
+    # (An addon's track is its own to check: only the library has its bytes.)
+    from_addon = node.kind in ('music', 'sound') and p['resource'] in assets and bool(assets[p['resource']].addon)
+    if node.kind == 'music' and p['resource'] not in music and not from_addon and not (embedded and is_audio(embedded)):
         raise ProjectError('Choose a native music ID for the selected game, or an embedded MP3 or WAV')
     if node.kind == 'sound' and p['resource'] in music:
         raise ProjectError('This ID selects music; use a Music node')
-    if node.kind == 'sound' and p['resource'] >= 25000 and not (embedded and is_audio(embedded)):
+    if node.kind == 'sound' and p['resource'] >= 25000 and not from_addon and not (embedded and is_audio(embedded)):
         raise ProjectError('Embed the sound effect (MP3 or WAV) before using an episode audio ID')
     for resource in ([node.asset] if node.kind in ('background', 'character_art') else
                      [node.portrait] if node.kind == 'dialogue' and not node.character and node.portrait is not None else []):
@@ -251,6 +254,24 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('left_character', 'right_character'):
             if p[key] and p[key] not in characters:
                 raise ProjectError(f'{label}: unknown grid character')
+
+
+def validate_cutscene(label, p, assets):
+    """A cutscene node's spec is an asset, in the project or an addon; an embedded one is checked, with what it draws and plays."""
+    from exp_runtime.cutscene import read_spec
+    asset = assets.get(p['spec']) if type(p['spec']) is int else None
+    if asset is None:
+        raise ProjectError(f'{label}: choose a cutscene from the project or an add-on')
+    if asset.data is None:
+        return
+    try:
+        spec = read_spec(asset.data)
+    except ValueError as error:
+        raise ProjectError(f'{label}: {error}') from error
+    for resource in ([item['image'] for item in spec['shots'] + spec.get('overlays', [])]
+                     + [item['sound'] for item in spec.get('sounds', [])]):
+        if resource not in assets:
+            raise ProjectError(f'{label}: the cutscene uses resource {resource}, which isn\'t in the project')
 
 
 def validate_presentation(project, node, p, label, characters):
@@ -849,6 +870,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
     presentation = presentation_record(project)
     if presentation:
         resources[PRESENTATION_RESOURCE] = presentation_bytes(presentation)
+    if project.addons:
+        resources[ADDON_RESOURCE] = requires_bytes([(entry['id'], entry['revision']) for entry in project.addons])
     return Compilation(encode_exp(resources), locations, variables, shared,
                        {key: value for key, value in characters.items() if isinstance(key, str)})
 
@@ -861,8 +884,18 @@ def export_project(project: Project, path, *, language=None):
     atomic_write(path, compile_project(project, language=language))
 
 
-def export_native_slot(project: Project, reference: Path, destination: Path):
+def export_native_slot(project: Project, reference: Path, destination: Path, *, pack_from=None):
+    """A replacement for an original app's episode. The apps can't read addons or this runtime's mechanics (creator/addons.py): a
+    project using a mechanic is refused, and one taking addon assets raises AddonsNeeded unless `pack_from`, the library to pack them
+    from, is given."""
+    from .addons import AddonsNeeded, check_native_export, pack_addons
     reference, destination = Path(reference), Path(destination)
+    try:
+        check_native_export(project)
+    except AddonsNeeded:
+        if pack_from is None:
+            raise
+        project = pack_addons(project, pack_from)
     if reference.resolve() == destination.resolve():
         raise ProjectError('Export a separate replacement file; keep the original episode as a backup')
     archive = ExpArchive(reference.read_bytes())

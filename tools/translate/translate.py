@@ -206,7 +206,11 @@ def translate_x360(args):
             print(f'{name}: own backgrounds {", ".join(sorted(backgrounds))}')
         left_out = []
         if addon is not None:
-            data, left_out = x360.strip_addon(data, addon, story.addon_revision)
+            # Checks every resource left out is the addon's own, byte for byte; then the project says it takes those from the addon,
+            # so its .expproj re-exports the same and importing the .exp brings them back.
+            _, left_out = x360.strip_addon(data, addon, story.addon_revision)
+            x360.use_addon(project, left_out, story.addon_revision)
+            data = compile_project(project)
         stem = args.out / f'X360_{story.episode_id:02d}_{safe(story.title)}'
         save_project(project, stem.with_suffix('.expproj'))
         stem.with_suffix('.exp').write_bytes(data)

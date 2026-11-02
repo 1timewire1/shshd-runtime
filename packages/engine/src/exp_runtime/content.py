@@ -1017,6 +1017,11 @@ class ContentLibrary:
             cached = self._addon_archives[record['id']] = ExpArchive(data)
         return record, cached
 
+    def addon_on_hand(self, record: dict) -> bool:
+        """shshd-runtime: whether an addon record can be read: already open (a preview's isolated copy has no files of its own), or
+        with its file in place."""
+        return record['id'] in self._addon_archives or (self.directory / record['file']).is_file()
+
     def episode_requires(self, record: dict):
         """shshd-runtime: the addons an episode declares, ((id, revision), ...). Read from its file once: the manifest
         doesn't hold them, so this works for episodes already imported. Only an imported file can declare any."""
@@ -1477,7 +1482,7 @@ class EpisodeResources:
                 held = None if stand_in is None else dict(revision=stand_in['supersedes'][addon_id])
             if held is None or held['revision'] < revision:
                 missing.append((addon_id, revision))
-            elif 'file' in held and not (self.library.directory / held['file']).is_file():
+            elif 'file' in held and not self.library.addon_on_hand(held):
                 missing.append((addon_id, revision))    # its file went (Verify Library removes a damaged one)
         return missing
 
