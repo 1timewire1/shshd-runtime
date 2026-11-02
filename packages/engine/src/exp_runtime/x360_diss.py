@@ -10,7 +10,8 @@ The arm decides what's caught, as the X360's does: its head carries the trigger'
 for about 55 ms of PUSH's 242, and a note is caught as its own box enters. The geometry is the map's and the deck model's
 (reference/Other Games/docs/MONDAY_PLANNER_PLAN.md). The game's frames are 60 a second, whatever the player draws.
 
-Kept from the Lua, for the owner to judge in play:
+Bugs in the Lua, kept on purpose so the game plays as the X360's does (owner, 2026-11-02, after playing it); they aren't ours
+to fix:
 - The good-note cap never counts: `goodNotesTypeCount` only goes up in a swap.
 - A swap makes the speed negative, so `Velocity >= 130` can't bring double notes until the next swap; on-fire notes still
   come at a streak of 20. A negative speed also ends the spin-down at once.
