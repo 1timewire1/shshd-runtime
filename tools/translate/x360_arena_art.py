@@ -298,7 +298,8 @@ def dance_atlas(folder, dance):
         atlas.paste(cell, tuple(rect[:2]))
     boxes = [dance['stand']] + dance['frames']
     cells = [dict(rect=rect, box=box) for rect, box in zip(placed, boxes)]
-    return _png(atlas), dict(atlas=DANCE_BASE, period_ms=dance['period_ms'], stand=cells[0], frames=cells[1:])
+    return _png(atlas), dict(atlas=DANCE_BASE, period_ms=dance['period_ms'], stand=cells[0], frames=cells[1:],
+                             places=dance.get('places', {}))
 
 
 def deck_parts(folder, parts):

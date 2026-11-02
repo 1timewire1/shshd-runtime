@@ -55,6 +55,7 @@ class X360DissRenderer(X360Deck):
         self._shown_effects = []
         self._dancer = None
         self._dance_from = None
+        self._josh_frame = None, None
 
     def x360(self):
         if self._x360 is None:
@@ -126,7 +127,7 @@ class X360DissRenderer(X360Deck):
         surface = self.canvas
         surface.fill((0, 0, 0, 0))
         now = game.now_ms
-        self._josh(surface, game)
+        self._josh(surface, game, session.engine.panel.background_id)
         if game.phase == TUTORIAL or (game.phase == OPENING and game.tutorial):
             self._tutorial(surface, game)
             return
@@ -165,10 +166,11 @@ class X360DissRenderer(X360Deck):
             return None
         return game.now_ms - self._dance_from
 
-    def _josh(self, surface, game):
-        """Josh on the steps behind the deck, the frames drawn one to one (reference tools x360_dbpdance.py): in the game's
-        camera, he's here at the front's practice; the hallway's and his room's marks are off this frame's deck, so all
-        three have him here. The loop's jump where it wraps is the game's."""
+    def _josh(self, surface, game, background):
+        """Josh behind the deck (reference tools x360_dbpdance.py), the frames drawn one to one as the game's camera has him
+        on the front's steps. The hallway's and his room's marks are off this frame's deck, so he stays on this side there,
+        at the size their backgrounds need (the spec's `places`, by background: scale, about his feet, and where those
+        are). The loop's jump where it wraps is the game's."""
         dance = self.x360()[0]['booth'].get('dance')
         if dance is None:                               # an addon from before he danced
             return
@@ -179,7 +181,25 @@ class X360DissRenderer(X360Deck):
             frames = dance['frames']
             cell = frames[(ms % dance['period_ms']) * len(frames) // dance['period_ms']]
         x, y, _, _ = self._to_native(cell['box'])
-        surface.blit(self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect'])), (round(x * self.k), round(y * self.k)))
+        place = dance.get('places', {}).get(str(background))
+        if place is None:
+            image = self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect']))
+        else:
+            left, top, width, height = self._to_native(dance['stand']['box'])
+            feet_x, feet_y = left + width / 2, top + height
+            to_x, to_y = place.get('feet', (feet_x, feet_y))
+            x, y = to_x + (x - feet_x) * place['scale'], to_y + (y - feet_y) * place['scale']
+            image = self._josh_scaled(dance, cell, place['scale'])
+        surface.blit(image, (round(x * self.k), round(y * self.k)))
+
+    def _josh_scaled(self, dance, cell, scale):
+        """A frame at a place's size, kept for the draws it stays up: only the last one, as 171 of them would be a lot."""
+        key = cell['rect'][0], cell['rect'][1], scale
+        if self._josh_frame[0] != key:
+            image = self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect']))
+            size = round(image.get_width() * scale), round(image.get_height() * scale)
+            self._josh_frame = key, pygame.transform.smoothscale(image, size)
+        return self._josh_frame[1]
 
     def _tutorial(self, surface, game):
         """hud/tutorial: the three cards come in, a second apart, then the prompt."""

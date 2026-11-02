@@ -291,8 +291,8 @@ class DrawingTests(unittest.TestCase):
         files[26300] = json.dumps(spec).encode()
         self.renderer = X360DissRenderer(SimpleNamespace(library=library(files)))
 
-    def draw(self, game):
-        session = SimpleNamespace(engine=SimpleNamespace(x360_diss=game))
+    def draw(self, game, background=-1):
+        session = SimpleNamespace(engine=SimpleNamespace(x360_diss=game, panel=SimpleNamespace(background_id=background)))
         self.renderer.draw(session)
         return self.renderer.canvas
 
@@ -347,7 +347,8 @@ class DrawingTests(unittest.TestCase):
         strip.fill((0, 0, 255, 255), (10, 0, 10, 20))
         strip.fill((255, 255, 0, 255), (20, 0, 10, 20))
         self.renderer._images[26794] = strip
-        box = [430, 200, 440, 220]
+        scale = self.renderer._deck()[0] * self.renderer.k      # a box the frames' size, as x360_dbpdance.py makes them
+        box = [430, 200, 430 + 10 / scale, 200 + 20 / scale]
         spec['booth']['dance'] = dict(atlas=26794, period_ms=2000, stand=dict(rect=[0, 0, 10, 20], box=box),
                                       frames=[dict(rect=[10, 0, 10, 20], box=box), dict(rect=[20, 0, 10, 20], box=box)])
         return spec['booth']['dance']
@@ -383,6 +384,32 @@ class DrawingTests(unittest.TestCase):
         game.tick(200, random)
         self.assertEqual(game.phase, COUNTDOWN)
         self.assertEqual(self._josh_colour(game), (0, 0, 255))
+
+    def test_josh_takes_his_size_and_place_from_the_background(self):
+        dance = self._with_dance()
+        dance['places'] = {'7': dict(scale=2), '8': dict(scale=2, feet=[20, 200])}
+        game = DissPractice.opened(False)
+        k = self.renderer.k
+
+        def extent(background):
+            self.draw(game, background)
+            xs, ys = [], []
+            for y in range(self.renderer.canvas.get_height()):
+                for x in range(90):
+                    if tuple(self.renderer.canvas.get_at((x, y)))[:3] == (0, 0, 255):
+                        xs.append(x)
+                        ys.append(y)
+            return min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+
+        left, top, width, height = extent(-1)
+        self.assertEqual((width, height), (10, 20))             # one to one where there's no place
+        big = extent(7)
+        self.assertEqual(big[2:], (20, 40))
+        self.assertEqual(big[1] + big[3], top + height)         # about his feet
+        moved = extent(8)
+        self.assertEqual(moved[2:], (20, 40))
+        self.assertAlmostEqual(moved[1] + moved[3], 200 * k, delta=1)
+        self.assertAlmostEqual(moved[0] + moved[2] / 2, 20 * k, delta=4)
 
     def test_an_addon_without_the_dance_still_draws(self):
         self.assertNotIn('dance', self.renderer.x360()[0]['booth'])
