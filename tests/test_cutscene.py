@@ -136,6 +136,14 @@ class SessionTests(unittest.TestCase):
         self.assertEqual((action.name, action.details['text']), ('dialogue', 'After'))
         self.assertIsNone(session.engine.cutscene)
 
+    def test_its_held_picture_is_the_episodes_title_card_for_the_picker(self):
+        from exp_runtime import episode_thumbnails
+        session = session_for(story())
+        self.assertTrue(episode_thumbnails.run_to_title_card(session))
+        self.assertEqual(session.pending.name, 'cutscene')
+        self.assertTrue(session.engine.cutscene.held)
+        self.assertFalse(session.transitioning)
+
     def test_it_takes_only_a_press(self):
         session, _ = self.played()
         with self.assertRaises(ValueError):
