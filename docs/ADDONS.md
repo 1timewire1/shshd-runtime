@@ -144,7 +144,8 @@ size in play doesn't change, as `standard_portrait` keeps it at the size CoD's p
   two. Kai's sad and shocked share a picture, so his shocked has its own entry.
 - **Left out of the map:** Sophie. Claire Hart's version has pink hair, and her red hair is plot-relevant.
 - **For Claire Hart's own episodes:** the pack also holds the rest of Troy Harris, Paul Clayton and Claire. With those, it covers
-  every portrait in 57 of Claire Hart Classic's 266 episodes.
+  every portrait in 57 of Claire Hart Classic's 266 episodes. It holds no Claire Hart backgrounds, so it isn't enough to translate
+  those episodes by itself.
 - **Stable IDs:** so that a complete Claire Hart addon can supersede it. Both hold each portrait under the same ID.
 
 **Switches:** "HD Portraits in CoD" and "Backdrop" on the Add-Ons page, with the CH tag, shown when the addon is imported and on by default.
