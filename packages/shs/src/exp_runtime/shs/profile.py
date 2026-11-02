@@ -94,7 +94,7 @@ TRANSLATED_PORTRAIT_ART = {31300: (26200, 26980, 1000), 31400: (26200, 26980, 10
 HIRES_SWITCH_PACKS = (31300,)
 # shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
 # them. Day of Diss (31400's episode 1) has no minigame.
-TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3)}
+TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4)}
 # shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).

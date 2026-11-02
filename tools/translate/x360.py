@@ -44,7 +44,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 8
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 9
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
@@ -80,7 +80,7 @@ OBJECTIVE_SOUND = ('data/sound/fx/success.wav', 26988)
 SING_TYPE, SING_MARK = 6, '{'           # OpenDialog type 6 is the X360's sing bubble; '{' is SHS's music note
 # The prototype's own music, when the translation is given its files (music_assets): an intro and the loop it runs
 # into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
-MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26912
+MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26914
 # What the maps and scripts play, as one track each: SHS has one music stream, and a level layers its music and ambience.
 # (file, its SOUNDMASTER Volume), the music first, whose length the track takes; the ambience repeats under it. The gain
 # comes from the music alone (mix_track), so it doesn't change level from place to place.
@@ -98,7 +98,10 @@ MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
          # After school, where the map has none (owner, 2026-11-02). No sound master names this file, and its passing
          # traffic sets its level, as a track's peak does.
          'city_street': (26911, (('data/sound/ambient/city_street.wav', 127),)),
-         'dbp': (26907, (('data/sound/music/dbp_bg_music.ogg', 127),))}
+         # Diss Practice's: the maps name the first, and the other two nothing; one for each round (owner, 2026-11-02).
+         'dbp': (26907, (('data/sound/music/dbp_bg_music.ogg', 127),)),
+         'dbp_2': (26912, (('data/sound/music/dbp_bg_music2.ogg', 127),)),
+         'dbp_3': (26913, (('data/sound/music/dbp_bg_music3.ogg', 127),))}
 MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
 # The lot's crowd under Day of Diss's music: its loudness (RMS) against the loop's, 16 dB under (see MIXES).
 PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 10 ** (-16 / 20))
@@ -224,10 +227,10 @@ DATING_BETH = Story('Dating Beth', 3, ['episode1/event1'], [
 # Rhythm asks of that target. Its grades 3, 4 and 5 in 40 s are scores of 50, 90 and 150, which are 10, 13 and 17 straight
 # good notes on its speed ladder; for 30 s, three quarters of that. The HD word game fits about 18 picks in 30 s.
 PRACTICE_TARGETS = (8, 10, 13)
-_PASSED = ' or '.join(f'(gameStats.disslevel == {level} and gameStats.diss_score >= {target})'
-                      for level, target in enumerate(PRACTICE_TARGETS))
+WORD_GAME_PASSED = ' or '.join(f'((disslevel == {level}) and (diss_score >= {target}))'
+                               for level, target in enumerate(PRACTICE_TARGETS))
 _NARRATION = 'Dialog("","bubbles/narrator/left","bubbles/enter_from_bottom","episode3/diss_battle_practice/%s",20,"x")\n'
-PRACTICE_END = (f'if {_PASSED} then\n'
+PRACTICE_END = ('if gameStats.diss_passed == 1 then\n'
                 'gameStats.disslevel = gameStats.disslevel + 1\n'
                 'if gameStats.disslevel == 1 then\n'
                 + ''.join(_NARRATION % f'dialog_000{c}' for c in ('', 'b', 'c', 'd')) +
@@ -245,6 +248,7 @@ DISS_PRACTICE = {'text': "Work on your rhythm until you get hot! Don't hit the w
                  'bad': ['Bent note', 'Off-key', 'Screech', 'Clunk', 'Sour note', 'Static'],
                  'duration_ms': 30000, 'refresh_ms': 3000, 'result': 'diss_score'}
 DISS_COMMENTS = tuple(f'episode3/comment/diss_00{n}' for n in range(1, 6))     # DissComment, functions/episode3.lua
+DISS_PASS = 5000                        # exp_runtime.x360_diss.PASS_SCORE
 # The battle (owner, 2026-11-01): the prototype has `--call diss practice minigame or something` where New Rules plays
 # its Rhyme game, and only the win. New Rules' Spike battle as our King of Diss translation plays it: its speed diss, the
 # same rounds (newrules.rhyme_rounds(library, 2)), ten hits to finish, three misses to lose, seven to win.
@@ -273,7 +277,7 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
     {location: 23 for location in ('school_hallway_a', 'school_front', 'math_classroom', 'ryan_house_out', 'school_hallway_b',
                                    'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
     player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
-    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=8,
+    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=9,
     keep_state=frozenset({'tod'}), diss_rounds=True,
     # One background per place, as most SHS episodes have; the school front and Josh's room by scene (owner, 2026-11-01).
     event_scenes={'episode3/monday_morning': 'hallway_a', 'episode3/practice_diss_001': 'front_morning',
@@ -285,8 +289,8 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
                   'episode3/talk_kim_001': 'kim_room', 'episode3/talk_kim_001b': 'kim_room'},
     # The levels' music where their scene has no cue of its own. A practice map's cue is Diss Practice's. Memory lane and
     # back at Kim's run on from Kim's.
-    event_music={'episode3/practice_diss_001': 'dbp', 'episode3/practice_diss_002': 'dbp',
-                 'episode3/practice_diss_003': 'dbp', 'episode3/talk_teachers': 'freedom',
+    event_music={'episode3/practice_diss_001': 'dbp', 'episode3/practice_diss_002': 'dbp_2',
+                 'episode3/practice_diss_003': 'dbp_3', 'episode3/talk_teachers': 'freedom',
                  'episode3/talk_teachers_002': 'freedom', 'episode3/talk_mom_001': 'freedom_suburban',
                  'episode3/talk_mom_002': 'freedom_suburban', 'episode3/monday_afternoon': 'city_street',
                  'episode3/diss_battle_001': 'freedom', 'episode3/talk_kim_001': 'freedom'},
@@ -904,8 +908,24 @@ class Builder:
         self.pending += ends
 
     def diss_round(self):
-        """A practice round, and what Diss Practice does when one ends (PRACTICE_END)."""
+        """A practice round: Diss Practice where the player has it and its switch is on, with its tutorial the first
+        time, or the word game; then what Diss Practice does when one ends (PRACTICE_END)."""
+        self.add('minigames_available', params={'result': 'real_minigames'})
+        real = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(real.id, 'next')]
+        first = self.add('branch', params={'expression': '(dissPractice == 0)'})
+        self.pending = [(first.id, 'next')]
+        self.add('x360_diss', params={'result': 'diss_score', 'tutorial': 1})
+        ends = self.pending
+        self.pending = [(first.id, 'otherwise')]
+        self.add('x360_diss', params={'result': 'diss_score', 'tutorial': 0})
+        self.pending += ends
+        self.add('set', variable='diss_passed', params={'expression': f'(diss_score > {DISS_PASS})'})
+        ends = self.pending
+        self.pending = [(real.id, 'otherwise')]
         self.add('word_game', text=DISS_PRACTICE['text'], params={k: v for k, v in DISS_PRACTICE.items() if k != 'text'})
+        self.add('set', variable='diss_passed', params={'expression': f'({WORD_GAME_PASSED})'})
+        self.pending += ends
         self.block(lua_subset.parse(PRACTICE_END))
 
     def speed_diss(self):

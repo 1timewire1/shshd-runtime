@@ -33,6 +33,7 @@ from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
 from .desktop_nr_arena_x360 import X360ArenaRenderer
+from .desktop_x360_diss import X360DissRenderer
 from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
 from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
@@ -391,6 +392,7 @@ class Desktop:
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
+        self.x360_diss_renderer = X360DissRenderer(session.resources)
         self.puzzle_key = None          # the jewel puzzle: (key, direction, ms to its next repeat) of a held direction key
         self.puzzle_pad = False         # OK came from a controller's confirm, and is held
         self.leash_anchor = None        # where a drag last turned, in frame units, while one is shaking the leash
@@ -988,6 +990,10 @@ class Desktop:
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
                                        self.SKIP_OPTIONS, lambda index: self._resolve_x360_leash(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_diss'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'Diss practice: catch the good notes with the needle.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_x360_diss(action, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'A jewel puzzle. Its score changes nothing that follows.',
@@ -1045,6 +1051,16 @@ class Desktop:
         if index == 2:
             self.minigame_played = action
             self.session.engine.x360_leash.start()      # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_x360_diss(self, action, index):
+        """Diss Practice's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            self.session.engine.x360_diss.start()       # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_minigame(index == 0))
 
@@ -1446,11 +1462,12 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
-        if action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle') and not ask and not closed and not self.error:
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss') and not ask and not closed
+                and not self.error):
             try:
                 engine = self.session.engine
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
-                            'x360_slot': self.x360_slot_renderer}[action.name]
+                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer}[action.name]
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
@@ -2764,7 +2781,7 @@ class Desktop:
             if command is not None:
                 self.command(command)
             return True
-        if (action and action.name == 'x360_slot' and not self.menu_open and not self.error and not asking
+        if (action and action.name in ('x360_slot', 'x360_diss') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             frame = self.bg_viewport
             x = (event.pos[0] - frame.x) * 768 / frame.width
@@ -3125,9 +3142,10 @@ class Desktop:
                 and self.host_prompt is None)
 
     def _slot_key(self, event):
-        """The slot machine takes one input: Enter, Space or a controller's confirm. True when the key was one."""
+        """The slot machine and Diss Practice take one input: Enter, Space or a controller's confirm. True when the key
+        was one."""
         action = self.session.pending
-        if (action is None or action.name != 'x360_slot' or self.menu_open or self.error
+        if (action is None or action.name not in ('x360_slot', 'x360_diss') or self.menu_open or self.error
                 or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
             return False
         self._attempt(lambda: self.session.answer(None))

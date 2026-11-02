@@ -800,7 +800,7 @@ QuitGame()
     def drive(data, answers=(), scores=()):
         """(lines, choices' prompts, word games played): answering in order, each word game ending at its score."""
         from playthrough import session
-        s = session(data)
+        s = session(data, arena=False)
         s.engine.random.state = 1
         answers, scores = list(answers), list(scores)
         lines, prompts, games = [], [], 0
@@ -853,6 +853,17 @@ QuitGame()
         # The first fails (7 < 8), the second passes (8), the third fails: the goal is now 10.
         self.assertEqual(lines[1:], [ouch, 'Afternoon', 'Level 2', 'Level 2b', 'Level 2c', 'Level 2d', 'Evening', ouch,
                                      'The end'])
+
+    def test_the_real_game_plays_where_the_switch_is_on_with_its_tutorial_the_first_time(self):
+        from exp_runtime.creator import compile_project
+        from playthrough import play
+        project = self.project(['t/start'])
+        games = [n.params['tutorial'] for n in project.nodes if n.kind == 'x360_diss']
+        self.assertEqual(games, [1, 0])
+        record = play(compile_project(project))
+        self.assertEqual([e['kind'] for e in record].count('x360_diss'), 3)
+        self.assertNotIn('word_game', [e['kind'] for e in record])
+        self.assertEqual(record[-1]['kind'], 'exit')
 
     def test_a_sound_can_play_at_its_volume(self):
         import io

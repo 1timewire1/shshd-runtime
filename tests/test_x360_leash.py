@@ -156,7 +156,7 @@ class ServiceTests(unittest.TestCase):
         session.answer(None)
         session.engine.x360_leash.shake(x.LEFT)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 33)
+        self.assertEqual(state['version'], 34)
         again = Session.from_snapshot(resources(), state)
         self.assertEqual(again.engine.x360_leash, session.engine.x360_leash)
         self.assertEqual(again.pending.name, 'x360_leash')

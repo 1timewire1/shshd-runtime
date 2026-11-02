@@ -35,6 +35,8 @@ DIGIT_SLOTS, DIGITS = 8, 10
 # rectangle were matched to the owner's Xenia screenshot of the title.
 TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, the front
 PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
+NOTES_BASE = 26790                      # Diss Practice's notes (the Monday Planner; desktop_x360_diss), past the later renders
+NOTE_KINDS = ('note', 'bad', 'swap', 'double')
 PUZZLE_BASE = 26436                     # the jewel puzzle (Puzzle Test; exp_runtime.x360_puzzle, desktop_x360_puzzle)
 LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
@@ -267,6 +269,13 @@ def booth(folder):
     if 'parts' in info:
         resources_parts, entry['parts'] = deck_parts(folder, info['parts'])
         resources.update(resources_parts)
+    if 'notes' in info:
+        notes = info['notes']
+        kinds = {}
+        for i, kind in enumerate(NOTE_KINDS):
+            resources[NOTES_BASE + i] = (folder / notes['kinds'][kind]['file']).read_bytes()
+            kinds[kind] = dict(id=NOTES_BASE + i, anchor=notes['kinds'][kind]['anchor'], depth=notes['kinds'][kind]['depth'])
+        entry['notes'] = dict(kinds=kinds, frame=notes['frame'], height=notes['height'], wheel=notes['wheel'], out=notes['out'])
     return resources, entry
 
 
@@ -288,7 +297,7 @@ def deck_parts(folder, parts):
                            record=dict(id=PARTS_BASE + 1, box=parts['record_base']),
                            seams=dict(id=PARTS_BASE + 2, **parts['seams']),
                            spindle=dict(id=PARTS_BASE + 3, box=parts['spindle']),
-                           arm=dict(atlas=PARTS_BASE + 4, frames=frames, push=arm['push']))
+                           arm=dict(atlas=PARTS_BASE + 4, frames=frames, push=arm['push']), camera=parts.get('camera'))
 
 
 def slot(files, pcm_wav):

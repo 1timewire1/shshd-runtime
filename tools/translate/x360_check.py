@@ -23,7 +23,7 @@ def run(data, rng, limit=20000, taken=None, right=None):
     """(events, outcome): events are ('line'|'choice'|'message', text), outcome 'exit' or why it stopped. With
     `taken` (a set of (choice text, answer) pairs), an answer no earlier run took is preferred. With `right` (a timed
     round's last prompt line -> its right answer), those rounds are answered right, so a run can win them."""
-    s, events = session(data), []
+    s, events = session(data, arena=False), []             # (the timed forms: every minigame has one)
     s.engine.random.state = rng.randrange(1, 1 << 31)
     action = s.advance()
     for _ in range(limit):

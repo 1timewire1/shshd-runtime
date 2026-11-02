@@ -31,6 +31,7 @@ from .story_labels import prepare_labels, story_labels
 from .title_screen import TitleScreen
 from .loading import loading_waits, retained_word
 from .minigames import MINIGAMES
+from .x360_diss import PASS_SCORE
 from .x360_games import SLOTS
 from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
@@ -382,7 +383,7 @@ class Session:
             return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
-        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle'):
+        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss'):
             return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
@@ -417,6 +418,8 @@ class Session:
             return self._complete_minigame(result=int(success))
         elif kind == 'x360_puzzle':
             return self._complete_minigame(result=0)    # (its story reads no result)
+        elif kind == 'x360_diss':
+            return self._complete_minigame(result=PASS_SCORE + 1 if success else 0)
         else:
             # Preserve starting scores where possible, adding enough points for
             # the requested side to win by a touchdown without signed overflow.
@@ -803,6 +806,11 @@ class Session:
                 raise ValueError('The jewel puzzle takes a press')
             self.engine.x360_puzzle.press()
             return action
+        elif action.name == 'x360_diss':
+            if value is not None:
+                raise ValueError('Diss Practice takes a press')
+            self.engine.x360_diss.press()
+            return action
         elif action.name == 'text_input':
             validate_name(value, **self.name_input_metrics())
             if not self._complete_text_input(value):
@@ -1144,6 +1152,13 @@ class Session:
         if self.pending and self.pending.name == 'x360_leash':
             finished = self.engine.x360_leash.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
             return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'x360_diss':
+            game = self.engine.x360_diss
+            finished = game.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
+            if game.sounds:
+                self.engine.request_sound(*game.sounds)
+                game.sounds.clear()
+            return self._complete_minigame() if finished else self.pending
         if self.pending and self.pending.name == 'x360_puzzle':
             game = self.engine.x360_puzzle
             finished = game.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
@@ -1200,7 +1215,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=33,
+        return dict(format='shs-runtime-save', version=34,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1241,8 +1256,12 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 34):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 35):
                 raise SaveError('Unsupported save format or version')
+            # Version 34 adds the X360 translations' Diss Practice (x360_diss.py); an older save never had one.
+            if state['version'] < 34 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_diss', None)
             # Version 33 adds the X360 translations' jewel puzzle (x360_puzzle.py); an older save never had one.
             if state['version'] < 33 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
@@ -1584,6 +1603,11 @@ class Session:
                     engine.x360_puzzle.validate()
                 except (ValueError, KeyError, TypeError, IndexError) as error:
                     raise SaveError(str(error)) from error
+            if engine.x360_diss is not None:
+                try:
+                    engine.x360_diss.validate()
+                except (ValueError, KeyError, TypeError, IndexError) as error:
+                    raise SaveError(str(error)) from error
             if not 0 <= engine.choice_ms <= 250:
                 raise SaveError('Invalid choice entrance clock')
             if engine.word_grid is not None:
@@ -1654,7 +1678,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,)}
+                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)
