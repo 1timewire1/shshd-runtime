@@ -294,10 +294,10 @@ are one route. Checked against all 107 arena games at every result: 100 have two
 
 **King of Diss** passes level + 3, capped at 10, to its practice, and targets 7 and 9 to its Rhyme battles.
 
-## X360 Arena Look
+## X360 Arena Skin
 
 With the [X360 addon](ADDONS.md#shsx360-the-cancelled-xbox-360-game) imported, the switch draws the arena on the X360 game's turntable. Geometry, rules and saves are the
-same. See [X360.md](X360.md#the-x360-arena-look).
+same. See [X360.md](X360.md#the-x360-arena-skin).
 
 ## Known limits
 

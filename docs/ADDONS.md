@@ -23,7 +23,7 @@ as a minigame library, a renderer's skin or an optional art pack.
 | **Required** | The episode, in its `requires` record | The episode opens for indexing and previews, but starting it shows a message naming the addon | `shsnr` and `shsx360` for their own stories |
 | **Optional** | The player, through `ContentLibrary.addon(id)` | Everything works, and the addon's switches aren't offered | `shsx360` as New Rules' arena skin; `chslim` in Cause of Death |
 
-An addon can be both: New Rules' stories never declare `shsx360`, but the X360 Arena Look reads it when it's there, and the X360
+An addon can be both: New Rules' stories never declare `shsx360`, but the X360 Arena Skin reads it when it's there, and the X360
 stories require it.
 
 ## In the library
@@ -99,7 +99,7 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Look. Revision 13, about 52 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 13, about 52 MB.
 
 | Resources | What |
 | --- | --- |
@@ -147,7 +147,7 @@ size in play doesn't change, as `standard_portrait` keeps it at the size CoD's p
   every portrait in 57 of Claire Hart Classic's 266 episodes.
 - **Stable IDs:** so that a complete Claire Hart addon can supersede it. Both hold each portrait under the same ID.
 
-**Switches:** "HD Portraits" and "Backdrop" on the Add-Ons page, with the CH tag, shown when the addon is imported and on by default.
+**Switches:** "HD Portraits in CoD" and "Backdrop" on the Add-Ons page, with the CH tag, shown when the addon is imported and on by default.
 The backdrop takes the place of the SHS HD Backdrop in play and on CoD's menus.
 
 ```sh
@@ -168,15 +168,16 @@ picture isn't found.
 
 Switches that only concern translated games and addons live on **Options › Add-Ons** (`ADDON_KEYS` in `desktop_pause_hd.py`), which
 hides itself when none of them is offered. Each carries its game's tag (`SWITCH_BADGES`, from `LEGACY_GAMES` in the game's profile).
-On the menus a switch shows when the library has what it concerns. In play, it shows when it concerns that episode.
+On the menus a switch shows when the library has what it concerns. In play, it shows when it concerns that episode. The skin's
+tag is New Rules', since it changes New Rules' episodes, and its label names X360 in that game's colour (`LABEL_TINTS`).
 
 | Switch | Tag | Shown when |
 | --- | --- | --- |
-| Hi-Res Portraits | NR | New Rules episodes |
-| MS3 Characters | X360 | X360 episodes |
-| HD Portraits, Backdrop | CH | CoD with `chslim` imported |
 | Use Translated Mini-Games | | Translated episodes with minigames |
-| X360 Arena Look | X360 | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
+| MS3 Characters | X360 | X360 episodes |
+| Hi-Res Portraits | NR | New Rules episodes |
+| HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
+| Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
 
 ## Writing your own
 

@@ -145,6 +145,14 @@ def legacy_fields(titles, game, episode_id=None):
     return {}
 
 
+def _with_legacy_order(record, game):
+    """An already imported translation with its place as the game now gives it (legacy_fields), so importing it again
+    picks up a new order. Its title's tag is long gone, so this goes by the `legacy` it was recorded with."""
+    info = getattr(GAMES.get(game), 'LEGACY_GAMES', {}).get(record.get('legacy'), {})
+    order = info.get('order', {}).get(record['episode_id'])
+    return record if order is None or record.get('order') == order else dict(record, order=order)
+
+
 def file_digest(path: Path) -> str:
     with path.open('rb') as stream:
         result = hashlib.sha256()
@@ -1263,7 +1271,7 @@ class ContentLibrary:
                             addons.pop(superseded, None)
                     continue
                 if sha in records:
-                    records[sha] = _with_episode_alias(records[sha], name)
+                    records[sha] = _with_legacy_order(_with_episode_alias(records[sha], name), self.game_id)
                     if (sha in listed and sha not in repaired and 'file' in records[sha]
                             and not (self.directory / records[sha]['file']).is_file()):
                         # Its file went missing (Verify Library removes a damaged one): this copy restores it.

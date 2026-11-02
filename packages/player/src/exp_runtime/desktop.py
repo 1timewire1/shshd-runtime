@@ -247,11 +247,11 @@ class Desktop:
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
-    ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits" switch (set_ch_portraits)
+    ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
-    arena_skin = False              # ...drawn in the X360 prototype's look: the "Arena Look" switch (x360_arena_switch)
+    arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
     host_prompt = None
     minigame_played = None
     ad_asked = None
@@ -1736,7 +1736,7 @@ class Desktop:
         self._drop_portraits()
 
     def set_ch_portraits(self, enabled):
-        """shshd-runtime: the CH "HD Portraits" switch, as set_hires_portraits."""
+        """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""
         self.ch_portraits = enabled
         library = getattr(self.session.resources, 'library', None)
         if library is not None:
@@ -2376,7 +2376,7 @@ class Desktop:
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
     def x360_arena_switch(self):
-        """shshd-runtime: whether the "Arena Look" switch is offered: in a translated New Rules episode (hires_switch)
+        """shshd-runtime: whether the "Use X360 Arena Skin" switch is offered: in a translated New Rules episode (hires_switch)
         with Use Translated Mini-Games on, and the X360 addon's arena skin imported (desktop_nr_arena_x360; owner,
         2026-10-31)."""
         if not (self.hires_switch() and self.arena_minigames):
@@ -3135,7 +3135,7 @@ class Desktop:
 
     def _arena_renderer(self):
         """New Rules' arena, told how tall the frame is in the window so it scales its art up to there: in the X360
-        look where the "Arena Look" switch is on and the X360 addon is imported, else New Rules' own."""
+        look where the "Use X360 Arena Skin" switch is on and the X360 addon is imported, else New Rules' own."""
         renderer = (self.x360_arena_renderer if self.arena_skin and self.x360_arena_switch()
                     else self.nr_arena_renderer)
         viewport = getattr(self, 'bg_viewport', None)

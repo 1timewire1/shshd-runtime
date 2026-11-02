@@ -134,7 +134,8 @@ PRESENTATION_RECORD = True
 # The cancelled Xbox 360 prototype's translations (tools/translate/x360.py TITLE_SUFFIX) are tagged "X360" in the Xbox
 # 360's green, under their own category (owner, 2026-10-31); their old place was Now Airing's "Date Unknown".
 LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
-                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360')}
+                # Day of Diss, Monday Planner, Dating Beth, Puzzle Test (owner, 2026-11-02).
+                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4})}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

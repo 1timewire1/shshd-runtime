@@ -619,7 +619,7 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
 
 Many of CoD's portraits are Claire Hart Classic's, downscaled about 4.17 times. The optional `chslim` addon holds the
 sharper originals and the green backdrop, with the map from CoD's pictures to them. With it imported, Options › Add-Ons
-offers CH-tagged HD Portraits and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
+offers CH-tagged HD Portraits in CoD and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
 
 ## HD backgrounds from SHS HD (this fork)
 

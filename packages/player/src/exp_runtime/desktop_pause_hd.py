@@ -56,26 +56,34 @@ AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (th
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
 MS3_CHARACTERS_LABEL = 'MS3 Characters'         # translated X360 episodes: the April build's looks, else the May build's
-CH_PORTRAITS_LABEL = 'HD Portraits'             # CoD with its portrait addon: Claire Hart's sharper originals
+CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
 CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
 ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
-ARENA_SKIN_LABEL = 'X360 Arena Look'            # ...that arena in the X360 prototype's look (its addon imported)
+ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
-SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'arena_skin': 'SHSX360', 'ch_portraits': 'CHC',
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'arena_skin': 'SHSNR', 'ch_portraits': 'CHC',
                  'ch_backdrop': 'CHC'}
+# The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
+# colour (owner, 2026-11-02). key -> the tag whose name in the label is coloured.
+LABEL_TINTS = {'arena_skin': 'SHSX360'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
+
+
+def legacy_tag(tag):
+    """(text, colour) of a game's tag in a profile's LEGACY_GAMES, or None."""
+    from .games import GAMES
+    for game in ('shs', 'cod'):
+        legacy = getattr(GAMES.get(game), 'LEGACY_GAMES', {}).get(tag)
+        if legacy is not None:
+            return legacy['badge'], legacy['color']
+    return None
 
 
 def switch_badge(key):
     """(text, colour) of the switch's game tag, or None."""
-    from .games import GAMES
-    for game in ('shs', 'cod'):
-        legacy = getattr(GAMES.get(game), 'LEGACY_GAMES', {}).get(SWITCH_BADGES.get(key))
-        if legacy is not None:
-            return legacy['badge'], legacy['color']
-    return None
+    return legacy_tag(SWITCH_BADGES.get(key))
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
@@ -88,7 +96,7 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
-ADDON_KEYS = ('hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames', 'arena_skin')
+ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'hires_portraits', 'ch_portraits', 'ch_backdrop', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -531,8 +539,9 @@ class HdPauseMenu:
     def row_color(self, index):
         return self.ROW_COLORS[index % 2]
 
-    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None):
-        """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style."""
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None, tint=None):
+        """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style. `tint`: (word,
+        colour) of a word in the label to colour (LABEL_TINTS)."""
         color = color or self.LABEL_COLOR
         self.rows_body(layer, top, height, background, lit=lit)
         x = PANEL_X + 31
@@ -550,7 +559,10 @@ class HdPauseMenu:
         pitch = 26.6
         for index, line in enumerate(lines):
             middle = top + ROW / 2 + (index - (len(lines) - 1) / 2) * pitch
-            self.text(layer, line, x, middle - self.cap_offset(ROW_PX), ROW_PX, color)
+            y = middle - self.cap_offset(ROW_PX)
+            self.text(layer, line, x, y, ROW_PX, color)
+            if tint is not None and tint[0] in line:
+                self.text(layer, tint[0], x + font.size(line.partition(tint[0])[0])[0] / self.scale, y, ROW_PX, tint[1])
 
     def badge(self, layer, x, middle, text, color):
         """A game's tag at (x, vertical middle), as the episode list draws it (desktop_episode_list_hd
@@ -643,7 +655,7 @@ class HdPauseMenu:
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'),
                            key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
-                         badge=switch_badge(key))
+                         badge=switch_badge(key), tint=legacy_tag(LABEL_TINTS.get(key)))
                 if kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
                                 self.switch_position(key, settings.get(key, False)))

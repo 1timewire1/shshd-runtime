@@ -1103,6 +1103,9 @@ class X360AddonTests(unittest.TestCase):
         fields = legacy_fields(['Day of Diss' + x360.TITLE_SUFFIX], 'shs', 1)
         self.assertEqual(fields, dict(titles=['Day of Diss'], legacy='SHSX360', category='Xbox 360'))
         self.assertEqual(LEGACY_GAMES['SHSX360']['badge'], 'X360')
+        # Listed Day of Diss, Monday Planner, Dating Beth, Puzzle Test (their ids are 1, 4, 3, 2).
+        order = LEGACY_GAMES['SHSX360']['order']
+        self.assertEqual(sorted((1, 4, 3, 2), key=lambda episode: order.get(episode, episode)), [1, 4, 3, 2])
 
 
 @unittest.skipUnless(HAS_PIL, 'x360_arena_art.py draws with Pillow')

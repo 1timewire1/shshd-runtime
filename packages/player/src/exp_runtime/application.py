@@ -996,7 +996,7 @@ class Application:
         return any(has_translated_minigames(profile, record) for record in self.library.episodes)
 
     def arena_skin_offered(self):
-        """Whether the "Arena Look" switch changes something: translated New Rules episodes (their arena) and the X360
+        """Whether the "X360 Arena Skin" switch changes something: translated New Rules episodes (their arena) and the X360
         addon's arena skin (desktop_nr_arena_x360; owner, 2026-10-31) are both in the library."""
         from .desktop_nr_arena_x360 import library_has_skin
         return self.hires_portraits_offered() and library_has_skin(self.library)
@@ -1014,7 +1014,7 @@ class Application:
             self.game.set_ms3_characters(self.state.ms3_characters)
 
     def apply_ch_portraits(self):
-        """The CH "HD Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
+        """The CH "HD Portraits in CoD" switch reaches the library; a paused episode loads its portraits afresh."""
         self.library.ch_portraits = self.state.ch_portraits
         if self.game:
             self.game.set_ch_portraits(self.state.ch_portraits)

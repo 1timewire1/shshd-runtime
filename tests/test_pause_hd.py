@@ -373,14 +373,23 @@ class CodPauseTests(unittest.TestCase):
 
     def test_the_add_ons_page_holds_the_translated_games_switches(self):
         from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
-        self.assertEqual(ADDON_KEYS, ('hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames',
+        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'ms3_characters', 'hires_portraits', 'ch_portraits', 'ch_backdrop',
                                       'arena_skin'))
         self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
         self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
         self.settings.update(ms3_characters=False, arena_minigames=True)
         rows = self.menu.option_rows('addons', self.settings, self.menu.strings())
         self.assertEqual([(kind, label, key) for kind, label, key in rows],
-                         [('switch', 'MS3 Characters', 'ms3_characters'), ('switch', 'Use Translated Mini-Games', 'arena_minigames')])
+                         [('switch', 'Use Translated Mini-Games', 'arena_minigames'), ('switch', 'MS3 Characters', 'ms3_characters')])
+
+    def test_the_x360_skin_wears_new_rules_tag_and_names_the_x360_in_its_colour(self):
+        from exp_runtime import desktop_pause_hd
+        from exp_runtime.shs.profile import LEGACY_GAMES
+        self.assertEqual(desktop_pause_hd.switch_badge('arena_skin'), ('NR', LEGACY_GAMES['SHSNR']['color']))
+        self.assertEqual(desktop_pause_hd.ARENA_SKIN_LABEL, 'Use X360 Arena Skin')
+        self.assertEqual(desktop_pause_hd.legacy_tag(desktop_pause_hd.LABEL_TINTS['arena_skin']),
+                         ('X360', LEGACY_GAMES['SHSX360']['color']))
+        self.assertEqual(desktop_pause_hd.CH_PORTRAITS_LABEL, 'HD Portraits in CoD')
 
     def test_a_cod_translations_tag_is_claire_harts_dark_green_ch(self):
         from exp_runtime import desktop_pause_hd
