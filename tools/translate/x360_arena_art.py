@@ -37,6 +37,7 @@ TITLE_BASE = 26410                      # sky, clouds, the ray glints' atlas, th
 PARTS_BASE = 26414                      # the deck split: body, record, its seams, spindle, the tone arm's atlas
 NOTES_BASE = 26790                      # Diss Practice's notes (the Monday Planner; desktop_x360_diss), past the later renders
 NOTE_KINDS = ('note', 'bad', 'swap', 'double')
+DANCE_BASE, DANCE_ATLAS_WIDTH = 26794, 2048     # Josh's dance behind that deck, one atlas
 PUZZLE_BASE = 26436                     # the jewel puzzle (Puzzle Test; exp_runtime.x360_puzzle, desktop_x360_puzzle)
 LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
@@ -276,7 +277,28 @@ def booth(folder):
             resources[NOTES_BASE + i] = (folder / notes['kinds'][kind]['file']).read_bytes()
             kinds[kind] = dict(id=NOTES_BASE + i, anchor=notes['kinds'][kind]['anchor'], depth=notes['kinds'][kind]['depth'])
         entry['notes'] = dict(kinds=kinds, frame=notes['frame'], height=notes['height'], wheel=notes['wheel'], out=notes['out'])
+    if 'dance' in info:
+        resources[DANCE_BASE], entry['dance'] = dance_atlas(folder, info['dance'])
     return resources, entry
+
+
+def dance_atlas(folder, dance):
+    """The atlas's bytes and the spec's `dance` entry: Josh's dance behind the deck (reference tools x360_dbpdance.py), its
+    frames on shelves in one atlas, each with its box in the booth's camera frame, and how he stands before he starts."""
+    names = ['stand'] + [str(i) for i in range(len(dance['frames']))]
+    cells = [Image.open(folder / 'dance' / f'{name}.png').convert('RGBA') for name in names]
+    placed, x, y, shelf = [], 0, 0, 0
+    for cell in cells:
+        if x + cell.width > DANCE_ATLAS_WIDTH:
+            x, y, shelf = 0, y + shelf, 0
+        placed.append([x, y, cell.width, cell.height])
+        x, shelf = x + cell.width, max(shelf, cell.height)
+    atlas = Image.new('RGBA', (DANCE_ATLAS_WIDTH, y + shelf), (0, 0, 0, 0))
+    for cell, rect in zip(cells, placed):
+        atlas.paste(cell, tuple(rect[:2]))
+    boxes = [dance['stand']] + dance['frames']
+    cells = [dict(rect=rect, box=box) for rect, box in zip(placed, boxes)]
+    return _png(atlas), dict(atlas=DANCE_BASE, period_ms=dance['period_ms'], stand=cells[0], frames=cells[1:])
 
 
 def deck_parts(folder, parts):

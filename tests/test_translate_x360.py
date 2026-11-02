@@ -1076,6 +1076,35 @@ class X360AddonTests(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_PIL, 'x360_arena_art.py draws with Pillow')
+class DanceAtlasTests(unittest.TestCase):
+    def test_every_frame_lands_in_the_atlas_with_its_box(self):
+        import tempfile
+        from PIL import Image
+        import x360_arena_art
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / 'dance').mkdir()
+            colours = {'stand': (9, 9, 9, 255), **{str(i): (i * 10 + 20, 0, 0, 255) for i in range(12)}}
+            for name, colour in colours.items():
+                Image.new('RGBA', (300, 40), colour).save(folder / 'dance' / f'{name}.png')
+            data, entry = x360_arena_art.dance_atlas(folder, dict(period_ms=800, stand=[1, 2, 3, 4], frames=[[i, 0, 1, 1] for i in range(12)]))
+        atlas = Image.open(io.BytesIO(data)).convert('RGBA')
+        self.assertEqual(entry['atlas'], x360_arena_art.DANCE_BASE)
+        self.assertIn(x360_arena_art.DANCE_BASE, x360_arena_art.SKIN_IDS)
+        self.assertEqual(atlas.width, x360_arena_art.DANCE_ATLAS_WIDTH)
+        self.assertEqual(entry['stand']['box'], [1, 2, 3, 4])
+        self.assertEqual(entry['period_ms'], 800)
+        self.assertEqual(len(entry['frames']), 12)
+        self.assertEqual(atlas.getpixel(tuple(entry['stand']['rect'][:2])), colours['stand'])
+        for i, cell in enumerate(entry['frames']):
+            self.assertEqual(cell['box'][0], i)
+            x, y, w, h = cell['rect']
+            self.assertLessEqual(x + w, atlas.width)
+            self.assertLessEqual(y + h, atlas.height)
+            self.assertEqual(atlas.getpixel((x + w - 1, y + h - 1)), colours[str(i)])
+
+
+@unittest.skipUnless(HAS_PIL, 'x360_arena_art.py draws with Pillow')
 class X360SkinTests(unittest.TestCase):
     def test_a_bmfont_descriptor_is_read(self):
         import x360_arena_art

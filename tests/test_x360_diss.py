@@ -340,6 +340,54 @@ class DrawingTests(unittest.TestCase):
             game.tick(1200, random)
             self.draw(game)
 
+    def _with_dance(self):
+        spec, archive = self.renderer.x360()
+        strip = self.pygame.Surface((30, 20), self.pygame.SRCALPHA)
+        strip.fill((0, 255, 0, 255), (0, 0, 10, 20))
+        strip.fill((0, 0, 255, 255), (10, 0, 10, 20))
+        strip.fill((255, 255, 0, 255), (20, 0, 10, 20))
+        self.renderer._images[26794] = strip
+        box = [430, 200, 440, 220]
+        spec['booth']['dance'] = dict(atlas=26794, period_ms=2000, stand=dict(rect=[0, 0, 10, 20], box=box),
+                                      frames=[dict(rect=[10, 0, 10, 20], box=box), dict(rect=[20, 0, 10, 20], box=box)])
+        return spec['booth']['dance']
+
+    def _josh_colour(self, game):
+        self.draw(game)
+        x, y, _, _ = self.renderer._to_native([430, 200, 440, 220])
+        return tuple(self.renderer.canvas.get_at((round(x * self.renderer.k) + 2, round(y * self.renderer.k) + 2)))[:3]
+
+    def test_josh_dances_at_once_in_a_later_practice_and_loops(self):
+        self._with_dance()
+        game = DissPractice.opened(False)
+        self.assertEqual(self._josh_colour(game), (0, 0, 255))
+        random = Dealer()
+        game.tick(1100, random)
+        self.assertEqual(self._josh_colour(game), (255, 255, 0))
+        game.tick(1000, random)
+        self.assertEqual(self._josh_colour(game), (0, 0, 255))      # round again
+
+    def test_josh_stands_in_the_first_practice_until_two_seconds_into_the_countdown(self):
+        self._with_dance()
+        game = DissPractice.opened(True)
+        random = Dealer()
+        self.assertEqual(self._josh_colour(game), (0, 255, 0))
+        game.tick(OPENING_MS + 20, random)
+        game.tick(TUTORIAL_MS, random)
+        self.draw(game)
+        self.assertIsNone(self.renderer._dance_ms(game))            # under the tutorial's cards, still standing
+        game.press()
+        game.tick(1900, random)
+        self.assertEqual(game.phase, COUNTDOWN)
+        self.assertEqual(self._josh_colour(game), (0, 255, 0))
+        game.tick(200, random)
+        self.assertEqual(game.phase, COUNTDOWN)
+        self.assertEqual(self._josh_colour(game), (0, 0, 255))
+
+    def test_an_addon_without_the_dance_still_draws(self):
+        self.assertNotIn('dance', self.renderer.x360()[0]['booth'])
+        self.draw(DissPractice.opened(False))
+
     def test_the_arm_drawn_is_the_arm_that_catches(self):
         game, random = running()
         self.renderer.game = game

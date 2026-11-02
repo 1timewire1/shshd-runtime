@@ -32,6 +32,7 @@ CARDS = (('tutorial_1', (.06, -.27), (.06, 1.2), 0), ('tutorial_2', (-.05, -.03)
 CARD_MOVE_MS, CARD_FADE_MS = 1000, 1500
 TUTORIAL_PROMPT_MS = 4000
 TUTORIAL_PROMPT_Y = 915
+DANCE_WAIT_MS = 2000                    # the first practice's Wait(2), before Josh dances
 
 
 class X360DissRenderer(X360Deck):
@@ -52,6 +53,8 @@ class X360DissRenderer(X360Deck):
         self.hits = []
         self.game = None
         self._shown_effects = []
+        self._dancer = None
+        self._dance_from = None
 
     def x360(self):
         if self._x360 is None:
@@ -123,6 +126,7 @@ class X360DissRenderer(X360Deck):
         surface = self.canvas
         surface.fill((0, 0, 0, 0))
         now = game.now_ms
+        self._josh(surface, game)
         if game.phase == TUTORIAL or (game.phase == OPENING and game.tutorial):
             self._tutorial(surface, game)
             return
@@ -146,6 +150,36 @@ class X360DissRenderer(X360Deck):
             surface.blit(words, words.get_rect(center=(FRAME[0] // 2, round(START_Y * self.k))))
         if game.phase == COUNTDOWN:
             self._countdown_digit(surface, game)
+
+    def _dance_ms(self, game):
+        """How far into his dance Josh is (None: he's still standing). The first practice has him stand until two seconds
+        after its tutorial returns, as the countdown starts (episode3/practice_diss_001: Wait(2)), and the others start him
+        at once, before theirs. Whether it's that round goes by the tutorial's being due, which is only different if the
+        player skipped the morning's practice. Only the drawing depends on this, so it's kept here, not in the game."""
+        if self._dancer is not game:
+            self._dancer, self._dance_from = game, None if game.tutorial else 0
+        if self._dance_from is None and game.phase not in (OPENING, TUTORIAL, READY):
+            into = COUNTDOWN_MS - game.phase_ms if game.phase == COUNTDOWN else COUNTDOWN_MS
+            self._dance_from = round(game.now_ms - into + DANCE_WAIT_MS)
+        if self._dance_from is None or game.now_ms < self._dance_from:
+            return None
+        return game.now_ms - self._dance_from
+
+    def _josh(self, surface, game):
+        """Josh on the steps behind the deck, the frames drawn one to one (reference tools x360_dbpdance.py): in the game's
+        camera, he's here at the front's practice; the hallway's and his room's marks are off this frame's deck, so all
+        three have him here. The loop's jump where it wraps is the game's."""
+        dance = self.x360()[0]['booth'].get('dance')
+        if dance is None:                               # an addon from before he danced
+            return
+        ms = self._dance_ms(game)
+        if ms is None:
+            cell = dance['stand']
+        else:
+            frames = dance['frames']
+            cell = frames[(ms % dance['period_ms']) * len(frames) // dance['period_ms']]
+        x, y, _, _ = self._to_native(cell['box'])
+        surface.blit(self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect'])), (round(x * self.k), round(y * self.k)))
 
     def _tutorial(self, surface, game):
         """hud/tutorial: the three cards come in, a second apart, then the prompt."""
