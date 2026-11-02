@@ -717,6 +717,235 @@ QuitGame()
         self.assertEqual(len(builder.pending), 4)                           # all four meet again at the end card
 
 
+class MondayPlannerTests(unittest.TestCase):
+    """What the Monday Planner adds to the translator, on authored scripts."""
+    EVENTS = """<Tongas project="t">
+    <object key="_a" type="EVENTCONFIGMASTER" name="t/start" version="1"><properties key="_a">
+    <p k="_a" n="LocationName">lot</p><p k="_a" n="Script" l="lua"><![CDATA[
+gameStats.tod = 0
+gameStats.disslevel = 0
+DissComment()
+game.RunEvent("t/practice")
+]]></p></properties></object>
+    <object key="_b" type="EVENTCONFIGMASTER" name="t/practice" version="1"><properties key="_b">
+    <p k="_b" n="LocationName">lot</p><p k="_b" n="Script" l="lua"><![CDATA[
+gameStats.tod = gameStats.tod +1
+if gameStats.tod > 2 then
+    gameStats.tod = 0
+end
+dissTutorial(gameStats.dissPractice)
+]]></p></properties></object>
+    <object key="_c" type="EVENTCONFIGMASTER" name="episode3/monday_afternoon" version="1"><properties key="_c">
+    <p k="_c" n="LocationName">room</p><p k="_c" n="Script" l="lua"><![CDATA[
+OpenDialog("",8)
+DialogText("t/afternoon")
+CloseDialog()
+game.RunEvent("t/practice")
+]]></p></properties></object>
+    <object key="_d" type="EVENTCONFIGMASTER" name="episode3/monday_evening" version="1"><properties key="_d">
+    <p k="_d" n="LocationName">lot</p><p k="_d" n="Script" l="lua"><![CDATA[
+OpenDialog("",8)
+DialogText("t/evening")
+CloseDialog()
+game.RunEvent("t/practice")
+]]></p></properties></object>
+    <object key="_e" type="EVENTCONFIGMASTER" name="t/battle" version="1"><properties key="_e">
+    <p k="_e" n="LocationName">lot</p><p k="_e" n="Script" l="lua"><![CDATA[
+OpenDialog("",8)
+DialogText("t/old")
+CloseDialog()
+--call the game here
+OpenDialog("",8)
+DialogText("t/won")
+CloseDialog()
+--next
+QuitGame()
+]]></p></properties></object></Tongas>"""
+    STRINGS = {'t/afternoon': 'Afternoon', 't/evening': 'Evening', 't/old': 'Before', 't/won': 'Won', 't/lost': 'Lost',
+               'episode3/end_demo/dialog_001': 'The end',
+               **{f'episode3/comment/diss_00{n}': f'Comment {n}' for n in range(1, 6)},
+               **{f'episode3/diss_battle_practice/dialog_000{c}': f'Level 2{c}' for c in ('', 'b', 'c', 'd')},
+               'episode3/diss_battle_practice/dialog_001': 'Level 3',
+               'episode3/diss_battle_practice/dialog_002': 'Level 4'}
+
+    def prototype(self):
+        import x360
+        strings = ''.join(f'<object key="_s{i}" type="UNISTRINGSMASTER" name="{k}" version="1"><properties key="_s{i}">'
+                          f'<p k="_s{i}" n="Text">{encode_wc(v)}</p></properties></object>'
+                          for i, (k, v) in enumerate(self.STRINGS.items()))
+        files = {'data/templates/unistrings.wxr': f'<Tongas project="t">{strings}</Tongas>'.encode(),
+                 'data/templates/eventconfig.wxr': self.EVENTS.encode(),
+                 'data/templates/guilabel.wxr': b'<Tongas project="t"></Tongas>'}
+        return x360.Prototype(pak(files))
+
+    def project(self, events, **story):
+        import x360
+
+        class Art:
+            def background(self, location, mode):
+                from PIL import Image
+                return Image.new('RGB', (12, 4), (10, 20, 30))
+
+            def backdrop(self):
+                return None
+        settings = dict(player='josh', diss_rounds=True, keep_state=frozenset({'tod'}),
+                        extra_text=x360.MONDAY_PLANNER.extra_text)
+        settings.update(story)
+        backgrounds = settings.pop('backgrounds', None)
+        return x360.translate(self.prototype(), x360.Story('Test', 1, events, [x360.Cast('josh', 'Josh', 1, bank=2050)],
+                                                           {'lot': 23, 'room': 23}, **settings), Art(),
+                              backgrounds=backgrounds)
+
+    @staticmethod
+    def drive(data, answers=(), scores=()):
+        """(lines, choices' prompts, word games played): answering in order, each word game ending at its score."""
+        from playthrough import session
+        s = session(data)
+        s.engine.random.state = 1
+        answers, scores = list(answers), list(scores)
+        lines, prompts, games = [], [], 0
+        action = s.advance()
+        for _ in range(2000):
+            while s.transitioning:
+                action = s.tick(s.engine.scene_transition.duration_ms)
+            kind, details = action.name, action.details
+            if kind == 'episode_exit':
+                break
+            if kind == 'dialogue':
+                lines.append(details['text'])
+                if not s.engine.dialogue_animation.complete:
+                    s.answer(); s.tick(2000)
+                action = s.answer()
+            elif kind == 'choice':
+                prompts.append(details['text'])
+                if not s.choice_ready:
+                    s.tick(250)
+                action = s.answer(answers.pop(0))
+            elif kind == 'word_game':
+                games += 1
+                action = s.skip_word_game(scores.pop(0))
+            elif kind == 'message_panel':
+                lines.append(s.engine.message_panel.text)
+                action = s.tick(4000)
+                if s.pending is not None and s.pending.name == kind:
+                    action = s.answer()
+            else:
+                raise AssertionError(kind)
+            if action is None:
+                action = s.pending
+        return lines, prompts, games
+
+    def test_a_round_passes_at_the_level_plus_three_says_so_and_goes_on_by_the_time_of_day(self):
+        from exp_runtime.creator import compile_project
+        data = compile_project(self.project(['t/start']))
+        comments = [f'Comment {n}' for n in range(1, 6)]
+        lines, _, games = self.drive(data, scores=(3, 4, 5))
+        self.assertEqual(games, 3)
+        self.assertIn(lines[0], comments)
+        self.assertEqual(lines[1:], ['Level 2', 'Level 2b', 'Level 2c', 'Level 2d', 'Afternoon', 'Level 3', 'Evening',
+                                     'Level 4', 'The end'])
+
+    def test_a_failed_round_says_ouch_and_doesnt_repeat_the_level(self):
+        from exp_runtime.creator import compile_project
+        data = compile_project(self.project(['t/start']))
+        ouch = "Ouch. You couldn't quite move up to the next level of diss battling..."
+        lines, _, _ = self.drive(data, scores=(2, 3, 3))
+        # The first fails (2 < 3), the second passes (3), the third fails: the target is now 4.
+        self.assertEqual(lines[1:], [ouch, 'Afternoon', 'Level 2', 'Level 2b', 'Level 2c', 'Level 2d', 'Evening', ouch,
+                                     'The end'])
+
+    def test_every_comment_can_be_said(self):
+        project = self.project(['t/start'])
+        said = [n.text for n in project.nodes if n.kind == 'dialogue' and n.text.startswith('Comment')]
+        self.assertEqual(said, [f'Comment {n}' for n in range(1, 6)])
+        self.assertEqual([n.params['bound'] for n in project.nodes if n.kind == 'random'], [5])
+
+    def battle(self):
+        import x360
+        from exp_runtime.creator import compile_project
+        loss = 'else\nOpenDialog("",8)\nDialogText("t/lost")\nCloseDialog()\nend\n--next'
+        project = self.project(['t/battle'], script_edits={'t/battle': (
+            ('--call the game here', 'SpeedDiss()\nif gameStats.flow >= 7 then'), ('--next', loss))})
+        return compile_project(project), x360.SPIKE_ROUNDS
+
+    def test_the_speed_diss_wins_at_seven_and_ends_at_ten_hits_or_three_misses(self):
+        data, rounds = self.battle()
+        right = [answer for _, _, answer in rounds]
+        wrong = [(answer + 1) % len(options) for _, options, answer in rounds]
+        lines, prompts, _ = self.drive(data, right[:12])
+        self.assertEqual(lines, ['Before', 'Won'])
+        self.assertEqual(len(prompts), 10)                      # ten hits finish it
+        self.assertEqual(prompts[0], 'Flow: 0/10\nMiss: 0/3\nRhymes with { Rude {')
+        self.assertEqual(prompts[9], 'Flow: 9/10\nMiss: 0/3\nRhymes with { Spend {')
+        lines, prompts, _ = self.drive(data, wrong[:3])
+        self.assertEqual((lines, len(prompts)), (['Before', 'Lost'], 3))
+        lines, prompts, _ = self.drive(data, right[:7] + wrong[7:10])
+        self.assertEqual((lines, len(prompts)), (['Before', 'Won'], 10))
+        lines, prompts, _ = self.drive(data, right[:6] + wrong[6:9])
+        self.assertEqual((lines, len(prompts)), (['Before', 'Lost'], 9))
+
+    def test_every_speed_diss_round_has_a_rhyme_and_times_out_as_a_miss(self):
+        import x360
+        project = self.project(['t/battle'], script_edits={'t/battle': (('--call the game here', 'SpeedDiss()'),)})
+        by_id = {n.id: n for n in project.nodes}
+        rounds = [n for n in project.nodes if n.kind == 'choice']
+        self.assertEqual(len(rounds), len(x360.SPIKE_ROUNDS))
+        for node, (_, options, answer) in zip(rounds, x360.SPIKE_ROUNDS):
+            self.assertEqual([o.text for o in node.options], [o.capitalize() for o in options])
+            self.assertEqual(node.timeout_ms, x360.SPEED_DISS_MS)
+            self.assertEqual(by_id[node.options[answer].target].variable, 'flow')
+            self.assertEqual(by_id[node.options[node.timeout_option].target].variable, 'miss')
+
+    def test_an_edit_that_doesnt_fit_its_script_stops_the_build(self):
+        import x360
+        with self.assertRaises(x360.TranslateError):
+            self.project(['t/battle'], script_edits={'t/battle': (('--no such line', 'x'),)})
+
+    def test_a_scene_has_its_own_background_and_music_or_silence(self):
+        import x360
+        from unittest import mock
+        from PIL import Image
+        picture = Image.new('RGB', (12, 4), (1, 2, 3))
+        with mock.patch.object(x360, 'SCENES', ('a', 'b')), mock.patch.dict(x360.MIXES, {}, clear=False):
+            project = self.project(['t/start'], event_scenes={'t/start': 'a', 't/practice': 'b',
+                                                              'episode3/monday_afternoon': 'a',
+                                                              'episode3/monday_evening': 'b'},
+                                   event_music={'episode3/monday_afternoon': ''},
+                                   backgrounds={'a': picture, 'b': picture})
+        assets = [n.asset for n in project.nodes if n.kind == 'background']
+        self.assertEqual(assets, [x360.SCENE_BACKGROUND_BASE, x360.SCENE_BACKGROUND_BASE + 1, x360.SCENE_BACKGROUND_BASE,
+                                  x360.SCENE_BACKGROUND_BASE + 1])
+        kinds = [n.kind for n in project.nodes]
+        self.assertEqual(kinds[kinds.index('stop_audio') - 1], 'background')    # silent as the scene arrives
+        self.assertEqual(kinds.count('stop_audio'), 1)
+
+    def test_time_of_day_is_only_kept_by_the_story_that_decides_by_it(self):
+        kept = [n.variable for n in self.project(['t/start']).nodes if n.kind == 'set']
+        self.assertIn('tod', kept)
+        # (Without it the practice's own routing can't be built, so a story without tod is one with no rounds.)
+        self.assertNotIn('tod', [n.variable for n in self.project(['t/battle'], keep_state=frozenset()).nodes
+                                 if n.kind == 'set'])
+
+    def test_a_placeholder_takes_its_one_portrait_in_all_five_slots(self):
+        import tempfile
+        import x360
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'spike').mkdir()
+            Image.new('RGBA', (4, 4)).save(Path(folder) / 'spike' / 'spike_neutral.png')
+            planner = x360.Story('T', 1, [], [x360.Cast('spike', 'Spike', 1)], {}, event_scenes={'t': 'a'})
+            self.assertEqual(len(x360.rendered_portraits(folder, planner)['spike']), 5)
+            other = x360.Story('T', 1, [], [x360.Cast('spike', 'Spike', 1)], {})
+            self.assertEqual(x360.rendered_portraits(folder, other), {})
+
+    def test_the_planners_edits_fit_nothing_the_other_stories_use(self):
+        import x360
+        for story in (x360.DAY_OF_DISS, x360.PUZZLE_TEST, x360.DATING_BETH):
+            self.assertFalse(story.diss_rounds or story.script_edits or story.event_scenes)
+        self.assertEqual(x360.MONDAY_PLANNER.addon_revision, x360.ADDON_REVISION)
+        self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
+
+
 class EmoticonEffectTests(unittest.TestCase):
     def test_each_effect_enters_then_keeps_a_quiet_loop(self):
         from exp_runtime import emoticon_effects as fx
@@ -787,7 +1016,11 @@ class X360AddonTests(unittest.TestCase):
         held = (26100, 26109, 26200, 26239, 27200, 27239, 26900, 26901, 26985, 26990, 26999, 26300, 26390)
         self.assertTrue(all(x360.addon_holds(i) for i in held))
         # New Rules' location strips and looks stay in the story that uses them.
-        self.assertFalse(any(x360.addon_holds(i) for i in (1, 25001, 26000, 26110, 26250, 27250)))
+        self.assertFalse(any(x360.addon_holds(i) for i in (1, 25001, 26000, 26121, 26250, 27250)))
+        # The later renders stay out of the New Rules looks' way, and within what the larger set moves.
+        self.assertEqual(x360.render_base('moondog'), 26235)
+        self.assertEqual(x360.render_base('mrpibb'), 26750)
+        self.assertTrue(all(x360.addon_holds(x360.render_base('dexter') + i) for i in (4, 1004)))
 
     def test_the_addon_holds_the_shared_resources_and_a_story_declares_it(self):
         import x360

@@ -55,9 +55,10 @@ def main(argv=None):
                          "--addon: the addon holds the minigame library and the arena's art)")
     xb = sub.add_parser('x360', help="the cancelled Xbox 360 prototype's new stories (creator projects)")
     xb.add_argument('pak', type=Path, help="the MS4 prototype's data.pak")
-    xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'dating-beth', 'all', 'addon'), default='all',
-                    help="a story, all three, or `addon`: the X360 addon (what the stories share, with the arena's "
-                         "X360 skin), built from all three with the same art and music arguments")
+    xb.add_argument('--story', choices=('day-of-diss', 'puzzle-test', 'dating-beth', 'monday-planner', 'all', 'addon'),
+                    default='all',
+                    help="a story, all of them, or `addon`: the X360 addon (what the stories share, with the arena's "
+                         "X360 skin), built from all of them with the same art and music arguments")
     xb.add_argument('--addon', type=Path,
                     help="the X360 addon (`--story addon` writes it): the stories leave out what it holds and declare "
                          "it")
