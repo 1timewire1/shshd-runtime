@@ -307,6 +307,8 @@ class Application:
         lines = sources + [
             '',
             f'Episodes: {len(library.episodes)}.',
+            *([f'Add-Ons: {len(library.addons)}.'] + [f'- {addon["title"]}, revision {addon["revision"]}' for addon in library.addons]
+              if getattr(library, 'addons', ()) else []),
             f'Saved games: {len(saves)}.',
             f'Decision Tree scenes saved: {trees}.',
             f'Names remembered: {len(state.names) + sum(len(table) for table in state.name_sets.values())}.',
@@ -427,16 +429,18 @@ class Application:
         """Storage's page: what each part of the library takes on disk, and what its drive has free."""
         self.progress_text = 'Measuring...'
         directory = library.directory
-        sizes = dict.fromkeys(('Episodes', 'Game apps') + tuple(label for label, _ in STORAGE_PARTS) + ('Other',), 0)
+        sizes = dict.fromkeys(('Episodes', 'Add-Ons', 'Game apps') + tuple(label for label, _ in STORAGE_PARTS) + ('Other',), 0)
+        addon_files = {Path(addon['file']).name for addon in getattr(library, 'addons', ())}
         parts = {name: label for label, names in STORAGE_PARTS for name in names}
         for path in directory.iterdir():
             if path.name == 'content' and path.is_dir():
                 for item in path.iterdir():
-                    sizes['Episodes' if item.suffix in ('.exp', '.json') else 'Game apps'] += disk_size(item)
+                    sizes['Add-Ons' if item.name in addon_files
+                          else 'Episodes' if item.suffix in ('.exp', '.json') else 'Game apps'] += disk_size(item)
             else:
                 sizes[parts.get(path.name, 'Other')] += disk_size(path)
         import shutil
-        lines = [f'{label}: {size_text(size)}' for label, size in sizes.items() if size or label != 'Other']
+        lines = [f'{label}: {size_text(size)}' for label, size in sizes.items() if size or label not in ('Other', 'Add-Ons')]
         return '\n'.join(lines + ['', f'Total: {size_text(sum(sizes.values()))}',
                                   f'Free on this drive: {size_text(shutil.disk_usage(directory).free)}'])
 
@@ -445,11 +449,12 @@ class Application:
         record or None)."""
         files = [(label, record['file'], record['sha256'], None) for key, label in APP_FILES
                  for record in (library.manifest.get(key),) if isinstance(record, dict) and 'file' in record]
-        return files + [((record.get('titles') or [record['name']])[0], record['file'], record['sha256'], record)
-                        for record in library.episodes if 'file' in record]
+        return (files + [((record.get('titles') or [record['name']])[0], record['file'], record['sha256'], record)
+                         for record in library.episodes if 'file' in record]
+                + [(f'{addon["title"]} (add-on)', addon['file'], addon['sha256'], addon) for addon in getattr(library, 'addons', ())])
 
     def verify_library(self, library):
-        """Verify Library: every file checked against its checksum. A damaged episode's file is removed (it cannot
+        """Verify Library: every file checked against its checksum. A damaged episode's or addon's file is removed (it cannot
         play): a built-in episode is then written again from the game's app here, and any other comes back when Add
         Episodes is given it again (ContentLibrary._install_episodes). Returns (checked, missing, damaged, restored),
         the middle two as names."""
@@ -594,6 +599,10 @@ class Application:
             # The work runs under the busy card over the Episodes page (the picker screen has none).
             work = getattr(self, kind)
             self.leave_choice()
+            if kind == 'export_episodes':
+                self.start_data_job(EPISODE_CHOICES[kind][3],
+                                    lambda library: (work(library, chosen), self.addons_needed(library, chosen)), self.exported)
+                return
             self.start_data_job(EPISODE_CHOICES[kind][3], lambda library: work(library, chosen), self.choice_done)
         if kind == 'delete_episodes':
             self.shell.confirm('Delete Episodes?', f'{count} will be deleted from {self.game_title}, with their saved '
@@ -603,6 +612,41 @@ class Application:
                                'scenes. Saved games stay.', 'Reset', run)
         else:
             run()
+
+    def added_text(self, count):
+        """What Add Episodes brought, with add-ons named apart."""
+        addons = getattr(self.library, 'last_addons_added', 0)
+        episodes = count - addons
+        parts = ([f'{episodes} episode{"s" if episodes != 1 else ""}'] if episodes else []) + (
+            [f'{addons} add-on{"s" if addons != 1 else ""}'] if addons else [])
+        return f'Added {" and ".join(parts)}.'
+
+    def exported(self, result):
+        """Export Episodes is done: its notice, or the offer of the addons those episodes need."""
+        from .desktop_addons import export_offer
+        self.refresh_saves()
+        self.picker = None
+        export_offer(self, self.addon_host(), result, self.start_data_job)
+
+    def addon_host(self):
+        """What desktop_addons needs of this game's menu."""
+        shell = self.shell
+        return SimpleNamespace(rows=shell.pause.show_rows, text=shell.pause.show_text, notice=shell.notify, confirm=shell.confirm,
+                               job=self.start_data_job, deleted=self.addon_deleted)
+
+    def addon_pages(self):
+        from .desktop_addons import AddonPages
+        pages = self.__dict__.get('_addon_pages')
+        if pages is None:
+            pages = self._addon_pages = AddonPages(self, self.addon_host())
+        return pages
+
+    def addon_deleted(self):
+        """An addon went: the game left for the main menu may be drawing from it, and the menus' backdrop too."""
+        self.game = None
+        episode_thumbnails.release_game_caches()
+        self.refresh_saves()
+        self.picker = None
 
     def choice_done(self, result):
         self.refresh_saves()
@@ -704,6 +748,36 @@ class Application:
                 target, number = folder / f'{Path(name).stem} ({number}).exp', number + 1
             target.write_bytes(library.episode_bytes(record))
         return ('Episodes Exported', f'{len(records)} episode{"s were" if len(records) != 1 else " was"} copied to '
+                f'{self.folder_text(folder)}.')
+
+    def addons_needed(self, library, ids):
+        """[(record id, title)] of the addons the library holds that these episodes declare, each once: Export Episodes offers
+        them (desktop_addons.export_offer)."""
+        needed = {}
+        for record in library.episodes:
+            if record['id'] in ids:
+                for name, _ in library.episode_requires(record):
+                    found = library.addon(name)
+                    if found is not None:
+                        needed[found[0]['id']] = found[0]['title']
+        return list(needed.items())
+
+    def export_addons(self, library, ids):
+        """An addon's EXP file, as imported and under its own name, into export_folder (as export_episodes)."""
+        import shutil
+        folder = self.export_folder(library)
+        folder.mkdir(parents=True, exist_ok=True)
+        records = [addon for addon in library.addons if addon['id'] in ids]
+        for record in records:
+            self.progress_text = record['title'][:44]
+            source = library.directory / record['file']
+            name = Path(record.get('name') or record['id'] + '.exp').name
+            target, number = folder / name, 2
+            while target.exists() and file_digest(target) != record['sha256']:
+                target, number = folder / f'{Path(name).stem} ({number}).exp', number + 1
+            if not target.exists():
+                shutil.copyfile(source, target)
+        return ('Add-Ons Exported', f'{len(records)} add-on{"s were" if len(records) != 1 else " was"} copied to '
                 f'{self.folder_text(folder)}.')
 
     def reset_trees(self, library, ids):
@@ -919,6 +993,7 @@ class Application:
         self.restore_player(state, player)
         state.ended_saves.clear()
         self.shot_cache.clear()
+        self.game = None                # (a game left for the main menu would hide what came back: see delete_save)
         self.refresh_saves()
         self.picker = None
         here = {record['id'] for record in self.library.episodes}
@@ -2303,7 +2378,7 @@ class Application:
                     self.episode_scroll = self.scroll = 0
                     self.picker = None
                     self.show('main' if self.shell is not None else 'episodes', remember=False)
-                    self.message = f'Added {result} episodes.' if result else 'Library updated. No new episodes were added.'
+                    self.message = self.added_text(result) if result else 'Library updated. No new episodes were added.'
                     self.prepare_previews()
             except ERRORS as error:
                 self.message = str(error)

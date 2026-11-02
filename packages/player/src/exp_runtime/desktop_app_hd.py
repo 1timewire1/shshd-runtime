@@ -12,6 +12,7 @@ Commands are the SD screens' (`Application.command`): this only draws, and lists
 """
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 import time
 
 import pygame
@@ -236,7 +237,7 @@ class AppOptions:
         # Data Management for both games (owner, 2026-10-30): what has a library to act on.
         games = app.games_with_libraries()
         if games:
-            for key in BOTH_GAMES_ACTIONS + ('restore',) + EPISODE_LISTS:
+            for key in BOTH_GAMES_ACTIONS + ('restore', 'manage_addons') + EPISODE_LISTS:
                 settings[key] = True
             for game in games:
                 settings[f'delete_library_{game}'] = True
@@ -303,9 +304,15 @@ class AppOptions:
             getattr(self, command[1])()
         elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
             self.pick_game(command[1])
+        elif kind == 'pause_action' and command[1] == 'manage_addons':
+            self.pick_addons()
+        elif kind == 'pause_action' and command[1].startswith('pick_addons:'):
+            self.open_addons(command[1].split(':')[1])
         elif kind == 'pause_action' and command[1].startswith('pick:'):
             _, action, game = command[1].split(':')
             app.app_screens.open_choice(action, game)
+        elif kind == 'pause_action' and command[1].startswith('addon'):
+            self.addon_pages.command(command[1])
         elif kind == 'pause_action' and command[1] == 'restore':
             self.show_backups()
         elif kind == 'pause_action' and command[1].startswith('restore:'):
@@ -450,6 +457,32 @@ class AppOptions:
                   'reset_trees': 'Reset Decision Tree'}
         self.menu.show_rows('data:pick', titles[action], [(f'pick:{action}:{game}', GAMES[game].TITLE)
                                                           for game in games], 'data:episodes')
+
+    # -- Add-Ons (desktop_addons) -------------------------------------------------------------------------------
+
+    addon_pages = None
+
+    def pick_addons(self):
+        """Add-Ons from the chooser: the game first, as its episode lists do, when both have a library."""
+        games = self.app.games_with_libraries()
+        if len(games) == 1:
+            self.open_addons(games[0])
+            return
+        self.menu.show_rows('data:pick', 'Add-Ons', [(f'pick_addons:{game}', GAMES[game].TITLE) for game in games], 'options:data')
+
+    def open_addons(self, game):
+        from .desktop_addons import AddonPages
+        app = self.app
+
+        def job(title, work, done):
+            def run(_):
+                with app.opened_library(game) as (library, _state):
+                    return work(library)
+            app.start_data_job(title, run, done)
+        host = SimpleNamespace(rows=self.menu.show_rows, text=self.menu.show_text, notice=self.notice, confirm=self.confirm,
+                               job=job, deleted=lambda: None)
+        self.addon_pages = AddonPages(app, host)
+        self.addon_pages.open()
 
     # -- Progress -----------------------------------------------------------------------------------------------
 
@@ -811,6 +844,22 @@ class AppScreens:
             def job(_):
                 with app.opened_library(game) as (library, state):
                     return getattr(app, kind)(library, chosen)
+            if kind == 'export_episodes':
+                from .desktop_addons import export_offer
+
+                def export_job(_):
+                    with app.opened_library(game) as (library, state):
+                        return app.export_episodes(library, chosen), app.addons_needed(library, chosen)
+
+                def library_job(job_title, work, done):
+                    def run_it(_):
+                        with app.opened_library(game) as (library, state):
+                            return work(library)
+                    app.start_data_job(job_title, run_it, done)
+                options = self.options
+                host = SimpleNamespace(notice=options.notice, confirm=options.confirm)
+                app.start_data_job(EPISODE_CHOICES[kind][3], export_job, lambda result: export_offer(app, host, result, library_job))
+                return
             app.start_data_job(EPISODE_CHOICES[kind][3], job, lambda result: self.options.notice(*result))
         title = GAMES[game].TITLE
         if kind == 'delete_episodes':

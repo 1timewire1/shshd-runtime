@@ -349,6 +349,8 @@ class HdShell:
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
         # Data Management's rows (main menu only).
+        if self.app.library.addons:
+            settings['manage_addons'] = True
         for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
                     'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive',
                     'delete_library') + EPISODE_LISTS:
@@ -701,6 +703,10 @@ class HdShell:
             self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
         elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
             self.app.open_choice(command[1])
+        elif kind == 'pause_action' and command[1] == 'manage_addons':
+            self.app.addon_pages().open()
+        elif kind == 'pause_action' and command[1].startswith('addon'):
+            self.app.addon_pages().command(command[1])
         elif kind == 'pause_action' and command[1] == 'sync_send':
             self.app.sync_flow().show_send_page()
         elif kind == 'pause_action' and command[1] == 'sync_receive':

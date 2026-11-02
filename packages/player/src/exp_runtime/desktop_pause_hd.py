@@ -139,7 +139,8 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
               ('data:sync', 'Sync Devices', (('sync_send', 'Send to Another Device'),
                                              ('sync_receive', 'Receive from Another Device'),
                                              ('sync_legacy', 'Legacy Mode'))))
-DATA_LAST = (('reset_settings', 'Reset Settings'),)
+# Add-Ons opens the host's page of them (desktop_addons), as Restore Progress does its rows.
+DATA_LAST = (('manage_addons', 'Add-Ons'), ('reset_settings', 'Reset Settings'))
 DATA_SWITCHES = ('sync_legacy',)        # Data Management rows that are switches (their setting is True / False)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own

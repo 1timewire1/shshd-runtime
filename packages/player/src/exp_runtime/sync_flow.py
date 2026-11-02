@@ -401,6 +401,8 @@ class SyncFlow:
                 with open_library(app, game) as (library, state):
                     self.apply(player, options, state)
             if app.library is not None:
+                if received:
+                    app.game = None             # (a game left for the main menu would hide what came: see delete_save)
                 app.refresh_saves()
                 app.picker = None
             ui.notify('Sync Complete', session.message or 'Done.')

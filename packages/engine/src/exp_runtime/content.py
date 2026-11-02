@@ -706,6 +706,7 @@ class ContentLibrary:
             seen.add(record['id'])
         self.addons = m.get('addons', [])
         self._addon_archives = {}
+        self._episode_requires = {}     # an episode's sha -> the addons it declares (episode_requires)
         from .episode_catalog import EpisodeCatalog
         self.catalog = EpisodeCatalog.from_data(m.get('episode_catalog', []))
         if 'store' in m and (getattr(GAMES[self.game_id], 'STORE_FILENAME', None) is None
@@ -1016,6 +1017,28 @@ class ContentLibrary:
             cached = self._addon_archives[record['id']] = ExpArchive(data)
         return record, cached
 
+    def episode_requires(self, record: dict):
+        """shshd-runtime: the addons an episode declares, ((id, revision), ...). Read from its file once: the manifest
+        doesn't hold them, so this works for episodes already imported. Only an imported file can declare any."""
+        sha = record.get('sha256')
+        found = self._episode_requires.get(sha)
+        if found is None:
+            found = ()
+            if 'file' in record:
+                try:
+                    declared = addon_record(ExpArchive(self._content_file(record, '.exp').read_bytes()))
+                except (ContentError, OSError):
+                    declared = None
+                if declared is not None and declared[0] == 'requires':
+                    found = tuple(declared[1])
+            self._episode_requires[sha] = found
+        return found
+
+    def addon_users(self, addon: dict):
+        """shshd-runtime: the episodes that need an addon record, or an addon it stands in for."""
+        names = {addon['addon'], *addon.get('supersedes', ())}
+        return [record for record in self.episodes if any(name in names for name, _ in self.episode_requires(record))]
+
     def episode_bytes(self, record: dict) -> bytes:
         """An episode's EXP file as it was imported (from the library's content, or the game package it ships in)."""
         if self.kind + '_member' in record:
@@ -1044,6 +1067,28 @@ class ContentLibrary:
         Path(stream.name).replace(self.directory / 'library.json')
         self.manifest, self.episodes = updated, updated['episodes']
         for record in gone:
+            (self.directory / record['file']).unlink(missing_ok=True)
+        return len(gone)
+
+    def remove_addons(self, ids) -> int:
+        """shshd-runtime: the addons with these record ids out of the library, as remove_episodes; how many went. Episodes that
+        need one say so until it's imported again (EpisodeResources.check_addons)."""
+        ids = set(ids)
+        gone = [a for a in self.addons if a['id'] in ids]
+        if not gone:
+            return 0
+        current = json.loads((self.directory / 'library.json').read_text(encoding='utf-8'))
+        if current != self.manifest:
+            raise ContentError('The library changed since it was opened; reopen it and try again')
+        updated = dict(self.manifest, addons=[a for a in self.addons if a not in gone])
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self.directory, prefix='.library-',
+                                         suffix='.json', delete=False) as stream:
+            stream.write(json.dumps(updated, indent=2, ensure_ascii=False) + '\n')
+        Path(stream.name).replace(self.directory / 'library.json')
+        self.manifest, self.addons = updated, updated['addons']
+        self._portrait_addon_map = None, None
+        for record in gone:
+            self._addon_archives.pop(record['id'], None)
             (self.directory / record['file']).unlink(missing_ok=True)
         return len(gone)
 
@@ -1269,6 +1314,14 @@ class ContentLibrary:
                         addon_additions.append(addon)
                         for superseded in addon.get('supersedes', ()):
                             addons.pop(superseded, None)
+                    else:
+                        # Its file went missing (Verify Library removes a damaged one): this copy restores it.
+                        held = next((a for a in self.addons if a['sha256'] == sha), None)
+                        if (held is not None and sha not in repaired
+                                and not (self.directory / held['file']).is_file()):
+                            (stage / (sha + '.exp')).write_bytes(data)
+                            repairs.append(held)
+                            repaired.add(sha)
                     continue
                 if sha in records:
                     records[sha] = _with_legacy_order(_with_episode_alias(records[sha], name), self.game_id)
@@ -1325,6 +1378,7 @@ class ContentLibrary:
                 (self.directory / record['file']).unlink(missing_ok=True)
             self._store = None
             self.catalog = catalog
+            self.last_addons_added = len(addon_additions)
             return len(additions) + len(addon_additions)
 
     def _addon_entry(self, data, sha, name, addons):
@@ -1423,6 +1477,8 @@ class EpisodeResources:
                 held = None if stand_in is None else dict(revision=stand_in['supersedes'][addon_id])
             if held is None or held['revision'] < revision:
                 missing.append((addon_id, revision))
+            elif 'file' in held and not (self.library.directory / held['file']).is_file():
+                missing.append((addon_id, revision))    # its file went (Verify Library removes a damaged one)
         return missing
 
     def check_addons(self):
