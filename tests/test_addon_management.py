@@ -227,6 +227,98 @@ class AppTests(Library):
         self.assertEqual(app.saved, set())
 
 
+class SyncTests(Library):
+    """The sender's and receiver's parts over two real libraries (the talking between them is test_lan_sync's)."""
+
+    def flow(self, library):
+        from exp_runtime import sync_flow
+        from contextlib import contextmanager
+
+        @contextmanager
+        def opened(app, game):
+            yield library, SimpleNamespace()
+        patcher = patch.object(sync_flow, 'open_library', opened)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return sync_flow
+
+    def other_library(self):
+        apk = self.root / 'game.apk'
+        folder = self.root / 'other'
+        import_game(apk, [], folder)
+        library = ContentLibrary(folder)
+        self.addCleanup(library.close)
+        return library
+
+    def provider(self, sync_flow):
+        provider = sync_flow.SendProvider.__new__(sync_flow.SendProvider)
+        provider.app, provider.categories = SimpleNamespace(state=None), {'episodes'}
+        return provider
+
+    def host(self, sync_flow):
+        host = sync_flow.ReceiveHost.__new__(sync_flow.ReceiveHost)
+        host.flow, host.app = None, None
+        return host
+
+    def test_the_sender_offers_every_addon(self):
+        provider = self.provider(self.flow(self.library))
+        self.assertEqual(provider.offer_addons(['shs']), {'shs': [dict(id=self.held['id'], addon='packs', revision=2)]})
+
+    def test_the_receiver_wants_what_it_lacks_or_holds_older_and_not_a_same_revision_rebuild(self):
+        other = self.other_library()
+        host = self.host(self.flow(other))
+        entry = dict(id='sent', addon='packs', revision=2)
+        self.assertEqual(host.want_addons('shs', [entry]), ['sent'])
+        path = self.root / 'older.exp'
+        path.write_bytes(pack(revision=1))
+        other.add_episodes([path])
+        self.assertEqual(host.want_addons('shs', [entry]), ['sent'])
+        path.write_bytes(pack(revision=2, title='A rebuild'))
+        other.add_episodes([path])
+        self.assertEqual(host.want_addons('shs', [entry]), [])
+        self.assertEqual(host.want_addons('shs', [dict(entry, revision=1)]), [])
+
+    def test_a_pack_standing_in_for_one_counts_as_holding_it_and_the_full_one_is_wanted_over_the_slim(self):
+        other = self.other_library()
+        host = self.host(self.flow(other))
+        path = self.root / 'full.exp'
+        path.write_bytes(pack('full', 'Everything', 1, supersedes=[('packs', 2)]))
+        other.add_episodes([path])
+        self.assertEqual(host.want_addons('shs', [dict(id='slim', addon='packs', revision=2)]), [])
+        self.assertEqual(host.want_addons('shs', [dict(id='slim', addon='packs', revision=3)]), ['slim'])
+        other.remove_addons([a['id'] for a in other.addons])
+        slim = self.root / 'slim.exp'
+        slim.write_bytes(pack())
+        other.add_episodes([slim])
+        self.assertEqual(host.want_addons('shs', [dict(id='whole', addon='full', revision=1)]), ['whole'])
+
+    def test_a_sent_addon_arrives_with_the_episodes_and_is_named_apart(self):
+        sync_flow = self.flow(self.library)
+        provider = self.provider(sync_flow)
+        provider.folder, provider.player, provider.options = None, {}, None
+        provider.app = SimpleNamespace(state=None, library_path=lambda game: self.root)
+        needs = self.needing()['id']
+        with patch('exp_runtime.progress_bundle.write_bundle', lambda *args, **kwargs: None):
+            items = provider.items(['shs'], {'shs': [needs]}, {'shs': [self.held['id']]})
+        names = [name for kind, name, path in items if kind == 'episode']
+        self.assertEqual(names, ['shs/0/Needs.exp', 'shs/1/The_Pack.exp'])
+        other = self.other_library()
+        stage = self.root / 'stage'
+        for kind, name, path in items:
+            if kind == 'episode':
+                _, index, file = name.split('/')
+                target = stage / 'episodes' / index / file
+                target.parent.mkdir(parents=True)
+                target.write_bytes(path.read_bytes())
+        host = self.host(self.flow(other))
+        host.app = SimpleNamespace(back_up_progress=Mock())
+        parts = host.apply_game(dict(categories=['episodes']), stage, other, SimpleNamespace())
+        self.assertEqual(parts, ['1 episode', '1 add-on'])
+        self.assertEqual([a['addon'] for a in other.addons], ['packs'])
+        record = next(r for r in other.episodes if r['titles'][0] == 'Needs it')
+        self.assertEqual(other.open_episode(record['id']).missing_addons(), [])
+
+
 class ReplacedProgressTests(unittest.TestCase):
     def test_restored_progress_lets_go_of_the_live_game_so_it_cant_hide_what_came_back(self):
         app = Application.__new__(Application)

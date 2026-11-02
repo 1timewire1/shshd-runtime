@@ -37,8 +37,11 @@ class Provider:
     def offer(self, games):
         return {game: list(self.episodes) for game in games}
 
-    def items(self, games, wanted):
-        self.wanted = wanted
+    def offer_addons(self, games):
+        return {game: [dict(id='pack', addon='packs', revision=2), dict(id='old', addon='older', revision=1)] for game in games}
+
+    def items(self, games, wanted, addons=None):
+        self.wanted, self.wanted_addons = wanted, addons
         episode = self.root / 'b.exp'
         episode.write_bytes(b'episode b' * 10000)            # a file streamed in blocks
         items = [('progress', f'{game}/progress.zip', b'bundle bytes') for game in games]
@@ -67,6 +70,9 @@ class Host:
 
     def want(self, game, offered):
         return [key for key in offered if key not in self.have]
+
+    def want_addons(self, game, offered):
+        return [entry['id'] for entry in offered if entry['addon'] == 'packs']
 
     def apply(self, hello, stage, games):
         if self.fail:
@@ -117,6 +123,7 @@ class SyncTests(unittest.TestCase):
         self.assertEqual((sender.status, sender.message), ('done', 'Received 1 episode.'))
         self.assertEqual(incoming.status, 'done')
         self.assertEqual(provider.wanted, {'shs': ['b']})              # the receiver had 'a'
+        self.assertEqual(provider.wanted_addons, {'shs': ['pack']})
         hello, games, files = host.applied
         self.assertEqual((hello['backup'], hello['games'], games), (True, ['shs'], ['shs']))
         self.assertEqual(files, {'shs/progress.zip': b'bundle bytes', 'shs/episodes/0/b.exp': b'episode b' * 10000})

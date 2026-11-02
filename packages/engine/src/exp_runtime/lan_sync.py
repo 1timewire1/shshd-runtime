@@ -13,7 +13,8 @@ payload when the header names one. The conversation (a sync is of one game or of
     receiver -> hello   {protocol, app, name, nonce, games, missing, error?}
                         games: those it takes (it has their library); missing: those it lacks; an error ends it
     both     -> confirm {ok}                                   each person checks the other's name and the code
-    sender   -> offer   {episodes: {game: [id]}}  receiver -> want {episodes: {game: [id]}}  (episodes sent)
+    sender   -> offer   {episodes: {game: [id]}, addons: {game: [{id, addon, revision}]}}
+    receiver -> want    {episodes: {game: [id]}, addons: {game: [id]}}          (episodes and addons sent)
     sender   -> item    {kind, name, index, count, size} + payload, for each item; then end {}
                         (names start with their game: "shs/progress.zip", "cod/3/Volume_8.exp")
     receiver -> result  {ok, message, missing}
@@ -65,6 +66,12 @@ CANCELLED = 'Sync was cancelled.'
 CANCELLED_THERE = 'Sync was cancelled on the other device.'
 VERSION = 'The other device has a different version of SHSHD Runtime; update both to the same version.'
 NO_LIBRARY = 'The receiving device has no library of this game.'
+
+
+def _addon_entry(entry):
+    """Whether an offered addon's entry is one this side can read."""
+    return (isinstance(entry, dict) and isinstance(entry.get('id'), str) and isinstance(entry.get('addon'), str)
+            and type(entry.get('revision')) is int)
 
 
 class SyncError(Exception):
@@ -382,8 +389,9 @@ class Session:
 class SendSession(Session):
     """The sender. `provider` supplies what goes (called on this session's thread):
     - `offer(games)`: {game: the episode ids it could send} (only with the episodes category);
-    - `items(games, wanted)`: after both confirmed, [(kind, name, payload bytes or Path)] for `games` (those the
-      receiver takes), given {game: the episodes it wants}; each name starts with its game;
+    - `offer_addons(games)`: {game: [{id, addon, revision}]} of its addons (likewise);
+    - `items(games, wanted, addons)`: after both confirmed, [(kind, name, payload bytes or Path)] for `games` (those the
+      receiver takes), given {game: the episodes it wants} and {game: the addons it wants}; each name starts with its game;
     - `library_size(game)` and `library_items(game)` ([(path in the library, file)]): a whole library, for a
       receiver that lacks it.
     Legacy Mode sends the first of `games` only, as protocol 1 does."""
@@ -410,14 +418,17 @@ class SendSession(Session):
         taken = [game for game in reply.get('games', ()) if game in self.games]
         self.code = pairing_code(self.nonce, reply.get('nonce', ''))
         self._confirm(channel)
-        wanted = {}
+        wanted, wanted_addons = {}, {}
         if 'episodes' in self.categories and taken:
-            offer = self.provider.offer(taken)
-            channel.send(dict(type='offer', episodes=offer))
-            asked = channel.expect('want').get('episodes', {})
+            offer, addons = self.provider.offer(taken), self.provider.offer_addons(taken)
+            channel.send(dict(type='offer', episodes=offer, addons=addons))
+            reply = channel.expect('want')
+            asked, addons_asked = reply.get('episodes', {}), reply.get('addons', {})
             wanted = {game: [key for key in asked.get(game, ()) if key in set(offer.get(game, ()))] for game in taken}
+            wanted_addons = {game: [key for key in addons_asked.get(game, ())
+                                    if key in {entry['id'] for entry in addons.get(game, ())}] for game in taken}
         self.progress = 'Packing...'
-        self.send_items(channel, self.provider.items(taken, wanted) if taken else [])
+        self.send_items(channel, self.provider.items(taken, wanted, wanted_addons) if taken else [])
         result = self.result(channel)
         message = str(result.get('message', ''))
         missing = [game for game in result.get('missing', ()) if game in self.games]
@@ -478,6 +489,7 @@ class ReceiveSession(Session):
     - `check(hello)`: None, or the reason this device cannot take the sync at all;
     - `games(hello)`: (the offered games it takes, those whose library it lacks);
     - `want(game, ids)`: which of a game's offered episodes it lacks;
+    - `want_addons(game, entries)`: the ids of those of a game's offered addons ({id, addon, revision}) it lacks or holds older;
     - `apply(hello, stage, games)`: everything has arrived in `stage` (each game's: <game>/progress.zip,
       <game>/episodes/<n>/<file>.exp); returns the success message;
     - `install(game, folder)`: a whole library arrived in `folder` (its files at their paths); returns the message."""
@@ -511,9 +523,12 @@ class ReceiveSession(Session):
         self.code = pairing_code(hello.get('nonce', ''), self.nonce)
         self._confirm(channel)
         if 'episodes' in hello.get('categories', ()) and taken:
-            offer = channel.expect('offer').get('episodes', {})
+            sent = channel.expect('offer')
+            offer, addons = sent.get('episodes', {}), sent.get('addons', {})
             channel.send(dict(type='want', episodes={game: list(self.host.want(game, [
-                key for key in offer.get(game, ()) if isinstance(key, str)])) for game in taken}))
+                key for key in offer.get(game, ()) if isinstance(key, str)])) for game in taken},
+                addons={game: list(self.host.want_addons(game, [entry for entry in addons.get(game, ()) if _addon_entry(entry)]))
+                        for game in taken}))
         self.receive_items(channel, taken)
         self.progress = 'Applying...'
         message = self.reply(channel, lambda: self.host.apply(hello, self.stage, taken) if taken else '',

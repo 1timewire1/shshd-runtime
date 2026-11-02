@@ -37,7 +37,7 @@ from .games import GAMES
 from .menu import SHARED_PREFERENCES
 
 SYNC_CATEGORIES = (('progress', 'Saved Games & Trees'), ('names', 'Names'), ('options', 'Options'),
-                   ('episodes', 'Episodes'))
+                   ('episodes', 'Episodes & Add-Ons'))
 BACKUP_LABEL = 'Back Up Receiver First'
 GAMES_LABEL = 'Games'
 # Options that stay per device (owner, 2026-10-30): the vibration switches and the controller's own settings. (Start
@@ -511,7 +511,16 @@ class SendProvider:
                                if 'file' in record and not record.get('builtin')]
         return offer
 
-    def items(self, games, wanted):
+    def offer_addons(self, games):
+        """Each game's addons: every one the receiver lacks or holds older goes (owner, 2026-11-02), since optional ones aren't
+        declared by any episode."""
+        offer = {}
+        for game in games:
+            with self.library(game) as (library, _):
+                offer[game] = [dict(id=addon['id'], addon=addon['addon'], revision=addon['revision']) for addon in library.addons]
+        return offer
+
+    def items(self, games, wanted, addons=None):
         from .progress_bundle import write_bundle
         folder = self.folder = Path(tempfile.mkdtemp(prefix='.sync-send-', dir=self.app.library_path(games[0])))
         progress = 'progress' in self.categories
@@ -529,6 +538,12 @@ class SendProvider:
                     name = Path(record.get('name') or key + '.exp').name
                     items.append(('episode', f'{game}/{index}/{name if name.lower().endswith(".exp") else name + ".exp"}',
                                   library.directory / record['file']))
+                # In with the episodes: the receiver's import tells them apart, in any order.
+                held = {addon['id']: addon for addon in library.addons}
+                for index, key in enumerate((addons or {}).get(game) or (), len(wanted.get(game) or ())):
+                    addon = held[key]
+                    items.append(('episode', f'{game}/{index}/{Path(addon.get("name") or key + ".exp").name}',
+                                  library.directory / addon['file']))
         return items
 
     def library_items(self, game):
@@ -559,6 +574,17 @@ class ReceiveHost:
         with open_library(self.app, game) as (library, _):
             have = {record['id'] for record in library.episodes}
         return [key for key in offered if key not in have]
+
+    def want_addons(self, game, offered):
+        """The offered addons this library lacks or holds older. A same-revision rebuild stays: neither side can tell which is
+        newer. `addon` follows superseding, so a pack that stands in for one offered counts as holding it."""
+        with open_library(self.app, game) as (library, _):
+            wanted = []
+            for entry in offered:
+                held = library.addon(entry['addon'])
+                if held is None or held[0]['revision'] < entry['revision']:
+                    wanted.append(entry['id'])
+        return wanted
 
     def apply(self, hello, stage, games):
         messages = []
@@ -599,7 +625,11 @@ class ReceiveHost:
         episodes = stage / 'episodes'
         if episodes.is_dir() and any(episodes.rglob('*.exp')):
             added = library.add_episodes([episodes])
-            parts.append(f'{added} episode{"s" if added != 1 else ""}')
+            addons = getattr(library, 'last_addons_added', 0) if added else 0
+            if added - addons or not addons:
+                parts.append(f'{added - addons} episode{"s" if added - addons != 1 else ""}')
+            if addons:
+                parts.append(f'{addons} add-on{"s" if addons != 1 else ""}')
         return parts
 
     def install(self, game, folder):
