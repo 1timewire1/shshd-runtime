@@ -59,7 +59,7 @@ MS3_CHARACTERS_LABEL = 'MS3 Characters'         # translated X360 episodes: the 
 ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
 ARENA_SKIN_LABEL = 'X360 Arena Look'            # ...that arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
-# 2026-10-26): key -> the tag in the SHS profile's LEGACY_GAMES. The switch itself is offered only when such episodes
+# 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
 SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'arena_skin': 'SHSX360'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
@@ -68,19 +68,24 @@ BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
 def switch_badge(key):
     """(text, colour) of the switch's game tag, or None."""
     from .games import GAMES
-    legacy = getattr(GAMES.get('shs'), 'LEGACY_GAMES', {}).get(SWITCH_BADGES.get(key))
-    return None if legacy is None else (legacy['badge'], legacy['color'])
+    for game in ('shs', 'cod'):
+        legacy = getattr(GAMES.get(game), 'LEGACY_GAMES', {}).get(SWITCH_BADGES.get(key))
+        if legacy is not None:
+            return legacy['badge'], legacy['color']
+    return None
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
 # player's own: SHS HD's Options is one page). A row shows when its setting is offered (`layout`'s `settings`), so a
 # game leaves out what does not apply to it.
-# Extras holds the play aids that change how a story plays (owner, 2026-10-21).
+# Extras holds the play aids that change how a story plays (owner, 2026-10-21). Add-Ons holds what only concerns translated
+# games and addons (owner, 2026-11-02), so the others stay short; like any category, it's hidden when it has no rows.
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 'Controller'), ('extras', 'Extras'),
-                     ('data', 'Data Management'))
+                     ('addons', 'Add-Ons'), ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
-                'hires_portraits', 'ms3_characters', 'check_updates')
-EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'arena_minigames', 'arena_skin')
+                'check_updates')
+EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
+ADDON_KEYS = ('hires_portraits', 'ms3_characters', 'arena_minigames', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -728,6 +733,8 @@ class HdPauseMenu:
             if 'unlock_warp' in settings:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows
+        if category == 'addons':
+            return [('switch', self.SWITCH_LABELS[key], key) for key in ADDON_KEYS if key in settings]
         if category == 'data':
             pages = [('page', title, screen) for screen, title, rows in DATA_PAGES
                      if any(key in settings for key, _ in rows)]

@@ -105,9 +105,14 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(switch_badge('hires_portraits'), ('NR', LEGACY_GAMES['SHSNR']['color']))
         self.assertIsNone(switch_badge('hd_backdrop'))
         self.settings.update(hires_portraits=True)
+        self.assertNotIn('hires_portraits', [c[1] for _, c in self.commands() if c[0] == 'pause_toggle'])
+        screen, state.screen = state.screen, 'options'
+        self.assertIn(('pause_open', 'options:addons'), [c for _, c in self.commands()])    # now it has a row
+        state.screen = 'options:addons'
         with patch.object(type(self.menu), 'badge', autospec=True, return_value=30) as badge:
             self.assertIn('hires_portraits', [c[1] for _, c in self.commands() if c[0] == 'pause_toggle'])
         self.assertEqual([call.args[4:] for call in badge.call_args_list], [('NR', LEGACY_GAMES['SHSNR']['color'])])
+        state.screen = screen
         del self.settings['hires_portraits']
         # This player's Autoplay Dialogue comes after the side panels (owner, 2026-10-21).
         self.settings.update(autoplay=False, disable_choice_timer=True)
@@ -365,6 +370,25 @@ class CodPauseTests(unittest.TestCase):
                          [('pause_toggle', 'choice_hints'), ('pause_toggle', 'skip_minigames'), ('pause_back',)])
         rows = self.menu.option_rows('extras', self.settings, self.menu.strings())
         self.assertEqual({key: label for _, label, key in rows}['choice_hints'], 'Choice & Answer Hints')
+
+    def test_the_add_ons_page_holds_the_translated_games_switches(self):
+        from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
+        self.assertEqual(ADDON_KEYS, ('hires_portraits', 'ms3_characters', 'arena_minigames', 'arena_skin'))
+        self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
+        self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
+        self.settings.update(ms3_characters=False, arena_minigames=True)
+        rows = self.menu.option_rows('addons', self.settings, self.menu.strings())
+        self.assertEqual([(kind, label, key) for kind, label, key in rows],
+                         [('switch', 'MS3 Characters', 'ms3_characters'), ('switch', 'Use Translated Mini-Games', 'arena_minigames')])
+
+    def test_a_cod_translations_tag_is_claire_harts_dark_green_ch(self):
+        from unittest.mock import patch
+        from exp_runtime import desktop_pause_hd
+        from exp_runtime.cod.profile import LEGACY_GAMES
+        with patch.dict(desktop_pause_hd.SWITCH_BADGES, {'example': 'CHC'}):
+            self.assertEqual(desktop_pause_hd.switch_badge('example'), ('CH', LEGACY_GAMES['CHC']['color']))
+        red, green, blue = LEGACY_GAMES['CHC']['color']
+        self.assertTrue(green > red and green > blue and green < 128)
 
     def test_cods_sound_page_offers_vibration_too(self):
         self.menu.state.screen = 'options:sound'

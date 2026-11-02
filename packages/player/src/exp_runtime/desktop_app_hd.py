@@ -169,7 +169,8 @@ SLIDER = (143, 460)                     # a volume slider's track: its left and 
 # Characters (MS3_CHARACTER_ART), Use
 # Translated Minigames (TRANSLATED_MINIGAMES) and translated Episode Titles (no CoD episode has one). Each game's own Options still has
 # them.
-ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'ms3_characters', 'arena_minigames', 'arena_skin',
+ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'ms3_characters', 'arena_minigames',
+                    'arena_skin',
                     'title_language')
 
 

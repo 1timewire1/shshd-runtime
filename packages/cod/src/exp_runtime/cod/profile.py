@@ -42,6 +42,8 @@ CATALOG_LAYOUTS = {17: ((33, 0),)}
 PAID_PROFILE = 'cod-ios-assets-v1'
 FREE_PROFILE = 'cod-ios-free-assets-v1'
 LOCALIZED_FREE_PROFILE = 'cod-ios-free-localized-assets-v1'
+# shshd-runtime: Claire Hart, as a tag for its switches for now (owner, 2026-11-02); its translated episodes will take it too.
+LEGACY_GAMES = {'CHC': dict(badge='CH', color=(12, 84, 48), category='Claire Hart')}
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.
