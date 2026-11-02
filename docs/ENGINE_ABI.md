@@ -568,7 +568,7 @@ These are not native SHS services. Episodes translated from SHS: New Rules
 runs beside the story as a linked segment (VM_SPEC.md §2.3). Each stands in for
 one New Rules service and answers as New Rules' engine does. The panel, its
 properties and its clock are decoded in
-`reference/Other Games/docs/NR_ARENA.md` and modelled in `nr_arena.py`.
+[NEW_RULES.md](NEW_RULES.md#the-arena) and modelled in `nr_arena.py`.
 
 | Service | New Rules | Arguments | Result |
 | --- | --- | --- | --- |
@@ -590,6 +590,25 @@ Service **70 selector 200** answers 1 when the arena plays here: New Rules'
 library is attached and the player's arena switch is on (`Session.nr_arena`).
 Native players and upstream exp-runtime answer 0 to an unknown selector, so a
 translated story takes the word game or timed choices it also carries.
+
+Service **213** (no arguments) goes before each arena game. It answers −1 to play
+the game. With Ask to Skip Mini-Games on, it waits for the player's choice and
+answers the result the game would have left instead
+([NEW_RULES.md](NEW_RULES.md#skipping)).
+
+## 5.2 The X360 minigames (shshd-runtime services 214–217)
+
+These are not native SHS services either. Episodes translated from the cancelled
+Xbox 360 game call them after **70 selector 201** answers 1, which it does only
+with the player's minigames switch on. Otherwise a story takes the fallback it
+also carries ([X360.md](X360.md#minigames)).
+
+| Service | Game | Arguments | Result, after waiting for the game |
+| --- | --- | --- | --- |
+| 214 | Slot machine | — | Bulbs taken, 0–5 |
+| 215 | Leash game | — | 1 won, 0 lost |
+| 216 | Jewel puzzle | — | The score |
+| 217 | Diss Practice | show the tutorial first | The score, at most 32767 |
 
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 

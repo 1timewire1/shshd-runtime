@@ -1,4 +1,4 @@
-"""The cancelled Xbox 360 SHS prototype's stories as creator projects (reference/Other Games/docs/SHS_X360.md).
+"""The cancelled Xbox 360 SHS prototype's stories as creator projects (docs/X360.md).
 
 The prototype (MS4, 2009-05-26) is a 3D game on Wanako's "Tongas" engine. Its story logic is Lua 5.1 source: event
 scripts embedded in templates/eventconfig.wxr and the conversations in scripts/dialogs/. This module reads its
@@ -10,7 +10,7 @@ TRANSLATOR_PLAN.md gives sources without bytecode. Two stories are new to this p
 * the puzzle test (prototype/puzzle/event1-2): two short scenes, Moondog and then Beth.
 
 Episode 3's Monday Planner (episode3/monday_*) is New Rules' King of Diss cut down to one day and restaged, and comes
-with its X360 cast, places and Diss Practice (reference/Other Games/docs/MONDAY_PLANNER_PLAN.md).
+with its X360 cast, places and Diss Practice (docs/X360.md).
 
 What carries over: every line, speaker, choice (with its enable condition), numeric state (gameStats.*, the
 *Dialogs flags), condition, scene jump and the hub's min/max gating, as the scripts have them, including the

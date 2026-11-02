@@ -2,7 +2,7 @@
 
 The scripts keep New Rules' own bytecode. Each host call is renamed or sent through a shim (kiwi_rewrite.py) according to
 the map below. The map was checked against the 45 New Rules stories that also exist as smartphone EXPs: with the same
-answers, the two versions show the same lines through these calls (reference/Other Games/docs/TRANSLATOR_PLAN.md).
+answers, the two versions show the same lines through these calls (docs/NEW_RULES.md).
 
 Characters keep their numbers (the paired stories number them identically). Portraits are New Rules' paper-doll
 looks, pre-rendered into five-picture expression banks; backgrounds are its location strips (nr_art.py).
@@ -1242,7 +1242,7 @@ LIBRARY_ENTRIES = {32611: 'rhyme', 31473: 'rhythm', 28903: 'beat boxing', 28201:
 # dancer level + 2 in practice, 7 - the level at the dance-off.
 DANCING_QUEEN = range(25101, 25107)
 DANCING_QUEEN_ENTRIES = {**LIBRARY_ENTRIES, 28903: 'dance steps', 30244: 'dj fever'}
-# New Rules' arena (docs NR_ARENA.md): its services and the other New Rules services the minigame library calls, as
+# New Rules' arena (docs/NEW_RULES.md): its services and the other New Rules services the minigame library calls, as
 # shshd-runtime's New Rules arena services (200-212), which the runtime answers as New Rules' engine does. Random and
 # the global numbers are SHS's own.
 ARENA_SERVICES = {50: 200, 51: 201, 52: 202, 53: 203, 54: 204, 55: 205, 56: 206, 57: 207,
@@ -1268,7 +1268,7 @@ def arena_entry(s, target):
     s.emit(0x22); s.jump(target)
     s.label(out)
 LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
-# What the word game asks where the arena asks a grade (owner, 2026-11-02; docs TIMED_GOALS_SCAN.md): the story reads the
+# What the word game asks where the arena asks a grade (owner, 2026-11-02; docs/NEW_RULES.md): the story reads the
 # library's 0-10 grade against its target, and raw hits read that way were far too easy. Rhythm's: the straight run that
 # scores each grade in 40 s, n(n + 1) / 2 points, at three quarters for 30 s, up to the owner's cap. The first Rhythm a story
 # plays has the arena's +2 first-play handicap. The games that score otherwise ask at least SHS's own pace: 6 in 20 s.

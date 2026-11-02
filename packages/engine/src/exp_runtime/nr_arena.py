@@ -1,6 +1,6 @@
 """shshd-runtime: New Rules' minigame arena panel (its panel type 27), driven by New Rules' own minigame library.
 
-The panel is passive (reference/Other Games/docs/NR_ARENA.md): it keeps the ring, the timer, the score and meter, the
+The panel is passive (docs/NEW_RULES.md): it keeps the ring, the timer, the score and meter, the
 HUD, popups and a key queue, turns and counts them down each frame, and answers the library's property reads and writes
 (New Rules services 50-57, here shshd-runtime's 200-207). Every rule of every game lives in the library's bytecode,
 which runs beside the story as a linked segment (vm.linked_layout). Pure and headless; the player draws it

@@ -72,12 +72,12 @@ NATIVE_DEFAULT_YIELDS = frozenset((12, 14, 19, 20, 21, 23, 31, 41, 42, 48, 62, 6
 SHS_HD_YIELDS = NATIVE_DEFAULT_YIELDS | frozenset((
     6, 15, 22, 26, 30, 32, 36, 37, 38, 43, 56, 57, 58, 59, 60, 61, 66, 83, 84, 85, 87, 98,
     *range(101, 121)))
-# shshd-runtime: New Rules' minigame arena (nr_arena.py, reference/Other Games/docs/NR_ARENA.md), the services the
+# shshd-runtime: New Rules' minigame arena (nr_arena.py, docs/NEW_RULES.md), the services the
 # translated New Rules stories and their minigame library call in place of New Rules' own (tools/translate
 # newrules.ARENA_SERVICES): the panel (50-57), the frame wait (29), formats (5), the menu and the info box over the
 # panel (9, 10) and the build query (32). Service 70 selector NR_ARENA_QUERY answers 1 where they work.
 # 213 is this player's own, called before an arena game: -1 plays it, another value is the result the story reads
-# instead (Ask to Skip Mini-Games, Session.skip_arena; NR_ARENA.md §7).
+# instead (Ask to Skip Mini-Games, Session.skip_arena; docs/NEW_RULES.md).
 NR_ARENA_SERVICES = frozenset(range(200, 214))
 NR_ARENA_QUERY = 200
 NR_BUILD = {1: 2, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}  # New Rules' 32 as the Java (arena) build answers it

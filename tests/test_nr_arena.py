@@ -1,4 +1,4 @@
-"""shshd-runtime: New Rules' minigame arena (nr_arena.py, reference/Other Games/docs/NR_ARENA.md) on authored scripts.
+"""shshd-runtime: New Rules' minigame arena (nr_arena.py, docs/NEW_RULES.md) on authored scripts.
 New Rules' own minigame library isn't a fixture; these drive the panel through the same services it calls."""
 import json
 from pathlib import Path

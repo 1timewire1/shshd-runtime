@@ -1,5 +1,5 @@
 """shshd-runtime: New Rules' minigame arena in the cancelled X360 prototype's look (owner, 2026-10-31), drawn from the
-X360 addon's skin (tools/translate/x360_arena_art.py; reference/Other Games/docs/NR_ARENA_X360_SKIN.md).
+X360 addon's skin (tools/translate/x360_arena_art.py; docs/X360.md).
 
 Only the drawing differs from desktop_nr_arena.py. The panel model, the library's rules and the result are the same,
 and so is every position the New Rules renderer works out (slots, anchors, the keypad, click targets): this renderer
@@ -54,7 +54,7 @@ def addon_skin(resources):
         if found is None or SPEC not in found[1].entries:
             return None
         spec = json.loads(found[1].read(SPEC))
-    except Exception:                                   # a damaged addon: New Rules' look (NR_ARENA_X360_SKIN §1)
+    except Exception:                                   # a damaged addon: New Rules' look (docs/X360.md)
         return None
     if spec.get('format') != FORMAT or spec.get('version') != VERSION:
         return None

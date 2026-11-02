@@ -1,4 +1,4 @@
-"""Translate other SHS games' episodes into shshd-runtime `.exp` files (reference/Other Games/docs/TRANSLATOR_PLAN.md).
+"""Translate other SHS games' episodes into shshd-runtime `.exp` files (docs/NEW_RULES.md, docs/X360.md).
 
     python tools/translate/translate.py newrules EPISODE.expd --pud RES_LARGE_PUD [--x1i X1I_JAR]
         [--synth java|sf2|none] [--soundfont SF2] [--library LIB] --out OUT_DIR

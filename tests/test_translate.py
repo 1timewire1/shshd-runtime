@@ -421,7 +421,7 @@ class NewRulesShimTests(unittest.TestCase):
 
     def test_a_library_games_word_goals_answer_the_storys_grade_target(self):
         # The story's target is the call's first argument, and it reads B against it: the shim leaves that target once
-        # the hits are enough, one short of it otherwise (docs TIMED_GOALS_SCAN.md).
+        # the hits are enough, one short of it otherwise (docs/NEW_RULES.md).
         nr = self.nr
 
         def result(kind, index, target, hits):

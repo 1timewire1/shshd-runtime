@@ -8,7 +8,7 @@ back the other way. A note goes blank when caught and comes back about 2 s later
 
 The arm decides what's caught, as the X360's does: its head carries the trigger's box, a press swings it in over the rim
 for about 55 ms of PUSH's 242, and a note is caught as its own box enters. The geometry is the map's and the deck model's
-(reference/Other Games/docs/MONDAY_PLANNER_PLAN.md). The game's frames are 60 a second, whatever the player draws.
+(docs/X360.md). The game's frames are 60 a second, whatever the player draws.
 
 Bugs in the Lua, kept on purpose so the game plays as the X360's does (owner, 2026-11-02, after playing it); they aren't ours
 to fix:

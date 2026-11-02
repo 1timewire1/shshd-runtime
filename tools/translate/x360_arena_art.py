@@ -1,4 +1,4 @@
-"""The X360 look for New Rules' minigame arena, for the X360 addon (reference/Other Games/docs/NR_ARENA_X360_SKIN.md):
+"""The X360 look for New Rules' minigame arena, for the X360 addon (docs/X360.md):
 the cancelled prototype's own 2D minigame art, fonts, effect sounds and Diss Practice music, cut from its data.pak, and
 New Rules' item pictures with an ink outline and a drop shadow, so they sit with it (owner, 2026-10-31).
 
@@ -84,7 +84,7 @@ SPARK_CELLS = ((64, 0), (0, 64))        # big_particles' two flares (64-pixel ce
 PUFF_CELLS = ((0, 0), (64, 0), (0, 64)) # smoke's three puffs: eat_bad_note
 DERIVED = ('note_double', 'note_fire', *(f'fx_spark_{i}' for i in range(len(SPARK_CELLS))),
            *(f'fx_puff_{i}' for i in range(len(PUFF_CELLS))))
-# Diss Practice's good-note tiers as New Rules' good-note pictures (NR_ARENA_X360_SKIN.md §3); the other X360
+# Diss Practice's good-note tiers as New Rules' good-note pictures (docs/X360.md); the other X360
 # counterparts. Every other item is New Rules' own, outlined.
 ITEMS = {20: 'note', 17: 'note_double', 19: 'note_fire', 18: 'note_broken', 28: 'remix', 21: 'cross', 23: 'stamp_pow'}
 NR_ITEMS, NR_ITEM_ICONS = 29, 8018      # New Rules' item pictures (nr_arena_art.ITEM_ICONS)

@@ -615,6 +615,12 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
   same shape, shows its bar under the first narration. Not explained yet: the runtime shows the room from the
   narration.
 
+## Claire Hart portraits and backdrop (this fork)
+
+Many of CoD's portraits are Claire Hart Classic's, downscaled about 4.17 times. The optional `chslim` addon holds the
+sharper originals and the green backdrop, with the map from CoD's pictures to them. With it imported, Options › Add-Ons
+offers CH-tagged HD Portraits and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
+
 ## HD backgrounds from SHS HD (this fork)
 
 Many CoD locations are SHS HD backgrounds at half size. The owner reviewed every CoD/SHS HD pair (the catalogue

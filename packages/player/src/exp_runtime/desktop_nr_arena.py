@@ -7,7 +7,7 @@ colours. This module is a port of the Java panel's paint (`class_13.method_356` 
 it draws at the X1i's 480 x 650 game area, then scales that up by a whole number with nearest-neighbour pixels, as
 the translator scales New Rules' backgrounds and portraits, so the player's last smoothing step down to the window
 keeps the pixel art sharp. Its layer is the whole 3:4 frame, like the football HD layer.
-Coordinates in comments and code are X1i pixels. Unverified or approximate parts are listed in NR_ARENA.md §6.
+Coordinates in comments and code are X1i pixels. Unverified or approximate parts are listed in docs/NEW_RULES.md.
 """
 import json
 import math
@@ -811,7 +811,7 @@ class NRArenaRenderer:
                              y + height - 4 if above else y)
 
     def _overlay(self, surface, action, now):
-        """New Rules' menu (9) and info box (10) over the arena. Approximate (NR_ARENA.md §6): the bubble's box and
+        """New Rules' menu (9) and info box (10) over the arena. Approximate (docs/NEW_RULES.md): the bubble's box and
         the item font, as the emulator shows them; the Java draws them with its own dialog layouts."""
         font = self.font(ITEM_FONT)
         width = 340

@@ -1,5 +1,5 @@
 """New Rules' minigame arena drawn from the X1i build's own art (480x800, about 1.5x New Rules' WinMo art), for the New
-Rules addon (reference/Other Games/docs/NR_ARENA.md §5).
+Rules addon (docs/NEW_RULES.md).
 
 The Java panel (renamed `class_13`) draws the arena from New Rules' UI layout bank (resource 2) and the UI packs in its
 image slots (`class_6.method_185` / `method_247`): a scrolling background tile, layout 31 (the stripe, the table, its

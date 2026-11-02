@@ -395,7 +395,8 @@ these options ([CREATOR.md](CREATOR.md)).
 
 An **addon** is an ordinary EXP archive holding resources that several
 episodes share, such as a translated game's backgrounds and music. Each
-episode then doesn't need its own copy. Resource **4** begins with
+episode then doesn't need its own copy. [ADDONS.md](ADDONS.md) covers how they
+behave and what the current ones hold. Resource **4** begins with
 `SHSHD-ADDONS\0`, followed by UTF-8 JSON with `format: "shshd-addons"` and
 `version: 1` (`addons.py`). This is SHSHD Runtime metadata, not a recovered
 native format; native players and upstream exp-runtime never read resource 4.

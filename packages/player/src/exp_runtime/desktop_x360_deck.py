@@ -1,5 +1,5 @@
 """shshd-runtime: the cancelled Xbox 360 prototype's Diss Practice deck, as its booth shots draw it (tools/translate/
-x360_arena_art.py, reference/Other Games/docs/NR_ARENA_X360_SKIN.md): the deck in its parts with the record turning under a
+x360_arena_art.py, docs/X360.md): the deck in its parts with the record turning under a
 fixed light and the tone arm swinging, the score's digits and the hit effects. Used by the arena's X360 look over New Rules'
 panel (desktop_nr_arena_x360.py) and by Diss Practice itself (desktop_x360_diss.py). Coordinates are the arena's native
 pixels until they are drawn, times `self.k`. A host gives `x360()`, the skin's spec and archive, and `k`, and its `_images`,
