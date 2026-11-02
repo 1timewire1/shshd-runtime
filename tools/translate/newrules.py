@@ -1268,6 +1268,14 @@ def arena_entry(s, target):
     s.emit(0x22); s.jump(target)
     s.label(out)
 LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
+# What the word game asks where the arena asks a grade (owner, 2026-11-02; docs TIMED_GOALS_SCAN.md): the story reads the
+# library's 0-10 grade against its target, and raw hits read that way were far too easy. Rhythm's: the straight run that
+# scores each grade in 40 s, n(n + 1) / 2 points, at three quarters for 30 s, up to the owner's cap. The first Rhythm a story
+# plays has the arena's +2 first-play handicap. The games that score otherwise ask at least SHS's own pace: 6 in 20 s.
+RHYTHM_HITS = {1: 8, 2: 8, 3: 8, 4: 10, 5: 13, 6: 16}
+RHYTHM_FIRST_HITS = {**RHYTHM_HITS, 6: 10}
+RHYTHM_MOST_HITS = 19
+LIBRARY_GAME_HITS = 9
 RHYME_PROMPT = '`%s` rhymes with...'    # the library string before its rhyme pairs' words
 RHYME_END = 'rhyming'                   # and the one after them
 # The arena games without words of their own, played as SHS word games: (banner, good words, bad words). Rhythm's
@@ -1870,6 +1878,19 @@ def library_game(s, kind, index, library, player=True, music=False, entry=None):
             s.push(NARRATOR)
         s.push(1); s.push(WORD_GAME_REFRESH_MS)
         s.call(71, 8)
+        # The result the story's own comparison wants, its target (the call's first argument) or short of it.
+        reached = s.label()
+        s.push_result()
+        if kind == 'rhythm':
+            s.select(1, RHYTHM_FIRST_HITS if index == 0 else RHYTHM_HITS, RHYTHM_MOST_HITS)
+        else:
+            s.push(LIBRARY_GAME_HITS)
+        s.emit(0x0d); s.jump_if_nonzero(reached)
+        s.arg(1); s.push(1); s.emit(0x51); s.emit(0x04); s.jump(out)
+        s.label(reached)
+        s.arg(1); s.emit(0x04)
+        s.label(out)
+        return
     s.push_result(); s.emit(0x04)                           # B, which the caller reads
     s.label(out)
 

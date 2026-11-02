@@ -268,6 +268,9 @@ class RuleTests(unittest.TestCase):
             again.validate()
 
 
+NOTE_CAMERA = [-.0175, 3.0619, -11.7855, .6349, 18.7875, .9874, 20.875]
+
+
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
 class DrawingTests(unittest.TestCase):
     def setUp(self):
@@ -285,7 +288,7 @@ class DrawingTests(unittest.TestCase):
         out = io.BytesIO()
         pygame.image.save(note, out, 'x.png')
         files[26790] = out.getvalue()
-        spec['booth']['parts']['camera'] = [-.0175, 3.0619, -11.7855, .6349, 18.7875, .9874, 20.875]
+        spec['booth']['parts']['camera'] = NOTE_CAMERA
         spec['booth']['notes'] = dict(frame=[2560, 1440], height=.25, wheel=[-.1447, 1.0085, -7.8384], out=1.19, kinds={
             kind: dict(id=26790, anchor=[10, 20], depth=3.5) for kind in ('note', 'bad', 'swap', 'double')})
         files[26300] = json.dumps(spec).encode()

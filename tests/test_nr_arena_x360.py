@@ -269,12 +269,44 @@ class X360ArenaTests(unittest.TestCase):
         renderer, parts = self.split_deck()
         arena = self.arena()
         arena.motion = motion
+        from exp_runtime.desktop_x360_deck import ARM_SPEED
 
-        def frame(now):
-            renderer._arm_press(arena, now)
-            return renderer._arm_frame(parts['arm'], now)['angle']
+        def frame(now):                                     # `now` on PUSH's own clock, which plays ARM_SPEED times as fast
+            renderer._arm_press(arena, now / ARM_SPEED)
+            return renderer._arm_frame(parts['arm'], now / ARM_SPEED)['angle']
         frame(0)                                            # the frame before any press
         return renderer, arena, frame
+
+    def test_the_tone_arm_plays_push_at_the_x360s_speed(self):
+        renderer, parts = self.split_deck()
+        renderer._arm_start = 1000
+        self.assertEqual(renderer._arm_frame(parts['arm'], 1100)['angle'], 20)    # PUSH's 400 ms in, 100 ms on
+
+    def with_notes(self, renderer):
+        from test_x360_diss import NOTE_CAMERA
+        spec = renderer.x360()[0]
+        red = self.pygame.Surface((20, 40), self.pygame.SRCALPHA)
+        red.fill((255, 0, 0, 255))
+        renderer._images[26790] = red
+        spec['booth']['parts']['camera'] = NOTE_CAMERA
+        spec['booth']['frame'] = [1848, 1040]
+        spec['booth']['notes'] = dict(frame=[2560, 1440], height=.25, wheel=[-.1447, 1.0085, -7.8384], out=1.19, kinds={
+            kind: dict(id=26790, anchor=[10, 40], depth=3.5) for kind in ('note', 'bad', 'swap', 'double')})
+
+    def test_the_notes_are_the_booths_as_large_as_their_place_on_the_record(self):
+        renderer, _ = self.split_deck()
+        arena = self.arena()
+        self.assertIsNone(renderer._note_of(20))                    # an addon without them keeps the flat pictures
+        self.with_notes(renderer)
+        ring = renderer._field(arena)
+        surface = self.pygame.Surface(self.module.FRAME, self.pygame.SRCALPHA)
+        near = renderer._item_x360(surface, arena, 20, 2, ring.centerx, ring.bottom, -1)
+        far = renderer._item_x360(surface, arena, 20, 2, ring.centerx, ring.top, -1)
+        self.assertGreater(near.height, far.height)
+        self.assertAlmostEqual(near.bottom, ring.bottom * renderer.k, delta=1)    # standing where it's put
+        for item in (20, 17, 19, 18, 28):
+            self.assertIsNotNone(renderer._note_of(item))
+        self.assertIsNone(renderer._note_of(21))                    # a cross isn't a note
 
     def test_the_tone_arm_swings_through_push_from_a_press_in_play_and_rests_otherwise(self):
         _, arena, frame = self.arm()

@@ -29,6 +29,7 @@ FX = {'good': dict(count=8, life=500, speed=(3, 8), colours=((255, 0, 0), (255, 
       # The X360's own greens (62 74 53 to 17 47 44) are lost on the black record here: the same hues, lighter.
       'bad': dict(count=10, life=1000, speed=(0.5, 1), colours=((150, 176, 128), (70, 130, 120)), size=(0.1, 0.4),
                   gravity=-2, grow=5, spin=45, sprites='fx_puff')}
+ARM_SPEED = 4                           # the tone arm's AnimSpeed: PUSH's 967 ms play in 242 (x360_diss.PUSH)
 SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300), (38, 1900), (66, 2500))
 
 # A remix arrow's burst (minigame/bps/eat_swap), as a good note's in its colours.
@@ -149,7 +150,7 @@ class X360Deck:
         """The tone arm's frame now: PUSH while it runs (_arm_press), at rest otherwise."""
         angle = 0
         if self._arm_start is not None:
-            elapsed, push = now - self._arm_start, arm['push']
+            elapsed, push = (now - self._arm_start) * ARM_SPEED, arm['push']
             if 0 <= elapsed < push[-1][0]:
                 for (t0, a0), (t1, a1) in zip(push, push[1:]):
                     if elapsed < t1:
@@ -158,6 +159,92 @@ class X360Deck:
             else:
                 self._arm_start = None
         return min(arm['frames'], key=lambda frame: abs(frame['angle'] - angle))
+
+    # -- the camera, and the notes it sees --------------------------------------------------------------------------------------------
+    def _project(self, x, z):
+        """A point on the record over its centre, at the notes' height, in the booth's frame: (x, y, depth)."""
+        booth = self.x360()[0]['booth']
+        notes, camera = booth['notes'], booth['parts']['camera']
+        wheel = notes['wheel']
+        dx = wheel[0] + x * notes['out'] - camera[0]
+        dy = wheel[1] + notes['height'] - camera[1]
+        dz = wheel[2] + z * notes['out'] - camera[2]
+        vx, vy, vz = self._to_camera(dx, dy, dz, camera)
+        width, height = booth['frame']
+        f = (height / 2) / math.tan(math.radians(camera[6]))
+        return width / 2 + f * vx / vz, height / 2 - f * vy / vz, vz
+
+    @staticmethod
+    def _to_camera(x, y, z, camera):
+        yaw, pitch, roll = (math.radians(a) for a in camera[3:6])
+        x, z = x * math.cos(yaw) - z * math.sin(yaw), x * math.sin(yaw) + z * math.cos(yaw)
+        y, z = y * math.cos(pitch) + z * math.sin(pitch), -y * math.sin(pitch) + z * math.cos(pitch)
+        x, y = x * math.cos(roll) + y * math.sin(roll), -x * math.sin(roll) + y * math.cos(roll)
+        return x, y, z
+
+    def _native_point(self, x, z, dy):
+        bx, by, depth = self._project(x, z)
+        nx, ny, _, _ = self._to_native([bx, by, bx, by])
+        return nx, ny + dy, depth
+
+    def _stand_note(self, surface, name, effects, nx, ny, depth, grow, now, index):
+        """The booth's note `name` standing at native (nx, ny), as large as the camera sees it at `depth`, with its effects
+        (minigame/bps: 'stink', 'flames' under it, 'sparks' over it). The rect drawn, in canvas pixels, or None."""
+        booth = self.x360()[0]['booth']
+        spec = booth['notes']
+        picture = spec['kinds'][name]
+        per_pixel = self._deck()[0] * booth['frame'][0] / spec['frame'][0]
+        scale = per_pixel * picture['depth'] / depth * grow * self.k
+        if scale <= 0:
+            return None
+        image = self.image(picture['id'])
+        size = (max(1, round(image.get_width() * scale)), max(1, round(image.get_height() * scale)))
+        left = nx * self.k - picture['anchor'][0] * scale
+        top = ny * self.k - picture['anchor'][1] * scale
+        centre = (left + size[0] / 2, top + size[1] / 2)
+        if 'stink' in effects:
+            self._stink(surface, centre, size, now, index)
+        if 'flames' in effects:
+            self._flames(surface, centre, size, now, index)
+        surface.blit(self.scaled(image, size), (round(left), round(top)))
+        if 'sparks' in effects:
+            self._sparks(surface, centre, size, now, index)
+        return pygame.Rect(round(left), round(top), *size)
+
+    # minigame/bps/bad_note_stink, hot_note_sparks and hot_note_flames, as their looks go: they only ever drift past.
+    def _stink(self, surface, centre, size, now, index):
+        sprites = self._sprites('fx_puff')
+        for i in range(3):
+            phase = (now / 1400 + i / 3 + index * .13) % 1
+            side = max(1, round(size[0] * (.4 + .5 * phase)))
+            image = self._tinted(sprites[i % len(sprites)], (150, 176, 128), side).copy()
+            image.set_alpha(round(110 * (1 - phase)))
+            surface.blit(image, image.get_rect(center=(round(centre[0] + (i - 1) * size[0] * .18),
+                                                       round(centre[1] - size[1] * (.1 + .7 * phase)))))
+
+    def _sparks(self, surface, centre, size, now, index):
+        sprites = self._sprites('fx_spark')
+        for i in range(3):
+            phase = (now / 900 + i / 3 + index * .17) % 1
+            side = max(1, round(size[0] * .16 * (1 - phase)))
+            image = self._tinted(sprites[i % len(sprites)], (255, 190, 60), side, additive=True)
+            x = centre[0] + size[0] * .55 * math.sin(i * 2.4 + index) * (.4 + phase)
+            y = centre[1] - size[1] * .3 + size[1] * phase * phase
+            surface.blit(image, image.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
+
+    def _flames(self, surface, centre, size, now, index):
+        sprites = self._sprites('fx_spark')
+        for i in range(5):
+            phase = (now / 500 + i / 5 + index * .11) % 1
+            side = max(1, round(size[0] * (.55 - .35 * phase)))
+            colour = (255, round(200 - 150 * phase), 20)
+            image = self._tinted(sprites[i % len(sprites)], colour, side, additive=True)
+            x = centre[0] + size[0] * .32 * math.sin(i * 1.9 + now / 170)
+            y = centre[1] + size[1] * .3 - size[1] * .9 * phase
+            surface.blit(image, image.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
+
+    def _sprites(self, prefix):
+        return [name for name in self.x360()[0]['pictures'] if name.startswith(prefix + '_')]
 
     def _arm_cell(self, arm, frame):
         key = ('arm', frame['angle'])

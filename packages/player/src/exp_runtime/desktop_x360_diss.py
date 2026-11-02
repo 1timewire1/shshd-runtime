@@ -17,6 +17,7 @@ from .x360_games import CLOSING, OPENING, OPENING_MS, READY
 
 FRAME = (768, 1024)
 NOTE_PICTURE = {NOTE: 'note', BAD: 'bad', REMIX: 'swap', DOUBLE: 'double', FIRE: 'double'}
+NOTE_EFFECTS = {BAD: ('stink',), DOUBLE: ('sparks',), FIRE: ('flames', 'sparks')}
 GROW_MS = 500                           # a new note scales in, as its effect's emitter has it
 RISE = 420                              # the deck comes up from below, as the arena's does
 FADE_MS = CLOSING_MS
@@ -76,33 +77,6 @@ class X360DissRenderer(X360Deck):
         """The tone arm's frame: the game's swing decides what it catches, so it's the game's angle that's drawn."""
         angle = arm_angle(self.game.arm_ms)
         return min(arm['frames'], key=lambda frame: abs(frame['angle'] - angle))
-
-    # -- the camera --------------------------------------------------------------------------------------------
-    def _project(self, x, z):
-        """A point on the record over its centre, at the notes' height, in the booth's frame: (x, y, depth)."""
-        booth = self.x360()[0]['booth']
-        notes, camera = booth['notes'], booth['parts']['camera']
-        wheel = notes['wheel']
-        dx = wheel[0] + x * notes['out'] - camera[0]
-        dy = wheel[1] + notes['height'] - camera[1]
-        dz = wheel[2] + z * notes['out'] - camera[2]
-        vx, vy, vz = self._to_camera(dx, dy, dz, camera)
-        width, height = booth['frame']
-        f = (height / 2) / math.tan(math.radians(camera[6]))
-        return width / 2 + f * vx / vz, height / 2 - f * vy / vz, vz
-
-    @staticmethod
-    def _to_camera(x, y, z, camera):
-        yaw, pitch, roll = (math.radians(a) for a in camera[3:6])
-        x, z = x * math.cos(yaw) - z * math.sin(yaw), x * math.sin(yaw) + z * math.cos(yaw)
-        y, z = y * math.cos(pitch) + z * math.sin(pitch), -y * math.sin(pitch) + z * math.cos(pitch)
-        x, y = x * math.cos(roll) + y * math.sin(roll), -x * math.sin(roll) + y * math.cos(roll)
-        return x, y, z
-
-    def _native_point(self, x, z, dy):
-        bx, by, depth = self._project(x, z)
-        nx, ny, _, _ = self._to_native([bx, by, bx, by])
-        return nx, ny + dy, depth
 
     # -- text --------------------------------------------------------------------------------------------------
     def _text(self, words, height, colour=None, font='badaboom'):
@@ -233,9 +207,6 @@ class X360DissRenderer(X360Deck):
                          pygame.transform.smoothscale(words, size).get_rect(center=(FRAME[0] // 2, TUTORIAL_PROMPT_Y)))
 
     def _notes_on_record(self, surface, game, now):
-        spec = self.x360()[0]['booth']['notes']
-        u = self._deck()[0]
-        per_pixel = u * self.x360()[0]['booth']['frame'][0] / spec['frame'][0]
         shown = []
         for index in range(len(ELEMENTS)):
             element = game.elements[index]
@@ -245,58 +216,8 @@ class X360DissRenderer(X360Deck):
                 shown.append((depth, index, element, nx, ny))
         for depth, index, element, nx, ny in sorted(shown, key=lambda item: -item[0]):
             kind = element['shown']
-            picture = spec['kinds'][NOTE_PICTURE[kind]]
             grow = min(1, max(0, now - element['born_ms']) / GROW_MS)
-            scale = per_pixel * picture['depth'] / depth * grow * self.k
-            if scale <= 0:
-                continue
-            image = self.image(picture['id'])
-            size = (max(1, round(image.get_width() * scale)), max(1, round(image.get_height() * scale)))
-            left = nx * self.k - picture['anchor'][0] * scale
-            top = ny * self.k - picture['anchor'][1] * scale
-            centre = (left + size[0] / 2, top + size[1] / 2)
-            if kind == BAD:
-                self._stink(surface, centre, size, now, index)
-            elif kind == FIRE:
-                self._flames(surface, centre, size, now, index)
-            surface.blit(self.scaled(image, size), (round(left), round(top)))
-            if kind in (DOUBLE, FIRE):
-                self._sparks(surface, centre, size, now, index)
-
-    # minigame/bps/bad_note_stink, hot_note_sparks and hot_note_flames, as their looks go: they only ever drift past.
-    def _stink(self, surface, centre, size, now, index):
-        sprites = self._sprites('fx_puff')
-        for i in range(3):
-            phase = (now / 1400 + i / 3 + index * .13) % 1
-            side = max(1, round(size[0] * (.4 + .5 * phase)))
-            image = self._tinted(sprites[i % len(sprites)], (150, 176, 128), side).copy()
-            image.set_alpha(round(110 * (1 - phase)))
-            surface.blit(image, image.get_rect(center=(round(centre[0] + (i - 1) * size[0] * .18),
-                                                       round(centre[1] - size[1] * (.1 + .7 * phase)))))
-
-    def _sparks(self, surface, centre, size, now, index):
-        sprites = self._sprites('fx_spark')
-        for i in range(3):
-            phase = (now / 900 + i / 3 + index * .17) % 1
-            side = max(1, round(size[0] * .16 * (1 - phase)))
-            image = self._tinted(sprites[i % len(sprites)], (255, 190, 60), side, additive=True)
-            x = centre[0] + size[0] * .55 * math.sin(i * 2.4 + index) * (.4 + phase)
-            y = centre[1] - size[1] * .3 + size[1] * phase * phase
-            surface.blit(image, image.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
-
-    def _flames(self, surface, centre, size, now, index):
-        sprites = self._sprites('fx_spark')
-        for i in range(5):
-            phase = (now / 500 + i / 5 + index * .11) % 1
-            side = max(1, round(size[0] * (.55 - .35 * phase)))
-            colour = (255, round(200 - 150 * phase), 20)
-            image = self._tinted(sprites[i % len(sprites)], colour, side, additive=True)
-            x = centre[0] + size[0] * .32 * math.sin(i * 1.9 + now / 170)
-            y = centre[1] + size[1] * .3 - size[1] * .9 * phase
-            surface.blit(image, image.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
-
-    def _sprites(self, prefix):
-        return [name for name in self.x360()[0]['pictures'] if name.startswith(prefix + '_')]
+            self._stand_note(surface, NOTE_PICTURE[kind], NOTE_EFFECTS.get(kind, ()), nx, ny, depth, grow, now, index)
 
     def _hit_effects(self, surface, game, now):
         for effect in game.effects:

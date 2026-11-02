@@ -419,11 +419,37 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertIn((16, (20,)), yields(kept))
         self.assertNotIn((16, (20,)), yields(dropped))
 
+    def test_a_library_games_word_goals_answer_the_storys_grade_target(self):
+        # The story's target is the call's first argument, and it reads B against it: the shim leaves that target once
+        # the hits are enough, one short of it otherwise (docs TIMED_GOALS_SCAN.md).
+        nr = self.nr
+
+        def result(kind, index, target, hits):
+            story = program((0x1A, target), *[(0x1A, 0)] * 7, 0x42, (0x29, 100), (0x19, 8), 0x08, (0x1F, 0x0D01), 0x33,
+                            words=text_words('intro'))
+            rewriter = Rewriter(story, zero_gap=True)
+            for pc, _, argc in nr.library_calls(story):
+                rewriter.replace_call(pc, 'game', argc, lambda s: nr.library_game(s, kind, index, None, False))
+            seen = yields(rewriter.finish(), [hits])
+            self.assertEqual(seen[0][0], 71)
+            return next(args[0] for service, args in seen if service == 13)
+
+        for target, hits in ((3, 8), (4, 10), (5, 13), (6, 16), (7, 19), (8, 19), (9, 19), (10, 19)):   # level + 3, capped
+            self.assertEqual(result('rhythm', 1, target, hits), target)
+            self.assertEqual(result('rhythm', 1, target, hits - 1), target - 1)
+            self.assertEqual(result('rhythm', 1, target, 32767), target)                                # a skip's win
+            self.assertEqual(result('rhythm', 1, target, 0), target - 1)                                # and its loss
+        self.assertEqual(result('rhythm', 0, 6, 10), 6)                                                 # first play
+        self.assertEqual(result('rhythm', 0, 6, 9), 5)
+        for kind, target in (('beat boxing', 7), ('dance steps', 5), ('dj fever', 3), ('dj fever', 7)):
+            self.assertEqual(result(kind, 0, target, 9), target)
+            self.assertEqual(result(kind, 0, target, 8), target - 1)
+
     def test_the_sequence_games_show_their_own_description(self):
         nr = self.nr
-        source = program(0x42, (0x29, 9999), 0x08, 0x33)
+        source = program((0x1A, 7), 0x42, (0x29, 9999), (0x19, 1), 0x08, 0x33)
         rewriter = Rewriter(source)
-        rewriter.replace_call(1, 'beat', 0, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
+        rewriter.replace_call(2, 'beat', 1, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
         result = rewriter.finish()
         game = next(args for service, args in yields(result) if service == 71)
         self.assertEqual(game[1], rewriter.strings[nr.GAME_DESCRIPTIONS['beat boxing']])   # not the call's argument

@@ -16,6 +16,12 @@ import pygame
 from .desktop_nr_arena import ENTRANCE_MS, FRAME, NATIVE, NRArenaRenderer, OX, SCREEN_HEIGHT, SCREEN_WIDTH
 from .desktop_x360_deck import FX, SCORE_BOX, X360Deck
 
+# New Rules' item pictures that are notes, as Diss Practice shoots them (booth `notes`; owner, 2026-11-02): (picture, its
+# effects). Its good note at speeds 1-7, 8-9 and max are the X360's note, double note and on-fire note.
+ITEM_NOTES = {20: ('note', ()), 17: ('double', ('sparks',)), 19: ('double', ('flames', 'sparks')), 18: ('bad', ('stink',)),
+              28: ('swap', ())}
+NOTE_ROW = .8                           # how far from the record's centre its notes ride (x360_diss.ELEMENTS)
+
 ADDON = 'shsx360'                       # tools/translate/x360.py ADDON_ID
 SPEC = 26300                            # x360_arena_art.SPEC
 NR_TRACK_BASE = 26980                   # New Rules' tracks in its addon (tools/translate/newrules.py MUSIC_BASE)
@@ -627,6 +633,9 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         name = self._picture_name(item)
         index = name and name.split('/')[1]
         resource = items.get(index) if index is not None else None
+        note = self._note_of(item)
+        if note is not None:
+            resource = self.x360()[0]['booth']['notes']['kinds'][note[0]]['id']
         if resource is None:
             return None
         image = self.image(resource)
@@ -658,7 +667,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 x = fx + (x - fx) * elapsed / total
                 y = fy + (y - fy) * elapsed / total
             y = self._row_y(arena, ring, y, slot) - (6 if arena.plates else 0)
-            drawn = self._item_x360(surface, arena, arena.slots[slot], arena.item_kind, x, y, arena.tint[slot])
+            drawn = self._item_x360(surface, arena, arena.slots[slot], arena.item_kind, x, y, arena.tint[slot], index=slot)
             if arena.keypad and slot < 6 and arena.slots[slot] != -1:
                 # The item's whole picture as drawn takes the click (Sequences: its slot's number key), a little
                 # beyond it; New Rules' item size is smaller than the X360 pictures (owner, 2026-11-01).
@@ -670,11 +679,24 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                                               drawn.height / self.k))
                 self.targets.append((area.inflate(10, 10), ('arena_key', 48 + int(KEYPAD[slot]))))
 
-    def _item_x360(self, surface, arena, item, kind, x, y, tint, alpha=255):
-        """An item standing at (x, y): the rect drawn, in canvas pixels, or None."""
+    def _note_of(self, item):
+        """The booth's (picture, effects) for New Rules' item picture `item` (ITEM_NOTES), or None."""
+        name = self._picture_name(item)
+        note = ITEM_NOTES.get(int(name.split('/')[1])) if name else None
+        return note if note and 'notes' in self.x360()[0]['booth'] else None
+
+    def _item_x360(self, surface, arena, item, kind, x, y, tint, alpha=255, index=0):
+        """An item standing at (x, y): the rect drawn, in canvas pixels, or None. A note is the booth's, as large as Diss
+        Practice's camera has it that far round the record. A popup's fades (`alpha`) keep the flat picture."""
         if item == -1:
             return None
         if kind == 2:
+            note = self._note_of(item)
+            if note is not None and alpha == 255:
+                ring = self._field(arena)
+                across = max(-1, min(1, (y - ring.centery) / max(1, ring.height / 2)))
+                depth = self._project(0, -NOTE_ROW * across)[2]
+                return self._stand_note(surface, note[0], note[1], x, y, depth, 1, self._now, index)
             return self._item_picture(surface, item, x, y, 58, alpha)
         elif kind == 3 and 0 <= item < len(arena.strings):
             # A tinted box (751: the library's colour for the words, GOOD and BAD) takes the tint, its text white
