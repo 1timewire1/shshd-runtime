@@ -408,7 +408,7 @@ def opening(files, pcm_wav, folder):
     """{resource ID: bytes} of Day of Diss's opening, a storyboard cutscene (exp_runtime.cutscene; owner, 2026-11-02). `folder`
     (Additional Resources/x360-opening; reference tools x360_opening_booth*.py) holds a still per camera move, 2560 x 1440, and
     josh_tall, 1440 x 2560: Josh from the place of the camera the card is painted over, on its side, hair to shoes. All are stored at
-    the frame's scale, so a window is a blit. The cuts and pans follow the prototype's, against the music, and the whip is where the
+    the frame's scale, so a window is a blit. The pans follow the prototype's, the cuts are timed to the music by the owner (2026-11-02), and the whip is where the
     prototype's fires against it, measured from a slowed capture (music 14.51 s, 0.3 s before its drop). The card then holds, as the
     episode's title card."""
     from pathlib import Path
@@ -455,10 +455,10 @@ def opening(files, pcm_wav, folder):
     whole = [0, 0, *size]
     # The climb ends where his eyes and green headphone land on the card's, read off both pictures.
     k = size[0] / OPENING_CLIMB_WINDOW
-    shots = [dict(image=first, start=0, end=3800, **{'from': [travel, 0, *size], 'to': whole}),
-             dict(image=lot, start=3800, end=7800, **{'from': whole, 'to': [travel, 0, *size]}),
-             dict(image=low, start=7800, end=10700, **{'from': whole, 'to': [travel, 0, *size]}),
-             dict(image=climb, start=10700, end=OPENING_WHIP, ease='out',
+    shots = [dict(image=first, start=0, end=3300, **{'from': [travel, 0, *size], 'to': whole}),
+             dict(image=lot, start=3300, end=7000, **{'from': whole, 'to': [travel, 0, *size]}),
+             dict(image=low, start=7000, end=10680, **{'from': whole, 'to': [travel, 0, *size]}),
+             dict(image=climb, start=10680, end=OPENING_WHIP, ease='out',
                   **{'from': [tall.width - size[0], tall.height - size[1], *size], 'to': [round(221 * k), round(145 * k), *size]}),
              dict(image=back_id, start=OPENING_WHIP, end=OPENING_WHIP, **{'from': whole, 'to': whole})]
     middle = 300, 690                   # the name's centre, clear of his face
