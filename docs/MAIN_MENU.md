@@ -817,8 +817,7 @@ New Rules Hi-Res Portraits and Episode Titles); each game's own Options still ha
     default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
   - Add-Ons picks the game first, when both have a library ([ADDONS.md](ADDONS.md#data-management)).
   - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
-    Receiving needs no library at all. With Legacy Mode on (the default for now), Send and Receive here show a notice
-    instead: legacy sync is one game, from inside it.
+    Receiving needs no library at all.
   Open Another Library, Add Episodes and Add APK Music stay per game.
 
 The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,

@@ -200,7 +200,7 @@ Elsewhere:
 
 The send page's **Episodes & Add-Ons** switch sends every addon the other device lacks or holds at a lower revision, whether or not an episode being sent needs it, as optional addons aren't declared by anything. A same-revision rebuild stays where it is, since neither device can tell which is newer. An addon standing in for another counts as holding it, and receiving a full pack deletes the slim one it supersedes.
 
-They travel in the offer step of [`lan_sync.py`](../packages/engine/src/exp_runtime/lan_sync.py), as `addons` beside `episodes`. A whole library sent to a device without one carries them already. Legacy Mode doesn't send them: it goes away when the Android build catches up.
+They travel in the offer step of [`lan_sync.py`](../packages/engine/src/exp_runtime/lan_sync.py), as `addons` beside `episodes`. A whole library sent to a device without one carries them already.
 
 ## In the Creator
 

@@ -48,14 +48,13 @@ class SharedSettingsTests(unittest.TestCase):
         self.assertEqual(path.stat().st_mtime_ns, 10**9)
         self.assertNotEqual(before, 10**9)
 
-    def test_sync_legacy_mode_starts_on_and_is_kept(self):
+    def test_a_settings_file_from_before_legacy_mode_went_loads_and_loses_the_key(self):
         path = self.root / 'settings.json'
+        path.write_text(json.dumps(dict(version=1, check_for_updates=False, sync_legacy=False, start_in='games')))
         settings = AppSettings(path)
-        self.assertTrue(settings.sync_legacy)                               # on by default for now (owner)
-        settings.set_sync_legacy(False)
-        self.assertFalse(AppSettings(path).sync_legacy)
-        with self.assertRaises(ValueError):
-            settings.set_sync_legacy('off')
+        self.assertEqual(settings.start_in, 'games')
+        settings.set_preferences(dict(autoplay=True))
+        self.assertNotIn('sync_legacy', json.loads(path.read_text()))
 
     def test_start_in_opens_a_game_that_has_a_library_else_the_chooser(self):
         settings = AppSettings(self.root / 'settings.json')

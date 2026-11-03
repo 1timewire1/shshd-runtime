@@ -18,7 +18,7 @@
     need the addon, and saves stay. Add Episodes, Library Info, Storage and Verify know about addons, and Export
     Episodes offers the addons the exported episodes need.
   - **Sync Devices:** addons travel with the episodes (the row is now "Episodes & Add-Ons"): every addon the receiver
-    lacks or holds older. Legacy Mode sends none, so turn it off on both devices for this.
+    lacks or holds older.
   - **Creator:** a project can use an addon's pictures, sounds and cutscenes by reference, or copy pictures and sounds
     in, and a timeline editor writes storyboards (MCP: `asset_list(addon=)`, `asset_use_addon`,
     `asset_save_cutscene`). Native export is blocked with an explanation for a project using a fork-only mechanic; one

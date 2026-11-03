@@ -5,6 +5,7 @@ import socket
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock
 
 from exp_runtime import lan_sync
 from exp_runtime.lan_sync import Beacon, Finder, Receiver, SendSession
@@ -249,126 +250,38 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(finder.devices(), [])
 
 
-def android_lan_sync():
-    """The Android build's own lan_sync (protocol 1), as a module of its own."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('lan_sync_v1', Path(__file__).parent / 'fixtures' / 'lan_sync_v1.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+class OlderProtocolTests(unittest.TestCase):
+    def test_a_beacon_on_another_protocol_is_not_listed(self):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.bind(('127.0.0.1', 0))
+        discovery = probe.getsockname()[1]
+        probe.close()
+        finder = Finder(port=discovery, bind='127.0.0.1')
+        self.addCleanup(finder.stop)
+        older = Beacon('Older', 'shs', 1234, addresses=['127.0.0.1'], discovery_port=discovery)
+        older.message = json.dumps(dict(app=lan_sync.APP, protocol=lan_sync.PROTOCOL - 1, name='Older', game='shs',
+                                        port=1234)).encode()
+        self.addCleanup(older.stop)
+        time.sleep(lan_sync.BEACON_S * 1.5)
+        self.assertEqual(finder.devices(), [])
+        current = Beacon('Current', 'shs', 1235, addresses=['127.0.0.1'], discovery_port=discovery)
+        self.addCleanup(current.stop)
+        self.assertTrue(wait(self, lambda: [d.name for d in finder.devices()] == ['Current']))
 
-
-class V1Provider:
-    """A sender's provider as protocol 1 asks it (offer() / items(wanted))."""
-
-    def __init__(self, root):
-        self.root = Path(root)
-
-    def offer(self):
-        return ['a', 'b']
-
-    def items(self, wanted):
-        episode = self.root / 'b.exp'
-        episode.write_bytes(b'episode b')
-        return [('progress', 'progress.zip', b'bundle bytes')] + [
-            ('episode', f'{index}/{key}.exp', episode) for index, key in enumerate(wanted or ())]
-
-
-class V1Host:
-    """A receiver's host as protocol 1 asks it (check / want(ids) / apply(hello, stage))."""
-
-    def __init__(self, game='shs'):
-        self.game, self.applied = game, None
-
-    def check(self, hello):
-        return None if hello.get('game') == self.game else 'The receiving device has another game open.'
-
-    def want(self, offered):
-        return [key for key in offered if key != 'a']
-
-    def apply(self, hello, stage):
-        self.applied = {path.relative_to(stage).as_posix(): path.read_bytes() for path in stage.rglob('*')
-                        if path.is_file()}
-        return '1 episode was synced.'
-
-
-class LegacyModeTests(unittest.TestCase):
-    """Legacy Mode (owner, 2026-10-30) pairs with the Android build's protocol 1, both ways."""
-
-    def setUp(self):
+    def test_a_sender_on_another_protocol_is_told_to_update_and_nothing_is_taken(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.v1 = android_lan_sync()
-
-    def confirm(self, sender, receiver):
-        self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
-                             and receiver.session.status == 'confirm'))
-        self.assertEqual(sender.code, receiver.session.code)
-        sender.confirm(True)
-        receiver.session.confirm(True)
-        self.assertTrue(wait(self, lambda: sender.finished and receiver.session.finished))
-
-    def test_an_android_sender_syncs_to_a_legacy_receiver(self):
-        host = Host(have=('a',), games=('shs', 'cod'))
-        discovery = free_port()
-        receiver = Receiver(self.root / 'stage', name='PC', app_version='1.0.2', game='shs', host=host, port=0,
-                            bind='127.0.0.1', beacon_addresses=['127.0.0.1'], discovery_port=discovery, legacy=True)
-        self.addCleanup(receiver.stop)
-        finder = self.v1.Finder(port=discovery, bind='127.0.0.1')    # the phone hears a legacy beacon
-        self.addCleanup(finder.stop)
-        self.assertTrue(wait(self, lambda: finder.devices('shs')))
-        sender = self.v1.SendSession('127.0.0.1', receiver.port, name='Phone', app_version='1.0.2', game='shs',
-                                     categories=['progress', 'episodes'], backup=True,
-                                     provider=V1Provider(self.root)).start()
-        self.confirm(sender, receiver)
-        self.assertEqual((sender.status, sender.message), ('done', 'Received 1 episode.'))
-        hello, games, files = host.applied
-        self.assertEqual((hello['game'], hello['games'], games), ('shs', ['shs'], ['shs']))
-        self.assertEqual(files, {'shs/progress.zip': b'bundle bytes', 'shs/episodes/0/b.exp': b'episode b'})
-
-    def test_a_legacy_sender_syncs_to_an_android_receiver(self):
-        host = V1Host()
-        discovery = free_port()
-        receiver = self.v1.Receiver(self.root / 'stage', name='Phone', app_version='1.0.2', game='shs', host=host,
-                                    port=0, bind='127.0.0.1', beacon_addresses=['127.0.0.1'],
-                                    discovery_port=discovery)
-        self.addCleanup(receiver.stop)
-        finder = Finder(port=discovery, bind='127.0.0.1', protocol=lan_sync.LEGACY_PROTOCOL)
-        self.addCleanup(finder.stop)
-        self.assertTrue(wait(self, lambda: finder.devices('shs')))
-        provider = Provider(self.root, ['a', 'b'])
-        sender = SendSession('127.0.0.1', receiver.port, name='PC', app_version='1.0.2', games=['shs'],
-                             categories=['progress', 'episodes'], backup=True, provider=provider, legacy=True).start()
-        self.confirm(sender, receiver)
-        self.assertEqual((sender.status, sender.message), ('done', '1 episode was synced.'))
-        self.assertEqual(provider.wanted, {'shs': ['b']})
-        self.assertEqual(host.applied, {'progress.zip': b'bundle bytes', 'episodes/0/b.exp': b'episode b' * 10000})
-
-    def test_a_legacy_receiver_without_that_games_library_says_so(self):
-        receiver = Receiver(self.root / 'stage', name='PC', app_version='1.0.2', game='shs', host=Host(games=('shs',)),
-                            port=0, bind='127.0.0.1', beacon_addresses=['127.0.0.1'], discovery_port=free_port(),
-                            legacy=True)
-        self.addCleanup(receiver.stop)
-        sender = self.v1.SendSession('127.0.0.1', receiver.port, name='Phone', app_version='1.0.2', game='cod',
-                                     categories=['progress'], backup=False, provider=V1Provider(self.root)).start()
-        self.assertTrue(wait(self, lambda: sender.finished))
-        self.assertEqual((sender.status, sender.message), ('failed', lan_sync.NO_LIBRARY))
-
-    def test_each_mode_hears_only_its_own_protocols_receivers(self):
-        discovery = free_port()
-        beacon = Beacon('Phone', 'shs', 1234, addresses=['127.0.0.1'], discovery_port=discovery,
-                        protocol=lan_sync.LEGACY_PROTOCOL)
-        self.addCleanup(beacon.stop)
-        current = Finder(port=discovery, bind='127.0.0.1')
-        self.addCleanup(current.stop)
-        time.sleep(lan_sync.BEACON_S * 1.5)
-        self.assertEqual(current.devices(), [])
-        current.stop()
-        self.assertFalse(current.thread.is_alive())                    # its port is free: macOS would refuse it else
-        legacy = Finder(port=discovery, bind='127.0.0.1', protocol=lan_sync.LEGACY_PROTOCOL)
-        self.addCleanup(legacy.stop)
-        self.assertTrue(wait(self, lambda: legacy.devices('shs')))
+        host = Mock()
+        ours, theirs = socket.socketpair()
+        self.addCleanup(theirs.close)
+        session = lan_sync.ReceiveSession(ours, Path(temporary.name), name='Here', app_version='1', host=host).start()
+        channel = lan_sync.Channel(theirs)
+        channel.send(dict(type='hello', protocol=lan_sync.PROTOCOL - 1, app='0', name='Old', game='shs', nonce='00'))
+        reply = channel.expect('hello')
+        self.assertEqual((reply['error'], reply['protocol']), (lan_sync.VERSION, lan_sync.PROTOCOL))
+        self.assertTrue(wait(self, lambda: session.finished))
+        self.assertEqual(session.status, 'failed')
+        host.apply.assert_not_called()
 
 
 if __name__ == '__main__':
