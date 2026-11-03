@@ -135,8 +135,7 @@ class SyncTests(unittest.TestCase):
                 receiver = self.receiver(host)
                 sender = self.sender(receiver, Provider(self.root, []))
                 self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
-                                     and receiver.session.status == 'confirm'
-                                     and sender.status == 'confirm'))
+                                     and receiver.session.status == 'confirm'))
                 incoming = receiver.session
                 (sender if refuser == 'sender' else incoming).confirm(False)
                 other = incoming if refuser == 'sender' else sender
