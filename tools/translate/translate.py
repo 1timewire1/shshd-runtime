@@ -8,6 +8,10 @@
 The x360 command reads the cancelled Xbox 360 prototype's (MS4) data.pak and writes its two new stories as creator
 projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catalog's, for the cast's looks.
 
+    python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR --sounds KG800_JAR --out OUT_DIR
+
+The shs11 command writes SHS '11's addon (shs11.py): every background, look and interface picture, and its music.
+
 EPISODE can also be `king-of-diss` or `dancing-queen`, the stories built into res_large.pud, or `king-of-diss-lite`, the
 condensed retelling in a Lite Java build (`--lite JAR`); `--downloads DIR` names the .expd folder to learn their
 capitals from. `addon` writes the New Rules addon (every background, the music and the frame backdrop, which the
@@ -86,10 +90,17 @@ def main(argv=None):
                     help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
                          'cursor and boards')
     xb.add_argument('--out', type=Path, required=True)
+    s11 = sub.add_parser('shs11', help="SHS '11, the J2ME game: for now its addon (shs11.py)")
+    s11.add_argument('--art', type=Path, required=True, help='a jar with the sharpest art: an Italian 480x800 or 360x640 build')
+    s11.add_argument('--english', type=Path, required=True, help='an English 30-script jar, for the cast tables: N73')
+    s11.add_argument('--sounds', type=Path, required=True, help='a jar with all 11 tracks, for the music: KG800')
+    s11.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     if args.game == 'x360':
         return translate_x360(args)
+    if args.game == 'shs11':
+        return translate_shs11(args)
     portraits = nr_art.load(args.pud)
     x1i = nr_art.load(args.x1i) if args.x1i else None
     art = nr_art.Art(portraits, x1i)
@@ -163,6 +174,17 @@ def main(argv=None):
             review.write_text(''.join(f'{count}\t{word}\n' for word, count in report.unknown.most_common()),
                               encoding='utf-8')
             print(f'  {len(report.unknown)} words left lowercase for review: {review.name}')
+
+
+def translate_shs11(args):
+    """Writes SHS '11's addon."""
+    import shs11
+    data, spec = shs11.build_addon(shs11.jar_file(args.art), shs11.jar_file(args.english), shs11.jar_file(args.sounds))
+    path = args.out / 'S11_Addon.exp'
+    path.write_bytes(data)
+    print(f"{path}: {len(data) / 1048576:.1f} MB, {sum(map(len, spec['backgrounds'].values()))} backgrounds, {len(spec['looks'])} looks, "
+          f"{len(spec['parts'])} loose parts, {len(spec['interface'])} interface pictures, {len(spec['music'])} tracks")
+    return 0
 
 
 def translate_x360(args):
