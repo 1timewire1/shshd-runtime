@@ -134,7 +134,8 @@ class SyncTests(unittest.TestCase):
                 host = Host()
                 receiver = self.receiver(host)
                 sender = self.sender(receiver, Provider(self.root, []))
-                self.assertTrue(wait(self, lambda: receiver.session is not None and receiver.session.status == 'confirm'
+                self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                                     and receiver.session.status == 'confirm'
                                      and sender.status == 'confirm'))
                 incoming = receiver.session
                 (sender if refuser == 'sender' else incoming).confirm(False)
@@ -153,7 +154,8 @@ class SyncTests(unittest.TestCase):
     def test_a_failure_applying_reaches_the_sender(self):
         receiver = self.receiver(Host(fail='Not enough space on this device.'))
         sender = self.sender(receiver, Provider(self.root, []), categories=('progress',))
-        self.assertTrue(wait(self, lambda: receiver.session is not None and receiver.session.status == 'confirm'))
+        self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                             and receiver.session.status == 'confirm'))
         sender.confirm(True)
         receiver.session.confirm(True)
         self.assertTrue(wait(self, lambda: sender.finished))
@@ -162,7 +164,8 @@ class SyncTests(unittest.TestCase):
     def test_cancelling_while_waiting_ends_the_other_side(self):
         receiver = self.receiver(Host())
         sender = self.sender(receiver, Provider(self.root, []))
-        self.assertTrue(wait(self, lambda: receiver.session is not None and receiver.session.status == 'confirm'))
+        self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                             and receiver.session.status == 'confirm'))
         sender.cancel()
         self.assertTrue(wait(self, lambda: receiver.session.finished))
         self.assertEqual(receiver.session.message, lan_sync.CANCELLED_THERE)

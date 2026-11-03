@@ -329,7 +329,7 @@ class CreatorCoreTests(unittest.TestCase):
                 "from exp_runtime.creator import native\n"
                 "assert 'pygame' not in sys.modules\n"
                 "print('ok')\n")
-        result = subprocess.run([sys.executable, '-I', '-c', code], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, '-I', '-S', '-c', code], capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout.strip()), (0, 'ok'), result.stderr)
 
 
