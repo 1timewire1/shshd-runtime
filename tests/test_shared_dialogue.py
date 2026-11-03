@@ -121,6 +121,23 @@ class SharedDialogueTests(unittest.TestCase):
                             self.assertEqual(layout.page(d, names=names),
                                              reference.page(d, names=expected_names))
 
+    def test_a_save_at_a_first_line_reached_before_attaching_still_loads(self):
+        # Skip Upsell Intros plays the opening before the session joins the process, so with a story already played
+        # this launch, its first line was left with no layout basis: "Save file was corrupt", found on the owner's g54.
+        from exp_runtime.process import RuntimeProcess
+        for game in ('shs', 'cod'):
+            with self.subTest(game=game):
+                process = RuntimeProcess()
+                process.attach(self.session(game))
+                process.current.engine.speaker_names.fonts['PajamaHip26'] = NameFontState(lines=3, gap=8)
+                held = deepcopy(process.current.engine.speaker_names.fonts)
+                session = self.session(game)                        # at a dialogue, on its own fonts
+                process.attach(session)
+                self.assertEqual(session.pending.name, 'dialogue')
+                self.assertEqual(session.engine.speaker_names.basis, held)      # laid out on the fonts it now has
+                restored = Session.from_snapshot(session.resources, deepcopy(session.snapshot()))
+                self.assertEqual(restored.engine.speaker_names, session.engine.speaker_names)
+
     def session(self, game='shs', kind='ipa'):
         words, (ref,) = text_words('A long authored dialogue with several pages. ' * 40)
         resources = Resources(program(*host_call(13, ref, 1), 0x33, words=words))

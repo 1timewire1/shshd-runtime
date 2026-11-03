@@ -24,6 +24,10 @@ class RuntimeProcess:
             old, new = previous.scene_transition, engine.scene_transition
             if old is not None and new is not None and hasattr(old, 'random_state'):
                 new.random_state = old.random_state
+            # Already at its first line (Skip Upsell / Ad Intros play the opening before attaching): that line is laid
+            # out again on the fonts it now has. Left without a basis, a save made on it would never load again.
+            if session.pending is not None and session.pending.name == 'dialogue':
+                session._prepare_dialogue(new_name=True)
         self.current = session
         session.process = self
         return session
