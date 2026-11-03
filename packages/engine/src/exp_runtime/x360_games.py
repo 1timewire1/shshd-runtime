@@ -26,9 +26,8 @@ animations that the level's turns play on the 3D Zack, doberman and collar are n
 """
 from dataclasses import dataclass, field
 
-X360_MINIGAMES_QUERY = 201
-X360_SLOT = 214
-X360_LEASH = 215
+from .x360_services import X360_LEASH, X360_MINIGAMES_QUERY, X360_SLOT  # noqa: F401
+
 
 BULB, CROSS, QUESTION = 0, 1, 2
 OFF = -1                                # a slot not reached: menus/icons/bulb_off

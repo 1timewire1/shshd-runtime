@@ -21,7 +21,7 @@ from .addons import AddonsNeeded, copy_addon_asset, drop_unused_addons, use_addo
 from .cutscenes import blank_spec, cutscene_assets, read_project_spec, save_cutscene
 from .assets import addon_asset_ids, image_png, import_library_image, player_library
 from .compiler import compile_project, export_project, export_native_slot
-from exp_runtime.cutscene import read_spec
+from exp_runtime.cutscene_spec import read_spec
 from .model import (Choice, EMOTICONS, KINDS, OPERATORS, Node, Project, ProjectError,
                     project_from_bytes, save_project, Character, is_audio, is_image, validate_structure)
 from .features import NAMES, parameters

@@ -158,8 +158,8 @@ class Project:
         return asset
 
     def add_cutscene(self, name: str, data: bytes) -> Asset:
-        """Embed a storyboard cutscene's spec (exp_runtime.cutscene) at the next free episode ID."""
-        from exp_runtime.cutscene import read_spec
+        """Embed a storyboard cutscene's spec (exp_runtime.cutscene_spec) at the next free episode ID."""
+        from exp_runtime.cutscene_spec import read_spec
         try:
             read_spec(data)
         except ValueError as error:

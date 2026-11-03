@@ -1,5 +1,6 @@
 """The creator and addons: projects that declare them, what compiles, Preview, importing, and going to an original app."""
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -313,6 +314,23 @@ class CutsceneAuthoringTests(unittest.TestCase):
         project.addons = [dict(id='packs', revision=1)]
         project.assets.append(Asset(26012, 'From the pack', None, 'packs'))
         self.assertEqual([a.id for a in cutscene_assets(project)], [26012])
+
+
+class CreatorCoreTests(unittest.TestCase):
+    def test_the_core_needs_only_formats(self):
+        # shshd-runtime-creator depends on shshd-runtime-formats alone (tools/test_packages.py's creator-core case), so
+        # what it shares with the engine belongs in formats. It compiles here with neither engine nor player to find.
+        root = Path(__file__).resolve().parents[1] / 'packages'
+        code = (f"import sys; sys.path[:0] = {[str(root / 'formats/src'), str(root / 'creator/src')]!r}\n"
+                "from importlib.util import find_spec\n"
+                "assert find_spec('exp_runtime.engine') is None and find_spec('exp_runtime.desktop') is None\n"
+                "from exp_runtime.creator import Project, compile_project, compiler, addons, cutscenes, model\n"
+                "from exp_runtime.cutscene_spec import read_spec\n"
+                "from exp_runtime.creator import native\n"
+                "assert 'pygame' not in sys.modules\n"
+                "print('ok')\n")
+        result = subprocess.run([sys.executable, '-I', '-c', code], capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, 'ok'), result.stderr)
 
 
 class TranslatorTests(unittest.TestCase):

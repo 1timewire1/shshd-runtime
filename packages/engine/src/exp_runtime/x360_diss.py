@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 import math
 
 from .x360_games import CLOSING, OPENING, OPENING_MS, READY, RUNNING
+from .x360_services import X360_DISS  # noqa: F401
 
-X360_DISS = 217
 TUTORIAL, COUNTDOWN, SPIN_DOWN, ENDED = 'tutorial', 'countdown', 'spin_down', 'ended'
 PASS_SCORE = 5000                       # DBP:EndGame: over this, the level goes up
 SECONDS = 60                            # totalTime

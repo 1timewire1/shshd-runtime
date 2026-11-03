@@ -10,10 +10,8 @@ import struct
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
-from exp_runtime.x360_games import X360_LEASH, X360_MINIGAMES_QUERY, X360_SLOT
-from exp_runtime.x360_diss import X360_DISS
-from exp_runtime.x360_puzzle import X360_PUZZLE
-from exp_runtime.cutscene import CUTSCENE, CUTSCENE_QUERY
+from exp_runtime.x360_services import X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
+from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
 from .model import (EMOTICONS, Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record,
@@ -259,7 +257,7 @@ def validate_node(project, node, nodes, assets, characters):
 
 def validate_cutscene(label, p, assets):
     """A cutscene node's spec is an asset, in the project or an addon; an embedded one is checked, with what it draws and plays."""
-    from exp_runtime.cutscene import read_spec
+    from exp_runtime.cutscene_spec import read_spec
     asset = assets.get(p['spec']) if type(p['spec']) is int else None
     if asset is None:
         raise ProjectError(f'{label}: choose a cutscene from the project or an add-on')

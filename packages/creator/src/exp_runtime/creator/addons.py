@@ -94,7 +94,7 @@ def drop_unused_addons(project):
 def use_addon_asset(project, library, addon_id, resource):
     """Take a picture, sound or cutscene spec from an addon by reference: it keeps its ID, and the project declares the addon at the
     library's revision. Returns the asset."""
-    from exp_runtime.cutscene import read_spec
+    from exp_runtime.cutscene_spec import read_spec
     found = library.addon(addon_id)
     if found is None:
         raise ProjectError(f'The library has no {addon_id} add-on.')

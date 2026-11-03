@@ -17,8 +17,8 @@ Changes from MS4 (owner, 2026-11-01), which leaves the game unfinished:
 from dataclasses import dataclass, field
 
 from .x360_games import CLOSING, OPENING, OPENING_MS, READY, RUNNING, TIME_UP
+from .x360_services import X360_PUZZLE  # noqa: F401
 
-X360_PUZZLE = 216
 SIZE = 8
 KINDS = 5
 GROUP = 4                               # Grid:SelectPieces (its comment says 3)

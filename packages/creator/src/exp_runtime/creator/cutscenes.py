@@ -1,8 +1,8 @@
-"""shshd-runtime: authoring storyboard cutscenes (exp_runtime.cutscene holds the format): the Creator's timeline editor and its MCP tool work
+"""shshd-runtime: authoring storyboard cutscenes (exp_runtime.cutscene_spec holds the format): the Creator's timeline editor and its MCP tool work
 on a spec as a plain dict, kept as an embedded asset of the project."""
 import json
 
-from exp_runtime.cutscene import FORMAT, VERSION, read_spec
+from exp_runtime.cutscene_spec import FORMAT, VERSION, read_spec
 
 from .model import ProjectError
 
