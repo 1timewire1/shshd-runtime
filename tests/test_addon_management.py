@@ -204,6 +204,24 @@ class AppTests(Library):
         self.assertEqual(host.notice.call_args.args[0], 'Add-Ons Exported')
         self.assertFalse(pages.command('something_else'))
 
+    def test_the_page_goes_to_the_open_games_menu_after_switching_games(self):
+        # Each game has its own shell and pause menu, and the app outlives them.
+        app = self.app()
+        first, second = app.shell, Mock()
+        app.addon_pages().open()
+        first.pause.show_rows.assert_called_once()
+        first.pause.show_rows.reset_mock()
+        app.shell = second
+        app.addon_pages().open()
+        second.pause.show_rows.assert_called_once()
+        first.pause.show_rows.assert_not_called()
+        # And back, and the same shell keeps its page.
+        app.shell = first
+        pages = app.addon_pages()
+        self.assertIs(app.addon_pages(), pages)
+        pages.open()
+        first.pause.show_rows.assert_called_once()
+
     def test_deleting_warns_with_the_count_and_only_goes_on_a_yes(self):
         pages, host = self.pages(self.app())
         pages.open()

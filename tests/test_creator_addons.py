@@ -242,6 +242,24 @@ class NativeExportTests(Library):
         self.assertNotIsInstance(caught.exception, AddonsNeeded)
 
 
+class GameTests(unittest.TestCase):
+    def test_this_runtimes_mechanics_are_refused_in_a_cod_project(self):
+        for kind, params in (('cutscene', {'spec': 26000}), ('cutscene_available', {'result': 'r'}), ('minigames_available', {'result': 'r'}),
+                             ('x360_slot', {'result': 'r'}), ('x360_leash', {'result': 'r'}), ('x360_puzzle', {'result': 'r'}),
+                             ('x360_diss', {'result': 'r', 'tutorial': 0})):
+            with self.subTest(kind=kind):
+                project = sequence(Node('m', kind, params=params), game='cod')
+                project.assets.append(Asset(26000, 'Spec', SPEC))
+                with self.assertRaises(ProjectError):
+                    compile_project(project)
+
+    def test_a_cod_project_can_still_take_pictures_from_an_addon(self):
+        project = sequence(Node('line', text='Hello.'), game='cod')
+        project.addons = [dict(id='chslim', revision=1)]
+        project.assets.append(Asset(28010, 'Portrait', None, 'chslim'))
+        self.assertEqual(addon_record(ExpArchive(compile_project(project))), ('requires', (('chslim', 1),)))
+
+
 class CutsceneAuthoringTests(unittest.TestCase):
     def project(self):
         project = sequence(Node('c', 'cutscene', params={'spec': 0}))

@@ -39,7 +39,8 @@ TEXT_BUFFER_WORDS = 512
 # What a failed survey upload shows: the offline runtime replaces exactly this response with its local receipt
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
-SHS_ONLY_KINDS = frozenset(('loading', 'survey'))
+SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                            'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
 HD_KINDS = frozenset(('faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result'))
 FACEPLACE_ACTIONS = {'enable': 114, 'clear': 118, 'name_chosen': 119, 'face_chosen': 120, 'default_name': 113}

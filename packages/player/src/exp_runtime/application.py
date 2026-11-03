@@ -635,10 +635,13 @@ class Application:
                                job=self.start_data_job, deleted=self.addon_deleted)
 
     def addon_pages(self):
+        """The Add-Ons page of the open game's menu. Each game has its own shell and pause menu, and this app outlives them: a page
+        kept from another game would go on drawing into that game's menu."""
         from .desktop_addons import AddonPages
-        pages = self.__dict__.get('_addon_pages')
-        if pages is None:
-            pages = self._addon_pages = AddonPages(self, self.addon_host())
+        shell, pages = self.__dict__.get('_addon_pages', (None, None))
+        if shell is not self.shell:
+            pages = AddonPages(self, self.addon_host())
+            self._addon_pages = self.shell, pages
         return pages
 
     def addon_deleted(self):

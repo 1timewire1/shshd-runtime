@@ -195,5 +195,28 @@ class BackdropTests(unittest.TestCase):
         self.assertIsNone(addon_backdrop(SimpleNamespace(game_id='shs', addon=lambda name: None), (10, 10)))
 
 
+class DeletingTheSlimPackTests(unittest.TestCase):
+    """Data Management's Delete, on a CoD library: its pictures go back to CoD's, and nothing still reads it."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.folder = Path(self.temporary.name)
+
+    def test_the_library_lets_go_of_it_and_a_later_import_brings_it_back(self):
+        record = dict(id='a' * 64, sha256='a' * 64, addon='chslim', title='Claire Hart (Slim)', revision=1, name='CH_Slim.exp', file=f'content/{"a" * 64}.exp')
+        (self.folder / 'content').mkdir()
+        (self.folder / record['file']).write_bytes(b'pack')
+        (self.folder / 'library.json').write_text(json.dumps(dict(addons=[record])), encoding='utf-8')
+        library = ContentLibrary.__new__(ContentLibrary)
+        library.directory, library.manifest, library.addons = self.folder, dict(addons=[record]), [record]
+        library._addon_archives, library._portrait_addon_map = {record['id']: object()}, (record['id'], {'map': 1})
+        self.assertEqual(library.remove_addons([record['id']]), 1)
+        self.assertFalse((self.folder / record['file']).exists())
+        self.assertEqual((library.addons, library._addon_archives, library._portrait_addon_map), ([], {}, (None, None)))
+        self.assertIsNone(library.addon('chslim'))
+        self.assertEqual(json.loads((self.folder / 'library.json').read_text(encoding='utf-8'))['addons'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
