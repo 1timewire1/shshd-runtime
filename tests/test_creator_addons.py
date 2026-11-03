@@ -1,5 +1,6 @@
 """The creator and addons: projects that declare them, what compiles, Preview, importing, and going to an original app."""
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -17,6 +18,8 @@ from exp_runtime.exp import ExpArchive
 from test_content import FAKE_NATIVE, archive, make_apk, metadata
 from test_creator_features import sequence
 from test_vm import program
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translate'))
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'picture'
 WAV = b'RIFF\x24\0\0\0WAVEfmt ' + b'sound'

@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translat
 import lua_subset  # noqa: E402
 
 HAS_PIL = importlib.util.find_spec('PIL') is not None
+HAS_NUMPY = importlib.util.find_spec('numpy') is not None
 
 
 def encode_wc(text):
@@ -381,6 +382,7 @@ QuitGame()
         self.assertEqual([n.params['resource'] for n in project.nodes if n.kind == 'music'],
                          [x360.MUSIC_INTRO, x360.MIXES['jumparound'][0], x360.MUSIC_LOOP])
 
+    @unittest.skipUnless(HAS_NUMPY, 'x360.py mixes audio with numpy')
     def test_a_level_or_camera_effect_that_is_a_sound_plays_and_others_dont(self):
         from unittest.mock import patch
         import x360
@@ -430,6 +432,7 @@ QuitGame()
         for _, resource in x360.SCRIPT_SOUNDS.values():
             self.assertTrue(x360.addon_holds(resource))
 
+    @unittest.skipUnless(HAS_NUMPY, 'x360.py mixes audio with numpy')
     @unittest.skipUnless(__import__('shutil').which('ffmpeg'), 'ffmpeg is not installed')
     def test_a_track_sets_its_level_from_the_music_and_the_ambience_repeats_under_it(self):
         # Decoded real audio: the music alone comes up to MIX_RMS, and the same gain carries the ambience over it.
@@ -456,6 +459,7 @@ QuitGame()
         tail = mixed[int(1.2 * 44100):int(1.8 * 44100)]
         self.assertGreater(np.abs(tail).max(), np.abs(alone).max() * 1.5)        # the ambience still there past its 0.5 s
 
+    @unittest.skipUnless(HAS_NUMPY, 'x360.py mixes audio with numpy')
     def test_the_limiter_leaves_the_music_and_rounds_off_only_the_peaks(self):
         import numpy as np
         import x360
@@ -464,6 +468,7 @@ QuitGame()
         self.assertTrue(x360.MIX_KNEE < out[1, 0] < x360.MIX_PEAK)
         self.assertTrue(-x360.MIX_PEAK <= out[1, 1] < -x360.MIX_KNEE)
 
+    @unittest.skipUnless(HAS_NUMPY, 'x360.py mixes audio with numpy')
     def test_the_pair_takes_its_ambience_running_on_from_the_intro_into_the_loop(self):
         import wave
         import numpy as np
@@ -865,6 +870,7 @@ QuitGame()
         self.assertNotIn('word_game', [e['kind'] for e in record])
         self.assertEqual(record[-1]['kind'], 'exit')
 
+    @unittest.skipUnless(HAS_NUMPY, 'x360.py mixes audio with numpy')
     def test_a_sound_can_play_at_its_volume(self):
         import io
         import struct

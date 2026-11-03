@@ -363,6 +363,7 @@ class LegacyModeTests(unittest.TestCase):
         time.sleep(lan_sync.BEACON_S * 1.5)
         self.assertEqual(current.devices(), [])
         current.stop()
+        self.assertFalse(current.thread.is_alive())                    # its port is free: macOS would refuse it else
         legacy = Finder(port=discovery, bind='127.0.0.1', protocol=lan_sync.LEGACY_PROTOCOL)
         self.addCleanup(legacy.stop)
         self.assertTrue(wait(self, lambda: legacy.devices('shs')))

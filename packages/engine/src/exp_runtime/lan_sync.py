@@ -235,7 +235,7 @@ class Finder:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((bind, port))
-        self.sock.settimeout(0.5)
+        self.sock.settimeout(0.1)
         self.found = {}
         self.lock = threading.Lock()
         self.stopped = threading.Event()
@@ -271,7 +271,9 @@ class Finder:
                     and (game is None or device.game in ('', game))]
 
     def stop(self):
+        """Stop listening; the port is free on return (macOS won't bind it again while the thread still holds it)."""
         self.stopped.set()
+        self.thread.join(1)
 
 
 # -- sessions -------------------------------------------------------------------------------------------------------

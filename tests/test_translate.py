@@ -944,7 +944,6 @@ class CasingTests(unittest.TestCase):
             self.assertEqual(casing.strings(replace(source, main_words=cased))[0][1], 'Zoe tries to catch Sam, but...')
 
 
-@unittest.skipUnless(HAS_NUMPY, 'tools/translate/midi_render.py needs numpy')
 @unittest.skipUnless(HAS_PIL, 'Pillow is not installed')
 class ArenaSkinTests(unittest.TestCase):
     def test_a_new_rules_font_reads_its_metrics_and_glyphs(self):
@@ -958,6 +957,7 @@ class ArenaSkinTests(unittest.TestCase):
         self.assertEqual(list(font['glyphs'][ord('A')].getdata()), [(0, 0, 0, 0), (255, 0, 0, 255)])
 
 
+@unittest.skipUnless(HAS_NUMPY, 'tools/translate/midi_render.py needs numpy')
 class MidiTests(unittest.TestCase):
     def test_notes_and_tempo(self):
         import midi_render
