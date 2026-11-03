@@ -258,11 +258,14 @@ class OlderProtocolTests(unittest.TestCase):
         probe.close()
         finder = Finder(port=discovery, bind='127.0.0.1')
         self.addCleanup(finder.stop)
-        older = Beacon('Older', 'shs', 1234, addresses=['127.0.0.1'], discovery_port=discovery)
-        older.message = json.dumps(dict(app=lan_sync.APP, protocol=lan_sync.PROTOCOL - 1, name='Older', game='shs',
-                                        port=1234)).encode()
-        self.addCleanup(older.stop)
-        time.sleep(lan_sync.BEACON_S * 1.5)
+        # Sent by hand: a Beacon's thread would announce its own protocol before a test could change its message.
+        older = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.addCleanup(older.close)
+        message = json.dumps(dict(app=lan_sync.APP, protocol=lan_sync.PROTOCOL - 1, name='Older', game='shs',
+                                  port=1234)).encode()
+        for _ in range(3):
+            older.sendto(message, ('127.0.0.1', discovery))
+            time.sleep(lan_sync.BEACON_S / 2)
         self.assertEqual(finder.devices(), [])
         current = Beacon('Current', 'shs', 1235, addresses=['127.0.0.1'], discovery_port=discovery)
         self.addCleanup(current.stop)
