@@ -176,6 +176,26 @@ class PickerModel:
         self.want_preview(record)
         return None
 
+    _waiting = None
+
+    def waiting_preview(self):
+        """What a tile shows until preview_soon has its preview: SHS's placeholder, else the flat card (Cause of Death
+        always: that picture is SHS's, owner 2026-11-03). One surface, decoded once, for them all."""
+        if self._waiting is None:
+            image = None
+            try:
+                data = episode_thumbnails.missing_preview(self.library) if self.cod is None else None
+                image = pygame.image.load(BytesIO(data)) if data else None
+            except (pygame.error, OSError, ValueError):     # (ValueError: an archive already closed)
+                image = None
+            if image is not None and image.get_size() != TILE_PIXELS:
+                image = pygame.transform.smoothscale(image, TILE_PIXELS)
+            if image is None:
+                image = pygame.Surface(TILE_PIXELS)
+                image.fill((70, 78, 100))
+            self._waiting = image.convert()
+        return self._waiting
+
     def want_preview(self, record):
         """Ask the background thread for a preview, ahead of those asked for earlier."""
         record_id = record['id']

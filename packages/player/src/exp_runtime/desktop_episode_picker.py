@@ -378,18 +378,11 @@ class HdEpisodePicker(HdUi):
 
     _faces = None                   # {record id: (preview, saved screenshot, the tile's face made of them)}
 
-    @lru_cache(maxsize=1)
-    def waiting_tile(self):
-        """A tile whose preview is still on its way: the model's flat card, under its usual caption."""
-        card = pygame.Surface((TILE[0] * S, TILE[1] * S)).convert()
-        card.fill((70, 78, 100))
-        return card
-
     def tile_image(self, record):
         """The tile's face at 2x: the preview, or preview above / saved screenshot below the zigzag."""
         preview = self.model.preview_soon(record) if BACKGROUND_PREVIEWS else self.model.preview(record)
         if preview is None:
-            return self.waiting_tile()
+            return self.model.waiting_preview()
         shot = self.saved_face(record)
         if shot is None:
             return preview

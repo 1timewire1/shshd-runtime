@@ -210,6 +210,24 @@ class ModelTests(unittest.TestCase):
         model.want_preview(episode)                         # nothing to do
         self.assertIsNone(model._decoder)
 
+    def test_tiles_wait_on_the_apps_placeholder_decoded_once_else_the_flat_card(self):
+        episode = record(1, 5, 5, 'Soon')
+        model = PickerModel(library_with(self.root, [episode], previews={
+            episode_thumbnails.MISSING: picture((216, 290), (0, 0, 200))}))
+        with patch.object(episode_thumbnails, 'missing_preview', wraps=episode_thumbnails.missing_preview) as read:
+            image = model.waiting_preview()
+            self.assertIs(model.waiting_preview(), image)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(image.get_size(), TILE_PIXELS)
+        self.assertEqual(image.get_at((5, 5))[:3], (0, 0, 200))
+        model = PickerModel(library_with(self.root, [episode]))
+        self.assertEqual(model.waiting_preview().get_at((5, 5))[:3], (70, 78, 100))
+        # Cause of Death keeps the flat card, whatever its art source holds.
+        model = PickerModel(library_with(self.root, [episode], previews={
+            episode_thumbnails.MISSING: picture((216, 290), (0, 0, 200))}))
+        model.cod = object()
+        self.assertEqual(model.waiting_preview().get_at((5, 5))[:3], (70, 78, 100))
+
     def test_nothing_to_show_or_a_library_gone_is_the_flat_card_not_a_stuck_tile(self):
         lone = record(1, 5, 5, 'Nothing')
         model = PickerModel(library_with(self.root, [lone]))
@@ -460,11 +478,11 @@ class ScreenTests(unittest.TestCase):
                              if desktop_episode_picker.TILE_X + i * desktop_episode_picker.TILE_STEP
                              >= desktop_episode_picker.FRAME[0])
             self.assertIn(row[first_out]['id'], asked)
-            self.assertIs(picker.tile_image(record_), picker.waiting_tile())
+            self.assertIs(picker.tile_image(record_), self.model.waiting_preview())
             deadline = time.monotonic() + 5
             while self.model._decoder is not None and time.monotonic() < deadline:
                 time.sleep(.005)
-            self.assertIsNot(picker.tile_image(record_), picker.waiting_tile())
+            self.assertIsNot(picker.tile_image(record_), self.model.waiting_preview())
             self.assertIs(picker.tile_image(record_), self.model.preview(record_))
 
     def test_a_saved_tiles_face_is_made_once_until_its_shot_changes(self):
