@@ -87,7 +87,10 @@ jobs:
 
   ios:
     name: iOS
-    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
+    # The port doesn't run yet (docs/IOS_APP.md): only on its own branch or by hand, so that a failed run means something.
+    if: >-
+      github.ref_name == 'ios-port' || github.head_ref == 'ios-port' ||
+      (github.event_name == 'workflow_dispatch' && inputs.release_run_id == '')
     uses: ./.github/workflows/ios-builds.yml
 
   build:

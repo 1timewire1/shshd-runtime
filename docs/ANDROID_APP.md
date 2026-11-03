@@ -24,7 +24,7 @@ workflow builds a debug APK signed with the runner's own development key. It is
 intended for sideloading, not Play Store publication.
 
 1. Push the changes to a repository you control. The workflow runs on pushes
-   to `android-port`. Forks may need Actions enabled first.
+   to `master` that touch the app. Forks may need Actions enabled first.
 2. Open **Actions → Android APK** and select the latest run. Once the workflow
    exists on the repository's default branch it can also be run manually.
 3. Download **shshd-runtime-android** from the completed run's artifacts.
