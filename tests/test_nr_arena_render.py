@@ -127,6 +127,25 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(renderer.canvas.get_at((3, 3))[:3], (10, 200, 30))
         self.assertEqual(renderer.canvas.get_at((renderer.canvas.get_width() - 3, 600))[:3], (10, 200, 30))
 
+    def test_on_a_phone_the_arena_goes_straight_to_the_frames_size_without_its_sprites_edges_going_bright(self):
+        from unittest.mock import patch
+        from exp_runtime import hd_scale
+        from exp_runtime.nr_arena import NRArena
+        files = skin_files(self.pygame, frame=(10, 200, 30))
+        names = {**self.module.SKIN, 'frame.png': self.module.FRAME_PICTURE}
+        by_id = {resource: files[name] for name, resource in names.items()}
+        renderer = self.module.NRArenaRenderer(SimpleNamespace(raw_asset=by_id.__getitem__, exists=by_id.__contains__))
+        session = self.session(NRArena.opened(False, False))
+        # A nearly clear pink over the frame, as a sprite's edge has: it must stay faint.
+        renderer.skin().static.fill((255, 0, 255, 8))
+        with patch.object(hd_scale, 'S', 1):
+            renderer.draw(None, session, now_ms=0)
+        self.assertEqual(renderer.canvas.get_size(), self.module.FRAME)     # the player has no pass left to make
+        red, green, blue = renderer.canvas.get_at((self.module.FRAME[0] // 2, 3))[:3]
+        self.assertLess(red, 30)
+        self.assertGreater(green, 180)
+        self.assertLess(blue, 50)
+
     def test_the_entrance_draws_its_moving_layouts_and_takes_no_clicks(self):
         from exp_runtime.nr_arena import NRArena
         arena = NRArena.opened(False, True)

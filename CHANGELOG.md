@@ -277,6 +277,14 @@
 
 ### Fixed
 
+- **Frame rate on phones, above all in the minigame arena.** A phone's clocks drop once frames miss their budget, so
+  an untouched arena sat at 20 fps on a Moto g54 and only rose after a tap. Each frame now does less: the window's backdrop
+  is painted only around the frame, an empty canvas is neither scaled nor drawn, the bottom bar's scale is kept, and
+  nothing is drawn under an arena that hides it. On a phone the standard arena scales once, straight to the frame's
+  size (a touch softer than a desktop's two passes). Rounds now run near 60 fps in the standard look and about 47 in the
+  X360 skin.
+- **A hitch at every sound effect.** Each play read and decoded its file on the drawing thread, about 45 ms on that phone.
+  The last few short effects are kept decoded, so only the first play of each costs anything.
 - **An import says how far it has got.** The busy card shows what is happening instead of one fixed line: on Android
   how much of the picked files has copied into the app, then the files unpacked from a bulk archive, then each game's
   copy and its episodes ("Surviving High School: episode 12 of 300"), and for Add Episodes which of how many. (Suggested

@@ -14,6 +14,8 @@ import math
 
 import pygame
 
+from . import hd_scale
+
 SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
 FRAME_PICTURE = 26178                   # the dialogue screens' frame without its bars (addon revision 3), if present
 FRAME = (768, 1024)
@@ -311,6 +313,7 @@ class NRArenaRenderer:
         self.native = pygame.Surface(NATIVE).convert()
         self.layer = pygame.Surface(NATIVE, pygame.SRCALPHA)     # the arena over the frame's picture
         self._frame_scaled = None                               # (size, the frame's picture at that size)
+        self._layer_scaled = None                               # the arena's layer at the canvas's size, kept
         self.target_height = FRAME[1]       # the frame's height in the window (Desktop sets it): the scale to reach
         self.canvas = pygame.Surface((NATIVE[0] * 2, NATIVE[1] * 2)).convert()
         self.hd_layer = True
@@ -480,17 +483,34 @@ class NRArenaRenderer:
             self._overlay(surface, action, now)
         k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
         size = (NATIVE[0] * k, NATIVE[1] * k)
+        direct = hd_scale.S == 1
+        if direct:
+            # A phone can't afford a second pass over every pixel each frame, on clocks that drop once a frame misses
+            # its budget (a g54 held 20 fps): one pass straight to the frame's size, a touch softer, at 60.
+            height = max(4, round(max(FRAME[1], self.target_height) / 4) * 4)
+            size = (height * 3 // 4, height)
         if self.canvas.get_size() != size:
             self.canvas = pygame.Surface(size).convert()
         if skin.frame is None:
-            pygame.transform.scale(surface, size, self.canvas)
+            if direct:
+                pygame.transform.smoothscale(surface, size, self.canvas)
+            else:
+                pygame.transform.scale(surface, size, self.canvas)
             return []
         # The frame's picture is drawn over the whole 3:4 frame as the dialogue screens draw it; the arena's pixel art
         # goes over it, scaled whole as above.
         if self._frame_scaled is None or self._frame_scaled[0] != size:
             self._frame_scaled = (size, pygame.transform.smoothscale(skin.frame, size))
         self.canvas.blit(self._frame_scaled[1], (0, 0))
-        self.canvas.blit(pygame.transform.scale(surface, size), (0, 0))
+        if self._layer_scaled is None or self._layer_scaled.get_size() != size:
+            self._layer_scaled = pygame.Surface(size, pygame.SRCALPHA, surface)
+        if direct:
+            # Premultiplied, or the faint edges of sprites come out at full colour (the notes' sparks went pink).
+            pygame.transform.smoothscale(surface.premul_alpha(), size, self._layer_scaled)
+            self.canvas.blit(self._layer_scaled, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)
+        else:
+            pygame.transform.scale(surface, size, self._layer_scaled)
+            self.canvas.blit(self._layer_scaled, (0, 0))
         return []
 
     def _entrance(self, surface, ms, table_curve=6):

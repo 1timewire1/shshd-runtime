@@ -156,6 +156,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         self._scaled = {}
         self._fonts = {}
         self._texts = {}
+        self._wrapped = {}
         self.countdown = None               # (start ms) once "press ok to start" closes
         self._prompt_seen = False
         self._sizes = []                    # (ms, the ring's size) over the last 0.8 s
@@ -274,7 +275,14 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
     def wrapped(self, font, text, height, width, colour=None, emphasis=None):
         """`text` in lines no wider than `width` native pixels, broken at spaces (and at its own line breaks), as
         text_surface images: New Rules' tutorials run to two long sentences. Each paragraph's lines are balanced:
-        the narrowest width that still takes as few lines, so no word is left alone on the last."""
+        the narrowest width that still takes as few lines, so no word is left alone on the last. Worked out once and
+        kept: a bubble on screen asks every frame."""
+        key = (font, colour, emphasis, text, height, width, self.k)
+        found = self._wrapped.get(key)
+        if found is not None:
+            return found
+        if len(self._wrapped) > 200:
+            self._wrapped.clear()
         face = self.bmfont(font, colour)
         scale = height / face.line_height
 
@@ -298,7 +306,8 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                     break
                 best, limit = trial, limit - 10
             lines += best
-        return [self.text_surface(font, line, height, colour, emphasis) for line in lines]
+        found = self._wrapped[key] = [self.text_surface(font, line, height, colour, emphasis) for line in lines]
+        return found
 
     # -- geometry ---------------------------------------------------------------------------------------------------
     def _field(self, arena):
