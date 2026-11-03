@@ -2082,10 +2082,11 @@ class Desktop:
         return True
 
     def _frame_covered(self, alpha):
-        """Whether this frame's story layer hides all of the frame (the arena's): nothing under it needs drawing."""
+        """Whether this frame's story layer hides all of the frame (the arena's): nothing under it needs drawing. Not with
+        any alpha channel, which a `convert()`ed canvas has on a Mac and can hold at 0 (graphics.opaque)."""
         layer = self.story_layer
         return (layer is not None and self.pending_background is None and (alpha is None or alpha >= 1)
-                and not layer.get_flags() & pygame.SRCALPHA
+                and not layer.get_masks()[3]
                 and layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0])
 
     def _draw_background_layer(self, target_size, viewport, covered=False):

@@ -54,6 +54,10 @@ class FramePresentationTests(unittest.TestCase):
         ui.pending_background = None
         ui.story_layer = self.pygame.Surface((768, 1024), self.pygame.SRCALPHA)
         self.assertFalse(ui._frame_covered(None))
+        # A Mac's display gives `convert()`ed canvases an alpha channel without the flag.
+        ui.story_layer = self.pygame.Surface((768, 1024), 0, 32, (0xFF0000, 0xFF00, 0xFF, 0xFF000000))
+        ui.story_layer.set_alpha(None)
+        self.assertFalse(ui._frame_covered(None))
         ui.story_layer = self.pygame.Surface((768, 1152))
         self.assertFalse(ui._frame_covered(None))       # the story's column, not the frame
         ui.story_layer = None
