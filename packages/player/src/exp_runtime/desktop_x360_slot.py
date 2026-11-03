@@ -4,10 +4,8 @@ of the X360 addon's skin (spec `slot`; tools/translate/x360_arena_art.py).
 The places come from the prototype's own group (bubbles/minigames/slot_machine) as MS3 draws it at 1280 x 720, a little
 larger and moved to fit the 3:4 frame: the five slots along the panel, the one in focus larger over its window, the clock
 over the panel's right end, and the title above. Nothing here decides anything in the game."""
-import math
-
 from . import graphics as pygame
-from .desktop_nr_arena_x360 import BMFont, addon_skin
+from .desktop_nr_arena_x360 import BMFont, addon_skin, clock_face
 from .x360_games import (BULB, CLOSING, CROSS, DURATION_MS, FLASH_MS, OFF, OPENING, OPENING_MS, QUESTION, READY, SLOTS,
                          TIME_UP)
 
@@ -120,18 +118,7 @@ class X360SlotRenderer:
         cx, cy = CLOCK_CENTRE[0], CLOCK_CENTRE[1] + rise
         step = round(game.clock_ms / DURATION_MS * 180)     # half-degree... 2 degrees a step: drawn once each
         if self._face[0] != step:
-            scale = 3
-            big = CLOCK_FACE * scale
-            face = pygame.Surface((2 * big + 2, 2 * big + 2), pygame.SRCALPHA)
-            pygame.draw.circle(face, (255, 255, 255, 255), (big + 1, big + 1), big)
-            if step:
-                points = [(big + 1, big + 1)]
-                for k in range(step + 1):
-                    a = math.radians(2 * k)
-                    points.append((big + 1 + big * math.sin(a), big + 1 - big * math.cos(a)))
-                if len(points) > 2:
-                    pygame.draw.polygon(face, (214, 20, 24, 255), points)
-            self._face = (step, pygame.transform.smoothscale(face, (2 * CLOCK_FACE, 2 * CLOCK_FACE)))
+            self._face = (step, clock_face(step, CLOCK_FACE))
         face = self._face[1]
         surface.blit(face, face.get_rect(center=(cx, cy + CLOCK_FACE_DROP)))
         ring = self.scaled(spec['clock'], (CLOCK_SIZE, CLOCK_SIZE))

@@ -235,6 +235,91 @@ class X360ArenaTests(unittest.TestCase):
         self.assertEqual(args[6], edges)
         self.assertGreaterEqual(args[4], narrowest)             # a short line keeps both flourishes whole
 
+    def on_panel(self, renderer=None):
+        """A renderer whose skin has the slot machine's pictures."""
+        renderer = renderer or self.module.X360ArenaRenderer(self.resources())
+        spec = renderer.x360()[0]
+        art = spec['pictures']['info_box']
+        spec['slot'] = dict(panel=art, window=art, clock=art)
+        return renderer
+
+    def test_a_number_key_game_is_on_the_slot_panel_for_the_whole_game(self):
+        renderer = self.on_panel()
+        renderer._deck_piece, renderer._time_x360 = Mock(), Mock()
+        arena = self.arena()
+        session = self.session(arena)
+        renderer.draw(None, session, now_ms=0)
+        self.assertEqual(renderer._deck_piece.call_count, 1)        # a game with no number keys keeps the deck
+        renderer._time_x360.assert_called()
+        renderer._deck_piece.reset_mock(), renderer._time_x360.reset_mock()
+        arena.keypad = True
+        renderer.draw(None, session, now_ms=33)
+        renderer._deck_piece.assert_not_called()
+        renderer._time_x360.assert_not_called()                     # the slot machine's clock instead
+        arena.keypad = False                                        # a tutorial turns them off for a while
+        renderer.draw(None, session, now_ms=66)
+        renderer._deck_piece.assert_not_called()
+        renderer._time_x360.assert_not_called()
+        session = self.session(self.arena())                        # the next game starts afresh
+        renderer.draw(None, session, now_ms=99)
+        self.assertEqual(renderer._deck_piece.call_count, 1)
+
+    def test_an_addon_without_the_slot_machine_keeps_the_deck(self):
+        renderer = self.module.X360ArenaRenderer(self.resources())
+        renderer._deck_piece = Mock()
+        arena = self.arena()
+        arena.keypad = True
+        renderer.draw(None, self.session(arena), now_ms=0)
+        self.assertEqual(renderer._deck_piece.call_count, 1)
+
+    def test_the_panel_is_there_from_the_entrance_when_the_code_ahead_shows_the_number_keys(self):
+        from exp_runtime.nr_arena import NUMBER_KEYS_PROPERTY
+        code = [SimpleNamespace(opcode=0x1a, operand=NUMBER_KEYS_PROPERTY)] * 2
+        vm = SimpleNamespace(pc=0, instruction_at=code.__getitem__)
+        arena = self.arena()
+        arena.entrance_ms = 0
+        self.assertTrue(arena.entering)
+        self.assertTrue(self.on_panel()._panel_look(arena, SimpleNamespace(vm=vm)))
+        self.assertFalse(self.on_panel()._panel_look(arena, SimpleNamespace(vm=None)))
+        # And not read again on a later frame, past the entrance, where the VM has gone on.
+        arena.entrance_ms = 2000
+        self.assertFalse(self.on_panel()._panel_look(arena, SimpleNamespace(vm=vm)))
+
+    def test_on_the_panel_items_keep_to_their_windows_and_a_window_takes_its_key(self):
+        renderer = self.on_panel()
+        arena = self.arena()
+        arena.keypad = True
+        session = self.session(arena)
+        renderer.draw(None, session, now_ms=0)
+        ring = renderer._field(arena)
+        cell = renderer._panel_cell(arena, ring, 0)
+        place = renderer._slot_point(arena, ring, 0)
+        self.assertEqual(place, (cell.centerx, cell.centery + self.module.PANEL_CELL_LIFT))
+        drawn = renderer._item_x360 = Mock(return_value=None)
+        arena.ring_size = 50                                        # the library easing the ring in
+        renderer.draw(None, session, now_ms=33)
+        self.assertEqual(renderer._slot_point(arena, ring, 0), place)
+        self.assertEqual(renderer._panel_cell(arena, ring, 0), cell)
+        self.assertEqual(drawn.call_args.kwargs['height'], self.module.PANEL_NOTE_HEIGHT / 2)
+        centres = {call.args[4:6] for call in drawn.call_args_list}
+        self.assertIn((cell.centerx, cell.centery + self.module.PANEL_NOTE_HEIGHT / 4), centres)   # grown from the middle
+        drawn.reset_mock()
+        arena.ring_size = 3                                         # where it rests between sequences
+        renderer.draw(None, session, now_ms=66)
+        drawn.assert_not_called()
+        frame = (cell.centerx * 768 / 489, cell.centery * 1024 / 652)
+        self.assertEqual(renderer.hit(frame), ('arena_key', 48 + int(self.nr.KEYPAD[0])))
+
+    def test_beat_boxes_two_right_notes_differ_on_the_panel_and_rhythms_tiers_stay(self):
+        renderer, _ = self.split_deck()
+        self.with_notes(renderer)
+        self.assertEqual(renderer._note_of(17)[0], renderer._note_of(19)[0])       # the deck: tiers of one note
+        renderer._panel_on = True
+        notes = [renderer._note_of(item) for item in (17, 19, 20)]
+        self.assertEqual(len(set(notes)), 3)
+        self.assertNotEqual(notes[0][0], notes[1][0])               # different shapes, not only different effects
+        self.assertIn('flames', notes[1][1])
+
     def test_the_deck_ignores_a_ring_easing_in_and_follows_a_shake(self):
         renderer = self.module.X360ArenaRenderer(self.resources())
         arena = self.arena()

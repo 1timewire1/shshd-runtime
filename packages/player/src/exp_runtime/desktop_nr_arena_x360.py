@@ -15,12 +15,16 @@ import pygame
 
 from .desktop_nr_arena import ENTRANCE_MS, FRAME, NATIVE, NRArenaRenderer, OX, SCREEN_HEIGHT, SCREEN_WIDTH
 from .desktop_x360_deck import FX, SCORE_BOX, X360Deck
+from .nr_arena import opens_number_keys
 
 # New Rules' item pictures that are notes, as Diss Practice shoots them (booth `notes`; owner, 2026-11-02): (picture, its
 # effects). Its good note at speeds 1-7, 8-9 and max are the X360's note, double note and on-fire note.
 ITEM_NOTES = {20: ('note', ()), 17: ('double', ('sparks',)), 19: ('double', ('flames', 'sparks')), 18: ('bad', ('stink',)),
               28: ('swap', ())}
 NOTE_ROW = .8                           # how far from the record's centre its notes ride (x360_diss.ELEMENTS)
+# On the slot panel (_panel_look) a picture is an answer to pick out, so no two may look alike, where Rhythm's tiers of one
+# note may: Beat Box's right answers are 17 and 19, both the double note in ITEM_NOTES (owner, 2026-11-03).
+PANEL_NOTES = {**ITEM_NOTES, 19: ('note', ('flames', 'sparks'))}
 
 ADDON = 'shsx360'                       # tools/translate/x360.py ADDON_ID
 SPEC = 26300                            # x360_arena_art.SPEC
@@ -41,6 +45,16 @@ BUBBLE_TEXT_WIDTH = 430                 # a bubble's or the info box's lines at 
 EDGE_SCALE = 0.6                        # native pixels a pixel of a nine-sliced picture's edge
 PANEL_FLOURISH = 170                    # the slot panel's ends, kept whole: its ink flourishes at top left, bottom right
 TITLE_X = 1.0                           # the 3:4 frame's place across the title's 16:9 screen (0 left, 1 right)
+# Sequences on the slot machine's panel (owner, 2026-11-03): native pixels. The items keep the arena's places.
+PANEL_BOX = pygame.Rect(8, 224, 473, 262)
+PANEL_CELL = (72, 86)                   # a slot's window, in the slot machine's proportions
+PANEL_CELL_LIFT = 27                    # its centre above where the item stands
+PANEL_CLOCK, PANEL_CLOCK_SIZE = (425, 349), 92      # in the panel's free right end, as the slot machine's is
+CLOCK_FACE_SHARE, CLOCK_DROP_SHARE = 31 / 92, 3 / 92    # the clock's ring against its picture (desktop_x360_slot)
+PANEL_LABEL = 22                        # a number key's height, above the top row's window and below the bottom's
+PANEL_NOTE_HEIGHT = 58                  # an item's standard height there; the target strip's is less
+PANEL_STRIP_HEIGHT = 44
+PANEL_SMALLEST = 8                      # the ring's size below which an item isn't drawn: the library rests it at 3
 
 
 def addon_skin(resources):
@@ -124,6 +138,22 @@ class BMFont:
         return out
 
 
+def clock_face(step, radius):
+    """The slot machine's clock face `radius` pixels across its ring: white, with red swept round from the top, `step`
+    2-degree steps."""
+    big = radius * 3
+    face = pygame.Surface((2 * big + 2, 2 * big + 2), pygame.SRCALPHA)
+    pygame.draw.circle(face, (255, 255, 255, 255), (big + 1, big + 1), big)
+    if step:
+        points = [(big + 1, big + 1)]
+        for k in range(step + 1):
+            a = math.radians(2 * k)
+            points.append((big + 1 + big * math.sin(a), big + 1 - big * math.cos(a)))
+        if len(points) > 2:
+            pygame.draw.polygon(face, (214, 20, 24, 255), points)
+    return pygame.transform.smoothscale(face, (2 * radius, 2 * radius))
+
+
 def plain_runs(text):
     """New Rules' text as [(text, emphasised)]: its font switches (` to the score font, ~ to font 59, ; back) taken
     out, what the backtick switches to shown as emphasis."""
@@ -169,6 +199,8 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         self._seams = {}                    # the record's seams by turn and size (_record_seams)
         self._arm_held, self._arm_start, self._now = -1, None, 0     # the tone arm's swing (_arm_press, _arm_frame)
         self._arm_clear, self._arm_waiting, self._arm_taken = False, False, False
+        self._panel_arena, self._panel_on = None, False     # _panel_look
+        self._panel_face = (None, None)     # the slot panel's clock face: (step and size, picture)
 
     # -- the skin ---------------------------------------------------------------------------------------------------
     def x360(self):
@@ -198,25 +230,29 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             image.blit(source, (0, 0))
         return image
 
-    def panel_art(self):
+    def panel_art(self, see_through=False):
         """The slot machine's panel for a bubble (owner, 2026-11-01): (picture, (left, top, right, bottom) edges for
         _nine, where its box starts below the top in native pixels, native pixels below the text, the narrowest it
         goes). The edges take in its flourishes, so a wider or taller panel doesn't stretch them. None with an addon
-        from before the slot machine (revision 1), whose bubbles stay speech bubbles."""
-        found = self._images.get('panel art')
+        from before the slot machine (revision 1), whose bubbles stay speech bubbles. `see_through` keeps the panel's own
+        alpha, as the slot machine draws it, where nothing lies under it to show through the text."""
+        key = 'panel art clear' if see_through else 'panel art'
+        found = self._images.get(key)
         if found is None:
             spec = self.x360()[0].get('slot')
             if spec is None:
                 return None
             source = self.image(spec['panel'])
-            image = self._opaque(source.subsurface(source.get_bounding_rect(min_alpha=8)).copy())
+            cut = source.subsurface(source.get_bounding_rect(min_alpha=8)).copy()
+            image = self._opaque(cut)
             w, h = image.get_size()
             column = [image.get_at((w // 2, y))[3] for y in range(h)]   # (the flourishes stop short of the middle)
             top = next((y for y, a in enumerate(column) if a > 128), 0)
             bottom = h - next((y for y, a in enumerate(reversed(column)) if a > 128), 0)
             flourish = min(PANEL_FLOURISH, (w - 2) // 2)
-            found = self._images['panel art'] = (image, (flourish, top + 10, flourish, h - bottom + 10), top * EDGE_SCALE,
-                                                 (h - bottom) * EDGE_SCALE + 16, 2 * flourish * EDGE_SCALE + 10)
+            found = self._images[key] = (cut if see_through else image, (flourish, top + 10, flourish, h - bottom + 10),
+                                         top * EDGE_SCALE, (h - bottom) * EDGE_SCALE + 16,
+                                         2 * flourish * EDGE_SCALE + 10)
         return found
 
     def bubble_art(self):
@@ -334,8 +370,11 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
     def _anchor(self, arena, anchor):
         """New Rules' anchors moved to where the X360 look shows those things."""
         if anchor == -4:
+            if self._panel_on:
+                return pygame.Rect(0, 0, PANEL_CLOCK_SIZE, PANEL_CLOCK_SIZE).move(
+                    PANEL_CLOCK[0] - PANEL_CLOCK_SIZE // 2, PANEL_CLOCK[1] - PANEL_CLOCK_SIZE // 2)
             return self._time_rect()
-        if anchor == -5:                    # New Rules' score dial: here the score's digits (where "+3" flies)
+        if anchor == -5:                   # New Rules' score dial: here the score's digits (where "+3" flies)
             return self._score_rect()
         if anchor == -15:                   # the dial's frame, with the meter round it: here the power bar
             return pygame.Rect(METER_BOX)
@@ -471,29 +510,36 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         u, cx, cy, rx, ry, record_cx, record_cy = self._deck()
         booth = self.x360()[0]['booth']
         self._now = now
-        # The deck keeps its size when a game sets another ring size (Fever, Sequences, a tutorial) and follows only the
-        # shake: its scale is the ring's size against where it rests, the median of the last 0.8 s (a shake swings
-        # round it; a size held takes over within half that), within the shake's 15 %.
-        self._sizes = [(t, s) for t, s in self._sizes if now - t < 800 and t <= now] + [(now, arena.ring_size)]
-        rest = max(1, sorted(s for _, s in self._sizes)[len(self._sizes) // 2])
-        # A shake swings back and forth; the library's easing a ring in or out moves one way: only the first (two
-        # turns within 0.6 s) moves the deck.
-        steps = [b - a for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600]
-        turns = sum(1 for d, e in zip(steps, steps[1:]) if (d > 0) != (e > 0))
-        size = min(1.15, max(0.85, arena.ring_size / rest)) if turns >= 2 else 1
-        if 'parts' in booth:
-            self._deck_parts(surface, arena, booth['parts'], size, deck_dy, now)
+        panel = self._panel_look(arena, session)
+        if panel:
+            self._panel_x360(surface, arena, deck_dy)
         else:
-            self._deck_piece(surface, self.image(booth['pieces']['deck']['id']), booth['pieces']['deck']['box'], size,
-                             deck_dy)
+            # The deck keeps its size when a game sets another ring size (Fever, a tutorial) and follows only the
+            # shake: its scale is the ring's size against where it rests, the median of the last 0.8 s (a shake swings
+            # round it; a size held takes over within half that), within the shake's 15 %.
+            self._sizes = [(t, s) for t, s in self._sizes if now - t < 800 and t <= now] + [(now, arena.ring_size)]
+            rest = max(1, sorted(s for _, s in self._sizes)[len(self._sizes) // 2])
+            # A shake swings back and forth; the library's easing a ring in or out moves one way: only the first (two
+            # turns within 0.6 s) moves the deck.
+            steps = [b - a for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600]
+            turns = sum(1 for d, e in zip(steps, steps[1:]) if (d > 0) != (e > 0))
+            size = min(1.15, max(0.85, arena.ring_size / rest)) if turns >= 2 else 1
+            if 'parts' in booth:
+                self._deck_parts(surface, arena, booth['parts'], size, deck_dy, now)
+            else:
+                self._deck_piece(surface, self.image(booth['pieces']['deck']['id']), booth['pieces']['deck']['box'], size,
+                                 deck_dy)
         if moving:
             self._hud_x360(surface, arena, session, now, hud_dy, deck_dy)
             return
         ring = self._field(arena)
         self._buttons_x360(arena, ring)
-        self._needle(surface, arena, ring)
-        if arena.keypad:
-            self._keypad_x360(surface, arena, ring)
+        if panel:
+            self._panel_keys(surface, arena, ring)
+        else:
+            self._needle(surface, arena, ring)
+            if arena.keypad:
+                self._keypad_x360(surface, arena, ring)
         count = len(arena.slots)
         self._ring_x360(surface, arena, ring, 0, count // 2)
         self._label_x360(surface, arena, session, 1, now)
@@ -508,6 +554,75 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 prompt = prompt or bubble[0].strip().casefold().rstrip('.!') == START_PROMPT
                 self._bubble_x360(surface, arena, ring, bubble[0], bubble[2], bubble[1], now)
         self._countdown(surface, arena, ring, now, prompt)
+
+    def _panel_look(self, arena, session):
+        """Whether this game is drawn on the slot machine's panel rather than the deck (owner, 2026-11-03): one played by
+        number keys, Sequences. The panel says so only after its entrance, once the turntable would have risen, so the
+        library's code is read ahead as it opens (opens_number_keys), once. It stays for that game: a tutorial turns the
+        keys off and on. An addon from before the slot machine keeps the deck."""
+        if self._panel_arena is not arena:
+            self._panel_arena = arena
+            self._panel_on = (self.x360()[0].get('slot') is not None and arena.entering
+                              and opens_number_keys(getattr(session, 'vm', None)))
+        if arena.keypad and not self._panel_on:
+            self._panel_on = self.x360()[0].get('slot') is not None
+        return self._panel_on
+
+    def _slot_point(self, arena, ring, slot, angle=None, vertical=1):
+        """On the panel a slot's item keeps to its window, however the library eases the ring in and out."""
+        if not self._panel_on or not 0 <= slot < 6:
+            return super()._slot_point(arena, ring, slot, angle, vertical)
+        cell = self._panel_cell(arena, ring, slot)
+        return cell.centerx, cell.centery + {0: 0, 1: PANEL_CELL_LIFT, 2: -PANEL_CELL_LIFT}[vertical]
+
+    def _panel_cell(self, arena, ring, slot):
+        """The window of `slot` on the panel, native pixels: round where its item stands at full size, as the number keys
+        are placed, however the library eases the ring in and out."""
+        a = (arena.angle + 90 + slot * (360 // (len(arena.slots) or 1))) % 360
+        x = self._ring_x(ring, a, 100)
+        y = self._row_y(arena, ring, self._ring_y(ring, a, 100), slot, 100)
+        w, h = PANEL_CELL
+        return pygame.Rect(round(x - w / 2), round(y - PANEL_CELL_LIFT - h / 2), w, h)
+
+    def _panel_x360(self, surface, arena, dy):
+        """The panel and its windows, one for each of the six places."""
+        art, edges, _, _, _ = self.panel_art(see_through=True)
+        self._nine(surface, art, PANEL_BOX.x, PANEL_BOX.y + dy, PANEL_BOX.width, PANEL_BOX.height, edges)
+        window = self.image(self.x360()[0]['slot']['window'])
+        ring = self._field(arena)
+        for slot in range(6):
+            cell = self._panel_cell(arena, ring, slot)
+            self.blit(surface, window, cell.x, cell.y + dy, cell.width, cell.height)
+
+    def _panel_keys(self, surface, arena, ring):
+        """The number keys, above the top row's windows and below the bottom row's, as the arena has them; each window and
+        its number take the key's clicks."""
+        from .desktop_nr_arena import KEYPAD
+        for i, ch in enumerate(KEYPAD):
+            cell = self._panel_cell(arena, ring, i)
+            flashing = arena.keypad_flash_ms > 0 and arena.keypad_flash == i
+            image = self.text_surface('badaboom_white' if not flashing else 'badaboom', ch, PANEL_LABEL,
+                                      None if not flashing else (255, 200, 40))
+            top = 2 <= i <= 4
+            y = cell.y - PANEL_LABEL + 1 if top else cell.bottom - 3
+            self.blit(surface, image, cell.centerx, y, anchor='midtop')
+            area = cell.union(pygame.Rect(cell.x, y, cell.width, PANEL_LABEL))
+            self.targets.append((area, ('arena_key', 48 + int(ch))))
+
+    def _panel_clock(self, surface, arena, dy):
+        """The slot machine's clock, its red sweeping round as the game's time goes."""
+        k = self.k
+        size = max(2, round(PANEL_CLOCK_SIZE * k))
+        total = max(1, arena.timer_total_ms)
+        step = round(min(1, max(0, total - max(0, arena.timer_ms)) / total) * 180)
+        key = (step, size)
+        if self._panel_face[0] != key:
+            self._panel_face = (key, clock_face(step, max(1, round(size * CLOCK_FACE_SHARE))))
+        cx, cy = round(PANEL_CLOCK[0] * k), round((PANEL_CLOCK[1] + dy) * k)
+        face = self._panel_face[1]
+        surface.blit(face, face.get_rect(center=(cx, cy + round(size * CLOCK_DROP_SHARE))))
+        ring = self.scaled(self.image(self.x360()[0]['slot']['clock']), (size, size))
+        surface.blit(ring, ring.get_rect(center=(cx, cy)))
 
     def _arm_press(self, arena, now):
         """Starts the tone arm's PUSH on a press of OK that plays (it restarts on one during it, as the X360's does), not
@@ -530,7 +645,9 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
     def _hud_x360(self, surface, arena, session, now, dy, deck_dy=0):
         if arena.score_display == 1 or (arena.score_display == 2 and arena.blink_clock_ms // 500 % 2 == 1):
             self._score_x360(surface, arena, now, dy)
-        if arena.timer_shown:
+        if arena.timer_shown and self._panel_on:
+            self._panel_clock(surface, arena, deck_dy)
+        elif arena.timer_shown:
             self._time_x360(surface, arena, now, deck_dy)            # on the deck: it moves with it
         if arena.score_display or arena.meter >= 0:
             self._meter_x360(surface, arena, dy)
@@ -666,6 +783,13 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             slot = (back + (-offset if k & 1 == 0 else offset)) % count
             if arena.blink[slot] == 1 and arena.blink_clock_ms // 500 % 2 == 1:
                 continue
+            if self._panel_on:                  # the library's ring eases: here, the item grows or shrinks in its window
+                height = PANEL_NOTE_HEIGHT * min(100, arena.ring_size) / 100
+                x, y = self._slot_point(arena, ring, slot, vertical=0)
+                if arena.ring_size >= PANEL_SMALLEST:
+                    self._item_x360(surface, arena, arena.slots[slot], arena.item_kind, x, y + height / 2, arena.tint[slot],
+                                    index=slot, height=height)
+                continue
             a = (arena.angle + 90 + slot * (360 // count)) % 360
             x, y = self._ring_x(ring, a, arena.ring_size), self._ring_y(ring, a, arena.ring_size)
             move = arena.moves[slot]
@@ -691,22 +815,27 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
     def _note_of(self, item):
         """The booth's (picture, effects) for New Rules' item picture `item` (ITEM_NOTES), or None."""
         name = self._picture_name(item)
-        note = ITEM_NOTES.get(int(name.split('/')[1])) if name else None
+        notes = PANEL_NOTES if self._panel_on else ITEM_NOTES
+        note = notes.get(int(name.split('/')[1])) if name else None
         return note if note and 'notes' in self.x360()[0]['booth'] else None
 
-    def _item_x360(self, surface, arena, item, kind, x, y, tint, alpha=255, index=0):
+    def _item_x360(self, surface, arena, item, kind, x, y, tint, alpha=255, index=0, height=PANEL_NOTE_HEIGHT):
         """An item standing at (x, y): the rect drawn, in canvas pixels, or None. A note is the booth's, as large as Diss
-        Practice's camera has it that far round the record. A popup's fades (`alpha`) keep the flat picture."""
+        Practice's camera has it that far round the record, or, on the panel, one size. A popup's fades (`alpha`) keep the
+        flat picture."""
         if item == -1:
             return None
         if kind == 2:
             note = self._note_of(item)
             if note is not None and alpha == 255:
+                if self._panel_on:
+                    return self._stand_note(surface, note[0], note[1], x, y, self._project(0, 0)[2],
+                                            height / PANEL_NOTE_HEIGHT, self._now, index)
                 ring = self._field(arena)
                 across = max(-1, min(1, (y - ring.centery) / max(1, ring.height / 2)))
                 depth = self._project(0, -NOTE_ROW * across)[2]
                 return self._stand_note(surface, note[0], note[1], x, y, depth, 1, self._now, index)
-            return self._item_picture(surface, item, x, y, 58, alpha)
+            return self._item_picture(surface, item, x, y, height, alpha)
         elif kind == 3 and 0 <= item < len(arena.strings):
             # A tinted box (751: the library's colour for the words, GOOD and BAD) takes the tint, its text white
             # with a black edge; an untinted one stays the X360's beige sticker with dark text.
@@ -861,6 +990,8 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 if 0 <= popup.value < len(arena.strings):
                     image = self.text_surface('badaboom', arena.strings[popup.value], 30, COMBO_RED, EMPHASIS)
                     self.blit(surface, image, x, y, anchor='midbottom')
+            elif popup.kind == 3 and self._panel_on:       # the target strip: the same pictures as the windows'
+                self._item_x360(surface, arena, popup.value, 2, x, y + 20, popup.tint, height=PANEL_STRIP_HEIGHT)
             elif popup.kind == 3:
                 self._item_picture(surface, popup.value, x, y + 20, 44)
             else:
@@ -883,7 +1014,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             sx, sy = self._point(arena, ring, slot, vertical=2 if above else 1)
             y = sy - h - 12 if above else sy + 12
             x = min(max(8, sx - w / 2), NATIVE[0] - 8 - w)
-            if 0 <= slot < len(arena.slots) and arena.item_kind == 2:
+            if 0 <= slot < len(arena.slots) and arena.item_kind == 2 and not self._panel_on:
                 name = self._picture_name(arena.slots[slot])
                 card = TUTORIAL_CARDS.get(int(name.split('/')[1])) if name else None
         # Clear of the bottom label (box 2's: "bling rhymes with...") when it shows, else of the gear's bar.

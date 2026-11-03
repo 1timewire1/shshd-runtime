@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from exp_runtime.nr_arena import NRArena, POPUP_TEXT
+from exp_runtime.nr_arena import NRArena, NUMBER_KEYS_AHEAD, NUMBER_KEYS_PROPERTY, POPUP_TEXT, opens_number_keys
 from exp_runtime.runtime import Session
 from test_runtime import host_call, text_words
 from test_vm import program
@@ -63,6 +63,18 @@ class ArenaModelTests(unittest.TestCase):
         arena.set(0, 729, 1)                                # insert a slot
         self.assertEqual(len(arena.slots), 5)
         self.assertTrue(arena.set(0, 718, 0))               # 718 closes it
+
+    def test_the_code_after_the_panel_opens_says_whether_the_game_shows_the_number_keys(self):
+        def vm(*operands):
+            code = [SimpleNamespace(opcode=0x1a, operand=operand) for operand in operands]
+            return SimpleNamespace(pc=0, instruction_at=code.__getitem__)
+        self.assertTrue(opens_number_keys(vm(712, NUMBER_KEYS_PROPERTY)))
+        self.assertFalse(opens_number_keys(vm(712, 714)))           # the code's end isn't an error
+        self.assertFalse(opens_number_keys(vm(*[712] * NUMBER_KEYS_AHEAD, NUMBER_KEYS_PROPERTY)))   # a later game's
+        self.assertFalse(opens_number_keys(None))
+        # Only as a constant pushed, not as a number used otherwise.
+        other = SimpleNamespace(pc=0, instruction_at=[SimpleNamespace(opcode=0x29, operand=NUMBER_KEYS_PROPERTY)].__getitem__)
+        self.assertFalse(opens_number_keys(other))
 
     def test_750_removes_popups_by_kind(self):
         # Sequences shows each sequence as a strip of pictures (749) and clears it with 750(3) before the next.

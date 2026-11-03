@@ -39,6 +39,26 @@ OK_KEYS, LEFT_KEY, RIGHT_KEY = (-5, -6), -3, -4
 PORTRAIT, PICTURE, TEXT = 1, 2, 3
 POPUP_TEXT, POPUP_ITEM, POPUP_PICTURE = 1, 2, 3
 
+NUMBER_KEYS_PROPERTY = 765              # shows the keypad labels (Sequences)
+NUMBER_KEYS_AHEAD = 24                  # how far past opening the panel Sequences sets them, in instructions (15 or 18)
+PUSH_OPCODES = (0x1a, 0x1b)             # a pushed constant (tools/translate/newrules.py arena_shape)
+
+
+def opens_number_keys(vm) -> bool:
+    """Whether the game that has just opened the panel goes on to show the number keys (Sequences), read from the code after
+    the VM's stop without running it: the panel only learns this after its entrance, and the X360 look draws that game
+    differently from the start. For drawing only, so a game this missed would only change look late."""
+    if vm is None:
+        return False
+    try:
+        for pc in range(vm.pc, vm.pc + NUMBER_KEYS_AHEAD):
+            instruction = vm.instruction_at(pc)
+            if instruction.opcode in PUSH_OPCODES and instruction.operand == NUMBER_KEYS_PROPERTY:
+                return True
+    except Exception:                   # the end of the code: nothing more to read
+        pass
+    return False
+
 
 @dataclass
 class Popup:
