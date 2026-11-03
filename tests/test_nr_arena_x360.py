@@ -243,7 +243,7 @@ class X360ArenaTests(unittest.TestCase):
         spec['slot'] = dict(panel=art, window=art, clock=art)
         return renderer
 
-    def test_a_number_key_game_is_on_the_slot_panel_for_the_whole_game(self):
+    def test_the_slot_panel_shows_while_the_number_keys_do(self):
         renderer = self.on_panel()
         renderer._deck_piece, renderer._time_x360 = Mock(), Mock()
         arena = self.arena()
@@ -253,16 +253,52 @@ class X360ArenaTests(unittest.TestCase):
         renderer._time_x360.assert_called()
         renderer._deck_piece.reset_mock(), renderer._time_x360.reset_mock()
         arena.keypad = True
-        renderer.draw(None, session, now_ms=33)
+        renderer.draw(None, session, now_ms=10000)                  # the slide between them starts
+        renderer._deck_piece.reset_mock(), renderer._time_x360.reset_mock()
+        renderer.draw(None, session, now_ms=20000)
         renderer._deck_piece.assert_not_called()
         renderer._time_x360.assert_not_called()                     # the slot machine's clock instead
-        arena.keypad = False                                        # a tutorial turns them off for a while
-        renderer.draw(None, session, now_ms=66)
-        renderer._deck_piece.assert_not_called()
-        renderer._time_x360.assert_not_called()
-        session = self.session(self.arena())                        # the next game starts afresh
-        renderer.draw(None, session, now_ms=99)
+        arena.keypad = False
+        renderer.draw(None, session, now_ms=30000)
+        renderer._deck_piece.assert_not_called()                    # the panel slides off first
+        renderer.draw(None, session, now_ms=40000)
         self.assertEqual(renderer._deck_piece.call_count, 1)
+
+    def test_a_sequences_tutorial_has_the_deck_for_the_spinning_games_part_and_slides_to_the_panel(self):
+        from exp_runtime.nr_arena import NUMBER_KEYS_PROPERTY
+        renderer = self.on_panel()
+        code = [SimpleNamespace(opcode=0x1a, operand=NUMBER_KEYS_PROPERTY)] * 2
+        arena = self.arena()
+        session = self.session(arena)
+        session.vm = SimpleNamespace(pc=0, instruction_at=code.__getitem__)
+        arena.entrance_ms = 0                                       # opening: read ahead
+        self.assertTrue(renderer._panel_look(arena, session))
+        arena.entrance_ms, arena.motion = 2000, 0                   # "view tutorial?": still the panel
+        self.assertTrue(renderer._panel_look(arena, session))
+        arena.motion = 1                                            # "yes": the library turns the ring, keys off
+        self.assertFalse(renderer._panel_look(arena, session))
+        arena.motion = -1                                           # its practice turns the other way: no going back
+        self.assertFalse(renderer._panel_look(arena, session))
+        renderer._look_x360, renderer._hud_x360 = Mock(), Mock()
+        renderer.draw(None, session, now_ms=1000)
+        renderer._look_x360.reset_mock()
+        arena.keypad, arena.motion = True, -1                       # its own rules: the keys on
+        looks = []
+        renderer._look_x360.side_effect = lambda s, a, b, dy, n: looks.append((renderer._panel_on, round(dy)))
+        for now, want in ((1000, (False, 0)), (1150, (False, 105)), (1300, (True, 420)), (1600, (True, 0))):
+            renderer.draw(None, session, now_ms=now)
+            self.assertEqual(looks[-1], want)
+        self.assertEqual(renderer._panel_switch, 1000)
+
+    def test_declining_the_tutorial_goes_straight_to_the_keys_and_the_panel_stays_as_it_leaves(self):
+        renderer = self.on_panel()
+        arena = self.arena()
+        arena.keypad = True
+        session = self.session(arena)
+        self.assertTrue(renderer._panel_look(arena, session))
+        arena.keypad = False
+        arena.exit_ms = 1000
+        self.assertTrue(renderer._panel_look(arena, session))
 
     def test_an_addon_without_the_slot_machine_keeps_the_deck(self):
         renderer = self.module.X360ArenaRenderer(self.resources())

@@ -55,6 +55,7 @@ PANEL_LABEL = 22                        # a number key's height, above the top r
 PANEL_NOTE_HEIGHT = 58                  # an item's standard height there; the target strip's is less
 PANEL_STRIP_HEIGHT = 44
 PANEL_SMALLEST = 8                      # the ring's size below which an item isn't drawn: the library rests it at 3
+PANEL_SWITCH_MS, PANEL_SWITCH_DROP = 600, 420       # one look sliding off and the other on, half the time each (_paint_x360)
 
 
 def addon_skin(resources):
@@ -199,7 +200,8 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         self._seams = {}                    # the record's seams by turn and size (_record_seams)
         self._arm_held, self._arm_start, self._now = -1, None, 0     # the tone arm's swing (_arm_press, _arm_frame)
         self._arm_clear, self._arm_waiting, self._arm_taken = False, False, False
-        self._panel_arena, self._panel_on = None, False     # _panel_look
+        self._panel_arena, self._panel_on, self._panel_opening = None, False, False     # _panel_look
+        self._panel_switch = None           # when the look last changed, in ms (_paint_x360)
         self._panel_face = (None, None)     # the slot panel's clock face: (step and size, picture)
 
     # -- the skin ---------------------------------------------------------------------------------------------------
@@ -510,25 +512,22 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         u, cx, cy, rx, ry, record_cx, record_cy = self._deck()
         booth = self.x360()[0]['booth']
         self._now = now
+        carried_on, was = self._panel_arena is arena, self._panel_on
         panel = self._panel_look(arena, session)
-        if panel:
-            self._panel_x360(surface, arena, deck_dy)
-        else:
-            # The deck keeps its size when a game sets another ring size (Fever, a tutorial) and follows only the
-            # shake: its scale is the ring's size against where it rests, the median of the last 0.8 s (a shake swings
-            # round it; a size held takes over within half that), within the shake's 15 %.
-            self._sizes = [(t, s) for t, s in self._sizes if now - t < 800 and t <= now] + [(now, arena.ring_size)]
-            rest = max(1, sorted(s for _, s in self._sizes)[len(self._sizes) // 2])
-            # A shake swings back and forth; the library's easing a ring in or out moves one way: only the first (two
-            # turns within 0.6 s) moves the deck.
-            steps = [b - a for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600]
-            turns = sum(1 for d, e in zip(steps, steps[1:]) if (d > 0) != (e > 0))
-            size = min(1.15, max(0.85, arena.ring_size / rest)) if turns >= 2 else 1
-            if 'parts' in booth:
-                self._deck_parts(surface, arena, booth['parts'], size, deck_dy, now)
-            else:
-                self._deck_piece(surface, self.image(booth['pieces']['deck']['id']), booth['pieces']['deck']['box'], size,
-                                 deck_dy)
+        if carried_on and panel != was and not moving:      # a tutorial going from the spinning games' part to its own
+            self._panel_switch = now
+        elif not carried_on:
+            self._panel_switch = None
+        into = (now - self._panel_switch) / PANEL_SWITCH_MS if self._panel_switch is not None else 1
+        if 0 <= into < 1 and not moving:
+            self._panel_on = panel if into >= .5 else not panel
+            away = 2 * into if into < .5 else 2 - 2 * into
+            dy = PANEL_SWITCH_DROP * away * away
+            self._look_x360(surface, arena, booth, dy, now)
+            self._hud_x360(surface, arena, session, now, 0, dy)
+            self._panel_on = panel
+            return
+        self._look_x360(surface, arena, booth, deck_dy, now)
         if moving:
             self._hud_x360(surface, arena, session, now, hud_dy, deck_dy)
             return
@@ -555,17 +554,40 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 self._bubble_x360(surface, arena, ring, bubble[0], bubble[2], bubble[1], now)
         self._countdown(surface, arena, ring, now, prompt)
 
+    def _look_x360(self, surface, arena, booth, dy, now):
+        """What the items stand on: the slot machine's panel, or the deck."""
+        if self._panel_on:
+            self._panel_x360(surface, arena, dy)
+            return
+        # The deck keeps its size when a game sets another ring size (Fever, a tutorial) and follows only the
+        # shake: its scale is the ring's size against where it rests, the median of the last 0.8 s (a shake swings
+        # round it; a size held takes over within half that), within the shake's 15 %.
+        self._sizes = [(t, s) for t, s in self._sizes if now - t < 800 and t <= now] + [(now, arena.ring_size)]
+        rest = max(1, sorted(s for _, s in self._sizes)[len(self._sizes) // 2])
+        # A shake swings back and forth; the library's easing a ring in or out moves one way: only the first (two
+        # turns within 0.6 s) moves the deck.
+        steps = [b - a for (_, a), (t, b) in zip(self._sizes, self._sizes[1:]) if a != b and now - t < 600]
+        turns = sum(1 for d, e in zip(steps, steps[1:]) if (d > 0) != (e > 0))
+        size = min(1.15, max(0.85, arena.ring_size / rest)) if turns >= 2 else 1
+        if 'parts' in booth:
+            self._deck_parts(surface, arena, booth['parts'], size, dy, now)
+        else:
+            self._deck_piece(surface, self.image(booth['pieces']['deck']['id']), booth['pieces']['deck']['box'], size, dy)
+
     def _panel_look(self, arena, session):
-        """Whether this game is drawn on the slot machine's panel rather than the deck (owner, 2026-11-03): one played by
-        number keys, Sequences. The panel says so only after its entrance, once the turntable would have risen, so the
-        library's code is read ahead as it opens (opens_number_keys), once. It stays for that game: a tutorial turns the
-        keys off and on. An addon from before the slot machine keeps the deck."""
+        """Whether the slot machine's panel is drawn now rather than the deck (owner, 2026-11-03): while the number keys
+        show, which is Sequences. The panel says so only after its entrance, once the turntable would have risen, so the
+        library's code is read ahead as it opens (opens_number_keys), once, and the panel stays through "view tutorial?".
+        If that's the player's first tutorial, the library then explains the spinning games, with a ring turning and the
+        keys off: that part has the deck, until it turns the keys on for Sequences' own rules (owner, 2026-11-03). An addon
+        from before the slot machine keeps the deck."""
+        slot = self.x360()[0].get('slot') is not None
         if self._panel_arena is not arena:
-            self._panel_arena = arena
-            self._panel_on = (self.x360()[0].get('slot') is not None and arena.entering
-                              and opens_number_keys(getattr(session, 'vm', None)))
-        if arena.keypad and not self._panel_on:
-            self._panel_on = self.x360()[0].get('slot') is not None
+            self._panel_arena, self._panel_on = arena, False
+            self._panel_opening = slot and arena.entering and opens_number_keys(getattr(session, 'vm', None))
+        if arena.keypad or (not arena.entering and arena.motion in (1, 2)):
+            self._panel_opening = False
+        self._panel_on = slot and (arena.keypad or self._panel_opening or (self._panel_on and arena.leaving))
         return self._panel_on
 
     def _slot_point(self, arena, ring, slot, angle=None, vertical=1):
@@ -576,11 +598,10 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         return cell.centerx, cell.centery + {0: 0, 1: PANEL_CELL_LIFT, 2: -PANEL_CELL_LIFT}[vertical]
 
     def _panel_cell(self, arena, ring, slot):
-        """The window of `slot` on the panel, native pixels: round where its item stands at full size, as the number keys
-        are placed, however the library eases the ring in and out."""
-        a = (arena.angle + 90 + slot * (360 // (len(arena.slots) or 1))) % 360
-        x = self._ring_x(ring, a, 100)
-        y = self._row_y(arena, ring, self._ring_y(ring, a, 100), slot, 100)
+        """The window of `slot` on the panel, native pixels: round where Sequences stands its item, the wide layout's two
+        rows of three at full size, however the library eases the ring in and out, and before it has set them."""
+        x = self._ring_x(ring, (90 + slot * 60) % 360, 100)
+        y = self._ring_y(ring, 240 if 2 <= slot <= 4 else 60, 100)
         w, h = PANEL_CELL
         return pygame.Rect(round(x - w / 2), round(y - PANEL_CELL_LIFT - h / 2), w, h)
 
