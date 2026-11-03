@@ -10,6 +10,8 @@ from zipfile import ZipFile
 
 import pygame
 
+from exp_runtime.hd_scale import S
+
 from exp_runtime import episode_thumbnails
 from exp_runtime.content import ContentLibrary, digest, import_game
 from exp_runtime.desktop_episode_picker import HdEpisodePicker, ROW_HEIGHT, TILE_STEP, TILE_X
@@ -185,6 +187,62 @@ class ModelTests(unittest.TestCase):
         path.write_bytes(picture((432, 580), (0, 200, 0)))
         model.forget_preview(other['id'])
         self.assertEqual(model.preview(other).get_at((5, 5))[:3], (0, 200, 0))
+
+    def wait_for_decoder(self, model):
+        import time
+        deadline = time.monotonic() + 5
+        while model._decoder is not None and time.monotonic() < deadline:
+            time.sleep(.005)
+        self.assertIsNone(model._decoder)
+
+    def test_a_preview_soon_comes_from_a_thread_that_then_ends(self):
+        episode = record(1, 5, 5, 'Soon')
+        library = library_with(self.root, [episode], previews={
+            episode_thumbnails.preview_names(episode)[0]: picture((432, 580), (200, 0, 0))})
+        model = PickerModel(library)
+        self.assertIsNone(model.preview_soon(episode))
+        self.wait_for_decoder(model)
+        image = model.preview_soon(episode)
+        self.assertEqual(image.get_size(), TILE_PIXELS)
+        self.assertEqual(image.get_at((5, 5))[:3], (200, 0, 0))
+        self.assertIs(model.preview(episode), image)        # the same one, kept
+        self.assertIs(model.preview_soon(episode), image)
+        model.want_preview(episode)                         # nothing to do
+        self.assertIsNone(model._decoder)
+
+    def test_nothing_to_show_or_a_library_gone_is_the_flat_card_not_a_stuck_tile(self):
+        lone = record(1, 5, 5, 'Nothing')
+        model = PickerModel(library_with(self.root, [lone]))
+        self.assertIsNone(model.preview_soon(lone))
+        self.wait_for_decoder(model)
+        self.assertEqual(model.preview_soon(lone).get_at((5, 5))[:3], (70, 78, 100))
+        model = PickerModel(library_with(self.root, [lone]))
+        with patch.object(model, '_decode_preview', side_effect=ValueError('closed')), self.assertLogs(level='WARNING'):
+            self.assertIsNone(model.preview_soon(lone))
+            self.wait_for_decoder(model)
+        self.assertEqual(model.preview_soon(lone).get_at((5, 5))[:3], (70, 78, 100))
+
+    def test_the_newest_asked_for_goes_first_and_a_forgotten_one_is_not_kept(self):
+        import threading
+        first, second, third = (record(i, 5, i, f'T{i}') for i in (1, 2, 3))
+        model = PickerModel(library_with(self.root, [first, second, third]))
+        hold, order = threading.Event(), []
+
+        def decode(entry):
+            hold.wait(5)
+            order.append(entry['id'])
+
+        with patch.object(model, '_decode_preview', side_effect=decode):
+            model.want_preview(first)           # in hand, waiting on `hold` (or about to be)
+            model.want_preview(second)
+            model.want_preview(third)
+            model.want_preview(second)
+            model.forget_preview(first['id'])
+            hold.set()
+            self.wait_for_decoder(model)
+        self.assertEqual(order[-2:], [second['id'], third['id']])
+        self.assertNotIn(first['id'], model._decoded)
+        self.assertEqual(set(model._decoded), {second['id'], third['id']})
 
     def test_a_flat_card_stands_in_when_nothing_else_exists(self):
         lone = record(1, 5, 5, 'Nothing')
@@ -385,6 +443,41 @@ class ScreenTests(unittest.TestCase):
         self.model = PickerModel(library)
         self.picker = HdEpisodePicker(library, self.model, lambda r: None)
         self.first = self.model.rows[0].episodes[0]['id']
+
+    def test_on_a_phone_a_tile_waits_on_its_card_and_those_just_out_of_sight_are_asked_for_too(self):
+        import time
+        from exp_runtime import desktop_episode_picker
+        picker = self.picker
+        record_ = self.model.rows[0].episodes[0]
+        with patch.object(desktop_episode_picker, 'BACKGROUND_PREVIEWS', True):
+            with patch.object(self.model, 'want_preview') as want:
+                picker.want_nearby()
+            asked = {call.args[0]['id'] for call in want.call_args_list}
+            self.assertIn(record_['id'], asked)
+            # Season 1's row runs on past the frame: a tile past the edge is asked for, and one further on isn't.
+            row = self.model.rows[0].episodes
+            first_out = next(i for i, r in enumerate(row)
+                             if desktop_episode_picker.TILE_X + i * desktop_episode_picker.TILE_STEP
+                             >= desktop_episode_picker.FRAME[0])
+            self.assertIn(row[first_out]['id'], asked)
+            self.assertIs(picker.tile_image(record_), picker.waiting_tile())
+            deadline = time.monotonic() + 5
+            while self.model._decoder is not None and time.monotonic() < deadline:
+                time.sleep(.005)
+            self.assertIsNot(picker.tile_image(record_), picker.waiting_tile())
+            self.assertIs(picker.tile_image(record_), self.model.preview(record_))
+
+    def test_a_saved_tiles_face_is_made_once_until_its_shot_changes(self):
+        record_ = self.model.rows[0].episodes[0]
+        picker = self.picker
+        picker.saved = {record_['id']}
+        shot = pygame.Surface((216 * S, 400 * S)).convert()
+        picker.shots = lambda r: shot
+        picker.mask = lambda name: pygame.Surface((216 * S, 20 * S), pygame.SRCALPHA)
+        face = picker.tile_image(record_)
+        self.assertIs(picker.tile_image(record_), face)
+        shot = pygame.Surface((216 * S, 400 * S)).convert()
+        self.assertIsNot(picker.tile_image(record_), face)
 
     def test_keys_move_between_tiles_and_rows_and_enter_opens(self):
         picker = self.picker

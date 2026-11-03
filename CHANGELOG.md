@@ -283,6 +283,12 @@
   nothing is drawn under an arena that hides it. On a phone the standard arena scales once, straight to the frame's
   size (a touch softer than a desktop's two passes). Rounds now run near 60 fps in the standard look and about 47 in the
   X360 skin.
+- **Freezes while scrolling the episode tiles on a phone.** Each tile decoded on the drawing thread, about 34 ms on a
+  Moto g54, so every new row froze the screen for about 200 ms, and opening Play/Resume for up to a second. On phones they
+  now load in the background, with the rows just out of sight loaded ahead; a tile not ready yet shows a plain card under
+  its title. A saved episode's tile is also composed once rather than every frame.
+- **The main menu's opening spin on a phone** ran at 18 fps; it now turns a half-size photo (over 40 fps), a touch softer
+  until it settles.
 - **A hitch at every sound effect.** Each play read and decoded its file on the drawing thread, about 45 ms on that phone.
   The last few short effects are kept decoded, so only the first play of each costs anything.
 - **An import says how far it has got.** The busy card shows what is happening instead of one fixed line: on Android
