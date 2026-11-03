@@ -118,7 +118,6 @@ class DialogueRenderer:
         frame = ImagePack.parse(data).images[0]
         return pygame.image.frombytes(frame.pixels, (frame.width, frame.height), frame.mode).convert_alpha()
 
-    @lru_cache(maxsize=64)
     @lru_cache(maxsize=8)
     def note_image(self, frame, tint=None):
         """Pack 155's song note (dialogue.NOTE_FRAMES); `tint` recolors it, keeping its alpha (the gold fonts' note)."""
@@ -130,6 +129,7 @@ class DialogueRenderer:
         image.fill(tuple(tint[:3]) + (255,), special_flags=pygame.BLEND_RGBA_MIN)
         return image
 
+    @lru_cache(maxsize=64)
     def frame_native(self, asset_id, index):
         """The frame at whatever density read_asset() actually returned --
         including a real HD substitute (content.HD_ASSET_MAP), which for
