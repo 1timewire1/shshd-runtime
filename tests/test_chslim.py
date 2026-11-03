@@ -203,7 +203,7 @@ class DeletingTheSlimPackTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.folder = Path(self.temporary.name)
 
-    def test_the_library_lets_go_of_it_and_a_later_import_brings_it_back(self):
+    def test_the_library_lets_go_of_it(self):
         record = dict(id='a' * 64, sha256='a' * 64, addon='chslim', title='Claire Hart (Slim)', revision=1, name='CH_Slim.exp', file=f'content/{"a" * 64}.exp')
         (self.folder / 'content').mkdir()
         (self.folder / record['file']).write_bytes(b'pack')
