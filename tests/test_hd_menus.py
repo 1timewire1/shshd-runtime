@@ -678,14 +678,18 @@ class ShellActionTests(unittest.TestCase):
         # An open window takes the keys: Left / Right step along an alert's buttons too.
         shell.stack.queue(0)
         shell.windows.hits = [(pygame.Rect(0, 0, 1, 1), ('item', 0)), (pygame.Rect(0, 0, 1, 1), ('item', 1))]
-        self.assertIsNone(shell.key(pygame.K_SPACE))                        # nothing highlighted in it yet
-        shell.key(pygame.K_LEFT)
+        self.assertIsNone(shell.key(pygame.K_SPACE))                        # nothing highlighted: it shows the first
+        self.assertEqual(shell.focus, ('item', 0))
+        shell.key(pygame.K_RIGHT)
         self.assertEqual(shell.focus, ('item', 1))
         shell.key(pygame.K_LEFT)
         self.assertEqual(shell.focus, ('item', 0))
         shell.fade = ('out', 0.0, None)
         self.assertIsNone(shell.key(pygame.K_RIGHT))                        # nothing moves while the screen fades
         self.assertEqual(shell.focus, ('item', 0))
+        shell.fade, shell.focus = None, None
+        shell.windows.hits = shell.windows.hits[:1]                          # one button (an OK): Enter presses it
+        self.assertEqual(shell.key(pygame.K_RETURN), ('item', 0))
 
     def test_arrow_keys_work_the_options_pages_over_the_main_menu(self):
         from exp_runtime.desktop_pause_hd import PauseState, VOLUME_STEP

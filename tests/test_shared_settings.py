@@ -48,6 +48,15 @@ class SharedSettingsTests(unittest.TestCase):
         self.assertEqual(path.stat().st_mtime_ns, 10**9)
         self.assertNotEqual(before, 10**9)
 
+    def test_sync_legacy_mode_starts_on_and_is_kept(self):
+        path = self.root / 'settings.json'
+        settings = AppSettings(path)
+        self.assertTrue(settings.sync_legacy)                               # on by default for now (owner)
+        settings.set_sync_legacy(False)
+        self.assertFalse(AppSettings(path).sync_legacy)
+        with self.assertRaises(ValueError):
+            settings.set_sync_legacy('off')
+
     def test_start_in_opens_a_game_that_has_a_library_else_the_chooser(self):
         settings = AppSettings(self.root / 'settings.json')
         everything, nothing = (lambda game: True), (lambda game: False)
@@ -140,7 +149,8 @@ class UnlockWarpingTests(unittest.TestCase):
         self.assertNotIn('unlock_warp', Desktop._pause_settings(SimpleNamespace(
             vibration_enabled=False, music_enabled=True, sound_enabled=True, music_volume=1, sound_volume=1,
             panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
-            backdrop_switch=lambda: False, hires_switch=lambda: False)))
+            backdrop_switch=lambda: False, hires_switch=lambda: False, ms3_switch=lambda: False, ch_switch=lambda: False,
+        minigames_switch=lambda: False)))
 
 if __name__ == '__main__':
     unittest.main()

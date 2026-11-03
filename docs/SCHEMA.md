@@ -390,3 +390,43 @@ and the episode plays without it. An app without the feature shows the first
 speaker alone, the yellow named-line box, no emoticon, and the intro with its
 own repeat flag. The episode creator writes the record when a project uses
 these options ([CREATOR.md](CREATOR.md)).
+
+## Addon extension (shshd-runtime)
+
+An **addon** is an ordinary EXP archive holding resources that several
+episodes share, such as a translated game's backgrounds and music. Each
+episode then doesn't need its own copy. [ADDONS.md](ADDONS.md) covers how they
+behave and what the current ones hold. Resource **4** begins with
+`SHSHD-ADDONS\0`, followed by UTF-8 JSON with `format: "shshd-addons"` and
+`version: 1` (`addons.py`). This is SHSHD Runtime metadata, not a recovered
+native format; native players and upstream exp-runtime never read resource 4.
+The record holds exactly one of:
+
+| Member | Value | In |
+| --- | --- | --- |
+| `provides` | `{id, title, revision}` | An addon: its short name (`[a-z0-9-]`, at most 32), a display title and its resource layout's revision (1–65535) |
+| `requires` | `[{id, revision}, ...]` | An episode: the addons it reads, each at least that revision |
+
+`provides` may also list `supersedes`, `[{id, revision}, ...]`: addons this one holds everything of, under the same IDs. Importing
+it removes them, episodes requiring them read it instead (at the revision listed), and importing one of them later is ignored
+unless it's newer than that.
+
+**Import.** The library recognises an addon by its `provides` record and lists
+it under the manifest's `addons`, apart from `episodes`, so no picker shows it.
+It keeps one addon per id:
+- a higher revision replaces a lower one, and the older file is removed;
+- a rebuild at the same revision replaces it too;
+- a lower revision is ignored.
+
+**Lookup.** An episode's episode-bank resources (26000 and up, the bank
+`FUN_00082bc0` selects for art) resolve from the episode itself first, then
+from each required addon in the order listed. Lower IDs keep coming from the
+game package.
+
+**A missing addon.** An episode whose addon is missing, or older than required,
+still opens for indexing and previews. Starting it shows a message naming the
+addon, not missing art. A malformed record is set aside with a warning.
+
+The New Rules translations (`tools/translate`, pack 31300) share the `shsnr`
+addon: every background in every time-of-day mode (26000–26173), the music
+(26980–26994) and the frame backdrop (26999).

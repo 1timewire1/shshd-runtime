@@ -299,6 +299,8 @@ To contribute code, tests, documentation or compatibility reports, start with
 - [Main menu](docs/MAIN_MENU.md) and [episode catalog](docs/EPISODE_CATALOG.md).
 - [Cause of Death](docs/COD.md), its [release dates](docs/COD_RELEASE_DATES.md)
   and [store listing](docs/COD_STORE.md).
+- [Addons](docs/ADDONS.md), and the translated games:
+  [New Rules](docs/NEW_RULES.md) and the [cancelled Xbox 360 game](docs/X360.md).
 - [Episode introductions and week cards](docs/TITLE_SCREENS.md).
 - [Mini games](docs/MINIGAMES.md) and [story services](docs/STORY_SERVICES.md).
 - [Development and tests](docs/DEVELOPMENT.md), [distribution](docs/DISTRIBUTION.md)

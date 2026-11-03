@@ -615,6 +615,12 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
   same shape, shows its bar under the first narration. Not explained yet: the runtime shows the room from the
   narration.
 
+## Claire Hart portraits and backdrop (this fork)
+
+Many of CoD's portraits are Claire Hart Classic's, downscaled about 4.17 times. The optional `chslim` addon holds the
+sharper originals and the green backdrop, with the map from CoD's pictures to them. With it imported, Options › Add-Ons
+offers CH-tagged HD Portraits in CoD and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
+
 ## HD backgrounds from SHS HD (this fork)
 
 Many CoD locations are SHS HD backgrounds at half size. The owner reviewed every CoD/SHS HD pair (the catalogue
@@ -870,7 +876,84 @@ CoD's colours (`cod/hd_art.positional_frames`).
       in; the default, the game chooser until there is one), Choose a Game, Surviving High School or Cause of
       Death. The app opens there when it is not told a game
       or library; a game without a library opens the chooser instead.
-    - **Data Management:** Add Episodes, Open Another Library.
+    - **Data Management** (owner, 2026-10-29) lists three pages, then Reset Settings:
+      - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
+        Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library, Delete Library.
+        Delete Library asks twice, then deletes the library's own parts (`application.LIBRARY_PARTS`, never
+        anything else in its folder) and goes to the game chooser.
+      - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
+      - **Progress:** Back Up Progress, Restore Progress, Reset Names, Delete All Saves.
+      - **Add-Ons** (with any in the library; [ADDONS.md](ADDONS.md#data-management)).
+
+      **Back Up Progress** writes a progress bundle (`progress_bundle.py`) to `Downloads/SHSHD Runtime Backups`. The
+      bundle is a zip of the library's saved games, Decision Trees, name tables and warp lock, with a manifest.
+      Options are not in it: both games share them, in `settings.json`. Every save and tree is named by its
+      episode's content id, the SHA-256 of the episode's file, which is the same in any library imported from that
+      file. So a bundle restores into any library of the same game. Progress for an episode the library lacks waits
+      there until the episode is added.
+
+      **Restore Progress** lists that game's eight newest backups. Choosing one asks first, backs up the current
+      progress (a "before restore" backup, which is also how a restore is undone), and then replaces the progress
+      with the backup's. The bundle is checked whole before anything changes: its game, and every file's path. A
+      swap that fails puts the library's own progress back.
+
+      **Sync Devices** (owner, 2026-10-30) sends a game's progress to another device on the same network
+      (`lan_sync.py` moves the files, `sync_flow.py` is the app's side). In a game it sends that game. From the game
+      chooser's Options it sends both games, or the one chosen on the send page's **Games** row.
+      - **Send to Another Device:** switches for Saved Games & Trees, Names, Options and Episodes & Add-Ons, plus Back Up
+        Receiver First. Then **Find Receiver** lists the receivers heard on the network.
+      - **Receive from Another Device:** a page showing this device's name and address while it waits.
+      - **Pairing:** once connected, each device asks its person "Send to X?" / "Receive from X?" with the same
+        four-digit code on both screens. A no on either side ends both at once.
+      - **What goes:** for each sent game the receiver has a library of (open or not), the episodes it lacks and a
+        progress bundle. The receiver merges the bundle: each
+        episode in it replaces that episode's saves and tree there, and every other episode's progress stays. The
+        sender's names win, and the receiver's other names stay. Options are applied, except those that stay per
+        device (`DEVICE_OPTIONS`: the vibration switches and the controller settings).
+      - **Back Up Receiver First:** what would be replaced goes first into the receiver's backups folder, as a
+        "before sync" backup that holds the options too. Restore Progress puts options back when a backup has them.
+      - **A missing game:** a sent game the receiver has no library of is named after the sync, with the size of the
+        sender's library of it, and both people are asked again. Yes sends that whole library (its
+        `LIBRARY_PARTS`), installed where the game's library belongs; no keeps what was already synced.
+      - **Result:** both devices show the result, or the short reason it failed.
+      - **Legacy Mode** (owner, 2026-10-30): a switch below Receive, on by default for now. It speaks protocol 1, the
+        one-game sync the Android build has (`lan_sync.LEGACY_PROTOCOL`), so a computer and that phone still pair
+        until Android is caught up. It works from inside a game as before: that game only, to a receiver that has its
+        library, with no whole-library round. From the game chooser, Send and Receive instead explain that Legacy Mode
+        must be off on both devices to sync both games at once, and that this works only computer to computer for
+        now. It is kept in `settings.json` (`sync_legacy`). `tests/fixtures/lan_sync_v1.py` is a frozen copy of the
+        Android build's module, so the tests pair against it both ways; remove it once Android speaks protocol 2.
+
+      Discovery is a UDP beacon from the receiver (port 47915), and the transfer runs over TCP (port 47914, or any
+      free port). Each side lists only receivers of its own protocol, so with Legacy Mode off a phone on protocol 1 is
+      not listed (and the reverse).
+
+      **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
+      2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add
+      Episodes uses, starting in that folder. **Use This Folder** chooses the folder there, and **Default** goes back
+      to the default folder. The choice is kept
+      in `settings.json` (`backup_folder`, `export_folder`), and Reset Settings clears it. When a folder is chosen,
+      Restore Progress looks in it and in the default folder. A phone keeps the default folders in Downloads.
+
+      Delete Episodes, Export Episodes and Reset Decision Tree each open the Episodes On Demand list in place of
+      the card (`EpisodeChoice`). The list shows only the episodes the action fits, each with a tick box. Its
+      footer counts the ticked ones, and the action's button acts on them. On a keyboard or controller, Enter ticks
+      the highlighted row, and moving down past the last row reaches the button.
+      - **Delete** offers the imported episodes, but never a built-in one or the one being played. It takes their
+        saves, previews and trees, while HD art already built from them stays in the twin store.
+      - **Export** copies each episode's EXP file under its own name to
+        `Downloads/SHSHD Runtime Episodes/<game>` (or the chosen Exports Folder), adding a number to the name rather than overwriting a
+        different file.
+      - **Reset Decision Tree** offers the episodes that have a tree.
+
+      Back, or a finished action, returns to the Episodes page.
+
+      Each row that changes something asks first, in a window of this player's own drawn like HD's "Delete Saved
+      Game?", and reports with an OK notice. Verify Library and the two Rebuild rows run as background jobs under
+      the busy card. Verify checks every file against the checksum the library recorded. A damaged episode's file
+      is removed, since it cannot play. A built-in episode is written again from the game's app, and any other
+      comes back when Add Episodes is given its file again. Rebuild HD Art is offered where there is HD art to
+      build: an SHS library with HD episodes, or Cause of Death.
   - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
     79 x 27 switch, and the value buttons at 104 x 34 with an 18-point label, wider where the value needs it.
 

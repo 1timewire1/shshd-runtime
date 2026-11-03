@@ -65,6 +65,7 @@ class CodShell(HdShell):
         self.windows = CodMenuWindows(library, self.data, art, logging_disabled=lambda: app.state.logging_disabled)
         self.stack = MenuStack(self.data, self.perform)
         self.main.backdrop_enabled = lambda: app.state.hd_backdrop
+        self.main.ch_backdrop_enabled = lambda: app.state.ch_backdrop
         self.pause = CodPauseMenu(SimpleNamespace(library=library), art)
         self.pause.main_menu = True
         self.stage = 'loading'

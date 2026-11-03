@@ -24,7 +24,8 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES, focus_step
+from .desktop_pause_hd import (CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+                               focus_step)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
 from .hd_ui import S, FRAME
@@ -44,6 +45,29 @@ SOUND_MENU, MUSIC_MENU = 7, 8
 PRIVACY_MENU, LEAVE_MENU, DISABLE_MENU, ENABLE_MENU = 16, 17, 19, 20
 DELETE_MENU, CONNECTION_MENU = 12, 41
 END_MENU, MISS_MENU = 23, 24
+# Data Management's confirmations (title, message, the Yes button's verb); `~game~` is the game's title.
+DATA_CONFIRMATIONS = {
+    'reset_names': ('Reset Names?', 'The names you typed in ~game~ will be forgotten: new games ask for them again '
+                    '(or take their defaults). Saved games keep the names they were saved with.', 'Reset'),
+    'delete_saves': ('Delete All Saves?', 'Every saved game of ~game~ will be deleted, with the Decision Tree\'s '
+                     'saved scenes. Episodes, names and settings stay.', 'Delete'),
+    'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
+                       'Check for Updates and the chosen folders too. Saves and names stay.', 'Reset'),
+    'verify_library': ('Verify Library?', 'Every file of ~game~ is checked against its checksum, which can take a few '
+                       'minutes. A damaged episode\'s file is removed: adding the episode again restores it.', 'Verify'),
+    'rebuild_previews': ('Rebuild Previews?', 'Every episode preview of ~game~ is drawn again from its title card, '
+                         'which can take a few minutes.', 'Rebuild'),
+    'rebuild_hd_art': ('Rebuild HD Art?', 'The HD pictures ~game~ shows in standard episodes are found again in your '
+                       'HD files, which can take a few minutes.', 'Rebuild'),
+}
+# The Episodes page's rows that open an episode list to choose from (application.EPISODE_CHOICES).
+EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees')
+# The confirmations above that run as a background job: (the busy card's title, the Application method given the result).
+DATA_JOBS = {
+    'verify_library': ('Verifying library', 'verify_report'),
+    'rebuild_previews': ('Drawing previews', 'previews_rebuilt'),
+    'rebuild_hd_art': ('Building HD art', 'hd_art_rebuilt'),
+}
 # "Options Unlocked" / "Warping feature has been unlocked for Football Season Mega Pack!" (strings 115 / 272): shown by
 # `SHSEngine::setAppMode` on the main menu after Football Season clears the warp lock (its flag +0x6490b), and by
 # Extras' Unlock Warping.
@@ -314,18 +338,42 @@ class HdShell:
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():
             settings['hires_portraits'] = state.hires_portraits
+        if self.app.ms3_characters_offered():
+            settings['ms3_characters'] = state.ms3_characters
+        if self.app.portrait_addon_offered():
+            settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
+        if self.app.minigames_offered():
+            settings['arena_minigames'] = state.arena_minigames
+        if self.app.arena_skin_offered() and state.arena_minigames:
+            settings['arena_skin'] = state.arena_skin               # ...with the X360 addon
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
-        # Data Management's rows (main menu only). On this branch: Sync Devices of master's Data Management (the rest
-        # comes when Android joins master).
-        for key in ('add_episodes', 'open_library', 'sync_send', 'sync_receive'):
+        # Data Management's rows (main menu only).
+        if self.app.library.addons:
+            settings['manage_addons'] = True
+        for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
+                    'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive',
+                    'delete_library') + EPISODE_LISTS:
             settings[key] = True
+        settings['sync_legacy'] = self.app.settings.sync_legacy
         sync = getattr(self.app, 'sync', None)
         if sync is not None:
             settings.update(sync.switches())            # Sync's send page
+        if self.app.picker_available():
+            settings['rebuild_previews'] = True
+        if self.app.hd_art_offered():
+            settings['rebuild_hd_art'] = True
+        if getattr(self.app, 'file_picker', None) is None:
+            # A computer's own file browser chooses them; a phone's backups and exports stay in Downloads.
+            for key in ('backup_folder', 'export_folder'):
+                settings[key] = self.app.folder_label(key)
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
+        if graphics.controller_connected():
+            settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
+            settings['grid_controls'] = GRID_CONTROLS_NAMES[state.grid_controls]
+            settings['controller_vibration'] = graphics.vibration_source() == 'controller'
         if self.app.warp_lock_offered():
             settings['unlock_warp'] = True
         return settings
@@ -378,6 +426,10 @@ class HdShell:
         state.persist()
         if which == 'hires_portraits':
             self.app.apply_hires_portraits()
+        if which == 'ms3_characters':
+            self.app.apply_ms3_characters()
+        if which == 'ch_portraits':
+            self.app.apply_ch_portraits()
         self.app.menu_music_changed(switched=which == 'music')
         if which == 'vibration' and state.vibration:
             self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
@@ -555,9 +607,11 @@ class HdShell:
         focus = self.focus if self.focus in targets else None
         if focus_step(key):
             self.focus = step_focus(targets, focus, focus_step(key))
-        elif key in KEYS_ACTIVATE and focus is not None:
-            self.activate(focus)
-            return focus
+        elif key in KEYS_ACTIVATE and (focus is not None or len(targets) == 1):
+            self.activate(focus or targets[0])
+            return focus or targets[0]
+        elif key in KEYS_ACTIVATE and targets:
+            self.focus = targets[0]         # nothing highlighted: Enter (a controller's confirm) shows where it is
         return None
 
     def wheel(self, dy):
@@ -627,6 +681,17 @@ class HdShell:
                                                    % len(TITLE_LANGUAGES)]
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
+        elif kind == 'pause_cycle' and command[1] == 'controller_confirm':
+            state = self.app.state
+            state.controller_confirm = 'east' if state.controller_confirm == 'south' else 'south'
+            self.app._attempt(state.persist)
+            self.app.sync_controller()
+        elif kind == 'pause_cycle' and command[1] == 'grid_controls':
+            state = self.app.state
+            state.grid_controls = 'hold' if state.grid_controls == 'tap' else 'tap'
+            self.app._attempt(state.persist)
+        elif kind == 'pause_cycle' and command[1] in ('backup_folder', 'export_folder'):
+            self.app.choose_folder(command[1])
         elif kind == 'pause_cycle' and command[1] == 'start_in':
             choices = START_IN
             self.app._attempt(lambda: self.app.settings.set_start_in(
@@ -634,6 +699,14 @@ class HdShell:
         elif kind == 'pause_action' and command[1] == 'unlock_warp':
             if self.app.unlock_warp():
                 self.open_window(WARP_UNLOCKED_MENU)
+        elif kind == 'pause_action' and command[1] == 'library_info':
+            self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
+        elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
+            self.app.open_choice(command[1])
+        elif kind == 'pause_action' and command[1] == 'manage_addons':
+            self.app.addon_pages().open()
+        elif kind == 'pause_action' and command[1].startswith('addon'):
+            self.app.addon_pages().command(command[1])
         elif kind == 'pause_action' and command[1] == 'sync_send':
             self.app.sync_flow().show_send_page()
         elif kind == 'pause_action' and command[1] == 'sync_receive':
@@ -644,6 +717,26 @@ class HdShell:
             self.app.sync_flow().choose(command[1])
         elif kind == 'pause_action' and command[1] == 'sync_none':
             pass                                        # "Looking for receivers...": nothing to press yet
+        elif kind == 'pause_action' and command[1] == 'delete_library':
+            self.app.confirm_delete_library()
+        elif kind == 'pause_action' and command[1] == 'back_up':
+            self.app.start_back_up()
+        elif kind == 'pause_action' and command[1] == 'restore':
+            self.app.show_backups()
+        elif kind == 'pause_action' and command[1].startswith('restore:'):
+            self.app.restore_progress(command[1])
+        elif kind == 'pause_action' and command[1] == 'storage':
+            self.app.start_data_job('Measuring storage', self.app.storage_text, lambda text: self.pause.show_text(
+                'data:storage', 'Storage', text, 'data:library'))
+        elif kind == 'pause_action' and command[1] in DATA_CONFIRMATIONS:
+            title, message, verb = DATA_CONFIRMATIONS[command[1]]
+            action = getattr(self.app, command[1])
+            if command[1] in DATA_JOBS:
+                busy, done = DATA_JOBS[command[1]]
+                run = lambda: self.app.start_data_job(busy, action, getattr(self.app, done))
+            else:
+                run = lambda: self.notify(*action())
+            self.confirm(title, message.replace('~game~', self.app.game_title), verb, run)
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':

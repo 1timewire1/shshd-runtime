@@ -55,29 +55,48 @@ DEVICE_VIBRATION_LABEL = 'Vibration'
 AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (this player's); choices still wait
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
+MS3_CHARACTERS_LABEL = 'MS3 Characters'         # translated X360 episodes: the April build's looks, else the May build's
+CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
+CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
+ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
+ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
-# 2026-10-26): key -> the tag in the SHS profile's LEGACY_GAMES. The switch itself is offered only when such episodes
-# are there (application.hires_portraits_offered, Desktop.hires_switch).
-SWITCH_BADGES = {'hires_portraits': 'SHSNR'}
+# 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
+# are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'arena_skin': 'SHSNR', 'ch_portraits': 'CHC',
+                 'ch_backdrop': 'CHC'}
+# The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
+# colour (owner, 2026-11-02). key -> the tag whose name in the label is coloured.
+LABEL_TINTS = {'arena_skin': 'SHSX360'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
+
+
+def legacy_tag(tag):
+    """(text, colour) of a game's tag in a profile's LEGACY_GAMES, or None."""
+    from .games import GAMES
+    for game in ('shs', 'cod'):
+        legacy = getattr(GAMES.get(game), 'LEGACY_GAMES', {}).get(tag)
+        if legacy is not None:
+            return legacy['badge'], legacy['color']
+    return None
 
 
 def switch_badge(key):
     """(text, colour) of the switch's game tag, or None."""
-    from .games import GAMES
-    legacy = getattr(GAMES.get('shs'), 'LEGACY_GAMES', {}).get(SWITCH_BADGES.get(key))
-    return None if legacy is None else (legacy['badge'], legacy['color'])
+    return legacy_tag(SWITCH_BADGES.get(key))
 HD_BACKDROP_LABEL = 'SHS HD Backdrop'          # SHS HD's collage beside the frame, else a dark fill (this player's)
 CHECK_UPDATES_LABEL = 'Check for Updates'      # the release check at launch (updates.py); main menu only
 # Options lists categories, each opening a page of its own switches (owner, 2026-10-14; no native strings, this
 # player's own: SHS HD's Options is one page). A row shows when its setting is offered (`layout`'s `settings`), so a
 # game leaves out what does not apply to it.
-# Extras holds the play aids that change how a story plays (owner, 2026-10-21).
+# Extras holds the play aids that change how a story plays (owner, 2026-10-21). Add-Ons holds what only concerns translated
+# games and addons (owner, 2026-11-02), so the others stay short; like any category, it's hidden when it has no rows.
 OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 'Controller'), ('extras', 'Extras'),
-                     ('data', 'Data Management'))
+                     ('addons', 'Add-Ons'), ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
-                'hires_portraits', 'check_updates')
+                'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
+ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'hires_portraits', 'ch_portraits', 'ch_backdrop', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -105,7 +124,12 @@ GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
 DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
                                            ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
-                                           ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'))),
+                                           ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'),
+                                           ('delete_library', 'Delete Library'),
+                                           # The chooser's (both games, owner 2026-10-30): a row per game, then both.
+                                           ('delete_library_shs', 'Delete Surviving High School'),
+                                           ('delete_library_cod', 'Delete Cause of Death'),
+                                           ('delete_libraries', 'Delete Both Libraries'))),
               ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
                                              ('export_episodes', 'Export Episodes'), ('export_folder', 'Exports Folder'),
                                              ('reset_trees', 'Reset Decision Tree'))),
@@ -113,8 +137,11 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
                                              ('backup_folder', 'Backups Folder'), ('reset_names', 'Reset Names'),
                                              ('delete_saves', 'Delete All Saves'))),
               ('data:sync', 'Sync Devices', (('sync_send', 'Send to Another Device'),
-                                             ('sync_receive', 'Receive from Another Device'))))
-DATA_LAST = (('reset_settings', 'Reset Settings'),)
+                                             ('sync_receive', 'Receive from Another Device'),
+                                             ('sync_legacy', 'Legacy Mode'))))
+# Add-Ons opens the host's page of them (desktop_addons), as Restore Progress does its rows.
+DATA_LAST = (('manage_addons', 'Add-Ons'), ('reset_settings', 'Reset Settings'))
+DATA_SWITCHES = ('sync_legacy',)        # Data Management rows that are switches (their setting is True / False)
 DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
@@ -125,6 +152,9 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VI
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
+                 'ms3_characters': MS3_CHARACTERS_LABEL, 'ch_portraits': CH_PORTRAITS_LABEL,
+                 'ch_backdrop': CH_BACKDROP_LABEL,
+                 'arena_minigames': ARENA_MINIGAMES_LABEL, 'arena_skin': ARENA_SKIN_LABEL,
                  'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
 # (rms ~2 levels): out = M . (r, g, b) + c.
@@ -510,8 +540,9 @@ class HdPauseMenu:
     def row_color(self, index):
         return self.ROW_COLORS[index % 2]
 
-    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None):
-        """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style."""
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None, tint=None):
+        """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style. `tint`: (word,
+        colour) of a word in the label to colour (LABEL_TINTS)."""
         color = color or self.LABEL_COLOR
         self.rows_body(layer, top, height, background, lit=lit)
         x = PANEL_X + 31
@@ -529,7 +560,10 @@ class HdPauseMenu:
         pitch = 26.6
         for index, line in enumerate(lines):
             middle = top + ROW / 2 + (index - (len(lines) - 1) / 2) * pitch
-            self.text(layer, line, x, middle - self.cap_offset(ROW_PX), ROW_PX, color)
+            y = middle - self.cap_offset(ROW_PX)
+            self.text(layer, line, x, y, ROW_PX, color)
+            if tint is not None and tint[0] in line:
+                self.text(layer, tint[0], x + font.size(line.partition(tint[0])[0])[0] / self.scale, y, ROW_PX, tint[1])
 
     def badge(self, layer, x, middle, text, color):
         """A game's tag at (x, vertical middle), as the episode list draws it (desktop_episode_list_hd
@@ -548,7 +582,7 @@ class HdPauseMenu:
     def layout(self, settings, host_rows=(), *, message=''):
         """(layer, buttons): buttons are (Rect in points, command). Commands:
         ('pause_open', screen), ('pause_back',), ('resume',), ('main_menu',), ('save',), ('load',),
-        ('pause_toggle', 'vibration'|'device_vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'),
+        ('pause_toggle', 'vibration'|'device_vibration'|'music'|'sound'|'side_panels'|'choice_hints'|'skip_minigames'|'skip_ad_intros'|'skip_upsell_intros'|'hd_backdrop'|'hires_portraits'|'arena_minigames'|'arena_skin'),
         ('pause_slider', 'music'|'sound', Rect), ('pause_link', url). Options is a list of categories
         ('pause_open', 'options:<category>'), each a page of its switches and sliders. While a page slides in
         (`open` / `back`) the layer holds both cards and there are no buttons."""
@@ -622,7 +656,7 @@ class HdPauseMenu:
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'),
                            key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
-                         badge=switch_badge(key))
+                         badge=switch_badge(key), tint=legacy_tag(LABEL_TINTS.get(key)))
                 if kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
                                 self.switch_position(key, settings.get(key, False)))
@@ -716,6 +750,8 @@ class HdPauseMenu:
             if 'unlock_warp' in settings:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows
+        if category == 'addons':
+            return [('switch', self.SWITCH_LABELS[key], key) for key in ADDON_KEYS if key in settings]
         if category == 'data':
             pages = [('page', title, screen) for screen, title, rows in DATA_PAGES
                      if any(key in settings for key, _ in rows)]
@@ -723,8 +759,8 @@ class HdPauseMenu:
         if category in DATA_TITLES:
             # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it on a value button.
             rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
-            return [('cycle' if isinstance(settings[key], str) else 'action', label, key)
-                    for key, label in rows if key in settings]
+            return [('switch' if key in DATA_SWITCHES else 'cycle' if isinstance(settings[key], str) else 'action',
+                     label, key) for key, label in rows if key in settings]
         if category in self.row_pages:
             return [(kind[0] if kind else 'action', label, key) for key, label, *kind in self.row_pages[category][1]]
         return []

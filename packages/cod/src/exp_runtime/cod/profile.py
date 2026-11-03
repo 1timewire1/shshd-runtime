@@ -42,6 +42,11 @@ CATALOG_LAYOUTS = {17: ((33, 0),)}
 PAID_PROFILE = 'cod-ios-assets-v1'
 FREE_PROFILE = 'cod-ios-free-assets-v1'
 LOCALIZED_FREE_PROFILE = 'cod-ios-free-localized-assets-v1'
+# shshd-runtime: Claire Hart, as a tag for its switches for now (owner, 2026-11-02); its translated episodes will take it too.
+LEGACY_GAMES = {'CHC': dict(badge='CH', color=(12, 84, 48), category='Claire Hart')}
+# shshd-runtime: the optional addon of Claire Hart's sharper originals of CoD's portraits, and the resource holding its map
+# and the rest of its contents (tools/translate/chslim.py). A complete Claire Hart addon will supersede it.
+PORTRAIT_ADDON = ('chslim', 28000)
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

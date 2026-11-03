@@ -3,7 +3,8 @@
 The HD app ships a 216 x 290 preview for 84 episodes (`preview_<pack>_<episode>.jpg`) and downloaded the rest, so
 those are gone. An episode's preview is its title card, which is the first thing it shows, so the missing ones are
 rendered here once, while a library is being set up, by running the episode to its title card and photographing that
-frame at twice the tile's size. Episodes that open without a title card keep `missingEpisodePreview.jpg`.
+frame at twice the tile's size. A storyboard cutscene's held picture counts as one (Day of Diss's card). Episodes that
+open without a title card keep `missingEpisodePreview.jpg`.
 """
 import gc
 import logging
@@ -27,8 +28,8 @@ BUNDLE = 'Payload/Surviving_HS.app/'
 MISSING = 'missingEpisodePreview.jpg'
 # The content of the `.none` marker an episode without a title card gets. Bumped when `run_to_title_card` learns to get
 # past something new, so episodes marked by an older pipeline are tried once more (2: the High School Story ad's choice;
-# 3: minigames and paced choices, CoD's Sunset; 4: BORROWED_CARDS).
-MARKER = b'4'
+# 3: minigames and paced choices, CoD's Sunset; 4: BORROWED_CARDS; 5: a cutscene's held picture).
+MARKER = b'5'
 # Episodes with no title card of their own (no service 8 in any script), shown a sibling's card with their own subtitle
 # (owner, 2026-10-21): (game, pack, episode) -> ((pack, episode) of the card's episode, subtitle). CoD's Fourth of July
 # Special, Part 2 opens on the picture of Part 1's card.
@@ -65,6 +66,7 @@ def missing_preview(library):
 def run_to_title_card(session):
     """Advance an episode to its title card without a player: fixed answers to whatever it asks on the way.
     Returns whether it got there."""
+    session.cutscenes = True
     session.advance()
     for _ in range(MAX_STEPS):
         pending = session.pending
@@ -72,6 +74,11 @@ def run_to_title_card(session):
             return False
         name = pending.name
         if name == 'presentation':
+            return True
+        if name == 'cutscene':
+            # Pressed on to where it holds, which is its title card.
+            while not session.engine.cutscene.held:
+                session.answer()
             return True
         if session.transitioning:
             session.tick(100)

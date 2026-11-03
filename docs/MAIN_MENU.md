@@ -789,3 +789,47 @@ scene 25006, PC 1245 now completes into the first football mini game. The tested
 route plays both halves and returns to dialogue. Relationship indicators now
 render with native icon/count selection, cache writes, sound and animation;
 see [UI_FIDELITY.md](UI_FIDELITY.md#npc-relationship-indicators).
+
+## This player's own screens in HD
+
+The game chooser, Bulk Import and each game's Setup page (with the message, update and busy cards over them) are drawn
+in the HD frame by `desktop_app_hd.py` (owner, 2026-10-30), no longer by the SD renderer. No HD art exists before a
+library: it comes from the player's own SHS HD app, and none ships. So they use the HD pause menu's card (its
+measurements, colours, rows and Arial Bold), and `AppCard` draws the parts that card takes from the art (the blue
+back button and the orange buttons) as shapes. They are drawn in SHS HD's blue on a dark gradient, with the kiwi
+above the card. The chooser shows each imported game's own app icon. The busy card notes that an import can take a
+while. Commands are the SD screens' own; the buttons are listed in frame points (`Application.buttons_in_frame`).
+The chooser's Options is the HD main menu's Options (`AppOptions`): the pause menu's own pages, controls and
+input, on the same card. Its value buttons and the sliders' speakers are drawn as shapes too. It reads and writes the
+shared options in `settings.json`, since no library is open there; the next game opened takes them, because the
+shared copy wins. Options only one game offers are left out (`ONE_GAME_OPTIONS`: SHS's ad and upsell intros,
+New Rules Hi-Res Portraits and Episode Titles); each game's own Options still has them. Its pages:
+- General, Sound, Controller (with a controller connected), Extras and Add-Ons (the switches that only concern translated
+  games and addons; hidden when none of them is offered);
+- Data Management for both games (owner, 2026-10-30), with the Backups and Exports folders and Reset Settings.
+  Choosing a folder returns to its page with the notice. Each game that has a library is opened for a row in turn
+  (`AppOptions.each`, `Application.opened_library`):
+  - Library: Library Info, Storage, Verify Library and the two Rebuild rows cover each game; Delete has a row per
+    game, then Delete Both Libraries.
+  - Episodes: Delete / Export Episodes and Reset Decision Tree pick the game first, then show that game's own list on
+    the app's card (`ChooserList`), with no game menu opened.
+  - Progress: Back Up Progress asks Combined (one file holding a bundle per game, `progress_bundle.write_set`; the
+    default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
+  - Add-Ons picks the game first, when both have a library ([ADDONS.md](ADDONS.md#data-management)).
+  - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
+    Receiving needs no library at all. With Legacy Mode on (the default for now), Send and Receive here show a notice
+    instead: legacy sync is one game, from inside it.
+  Open Another Library, Add Episodes and Add APK Music stay per game.
+
+The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,
+Add Episodes, Add APK Music, and the Backups and Exports folders. It is a tall card with:
+- the folder's path at the top (a tap lets you type one, and Enter opens it);
+- a strip with Up, and Default for the two folder settings;
+- the folder's entries as rows, with shape icons, scrolled by the wheel and Page Up / Down;
+- Back and, where a folder is what you choose, Use This Folder.
+
+Opened from an HD library, it wears that game's own card (`shell.pause`, SHS's or CoD's art and colours) over its main
+menu without the buttons, as On Demand does. Before a library it wears the app's card on the dark backdrop.
+
+A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. The standard edition's
+own SD menus stay as they are.

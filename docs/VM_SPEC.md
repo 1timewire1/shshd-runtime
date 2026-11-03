@@ -118,7 +118,22 @@ When `previous_flag` is nonzero, the native loader records these boundaries and 
 
 With both segments available, the interpreter selects primary code for signed `PC < code_boundary`; otherwise it indexes secondary code at `PC - code_boundary`. Data lookup uses the analogous boundary after checking the stack range. Constructor defaults for both boundaries are `0x8000`.
 
-There are no linked corpus fixtures. Binary round trips have synthetic coverage; the Python executor rejects linked programs. The fields and observed array selection are specified here without claiming a complete working segment-loading lifecycle.
+There are no linked SHS corpus fixtures. Binary round trips have synthetic coverage. The fields and observed array selection are specified here without claiming a complete working segment-loading lifecycle for SHS.
+
+**New Rules** (the '09/'10 engine) does use one: its minigame library, script 25200, is a linked segment. Its code
+starts at boundary 26942 and its data at 29396, and the library is loaded beside whichever story runs. Stories call
+into it with SAVE_RET + JMP_ABS to its absolute entry PCs. The Java VM (`class_15` in a renamed decompile) selects
+arrays exactly as described above. It places its 256-word stack at `32767 − 256 − 10 = 32501`, right above the
+library's 3,105 data words.
+
+shshd-runtime's executor (`KiwiVM(..., linked=...)`) runs a script beside such a segment:
+- a PC at or above the code boundary runs the segment's instructions;
+- an address at or above the data boundary, below the stack, is the segment's data;
+- the stack is whatever fits above that data, at most 0x400 words (`vm.linked_layout`), which gives New Rules' 256.
+
+The segment and its data stay attached when the next scene loads, and saves carry its data as `linked_data`. A script
+that would overlap the segment's code or data is refused. The session attaches resource 25200 from the episode or its
+addons when its header sets `previous_flag` (`EpisodeResources.linked_program`).
 
 ## 3. Machine state and memory
 

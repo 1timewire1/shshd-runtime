@@ -130,6 +130,20 @@ class EpisodeZipTests(unittest.TestCase):
                 with ContentLibrary(directory) as reopened:            # the manifest accepts the new fields
                     self.assertEqual(reopened.select(digest(tagged))['legacy'], 'SHSNR')
 
+    def test_importing_a_translation_again_picks_up_its_new_place(self):
+        tagged = archive({1: metadata('ZIP story (SHSNR)'), 25001: program(0x33).to_bytes(), 26000: b'art'})
+        directory, story = self.root / 'reorder', self.root / 'story.exp'
+        story.write_bytes(tagged)
+        import_game(self.sources[0][1], [story], directory)
+        from exp_runtime.shs.profile import LEGACY_GAMES
+        with ContentLibrary(directory) as library:
+            record = library.select(digest(tagged))
+            self.assertNotIn('order', record)
+            with patch.dict(LEGACY_GAMES['SHSNR'], order={record['episode_id']: 1.5}):
+                library.add_episodes([story])
+        with ContentLibrary(directory) as reopened:
+            self.assertEqual(reopened.select(digest(tagged))['order'], 1.5)
+
     def test_same_basename_and_metadata_do_not_merge_different_editions(self):
         directory = self.root / 'library'
         import_game(self.sources[0][1], [], directory)

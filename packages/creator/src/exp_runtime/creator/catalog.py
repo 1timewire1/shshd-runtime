@@ -2,14 +2,21 @@
 from exp_runtime.content import ContentLibrary
 from .graph import page
 from .media import inspect_asset
+from .model import ProjectError
 
 
-def library_assets(workspace, library, *, episode=None, kind=None, query='', offset=0, limit=50):
+def library_assets(workspace, library, *, episode=None, kind=None, query='', offset=0, limit=50, addon=None):
     page(offset, limit)
     with ContentLibrary(workspace.path(library)) as content:
-        resources = content.open_episode(episode) if episode else content
-        read = resources.archive.read if episode else content.read_asset
-        ids = sorted(resources.archive.entries if episode else content.base_members.keys() | content.music_members.keys())
+        if addon:
+            held = content.addon(addon)
+            if held is None:
+                raise ProjectError(f'The library has no {addon} add-on')
+            read, ids = held[1].read, sorted(held[1].entries)
+        else:
+            resources = content.open_episode(episode) if episode else content
+            read = resources.archive.read if episode else content.read_asset
+            ids = sorted(resources.archive.entries if episode else content.base_members.keys() | content.music_members.keys())
         found = []
         # Metadata is derived only for matching IDs. A type filter requires
         # inspection, so bound every scan and return a continuation offset.
@@ -24,7 +31,12 @@ def library_assets(workspace, library, *, episode=None, kind=None, query='', off
                     next_offset=index if index < len(ids) else None)
 
 
-def read_asset(workspace, library, resource, episode=None):
+def read_asset(workspace, library, resource, episode=None, addon=''):
     with ContentLibrary(workspace.path(library)) as content:
+        if addon:
+            held = content.addon(addon)
+            if held is None:
+                raise ProjectError(f'The library has no {addon} add-on')
+            return held[1].read(resource)
         resources = content.open_episode(episode) if episode else content
         return resources.archive.read(resource) if episode else content.read_asset(resource)

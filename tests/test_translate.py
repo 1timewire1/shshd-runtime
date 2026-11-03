@@ -9,7 +9,7 @@ import sys
 import unittest
 
 from exp_runtime.decode.bytecode import OPERAND_OPCODES, decode_program
-from exp_runtime.vm import KiwiVM, StopKind
+from exp_runtime.vm import KiwiVM, StopKind, linked_layout as nr_linked_layout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translate'))
 from kiwi_rewrite import Rewriter  # noqa: E402
@@ -142,6 +142,162 @@ class NewRulesShimTests(unittest.TestCase):
                 borrowed_themes=borrowed_themes or {}))
         return rewriter.finish(), report
 
+    def test_the_minigame_library_keeps_its_place_and_calls_the_arena_services(self):
+        # New Rules' library 25200 is a linked segment (VM_SPEC.md 2.3): its calls are renamed (arena 50-57, the frame
+        # wait 29, formats 5... to 200-212; random and globals to SHS's), and nothing moves.
+        from test_vm_linked import linked
+        nr = self.nr
+        library = linked((0x1A, 3), call(6, 1), (0x1A, 707), call(53, 1), call(29, 0), (0x1A, 1900), call(16, 1), 0x43,
+                         words=(1, 2), data_boundary=50, code_boundary=100)
+        out = nr.translate_library(library)
+        self.assertEqual((out.previous_instruction_count, out.previous_data_count), (100, 50))
+        self.assertEqual(out.instructions[0].pc, 100)
+        self.assertEqual([i.operand >> 8 for i in out.instructions if i.opcode == 0x1f], [27, 203, 208, 55])
+        with self.assertRaisesRegex(nr.TranslateError, 'service 48'):
+            nr.translate_library(linked(call(48, 0), 0x43, data_boundary=50, code_boundary=100))
+        with self.assertRaisesRegex(Exception, 'appended'):
+            Rewriter(library).words([1])                    # a linked segment can't grow
+
+    def test_the_librarys_sound_hooks_play_new_rules_tracks_with_the_addons_music(self):
+        # The library's games call its empty sound hooks where the downloads' copies play tracks: the play hook with
+        # a sound effect's index (13, right; 1, wrong: 0x5B pushes 1) and the game-music hook. With the addon's music
+        # the hooks play them (79 / 80 at MUSIC_BASE + index). The library's code already reaches the KiWi limit, so
+        # the shims overwrite a function nothing calls (its room); every other instruction stays where it was.
+        from unittest.mock import patch
+        from test_vm_linked import linked
+        nr = self.nr
+        base = nr.LIBRARY_PLAY
+        assert nr.LIBRARY_GAME_MUSIC == base + 4
+        stub = (0x48, 0x4A, 0x22, 0x43)
+        game, room = base + 8, (base + 19, base + 39)
+        source = (*stub, *stub, (0x1A, 13), 0x42, (0x29, base), 0x15, 0x5B, 0x42, (0x29, base), 0x15,
+                  0x42, (0x29, base + 4), 0x43, *(0x43,) * 20, 0x43)
+        library = linked(*source, words=(0,), data_boundary=50, code_boundary=base)
+        story = program(0x42, (0x29, game), 0x33)
+
+        def played(segment):
+            vm = KiwiVM(story, **nr_linked_layout(segment))
+            seen = []
+            while (stop := vm.run()).kind == StopKind.YIELD:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        def code(instructions):
+            return [(i.pc, i.opcode, i.operand) for i in instructions]
+        with patch.object(nr, 'LIBRARY_ROOM', (room,)):
+            out = nr.translate_library(library, music=True)
+            self.assertEqual(played(out), [(79, (nr.MUSIC_BASE + 13,)), (79, (nr.MUSIC_BASE + 1,)),
+                                           (80, (nr.MUSIC_BASE + nr.GAME_MUSIC_TRACK, 0))])
+            self.assertEqual(len(out.instructions), len(library.instructions))
+            self.assertEqual([out.instructions[0].opcode, out.instructions[4].opcode], [0x29, 0x29])
+            self.assertEqual(code(out.instructions[8:19]), code(library.instructions[8:19]))
+            self.assertEqual(code(out.instructions[39:]), code(library.instructions[39:]))
+            self.assertEqual(played(nr.translate_library(library)), [])       # no music in the addon: still empty
+            music = linked(*source[:12], (0x1A, 8), *source[13:], words=(0,), data_boundary=50, code_boundary=base)
+            with self.assertRaisesRegex(nr.TranslateError, 'track 8'):
+                nr.translate_library(music, music=True)                       # a music track would need 80
+
+    def test_arena_additions_find_their_code_by_its_shape_and_run_before_it(self):
+        # A download's copy of Rhythm (its good-note branch, entered by the jump at 0) and of Rhyme (its wrong answer,
+        # entered at 13): each site is found by its code's shape, addresses aside, and its addition runs first, the
+        # right jingle (79) and the shake (202 with SHAKE), then the code that was there (52: 708 = 1 or 2).
+        nr = self.nr
+        rhythm = [(0x29, 2), (0x28, 73), (0x1A, 708), 0x5B, (0x1F, 0x3402), 0x62, (0x40, 5), 0x3E, 0x15, (0x40, 6),
+                  (0x1A, 1500), 0x53, 0x33]
+        rhyme = [(0x29, 16), 0x15, (0x28, 19), (0x1A, 708), (0x1A, 2), (0x1F, 0x3402), 0x5B, 0x42, (0x29, 40), 0x15,
+                 0x61, (0x1A, 4000), 0x3E, 0x33]
+        source = program(*rhythm, *rhyme, words=(0,) * 8)
+        rewriter = Rewriter(source, zero_gap=True)
+        made = nr.arena_additions(rewriter, source, music=True)
+        self.assertEqual(made, [('rhythm good note', 2), ('rhyme wrong answer', 16)])
+        out = rewriter.finish()
+        self.assertEqual(len([i for i in out.instructions if i.pc < len(source.instructions)]),
+                         len(source.instructions))
+
+        def first_calls(start):
+            vm = KiwiVM(out)
+            vm.pc = start
+            seen = []
+            while len(seen) < 2 and (stop := vm.run()).kind == StopKind.YIELD:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        self.assertEqual(first_calls(0), [(79, (nr.MUSIC_BASE + 13,)), (52, (708, 1))])
+        from exp_runtime.nr_arena import SHAKE
+        self.assertEqual(first_calls(13), [(202, (SHAKE, nr.ARENA_SHAKE_MS)), (52, (708, 2))])
+        self.assertEqual([name for name, _ in nr.arena_additions(Rewriter(source), source, music=False)],
+                         ['rhyme wrong answer'])                    # no music: the shake alone
+
+    def test_a_library_call_enters_the_librarys_own_game_where_the_player_has_the_arena(self):
+        # The story calls the game at 100 with two arguments; the library leaves 42 in B. With the arena (70(200)
+        # answers 1) the shim asks whether to skip the game (213: -1 plays it), then drops its frame and jumps there,
+        # so the story reads the library's own result; a skip's answer is the result instead. Without the arena, the
+        # word game plays as before.
+        from test_vm_linked import linked
+        nr = self.nr
+        library = linked((0x1A, 42), 0x04, 0x43, data_boundary=50, code_boundary=100)
+        story = program((0x1A, 7), (0x1A, 0), 0x42, (0x29, 100), (0x19, 2), 0x08, (0x1F, 0x0D01), 0x33,
+                        words=text_words('intro'))
+        rewriter = Rewriter(story, zero_gap=True)
+        for pc, entry, argc in nr.library_calls(story):
+            rewriter.replace_call(pc, ('library', 'rhythm', 0), argc,
+                                  lambda s, entry=entry: nr.library_game(s, 'rhythm', 0, None, True, False, entry))
+        out = rewriter.finish()
+
+        def play(arena, skip=-1):
+            vm = KiwiVM(out, **nr_linked_layout(library))
+            stop = vm.run()
+            self.assertEqual((stop.yield_id, stop.args), (70, (nr.ARENA_QUERY,)))
+            vm.resume(arena)
+            seen = []
+            while (stop := vm.run()).kind == StopKind.YIELD and len(seen) < 20:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(skip if stop.yield_id == nr.ARENA_SKIP else 0)
+            return seen
+        self.assertEqual(play(1), [(nr.ARENA_SKIP, ()), (13, (42,))])
+        self.assertEqual(play(1, skip=5), [(nr.ARENA_SKIP, ()), (13, (5,))])     # skipped: the story reads 5
+        self.assertIn(71, [service for service, _ in play(0)])
+
+    def test_a_downloads_arena_round_is_found_and_its_platform_query_asks_the_player(self):
+        # The download's own arena game (the function at 9 calls a helper at 16 that waits a frame, 29, then opens the
+        # panel, 50) is renamed to the player's arena services; its platform query (32(1)) before the call to the game
+        # answers 2 where the player has the arena, else 1. A query elsewhere still answers 1. The story's call into the
+        # game first asks whether to skip it (213): -1 plays it; a result skips it, read from B.
+        nr = self.nr
+        source = program((0x1A, 1), call(32, 1), 0x42, (0x29, 9), 0x33,                       # 0-4: the story
+                         (0x1A, 1), call(32, 1), 0x33, 0x33,                                    # 5-8: another query
+                         0x48, 0x4A, 0x42, (0x29, 16), call(50, 0), 0x22, 0x43,                 # 9-15: the game
+                         call(29, 0), 0x43)
+        pcs, guards = nr.arena_code(source)
+        self.assertEqual(guards, {1})
+        self.assertEqual(nr.arena_calls(source), {3: 9})
+        self.assertTrue({13, 16} <= pcs and not {1, 6} & pcs)
+        rewriter = Rewriter(source, zero_gap=True)
+        rewriter.replace_call(3, ('arena entry', 9), 0, lambda s: nr.arena_entry(s, 9))
+        for pc, service, argc in rewriter.calls():
+            if pc in pcs and service in nr.ARENA_SERVICES:
+                rewriter.rename(pc, nr.ARENA_SERVICES[service])
+            elif service == 32:
+                nr.build_query(rewriter, pc, argc, dict(keyboard_guards=set(), arena_guards=guards))
+        out = rewriter.finish()
+        services = [i.operand >> 8 for i in out.instructions if i.opcode == 0x1f]
+        self.assertIn(200, services)
+        self.assertIn(208, services)
+        self.assertIn(70, services)
+        vm = KiwiVM(out)
+        stop = vm.run()
+        self.assertEqual((stop.yield_id, stop.args), (70, (nr.ARENA_QUERY,)))
+        vm.resume(1)                                                # the query answers 2: the game plays
+        self.assertEqual(vm.run().yield_id, nr.ARENA_SKIP)
+        vm.resume(-1)
+        self.assertEqual(vm.run().yield_id, 208)
+        vm.resume(0)
+        self.assertEqual(vm.run().yield_id, 200)
+        vm = KiwiVM(out)
+        vm.run(); vm.resume(1)
+        vm.run(); vm.resume(4)                                      # skipped with 4
+        self.assertEqual((vm.run().kind, vm.b), (StopKind.HALT, 4))
+
     def test_king_of_diss_lite_borrows_the_full_storys_expressions_and_crowd_colour(self):
         # Lite's 40 has no expression word and its crowd lists the offscreen group (gray); a line the full story also
         # has takes its expression (Hector standing in for Kim, whom Lite leaves out), and its crowd the full colour.
@@ -263,11 +419,37 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertIn((16, (20,)), yields(kept))
         self.assertNotIn((16, (20,)), yields(dropped))
 
+    def test_a_library_games_word_goals_answer_the_storys_grade_target(self):
+        # The story's target is the call's first argument, and it reads B against it: the shim leaves that target once
+        # the hits are enough, one short of it otherwise (docs/NEW_RULES.md).
+        nr = self.nr
+
+        def result(kind, index, target, hits):
+            story = program((0x1A, target), *[(0x1A, 0)] * 7, 0x42, (0x29, 100), (0x19, 8), 0x08, (0x1F, 0x0D01), 0x33,
+                            words=text_words('intro'))
+            rewriter = Rewriter(story, zero_gap=True)
+            for pc, _, argc in nr.library_calls(story):
+                rewriter.replace_call(pc, 'game', argc, lambda s: nr.library_game(s, kind, index, None, False))
+            seen = yields(rewriter.finish(), [hits])
+            self.assertEqual(seen[0][0], 71)
+            return next(args[0] for service, args in seen if service == 13)
+
+        for target, hits in ((3, 8), (4, 10), (5, 13), (6, 16), (7, 19), (8, 19), (9, 19), (10, 19)):   # level + 3, capped
+            self.assertEqual(result('rhythm', 1, target, hits), target)
+            self.assertEqual(result('rhythm', 1, target, hits - 1), target - 1)
+            self.assertEqual(result('rhythm', 1, target, 32767), target)                                # a skip's win
+            self.assertEqual(result('rhythm', 1, target, 0), target - 1)                                # and its loss
+        self.assertEqual(result('rhythm', 0, 6, 10), 6)                                                 # first play
+        self.assertEqual(result('rhythm', 0, 6, 9), 5)
+        for kind, target in (('beat boxing', 7), ('dance steps', 5), ('dj fever', 3), ('dj fever', 7)):
+            self.assertEqual(result(kind, 0, target, 9), target)
+            self.assertEqual(result(kind, 0, target, 8), target - 1)
+
     def test_the_sequence_games_show_their_own_description(self):
         nr = self.nr
-        source = program(0x42, (0x29, 9999), 0x08, 0x33)
+        source = program((0x1A, 7), 0x42, (0x29, 9999), (0x19, 1), 0x08, 0x33)
         rewriter = Rewriter(source)
-        rewriter.replace_call(1, 'beat', 0, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
+        rewriter.replace_call(2, 'beat', 1, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
         result = rewriter.finish()
         game = next(args for service, args in yields(result) if service == 71)
         self.assertEqual(game[1], rewriter.strings[nr.GAME_DESCRIPTIONS['beat boxing']])   # not the call's argument
@@ -589,6 +771,23 @@ class NewRulesShimTests(unittest.TestCase):
         source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
         self.assertEqual(yields(self.nr.expand_streams(source, library_data=29396)), [(30, (0,))])
 
+    def test_library_reads_stay_where_the_library_runs_beside_the_story(self):
+        # An arena build: the dance steps pass the library's own tables (32426, 32423, 32424) to its sequences game.
+        source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
+        kept = self.nr.expand_streams(source)
+        self.assertEqual((kept.instructions[0].opcode, kept.instructions[0].operand), (0x40, 30000))
+
+    def test_the_arena_test_menu_needs_the_arena_and_quits(self):
+        import nr_arena_test
+        rewriter = Rewriter(program(0x33))
+        rewriter.prologue(nr_arena_test.menu)
+        menu = rewriter.finish()
+        # Without the arena (70(200) = 0): a line saying so, then the episode ends (7).
+        self.assertEqual([service for service, _ in yields(menu, [0])], [70, 13, 7])
+        # With it: the first menu (2, three options, 4), whose Quit ends the episode.
+        quit = yields(menu, [1, 0, 0, 0, 0, nr_arena_test.QUIT])
+        self.assertEqual([service for service, _ in quit], [70, 2, 3, 3, 3, 4, 7])
+
     def test_a_speed_diss_is_timed_rhyme_choices_until_its_hits_or_misses_run_out(self):
         # The story calls the library (SAVE_RETURN + JUMP past its code) and reads B; here it shows B with 30.
         source = program(0x42, (0x29, 9999), 0x08, call(30, 1), 0x33)
@@ -743,6 +942,19 @@ class CasingTests(unittest.TestCase):
         for twin in ('$ZOE tries to catch Sam, but...', '$SUPERZOE tries to catch Sam, but...'):
             cased = casing.recase_program(source, dictionary, names=('zoe', 'sam'), exact={'x': twin})
             self.assertEqual(casing.strings(replace(source, main_words=cased))[0][1], 'Zoe tries to catch Sam, but...')
+
+
+@unittest.skipUnless(HAS_PIL, 'Pillow is not installed')
+class ArenaSkinTests(unittest.TestCase):
+    def test_a_new_rules_font_reads_its_metrics_and_glyphs(self):
+        import nr_arena_art
+        # space 8, gap 1, track -2, two characters (A, B) 12 high; two colours; A is 2 x 1 (clear, red), B empty.
+        data = (bytes([8, 1, 0xFE]) + struct.pack('>h', 2) + bytes([12]) + b'AB' + struct.pack('>h', 2)
+                + bytes([0, 0, 0, 255, 0, 0]) + struct.pack('>h', 2) + bytes([2, 1, 0, 1, 0]))
+        font = nr_arena_art.read_font(data)
+        self.assertEqual((font['space'], font['gap'], font['track'], font['height']), (8, 1, -2, 12))
+        self.assertEqual(sorted(font['glyphs']), [ord('A')])
+        self.assertEqual(list(font['glyphs'][ord('A')].getdata()), [(0, 0, 0, 0), (255, 0, 0, 255)])
 
 
 @unittest.skipUnless(HAS_NUMPY, 'tools/translate/midi_render.py needs numpy')

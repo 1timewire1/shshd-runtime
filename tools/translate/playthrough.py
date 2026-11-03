@@ -4,7 +4,8 @@ its smartphone twin.
     python tools/translate/playthrough.py EPISODE.exp [--answers 0,1,...] [--name Matt] [--seed 1] [--out FILE.json]
 
 Every choice takes the next answer (then 0), text input gets --name, a portrait picker confirms its first look; title
-cards, messages and the loading screen are acknowledged after their reading time. The record lists dialogue lines
+cards, messages and the loading screen are acknowledged after their reading time. New Rules' minigame arena (with
+the addon's library) is played by a bot that presses OK every few frames and turns down tutorials. The record lists dialogue lines
 (speaker, text, character, expression), choices (title, text, options), title cards, messages and the episode exit.
 """
 import argparse
@@ -13,23 +14,39 @@ from pathlib import Path
 from types import SimpleNamespace
 import sys
 
-from exp_runtime.content import digest
+from exp_runtime.content import EpisodeResources, digest
+from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive
 from exp_runtime.runtime import Session
 from exp_runtime.vm import VMError
 
+LINKED_SCRIPT = EpisodeResources.LINKED_SCRIPT
 
-def session(data, game='shs'):
+
+def session(data, game='shs', addons=(), arena=True):
+    """`addons`: the archives (ExpArchive) of the addons the episode declares, whose resources it also has, and whose
+    linked script (New Rules' minigame library) the episode runs beside. `arena`: the player's arena switch."""
     archive = ExpArchive(data)
+    programs = archive.programs()
+
+    def linked_program():
+        for addon in addons:
+            if LINKED_SCRIPT in addon.entries:
+                program = decode_program(addon.read(LINKED_SCRIPT))
+                return program if program.previous_flag else None
+        return None
     resources = SimpleNamespace(library=SimpleNamespace(game_id=game, directory=Path('.')), record={'titles': ['']},
                                 identity=dict(profile='translate', episode_sha256=digest(data)),
-                                program=archive.programs().__getitem__, exists=lambda key: key in archive.entries)
-    return Session(resources, ephemeral=True)
+                                program=programs.__getitem__, linked_program=linked_program,
+                                exists=lambda key: key in archive.entries or any(key in a.entries for a in addons))
+    s = Session(resources, ephemeral=True)
+    s.nr_arena = arena
+    return s
 
 
-def play(data, answers=(), name='Matt', limit=5000, seed=1):
+def play(data, answers=(), name='Matt', limit=5000, seed=1, addons=(), arena=True):
     """The record; a VM error ends it with an `error` event."""
-    s, record = session(data), []
+    s, record = session(data, addons=addons, arena=arena), []
     s.engine.random.state = seed                # the native clock seed, fixed so two runs (and two versions) agree
     try:
         steps(s, list(answers), name, limit, record)
@@ -79,6 +96,49 @@ def steps(s, answers, name, limit, record):
             action = s.tick(4000)
             if s.pending is not None and s.pending.name == kind and kind != 'loading':
                 action = s.answer()
+        elif kind == 'arena_skip':
+            record.append(dict(kind='arena_skip'))
+            action = s.answer(arena_skip_answer(s))
+        elif kind in ARENA:
+            action = arena_game(s, record)
+        elif kind == 'x360_slot':
+            record.append(dict(kind=kind))
+            while s.pending is not None and s.pending.name == kind:      # takes every bulb it sees
+                game = s.engine.x360_slot
+                if game.phase == 'ready' or (game.focus == game.slot and game.option == 0):
+                    s.answer(None)
+                action = s.tick(33)
+        elif kind == 'x360_diss':
+            record.append(dict(kind=kind))
+            while s.pending is not None and s.pending.name == kind:      # presses again and again, then past the score
+                game = s.engine.x360_diss
+                s.answer(None)
+                action = s.tick(100)
+        elif kind == 'x360_puzzle':
+            record.append(dict(kind=kind))
+            turn = 0
+            while s.pending is not None and s.pending.name == kind:      # drags about, then lets the clock run out
+                game = s.engine.x360_puzzle
+                if game.phase in ('ready', 'score'):
+                    s.answer(None)
+                elif game.phase == 'running':
+                    turn += 1
+                    if turn == 5:
+                        game.press()
+                    if turn % 3 == 0:
+                        game.move(('up', 'right', 'down', 'left')[turn // 3 % 4])
+                action = s.tick(33)
+        elif kind == 'x360_leash':
+            record.append(dict(kind=kind))
+            turn = 0
+            while s.pending is not None and s.pending.name == kind:      # shakes the way it's asked to, every 100 ms
+                game = s.engine.x360_leash
+                if game.phase == 'ready':
+                    s.answer(None)
+                turn += 1
+                if turn % 3 == 0:
+                    game.shake((('left', 'right'), ('up', 'down'))[game.wanted][turn // 3 % 2])
+                action = s.tick(33)
         elif kind in ('word_game', 'football', 'word_grid'):
             record.append(dict(kind=kind))
             for _ in range(1000):
@@ -92,6 +152,43 @@ def steps(s, answers, name, limit, record):
             break
         if action is None:
             action = s.pending
+
+
+ARENA = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
+
+
+def arena_skip_answer(s):
+    """The answer to an arena game's skip question (a session with skip_arena on): -1 plays it. Checks replace this to
+    finish the game with a result instead."""
+    return -1
+ARENA_FRAME_MS = 33
+ARENA_OK_EVERY = 6                      # frames between the bot's OK presses
+ARENA_FRAMES = 20000                    # about 11 minutes of play, more than any game runs
+
+
+def arena_game(s, record):
+    """One stretch of New Rules' minigame arena: frames until the story has the screen again. Its menus (a tutorial's
+    offer) take "no" where there is one, its info boxes are acknowledged, and the record notes what was shown and the
+    result the library leaves in B."""
+    event = dict(kind='arena', menus=[], info=[], frames=0)
+    record.append(event)
+    action = s.pending
+    while action is not None and action.name in ARENA and event['frames'] < ARENA_FRAMES:
+        if action.name == 'arena_menu':
+            options = action.details['options']
+            event['menus'].append(dict(title=action.details['title'], options=options))
+            action = s.answer(options.index('no') if 'no' in options else 0)
+        elif action.name == 'arena_info':
+            event['info'].append(action.details['text'])
+            action = s.answer()
+        else:
+            if s.engine.nr_arena is not None and event['frames'] % ARENA_OK_EVERY == 0:
+                s.arena_press(-5)
+            action = s.tick(ARENA_FRAME_MS)
+            event['frames'] += 1
+        action = action if action is not None else s.pending
+    event['b'] = s.vm.b
+    return action
 
 
 if __name__ == '__main__':

@@ -21,8 +21,14 @@ TRANSLATED_MUSIC_LOOPS: the X360 prototype's `dont_trust_me` and `dont_trust_me_
 loop queued behind it, looping (pygame hands over at the end of the intro); its position counts across both, so the
 pause menu resumes in the right one. A host mixer that cannot queue plays the intro alone.
 """
+import atexit
+import hashlib
 from io import BytesIO
 import logging
+from pathlib import Path
+import shutil
+import tempfile
+import time
 import wave
 
 from . import graphics as pygame
@@ -30,6 +36,69 @@ from .audio import mp3_length_ms
 from .content import ContentError
 
 FADE_MS = 1000
+CUE_FOLDER_PREFIX = 'shshd-music-'
+STALE_CUE_FOLDER_S = 86400              # a day: another copy of the player may be using a newer one
+
+
+class CueFiles:
+    """Cues on disk for SDL_mixer's stream, in a temporary folder of this run. From a Python file object the mixer would
+    read through Python on its audio thread, holding SDL's audio lock while it waits for the interpreter's. pygame's
+    `music.pause` waits for that lock holding the interpreter's: a deadlock, and the player hangs (the owner paused
+    during an X360 arena game, 2026-11-01; a WAV reads every audio buffer, so a few dozen pauses were enough)."""
+
+    def __init__(self, base=None):
+        self.base = Path(base) if base is not None else None
+        self.folder = None
+        self.recent = []        # the newest cues' names: an intro and its loop stay
+
+    def path(self, data):
+        name = hashlib.blake2b(data, digest_size=16).hexdigest() + '.cue'
+        if self.folder is None:
+            base = self.base if self.base is not None else Path(tempfile.gettempdir())
+            self._clear_stale(base)
+            self.folder = Path(tempfile.mkdtemp(prefix=CUE_FOLDER_PREFIX, dir=base))
+            atexit.register(shutil.rmtree, self.folder, ignore_errors=True)
+        path = self.folder / name
+        if not path.exists():
+            part = path.with_suffix('.part')
+            part.write_bytes(data)
+            part.replace(path)
+        self.recent = [other for other in self.recent if other != name][-1:] + [name]
+        self._clear_old()
+        return str(path)
+
+    def _clear_old(self):
+        for other in self.folder.iterdir():
+            if other.name not in self.recent:
+                try:
+                    other.unlink()
+                except OSError:
+                    pass                # still the mixer's (Windows): the next cue tries again
+
+    @staticmethod
+    def _clear_stale(base):
+        """Folders a closed or killed run left behind."""
+        try:
+            for folder in base.glob(CUE_FOLDER_PREFIX + '*'):
+                if folder.is_dir() and time.time() - folder.stat().st_mtime > STALE_CUE_FOLDER_S:
+                    shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            pass
+
+
+_cue_files = CueFiles()
+
+
+def cue_source(music, data):
+    """What to give `music.load` or `queue` for a cue: a file for pygame's own stream (CueFiles), or the bytes as a stream
+    for a host's mixer, which takes them whole, or if no file can be written."""
+    if getattr(music, '__name__', '') != 'pygame.mixer_music':
+        return BytesIO(data)
+    try:
+        return _cue_files.path(data)
+    except OSError as error:
+        logging.warning('Music has no temporary file: %s', error)
+        return BytesIO(data)
 
 
 def audio_length_ms(data):
@@ -215,18 +284,18 @@ class MusicStream:
         queued to repeat behind it, or, from a position past the intro, the loop alone from there."""
         music = pygame.mixer.music
         if loop is None:
-            music.load(BytesIO(data))
+            music.load(cue_source(music, data))
             music.play(loops=-1 if flag else 0, start=start)
             return
         if length is not None and start >= length:
-            music.load(BytesIO(loop['data']))
+            music.load(cue_source(music, loop['data']))
             music.play(loops=-1, start=start - length)
             return
-        music.load(BytesIO(data))
+        music.load(cue_source(music, data))
         music.play(loops=0, start=start)
         queue = getattr(music, 'queue', None)
         if queue is not None:
-            queue(BytesIO(loop['data']), loops=-1)
+            queue(cue_source(music, loop['data']), loops=-1)
 
     def _replay(self, position, now):
         current = self.current

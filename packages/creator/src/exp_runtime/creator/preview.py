@@ -17,6 +17,9 @@ def preview_resources(data, library_path, game):
         if library.game_id != game:
             raise ProjectError('Preview library does not match the project game')
         with tempfile.TemporaryDirectory(prefix='exp-creator-preview-') as temporary:
+            # Addons read now, from the real folder: the copy below looks for its files in the temporary one.
+            for addon in library.addons:
+                library.addon(addon['addon'])
             isolated = copy(library)
             isolated.directory = Path(temporary)
             record = dict(id=digest(data), sha256=digest(data), name=meta.title + '.exp',

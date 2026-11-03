@@ -14,6 +14,8 @@ def main(argv=None):
     parser.add_argument('--language', choices=('en', 'fr', 'it', 'de', 'es'), help='Story language for export')
     parser.add_argument('--smoke-test', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--export', type=Path, help='Compile a project without starting the GUI')
+    parser.add_argument('--pack-addons', action='store_true',
+                        help='with --native-slot and --library: pack the pictures and sounds the project takes from add-ons into the .exp')
     parser.add_argument('--native-slot', type=Path, help='With --export, retain this original EXP catalog identity')
     parser.add_argument('--preview', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--library', type=Path, help=argparse.SUPPRESS)
@@ -42,7 +44,14 @@ def main(argv=None):
             project = load_project(args.project)
             if args.language: project.language = args.language
             if args.native_slot:
-                export_native_slot(project, args.native_slot, args.export)
+                if args.pack_addons:
+                    from exp_runtime.content import ContentLibrary
+                    if not args.library:
+                        parser.error('--pack-addons requires --library')
+                    with ContentLibrary(args.library) as library:
+                        export_native_slot(project, args.native_slot, args.export, pack_from=library)
+                else:
+                    export_native_slot(project, args.native_slot, args.export)
             else:
                 export_project(project, args.export)
             return

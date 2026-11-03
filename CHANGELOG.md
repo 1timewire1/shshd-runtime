@@ -4,6 +4,57 @@
 
 ### Added
 
+- **Addons: shared resource packs for episodes.** An addon is an `.exp` file holding resources several episodes use,
+  such as a translated game's backgrounds and music; each episode declares the addons it reads (resource 4,
+  SCHEMA.md "Addon extension") instead of carrying its own copies.
+  - **Import:** importing an addon files it apart from the episodes, so no picker lists it. A newer revision replaces
+    an older one.
+  - **Lookup:** an episode reads its own art first, then its addons'.
+  - **Missing addon:** an episode without its addon says which one it needs, rather than starting with missing art.
+  - **`tools/translate`:** `newrules addon` writes the New Rules addon (every background in every time of day, the
+    music, the frame backdrop), and `--addon` builds the translations against it. The 50 New Rules episodes shrink
+    from 299 MB to 91 MB in all, the 44 MB addon included; their scripts and every picture and track are unchanged.
+  - **Data Management:** an Add-Ons page per library has Details, Export and Delete. Delete warns how many episodes
+    need the addon, and saves stay. Add Episodes, Library Info, Storage and Verify know about addons, and Export
+    Episodes offers the addons the exported episodes need.
+  - **Sync Devices:** addons travel with the episodes (the row is now "Episodes & Add-Ons"): every addon the receiver
+    lacks or holds older. Legacy Mode sends none, so turn it off on both devices for this.
+  - **Creator:** a project can use an addon's pictures, sounds and cutscenes by reference, or copy pictures and sounds
+    in, and a timeline editor writes storyboards (MCP: `asset_list(addon=)`, `asset_use_addon`,
+    `asset_save_cutscene`). Native export is blocked with an explanation for a project using a fork-only mechanic; one
+    taking only addon pictures and sounds is offered to pack them into the `.exp`. Making an addon in the Creator is
+    not offered yet.
+  - **Options > Add-Ons** holds the switches that only concern translated games and addons, each shown when it
+    applies: Use Translated Mini-Games, MS3 Characters, Hi-Res Portraits, HD Portraits in CoD, Backdrop, and Use X360
+    Arena Skin.
+  - The docs are `docs/ADDONS.md`, `docs/NEW_RULES.md` and `docs/X360.md`.
+- **New Rules' minigame arena.** All 50 New Rules translations now play their minigames on New Rules' own arena: the
+  player runs its library code beside the story (the VM now allows a script beside a linked segment), and draws the
+  panel from the `shsnr` addon's skin, the X1i build's own art, fonts and layouts (`nr_arena.py`, `desktop_nr_arena.py`).
+  Keys, a controller, clicks and taps play it, and a game can be saved mid-way.
+  - The rules stay in the library's bytecode. The panel only keeps state and draws.
+  - Each game asks to be skipped first, with its results probed in advance, and sounds are added where New Rules plays
+    none.
+  - `tools/translate --arena` wires a translation's games to it. Each is guarded by service 70 selector 200, so another
+    player takes the word game instead.
+  - `tools/translate/nr_arena_test.py` writes *Minigame Arena Test*: all 5 library games and 5 download rounds.
+  - New Rules' library word games have real goals, capped at 19, after a scan of their timed goals.
+- **The X360 arena skin.** With the `shsx360` addon, Use X360 Arena Skin (off by default) redraws New Rules' arena as the
+  Xbox 360 prototype's turntable: its deck, digits and turning record, its title screen as the backdrop, and the
+  arm's swing on presses. Same geometry, rules and saves, so New Rules' stories need no rebuild.
+- **The Xbox 360 stories' real minigames.** Dating Beth's slot machine and leash game, Puzzle Test's jewel puzzle and Diss
+  Practice run from the prototypes' own rules (services 214-217, guarded by service 70 selector 201), behind Use
+  Translated Mini-Games. Other players take the word games. The Xbox 360 stories now need the `shsx360` addon.
+  - **Monday Planner** is a new translation: Diss Practice three times, on the real turntable with Josh dancing behind
+    the deck, and a speed diss.
+  - **MS3 Characters** (off by default) swaps in the April prototype's looks and dancer.
+  - Level music and ambience are mixed into one track per combination, with `zip.wav` at each dialogue's close.
+- **Storyboard cutscenes** (service 218, guarded by service 70 selector 202; `cutscene.py`, `desktop_cutscene.py`): stills
+  with a 3:4 window panned across them, overlays and sounds on a timeline, its clock following the music. Day of Diss
+  opens with one, holding on Josh's title card, which also serves as the picker's preview. SHS only for now.
+- **`chslim`, an optional Cause of Death pack:** Claire Hart's sharper portraits, found by a hash of the picture's bytes,
+  and its backdrop, behind HD Portraits in CoD and Backdrop. Sophie is left out on purpose, as her red hair matters to
+  the plot. A full Claire Hart pack could replace it later (`supersedes`).
 - **Cause of Death shows 64 of its backgrounds in HD** when you also have SHS HD. Many CoD locations are SHS HD
   backgrounds at half size. On its first preparation, a CoD library copies them from your own SHS library's HD
   episodes and the linked SHS HD bundle, in about 17 seconds. Where CoD changed a picture, the HD copy gets the
@@ -226,6 +277,17 @@
 
 ### Fixed
 
+- **Music no longer freezes the player.** Pausing music played from a Python file object could deadlock against the
+  audio thread, stopping the player at 0 CPU. Music now plays from a temporary file.
+- **Deleting a save lets go of that episode's live game.** A game left for the main menu stays alive behind it, so
+  Continue could still resume a deleted save, and its next autosave brought the save back. Restoring and syncing
+  progress do the same now.
+- The first launch after an import no longer crashes on the busy card.
+- **The episode explorer plays through scene fades.** When a tap on a dialogue line started a queued fade, the
+  explorer (`tree_explorer.py`, `tools/explore_tree.py`) kept tapping the line, which ignores taps until the fade
+  ends, so a run stopped there at its 30000-screen limit. It now lets the fade run. This happened in almost every
+  Cause of Death episode: a walk taking the first option on every screen now gets 5-10 times further, and
+  MTX_Secret_Files_02's exit plays to the end of the episode.
 - **A translated episode's end card keeps its frame.** The sepia scene behind "Miss An Episode?" now shows a New
   Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
   of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a

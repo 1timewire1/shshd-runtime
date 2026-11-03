@@ -34,6 +34,8 @@ from io import BytesIO
 import pygame
 
 from . import momentum
+
+DELETE_SAVE_LABEL = 'Delete'        # the popup's Delete Save button
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .graphics import faded
 from .episode_picker import EpisodeInfo
@@ -276,9 +278,9 @@ class HdEpisodePicker(HdUi):
     INFO_KEY = pygame.K_i            # the highlighted episode's info card (an episode that has one)
 
     def popup_commands(self):
-        """The popup's New Game, Continue and back, in keyboard order."""
+        """The popup's New Game, Continue, back and Delete Save, in keyboard order."""
         record = self.popup
-        return [('new', record['id']), ('continue', record['id']), ('close',)]
+        return [('new', record['id']), ('continue', record['id']), ('close',), ('delete_save', record['id'])]
 
     def popup_key(self, key):
         """The New Game / Continue popup's keys: arrows or Tab move a highlight over its two cards and its back button,
@@ -398,7 +400,8 @@ class HdEpisodePicker(HdUi):
                              2 * S, border_radius=4 * S)
         mark = self.model.mark(record)
         if mark is not None:
-            self.draw_standard_mark(layer, x + TILE[0] - 42, y + TILE[1] - 30, mark, self.model.mark_color(record))
+            self.draw_standard_mark(layer, x + TILE[0] - 8 - self.mark_width(mark), y + TILE[1] - 30, mark,
+                                    self.model.mark_color(record))
         info = self.info_rect(record, x, y)
         if info is not None:
             self.draw_info_mark(layer, info)
@@ -409,7 +412,8 @@ class HdEpisodePicker(HdUi):
         show); None without an info card."""
         if not self.model.has_info(record):
             return None
-        right = x + TILE[0] - 8 - (42 if self.model.mark(record) is not None else 0)
+        mark = self.model.mark(record)
+        right = x + TILE[0] - 8 - (self.mark_width(mark) + 8 if mark is not None else 0)
         return pygame.Rect(right - INFO_PLATE[0], y + TILE[1] - 10 - INFO_PLATE[1], *INFO_PLATE)
 
     def draw_info_mark(self, layer, rect):
@@ -437,11 +441,15 @@ class HdEpisodePicker(HdUi):
         pygame.draw.rect(surface, glyph, stem, border_radius=2 * S)
         layer.blit(surface, (round(cx * S - size * S / 2), round(cy * S - size * S / 2)))
 
+    def mark_width(self, mark):
+        """The tag plate's width in points: 34, wider for a tag that needs it (the X360 translations' "X360")."""
+        return max(34, -(-self.font(13).size(mark)[0] // S) + 10)
+
     def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
         """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition.
         An episode translated from another SHS game shows its game's tag ("NR") on the same plate, in its game's
         colour lightened for the dark plate (owner, 2026-10-25)."""
-        width, height = 34, 20
+        width, height = self.mark_width(mark), 20
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
         pygame.draw.rect(plate, (0, 0, 0, 150), plate.get_rect(), border_radius=6 * S)
         tint = MARK_COLOR if color is None else tuple(round(c + (255 - c) * MARK_TINT) for c in color)
@@ -610,6 +618,13 @@ class HdEpisodePicker(HdUi):
         back = pygame.Rect(left + 22, top + 359, *BUTTON_SIZE)
         self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('close',) or self.popup_focus == ('close',))
         self.hits.append((back, ('close',)))
+        # Delete Save (this player's; Data Management, owner 2026-10-29): the back button's twin at the card's right,
+        # asking "Delete Saved Game?" first (Application.picker_command).
+        delete = pygame.Rect(left + CARD[0] - 22 - BUTTON_SIZE[0], top + 359, *BUTTON_SIZE)
+        command = ('delete_save', record['id'])
+        self.draw_button(layer, delete.x, delete.y, label=DELETE_SAVE_LABEL,
+                         pressed=self.pressed == command or self.popup_focus == command)
+        self.hits.append((delete, command))
         # A click outside the card closes it.
         self.hits.insert(0, (pygame.Rect(0, 0, *FRAME), ('close',)))
 

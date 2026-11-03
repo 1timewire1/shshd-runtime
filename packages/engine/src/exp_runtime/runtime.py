@@ -31,9 +31,14 @@ from .story_labels import prepare_labels, story_labels
 from .title_screen import TitleScreen
 from .loading import loading_waits, retained_word
 from .minigames import MINIGAMES
+from .cutscene import Cutscene
+from .x360_diss import PASS_SCORE
+from .x360_games import SLOTS
 from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
-from .vm import KiwiVM, StopKind, VMError, VMStop, signed16
+from .vm import KiwiVM, StopKind, VMError, VMStop, linked_layout, signed16
+
+ARENA_FRAME_CAP_MS = 250                # New Rules' arena: the longest a single frame counts (as the minigames cap theirs)
 
 
 class SaveError(ValueError):
@@ -145,6 +150,13 @@ class Session:
     # Whether a timed choice's clock runs. The desktop's Disable Choice Timer (this player's option, not native) holds
     # it; `expire_choice` then lets it run out on request. Not saved: the remaining time is kept as it was.
     choice_timer = True
+    # shshd-runtime: whether New Rules' minigame arena plays (nr_arena.py) where a translated story offers it; off, its
+    # story plays the word game or timed choices it carries for apps without the arena. Not saved: read at each call.
+    nr_arena = True
+    cutscenes = False           # shshd-runtime: whether a player draws storyboard cutscenes (desktop_cutscene)
+    # shshd-runtime: Ask to Skip Mini-Games for New Rules' arena: service 213 waits (an 'arena_skip' screen) for the
+    # result to give the story instead, or -1 to play. Off, it plays at once. Not saved: read at each call.
+    skip_arena = False
     # shshd-runtime: (the dialogue motion, its two-speaker line's partner ID or -1), so the next line knows whether its
     # partner is new. Not saved: a restore takes it from the restored line.
     _duet_line = None
@@ -155,7 +167,9 @@ class Session:
         # An ephemeral session (a preview capture) never writes the library's shared tree file.
         self.ephemeral = ephemeral
         self.scene = start_script
-        self.vm = KiwiVM(resources.program(start_script))
+        # shshd-runtime: a linked segment beside the scripts (New Rules' minigame library, from its addon), if any.
+        linked = resources.linked_program() if hasattr(resources, 'linked_program') else None
+        self.vm = KiwiVM(resources.program(start_script), **linked_layout(linked))
         self.engine = EngineState()
         self._set_build()
         self.engine.game_key = game_id(resources)
@@ -371,6 +385,8 @@ class Session:
             return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
+        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss'):
+            return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
     def start_minigame(self):
@@ -398,6 +414,14 @@ class Session:
             # Explicit success/failure, including tutorial grids with target 0
             # that ordinary play cannot fail. No raw grid score escapes the UI.
             return self._complete_minigame(result=int(success))
+        elif kind == 'x360_slot':
+            return self._complete_minigame(result=SLOTS if success else 0)
+        elif kind == 'x360_leash':
+            return self._complete_minigame(result=int(success))
+        elif kind == 'x360_puzzle':
+            return self._complete_minigame(result=0)    # (its story reads no result)
+        elif kind == 'x360_diss':
+            return self._complete_minigame(result=PASS_SCORE + 1 if success else 0)
         else:
             # Preserve starting scores where possible, adding enough points for
             # the requested side to win by a touchdown without signed overflow.
@@ -406,6 +430,14 @@ class Session:
             winner = min(32767, max(winner, loser + 7))
             game.home, game.away = (winner, loser) if success else (loser, winner)
         return self._complete_minigame()
+
+    @_sound_batch
+    def skip_x360_slot(self, points: int):
+        """shshd-runtime: finish the pending slot machine with `points`, the skip prompt's outcome."""
+        if not self.pending or self.pending.name != 'x360_slot' or self.transitioning:
+            raise ValueError('There is no skippable slot machine')
+        self.start_minigame()
+        return self._complete_minigame(result=points)
 
     @_sound_batch
     def skip_word_game(self, score: int):
@@ -601,7 +633,15 @@ class Session:
             request = self.vm.run(remaining)
             if request.kind == StopKind.YIELD:
                 queued_notice = self.engine.next_dialogue_notice
+                self.engine.nr_arena_enabled = self.nr_arena
+                self.engine.nr_arena_skip = self.skip_arena
+                self.engine.cutscenes_enabled = self.cutscenes
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
+                if action.name == 'cutscene':
+                    try:
+                        self.engine.cutscene = Cutscene.opened(action.details['spec'], self.resources.read_asset(action.details['spec']))
+                    except ValueError as error:
+                        raise VMError(str(error)) from error
                 if action.name in ('dt_add_node', 'dt_add_result', 'dt_save'):
                     # Real native behavior: every addNode/addResult call
                     # auto-saves its own tree_<serial>.sav immediately, not
@@ -758,6 +798,36 @@ class Session:
             game.tap(value, self.engine.random)
             self._game_sound(game, before)
             return action
+        elif action.name == 'x360_slot':
+            if value is not None:
+                raise ValueError('The slot machine takes a press')
+            self.engine.x360_slot.press()
+            self._slot_sounds()
+            return action
+        elif action.name == 'x360_leash':
+            if value is not None:
+                raise ValueError('The leash game takes a press')
+            self.engine.x360_leash.press()
+            return action
+        elif action.name == 'cutscene':
+            if value is not None:
+                raise ValueError('A cutscene takes a press')
+            self.engine.cutscene.press()
+            if not self.engine.cutscene.finished:
+                return action
+            if self._queue_transition(0):           # service 16 before it: it stays up under the closing blinds
+                return action
+            return self._complete_minigame(result=0)
+        elif action.name == 'x360_puzzle':
+            if value is not None:
+                raise ValueError('The jewel puzzle takes a press')
+            self.engine.x360_puzzle.press()
+            return action
+        elif action.name == 'x360_diss':
+            if value is not None:
+                raise ValueError('Diss Practice takes a press')
+            self.engine.x360_diss.press()
+            return action
         elif action.name == 'text_input':
             validate_name(value, **self.name_input_metrics())
             if not self._complete_text_input(value):
@@ -812,9 +882,30 @@ class Session:
                 if not self._complete_panel():
                     return action
             self.pending = None
+        elif action.name == 'arena_menu':
+            # New Rules' menu over the arena (its 9): the chosen option's index goes back to the library.
+            if type(value) is not int or not 0 <= value < len(action.details['options']):
+                raise ValueError('Choose an option by its zero-based index')
+            self.vm.resume(value)
+            self.pending = None
+        elif action.name == 'arena_info':
+            self.vm.resume(0)                               # New Rules' info box (its 10): OK closes it
+            self.pending = None
+        elif action.name == 'arena_skip':
+            # Before an arena game (213): -1 plays it; another value is the result its story reads instead.
+            if type(value) is not int or not -1 <= value <= 0x7FFF:
+                raise ValueError('Skip an arena game with its result, or -1 to play it')
+            self.vm.resume(value)
+            self.pending = None
         else:
             raise VMError(f'Cannot answer {action.name}; its native contract is not implemented')
         return self.advance()
+
+    def arena_press(self, key_code: int) -> None:
+        """A key press on New Rules' minigame arena (a Nokia key code, nr_arena.KEY_BITS), for its library to read."""
+        arena = self.engine.nr_arena
+        if arena is not None and not arena.entering and not arena.leaving:   # none while it comes or goes
+            arena.press(key_code)
 
     def _complete_survey(self, action):
         from .shs.survey import RESPONSE_STEPS, SURVEY_TEXT, script_response
@@ -889,7 +980,7 @@ class Session:
             self.engine.title_screen = None
         elif kind == 'message_panel':
             self.engine.message_panel = None
-        elif kind in ('character_picker', 'word_game'):
+        elif kind in ('character_picker', 'word_game', 'cutscene'):
             setattr(self.engine, kind, None)
         # A VM pause or debugger stop can occur before the next UI is ready.
         # Retain native phase 1 so a later tick/advance cannot return twice.
@@ -929,6 +1020,12 @@ class Session:
     def _game_sound(self, game, before):
         if game.sound_serial != before:
             self.engine.request_sound(*game.sound_ids)
+
+    def _slot_sounds(self):
+        game = self.engine.x360_slot
+        if game.sounds:
+            self.engine.request_sound(*game.sounds)
+            game.sounds.clear()
 
     @_sound_batch
     def grid_pointer(self, phase, index=None):
@@ -1001,6 +1098,28 @@ class Session:
                 self.pending = None
                 return self.advance()
             return self.pending
+        if self.pending and self.pending.name == 'arena_exit':
+            # New Rules' exit: the panel has closed; its bands and table leave before the script goes on.
+            if self.engine.nr_arena is None or self.engine.nr_arena.leave(min(elapsed_ms, ARENA_FRAME_CAP_MS)):
+                self.engine.nr_arena = None
+                self.vm.resume(0)
+                self.pending = None
+                return self.advance()
+            return self.pending
+        if self.pending and self.pending.name == 'arena_entrance':
+            # New Rules' entrance: the panel's clock waits, and so does the script, until it has run (nr_arena.py).
+            if self.engine.nr_arena is None or self.engine.nr_arena.enter(min(elapsed_ms, ARENA_FRAME_CAP_MS)):
+                self.vm.resume(0)
+                self.pending = None
+                return self.advance()
+            return self.pending
+        if self.engine.nr_arena is not None:
+            # New Rules' arena keeps turning under its own menu and info box; a long gap counts as one capped frame.
+            self.engine.nr_arena.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
+        if self.pending and self.pending.name == 'arena_frame':
+            self.vm.resume(0)                       # the library's frame wait (New Rules' 29): its next pass
+            self.pending = None
+            return self.advance()
         if self.pending and self.pending.name == 'dialogue':
             motion = self.engine.dialogue_animation
             was_complete = motion.complete
@@ -1043,6 +1162,34 @@ class Session:
             if finished:
                 return self._complete_minigame()  # FUN_000add90, mode 2.
             return self.pending
+        if self.pending and self.pending.name == 'x360_slot':
+            finished = self.engine.x360_slot.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
+            self._slot_sounds()
+            return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'x360_leash':
+            finished = self.engine.x360_leash.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
+            return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'x360_diss':
+            game = self.engine.x360_diss
+            finished = game.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
+            if game.sounds:
+                self.engine.request_sound(*game.sounds)
+                game.sounds.clear()
+            return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'cutscene':
+            game = self.engine.cutscene
+            game.tick(elapsed_ms)
+            if game.sounds:
+                self.engine.request_sound(*game.sounds)
+                game.sounds.clear()
+            return self.pending
+        if self.pending and self.pending.name == 'x360_puzzle':
+            game = self.engine.x360_puzzle
+            finished = game.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
+            if game.sounds:
+                self.engine.request_sound(*game.sounds)
+                game.sounds.clear()
+            return self._complete_minigame() if finished else self.pending
         if self.pending and self.pending.name in ('word_grid', 'football'):
             kind = self.pending.name
             game = getattr(self.engine, kind)
@@ -1092,7 +1239,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=29,
+        return dict(format='shs-runtime-save', version=35,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1133,8 +1280,32 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 30):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 36):
                 raise SaveError('Unsupported save format or version')
+            # Version 35 adds a storyboard cutscene (cutscene.py); an older save never had one.
+            if state['version'] < 35 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('cutscene', None)
+            # Version 34 adds the X360 translations' Diss Practice (x360_diss.py); an older save never had one.
+            if state['version'] < 34 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_diss', None)
+            # Version 33 adds the X360 translations' jewel puzzle (x360_puzzle.py); an older save never had one.
+            if state['version'] < 33 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_puzzle', None)
+            # Version 32 adds the X360 translations' leash game (x360_games.py); an older save never had one.
+            if state['version'] < 32 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_leash', None)
+            # Version 31 adds the X360 translations' slot machine (x360_games.py); an older save never had one open.
+            if state['version'] < 31 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_slot', None)
+            # Version 30 adds New Rules' minigame arena (nr_arena.py); an older save never had one open.
+            if state['version'] < 30 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('nr_arena', None)
             # Version 29 stores an open portrait picker's slot positions (a translated pack may place them its own
             # way); an older one used the native slots.
             if state['version'] < 29 and (state.get('engine') or {}).get('character_picker') is not None:
@@ -1393,7 +1564,7 @@ class Session:
             session = cls(resources, start_script=state['scene'])
             if state['script_sha256'] != digest(session.vm.program.to_bytes()):
                 raise SaveError('Saved script does not match the loaded script')
-            session.vm = KiwiVM.from_snapshot(session.vm.program, state['vm'])
+            session.vm = KiwiVM.from_snapshot(session.vm.program, state['vm'], linked=session.vm.linked)
             library_view = session.engine.dt_view          # the library's own tree, read when the session was made
             engine_state = dict(state['engine'])
             saved_view = dict(engine_state['dt_view'])
@@ -1440,6 +1611,36 @@ class Session:
                 raise SaveError('Invalid native random generator state')
             if engine.word_game is not None:
                 engine.word_game.validate()
+            if engine.nr_arena is not None:
+                try:
+                    engine.nr_arena.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
+            if engine.x360_slot is not None:
+                try:
+                    engine.x360_slot.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
+            if engine.x360_leash is not None:
+                try:
+                    engine.x360_leash.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
+            if engine.cutscene is not None:
+                try:
+                    engine.cutscene.validate()
+                except (ValueError, TypeError) as error:
+                    raise SaveError(str(error)) from error
+            if engine.x360_puzzle is not None:
+                try:
+                    engine.x360_puzzle.validate()
+                except (ValueError, KeyError, TypeError, IndexError) as error:
+                    raise SaveError(str(error)) from error
+            if engine.x360_diss is not None:
+                try:
+                    engine.x360_diss.validate()
+                except (ValueError, KeyError, TypeError, IndexError) as error:
+                    raise SaveError(str(error)) from error
             if not 0 <= engine.choice_ms <= 250:
                 raise SaveError('Invalid choice entrance clock')
             if engine.word_grid is not None:
@@ -1483,9 +1684,9 @@ class Session:
                     # completed call is recoverable from the program and stack
                     # backing without inventing a suspended VM frame.
                     pc = session.vm.pc - 1
-                    if request is not None or not 0 <= pc < len(session.vm.program.instructions):
+                    if request is not None or pc < 0:
                         raise SaveError('Invalid completed loading call')
-                    instruction = session.vm.program.instructions[pc]
+                    instruction = session.vm.instruction_at(pc)
                     if (not ((instruction.opcode == 0x1f and instruction.operand >> 8 == 91)
                              or (instruction.opcode == 0x1e and instruction.operand == 91))
                             or session.vm.result != 0
@@ -1507,7 +1708,10 @@ class Session:
                 allowed = {'choice': (1, 4), 'character_picker': (78,), 'word_game': (71,), 'word_grid': (96,), 'football': (94,), 'dialogue': (13, 65, 15, 37, 76), 'text_input': (17, 40),
                            'presentation': (8,), 'loading': (91,), 'message_panel': (33,), 'download_poll': (9,),
                            'survey_confirmation': (9,), 'episode_exit': (7, 63),
-                           'finished': (None,), 'vm_pause': (None,)}
+                           'finished': (None,), 'vm_pause': (None,),
+                           'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
+                           'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
+                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)
@@ -1535,7 +1739,7 @@ class Session:
                 elif name == 'loading':
                     expected_details = {}
                     if (engine.loading and not engine.loading.blocking and len(request.args) != 1
-                            and session.vm.program.instructions[request.pc].opcode == 0x1e):
+                            and session.vm.instruction_at(request.pc).opcode == 0x1e):
                         expected_details['argument_count'] = len(request.args)
                     if (engine.loading is None or details != expected_details
                             or engine.loading.blocking != loading_waits(session.vm, request)):

@@ -195,6 +195,7 @@ class HdUi:
 
     # ------------------------------------------------------------ window furniture
 
+    ch_backdrop_enabled = staticmethod(lambda: False)  # CoD's shell binds its portrait addon's backdrop switch
     backdrop_enabled = staticmethod(lambda: True)      # the shell binds the player's "SHS HD Backdrop" switch
 
     def side_art(self, size):

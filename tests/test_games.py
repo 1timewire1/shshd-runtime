@@ -359,7 +359,7 @@ class GameChooserTests(unittest.TestCase):
         app = Application(audio=False, check_updates=False); self.addCleanup(app.close)
         self.assertEqual(app.screen, 'games')
         app.render()
-        self.assertEqual({command for _, command in app.renderer.buttons},
+        self.assertEqual({command for _, command in app.buttons},          # the HD chooser's (desktop_app_hd)
                          {('choose_game', 'shs'), ('choose_game', 'cod'), ('bulk',), ('options',)})
         app.choose_game('cod'); app.render()
         self.assertEqual((app.screen, app.selected_game, app.library), ('setup', 'cod', None))
@@ -425,7 +425,7 @@ class GameChooserTests(unittest.TestCase):
         app.screen = 'browser'
         app.import_paths([extra]); app.job.result(timeout=10); app.tick(0)
         self.assertEqual(app.screen, 'main')                 # the HD main menu, not the SD episode list
-        self.assertIn('Added 1 episodes', app.message)
+        self.assertIn('Added 1 episode.', app.message)
 
     def test_game_libraries_given_on_the_command_line_are_used_and_not_remembered(self):
         from exp_runtime.application import Application, main

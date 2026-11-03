@@ -225,3 +225,63 @@ def restore_bundle(directory, path, game):
         finally:
             shutil.rmtree(stage, ignore_errors=True)
     return manifest, player
+
+
+# -- both games in one file (the chooser's Back Up Progress, owner 2026-10-30) -----------------------------------------
+# A set holds each game's ordinary bundle as `<game>.zip`, beside a manifest of its own; Restore Progress treats each
+# as it would a single game's backup.
+SET_FORMAT = 'shshd-progress-set'
+
+
+def write_set(target, bundles, *, note=''):
+    """Write a set of bundles ({game: its bundle's file}) to `target`, replaced whole; returns its manifest."""
+    games = sorted(bundles)
+    manifest = dict(format=SET_FORMAT, version=VERSION, created=datetime.now().isoformat(timespec='seconds'),
+                    note=note, games=games, saved={game: len(read_manifest(bundles[game]).get('saved', ()))
+                                                    for game in games})
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.progress-', suffix='.zip', delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        with ZipFile(temporary, 'w') as bundle:             # the games' bundles are compressed already
+            bundle.writestr(MANIFEST, json.dumps(manifest, indent=2))
+            for game in games:
+                bundle.write(bundles[game], f'{game}.zip')
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return manifest
+
+
+def read_backup(path):
+    """Any backup's manifest, a game's or a set's, with `games` (the games it holds) and `saved` ({game: how many
+    saved games}) either way; BundleError if it is neither."""
+    try:
+        with ZipFile(path) as bundle:
+            manifest = json.loads(bundle.read(MANIFEST))
+    except (OSError, KeyError, BadZipFile, ValueError) as error:
+        raise BundleError(f'Not a progress backup: {Path(path).name}') from error
+    if isinstance(manifest, dict) and manifest.get('format') == SET_FORMAT:
+        if manifest.get('version') != VERSION:
+            raise BundleError(f'{Path(path).name} was made by a newer version of this app')
+        if not isinstance(manifest.get('games'), list) or not isinstance(manifest.get('saved'), dict):
+            raise BundleError(f'Not a progress backup: {Path(path).name}')
+        return manifest
+    manifest = read_manifest(path)
+    return dict(manifest, games=[manifest.get('game')], saved={manifest.get('game'): len(manifest.get('saved', ()))})
+
+
+def set_member(path, game, folder):
+    """A set's bundle for `game`, unpacked into `folder`; returns its file (a game's own backup: the file itself)."""
+    if read_backup(path).get('format') != SET_FORMAT:
+        return Path(path)
+    if not re.fullmatch('[a-z]+', game):
+        raise BundleError(f'Not a game: {game}')
+    target = Path(folder) / f'{game}.zip'
+    with ZipFile(path) as bundle:
+        try:
+            target.write_bytes(bundle.read(f'{game}.zip'))
+        except KeyError as error:
+            raise BundleError(f'The backup has no {game} progress') from error
+    return target
