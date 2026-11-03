@@ -23,7 +23,7 @@ import random
 import pygame
 
 from .animation_curves import ease_in_out
-from .graphics import faded
+from .graphics import faded, opaque
 from .shs.football import SELECTED_FRAMES, PLAY_FRAMES as ANDROID_PLAY_FRAMES
 from .shs.football_layout import feedback_text, footer_id, heading_id, help_motion, legend_codes, team_name
 from .hd_gl import GLAtlas, ImageFont
@@ -564,6 +564,7 @@ class HdFootballRenderer:
         self.bar(game)
         if game.phase == 26:
             self.exit_fade(game.phase_ms)
+        opaque(self.canvas)
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
 
     def exit_fade(self, remaining_ms):

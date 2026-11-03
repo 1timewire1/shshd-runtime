@@ -1406,9 +1406,7 @@ class Desktop:
                 else:
                     buttons = renderer.draw(None if action.name == 'text_input' else self.canvas,
                                             self.session, **options)
-                if getattr(renderer, 'hd_layer', False):
-                    self.story_layer = pygame.opaque(renderer.canvas)
-                elif action.name == 'text_input':
+                if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
                 if action.name in ARENA_ACTIONS:
                     self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
