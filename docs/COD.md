@@ -933,7 +933,8 @@ CoD's colours (`cod/hd_art.positional_frames`).
       Episodes uses, starting in that folder. **Use This Folder** chooses the folder there, and **Default** goes back
       to the default folder. The choice is kept
       in `settings.json` (`backup_folder`, `export_folder`), and Reset Settings clears it. When a folder is chosen,
-      Restore Progress looks in it and in the default folder. A phone keeps the default folders in Downloads.
+      Restore Progress looks in it and in the default folder. A phone has no chooser for them: Android's default
+      folders are in the app's external files folder (`Application.USER_FOLDER_ROOT`).
 
       Delete Episodes, Export Episodes and Reset Decision Tree each open the Episodes On Demand list in place of
       the card (`EpisodeChoice`). The list shows only the episodes the action fits, each with a tick box. Its
