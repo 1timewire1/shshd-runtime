@@ -289,6 +289,10 @@
   no-thumbnail image under its title (a plain card in Cause of Death). A saved episode's tile is also composed once rather than every frame.
 - **The main menu's opening spin on a phone** ran at 18 fps; it now turns a half-size photo (over 40 fps), a touch softer
   until it settles.
+- **Minigames fade as SHS HD's do.** Football and the word grid fade in over the scene over 0.8 s, and out again to show it,
+  rather than fading to black and cutting back. The loading band opens from a line after 0.4 s and closes the same way,
+  over 0.4 s, about the frame's centre. Decompiled from HD 1.4.38; the Mac display fix for both games stays.
+- **Bold narration.** A narrator's emphasised words were darker rather than bold on the iOS and HD fonts.
 - **A hitch at every sound effect.** Each play read and decoded its file on the drawing thread, about 45 ms on that phone.
   The last few short effects are kept decoded, so only the first play of each costs anything.
 - **An import says how far it has got.** The busy card shows what is happening instead of one fixed line: on Android

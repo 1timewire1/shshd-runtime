@@ -40,6 +40,9 @@ BACKGROUND_SCALE_X = {1013: 1.01}
 DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (108, 108, 108), -1: (223, 163, 52)}
 IOS_DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (137, 137, 137), -1: (180, 109, 26)}
 NARRATION_COLORS = (223, 163, 52), (125, 67, 0)
+# HD's initFonts (1.4.38 0002af38): narration is +0xe274, TrebuchetMS-Italic in 0xffb46d1a, switching on '`' to +0xfa90, the
+# same face and colour with a stroke of 1.2 at its 32 (0.6 at 16 points). Bold, then, not the Android build's darker colour.
+NARRATION_EMPHASIS_FONT = 'TrebuchetMS_Italic16NarrationEmphasis'
 NAME_COLORS = {'PajamaHip24': (41, 104, 221), 'PajamaHip26': (41, 104, 221),
                'PajamaHip266': (180, 78, 78), 'PajamaHipG26': (137, 137, 137),
                'PajamaHipY26': (180, 109, 26), 'PajamaHipS26': (254, 53, 0)}

@@ -120,6 +120,26 @@ class VectorTextTests(unittest.TestCase):
             self.assertAlmostEqual(vt.load_font(library, 'TrebuchetMS_Italic16NarrationEmphasis').embolden, .6 / 16)
             self.assertAlmostEqual(vt.load_font(library, 'TrebuchetMS_Italic16Emphasis').embolden, .5 / 16)
 
+    def test_hds_narration_emphasis_is_its_face_stroked_and_needs_the_bundle(self):
+        vt = self.vt
+        os.environ['SHS_TREBUCHET_ITALIC_FONT'] = self.source.path
+        self.addCleanup(os.environ.pop, 'SHS_TREBUCHET_ITALIC_FONT', None)
+        name = 'TrebuchetMS_Italic16NarrationEmphasis'
+
+        def library(bundle):
+            return SimpleNamespace(kind='apk', hd_raw_resource=lambda resource_id: bundle, _read=[],
+                                   read_ui_asset=None)
+        for bundle, stroked in ((b'x', True), (None, False)):
+            with self.subTest(bundle=bundle), mock.patch.object(BitmapFont, 'parse', return_value=self.base):
+                shelf = library(bundle)
+                shelf.read_ui_asset = lambda path: shelf._read.append(path) or b''
+                font = vt.load_font(shelf, name)
+                self.assertEqual(shelf._read, ['fonts/TrebuchetMS_Italic16.fnt'])
+                if stroked:
+                    self.assertAlmostEqual(font.embolden, .6 / 16)
+                else:
+                    self.assertIs(font, self.base)          # the Android look keeps its plain font
+
     def test_names_map_to_sizes_and_are_ignored_without_an_hd_bundle(self):
         vt = self.vt
         self.assertEqual(vt.parse_name('ArialRoundedMTBold16'), ('ArialRoundedMTBold', 16))

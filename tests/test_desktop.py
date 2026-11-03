@@ -20,6 +20,94 @@ class FramePresentationTests(unittest.TestCase):
         pygame.display.set_mode((1, 1))
         self.pygame = pygame
 
+    def faded_ui(self, name, game):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.capture = False
+        ui.session = SimpleNamespace(engine=SimpleNamespace(
+            football=game if name == 'football' else None, word_grid=game if name == 'word_grid' else None,
+            panel=SimpleNamespace(background_id=7)))
+        ui.dialogue_renderer = SimpleNamespace(image=lambda asset: 'the scene', background_origin=lambda image, engine: (1, 2))
+        return ui, SimpleNamespace(name=name), SimpleNamespace(canvas=self.pygame.Surface((8, 8)))
+
+    def test_hds_minigames_fade_in_and_out_over_the_scene_not_black(self):
+        for name, exit_phase in (('football', 26), ('word_grid', 7)):
+            with self.subTest(name):
+                game = SimpleNamespace(phase=0, phase_ms=0)
+                ui, action, renderer = self.faded_ui(name, game)
+
+                def alpha_at(now):
+                    ui.panel_alpha = ui.pending_background = ui.pending_background_origin = None
+                    with patch('pygame.time.get_ticks', return_value=now):
+                        ui._fade_minigame(action, renderer)
+                    return ui.panel_alpha
+
+                self.assertEqual(alpha_at(1000), 0)                 # in: 0.8 s from when it first shows
+                self.assertEqual(ui.pending_background, 'the scene')
+                self.assertEqual(ui.pending_background_origin, (1, 2))
+                self.assertAlmostEqual(alpha_at(1400), .5, delta=.01)
+                self.assertIsNone(alpha_at(1800))                   # settled: no fade, and no picture drawn under it
+                self.assertIsNone(ui.pending_background)
+                self.assertIsNone(alpha_at(9000))
+                game.phase = exit_phase
+                game.phase_ms = 960
+                self.assertIsNone(alpha_at(9100))                   # out: 0.8 s of the exit's 960 ms
+                game.phase_ms = 560
+                self.assertAlmostEqual(alpha_at(9200), .5, delta=.01)
+                self.assertEqual(ui.pending_background, 'the scene')
+                game.phase_ms = 100
+                self.assertEqual(alpha_at(9300), 0)                 # the last 160 ms: only the scene
+
+    def test_a_fade_leaves_no_alpha_on_a_plain_canvas(self):
+        from exp_runtime.graphics import faded
+        ui, action, renderer = self.faded_ui('football', SimpleNamespace(phase=0, phase_ms=0))
+        faded(renderer.canvas, 100)
+        with patch('pygame.time.get_ticks', return_value=1000):
+            ui._fade_minigame(action, renderer)
+        self.assertEqual(renderer.canvas.get_alpha(), 255)
+
+    def band_renderer(self):
+        from exp_runtime.desktop_loading import HdLoadingRenderer
+        band = HdLoadingRenderer.__new__(HdLoadingRenderer)
+        band.canvas = self.pygame.Surface((80, 100), self.pygame.SRCALPHA)
+        band.canvas.fill((200, 0, 0, 255))
+        return band
+
+    def test_the_band_waits_then_opens_about_the_frames_centre(self):
+        band = self.band_renderer()
+        band.entrance(300)                                      # the 0.4 s delay: nothing yet
+        self.assertEqual(band.canvas.get_bounding_rect().height, 0)
+        band = self.band_renderer()
+        band.entrance(600)                                      # half way: half its height, centred
+        shown = band.canvas.get_bounding_rect()
+        self.assertEqual((shown.top, shown.bottom), (25, 75))
+        band = self.band_renderer()
+        band.entrance(800)
+        self.assertEqual(band.canvas.get_bounding_rect().height, 100)
+
+    def test_the_band_closes_over_what_follows_it(self):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.capture = False
+        ui.window = self.pygame.Surface((80, 100))
+        ui.bg_viewport = self.pygame.Rect(0, 0, 80, 100)
+        ui.session = SimpleNamespace(pending=SimpleNamespace(name='loading'))
+        ui.loading_handover = dict(layer=self.band_renderer().canvas, since=None)
+        ui._draw_loading_handover()                             # still loading: not yet
+        self.assertEqual(ui.window.get_at((40, 50))[:3], (0, 0, 0))
+        ui.session.pending = SimpleNamespace(name='football')
+        with patch('pygame.time.get_ticks', return_value=1000):
+            ui._draw_loading_handover()
+        self.assertEqual(ui.window.get_at((40, 2))[:3], (200, 0, 0))
+        ui.window.fill((0, 0, 0))
+        with patch('pygame.time.get_ticks', return_value=1200):
+            ui._draw_loading_handover()
+        self.assertEqual(ui.window.get_at((40, 50))[:3], (200, 0, 0))
+        self.assertEqual(ui.window.get_at((40, 10))[:3], (0, 0, 0))
+        with patch('pygame.time.get_ticks', return_value=1400):
+            ui._draw_loading_handover()
+        self.assertIsNone(ui.loading_handover)
+
     def test_the_margins_are_what_is_left_of_the_window_around_the_frame(self):
         from exp_runtime.desktop import window_margins
         Rect = self.pygame.Rect

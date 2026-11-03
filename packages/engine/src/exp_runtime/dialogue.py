@@ -300,6 +300,12 @@ class DialogueLayout:
             origin = (30, top)
             body_width = width
         elif mode == 4:
+            if cap_height is not None or getattr(font, 'source', None) is not None:
+                # The iOS builds' outline text switches to a stroked twin in the same colour (shs/profile.py).
+                emphasis = GAMES[game_id(self.resources)].NARRATION_EMPHASIS_FONT
+                face = self.font(emphasis)
+                switch_fonts = {'`': (emphasis, with_note(face) if note_frame is not None else face)}
+                body_style = replace(body_style, markers=(('`', body_style.color),))
             name = layout_text(self.font(name_font), '', 1, name_style)
             name_origin, name_scale = (0, 0), .9
             # FUN_000858cc configures state+0xd180 with registry font 5,

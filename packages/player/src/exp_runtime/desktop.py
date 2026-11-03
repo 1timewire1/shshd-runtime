@@ -49,7 +49,8 @@ from .hd_choice import SELECT_MS, TRANSITION_MS, panel_alpha
 from .hd_ui import FRAME as HD_FRAME, S as HD_S
 from .menu_engine import MenuEngineData, MenuEngineError, MenuStack
 from .desktop_picker import CharacterPickerRenderer, CodCharacterPickerRenderer, HdCharacterPickerRenderer
-from .desktop_loading import HdLoadingRenderer, LoadingRenderer
+from .animation_curves import ease_in_out
+from .desktop_loading import HdLoadingRenderer, LOADING_CLOSE_MS, LoadingRenderer
 from .desktop_message import MessageRenderer
 from .desktop_panels import DTViewRenderer, FaceplacePanelRenderer
 from .desktop_title import CodTitleRenderer, HdTitleRenderer, TitleRenderer
@@ -210,6 +211,8 @@ def arena_menu_prompt(details):
 # After New Rules' exit the arena's last picture (the bare frame) fades out over the story's next screen, rather than
 # cutting to it (owner, 2026-10-30; this player's own, as New Rules shows the next screen at once).
 ARENA_HANDOVER_MS = 400
+MINIGAME_EXITS = {'football': 26, 'word_grid': 7}       # each game's phase while `finishGame` runs
+MINIGAME_FADE_MS, MINIGAME_EXIT_MS = 800, 960
 # Football's nine plays (football.py SLOTS: three rows of three, top left first) by controller position (owner,
 # 2026-10-29): the face buttons are the edges' middles, the triggers the top corners, the bumpers the bottom corners
 # and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
@@ -269,6 +272,8 @@ class Desktop:
     panel_overlay = None        # the HD timer layers for this frame (outside the view's fades)
     edge_layer = None
     _edge_scaled = (None, None, None)   # (edge_layer, size, the layer at that size)
+    minigame_shown = None               # (the minigame's state, when it first showed) for its fade in
+    loading_handover = None             # {layer, since} the HD band, to close over what follows it
     _blank_canvas = b''
     fade = None
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
@@ -1304,6 +1309,44 @@ class Desktop:
         ms = pygame.time.get_ticks() - fade['since']
         self._draw_cover(fade['kind'], scene_fade.coverage(fade['kind'], fade['phase'], ms))
 
+    def _fade_minigame(self, action, renderer):
+        """HD's minigame is a view over the scene: `internalTransitionOn` eases its alpha up over 0.8 s, and `finishGame`
+        eases it back to 0 over 0.8 s (UIKit's curve 0, 1.4.38 00048728 / 000485b0), the callback following at 960 ms."""
+        engine = self.session.engine
+        game = engine.football if action.name == 'football' else engine.word_grid
+        faded(renderer.canvas, None)                # (a plain surface keeps the whole-surface alpha it was last given)
+        now = pygame.time.get_ticks()
+        if self.minigame_shown is None or self.minigame_shown[0] is not game:
+            self.minigame_shown = (game, now)
+        if game.phase == MINIGAME_EXITS[action.name]:
+            alpha = 1 - ease_in_out((MINIGAME_EXIT_MS - game.phase_ms) / MINIGAME_FADE_MS)
+        else:
+            alpha = ease_in_out((now - self.minigame_shown[1]) / MINIGAME_FADE_MS)
+        if alpha < 1 and not self.capture:
+            self.panel_alpha = alpha
+            background = self.dialogue_renderer.image(engine.panel.background_id)
+            self.pending_background = background
+            self.pending_background_origin = self.dialogue_renderer.background_origin(background, engine)
+
+    def _draw_loading_handover(self):
+        """The band closing over what follows it (`hideLoadingScreen`: desktop_loading.LOADING_CLOSE_MS)."""
+        handover = self.loading_handover
+        action = self.session.pending
+        if handover is None or (action is not None and action.name == 'loading') or not hasattr(self, 'bg_viewport'):
+            return
+        now = pygame.time.get_ticks()
+        if handover['since'] is None:
+            handover['since'] = now
+        ms = now - handover['since']
+        if ms >= LOADING_CLOSE_MS or self.capture:
+            self.loading_handover = None
+            return
+        area = self.bg_viewport
+        scale = 1 - ease_in_out(ms / LOADING_CLOSE_MS)
+        height = max(1, round(area.height * scale))
+        band = pygame.transform.smoothscale(handover['layer'], (area.width, height))
+        self.window.blit(band, (area.x, area.y + round(area.height * (1 - scale) / 2)))
+
     def _draw_arena_handover(self):
         """The arena's last picture fading out over the screen that follows it (ARENA_HANDOVER_MS)."""
         handover = getattr(self, 'arena_handover', None)
@@ -1445,6 +1488,10 @@ class Desktop:
                 self.pending_background = getattr(renderer, 'pending_background', None)
                 self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
                 self.pending_background_alpha = getattr(renderer, 'pending_background_alpha', 255)
+                if action.name in MINIGAME_EXITS and getattr(renderer, 'hd_layer', False):
+                    self._fade_minigame(action, renderer)
+                elif action.name == 'loading' and renderer is self.loading_hd:
+                    self.loading_handover = dict(layer=renderer.canvas, since=None)
                 if action.name == 'text_input':
                     # The gear opens the pause menu here too (owner, 2026-10-29). The originals leave it inert, but their
                     # keyboard covered it; this player's gear stays in sight (on a desktop always), so an inert one read as
@@ -1985,6 +2032,7 @@ class Desktop:
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
         self._draw_arena_handover()
+        self._draw_loading_handover()
         self._draw_transition()
         if self.fade:
             self._draw_fade()

@@ -412,8 +412,8 @@ COD_EMPHASIS_RED = (254, 53, 53)        # 0xfffe3535
 
 
 def cod_emphasis_font(library, name: str, base: BitmapFont):
-    """Cause of Death's backtick switch fonts (cod/profile.py EMPHASIS_FONTS, initFonts 1.3.4 armv7): TrebuchetMS-Italic at
-    16 points, each instance given `setStroke(0.5, colour)`. That stroke is drawn over the fill in the fill's own
+    """The stroked TrebuchetMS-Italic switch fonts: SHS HD's narration's (shs/profile.py NARRATION_EMPHASIS_FONT) and Cause
+    of Death's backtick ones (cod/profile.py EMPHASIS_FONTS, initFonts 1.3.4 armv7): 16 points, each `setStroke(0.5, colour)`. That stroke is drawn over the fill in the fill's own
     colour (+0x15af4 red, +0x1ebb4 blue), or red over a black fill for the gray and default sets (+0x27c74 at
     0002669e, +0x30d34 at 000267fc). The narration's (+0xfa74) has a 0.6-point stroke in its own colour. The fill
     colour is the layout's (BODY_MARKERS / NARRATION_COLORS). `base` is the installed-face atlas font whose metrics
@@ -461,8 +461,14 @@ def load_font(library, name: str) -> BitmapFont:
         return base
     cache = library.__dict__.setdefault('_text_fonts', {}) if hasattr(library, '__dict__') else {}
     if name not in cache:
-        base = BitmapFont.parse(library.read_ui_asset(f'fonts/{HD_ONLY_FONTS.get(name, name)}.fnt'))
-        cache[name] = hd_font(library, name, base)
+        if name.endswith('NarrationEmphasis'):
+            # No Android descriptor of its own: the narration font's, stroked (HD only, as the plain one is vector).
+            base = BitmapFont.parse(library.read_ui_asset(f'fonts/{COD_EMPHASIS}.fnt'))
+            plain = hd_font(library, COD_EMPHASIS, base)
+            cache[name] = plain if plain is base else cod_emphasis_font(library, name, base)
+        else:
+            base = BitmapFont.parse(library.read_ui_asset(f'fonts/{HD_ONLY_FONTS.get(name, name)}.fnt'))
+            cache[name] = hd_font(library, name, base)
     return cache[name]
 
 

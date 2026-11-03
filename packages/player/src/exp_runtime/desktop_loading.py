@@ -3,11 +3,14 @@ from functools import lru_cache
 
 from . import graphics as pygame
 
+from .animation_curves import ease_in_out
 from .fonts import TextStyle
 from .hd_scale import S as HD_SCALE
-from .location_pan import default_ease
 from .menu import MenuStrings
 from .ui_assets import Rect, read_ui
+
+
+LOADING_CLOSE_MS = 400      # `hideLoadingScreen`: animateView 0x17, back to scale y 0.001 at once over 0.4 s, curve 0
 
 
 class LoadingRenderer:
@@ -127,10 +130,12 @@ class HdLoadingRenderer:
         self.entrance(getattr(loading, 'elapsed_ms', self.ENTRANCE_MS))
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
 
-    ENTRANCE_MS, ENTRANCE_PIVOT = 200, 539
+    # `showLoadingScreen` (1.4.38 0002428c) makes the view the whole 768 x 1024 frame and calls animateView 0x16 (000235a8):
+    # scale y 0.001 about its centre, then after a 0.4 s delay to its full height over 0.4 s, UIKit's curve 0.
+    ENTRANCE_DELAY_MS, ENTRANCE_MS = 400, 400
 
     def entrance(self, elapsed_ms):
-        scale = default_ease(min(1., max(0., elapsed_ms) / self.ENTRANCE_MS))
+        scale = ease_in_out((elapsed_ms - self.ENTRANCE_DELAY_MS) / self.ENTRANCE_MS)
         if scale >= 1:
             return
         canvas = self.canvas
@@ -138,7 +143,7 @@ class HdLoadingRenderer:
         band = pygame.transform.smoothscale(canvas, (width, max(1, round(height * scale))))
         canvas.fill((0, 0, 0, 0))
         if scale > 0:
-            canvas.blit(band, (0, round(self.ENTRANCE_PIVOT * self.S * (1 - scale))))
+            canvas.blit(band, (0, round(height * (1 - scale) / 2)))
 
     def draw_band(self, frame):
         """The band with runner `frame` (23-27) on the transparent canvas, at S (also the menus' episode loading screen:

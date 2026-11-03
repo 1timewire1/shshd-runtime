@@ -267,8 +267,12 @@ message now plays 8101 for a win or 8105 otherwise, without replaying the cue
 on an intermediate message. Android target shadows retain their four 110 ms
 frames across deals, with their own unclamped animation clocks. Save version
 22 retains those clocks; the existing iOS shadow rotation remains unchanged.
-The iOS final overlay eases to black over 800 ms, then releases the callback
-at 960 ms. Gameplay and particles freeze during that exit phase.
+HD's `SHSUIMinigameBase::finishGame` (1.4.38 000485b0) eases the game view's
+alpha to 0 over 800 ms (UIKit curve 0), showing the scene under it, and releases
+the callback at 960 ms; there is no black overlay. `internalTransitionOn`
+(00048728) eases it in the same way, and the word grid shares both. The view
+stacking is read from the code, not recorded. Gameplay and particles freeze
+during that exit phase.
 
 Cross-panel native widget lifetimes, the complete audio timeline, float32
 boundary rounding outside the verified star/fragment routines, unusual native

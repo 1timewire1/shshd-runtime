@@ -66,6 +66,38 @@ class SharedDialogueTests(unittest.TestCase):
             self.assertEqual((style.height, style.gap), (10, 7))
             self.assertEqual((style.color, style.markers), (color, (('`', emphasis),)))
 
+    def test_ios_narration_emphasis_is_the_same_colour_in_a_stroked_face_and_androids_a_darker_colour(self):
+        reference = authored_dialogue()
+
+        class Outline:
+            cap_height = 12
+
+            def __init__(self, font):
+                self.plain = font
+
+            def __getattr__(self, name):
+                return getattr(self.plain, name)
+
+        def page(font):
+            resources = EpisodeResources.__new__(EpisodeResources)
+            resources.library = SimpleNamespace(game_id='shs', kind='ipa')
+            with patch('exp_runtime.dialogue.read_ui', return_value=b'authored layout'),                  patch('exp_runtime.dialogue.LayoutBank.parse', return_value=reference.bank):
+                layout = resources.dialogue_layout()
+            layout.font = font
+            layout.border_widths = reference.border_widths
+            names = SpeakerNames()
+            d = dict(details(4), text='To meet `the right girl...`')
+            layout.prepare_name(d, names)
+            return layout.page(d, names=names)
+
+        outline = page(lambda name: Outline(reference.font(name)))
+        self.assertEqual({g.color for g in outline.body.glyphs}, {(223, 163, 52)})
+        roles = {g.font for g in outline.body.glyphs}
+        self.assertEqual(roles, {None, 'TrebuchetMS_Italic16NarrationEmphasis'})
+        android = page(reference.font)
+        self.assertEqual({g.color for g in android.body.glyphs}, {(223, 163, 52), (125, 67, 0)})
+        self.assertEqual({g.font for g in android.body.glyphs}, {None})
+
     def test_all_package_adapters_use_v013_geometry_and_speaker_history(self):
         reference = authored_dialogue()
         for game, kind in (('shs', 'apk'), ('shs', 'ipa'), ('cod', 'ipa')):
