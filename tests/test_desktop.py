@@ -12,6 +12,58 @@ from test_vm import program as vm_program
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class FramePresentationTests(unittest.TestCase):
+    def setUp(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        import pygame
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.pygame = pygame
+
+    def test_the_margins_are_what_is_left_of_the_window_around_the_frame(self):
+        from exp_runtime.desktop import window_margins
+        Rect = self.pygame.Rect
+        self.assertEqual(window_margins((768, 1707), Rect(0, 341, 768, 1024)),
+                         [Rect(0, 0, 768, 341), Rect(0, 1365, 768, 342)])
+        self.assertEqual(window_margins((1600, 1024), Rect(416, 0, 768, 1024)),
+                         [Rect(0, 0, 416, 1024), Rect(1184, 0, 416, 1024)])
+        self.assertEqual(window_margins((768, 1024), Rect(0, 0, 768, 1024)), [])
+
+    def test_only_a_canvas_as_it_was_cleared_counts_as_empty(self):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.canvas = self.pygame.Surface((32, 48), self.pygame.SRCALPHA)
+        self.assertTrue(ui._canvas_empty())
+        ui.canvas.set_at((31, 47), (0, 0, 0, 1))        # the last pixel, barely
+        self.assertFalse(ui._canvas_empty())
+        ui.canvas.fill((0, 0, 0, 0))
+        self.assertTrue(ui._canvas_empty())
+        ui.canvas = self.pygame.Surface((64, 96), self.pygame.SRCALPHA)
+        self.assertTrue(ui._canvas_empty())             # a new size is compared at its own
+
+    def test_only_an_opaque_whole_frame_layer_hides_the_frame(self):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.pending_background = None
+        ui.story_layer = self.pygame.Surface((768, 1024))
+        self.assertTrue(ui._frame_covered(None))
+        self.assertTrue(ui._frame_covered(1))
+        self.assertFalse(ui._frame_covered(.5))         # fading: the frame shows through
+        ui.pending_background = object()
+        self.assertFalse(ui._frame_covered(None))       # its crossfade state is kept up
+        ui.pending_background = None
+        ui.story_layer = self.pygame.Surface((768, 1024), self.pygame.SRCALPHA)
+        self.assertFalse(ui._frame_covered(None))
+        # A Mac's display gives `convert()`ed canvases an alpha channel without the flag.
+        ui.story_layer = self.pygame.Surface((768, 1024), 0, 32, (0xFF0000, 0xFF00, 0xFF, 0xFF000000))
+        ui.story_layer.set_alpha(None)
+        self.assertFalse(ui._frame_covered(None))
+        ui.story_layer = self.pygame.Surface((768, 1152))
+        self.assertFalse(ui._frame_covered(None))       # the story's column, not the frame
+        ui.story_layer = None
+        self.assertFalse(ui._frame_covered(None))
+
+
 class DesktopTests(unittest.TestCase):
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_dialogue_motion_renders_between_states_and_pauses_without_advancing_vm(self):

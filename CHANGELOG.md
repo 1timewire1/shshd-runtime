@@ -277,6 +277,24 @@
 
 ### Fixed
 
+- **Frame rate on phones, above all in the minigame arena.** A phone's clocks drop once frames miss their budget, so
+  an untouched arena sat at 20 fps on a Moto g54 and only rose after a tap. Each frame now does less: the window's backdrop
+  is painted only around the frame, an empty canvas is neither scaled nor drawn, the bottom bar's scale is kept, and
+  nothing is drawn under an arena that hides it. On a phone the standard arena scales once, straight to the frame's
+  size (a touch softer than a desktop's two passes). Rounds now run near 60 fps in the standard look and about 47 in the
+  X360 skin.
+- **Freezes while scrolling the episode tiles on a phone.** Each tile decoded on the drawing thread, about 34 ms on a
+  Moto g54, so every new row froze the screen for about 200 ms, and opening Play/Resume for up to a second. On phones they
+  now load in the background, with the rows just out of sight loaded ahead; a tile not ready yet shows SHS's
+  no-thumbnail image under its title (a plain card in Cause of Death). A saved episode's tile is also composed once rather than every frame.
+- **The main menu's opening spin on a phone** ran at 18 fps; it now turns a half-size photo (over 40 fps), a touch softer
+  until it settles.
+- **A hitch at every sound effect.** Each play read and decoded its file on the drawing thread, about 45 ms on that phone.
+  The last few short effects are kept decoded, so only the first play of each costs anything.
+- **An import says how far it has got.** The busy card shows what is happening instead of one fixed line: on Android
+  how much of the picked files has copied into the app, then the files unpacked from a bulk archive, then each game's
+  copy and its episodes ("Surviving High School: episode 12 of 300"), and for Add Episodes which of how many. (Suggested
+  by zazatree.)
 - **Music no longer freezes the player.** Pausing music played from a Python file object could deadlock against the
   audio thread, stopping the player at 0 CPU. Music now plays from a temporary file.
 - **Deleting a save lets go of that episode's live game.** A game left for the main menu stays alive behind it, so

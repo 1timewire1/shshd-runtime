@@ -208,6 +208,7 @@ class X360ArenaTests(unittest.TestCase):
         lines = renderer.wrapped('casual', 'AAAA BBBB CCCC DDDD\nEE', 12, 85)
         self.assertEqual(len(lines), 3)                 # 9 a letter: two words a line, then its own break
         self.assertTrue(all(line.get_width() / renderer.k <= 85 + 12 for line in lines))
+        self.assertIs(renderer.wrapped('casual', 'AAAA BBBB CCCC DDDD\nEE', 12, 85), lines)     # worked out once
         # Two-tone (white fill, black edge) text keeps its black edge when a word takes the emphasis colour.
         face = renderer.bmfont('casual_white')
         glyph = face.render([('A', (255, 214, 64))])

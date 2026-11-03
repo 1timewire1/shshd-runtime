@@ -1,5 +1,7 @@
 # Python environments, caches and generated packages.
 .venv/
+.venv-android/
+.android-env/
 venv/
 __pycache__/
 *.py[cod]
@@ -70,3 +72,8 @@ DerivedData/
 *.provisionprofile
 .env
 .env.*
+
+# The Android release key (docs/ANDROID_APP.md): never committed
+*.jks
+*.keystore
+signing.properties

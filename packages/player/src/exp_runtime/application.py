@@ -272,7 +272,7 @@ class Application:
                                if game in staged.games and not path.exists()}
                     if targets:
                         self.job_kind = 'staged'
-                        self.job = self.executor.submit(import_staged, staged, targets)
+                        self.job = self.executor.submit(import_staged, staged, targets, self.report_progress)
                 elif archive is not None:
                     self.start_bulk(archive, start)     # the same, from one .zip/.rar in the folder
             if self.job is None and directory is None:
@@ -415,6 +415,10 @@ class Application:
         self.sync_controller()
         self.menu_music_changed()
         return 'Settings Reset', 'Every option is back to its default.'
+
+    def report_progress(self, text):
+        """How far an import has got, from the worker: the busy card's line."""
+        self.progress_text = text[:44]
 
     def start_data_job(self, title, work, done):
         """A Data Management row's work, `work(library)` off the UI thread under the busy card titled `title` (its
@@ -675,9 +679,15 @@ class Application:
         return ('Episodes Deleted',
                 f'{count} episode{"s were" if count != 1 else " was"} deleted from {self.title_of(library)}.')
 
-    @staticmethod
-    def user_folder(name):
-        """A folder of this app's in the player's Downloads (else their home folder): `<APP_NAME> <name>`."""
+    # Where a phone's backups and exports go: the host's own folder for files a player can reach (Android: the app's
+    # external files folder), else the player's Downloads (else their home folder).
+    USER_FOLDER_ROOT = None
+
+    @classmethod
+    def user_folder(cls, name):
+        """A folder of this app's for files the player keeps: `<APP_NAME> <name>`."""
+        if cls.USER_FOLDER_ROOT is not None:
+            return Path(cls.USER_FOLDER_ROOT) / f'{APP_NAME} {name}'
         home = Path.home()
         base = home / 'Downloads' if (home / 'Downloads').is_dir() else home
         return base / f'{APP_NAME} {name}'
@@ -1297,7 +1307,7 @@ class Application:
     def start_bulk(self, archive, start=None):
         """Import every game a bulk .zip/.rar holds (staged_import.import_bulk), on the worker."""
         self.job_kind = 'bulk'
-        self.job = self.executor.submit(import_bulk, Path(archive), self.library_targets(start))
+        self.job = self.executor.submit(import_bulk, Path(archive), self.library_targets(start), self.report_progress)
         self.focus = None
         self.cancel_pointer()
         pygame.key.stop_text_input()
@@ -1683,9 +1693,8 @@ class Application:
             # import) are named here.
             title = (self.job_title if self.job_kind == 'data'
                      else {'previews': 'Preparing episodes'}.get(self.job_kind, 'Importing content'))
-            self.shell.main.draw_busy(canvas, title, self.progress_text if self.job_kind in ('previews', 'data')
-                                      else 'Checking and copying your files. This can take a while: keep the '
-                                           'app open.')
+            self.shell.main.draw_busy(canvas, title, self.progress_text or 'Checking and copying your files. This can '
+                                      'take a while: keep the app open.')
         elif self.message:
             # The prompt's card with an OK button: on a phone or an iPad there is no Escape or Enter to dismiss it
             # (the owner's g54 was left on "Added 53 episodes." with no way out).
@@ -2166,7 +2175,7 @@ class Application:
             episodes = [p for p in paths if p not in ipas + apks]
             self.job_kind = 'library'
             self.job = self.executor.submit(import_game, source, episodes, self.directory,
-                                            music_apk=music_apk, game=self.selected_game)
+                                            music_apk=music_apk, game=self.selected_game, progress=self.report_progress)
         elif any(p.suffix.lower() == '.apk' for p in paths):
             if len(paths) != 1:
                 raise ContentError('Add one music APK at a time; add episode files separately.')
@@ -2174,7 +2183,7 @@ class Application:
             self.job = self.executor.submit(self.library.add_music_apk, paths[0])
         else:
             self.job_kind = 'episodes'
-            self.job = self.executor.submit(self.library.add_episodes, paths)
+            self.job = self.executor.submit(self.library.add_episodes, paths, self.report_progress)
         self.focus = None
         self.cancel_pointer()
         pygame.key.stop_text_input()
@@ -2356,6 +2365,7 @@ class Application:
         if self.job and self.job.done():
             job, kind = self.job, self.job_kind
             self.job = self.job_kind = None
+            self.progress_text = ''
             try:
                 result = job.result()
                 if kind == 'library':

@@ -24,6 +24,10 @@ number is informational. See [SHS IPA support](docs/IPA.md) and
 
 ## Download an app
 
+An experimental [Android port](docs/ANDROID_APP.md) and **Android APK** build
+workflow are included. It reuses the pygame renderer and needs Android build
+and device verification before it can be considered a working release.
+
 Open this repository's **Releases** page and download the archive for your
 system: `shshd-runtime-<version>-windows-x64.zip`, `-linux-x64.tar.gz`,
 `-macos-arm64.zip` (Apple Silicon) or `-macos-x64.zip` (Intel). Extract it and

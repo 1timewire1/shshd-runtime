@@ -499,7 +499,7 @@ class MenuRenderer:
             if app.job_kind == 'previews':
                 self.overlay('Preparing episodes', app.progress_text)
             else:
-                self.overlay('Importing content', 'Checking and copying your files...')
+                self.overlay('Importing content', app.progress_text or 'Checking and copying your files...')
             self.buttons = []
             # Small animated progress indicator; work runs outside the UI thread.
             x = 55 + round((math.sin(pygame.time.get_ticks() / 250) + 1) * 90)

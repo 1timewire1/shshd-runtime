@@ -1114,9 +1114,36 @@ class MusicPlaybackTests(unittest.TestCase):
         ui.session.engine.sound_ids = [28202]
         ui.session.engine.sound_serial += 1
         with patch('pygame.mixer.Sound') as sound:
+            sound.return_value.get_length.return_value = 1
             ui._sync_audio()
             r.read_asset.assert_called_once_with(28202)
             sound.return_value.play.assert_called_once_with()
+
+    def test_a_short_sound_is_decoded_once_per_episode_and_only_the_last_few_are_kept(self):
+        ui, r = self.make_ui(music=8222)
+        with patch('pygame.mixer.Sound') as sound:
+            sound.return_value.get_length.return_value = 1
+            ui._play_sounds([28202])
+            ui._play_sounds([28202])
+            self.assertEqual(sound.call_count, 1)
+            self.assertEqual(sound.return_value.play.call_count, 2)
+            for asset in range(ui.SOUNDS_KEPT):         # pushes the oldest out; 28202 was played last before these
+                ui._play_sounds([asset])
+            sound.reset_mock()
+            ui._play_sounds([ui.SOUNDS_KEPT - 1])
+            sound.assert_not_called()
+            ui._play_sounds([28202])
+            self.assertEqual(sound.call_count, 1)
+            sound.reset_mock()
+            sound.return_value.get_length.return_value = ui.SOUND_KEPT_SECONDS + 1     # long: not worth the memory
+            ui._play_sounds([9001])
+            ui._play_sounds([9001])
+            self.assertEqual(sound.call_count, 2)
+            sound.reset_mock()
+            sound.return_value.get_length.return_value = 1
+            ui.session.resources = Mock(read_asset=Mock(return_value=b'other episode'))     # its ids are its own
+            ui._play_sounds([28202])
+            self.assertEqual(sound.call_count, 1)
 
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_original_apk_contains_and_plays_every_redirected_track(self):

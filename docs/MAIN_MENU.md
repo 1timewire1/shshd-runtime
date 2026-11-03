@@ -798,7 +798,7 @@ library: it comes from the player's own SHS HD app, and none ships. So they use 
 measurements, colours, rows and Arial Bold), and `AppCard` draws the parts that card takes from the art (the blue
 back button and the orange buttons) as shapes. They are drawn in SHS HD's blue on a dark gradient, with the kiwi
 above the card. The chooser shows each imported game's own app icon. The busy card notes that an import can take a
-while. Commands are the SD screens' own; the buttons are listed in frame points (`Application.buttons_in_frame`).
+while, and shows how far it has got (`Application.report_progress`, the import functions' `progress`). Commands are the SD screens' own; the buttons are listed in frame points (`Application.buttons_in_frame`).
 The chooser's Options is the HD main menu's Options (`AppOptions`): the pause menu's own pages, controls and
 input, on the same card. Its value buttons and the sliders' speakers are drawn as shapes too. It reads and writes the
 shared options in `settings.json`, since no library is open there; the next game opened takes them, because the

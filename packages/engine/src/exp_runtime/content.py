@@ -496,7 +496,7 @@ def _apk_music_members(apk: ZipFile, ipa_members):
 
 
 def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd_ipa_path: Path | None = None, *,
-                music_apk: Path | None = None, game: str | None = None) -> dict:
+                music_apk: Path | None = None, game: str | None = None, progress=None) -> dict:
     """Create a relocatable library atomically; keep original inputs untouched.
 
     A failed import leaves no partly usable library. Additional episodes are
@@ -504,7 +504,9 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
     The historical ``apk_path`` argument also accepts the supported iOS IPA.
     ``hd_ipa_path`` is the optional SHS HD (iPad) bundle, accepted only alongside
     an SHS APK: it unlocks HD-native art (see HD_ASSET_MAP) but nothing requires it.
+    ``progress`` (a line of text, from the worker) is told how far it has got.
     """
+    report = progress or (lambda text: None)
     apk_path, destination = Path(apk_path), Path(destination)
     hd_ipa_path = Path(hd_ipa_path) if hd_ipa_path is not None else None
     if (hd_ipa_path is None and music_apk is not None and apk_path.suffix.lower() == '.ipa'
@@ -530,6 +532,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         # Validate the private copy, so source changes during import cannot
         # leave a manifest describing different bytes from those we retain.
         copied_apk = staged / 'content' / ('input.' + kind)
+        report('copying the game')
         shutil.copyfile(apk_path, copied_apk)
         apk_hash = file_digest(copied_apk)
         final_apk = copied_apk.with_name(apk_hash + '.' + kind)
@@ -537,6 +540,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         hd_ipa_manifest = final_ipa = None
         if hd_ipa_path is not None:
             copied_ipa = staged / 'content' / 'input.ipa'
+            report('copying the HD app')
             shutil.copyfile(hd_ipa_path, copied_ipa)
             ipa_hash = file_digest(copied_ipa)
             final_ipa = copied_ipa.with_name(ipa_hash + '.ipa')
@@ -567,6 +571,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
                 records[sha] = _with_episode_alias(records[sha], name)
             return sha
 
+        report('reading the game')
         try:
             with ZipFile(final_apk) as apk:
                 if kind == 'ipa':
@@ -599,7 +604,9 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         except BadZipFile as error:
             raise ContentError(f'The supplied {kind.upper()} is not a valid ZIP archive') from error
         with _episode_inputs(episode_paths, game=source_game) as (external, catalog):
-            for path in external:
+            external = list(external)
+            for index, path in enumerate(external):
+                report(f'episode {index + 1} of {len(external)}')
                 data = path.read_bytes()
                 sha = digest(data)
                 episode_record(data, path.name, dict(file=f'content/{sha}.exp'))
@@ -1205,7 +1212,7 @@ class ContentLibrary:
             self.manifest, self.music_apk, self.music_members = updated, retained, members
             return len(members)
 
-    def add_episodes(self, paths: list[Path]) -> int:
+    def add_episodes(self, paths: list[Path], progress=None) -> int:
         """Validate a batch before atomically publishing an expanded manifest.
 
         Content is copied under its hash; existing content and saves are never
@@ -1217,8 +1224,14 @@ class ContentLibrary:
             store = _store_listing(paths, game=self.game_id)
             if not candidates and not catalog.entries and store is None:
                 raise ContentError('No EXP episodes found in the selected files, ZIPs, RARs or folders')
-            return self._install_episodes(((path.read_bytes(), path.name, {}) for path in candidates), catalog=catalog,
-                                          store=store)
+            candidates = list(candidates)
+
+            def episodes():
+                for index, path in enumerate(candidates):
+                    if progress:
+                        progress(f'Episode {index + 1} of {len(candidates)}')
+                    yield path.read_bytes(), path.name, {}
+            return self._install_episodes(episodes(), catalog=catalog, store=store)
 
     def store_listing(self):
         """The imported store listing (CoD's mtxprods products, cod/store.py) as data, or None."""

@@ -35,6 +35,7 @@ from .hd_ui import HdUi, S, FRAME
 from .menu import MenuFont
 
 INTRO_PHOTO_START, INTRO_PHOTO_ZOOM, INTRO_PHOTO_TURN = 0.4, 1.7, 1.9375
+PHOTO_TURN_COARSE = 2 if S == 1 else 1      # a phone turns the photo at half that: its rotozoom held the intro at 18 fps
 INTRO_STRIP_START, INTRO_STRIP_TIME = 2.6, 0.6
 BUTTONS_START_INTRO = 1.5             # `animateMainMenuButtonsIn(1.5)` (SHS HD 00027916; CoD the same)
 # Each layer's animation (see the docstring): 0.35 s of movement after its delay, held twice.
@@ -207,20 +208,21 @@ class HdMainMenu(HdUi):
         # Turned at 1 pixel per point and then scaled up: rotozoom at S had to write the whole turned square (about
         # 13 million pixels, ~155 ms a frame); a quarter of that, and only the part inside the frame scaled up. A
         # 1080p window shows the frame at about 1 pixel per point anyway, and the settled photo is drawn at S.
+        coarse = PHOTO_TURN_COARSE
         if self._photo_1x is None or self._photo_1x[0] is not photo:
-            self._photo_1x = photo, pygame.transform.smoothscale(photo, (photo.get_width() // S,
-                                                                        photo.get_height() // S))
+            self._photo_1x = photo, pygame.transform.smoothscale(photo, (photo.get_width() // S // coarse,
+                                                                        photo.get_height() // S // coarse))
         small = self._photo_1x[1]
-        span = (FRAME[0] + FRAME[1]) / zoom                    # the frame's diagonal in photo pixels
+        span = (FRAME[0] + FRAME[1]) / zoom / coarse           # the frame's diagonal in photo pixels
         crop = pygame.Rect(0, 0, min(small.get_width(), round(span)), min(small.get_height(), round(span)))
         crop.center = small.get_rect().center
         image = pygame.transform.rotozoom(small.subsurface(crop), turn, zoom)
-        placed = image.get_rect(center=(FRAME[0] // 2, FRAME[1] // 2))
-        visible = placed.clip(pygame.Rect((0, 0), FRAME))
+        placed = image.get_rect(center=(FRAME[0] // 2 // coarse, FRAME[1] // 2 // coarse))
+        visible = placed.clip(pygame.Rect(0, 0, FRAME[0] // coarse, FRAME[1] // coarse))
         if visible.width > 0 and visible.height > 0:
             piece = image.subsurface(visible.move(-placed.x, -placed.y))
-            layer.blit(pygame.transform.smoothscale(piece, (visible.width * S, visible.height * S)),
-                       (visible.x * S, visible.y * S))
+            layer.blit(pygame.transform.smoothscale(piece, (visible.width * S * coarse, visible.height * S * coarse)),
+                       (visible.x * S * coarse, visible.y * S * coarse))
 
     def draw_ribbon_title(self, layer):
         layers = self.main_layers()

@@ -281,6 +281,7 @@ class AlertSoundTests(unittest.TestCase):
     def test_the_alert_plays_sound_0x1f52_once_when_it_has_slid_on(self):
         toast = self.alert()
         with patch.object(self.pygame.mixer, 'Sound') as sound:
+            sound.return_value.get_length.return_value = 1
             self.ui._sync_audio()
             sound.assert_not_called()                                   # still sliding
             toast.tick(200)

@@ -44,6 +44,8 @@ from .hd_layout import HdLayouts
 from .hd_ui import HdUi
 
 from .hd_scale import S
+
+BACKGROUND_PREVIEWS = S == 1          # a phone's tiles load behind the scene (EpisodePicker.preview_soon)
 FRAME = (768, 1024)
 ROW_HEIGHT = 320
 TILE = (216, 290)
@@ -374,12 +376,21 @@ class HdEpisodePicker(HdUi):
         for index, line in enumerate(lines):
             self.text(layer, line, points, x - 10, y - 12 + index * (points + 4))
 
+    _faces = None                   # {record id: (preview, saved screenshot, the tile's face made of them)}
+
     def tile_image(self, record):
         """The tile's face at 2x: the preview, or preview above / saved screenshot below the zigzag."""
-        preview = self.model.preview(record)
+        preview = self.model.preview_soon(record) if BACKGROUND_PREVIEWS else self.model.preview(record)
+        if preview is None:
+            return self.model.waiting_preview()
         shot = self.saved_face(record)
         if shot is None:
             return preview
+        if self._faces is None:
+            self._faces = {}
+        cached = self._faces.get(record['id'])
+        if cached is not None and cached[0] is preview and cached[1] is shot:
+            return cached[2]
         face = pygame.Surface((TILE[0] * S, TILE[1] * S), pygame.SRCALPHA)
         face.fill((0, 0, 0, 255))
         top = preview.subsurface((0, 0, TILE[0] * S, self.mask(TOP_MASK).get_height())).convert_alpha()
@@ -389,6 +400,7 @@ class HdEpisodePicker(HdUi):
         window = shot_window(shot, BOTTOM_MASK_TOP - SHOT_OFFSET, bottom_mask.get_height() // S)
         window.blit(bottom_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         face.blit(window, (0, BOTTOM_MASK_TOP * S))
+        self._faces[record['id']] = (preview, shot, face)
         return face
 
     def draw_tile(self, layer, record, x, y):
@@ -494,6 +506,8 @@ class HdEpisodePicker(HdUi):
         layer = self.begin_layer(backdrop)
         self.hits = []
         strings = self.strings()
+        if BACKGROUND_PREVIEWS:
+            self.want_nearby()
         for index, row in enumerate(self.model.rows):
             top = index * ROW_HEIGHT - self.scroll_y
             if top + ROW_HEIGHT <= 0 or top >= FRAME[1]:
@@ -524,6 +538,19 @@ class HdEpisodePicker(HdUi):
                 self.hits.append((restore, ('restore',)))
         self.draw_overlay(layer, strings)
         return layer
+
+    def want_nearby(self):
+        """Have the previews just out of sight ready for a scroll: a row above and below, a tile either side. Asked for
+        before the visible tiles, which the thread takes first."""
+        for index, row in enumerate(self.model.rows):
+            top = index * ROW_HEIGHT - self.scroll_y
+            if top + 2 * ROW_HEIGHT <= 0 or top - ROW_HEIGHT >= FRAME[1]:
+                continue
+            offset = self.row_x.get(row.key, 0)
+            for column, record in enumerate(row.episodes):
+                x = TILE_X + column * TILE_STEP - offset
+                if x + TILE[0] + TILE_STEP > 0 and x - TILE_STEP < FRAME[0]:
+                    self.model.want_preview(record)
 
     overlay_shown = None
     overlay_opened = 0

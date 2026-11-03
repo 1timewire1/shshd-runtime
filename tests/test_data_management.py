@@ -48,6 +48,16 @@ class CustomWindowTests(unittest.TestCase):
         self.assertIsNone(shell.confirmed)
 
 
+class UserFolderTests(unittest.TestCase):
+    def test_a_host_names_where_the_players_files_go(self):
+        # Android's external files folder (platforms/android.py): a phone's Downloads isn't the app's to write to.
+        from unittest.mock import patch
+        from exp_runtime.application import Application
+        self.assertIn('SHSHD Runtime Backups', str(Application.user_folder('Backups')))
+        with patch.object(Application, 'USER_FOLDER_ROOT', 'external'):
+            self.assertEqual(Application.user_folder('Backups'), Path('external') / 'SHSHD Runtime Backups')
+
+
 class LibraryActionTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

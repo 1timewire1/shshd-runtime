@@ -26,6 +26,10 @@ class AddonPages:
 
     def _read(self, library):
         summaries = {}
+        # The first read of a library opens every episode's file (ContentLibrary.episode_requires keeps what it finds).
+        for index, record in enumerate(library.episodes):
+            self.app.progress_text = f'Episode {index + 1} of {len(library.episodes)}'
+            library.episode_requires(record)
         for record in library.addons:
             users = library.addon_users(record)
             path = library.directory / record['file']

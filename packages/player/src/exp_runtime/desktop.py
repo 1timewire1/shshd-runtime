@@ -104,6 +104,15 @@ CONTINUE_GUARD_MS = 250
 WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 
 
+def window_margins(size, frame):
+    """The parts of a window of `size` outside the rect `frame`."""
+    width, height = size
+    areas = (pygame.Rect(0, 0, width, frame.top), pygame.Rect(0, frame.bottom, width, height - frame.bottom),
+             pygame.Rect(0, frame.top, frame.left, frame.height),
+             pygame.Rect(frame.right, frame.top, width - frame.right, frame.height))
+    return [area for area in areas if area.width > 0 and area.height > 0]
+
+
 def word_game_options(outcomes):
     """(option labels, the score each finishes the quiz with) for the skip prompt, best first, then "Play" (labels
     only): Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, the score ranges for more
@@ -259,6 +268,8 @@ class Desktop:
     panel_alpha = None          # the HD menu view's alpha for this frame (None: drawn whole)
     panel_overlay = None        # the HD timer layers for this frame (outside the view's fades)
     edge_layer = None
+    _edge_scaled = (None, None, None)   # (edge_layer, size, the layer at that size)
+    _blank_canvas = b''
     fade = None
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
@@ -859,14 +870,35 @@ class Desktop:
         try:
             for asset in assets:
                 if swaps is not None and swaps[0].get(asset):
-                    data = swaps[2].read(random.choice(swaps[0][asset]))     # one of the X360's, as it picks
+                    name = random.choice(swaps[0][asset])       # one of the X360's, as it picks
+                    sound = self._sound(name, lambda: swaps[2].read(name))
                 else:
-                    data = self.session.resources.read_asset(asset)
-                sound = pygame.mixer.Sound(file=BytesIO(data))
+                    sound = self._sound(asset, lambda: self.session.resources.read_asset(asset))
                 sound.set_volume(self.sound_volume)
                 sound.play()
         except (ContentError, pygame.error) as error:
             logging.warning('Sound %s cannot be played: %s', assets, error)
+
+    SOUNDS_KEPT = 32
+    SOUND_KEPT_SECONDS = 5
+    _sounds_kept = (None, {})           # (the resources they came from, {key: decoded Sound})
+
+    def _sound(self, key, read):
+        """A sound effect, decoded once: read and decoded at every play, each hit in a minigame cost a phone's frame 45 ms.
+        The last few short ones are kept, per episode (its ids are its own)."""
+        resources = self.session.resources
+        if self._sounds_kept[0] is not resources:
+            self._sounds_kept = (resources, {})
+        kept = self._sounds_kept[1]
+        sound = kept.pop(key, None)
+        if sound is None:
+            sound = pygame.mixer.Sound(file=BytesIO(read()))
+            if sound.get_length() > self.SOUND_KEPT_SECONDS:
+                return sound
+            if len(kept) >= self.SOUNDS_KEPT:
+                del kept[next(iter(kept))]
+        kept[key] = sound
+        return sound
 
     def _sync_text_input(self):
         if self.capture:
@@ -1682,6 +1714,14 @@ class Desktop:
 
     _backdrop = (None, None)        # (window size, surface) of the last window backdrop
 
+    def _canvas_empty(self):
+        """Whether the canvas is still as render() cleared it. All zero bytes, so a compare: get_bounding_rect costs as
+        much as the scale it would save."""
+        buffer = self.canvas.get_buffer()
+        if len(self._blank_canvas) != buffer.length:
+            self._blank_canvas = bytes(buffer.length)
+        return self._blank_canvas.startswith(buffer)
+
     def _window_backdrop(self, size):
         """While the "SHS HD Backdrop" switch is on, SHS HD's faded main-menu collage around the frame
         (hd_ui.window_backdrop), else None (the dark fill)."""
@@ -1829,10 +1869,16 @@ class Desktop:
         frame.center = (width // 2, height // 2)
         target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
         with frame_log.section('present'):
-            scaled = self.canvas if self.canvas.get_size() == target_size else pygame.transform.smoothscale(self.canvas, target_size)
+            # A screen with its own layer leaves the canvas empty: no pass, and nothing to blit.
+            if self._canvas_empty():
+                scaled = None
+            elif self.canvas.get_size() == target_size:
+                scaled = self.canvas
+            else:
+                scaled = pygame.transform.smoothscale(self.canvas, target_size)
         alpha, overlay = self.panel_alpha, self.panel_overlay
         self.panel_alpha = self.panel_overlay = None
-        if alpha is not None and alpha < 1:
+        if scaled is not None and alpha is not None and alpha < 1:
             scaled = faded(scaled, round(255 * alpha))
         # The column also sits 5.5 units above the frame's bottom edge (box
         # top and bottom lines both measured 21.5 px lower than HD's at
@@ -1843,11 +1889,13 @@ class Desktop:
         bg_size = frame.size
         with frame_log.section('backdrop'):
             backdrop = self._window_backdrop(self.window.get_size())
-            if backdrop is not None:
-                self.window.blit(backdrop, (0, 0))
-            else:
-                self.window.fill((8, 12, 20))
-            self._draw_background_layer(bg_size, self.bg_viewport)
+            # Only around the frame: the background layer starts by filling the frame itself.
+            for area in window_margins((width, height), frame):
+                if backdrop is not None:
+                    self.window.blit(backdrop, area, area)
+                else:
+                    self.window.fill((8, 12, 20), area)
+            self._draw_background_layer(bg_size, self.bg_viewport, self._frame_covered(alpha))
         under = getattr(self, 'under_layer', None)
         if under is not None:
             # A screen under the choice that covers the whole frame (New Rules' arena under its menu).
@@ -1874,10 +1922,14 @@ class Desktop:
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
             edge_height = round(self.viewport.height * 72 / 480)
-            self.window.blit(pygame.transform.smoothscale(self.edge_layer, (self.bg_viewport.width, edge_height)),
-                             (self.bg_viewport.x, self.bg_viewport.bottom - edge_height))
-        self.window.blit(scaled, self.viewport)
-        ui_layers.append((scaled, self.viewport))
+            edge_size = (self.bg_viewport.width, edge_height)
+            # The layer is the same surface until the bar changes (bottom_bar_layer's cache).
+            if self._edge_scaled[:2] != (self.edge_layer, edge_size):
+                self._edge_scaled = (self.edge_layer, edge_size, pygame.transform.smoothscale(self.edge_layer, edge_size))
+            self.window.blit(self._edge_scaled[2], (self.bg_viewport.x, self.bg_viewport.bottom - edge_height))
+        if scaled is not None:
+            self.window.blit(scaled, self.viewport)
+            ui_layers.append((scaled, self.viewport))
         if overlay is not None:
             self.window.blit(pygame.transform.smoothscale(overlay, target_size), self.viewport)
         self._panel_handover(ui_layers)
@@ -2029,7 +2081,15 @@ class Desktop:
             self._tree_click(event.pos)
         return True
 
-    def _draw_background_layer(self, target_size, viewport):
+    def _frame_covered(self, alpha):
+        """Whether this frame's story layer hides all of the frame (the arena's): nothing under it needs drawing. Not with
+        any alpha channel, which a `convert()`ed canvas has on a Mac and can hold at 0 (graphics.opaque)."""
+        layer = self.story_layer
+        return (layer is not None and self.pending_background is None and (alpha is None or alpha >= 1)
+                and not layer.get_masks()[3]
+                and layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0])
+
+    def _draw_background_layer(self, target_size, viewport, covered=False):
         """Composited directly at window resolution, under the UI canvas.
 
         self.canvas is left transparent where a background belongs (see
@@ -2051,11 +2111,12 @@ class Desktop:
         """
         # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
-        self.window.fill((0, 0, 0), viewport)
-        # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
-        frame_backdrop = self._frame_backdrop(viewport.size)
-        if frame_backdrop is not None:
-            self.window.blit(frame_backdrop, viewport)
+        if not covered:
+            self.window.fill((0, 0, 0), viewport)
+            # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
+            frame_backdrop = self._frame_backdrop(viewport.size)
+            if frame_backdrop is not None:
+                self.window.blit(frame_backdrop, viewport)
         background = self.pending_background
         placement = None if background is None else self._background_placement(background, target_size)
         change = self._location_change(background, placement)
