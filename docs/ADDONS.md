@@ -40,7 +40,7 @@ An import can hold addons and the episodes that need them together, in any order
 ([staged_import.py](../packages/engine/src/exp_runtime/staged_import.py)). The library they go to is the one that folder fills, so
 `chslim` goes under `cod_episodes`.
 
-**Not yet:** Sync Devices doesn't send addons, and the creator can't declare them.
+**Sync Devices** sends them with the episodes ([below](#sync-devices)). The iOS and Android builds don't support addons yet.
 
 ### Lookup
 
@@ -180,6 +180,31 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Hi-Res Portraits | NR | New Rules episodes |
 | HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
 | Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
+
+## Data Management
+
+**Options › Data Management › Add-Ons** lists a library's addons, and hides itself when there are none. From the chooser it's always there, and picks the game first when both have a library. Each addon has:
+
+- **Details:** its ID, revision and size, and the episodes that need it. Reading those takes a moment the first time, as the manifest doesn't record them (`ContentLibrary.episode_requires`).
+- **Export:** its file, under its own name, into the Exports folder.
+- **Delete:** after a warning that counts the episodes needing it. Those show the "needs the addon" message until it's imported again, and their saves stay. It also lets go of a game left for the main menu, which could be drawing from it.
+
+Elsewhere:
+
+- **Add Episodes** takes addons, and says how many of each came.
+- **Library Info** lists them, and **Storage** counts them apart from episodes.
+- **Verify Library** checks them. A damaged file is removed, and importing the addon again restores it, as it does an episode's.
+- **Export Episodes** exports only what you chose. When those episodes need addons, it says so afterwards and offers to export those too.
+
+## Sync Devices
+
+The send page's **Episodes & Add-Ons** switch sends every addon the other device lacks or holds at a lower revision, whether or not an episode being sent needs it, as optional addons aren't declared by anything. A same-revision rebuild stays where it is, since neither device can tell which is newer. An addon standing in for another counts as holding it, and receiving a full pack deletes the slim one it supersedes.
+
+They travel in the offer step of [`lan_sync.py`](../packages/engine/src/exp_runtime/lan_sync.py), as `addons` beside `episodes`. A whole library sent to a device without one carries them already. Legacy Mode doesn't send them: it goes away when the Android build catches up.
+
+## In the Creator
+
+See [CREATOR.md](CREATOR.md#add-ons). A project can take pictures, sounds and cutscenes from an addon by reference, or copy pictures and sounds in. It can't make one yet: that's what the steps below are for.
 
 ## Writing your own
 

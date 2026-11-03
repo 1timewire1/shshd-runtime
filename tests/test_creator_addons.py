@@ -242,6 +242,58 @@ class NativeExportTests(Library):
         self.assertNotIsInstance(caught.exception, AddonsNeeded)
 
 
+class CutsceneAuthoringTests(unittest.TestCase):
+    def project(self):
+        project = sequence(Node('c', 'cutscene', params={'spec': 0}))
+        project.assets += [Asset(26000, 'Art', PNG), Asset(26005, 'Whip', WAV)]
+        return project
+
+    def spec(self, **more):
+        from exp_runtime.creator.cutscenes import blank_shot, blank_spec
+        spec = blank_spec()
+        shot = blank_shot()
+        shot.update(image=26000, end=1000)
+        spec.update(shots=[shot], hold=1000, sounds=[dict(at=500, sound=26005)], **more)
+        return spec
+
+    def test_a_saved_cutscene_plays_from_its_node(self):
+        from exp_runtime.creator.cutscenes import cutscene_assets, read_project_spec, save_cutscene
+        project = self.project()
+        asset = save_cutscene(project, 'Opening', self.spec())
+        self.assertEqual([a.id for a in cutscene_assets(project)], [asset.id])
+        self.assertEqual(read_project_spec(asset)['hold'], 1000)
+        project.nodes[0].params['spec'] = asset.id
+        built = ExpArchive(compile_project(project))
+        self.assertEqual(built.read(asset.id), asset.data)
+
+    def test_replacing_keeps_its_id_and_a_missing_picture_is_named(self):
+        from exp_runtime.creator.cutscenes import read_project_spec, save_cutscene
+        project = self.project()
+        asset = save_cutscene(project, 'Opening', self.spec())
+        again = save_cutscene(project, 'Renamed', self.spec(skip=500), asset.id)
+        self.assertEqual((again.id, again.name, read_project_spec(again)['skip']), (asset.id, 'Renamed', 500))
+        spec = self.spec()
+        spec['shots'][0]['image'] = 26999
+        with self.assertRaisesRegex(ProjectError, '26999'):
+            save_cutscene(project, 'Broken', spec)
+        with self.assertRaises(ProjectError):
+            save_cutscene(project, 'Not one', self.spec(), 26000)
+
+    def test_a_bad_timeline_is_refused(self):
+        from exp_runtime.creator.cutscenes import blank_spec, save_cutscene
+        with self.assertRaises(ProjectError):
+            save_cutscene(self.project(), 'No shots', blank_spec())
+        with self.assertRaises(ProjectError):
+            save_cutscene(self.project(), 'Skips past its hold', self.spec(skip=5000))
+
+    def test_an_addons_asset_can_be_chosen_as_only_the_library_knows_what_it_is(self):
+        from exp_runtime.creator.cutscenes import cutscene_assets
+        project = self.project()
+        project.addons = [dict(id='packs', revision=1)]
+        project.assets.append(Asset(26012, 'From the pack', None, 'packs'))
+        self.assertEqual([a.id for a in cutscene_assets(project)], [26012])
+
+
 class TranslatorTests(unittest.TestCase):
     def test_a_translated_project_says_what_it_takes_from_the_addon(self):
         import x360

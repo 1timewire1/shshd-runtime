@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDia
 
 from exp_runtime.exp import ContentError
 from .addons import AddonsNeeded, copy_addon_asset, drop_unused_addons, use_addon_asset
+from .cutscenes import blank_spec, cutscene_assets, read_project_spec, save_cutscene
 from .assets import addon_asset_ids, image_png, import_library_image, player_library
 from .compiler import compile_project, export_project, export_native_slot
 from exp_runtime.cutscene import read_spec
@@ -25,7 +26,7 @@ from .model import (Choice, EMOTICONS, KINDS, OPERATORS, Node, Project, ProjectE
                     project_from_bytes, save_project, Character, is_audio, is_image, validate_structure)
 from .features import NAMES, parameters
 from .editing import Recovery, auto_layout, copy_nodes, paste_nodes
-from .panels import DebugDialog, ListDialog, RecordDialog, TranslationsDialog
+from .panels import CutsceneDialog, DebugDialog, ListDialog, RecordDialog, TranslationsDialog
 from .live import LiveEditor
 from .sharing import SharingError, digest, guard, session_info
 
@@ -172,8 +173,10 @@ class LibraryBrowser(QDialog):
         self.items.clear()
         self.episode, self.resource, self.addon = None, None, None
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
-        self.use_addon.setVisible(bool(selector) and selector.startswith('addon:'))
+        from_addon = bool(selector) and selector.startswith('addon:')
+        self.use_addon.setVisible(from_addon)
         self.use_addon.setEnabled(False)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Copy into project' if from_addon else 'Add image to project')
         try:
             if selector and selector.startswith('addon:'):
                 self.addon = selector[len('addon:'):]
@@ -616,6 +619,13 @@ class Editor(QMainWindow):
                         lambda value: self.set_node('expression', value)))
                 if node.kind == 'dialogue' and self.project.game == 'shs':
                     self.presentation_rows(form, node)
+                if node.kind == 'cutscene':
+                    choices = [('None', 0)] + [(f'{a.id} · {a.name}', a.id) for a in cutscene_assets(self.project)]
+                    form.addRow('Cutscene', self.combo(choices, parameters(node)['spec'],
+                                                       lambda value: self.set_param('spec', value)))
+                    timeline = QPushButton('New or edit timeline…')
+                    timeline.clicked.connect(self.edit_cutscene)
+                    form.addRow(timeline)
                 if node.kind == 'music' and self.project.game == 'shs':
                     loops = [('None', -1)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
                                               if a.addon or a.data is not None and is_audio(a.data)]
@@ -700,6 +710,33 @@ class Editor(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.set_project('emoticons', [box.currentData() for box in boxes])
             self.show_properties()
+
+    def edit_cutscene(self):
+        """The selected cutscene node's timeline: its own if it has one in the project, else a new one. An add-on's can't be edited
+        here, as the project doesn't hold it."""
+        node = self.project.node(self.selected)
+        current = next((a for a in self.project.assets if a.id == parameters(node)['spec']), None)
+        if current is not None and current.addon:
+            self.error(ProjectError('That cutscene belongs to an add-on, so it can\'t be edited here.'))
+            return
+        spec = read_project_spec(current) if current is not None else None
+        pictures = [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
+                    if a.addon or a.data is not None and is_image(a.data)]
+        sounds = [(f'{a.id} · {a.name}', a.id) for a in self.project.assets if a.addon or a.data is not None and is_audio(a.data)]
+        dialog = CutsceneDialog(spec or blank_spec(), current.name if spec else 'Cutscene', pictures, sounds, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        candidate = deepcopy(self.project)
+        try:
+            asset = save_cutscene(candidate, dialog.name.text().strip() or 'Cutscene', dialog.spec, current.id if spec else None)
+        except ProjectError as error:
+            self.error(error)
+            return
+        self.remember()
+        self.project = candidate
+        self.project.node(self.selected).params['spec'] = asset.id
+        self.changed()
+        self.refresh()
 
     def set_option(self, index, key, value):
         option = self.project.node(self.selected).options[index]

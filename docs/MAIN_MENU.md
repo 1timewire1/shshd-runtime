@@ -815,6 +815,7 @@ New Rules Hi-Res Portraits and Episode Titles); each game's own Options still ha
     the app's card (`ChooserList`), with no game menu opened.
   - Progress: Back Up Progress asks Combined (one file holding a bundle per game, `progress_bundle.write_set`; the
     default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
+  - Add-Ons picks the game first, when both have a library ([ADDONS.md](ADDONS.md#data-management)).
   - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
     Receiving needs no library at all. With Legacy Mode on (the default for now), Send and Receive here show a notice
     instead: legacy sync is one game, from inside it.

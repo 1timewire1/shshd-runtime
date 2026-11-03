@@ -304,4 +304,3 @@ same. See [X360.md](X360.md#the-x360-arena-skin).
 - The WinMo panel's property code wasn't compared with the Java's.
 - The menu and info box's own layouts aren't decoded.
 - HUD box words 3 and 4 are inferred.
-- Sync Devices doesn't send addons, so a synced New Rules episode needs `shsnr` imported on the other device.

@@ -883,6 +883,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
         anything else in its folder) and goes to the game chooser.
       - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
       - **Progress:** Back Up Progress, Restore Progress, Reset Names, Delete All Saves.
+      - **Add-Ons** (with any in the library; [ADDONS.md](ADDONS.md#data-management)).
 
       **Back Up Progress** writes a progress bundle (`progress_bundle.py`) to `Downloads/SHSHD Runtime Backups`. The
       bundle is a zip of the library's saved games, Decision Trees, name tables and warp lock, with a manifest.
@@ -899,7 +900,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
       **Sync Devices** (owner, 2026-10-30) sends a game's progress to another device on the same network
       (`lan_sync.py` moves the files, `sync_flow.py` is the app's side). In a game it sends that game. From the game
       chooser's Options it sends both games, or the one chosen on the send page's **Games** row.
-      - **Send to Another Device:** switches for Saved Games & Trees, Names, Options and Episodes, plus Back Up
+      - **Send to Another Device:** switches for Saved Games & Trees, Names, Options and Episodes & Add-Ons, plus Back Up
         Receiver First. Then **Find Receiver** lists the receivers heard on the network.
       - **Receive from Another Device:** a page showing this device's name and address while it waits.
       - **Pairing:** once connected, each device asks its person "Send to X?" / "Receive from X?" with the same

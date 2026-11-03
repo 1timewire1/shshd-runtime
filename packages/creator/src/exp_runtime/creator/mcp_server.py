@@ -109,6 +109,11 @@ def create_server(root):
         from .catalog import library_assets
         return library_assets(workspace, library, episode=episode, kind=kind, query=query, offset=offset, limit=limit, addon=addon)
 
+    @edit_tool(name='asset_save_cutscene')
+    def save_cutscene(path: str, revision: str, name: str, spec: dict, resource: int | None = None) -> dict:
+        """Embed a storyboard cutscene's JSON spec (format in exp_runtime.cutscene), or replace the project's cutscene at `resource`. Everything it draws or plays must be in the project. A cutscene node then names it."""
+        return workspace.save_cutscene(path, revision, name, spec, resource)
+
     @edit_tool(name='asset_use_addon')
     def use_addon(path: str, revision: str, library: str, addon: str, resource: int, copy: bool = False) -> dict:
         """Take a picture, sound or cutscene from a library's add-on by reference, keeping its ID and declaring the add-on; or, with copy, embed a picture or sound so that no add-on is needed."""

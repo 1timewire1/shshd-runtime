@@ -228,6 +228,10 @@ class Workspace:
                 import_library_image(project, content, resource, content.open_episode(episode) if episode else None)
         return self.edit(name, revision, apply)
 
+    def save_cutscene(self, name, revision, title, spec, resource=None):
+        from .cutscenes import save_cutscene
+        return self.edit(name, revision, lambda project: save_cutscene(project, title, spec, resource))
+
     def addon_asset(self, name, revision, library, addon, resource, copy=False):
         from exp_runtime.content import ContentLibrary
         from .addons import copy_addon_asset, use_addon_asset
