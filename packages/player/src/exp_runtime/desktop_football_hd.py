@@ -22,6 +22,7 @@ import random
 
 import pygame
 
+from .animation_curves import ease_in_out
 from .graphics import faded
 from .shs.football import SELECTED_FRAMES, PLAY_FRAMES as ANDROID_PLAY_FRAMES
 from .shs.football_layout import feedback_text, footer_id, heading_id, help_motion, legend_codes, team_name
@@ -561,7 +562,14 @@ class HdFootballRenderer:
         elif game.phase == 0:
             self.countdown(game)
         self.bar(game)
+        if game.phase == 26:
+            self.exit_fade(game.phase_ms)
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
+
+    def exit_fade(self, remaining_ms):
+        layer = pygame.Surface(FRAME, pygame.SRCALPHA)
+        layer.fill((0, 0, 0, round(255 * ease_in_out((960 - remaining_ms) / 800))))
+        self.canvas.blit(layer, (0, 0))
 
 
 SLOTS_BY_COLUMN = {60: (184,), 160: (384,), 260: (584,)}
