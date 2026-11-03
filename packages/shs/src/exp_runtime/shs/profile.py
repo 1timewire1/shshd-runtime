@@ -89,6 +89,15 @@ TRANSLATED_PICKER_LAYOUTS = {31300: {4: [(160, 275), (52, 241), (160, 170), (269
 # 27200 on (tools/translate newrules.PORTRAIT_BASE / HIRES_PORTRAIT_OFFSET).
 # The cancelled Xbox 360 prototype's translations (pack 31400, tools/translate x360.py) store theirs the same way.
 TRANSLATED_PORTRAIT_ART = {31300: (26200, 26980, 1000), 31400: (26200, 26980, 1000)}
+# Whose two sets the "Hi-Res Portraits" switch chooses between: New Rules' WinMo and X1i art. The X360's are two sizes of
+# one render, so it always shows the larger (owner, 2026-11-01: the switch doesn't belong in its episodes).
+HIRES_SWITCH_PACKS = (31300,)
+# shshd-runtime: the "MS3 Characters" switch (ContentLibrary.ms3_characters): pack -> how far above a portrait's ID its
+# April 2009 look is (tools/translate x360.MS3_LOOKS). A portrait with none stays as it is.
+MS3_CHARACTER_ART = {31400: 2000}
+# shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
+# them. Day of Diss (31400's episode 1) has no minigame.
+TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4)}
 # shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).
@@ -122,7 +131,11 @@ PRESENTATION_RECORD = True
 # view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`
 # places an episode by another position than its id: New Rules' second built-in story, Dancing Queen (101), follows
 # King of Diss (1), ahead of the downloads (2-48); King of Diss Lite (100) stays last, as the alternative version.
-LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5})}
+# The cancelled Xbox 360 prototype's translations (tools/translate/x360.py TITLE_SUFFIX) are tagged "X360" in the Xbox
+# 360's green, under their own category (owner, 2026-10-31); their old place was Now Airing's "Date Unknown".
+LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
+                # Day of Diss, Monday Planner, Dating Beth, Puzzle Test (owner, 2026-11-02).
+                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4})}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

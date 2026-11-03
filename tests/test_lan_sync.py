@@ -37,8 +37,11 @@ class Provider:
     def offer(self, games):
         return {game: list(self.episodes) for game in games}
 
-    def items(self, games, wanted):
-        self.wanted = wanted
+    def offer_addons(self, games):
+        return {game: [dict(id='pack', addon='packs', revision=2), dict(id='old', addon='older', revision=1)] for game in games}
+
+    def items(self, games, wanted, addons=None):
+        self.wanted, self.wanted_addons = wanted, addons
         episode = self.root / 'b.exp'
         episode.write_bytes(b'episode b' * 10000)            # a file streamed in blocks
         items = [('progress', f'{game}/progress.zip', b'bundle bytes') for game in games]
@@ -67,6 +70,9 @@ class Host:
 
     def want(self, game, offered):
         return [key for key in offered if key not in self.have]
+
+    def want_addons(self, game, offered):
+        return [entry['id'] for entry in offered if entry['addon'] == 'packs']
 
     def apply(self, hello, stage, games):
         if self.fail:
@@ -117,6 +123,7 @@ class SyncTests(unittest.TestCase):
         self.assertEqual((sender.status, sender.message), ('done', 'Received 1 episode.'))
         self.assertEqual(incoming.status, 'done')
         self.assertEqual(provider.wanted, {'shs': ['b']})              # the receiver had 'a'
+        self.assertEqual(provider.wanted_addons, {'shs': ['pack']})
         hello, games, files = host.applied
         self.assertEqual((hello['backup'], hello['games'], games), (True, ['shs'], ['shs']))
         self.assertEqual(files, {'shs/progress.zip': b'bundle bytes', 'shs/episodes/0/b.exp': b'episode b' * 10000})
@@ -127,7 +134,8 @@ class SyncTests(unittest.TestCase):
                 host = Host()
                 receiver = self.receiver(host)
                 sender = self.sender(receiver, Provider(self.root, []))
-                self.assertTrue(wait(self, lambda: receiver.session is not None and receiver.session.status == 'confirm'
+                self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                                     and receiver.session.status == 'confirm'
                                      and sender.status == 'confirm'))
                 incoming = receiver.session
                 (sender if refuser == 'sender' else incoming).confirm(False)
@@ -146,7 +154,8 @@ class SyncTests(unittest.TestCase):
     def test_a_failure_applying_reaches_the_sender(self):
         receiver = self.receiver(Host(fail='Not enough space on this device.'))
         sender = self.sender(receiver, Provider(self.root, []), categories=('progress',))
-        self.assertTrue(wait(self, lambda: receiver.session is not None and receiver.session.status == 'confirm'))
+        self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                             and receiver.session.status == 'confirm'))
         sender.confirm(True)
         receiver.session.confirm(True)
         self.assertTrue(wait(self, lambda: sender.finished))
@@ -155,7 +164,8 @@ class SyncTests(unittest.TestCase):
     def test_cancelling_while_waiting_ends_the_other_side(self):
         receiver = self.receiver(Host())
         sender = self.sender(receiver, Provider(self.root, []))
-        self.assertTrue(wait(self, lambda: receiver.session is not None and receiver.session.status == 'confirm'))
+        self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                             and receiver.session.status == 'confirm'))
         sender.cancel()
         self.assertTrue(wait(self, lambda: receiver.session.finished))
         self.assertEqual(receiver.session.message, lan_sync.CANCELLED_THERE)
@@ -356,6 +366,7 @@ class LegacyModeTests(unittest.TestCase):
         time.sleep(lan_sync.BEACON_S * 1.5)
         self.assertEqual(current.devices(), [])
         current.stop()
+        self.assertFalse(current.thread.is_alive())                    # its port is free: macOS would refuse it else
         legacy = Finder(port=discovery, bind='127.0.0.1', protocol=lan_sync.LEGACY_PROTOCOL)
         self.addCleanup(legacy.stop)
         self.assertTrue(wait(self, lambda: legacy.devices('shs')))

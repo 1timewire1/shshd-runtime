@@ -561,6 +561,65 @@ other state/panel services, native save/resource extensions, audio and outstandi
 mini-game presentation. The corpus's presence of a service does not prove the
 Android helper matches its original iOS semantics.
 
+## 5.1 New Rules' minigame arena (shshd-runtime services 200–212)
+
+These are not native SHS services. Episodes translated from SHS: New Rules
+(`tools/translate`) call them, as does New Rules' own minigame library, which
+runs beside the story as a linked segment (VM_SPEC.md §2.3). Each stands in for
+one New Rules service and answers as New Rules' engine does. The panel, its
+properties and its clock are decoded in
+[NEW_RULES.md](NEW_RULES.md#the-arena) and modelled in `nr_arena.py`.
+
+| Service | New Rules | Arguments | Result |
+| --- | --- | --- | --- |
+| 200 | 50 | margins, show score | Opens the arena panel |
+| 201 | 51 | label id (690–695), text | Sets a label |
+| 202 | 52 | property, value | Sets a property on the selected slot |
+| 203 | 53 | property | The property's value |
+| 204 | 54 | slot | The slot's item |
+| 205 | 55 | slot, item or text | Puts an item in a slot |
+| 206 | 56 | slot, property, v1[, v2[, v3]] | Sets a property; 718 closes the panel |
+| 207 | 57 | slot, property, v | Sets a property |
+| 208 | 29 | — | Waits for the next frame (the session completes it on its next tick) |
+| 209 | 5 | [−k], format, values… | Formats into string slot k−1 (slot 0 without a selector); the slot's handle |
+| 210 | 9 | title, `a\|b…`, selection | A menu over the panel; waits; the chosen index |
+| 211 | 10 | text | An info box over the panel; waits for OK; 0 |
+| 212 | 32 | selector | New Rules' build query as the Java (arena) build answers it |
+
+Service **70 selector 200** answers 1 when the arena plays here: New Rules'
+library is attached and the player's arena switch is on (`Session.nr_arena`).
+Native players and upstream exp-runtime answer 0 to an unknown selector, so a
+translated story takes the word game or timed choices it also carries.
+
+Service **213** (no arguments) goes before each arena game. It answers −1 to play
+the game. With Ask to Skip Mini-Games on, it waits for the player's choice and
+answers the result the game would have left instead
+([NEW_RULES.md](NEW_RULES.md#skipping)).
+
+## 5.2 The X360 minigames (shshd-runtime services 214–217)
+
+These are not native SHS services either. Episodes translated from the cancelled
+Xbox 360 game call them after **70 selector 201** answers 1, which it does only
+with the player's minigames switch on. Otherwise a story takes the fallback it
+also carries ([X360.md](X360.md#minigames)).
+
+| Service | Game | Arguments | Result, after waiting for the game |
+| --- | --- | --- | --- |
+| 214 | Slot machine | — | Bulbs taken, 0–5 |
+| 215 | Leash game | — | 1 won, 0 lost |
+| 216 | Jewel puzzle | — | The score |
+| 217 | Diss Practice | show the tutorial first | The score, at most 32767 |
+
+## 5.3 Storyboard cutscenes (shshd-runtime service 218)
+
+Service **218** (`spec`) plays the storyboard whose JSON spec is resource `spec`, and
+completes with 0 after its last press. A story asks **70 selector 202** first, which
+answers 1 only on a player that draws them (`Session.cutscenes`). Native players and
+upstream exp-runtime answer 0 to an unknown selector, so a story goes straight on.
+
+The spec is described in `cutscene.py`. A service 16 before it runs when its last press
+ends it, with the last picture up under the closing blinds.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

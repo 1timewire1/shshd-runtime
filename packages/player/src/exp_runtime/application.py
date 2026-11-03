@@ -34,7 +34,7 @@ from .episode_picker import PickerModel
 from . import episode_thumbnails, frame_log
 from .languages import TITLE_LANGUAGES
 from .launcher import APP_NAME
-from .games import GAMES
+from .games import GAMES, has_translated_minigames
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
@@ -307,6 +307,8 @@ class Application:
         lines = sources + [
             '',
             f'Episodes: {len(library.episodes)}.',
+            *([f'Add-Ons: {len(library.addons)}.'] + [f'- {addon["title"]}, revision {addon["revision"]}' for addon in library.addons]
+              if getattr(library, 'addons', ()) else []),
             f'Saved games: {len(saves)}.',
             f'Decision Tree scenes saved: {trees}.',
             f'Names remembered: {len(state.names) + sum(len(table) for table in state.name_sets.values())}.',
@@ -372,6 +374,7 @@ class Application:
         (directory / 'dtview_tree.json').unlink(missing_ok=True)
         state.ended_saves.clear()
         if library is self.library:
+            self.game = None                                    # (a game left for the main menu: see delete_save)
             self.shot_cache.clear()
             self.refresh_saves()
             self.picker = None                                  # the picker's saved-game marks and pictures
@@ -386,6 +389,10 @@ class Application:
         record = self.library.select(episode)
         for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
             (self.library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
+        # A game left for the main menu stays alive behind it, and counts as saved (refresh_saves): Continue would resume
+        # it as if nothing was deleted, and its next autosave would bring the save back.
+        if self.game is not None and self.game.session.resources.record['id'] == record['id']:
+            self.game = None
         self.state.ended_saves.clear()
         self.shot_cache.pop(record['id'], None)
         self.refresh_saves()
@@ -403,6 +410,8 @@ class Application:
         if not self.settings.check_for_updates:
             self.set_update_check(True)
         self.apply_hires_portraits()
+        self.apply_ms3_characters()
+        self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
         return 'Settings Reset', 'Every option is back to its default.'
@@ -420,16 +429,18 @@ class Application:
         """Storage's page: what each part of the library takes on disk, and what its drive has free."""
         self.progress_text = 'Measuring...'
         directory = library.directory
-        sizes = dict.fromkeys(('Episodes', 'Game apps') + tuple(label for label, _ in STORAGE_PARTS) + ('Other',), 0)
+        sizes = dict.fromkeys(('Episodes', 'Add-Ons', 'Game apps') + tuple(label for label, _ in STORAGE_PARTS) + ('Other',), 0)
+        addon_files = {Path(addon['file']).name for addon in getattr(library, 'addons', ())}
         parts = {name: label for label, names in STORAGE_PARTS for name in names}
         for path in directory.iterdir():
             if path.name == 'content' and path.is_dir():
                 for item in path.iterdir():
-                    sizes['Episodes' if item.suffix in ('.exp', '.json') else 'Game apps'] += disk_size(item)
+                    sizes['Add-Ons' if item.name in addon_files
+                          else 'Episodes' if item.suffix in ('.exp', '.json') else 'Game apps'] += disk_size(item)
             else:
                 sizes[parts.get(path.name, 'Other')] += disk_size(path)
         import shutil
-        lines = [f'{label}: {size_text(size)}' for label, size in sizes.items() if size or label != 'Other']
+        lines = [f'{label}: {size_text(size)}' for label, size in sizes.items() if size or label not in ('Other', 'Add-Ons')]
         return '\n'.join(lines + ['', f'Total: {size_text(sum(sizes.values()))}',
                                   f'Free on this drive: {size_text(shutil.disk_usage(directory).free)}'])
 
@@ -438,11 +449,12 @@ class Application:
         record or None)."""
         files = [(label, record['file'], record['sha256'], None) for key, label in APP_FILES
                  for record in (library.manifest.get(key),) if isinstance(record, dict) and 'file' in record]
-        return files + [((record.get('titles') or [record['name']])[0], record['file'], record['sha256'], record)
-                        for record in library.episodes if 'file' in record]
+        return (files + [((record.get('titles') or [record['name']])[0], record['file'], record['sha256'], record)
+                         for record in library.episodes if 'file' in record]
+                + [(f'{addon["title"]} (add-on)', addon['file'], addon['sha256'], addon) for addon in getattr(library, 'addons', ())])
 
     def verify_library(self, library):
-        """Verify Library: every file checked against its checksum. A damaged episode's file is removed (it cannot
+        """Verify Library: every file checked against its checksum. A damaged episode's or addon's file is removed (it cannot
         play): a built-in episode is then written again from the game's app here, and any other comes back when Add
         Episodes is given it again (ContentLibrary._install_episodes). Returns (checked, missing, damaged, restored),
         the middle two as names."""
@@ -587,6 +599,10 @@ class Application:
             # The work runs under the busy card over the Episodes page (the picker screen has none).
             work = getattr(self, kind)
             self.leave_choice()
+            if kind == 'export_episodes':
+                self.start_data_job(EPISODE_CHOICES[kind][3],
+                                    lambda library: (work(library, chosen), self.addons_needed(library, chosen)), self.exported)
+                return
             self.start_data_job(EPISODE_CHOICES[kind][3], lambda library: work(library, chosen), self.choice_done)
         if kind == 'delete_episodes':
             self.shell.confirm('Delete Episodes?', f'{count} will be deleted from {self.game_title}, with their saved '
@@ -596,6 +612,44 @@ class Application:
                                'scenes. Saved games stay.', 'Reset', run)
         else:
             run()
+
+    def added_text(self, count):
+        """What Add Episodes brought, with add-ons named apart."""
+        addons = getattr(self.library, 'last_addons_added', 0)
+        episodes = count - addons
+        parts = ([f'{episodes} episode{"s" if episodes != 1 else ""}'] if episodes else []) + (
+            [f'{addons} add-on{"s" if addons != 1 else ""}'] if addons else [])
+        return f'Added {" and ".join(parts)}.'
+
+    def exported(self, result):
+        """Export Episodes is done: its notice, or the offer of the addons those episodes need."""
+        from .desktop_addons import export_offer
+        self.refresh_saves()
+        self.picker = None
+        export_offer(self, self.addon_host(), result, self.start_data_job)
+
+    def addon_host(self):
+        """What desktop_addons needs of this game's menu."""
+        shell = self.shell
+        return SimpleNamespace(rows=shell.pause.show_rows, text=shell.pause.show_text, notice=shell.notify, confirm=shell.confirm,
+                               job=self.start_data_job, deleted=self.addon_deleted)
+
+    def addon_pages(self):
+        """The Add-Ons page of the open game's menu. Each game has its own shell and pause menu, and this app outlives them: a page
+        kept from another game would go on drawing into that game's menu."""
+        from .desktop_addons import AddonPages
+        shell, pages = self.__dict__.get('_addon_pages', (None, None))
+        if shell is not self.shell:
+            pages = AddonPages(self, self.addon_host())
+            self._addon_pages = self.shell, pages
+        return pages
+
+    def addon_deleted(self):
+        """An addon went: the game left for the main menu may be drawing from it, and the menus' backdrop too."""
+        self.game = None
+        episode_thumbnails.release_game_caches()
+        self.refresh_saves()
+        self.picker = None
 
     def choice_done(self, result):
         self.refresh_saves()
@@ -697,6 +751,36 @@ class Application:
                 target, number = folder / f'{Path(name).stem} ({number}).exp', number + 1
             target.write_bytes(library.episode_bytes(record))
         return ('Episodes Exported', f'{len(records)} episode{"s were" if len(records) != 1 else " was"} copied to '
+                f'{self.folder_text(folder)}.')
+
+    def addons_needed(self, library, ids):
+        """[(record id, title)] of the addons the library holds that these episodes declare, each once: Export Episodes offers
+        them (desktop_addons.export_offer)."""
+        needed = {}
+        for record in library.episodes:
+            if record['id'] in ids:
+                for name, _ in library.episode_requires(record):
+                    found = library.addon(name)
+                    if found is not None:
+                        needed[found[0]['id']] = found[0]['title']
+        return list(needed.items())
+
+    def export_addons(self, library, ids):
+        """An addon's EXP file, as imported and under its own name, into export_folder (as export_episodes)."""
+        import shutil
+        folder = self.export_folder(library)
+        folder.mkdir(parents=True, exist_ok=True)
+        records = [addon for addon in library.addons if addon['id'] in ids]
+        for record in records:
+            self.progress_text = record['title'][:44]
+            source = library.directory / record['file']
+            name = Path(record.get('name') or record['id'] + '.exp').name
+            target, number = folder / name, 2
+            while target.exists() and file_digest(target) != record['sha256']:
+                target, number = folder / f'{Path(name).stem} ({number}).exp', number + 1
+            if not target.exists():
+                shutil.copyfile(source, target)
+        return ('Add-Ons Exported', f'{len(records)} add-on{"s were" if len(records) != 1 else " was"} copied to '
                 f'{self.folder_text(folder)}.')
 
     def reset_trees(self, library, ids):
@@ -875,6 +959,8 @@ class Application:
                 setattr(self.state, key, value)
         self.state.persist()
         self.apply_hires_portraits()
+        self.apply_ms3_characters()
+        self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
 
@@ -910,6 +996,7 @@ class Application:
         self.restore_player(state, player)
         state.ended_saves.clear()
         self.shot_cache.clear()
+        self.game = None                # (a game left for the main menu would hide what came back: see delete_save)
         self.refresh_saves()
         self.picker = None
         here = {record['id'] for record in self.library.episodes}
@@ -967,16 +1054,53 @@ class Application:
         return (self.updates.future is not None or self.updates.available is not None) and waited < UPDATE_WAIT
 
     def hires_portraits_offered(self):
-        """Whether the library has an episode with a second, hi-res portrait set (the game profile's
-        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
-        packs = getattr(GAMES.get(self.library.game_id), 'TRANSLATED_PORTRAIT_ART', {}) if self.library else {}
+        """Whether the library has an episode with a second, hi-res portrait set to choose (the game profile's
+        HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        packs = getattr(GAMES.get(self.library.game_id), 'HIRES_SWITCH_PACKS', ()) if self.library else ()
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+
+    def ms3_characters_offered(self):
+        """Whether the library has an episode the "MS3 Characters" switch changes (MS3_CHARACTER_ART: translated X360
+        episodes)."""
+        packs = getattr(GAMES.get(self.library.game_id), 'MS3_CHARACTER_ART', ()) if self.library else ()
+        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+
+    def portrait_addon_offered(self):
+        """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
+        change something."""
+        addon = getattr(GAMES.get(self.library.game_id), 'PORTRAIT_ADDON', None) if self.library else None
+        return addon is not None and self.library.addon(addon[0]) is not None
+
+    def minigames_offered(self):
+        """Whether the library has an episode the "Use Translated Mini-Games" switch changes (TRANSLATED_MINIGAMES)."""
+        if not self.library:
+            return False
+        profile = GAMES.get(self.library.game_id)
+        return any(has_translated_minigames(profile, record) for record in self.library.episodes)
+
+    def arena_skin_offered(self):
+        """Whether the "X360 Arena Skin" switch changes something: translated New Rules episodes (their arena) and the X360
+        addon's arena skin (desktop_nr_arena_x360; owner, 2026-10-31) are both in the library."""
+        from .desktop_nr_arena_x360 import library_has_skin
+        return self.hires_portraits_offered() and library_has_skin(self.library)
 
     def apply_hires_portraits(self):
         """The "Hi-Res Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
         self.library.hires_portraits = self.state.hires_portraits
         if self.game:
             self.game.set_hires_portraits(self.state.hires_portraits)
+
+    def apply_ms3_characters(self):
+        """The "MS3 Characters" switch reaches the library; a paused episode loads its portraits afresh."""
+        self.library.ms3_characters = self.state.ms3_characters
+        if self.game:
+            self.game.set_ms3_characters(self.state.ms3_characters)
+
+    def apply_ch_portraits(self):
+        """The CH "HD Portraits in CoD" switch reaches the library; a paused episode loads its portraits afresh."""
+        self.library.ch_portraits = self.state.ch_portraits
+        if self.game:
+            self.game.set_ch_portraits(self.state.ch_portraits)
 
     def set_update_check(self, enabled):
         """The launch update check on or off (settings.json), from the SD Options or the HD General page."""
@@ -1145,6 +1269,8 @@ class Application:
         if 'SHS_HD_ART' not in os.environ:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
         library.hires_portraits = state.hires_portraits
+        library.ms3_characters = state.ms3_characters
+        library.ch_portraits = state.ch_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
         self.picker, self.shot_cache = None, {}
@@ -1721,7 +1847,9 @@ class Application:
             self.game.menu_open = False
         else:
             if load_path:
-                session = Session.load(self.library.open_episode(episode), load_path)
+                resources = self.library.open_episode(episode)
+                resources.check_addons()
+                session = Session.load(resources, load_path)
                 self.state.process.attach(session, restored=True)
                 self.state.selected = episode
                 self.state.persist()
@@ -1764,6 +1892,10 @@ class Application:
         self.game.grid_controls = self.state.grid_controls
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.hires_portraits = self.state.hires_portraits
+        self.game.ms3_characters = self.state.ms3_characters
+        self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
+        self.game.arena_minigames = self.state.arena_minigames
+        self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
         self.game.warp_unlocked = (self.state.warp_unlocked
                                    or self.game.session.resources.record.get('builtin') != 'football-star')
@@ -1862,6 +1994,10 @@ class Application:
         self.state.disable_choice_timer = self.game.disable_choice_timer
         self.state.hd_backdrop = self.game.hd_backdrop
         self.state.hires_portraits = self.game.hires_portraits
+        self.state.ms3_characters = self.game.ms3_characters
+        self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
+        self.state.arena_minigames = self.game.arena_minigames
+        self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)
         self.state.sound_volume = round(self.game.sound_volume * 100)
         self.state.persist()
@@ -2116,7 +2252,8 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits'):
+                               'hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames',
+                               'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
                 setattr(self.state, key, not previous)
@@ -2127,6 +2264,10 @@ class Application:
                     raise
                 if key == 'hires_portraits':
                     self.apply_hires_portraits()
+                if key == 'ms3_characters':
+                    self.apply_ms3_characters()
+                if key == 'ch_portraits':
+                    self.apply_ch_portraits()
                 if self.game:
                     self.game.music_enabled, self.game.sound_enabled = self.state.music, self.state.sound
                     self.game.vibration_enabled = self.state.vibration
@@ -2136,6 +2277,8 @@ class Application:
                     self.game.skip_ad_intros = self.state.skip_ad_intros
                     self.game.autoplay = self.state.autoplay
                     self.game.disable_choice_timer = self.state.disable_choice_timer
+                    self.game.arena_minigames = self.state.arena_minigames
+                    self.game.arena_skin = self.state.arena_skin
                     self.game._sync_music()
             elif kind in ('save', 'load') and self.paused_menu:
                 self.game.command((kind,))
@@ -2238,7 +2381,7 @@ class Application:
                     self.episode_scroll = self.scroll = 0
                     self.picker = None
                     self.show('main' if self.shell is not None else 'episodes', remember=False)
-                    self.message = f'Added {result} episodes.' if result else 'Library updated. No new episodes were added.'
+                    self.message = self.added_text(result) if result else 'Library updated. No new episodes were added.'
                     self.prepare_previews()
             except ERRORS as error:
                 self.message = str(error)

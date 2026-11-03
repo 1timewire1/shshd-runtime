@@ -293,12 +293,16 @@ class HdEpisodeList(HdEpisodePicker):
         if chosen and not (self.popup or self.alert):
             self.hits.append((act, CHOICE_ACT))
 
+    def mark_width(self, mark):
+        """The tag plate's width in points: 32, wider for a tag that needs it (the X360 translations' "X360")."""
+        return max(32, -(-self.font(11).size(mark)[0] // S) + 10)
+
     def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
         """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition,
         restyled from the tile grid's dark plate to sit on this screen's white rows. Gray, so that blue is New
         Rules' own: an episode translated from another SHS game shows its game's tag ("NR") in its game's colour
         (owner, 2026-10-25)."""
-        width, height = 32, 18
+        width, height = self.mark_width(mark), 18
         color = STANDARD_MARK_COLOR if color is None else color
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
         pygame.draw.rect(plate, (*color, 30), plate.get_rect(), border_radius=6 * S)
@@ -349,7 +353,7 @@ class HdEpisodeList(HdEpisodePicker):
             right -= ICON_SIZE + 10
         mark = self.model.mark(record)
         if mark is not None:
-            right -= 32
+            right -= self.mark_width(mark)
             self.draw_standard_mark(layer, right, rect.y + (rect.height - 18) / 2, mark, self.model.mark_color(record))
             right -= 8
         text_width = right - rect.x - 18

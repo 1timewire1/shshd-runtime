@@ -425,7 +425,7 @@ class GameChooserTests(unittest.TestCase):
         app.screen = 'browser'
         app.import_paths([extra]); app.job.result(timeout=10); app.tick(0)
         self.assertEqual(app.screen, 'main')                 # the HD main menu, not the SD episode list
-        self.assertIn('Added 1 episodes', app.message)
+        self.assertIn('Added 1 episode.', app.message)
 
     def test_game_libraries_given_on_the_command_line_are_used_and_not_remembered(self):
         from exp_runtime.application import Application, main

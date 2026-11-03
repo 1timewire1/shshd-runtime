@@ -400,7 +400,8 @@ class HdEpisodePicker(HdUi):
                              2 * S, border_radius=4 * S)
         mark = self.model.mark(record)
         if mark is not None:
-            self.draw_standard_mark(layer, x + TILE[0] - 42, y + TILE[1] - 30, mark, self.model.mark_color(record))
+            self.draw_standard_mark(layer, x + TILE[0] - 8 - self.mark_width(mark), y + TILE[1] - 30, mark,
+                                    self.model.mark_color(record))
         info = self.info_rect(record, x, y)
         if info is not None:
             self.draw_info_mark(layer, info)
@@ -411,7 +412,8 @@ class HdEpisodePicker(HdUi):
         show); None without an info card."""
         if not self.model.has_info(record):
             return None
-        right = x + TILE[0] - 8 - (42 if self.model.mark(record) is not None else 0)
+        mark = self.model.mark(record)
+        right = x + TILE[0] - 8 - (self.mark_width(mark) + 8 if mark is not None else 0)
         return pygame.Rect(right - INFO_PLATE[0], y + TILE[1] - 10 - INFO_PLATE[1], *INFO_PLATE)
 
     def draw_info_mark(self, layer, rect):
@@ -439,11 +441,15 @@ class HdEpisodePicker(HdUi):
         pygame.draw.rect(surface, glyph, stem, border_radius=2 * S)
         layer.blit(surface, (round(cx * S - size * S / 2), round(cy * S - size * S / 2)))
 
+    def mark_width(self, mark):
+        """The tag plate's width in points: 34, wider for a tag that needs it (the X360 translations' "X360")."""
+        return max(34, -(-self.font(13).size(mark)[0] // S) + 10)
+
     def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
         """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition.
         An episode translated from another SHS game shows its game's tag ("NR") on the same plate, in its game's
         colour lightened for the dark plate (owner, 2026-10-25)."""
-        width, height = 34, 20
+        width, height = self.mark_width(mark), 20
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
         pygame.draw.rect(plate, (0, 0, 0, 150), plate.get_rect(), border_radius=6 * S)
         tint = MARK_COLOR if color is None else tuple(round(c + (255 - c) * MARK_TINT) for c in color)

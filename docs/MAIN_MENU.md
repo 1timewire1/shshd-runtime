@@ -804,7 +804,8 @@ input, on the same card. Its value buttons and the sliders' speakers are drawn a
 shared options in `settings.json`, since no library is open there; the next game opened takes them, because the
 shared copy wins. Options only one game offers are left out (`ONE_GAME_OPTIONS`: SHS's ad and upsell intros,
 New Rules Hi-Res Portraits and Episode Titles); each game's own Options still has them. Its pages:
-- General, Sound, Controller (with a controller connected) and Extras;
+- General, Sound, Controller (with a controller connected), Extras and Add-Ons (the switches that only concern translated
+  games and addons; hidden when none of them is offered);
 - Data Management for both games (owner, 2026-10-30), with the Backups and Exports folders and Reset Settings.
   Choosing a folder returns to its page with the notice. Each game that has a library is opened for a row in turn
   (`AppOptions.each`, `Application.opened_library`):
@@ -814,6 +815,7 @@ New Rules Hi-Res Portraits and Episode Titles); each game's own Options still ha
     the app's card (`ChooserList`), with no game menu opened.
   - Progress: Back Up Progress asks Combined (one file holding a bundle per game, `progress_bundle.write_set`; the
     default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
+  - Add-Ons picks the game first, when both have a library ([ADDONS.md](ADDONS.md#data-management)).
   - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
     Receiving needs no library at all. With Legacy Mode on (the default for now), Send and Receive here show a notice
     instead: legacy sync is one game, from inside it.

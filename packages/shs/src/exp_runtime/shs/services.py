@@ -66,13 +66,28 @@ def dispatch(self, vm, *, resource_exists=None):
         if not self.loading.blocking:
             # Compact calls retain their count in bytecode. Register-count
             # calls lose it on completion; keep nonlegacy counts for saves.
-            if vm.program.instructions[request.pc].opcode == 0x1e and len(args) != 1:
+            if vm.instruction_at(request.pc).opcode == 0x1e and len(args) != 1:
                 details['argument_count'] = len(args)
             vm.resume(0)  # The call completes, but host +0x118 still gates execution.
         return EngineAction('loading', request, False, details)
     if y == 70:
         at_least(1)
         selector = args[0]
+        from ..engine import NR_ARENA_QUERY
+        if selector == NR_ARENA_QUERY:
+            # shshd-runtime: whether New Rules' minigame arena plays here (its library attached and the player's
+            # switch on); native players and upstream answer 0, and the story takes its other way.
+            available = getattr(self, 'nr_arena_enabled', False) and vm.linked is not None
+            return complete('query_build', int(available), selector=selector)
+        from ..x360_games import X360_MINIGAMES_QUERY
+        if selector == X360_MINIGAMES_QUERY:
+            # shshd-runtime: whether the X360 translations' real minigames play here (the same switch); others take
+            # the timed choice the story carries.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
+        from ..cutscene import CUTSCENE_QUERY
+        if selector == CUTSCENE_QUERY:
+            # shshd-runtime: whether storyboard cutscenes play here (a player that draws them); others go straight on.
+            return complete('query_build', int(getattr(self, 'cutscenes_enabled', False)), selector=selector)
         if self.hd_version is not None:
             # SHSScript::syscall case 0x46 (HD): 2 -> 2, 3 -> 6, 6 -> the app version (CFBundleVersion) in host
             # string slot 0, 9 -> 1, 10 -> 2 when the in-app store is available, else 1 (answered as available:

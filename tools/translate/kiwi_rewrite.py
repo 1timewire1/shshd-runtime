@@ -27,6 +27,8 @@ from dataclasses import replace
 from exp_runtime.decode.bytecode import BytecodeInstruction, KiwiProgram, OPERAND_OPCODES, decode_program
 
 STACK_BASE = 0x7bf5                     # the VM's stack starts here; data must stay below it
+# Instructions whose effect depends on their own address (relative branches, SAVE_RETURN, the register-A switch).
+RELATIVE = frozenset((0x28, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x42, 0x5c))
 
 
 class RewriteError(ValueError):
@@ -106,11 +108,16 @@ class Shim:
 
 
 class Rewriter:
-    def __init__(self, program: KiwiProgram, zero_gap=False):
+    def __init__(self, program: KiwiProgram, zero_gap=False, room=None):
         """`zero_gap`: the source engine allocates data as one zeroed array (New Rules' Java `new short[main + gap +
-        extra]`, r.java), so its scripts may read gap words they never wrote; the output stores them as zeros."""
-        if program.previous_flag:
-            raise RewriteError('linked KiWi segments are not supported')
+        extra]`, r.java), so its scripts may read gap words they never wrote; the output stores them as zeros.
+        A linked segment (New Rules' minigame library) sits at fixed boundaries: its data can't grow (the stories'
+        data and the stack are fixed around it) and it takes no prologue, but shims may follow its code, at addresses
+        from its code boundary. `room` ((start, end) address ranges): dead code the shims overwrite instead, in
+        order, for a program whose code already reaches the KiWi limit."""
+        self.room = list(room or ())
+        self.linked = bool(program.previous_flag)
+        self.code_base = program.previous_instruction_count if self.linked else 0
         self.program, self.zero_gap = program, zero_gap
         self.code = [(i.opcode, i.operand) for i in program.instructions]
         self.original = len(self.code)
@@ -121,6 +128,8 @@ class Rewriter:
     # -- data ------------------------------------------------------------------------------------------------------
     def words(self, values):
         """Append words after the extra bank; returns the first one's address."""
+        if self.linked:
+            raise RewriteError('nothing can be appended to a linked segment')
         address = len(self.program.main_words) + self.program.gap_count + len(self.extra)
         self.extra.extend(word(v) for v in values)
         if address + len(values) >= STACK_BASE:
@@ -165,15 +174,19 @@ class Rewriter:
             self.shims[shim_key] = shim
         self.sites[pc] = ('shim', shim_key)
 
-    def replace_function(self, pc, key, build):
-        """Run the shim `key` instead of the function starting at `pc` (its PUSH_FP). The shim has no arguments; it
-        returns to the function's caller (whose SAVE_RETURN is still on the stack) and sets what the caller reads."""
-        opcode, _ = self.code[pc]
-        if opcode != 0x48 or pc >= self.original:
-            raise RewriteError(f'no function starts at {pc}')
+    def replace_function(self, pc, key, build, argc=0):
+        """Run the shim `key` instead of the function starting at `pc` (its PUSH_FP, an address: from the code
+        boundary in a linked segment). The shim reads the caller's `argc` arguments with `arg(i)`, returns to the
+        function's caller (whose SAVE_RETURN is still on the stack), which drops them itself, and sets what the
+        caller reads."""
+        pc -= self.code_base
+        opcode, _ = self.code[pc] if 0 <= pc < self.original else (None, None)
+        if opcode != 0x48:
+            raise RewriteError(f'no function starts at {pc + self.code_base}')
         shim_key = (key, 'function')
         if shim_key not in self.shims:
-            shim = Shim(self, 0)
+            shim = Shim(self, argc)
+            shim.function = True
             build(shim)
             self.shims[shim_key] = shim
         self.sites[pc] = ('function', shim_key)
@@ -193,6 +206,18 @@ class Rewriter:
             self.shims[shim_key] = shim
         self.sites[pc] = ('function', shim_key)
 
+    def insert(self, pc, build):
+        """Run `build`'s code (no arguments, no frame; it must leave the stack as it found it) just before the
+        instruction at address `pc`, which moves to the end of that block. The instruction can't be one that depends
+        on where it sits: a relative branch, a SAVE_RETURN or a computed jump."""
+        pc -= self.code_base
+        opcode = self.code[pc][0] if 0 <= pc < self.original else None
+        if opcode is None or opcode in RELATIVE or pc in self.sites:
+            raise RewriteError(f'nothing can be inserted before {pc + self.code_base}')
+        shim = Shim(self, 0)
+        build(shim)
+        self.sites[pc] = ('insert', shim)
+
     def prologue(self, build):
         """Code that runs once before the program's first instruction (built like a shim body, without arguments)."""
         self.start = Shim(self, 0)
@@ -200,16 +225,41 @@ class Rewriter:
 
     # -- output ----------------------------------------------------------------------------------------------------
     def finish(self) -> KiwiProgram:
+        if self.linked and self.start is not None:
+            raise RewriteError('a linked segment takes no prologue')
         code = list(self.code)
+        base = self.code_base                   # jumps are addresses; a linked segment's start at its code boundary
+        placing = self.shims or any(site[0] in ('shim', 'insert') for site in self.sites.values())
+        for start, end in self.room if placing else ():
+            if not base <= start <= end <= base + self.original:
+                raise RewriteError(f'the room {start}-{end} is not in the code')
+        rooms = [list(r) for r in self.room]            # [next free address, end] of each
+
+        def put(items):
+            """Where `items` (assembled at that address by a callable) go: over the first room they fit in, or after
+            the code."""
+            if not self.room:
+                start = base + len(code)
+                code.extend(items(start) if callable(items) else items)
+                return start
+            for free in rooms:
+                start = free[0]
+                placed = items(start) if callable(items) else items
+                if start + len(placed) <= free[1]:
+                    code[start - base:start - base + len(placed)] = placed
+                    free[0] += len(placed)
+                    return start
+            raise RewriteError(f'the shims overflow the room {self.room}')
         starts = {}
         for key, shim in self.shims.items():
-            starts[key] = len(code)
-            code.extend(_assemble(shim, len(code)))
+            starts[key] = put(lambda start, shim=shim: _assemble(shim, start))
         for pc, site in sorted(self.sites.items()):
             if site[0] == 'shim':
-                trampoline = len(code)
-                code.extend([(0x1a, pc), (0x29, starts[site[1]])])
-                code[pc] = (0x29, trampoline)
+                code[pc] = (0x29, put([(0x1a, base + pc), (0x29, starts[site[1]])]))
+            elif site[0] == 'insert':
+                displaced = code[pc]
+                code[pc] = (0x29, put(lambda start, shim=site[1], displaced=displaced, pc=pc:
+                                      _assemble(shim, start, frame=False) + [displaced, (0x29, base + pc + 1)]))
             elif site[0] == 'function':
                 code[pc] = (0x29, starts[site[1]])
         if self.start is not None:
@@ -227,9 +277,10 @@ class Rewriter:
             code.extend(_assemble(self.start, block, frame=False))
             code.extend([(first, operand), (0x29, 1)])
             code[0] = (0x29, block)
-        if len(code) > 0x7fff:
-            raise RewriteError(f'{len(code)} instructions exceed the KiWi limit')
-        instructions = tuple(BytecodeInstruction(pc, 0, opcode, operand) for pc, (opcode, operand) in enumerate(code))
+        if base + len(code) > 0x7fff:
+            raise RewriteError(f'{base + len(code)} instructions exceed the KiWi limit')
+        instructions = tuple(BytecodeInstruction(self.code_base + pc, 0, opcode, operand)
+                             for pc, (opcode, operand) in enumerate(code))
         program = replace(self.program, extra_words=tuple(self.extra), instructions=instructions)
         if self.zero_gap:
             program = replace(program, main_words=program.main_words + (0,) * program.gap_count, gap_count=0)

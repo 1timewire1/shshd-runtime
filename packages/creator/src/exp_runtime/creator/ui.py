@@ -17,13 +17,16 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDia
     QSpinBox, QSplitter, QTextEdit, QToolBar, QVBoxLayout, QWidget)
 
 from exp_runtime.exp import ContentError
-from .assets import image_png, import_library_image, player_library
+from .addons import AddonsNeeded, copy_addon_asset, drop_unused_addons, use_addon_asset
+from .cutscenes import blank_spec, cutscene_assets, read_project_spec, save_cutscene
+from .assets import addon_asset_ids, image_png, import_library_image, player_library
 from .compiler import compile_project, export_project, export_native_slot
+from exp_runtime.cutscene_spec import read_spec
 from .model import (Choice, EMOTICONS, KINDS, OPERATORS, Node, Project, ProjectError,
                     project_from_bytes, save_project, Character, is_audio, is_image, validate_structure)
 from .features import NAMES, parameters
 from .editing import Recovery, auto_layout, copy_nodes, paste_nodes
-from .panels import DebugDialog, ListDialog, RecordDialog, TranslationsDialog
+from .panels import CutsceneDialog, DebugDialog, ListDialog, RecordDialog, TranslationsDialog
 from .live import LiveEditor
 from .sharing import SharingError, digest, guard, session_info
 
@@ -132,6 +135,8 @@ class LibraryBrowser(QDialog):
         layout = QVBoxLayout(self)
         self.bank = QComboBox()
         self.bank.addItem('Original game assets (reference only)', None)
+        for addon in library.addons:
+            self.bank.addItem(f'Add-on: {addon["title"]}', 'addon:' + addon['addon'])
         for episode in library.episodes:
             self.bank.addItem(episode['titles'][0] or episode['name'], episode['id'])
         layout.addWidget(self.bank)
@@ -149,6 +154,11 @@ class LibraryBrowser(QDialog):
         layout.addLayout(row, 1)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Add image to project')
+        # An add-on's picture or sound: by reference, which needs the add-on, or copied in, which doesn't (the Ok above).
+        self.reference = False
+        self.use_addon = self.buttons.addButton('Use from add-on', QDialogButtonBox.ButtonRole.AcceptRole)
+        self.use_addon.clicked.connect(self.choose_reference)
+        self.use_addon.hide()
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -161,9 +171,17 @@ class LibraryBrowser(QDialog):
     def populate(self):
         selector = self.bank.currentData()
         self.items.clear()
-        self.episode, self.resource = None, None
+        self.episode, self.resource, self.addon = None, None, None
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
+        from_addon = bool(selector) and selector.startswith('addon:')
+        self.use_addon.setVisible(from_addon)
+        self.use_addon.setEnabled(False)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Copy into project' if from_addon else 'Add image to project')
         try:
+            if selector and selector.startswith('addon:'):
+                self.addon = selector[len('addon:'):]
+                self.items.addItems([str(i) for i in addon_asset_ids(self.library, self.addon)])
+                return
             self.episode = self.library.open_episode(selector) if selector else None
             ids = (self.episode.archive.entries if self.episode else self.library.base_members)
             self.items.addItems([str(i) for i in sorted(ids) if 26000 <= i <= 32767] if self.episode
@@ -171,8 +189,15 @@ class LibraryBrowser(QDialog):
         except (ContentError, OSError) as error:
             self.preview.setText(str(error))
 
+    def choose_reference(self):
+        self.reference = True
+        self.accept()
+
     def show_image(self, text):
         self.resource = None
+        if self.addon:
+            self.show_addon_asset(text)
+            return
         try:
             resource = int(text)
             png = image_png((self.episode or self.library).read_asset(resource))
@@ -185,6 +210,34 @@ class LibraryBrowser(QDialog):
         except (ValueError, OSError, ContentError) as error:
             self.preview.setText(str(error) if text else 'Select an image resource.')
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(self.resource is not None)
+
+
+    def show_addon_asset(self, text):
+        """An add-on's resource: a picture is shown, and a sound or cutscene is named. Copying only takes pictures and sounds."""
+        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+        try:
+            resource = int(text)
+            data = self.library.addon(self.addon)[1].read(resource)
+            copyable = True
+            if is_image(data):
+                pixmap = QPixmap()
+                if not pixmap.loadFromData(image_png(data)):
+                    raise ProjectError('Image could not be decoded')
+                self.preview.setPixmap(pixmap.scaled(380, 360, Qt.AspectRatioMode.KeepAspectRatio,
+                                                    Qt.TransformationMode.SmoothTransformation))
+            elif is_audio(data):
+                self.preview.setText(f'A sound, {len(data) // 1024} KB.')
+            else:
+                copyable = False
+                read_spec(data)
+                self.preview.setText('A storyboard cutscene.')
+            self.resource = resource
+            ok.setEnabled(copyable)
+            self.use_addon.setEnabled(True)
+        except (ValueError, OSError, ContentError) as error:
+            self.preview.setText(str(error) if text else 'Select a resource.')
+            ok.setEnabled(False)
+            self.use_addon.setEnabled(False)
 
 
 class Editor(QMainWindow):
@@ -355,7 +408,8 @@ class Editor(QMainWindow):
                 widget.setText(value)
             widget.blockSignals(False)
         self.assets.clear()
-        self.assets.addItems([f'{a.id} · {a.name}{" (base)" if a.data is None else ""}' for a in self.project.assets])
+        self.assets.addItems([f'{a.id} · {a.name}{" (add-on)" if a.addon else " (base)" if a.data is None else ""}'
+                              for a in self.project.assets])
         self.library_label.setText('Game library: ' + (Path(self.project.library).name if self.project.library else 'none'))
         self.library_label.setToolTip(self.project.library)
         self.preview_selected.setEnabled(not self.project.native)
@@ -565,9 +619,16 @@ class Editor(QMainWindow):
                         lambda value: self.set_node('expression', value)))
                 if node.kind == 'dialogue' and self.project.game == 'shs':
                     self.presentation_rows(form, node)
+                if node.kind == 'cutscene':
+                    choices = [('None', 0)] + [(f'{a.id} · {a.name}', a.id) for a in cutscene_assets(self.project)]
+                    form.addRow('Cutscene', self.combo(choices, parameters(node)['spec'],
+                                                       lambda value: self.set_param('spec', value)))
+                    timeline = QPushButton('New or edit timeline…')
+                    timeline.clicked.connect(self.edit_cutscene)
+                    form.addRow(timeline)
                 if node.kind == 'music' and self.project.game == 'shs':
                     loops = [('None', -1)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
-                                              if a.data is not None and is_audio(a.data)]
+                                              if a.addon or a.data is not None and is_audio(a.data)]
                     then_loop = self.combo(loops, parameters(node)['then_loop'],
                                            lambda value: self.set_param('then_loop', value))
                     then_loop.setToolTip('An embedded track this one runs into without a gap after playing once '
@@ -650,6 +711,33 @@ class Editor(QMainWindow):
             self.set_project('emoticons', [box.currentData() for box in boxes])
             self.show_properties()
 
+    def edit_cutscene(self):
+        """The selected cutscene node's timeline: its own if it has one in the project, else a new one. An add-on's can't be edited
+        here, as the project doesn't hold it."""
+        node = self.project.node(self.selected)
+        current = next((a for a in self.project.assets if a.id == parameters(node)['spec']), None)
+        if current is not None and current.addon:
+            self.error(ProjectError('That cutscene belongs to an add-on, so it can\'t be edited here.'))
+            return
+        spec = read_project_spec(current) if current is not None else None
+        pictures = [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
+                    if a.addon or a.data is not None and is_image(a.data)]
+        sounds = [(f'{a.id} · {a.name}', a.id) for a in self.project.assets if a.addon or a.data is not None and is_audio(a.data)]
+        dialog = CutsceneDialog(spec or blank_spec(), current.name if spec else 'Cutscene', pictures, sounds, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        candidate = deepcopy(self.project)
+        try:
+            asset = save_cutscene(candidate, dialog.name.text().strip() or 'Cutscene', dialog.spec, current.id if spec else None)
+        except ProjectError as error:
+            self.error(error)
+            return
+        self.remember()
+        self.project = candidate
+        self.project.node(self.selected).params['spec'] = asset.id
+        self.changed()
+        self.refresh()
+
     def set_option(self, index, key, value):
         option = self.project.node(self.selected).options[index]
         if getattr(option, key) != value:
@@ -712,6 +800,7 @@ class Editor(QMainWindow):
         if row >= 0:
             self.remember()
             self.project.assets.pop(row)
+            drop_unused_addons(self.project)
             self.refresh()
 
     def choose_library(self):
@@ -739,7 +828,10 @@ class Editor(QMainWindow):
                 browser = LibraryBrowser(library, self)
                 if browser.exec() == QDialog.DialogCode.Accepted:
                     candidate = deepcopy(self.project)
-                    import_library_image(candidate, library, browser.resource, browser.episode)
+                    if browser.addon:
+                        (use_addon_asset if browser.reference else copy_addon_asset)(candidate, library, browser.addon, browser.resource)
+                    else:
+                        import_library_image(candidate, library, browser.resource, browser.episode)
                     self.remember()
                     self.project = candidate
                     self.refresh()
@@ -909,7 +1001,9 @@ class Editor(QMainWindow):
                                             Path(reference).name, '.exp', 'EXP episodes')
         if destination:
             try:
-                metadata = export_native_slot(self.project, Path(reference), destination)
+                metadata = self.export_slot(Path(reference), destination)
+                if metadata is None:
+                    return
                 QMessageBox.information(self, 'Original app export',
                     f'Exported pack {metadata.pack_id}, episode {metadata.episode_id}.\n\n'
                     f'Install the replacement under the original catalog filename: {Path(reference).name}\n'
@@ -917,6 +1011,23 @@ class Editor(QMainWindow):
                     'The original apps do not have an EXP file picker. See docs/CREATOR.md for installation and verification limits.')
             except (ContentError, OSError) as error:
                 self.error(error)
+
+    def export_slot(self, reference, destination):
+        """The slot's export. One that takes add-on assets is blocked, with the offer to pack them in; None if it's declined."""
+        try:
+            return export_native_slot(self.project, reference, destination)
+        except AddonsNeeded as needed:
+            answer = QMessageBox.question(self, 'Original app export', f'{needed}\n\nPack them into this export? Your project stays as '
+                                          'it is, and the file gets larger.')
+            if answer != QMessageBox.StandardButton.Yes:
+                return None
+            if not self.project.library:
+                self.choose_library()
+            if not self.project.library:
+                return None
+            from exp_runtime.content import ContentLibrary
+            with ContentLibrary(Path(self.project.library)) as library:
+                return export_native_slot(self.project, reference, destination, pack_from=library)
 
     def read_preview_output(self):
         if self.preview_process is not None:
@@ -1078,6 +1189,18 @@ class Editor(QMainWindow):
         embedded = next((a.data for a in self.project.assets if a.id == resource and a.data is not None), None)
         if embedded is None and not self.project.library: self.choose_library()
         if embedded is None and not self.project.library: return
+        addon = next((a.addon for a in self.project.assets if a.id == resource and a.addon), '')
+        if addon:
+            from exp_runtime.content import ContentLibrary
+            try:
+                with ContentLibrary(Path(self.project.library)) as library:
+                    held = library.addon(addon)
+                    if held is None:
+                        raise ProjectError(f'The library has no {addon} add-on')
+                    embedded = held[1].read(resource)
+            except (ContentError, OSError) as error:
+                self.error(error)
+                return
         try:
             if embedded is not None:
                 data = embedded

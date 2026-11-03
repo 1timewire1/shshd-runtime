@@ -37,6 +37,11 @@ def image_png(data: bytes) -> bytes:
     return output.getvalue()
 
 
+def addon_asset_ids(library, addon_id):
+    """The episode-bank resources an addon holds, for browsing."""
+    return sorted(key for key in library.addon(addon_id)[1].entries if 26000 <= key <= 32767)
+
+
 def import_library_image(project, library, resource, episode=None):
     if library.game_id != project.game:
         raise ProjectError('The library must match the project game')

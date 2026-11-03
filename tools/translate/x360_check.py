@@ -19,11 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from playthrough import session  # noqa: E402
 
 
-def run(data, rng, limit=20000, taken=None):
+def run(data, rng, limit=20000, taken=None, right=None):
     """(events, outcome): events are ('line'|'choice'|'message', text), outcome 'exit' or why it stopped. With
-    `taken` (a set of (choice text, answer) pairs), an answer no earlier run took is preferred."""
-    s, events = session(data), []
-    s.engine.random.state = 1
+    `taken` (a set of (choice text, answer) pairs), an answer no earlier run took is preferred. With `right` (a timed
+    round's last prompt line -> its right answer), those rounds are answered right, so a run can win them."""
+    s, events = session(data, arena=False), []             # (the timed forms: every minigame has one)
+    s.engine.random.state = rng.randrange(1, 1 << 31)
     action = s.advance()
     for _ in range(limit):
         while s.transitioning:
@@ -47,13 +48,16 @@ def run(data, rng, limit=20000, taken=None):
                 return events, f'choice with no enabled option: {details.get("text")!r}'
             fresh = [i for i in enabled if taken is not None and (details.get('text'), details['options'][i]) not in taken]
             pick = rng.choice(fresh or enabled)
+            line = str(details.get('text')).rpartition('\n')[2]
+            if right is not None and line in right:
+                pick = right[line]
             if taken is not None:
                 taken.add((details.get('text'), details['options'][pick]))
             events.append(('answer', details['options'][pick]))
             action = s.answer(pick)
         elif kind == 'word_game':
-            # Dating Beth's minigames: finish them at a random score (0-6), so every branch they decide is reached
-            score = rng.randrange(7)
+            # The word games: finish them at a random score (0-14), so every branch they decide is reached
+            score = rng.randrange(15)
             events.append(('word_game', score))
             action = s.skip_word_game(score)
         elif kind == 'message_panel':
@@ -78,12 +82,16 @@ def main():
     project = load_project(args.project)
     data = args.project.with_suffix('.exp').read_bytes()
     authored = Counter(n.text for n in project.nodes if n.kind in ('dialogue', 'message') and n.text)
+    # The timed rounds (x360.Builder.speed_diss): the answer that counts towards `flow`
+    by_id = {n.id: n for n in project.nodes}
+    right = {n.text.rpartition('\n')[2]: i for n in project.nodes if n.kind == 'choice' and n.timeout_ms
+             for i, o in enumerate(n.options) if by_id[o.target].variable == 'flow'}
     options = Counter(o.text for n in project.nodes if n.kind == 'choice' for o in n.options)
     seen, answered, outcomes, endings, problems, taken = set(), set(), Counter(), Counter(), [], set()
     for i in range(args.runs):
         rng = random.Random(args.seed * 100003 + i)
         # Half the runs prefer untaken answers (coverage); the rest are plain random (deep combinations).
-        events, outcome = run(data, rng, taken=taken if i % 2 == 0 else None)
+        events, outcome = run(data, rng, taken=taken if i % 2 == 0 else None, right=right if i % 4 == 1 else None)
         outcomes[outcome] += 1
         seen.update(text for kind, text in events if kind in ('line', 'message'))
         answered.update(text for kind, text in events if kind == 'answer')

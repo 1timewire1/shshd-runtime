@@ -128,6 +128,143 @@ class ListDialog(QDialog):
             self.value[row], self.value[other] = self.value[other], self.value[row]; self.refresh(other)
 
 
+class CutsceneDialog(QDialog):
+    """shshd-runtime: a storyboard cutscene's timeline: tables of shots, overlays and sounds (cutscenes.py). Times are milliseconds. A
+    shot's window is the part of its picture that fills the frame, and one the frame's size is the sharpest and cheapest to draw. Preview
+    from the node plays it."""
+    SHOT_COLUMNS = ('Picture', 'Start', 'End', 'From X', 'From Y', 'From W', 'From H', 'To X', 'To Y', 'To W', 'To H', 'Ease out')
+    OVERLAY_COLUMNS = ('Picture', 'Start', 'End', 'From center X', 'From center Y', 'From W', 'From H',
+                       'To center X', 'To center Y', 'To W', 'To H')
+    SOUND_COLUMNS = ('At', 'Sound')
+
+    def __init__(self, spec, name, pictures, sounds, parent=None):
+        """`pictures`, `sounds`: [(label, resource)] of what the project holds."""
+        super().__init__(parent)
+        self.setWindowTitle('Storyboard cutscene'); self.resize(1120, 720)
+        self.pictures, self.sounds, self.spec = pictures, sounds, None
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.name = QLineEdit(name, self)
+        form.addRow('Name', self.name)
+        self.width_field, self.height_field = self.number(spec['size'][0], 1, 8192), self.number(spec['size'][1], 1, 8192)
+        size = QHBoxLayout(); size.addWidget(self.width_field); size.addWidget(self.height_field)
+        form.addRow('Frame size', size)
+        self.hold = self.number(spec['hold'], 0, 3600000)
+        self.hold.setToolTip('Where it stays until a press or Autoplay: its title card, if it has one.')
+        form.addRow('Holds at', self.hold)
+        self.skip = self.number(spec['skip'], 0, 3600000)
+        self.skip.setToolTip('Where a press before it jumps to.')
+        form.addRow('A press jumps to', self.skip)
+        self.music = QComboBox(self)
+        self.music.addItem('None: its own clock', -1)
+        for label, resource in sounds:
+            self.music.addItem(label, resource)
+        at = self.music.findData(spec.get('music', -1))
+        self.music.setCurrentIndex(max(0, at))
+        self.music.setToolTip('The track the clock follows, so sounds land on its beats. Start it just before this node.')
+        form.addRow('Follows the music', self.music)
+        layout.addLayout(form)
+        self.shots = self.table(self.SHOT_COLUMNS, layout, 'Shots', self.add_shot)
+        for shot in spec['shots']:
+            self.add_shot(shot)
+        self.overlays = self.table(self.OVERLAY_COLUMNS, layout, 'Overlays', self.add_overlay)
+        for overlay in spec.get('overlays', ()):
+            self.add_overlay(overlay)
+        self.sound_rows = self.table(self.SOUND_COLUMNS, layout, 'Sounds', self.add_sound)
+        for sound in spec.get('sounds', ()):
+            self.add_sound(sound)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+
+    def number(self, value, low=-100000, high=100000):
+        field = QSpinBox(self); field.setRange(low, high); field.setValue(int(round(value)))
+        return field
+
+    def table(self, columns, layout, title, add):
+        row = QHBoxLayout()
+        row.addWidget(QLabel(title, self)); row.addStretch()
+        adding, removing = QPushButton('Add', self), QPushButton('Remove', self)
+        adding.clicked.connect(lambda: add()); row.addWidget(adding); row.addWidget(removing)
+        layout.addLayout(row)
+        table = QTableWidget(0, len(columns), self)
+        table.setHorizontalHeaderLabels(list(columns))
+        removing.clicked.connect(lambda: table.removeRow(table.currentRow()) if table.currentRow() >= 0 else None)
+        layout.addWidget(table, 1)
+        return table
+
+    def picker(self, choices, current):
+        box = QComboBox(self)
+        for label, resource in choices:
+            box.addItem(label, resource)
+        box.setCurrentIndex(max(0, box.findData(current)))
+        return box
+
+    def add_shot(self, shot=None):
+        from .cutscenes import blank_shot
+        shot = shot or blank_shot(self.next_start(self.shots))
+        row = self.shots.rowCount(); self.shots.insertRow(row)
+        self.shots.setCellWidget(row, 0, self.picker(self.pictures, shot['image']))
+        for column, value in enumerate((shot['start'], shot['end'], *shot['from'], *shot['to']), 1):
+            self.shots.setCellWidget(row, column, self.number(value, -100000, 3600000))
+        ease = QCheckBox(self); ease.setChecked(shot.get('ease') == 'out')
+        self.shots.setCellWidget(row, 11, ease)
+
+    def add_overlay(self, overlay=None):
+        from .cutscenes import blank_overlay
+        overlay = overlay or blank_overlay()
+        row = self.overlays.rowCount(); self.overlays.insertRow(row)
+        self.overlays.setCellWidget(row, 0, self.picker(self.pictures, overlay['image']))
+        for column, value in enumerate((overlay['start'], overlay['end'], *overlay['from'], *overlay['to']), 1):
+            self.overlays.setCellWidget(row, column, self.number(value, -100000, 3600000))
+
+    def add_sound(self, sound=None):
+        sound = sound or dict(at=0, sound=0)
+        row = self.sound_rows.rowCount(); self.sound_rows.insertRow(row)
+        self.sound_rows.setCellWidget(row, 0, self.number(sound['at'], 0, 3600000))
+        self.sound_rows.setCellWidget(row, 1, self.picker(self.sounds, sound['sound']))
+
+    def next_start(self, table):
+        rows = table.rowCount()
+        return table.cellWidget(rows - 1, 2).value() if rows else 0
+
+    def read_row(self, table, row, count):
+        return [table.cellWidget(row, column).value() for column in range(1, count)]
+
+    def current_spec(self):
+        """The tables as a spec, its shots and sounds in time order, as the format wants."""
+        from .cutscenes import blank_spec
+        spec = blank_spec()
+        spec.update(size=[self.width_field.value(), self.height_field.value()], hold=self.hold.value(), skip=self.skip.value())
+        if self.music.currentData() != -1:
+            spec['music'] = self.music.currentData()
+        for row in range(self.shots.rowCount()):
+            start, end, *numbers = self.read_row(self.shots, row, 11)
+            shot = {'image': self.shots.cellWidget(row, 0).currentData(), 'start': start, 'end': end, 'from': numbers[:4], 'to': numbers[4:]}
+            if self.shots.cellWidget(row, 11).isChecked():
+                shot['ease'] = 'out'
+            spec['shots'].append(shot)
+        for row in range(self.overlays.rowCount()):
+            start, end, *numbers = self.read_row(self.overlays, row, 11)
+            spec['overlays'].append({'image': self.overlays.cellWidget(row, 0).currentData(), 'start': start, 'end': end,
+                                     'from': numbers[:4], 'to': numbers[4:]})
+        for row in range(self.sound_rows.rowCount()):
+            spec['sounds'].append(dict(at=self.sound_rows.cellWidget(row, 0).value(), sound=self.sound_rows.cellWidget(row, 1).currentData()))
+        spec['shots'].sort(key=lambda shot: shot['start'])
+        spec['sounds'].sort(key=lambda sound: sound['at'])
+        return spec
+
+    def accept(self):
+        from .cutscenes import spec_bytes
+        spec = self.current_spec()
+        try:
+            spec_bytes(spec)
+        except ProjectError as error:
+            QMessageBox.warning(self, 'Storyboard cutscene', str(error))
+            return
+        self.spec = spec
+        super().accept()
+
+
 class TranslationsDialog(QDialog):
     def __init__(self, project, parent=None):
         from .features import text_fields

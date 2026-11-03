@@ -990,7 +990,7 @@ class DesktopTests(unittest.TestCase):
         import pygame
 
         self.addCleanup(pygame.quit)
-        pack_id = 31300                                 # New Rules (the X360 translations, 31400, work the same)
+        pack_id = 31300                                 # New Rules
         self.assertIn(pack_id, TRANSLATED_PORTRAIT_ART)
         with tempfile.TemporaryDirectory() as temporary:
             resources = Resources(branching_program())
@@ -1013,6 +1013,60 @@ class DesktopTests(unittest.TestCase):
             self.assertTrue(all(clear.called for clear in cleared))
             ui.command(('pause_toggle', 'hires_portraits'))
             self.assertEqual((ui.hires_portraits, resources.library.hires_portraits), (True, True))
+
+    def test_the_ms3_characters_switch_shows_in_x360_episodes_and_swaps_at_once(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import MS3_CHARACTERS_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            resources.library.ms3_characters = False
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('ms3_characters', ui._pause_settings())            # an ordinary episode
+            resources.record = dict(resources.record, pack_id=31300)
+            self.assertNotIn('ms3_characters', ui._pause_settings())            # New Rules
+            for episode in (1, 2, 3, 4):                                        # all four X360 episodes
+                resources.record = dict(resources.record, pack_id=31400, episode_id=episode)
+                self.assertIs(ui._pause_settings()['ms3_characters'], False)
+            saved = []
+            ui.on_settings = lambda: saved.append(ui.ms3_characters)
+            ui.images[26200] = None
+            ui.command(('pause_toggle', 'ms3_characters'))
+            self.assertEqual((ui.ms3_characters, resources.library.ms3_characters, saved), (True, True, [True]))
+            self.assertEqual(len(ui.images), 0)
+        self.assertEqual(MS3_CHARACTERS_LABEL, 'MS3 Characters')
+        self.assertIsNotNone(switch_badge('ms3_characters'))
+
+    def test_the_x360_episodes_offer_the_minigames_switch_where_they_have_minigames_and_never_hi_res(self):
+        # The Hi-Res switch is New Rules' (owner, 2026-11-01); Use Translated Mini-Games goes where there's something to
+        # switch: every New Rules episode, and the X360's but Day of Diss.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import ARENA_MINIGAMES_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('arena_minigames', ui._pause_settings())            # an ordinary episode
+            for pack, episode, hires, minigames in ((31300, 7, True, True), (31400, 1, False, False),
+                                                    (31400, 2, False, True), (31400, 3, False, True)):
+                with self.subTest(pack=pack, episode=episode):
+                    resources.record = dict(resources.record, pack_id=pack, episode_id=episode)
+                    settings = ui._pause_settings()
+                    self.assertEqual('hires_portraits' in settings, hires)
+                    self.assertEqual('arena_minigames' in settings, minigames)
+                    self.assertEqual('arena_skin' in settings and pack == 31400, False)  # the arena's look is New Rules'
+        self.assertEqual(ARENA_MINIGAMES_LABEL, 'Use Translated Mini-Games')
+        self.assertIsNone(switch_badge('arena_minigames'))                       # no one game's tag
 
     def test_a_translated_episode_shows_its_own_backdrop_where_the_art_leaves_the_frame_black(self):
         # Translated New Rules episodes (pack 31300) carry New Rules' UI backdrop (shs/profile.py

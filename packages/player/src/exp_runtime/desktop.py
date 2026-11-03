@@ -5,6 +5,7 @@ from io import BytesIO
 from copy import deepcopy
 import logging
 import os
+import random
 import re
 from types import SimpleNamespace
 import webbrowser
@@ -16,7 +17,7 @@ from . import graphics as pygame
 from .app_icon import set_window_icon
 from .content import ContentError, presentation_feature
 from .audio import music_cue
-from .games import GAMES, game_id
+from .games import GAMES, game_id, has_translated_minigames
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -30,6 +31,15 @@ except ImportError:
     HdFootballRenderer = HdWordRenderer = None
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
+from .desktop_nr_arena import NRArenaRenderer
+from .desktop_nr_arena_x360 import X360ArenaRenderer
+from .desktop_x360_diss import X360DissRenderer
+from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
+from .desktop_cutscene import CutsceneRenderer
+from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
+from .desktop_x360_slot import X360SlotRenderer
+from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
+from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -50,7 +60,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
-from .choice_hints import word_game_outcomes
+from .choice_hints import ARENA_RESULTS, arena_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -111,6 +121,16 @@ def word_game_options(outcomes):
     return (*labels, 'Play'), tuple(scores)
 
 
+def arena_skip_options(outcomes):
+    """(option labels, the result each hands the story) for a New Rules arena game's skip prompt, as word_game_options
+    labels them (Win / Lose, Skip, or the result ranges), then "Play" (labels only). Each outcome hands its lowest
+    result: every result in it leads the same way to the episode's end (checked on all 50 episodes, 2026-10-31)."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None:
+        return labels, (ARENA_RESULTS - 1, 0)
+    return labels, tuple(low for low, _ in reversed(outcomes))
+
+
 class _PromptEngine:
     """The engine as a host prompt's stand-in session shows it: the same state, but no word quiz, so a prompt over
     one is drawn as an ordinary choice."""
@@ -144,6 +164,43 @@ class _UntimedChoice:
         return getattr(self.real_session, name)
 
 
+# New Rules' minigame arena (desktop_nr_arena.py): its frames, its menu and its info box draw over it.
+ARENA_ACTIONS = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
+# Keys as New Rules' Nokia key codes (nr_arena.KEY_BITS): OK / fire, the joystick, the right soft key.
+LEASH_KEYS = {pygame.K_LEFT: LEFT, pygame.K_RIGHT: RIGHT, pygame.K_UP: UP, pygame.K_DOWN: DOWN,
+              pygame.K_a: LEFT, pygame.K_d: RIGHT, pygame.K_w: UP, pygame.K_s: DOWN}
+ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, pygame.K_UP: -1, pygame.K_DOWN: -2,
+              pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
+ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
+                     **{getattr(pygame, f'K_KP{n}'): 48 + n for n in range(10)}}
+
+
+# New Rules' text is all lowercase (its fonts had only capitals); a game's name in its menus, word by word, where
+# capitalising the word isn't enough (owner, 2026-10-31: "welcome to the dj fever game").
+ARENA_GAME_WORDS = {'dj': 'DJ'}
+
+
+def arena_menu_prompt(details):
+    """(title, text, options) for New Rules' menu shown as SHS's choice: its last sentence, a question ("view
+    tutorial?"), is the title and the rest ("welcome to the `rhyming` game.") the text, without New Rules' font
+    switches and in sentence case, as SHS's own menus are written. The words it highlights (between backticks) are
+    the game's name, written as a name (ARENA_GAME_WORDS: "DJ Fever")."""
+    def name(match):
+        return ' '.join(ARENA_GAME_WORDS.get(word, word.capitalize()) for word in match.group(1).split())
+
+    def sentences(string):
+        string = re.sub(r'`([^`]*)`', name, string)
+        string = re.sub(r'\s+', ' ', string.replace('`', '').replace('~', '')).strip()
+        return re.sub(r'(^|[.!?] )([a-z])', lambda m: m.group(1) + m.group(2).upper(), string)
+    body = sentences(details.get('title') or '')
+    parts = re.split(r'(?<=[.!])\s+(?=[^.!?]*\?$)', body, maxsplit=1)
+    title, text = (parts[1], parts[0]) if len(parts) == 2 else (body, '')
+    return title, text, [sentences(option) for option in details.get('options', [])]
+
+
+# After New Rules' exit the arena's last picture (the bare frame) fades out over the story's next screen, rather than
+# cutting to it (owner, 2026-10-30; this player's own, as New Rules shows the next screen at once).
+ARENA_HANDOVER_MS = 400
 # Football's nine plays (football.py SLOTS: three rows of three, top left first) by controller position (owner,
 # 2026-10-29): the face buttons are the edges' middles, the triggers the top corners, the bumpers the bottom corners
 # and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
@@ -177,7 +234,7 @@ class Desktop:
     # before a football game or word grid (Win, Lose or Play), and whether to skip the High School Story ad intros.
     # {'action', 'session', 'options', 'resolve'} while it is up (`session` stands in for the real one when drawing it).
     # `minigame_played` is the game the player chose to play and `ad_asked` the ad choice already asked about.
-    skip_minigames = False
+    _skip_minigames = False
     skip_ad_intros = False
     # Autoplay Dialogue (this player's option): dialogue, title cards and message panels take no taps; once their text
     # is out they wait AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS) and advance by themselves (owner's
@@ -190,6 +247,12 @@ class Desktop:
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
+    ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
+    ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
+    ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
+    _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
+    x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
+    arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
     host_prompt = None
     minigame_played = None
     ad_asked = None
@@ -229,7 +292,35 @@ class Desktop:
             session.share_names(self.names)
         session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
         session.choice_timer = not self._disable_choice_timer
+        session.nr_arena = self._arena_minigames
+        session.skip_arena = self._skip_minigames
+        session.cutscenes = True            # (this player draws them: desktop_cutscene)
         self._session = session
+
+    @property
+    def skip_minigames(self):
+        """Ask to Skip Mini-Games: football, the word grid and the word quiz first ask Win, Lose or Play, and so do
+        New Rules' arena games (Session.skip_arena: their stories wait at service 213)."""
+        return self._skip_minigames
+
+    @skip_minigames.setter
+    def skip_minigames(self, value):
+        self._skip_minigames = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.skip_arena = self._skip_minigames
+
+    @property
+    def arena_minigames(self):
+        """shshd-runtime's "Use Translated Mini-Games" (owner, 2026-10-31, as Minigame Arena): translated episodes play
+        their minigames for real, New Rules' in its arena; off, as the timed choices they carry for players without it.
+        A story asks as each game starts (service 70's arena query), so a game already playing keeps its form."""
+        return self._arena_minigames
+
+    @arena_minigames.setter
+    def arena_minigames(self, value):
+        self._arena_minigames = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.nr_arena = self._arena_minigames
 
     @property
     def disable_choice_timer(self):
@@ -301,6 +392,17 @@ class Desktop:
             self.football_renderer = FootballRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
+        self.nr_arena_renderer = NRArenaRenderer(session.resources)
+        self.x360_arena_renderer = X360ArenaRenderer(session.resources)
+        self.x360_slot_renderer = X360SlotRenderer(session.resources)
+        self.x360_leash_renderer = X360LeashRenderer(session.resources)
+        self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
+        self.cutscene_renderer = CutsceneRenderer(session.resources)
+        self.x360_diss_renderer = X360DissRenderer(session.resources)
+        self.puzzle_key = None          # the jewel puzzle: (key, direction, ms to its next repeat) of a held direction key
+        self.puzzle_pad = False         # OK came from a controller's confirm, and is held
+        self.leash_anchor = None        # where a drag last turned, in frame units, while one is shaking the leash
+        self._x360_arena = None             # whether the X360 addon's arena skin is there (x360_arena_switch)
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
         self.tree_fling, self.wall_fling = momentum.Fling(momentum.RATE_FAST), momentum.Fling()
@@ -575,9 +677,18 @@ class Desktop:
             self.music_token = token
             if engine.music_id >= 0:
                 if self.music_enabled:               # playMusic ignores requests while Music is off
-                    stream.play(engine.music_id, engine.music_flag, self._open_cue, now, held=self.menu_open)
+                    music_id, opener = engine.music_id, self._open_cue
+                    swaps = self._x360_swaps()
+                    if swaps is not None and music_id in swaps[1]:
+                        # The X360 look's own music for the games' track (owner, 2026-10-31), under its own ID, so
+                        # a later request for New Rules' track isn't taken for it.
+                        archive, music_id = swaps[2], swaps[1][music_id]
+                        opener = lambda _id: (archive.read(music_id), 0)       # noqa: E731
+                    stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open)
             else:
                 stream.stop(engine.music_stop_ms, now)
+        self._x360_tutorial_music(stream, now)
+        self._end_x360_music(stream, engine, now)
         stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
                       paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
         self._sync_pause_song(now)
@@ -683,12 +794,75 @@ class Desktop:
         except pygame.error as error:
             logging.warning('Vibration buzz cannot be played: %s', error)
 
+    def _end_x360_music(self, stream, engine, now):
+        """The X360 look's game music fades out as the game ends: as "Time's up!" appears (the panel's time_up; owner,
+        2026-11-01, at first "your score"), or once the arena is gone. Diss Practice's music belongs to the game, and
+        the story doesn't stop it."""
+        from .desktop_nr_arena_x360 import MUSIC_FADE_MS
+        current = stream.current
+        if current is None or stream.fade is not None or getattr(self, '_x360_arena', None) is not True:
+            return                          # (the addon's skin is known to be there once the switch was offered)
+        try:
+            spec = self.x360_arena_renderer.x360()[0]
+        except ValueError:
+            return
+        music = {*spec.get('music_track', {}).values(), spec.get('tutorial_music')}
+        if current['id'] not in music:
+            return
+        arena = engine.nr_arena
+        if arena is None or arena.time_up:
+            stream.stop(MUSIC_FADE_MS, now)
+
+    def _in_x360_tutorial(self):
+        """Whether a tutorial is running in the X360 look: from a yes to "view tutorial?" until the game's own music
+        request, which comes as the game starts. Not kept in a save: a tutorial resumed from one plays as New Rules' does."""
+        if self.x360_tutorial is None:
+            return False
+        engine = self.session.engine
+        if engine.music_serial != self.x360_tutorial or self._x360_swaps() is None:
+            self.x360_tutorial = None
+            return False
+        return True
+
+    def _x360_tutorial_music(self, stream, now):
+        """New Rules plays no music in a tutorial; the X360 look plays the tutorials' own (owner, 2026-11-01)."""
+        if not self.music_enabled or not self._in_x360_tutorial():
+            return
+        spec, archive = self.x360_arena_renderer.x360()
+        resource = spec.get('tutorial_music')
+        if resource is not None:
+            stream.play(resource, True, lambda _id: (archive.read(resource), 0), now, held=self.menu_open)
+
+    def _x360_tutorial_sounds(self):
+        """New Rules plays no sound in a tutorial's practice; the X360 look plays the game's for each hit effect there."""
+        if self._in_x360_tutorial() and self.x360_arena_renderer.hits:
+            from .desktop_nr_arena_x360 import HIT_TRACKS, NR_TRACK_BASE
+            hits = self.x360_arena_renderer.hits
+            self._play_sounds([NR_TRACK_BASE + HIT_TRACKS[kind] for kind in hits])
+            hits.clear()
+
+    def _x360_swaps(self):
+        """While the arena is open in the X360 look: ({New Rules sound: [X360 sounds]}, {New Rules music: X360 music},
+        the X360 addon's archive), from its skin's spec (owner, 2026-10-31: right, wrong and the swaps' bonus noise,
+        and the games' track, Diss Practice's); else None. Nothing the script sees changes."""
+        if not (self.arena_skin and self.session.engine.nr_arena is not None and self.x360_arena_switch()):
+            return None
+        from .desktop_nr_arena_x360 import NR_TRACK_BASE
+        spec, archive = self.x360_arena_renderer.x360()
+        return ({NR_TRACK_BASE + int(track): ids for track, ids in spec.get('sound_tracks', {}).items()},
+                {NR_TRACK_BASE + int(track): music for track, music in spec.get('music_track', {}).items()}, archive)
+
     def _play_sounds(self, assets):
         if not self.sound_enabled:
             return
+        swaps = self._x360_swaps()
         try:
             for asset in assets:
-                sound = pygame.mixer.Sound(file=BytesIO(self.session.resources.read_asset(asset)))
+                if swaps is not None and swaps[0].get(asset):
+                    data = swaps[2].read(random.choice(swaps[0][asset]))     # one of the X360's, as it picks
+                else:
+                    data = self.session.resources.read_asset(asset)
+                sound = pygame.mixer.Sound(file=BytesIO(data))
                 sound.set_volume(self.sound_volume)
                 sound.play()
         except (ContentError, pygame.error) as error:
@@ -810,7 +984,111 @@ class Desktop:
             else:
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
                                            self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_slot'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            # shshd-runtime: the X360's slot machine offers each outcome its story has.
+            outcomes = x360_slot_outcomes(self.session)
+            options, points = arena_skip_options(outcomes)
+            options = tuple(option.replace(' or more', '') for option in options)       # (5 is all there is)
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
+                                       lambda index: self._resolve_x360_slot(action, points, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_x360_leash(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_diss'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'Diss practice: catch the good notes with the needle.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_x360_diss(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'A jewel puzzle. Its score changes nothing that follows.',
+                                       ('Skip', 'Play'), lambda index: self._resolve_x360_puzzle(action, index))
+        if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
+            if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
+                # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
+                # the results 0-15): most two, a few three.
+                outcomes = arena_outcomes(self.session)
+                options, results = arena_skip_options(outcomes)
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._arena_summary(outcomes), options,
+                                           lambda index: self._resolve_arena_skip(action, results, index))
+            else:
+                self._attempt(lambda: self.session.answer(-1))     # switched off meanwhile: it plays
+        if (prompt is None and action is not None and action.name == 'arena_menu' and not self.error
+                and hasattr(self.session.resources, 'read_asset')):
+            # shshd-runtime (owner, 2026-10-31): New Rules' menu over the arena (its tutorial offer) is SHS's choice,
+            # drawn over the arena (render's under_layer); the pick goes back to the library as its option's index.
+            title, text, options = arena_menu_prompt(action.details)
+            prompt = self._open_prompt(action, title, text, options,
+                                       lambda index: self._resolve_arena_menu(action, index))
         return prompt
+
+    @staticmethod
+    def _arena_summary(outcomes):
+        """What the arena game about to start decides, for its skip prompt."""
+        game = 'A New Rules minigame, in its arena.'
+        if outcomes is None or len(outcomes) == 2:
+            passed = f' (a result of {outcomes[1][0]} or more)' if outcomes else ''
+            return f'{game} Win passes it{passed}; Lose fails it.'
+        if len(outcomes) == 1:
+            return f'{game} Its result changes nothing that follows.'
+        return f'{game} Its story goes {len(outcomes)} ways, by result.'
+
+    def _resolve_arena_skip(self, action, results, index):
+        """The arena game's skip prompt: an outcome hands its story that result instead of the game; Play plays it."""
+        if self.session.pending is action:
+            value = results[index] if index < len(results) else -1
+            self._attempt(lambda: self.session.answer(value))
+
+    def _resolve_x360_slot(self, action, points, index):
+        """The slot machine's skip prompt: an outcome hands its story those points; Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(points):
+            self.minigame_played = action
+            self.session.engine.x360_slot.start()       # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_x360_slot(points[index]))
+
+    def _resolve_x360_leash(self, action, index):
+        """The leash game's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            self.session.engine.x360_leash.start()      # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_x360_diss(self, action, index):
+        """Diss Practice's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            self.session.engine.x360_diss.start()       # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_x360_puzzle(self, action, index):
+        """The jewel puzzle's skip prompt: Skip goes straight on, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 1:
+            self.minigame_played = action
+            self.session.engine.x360_puzzle.start()     # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(False))
+
+    def _resolve_arena_menu(self, action, index):
+        if self.session.pending is action:
+            details = action.details
+            taken = ('view tutorial' in (details.get('title') or '').casefold()
+                     and details['options'][index].casefold() == 'yes' and self._x360_swaps() is not None)
+            self.x360_tutorial = self.session.engine.music_serial if taken else None
+            if taken:
+                self.x360_arena_renderer.hits.clear()   # (the game before's)
+            self._attempt(lambda: self.session.answer(index))
 
     def _open_prompt(self, action, title, text, options, resolve):
         """A narrator-style choice (no character: the gold theme, no portrait) over `action`; `resolve(index)` runs
@@ -955,14 +1233,29 @@ class Desktop:
                 ready = engine.message_panel is not None and engine.message_panel.ready
             elif action.name == 'presentation':
                 ready = engine.title_screen is not None and engine.title_screen.ready
+            elif action.name == 'cutscene':
+                ready = engine.cutscene is not None and engine.cutscene.held
         if not ready:
             self.autoplay_ms = 0
             return
         self.autoplay_ms += elapsed_ms
-        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name == 'presentation' else self.AUTOPLAY_WAIT_MS
+        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name in ('presentation', 'cutscene') else self.AUTOPLAY_WAIT_MS
         if self.autoplay_ms >= wait:
             self.autoplay_ms = 0
             self._answer()
+
+    def _sync_cutscene(self):
+        """A cutscene that names a track runs on that track's position, so its sounds land on their beats. With Music off, or
+        once a press has jumped, it runs on the session's clock."""
+        action = self.session.pending
+        if action is None or action.name != 'cutscene':
+            return
+        stream = self.music_stream
+        if stream.current is None or stream.paused:
+            return
+        game = self.session.engine.cutscene
+        if game is not None and stream.current['id'] == game.music:
+            game.sync(round(stream.position() * 1000))
 
     def _tick_fade(self, elapsed_ms):
         fade = self.fade
@@ -978,6 +1271,24 @@ class Desktop:
             self.window.blit(fade['frozen'], (0, 0))
         ms = pygame.time.get_ticks() - fade['since']
         self._draw_cover(fade['kind'], scene_fade.coverage(fade['kind'], fade['phase'], ms))
+
+    def _draw_arena_handover(self):
+        """The arena's last picture fading out over the screen that follows it (ARENA_HANDOVER_MS)."""
+        handover = getattr(self, 'arena_handover', None)
+        action = self.session.pending
+        if (handover is None or (action is not None and action.name in ARENA_ACTIONS)
+                or not hasattr(self, 'bg_viewport')):
+            return
+        now = pygame.time.get_ticks()
+        if handover['since'] is None:
+            handover['since'] = now
+        ms = now - handover['since']
+        if ms >= ARENA_HANDOVER_MS or self.capture:
+            self.arena_handover = None
+            return
+        if handover['scaled'] is None or handover['scaled'].get_size() != self.bg_viewport.size:
+            handover['scaled'] = pygame.transform.smoothscale(handover['layer'], self.bg_viewport.size)
+        self.window.blit(faded(handover['scaled'], round(255 * (1 - ms / ARENA_HANDOVER_MS))), self.bg_viewport)
 
     def _draw_transition(self):
         """The session's queued transition over the frame (fade_transition.FadeTransition; Android's has no layers)."""
@@ -1043,13 +1354,23 @@ class Desktop:
             self.screen_token, self.scroll, self.choice_focus = token, 0, None
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
+        self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
         self.pending_background_alpha = 255
         details = action.details if action else {}
         ask = self._host_prompt()
         closed = self._ui_closed(action)
-        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
+        if ask and action.name in ARENA_ACTIONS and not self.error:
+            # The arena's menu as SHS's choice (_host_prompt): the arena, without its own menu, under the choice.
+            try:
+                renderer = self._arena_renderer()
+                renderer.draw(None, self.session, overlay=False)
+                self.under_layer = renderer.canvas
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Panel rendering stopped: %s', error)
+        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input', *ARENA_ACTIONS) and not self.error:
             try:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
                 # reads and (pre-caching) re-decompressed an HD resource -- for the one the dict ends up
@@ -1063,6 +1384,7 @@ class Desktop:
                     'message_panel': message, 'survey_confirmation': message,
                     'presentation': self._title_renderer,
                     'text_input': lambda: self.input_renderer,
+                    **{name: self._arena_renderer for name in ARENA_ACTIONS},
                 }
                 renderer = selectors[action.name]()
                 options = (dict(error=self.input_error,
@@ -1086,6 +1408,8 @@ class Desktop:
                                             self.session, **options)
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
+                if action.name in ARENA_ACTIONS:
+                    self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
                 self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
                 self.pending_background_alpha = getattr(renderer, 'pending_background_alpha', 255)
@@ -1159,6 +1483,41 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
+        if action and action.name == 'cutscene' and not ask and not closed and not self.error:
+            try:
+                engine = self.session.engine
+                self.cutscene_renderer.draw(self.session)
+                self.story_layer = self.cutscene_renderer.canvas
+                self.panel_alpha = None
+                self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                self.edge_layer = None              # it has the whole frame
+                self.buttons = [(pygame.Rect(0, 0, *SIZE), ('continue',))]
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Cutscene rendering stopped: %s', error)
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss') and not ask and not closed
+                and not self.error):
+            try:
+                engine = self.session.engine
+                renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
+                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer}[action.name]
+                renderer.draw(self.session)
+                self.story_layer = renderer.canvas
+                self.panel_alpha = renderer.alpha(getattr(engine, action.name))
+                self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed)
+                self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',))]
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Minigame rendering stopped: %s', error)
         if closed and not self.error:
             # An answered menu, entry or picker under the closing blinds: the scene and the bottom bar alone.
             engine = self.session.engine
@@ -1326,11 +1685,14 @@ class Desktop:
     def _window_backdrop(self, size):
         """While the "SHS HD Backdrop" switch is on, SHS HD's faded main-menu collage around the frame
         (hd_ui.window_backdrop), else None (the dark fill)."""
-        key = size, self.hd_backdrop
+        key = size, self.hd_backdrop, self.ch_backdrop
         if self._backdrop[0] != key:
             surface = None
             try:
-                collage = self.backdrop_collage() if self.hd_backdrop else None
+                if self.ch_backdrop and self.ch_switch():
+                    from .desktop_cod_main import addon_backdrop
+                    surface = addon_backdrop(self.session.resources.library, size)
+                collage = self.backdrop_collage() if self.hd_backdrop and surface is None else None
                 if collage is not None:
                     from .hd_ui import window_backdrop
                     surface = window_backdrop(collage, size)
@@ -1360,12 +1722,32 @@ class Desktop:
         return self.backdrop_collage() is not None
 
     def hires_switch(self):
-        """shshd-runtime: whether this episode has a second, hi-res portrait set (the game profile's
-        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        """shshd-runtime: whether this episode has a second, hi-res portrait set to choose (the game profile's
+        HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
-        packs = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_PORTRAIT_ART', {})
-        return record.get('pack_id') in packs
+        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'HIRES_SWITCH_PACKS', ())
+
+    def ms3_switch(self):
+        """shshd-runtime: whether this episode has the April build's looks to choose (MS3_CHARACTER_ART: translated X360
+        episodes), so the "MS3 Characters" switch changes something."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'MS3_CHARACTER_ART', ())
+
+    def ch_switch(self):
+        """shshd-runtime: whether the library has the game's optional portrait addon (PORTRAIT_ADDON), so the CH
+        switches change something."""
+        library = getattr(self.session.resources, 'library', None)
+        addon = getattr(GAMES.get(game_id(self.session.resources)), 'PORTRAIT_ADDON', None)
+        return addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None
+
+    def minigames_switch(self):
+        """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
+        profile's TRANSLATED_MINIGAMES)."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return has_translated_minigames(GAMES.get(game_id(resources)), record)
 
     def set_hires_portraits(self, enabled):
         """shshd-runtime: the "Hi-Res Portraits" switch, from either Options page. The library reads the other set
@@ -1376,6 +1758,26 @@ class Desktop:
         library = getattr(self.session.resources, 'library', None)
         if library is not None:
             library.hires_portraits = enabled
+        self._drop_portraits()
+
+    def set_ms3_characters(self, enabled):
+        """shshd-runtime: the "MS3 Characters" switch, as set_hires_portraits: the next portrait drawn is the other set's,
+        and a save names the standard portraits, so it needs nothing of its own."""
+        self.ms3_characters = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.ms3_characters = enabled
+        self._drop_portraits()
+
+    def set_ch_portraits(self, enabled):
+        """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""
+        self.ch_portraits = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.ch_portraits = enabled
+        self._drop_portraits()
+
+    def _drop_portraits(self):
         self.images.clear()
         cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
                   CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
@@ -1446,6 +1848,10 @@ class Desktop:
             else:
                 self.window.fill((8, 12, 20))
             self._draw_background_layer(bg_size, self.bg_viewport)
+        under = getattr(self, 'under_layer', None)
+        if under is not None:
+            # A screen under the choice that covers the whole frame (New Rules' arena under its menu).
+            self.window.blit(pygame.transform.smoothscale(under, self.bg_viewport.size), self.bg_viewport)
         ui_layers = []
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
@@ -1526,6 +1932,7 @@ class Desktop:
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
+        self._draw_arena_handover()
         self._draw_transition()
         if self.fade:
             self._draw_fade()
@@ -1996,7 +2403,21 @@ class Desktop:
                     skip_minigames=self.skip_minigames,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
-                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}))
+                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
+                    **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
+                    **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
+                    **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
+                    **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
+
+    def x360_arena_switch(self):
+        """shshd-runtime: whether the "Use X360 Arena Skin" switch is offered: in a translated New Rules episode (hires_switch)
+        with Use Translated Mini-Games on, and the X360 addon's arena skin imported (desktop_nr_arena_x360; owner,
+        2026-10-31)."""
+        if not (self.hires_switch() and self.arena_minigames):
+            return False
+        if self._x360_arena is None:
+            self._x360_arena = self.x360_arena_renderer.available()
+        return self._x360_arena
 
     def pause_box(self):
         if self.pause_hd.available() and not self.error:
@@ -2160,6 +2581,16 @@ class Desktop:
                 self.hd_backdrop = not self.hd_backdrop
             elif command[1] == 'hires_portraits':
                 self.set_hires_portraits(not self.hires_portraits)
+            elif command[1] == 'ms3_characters':
+                self.set_ms3_characters(not self.ms3_characters)
+            elif command[1] == 'ch_portraits':
+                self.set_ch_portraits(not self.ch_portraits)
+            elif command[1] == 'ch_backdrop':
+                self.ch_backdrop = not self.ch_backdrop
+            elif command[1] == 'arena_minigames':
+                self.arena_minigames = not self.arena_minigames
+            elif command[1] == 'arena_skin':
+                self.arena_skin = not self.arena_skin
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
                 if self.vibration_enabled and self.audio:
@@ -2259,7 +2690,7 @@ class Desktop:
             elif kind == 'choose' and action and action.name == 'word_game':
                 self._answer(command[1])
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
-                                                                     'survey_confirmation'):
+                                                                     'survey_confirmation', 'cutscene'):
                 if not self.autoplay and not self._continue_guarded(action):   # Autoplay: `_tick_autoplay`
                     if (action.name == 'message_panel' and self.dialogue_renderer.game_id() == 'cod'
                             and self.session.engine.message_panel is not None
@@ -2268,6 +2699,10 @@ class Desktop:
                     self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
+            elif kind == 'arena_key' and action and action.name == 'arena_frame':
+                self.session.arena_press(command[1])
+            elif kind == 'arena_answer' and action and action.name in ('arena_menu', 'arena_info'):
+                self._attempt(lambda: self.session.answer(command[1]))
         self._sync_text_input()
 
     def _continue_guarded(self, action):
@@ -2350,7 +2785,9 @@ class Desktop:
             return True                         # the menu is zooming out after Resume: input waits for the story
         if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
             return True
-        if event.type == pygame.KEYDOWN and (self._football_key(event) or self._grid_key(event)):
+        if event.type == pygame.KEYUP:
+            self._puzzle_key_up(event)
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2418,6 +2855,34 @@ class Desktop:
                         self.command(('choose', index))
             return True
         asking = self.host_prompt is not None and self.host_prompt['action'] is action
+        if (action and action.name in ARENA_ACTIONS and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            frame = self.bg_viewport
+            command = self._arena_tap(action, (event.pos[0] - frame.x) * 768 / frame.width,
+                                      (event.pos[1] - frame.y) * 1024 / frame.height)
+            if command is not None:
+                self.command(command)
+            return True
+        if (action and action.name in ('x360_slot', 'x360_diss') and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            frame = self.bg_viewport
+            x = (event.pos[0] - frame.x) * 768 / frame.width
+            y = (event.pos[1] - frame.y) * 1024 / frame.height
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                self._attempt(lambda: self.session.answer(None))
+            return True
+        if (action and action.name == 'x360_leash' and not self.menu_open and not self.error and not asking
+                and (event.type == pygame.MOUSEMOTION
+                     or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
+            self._leash_pointer(event)
+            return True
+        if (action and action.name == 'x360_puzzle' and not self.menu_open and not self.error and not asking
+                and (event.type == pygame.MOUSEMOTION
+                     or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
+            self._puzzle_pointer(event)
+            return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             if self._football().__class__ is HdFootballRenderer:
@@ -2702,10 +3167,198 @@ class Desktop:
             self.notice_focus = None
             self.notice_stack.press(self.notice_data.action((focus or targets[0])[1]))
 
+    def _arena_renderer(self):
+        """New Rules' arena, told how tall the frame is in the window so it scales its art up to there: in the X360
+        look where the "Use X360 Arena Skin" switch is on and the X360 addon is imported, else New Rules' own."""
+        renderer = (self.x360_arena_renderer if self.arena_skin and self.x360_arena_switch()
+                    else self.nr_arena_renderer)
+        viewport = getattr(self, 'bg_viewport', None)
+        if viewport is not None:
+            renderer.target_height = viewport.height
+        return renderer
+
+    def _arena_tap(self, action, x, y):
+        """The command for a click at (x, y) in frame pixels (768 x 1024) on New Rules' arena: the gear, bottom left,
+        opens the pause menu as on football's frame; Sequences' items (their number keys, 765) and the info box take
+        clicks. Anywhere else a tap is the OK key, the only key the turning games play by (owner, 2026-10-31)."""
+        if 0 <= x < 150 and 880 <= y <= 1024:
+            return ('menu',)
+        if not (0 <= x <= 768 and 0 <= y <= 1024):
+            return None
+        command = self._arena_renderer().hit((x, y))
+        if command is None and action.name == 'arena_frame':
+            command = ('arena_key', -5)
+        return command
+
+    def _arena_key(self, event):
+        """New Rules' arena by keys (a controller's arrive as these, gamepad.py): Enter / Space (a controller's
+        confirm) are its OK, the arrows its joystick, Backspace its right soft key and 0-9 its number keys; on its menu
+        the arrows move the highlight and Enter picks. Escape stays the pause menu. True when the key was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ARENA_ACTIONS or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        key = event.key
+        if action.name in ('arena_entrance', 'arena_exit'):
+            return key in ARENA_KEYS or key in ARENA_NUMBER_KEYS          # New Rules takes no keys meanwhile
+        if action.name == 'arena_frame':
+            code = ARENA_KEYS.get(key)
+            if code is None:
+                code = ARENA_NUMBER_KEYS.get(key)
+            if code is None:
+                return False
+            self.command(('arena_key', code))
+            return True
+        if action.name == 'arena_menu' and key in (pygame.K_UP, pygame.K_DOWN):
+            self._arena_renderer().move_focus(action, -1 if key == pygame.K_UP else 1)
+            return True
+        if key in KEYS_ACTIVATE:
+            focus = self._arena_renderer().focus(action)
+            self.command(('arena_answer', focus if focus is not None else 0))
+            return True
+        return False
+
     def _football_input(self):
         action = self.session.pending
         return (action is not None and action.name == 'football' and not self.menu_open and not self.error
                 and self.host_prompt is None)
+
+    def _slot_key(self, event):
+        """The slot machine and Diss Practice take one input: Enter, Space or a controller's confirm. True when the key
+        was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ('x360_slot', 'x360_diss') or self.menu_open or self.error
+                or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
+            return False
+        self._attempt(lambda: self.session.answer(None))
+        return True
+
+    def _leash_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'x360_leash' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _leash_key(self, event):
+        """The leash game: OK starts it; the arrows, WASD and a controller's D-pad shake it. A controller's stick reads as
+        arrows too, but _leash_stick reads it for itself. True when the key was one."""
+        if not self._leash_ready():
+            return False
+        if event.key in KEYS_ACTIVATE:
+            self._attempt(lambda: self.session.answer(None))
+            return True
+        direction = LEASH_KEYS.get(event.key)
+        if direction is None:
+            return False
+        button = getattr(event, 'controller', None)
+        if button is None or pygame.gamepads().holding(button):
+            self.session.engine.x360_leash.shake(direction)
+        return True
+
+    def _leash_stick(self):
+        """The leash game, each frame: a controller's stick, read as the prototype reads it."""
+        if not self._leash_ready():
+            self.leash_anchor = None
+            return
+        pads = pygame.gamepads()
+        for x, y in pads.sticks.values() if pads is not None else ():
+            direction = stick_direction(x, y)
+            if direction is not None:
+                self.session.engine.x360_leash.shake(direction, SHAKE_WINDOW_STICK_MS)
+
+    def _leash_pointer(self, event):
+        """The leash game's mouse and touch: a press is OK, or the gear; holding it and dragging back and forth shakes."""
+        frame = self.bg_viewport
+        x = (event.pos[0] - frame.x) * 768 / frame.width
+        y = (event.pos[1] - frame.y) * 1024 / frame.height
+        if event.type == pygame.MOUSEBUTTONUP:
+            self.leash_anchor = None
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                self.leash_anchor = (x, y)
+                self._attempt(lambda: self.session.answer(None))
+        elif self.leash_anchor is not None:
+            direction = drag_direction(self.leash_anchor, x, y)
+            if direction is not None:
+                self.leash_anchor = (x, y)
+                self.session.engine.x360_leash.shake(direction)
+
+    def _puzzle_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'x360_puzzle' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _puzzle_key(self, event):
+        """The jewel puzzle: OK starts it, is held to drag, and goes on past the score; the arrows, WASD and a controller's
+        D-pad or stick move the cursor, repeating while held. True when the key was one."""
+        if not self._puzzle_ready():
+            return False
+        if event.key in KEYS_ACTIVATE:
+            self.puzzle_pad = getattr(event, 'controller', None) is not None
+            self._attempt(lambda: self.session.answer(None))
+            return True
+        direction = LEASH_KEYS.get(event.key)
+        if direction is None:
+            return False
+        self.session.engine.x360_puzzle.move(direction)
+        if getattr(event, 'controller', None) is None:          # (a controller's direction repeats by itself)
+            self.puzzle_key = (event.key, direction, REPEAT_DELAY_MS)
+        return True
+
+    def _puzzle_key_up(self, event):
+        if self.puzzle_key is not None and self.puzzle_key[0] == event.key:
+            self.puzzle_key = None
+        action = self.session.pending
+        if event.key in KEYS_ACTIVATE and action is not None and action.name == 'x360_puzzle':
+            self.session.engine.x360_puzzle.release()
+
+    def _puzzle_frame(self, elapsed_ms):
+        """The jewel puzzle, each frame: a held key's repeats, and a controller's confirm let go."""
+        action = self.session.pending
+        if action is None or action.name != 'x360_puzzle':
+            self.puzzle_key, self.puzzle_pad = None, False
+            return
+        game = self.session.engine.x360_puzzle
+        if not self._puzzle_ready():
+            game.let_go()
+            self.puzzle_key, self.puzzle_pad = None, False
+            return
+        if self.puzzle_pad:
+            pads = pygame.gamepads()
+            if pads is None or not pads.holding('confirm'):
+                game.release()
+                self.puzzle_pad = False
+        if self.puzzle_key is not None:
+            key, direction, left = self.puzzle_key
+            left -= elapsed_ms
+            if left <= 0:
+                game.move(direction)
+                left = REPEAT_MS
+            self.puzzle_key = (key, direction, left)
+
+    def _puzzle_pointer(self, event):
+        """The jewel puzzle's mouse and touch: a press on a jewel holds it and a drag takes its row or column along; off
+        the board a press is OK, or the gear; a mouse over the board with its button up points the cursor."""
+        frame = self.bg_viewport
+        x = (event.pos[0] - frame.x) * 768 / frame.width
+        y = (event.pos[1] - frame.y) * 1024 / frame.height
+        game = self.session.engine.x360_puzzle
+        if event.type == pygame.MOUSEBUTTONUP:
+            game.let_go()
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif on_board(x, y) and game.phase == 'running':
+                game.grab(*cell_at(x, y))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                self._attempt(lambda: self.session.answer(None))
+                if game.button:                                 # (not a hold of its own: nothing to let go of)
+                    game.release()
+        elif game.target is not None:
+            game.drag(*cell_at(x, y))
+        elif on_board(x, y):
+            game.point(*cell_at(x, y))
 
     def _football_key(self, event):
         """A play picked by its position (FOOTBALL_BUTTONS, FOOTBALL_KEYPAD); True when the key was one."""
@@ -2930,6 +3583,9 @@ class Desktop:
         if self.active:
             self._coast_panels()
             self._grid_hold(elapsed_ms)
+            self._leash_stick()
+            self._puzzle_frame(elapsed_ms)
+            self._x360_tutorial_sounds()
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)
@@ -2986,6 +3642,7 @@ class Desktop:
                 self.choice_closing = dict(action=pending, index=None, ms=SELECT_MS)
             else:
                 self._attempt(lambda: self.session.tick(elapsed_ms))
+                self._sync_cutscene()
             if self.session.pending is not None and (self.session.pending.name in ('choice', 'word_game')
                                                      or self.host_prompt is not None):
                 self.choice_renderer.age_ms += elapsed_ms     # the HD panel's fade-in and its labels' fly-on

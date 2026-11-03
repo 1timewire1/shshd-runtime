@@ -78,10 +78,31 @@ def hd_collage(library):
         return None
 
 
+def addon_backdrop(library, size):
+    """The portrait addon's backdrop covering `size`, its middle kept, or None without the addon."""
+    from .games import GAMES
+    addon = getattr(GAMES.get(getattr(library, 'game_id', None)), 'PORTRAIT_ADDON', None)
+    found = library.addon(addon[0]) if addon is not None and hasattr(library, 'addon') else None
+    if found is None:
+        return None
+    try:
+        image = _image(found[1].read(library.portrait_addon_map(addon)['backdrop']))
+    except (KeyError, pygame.error, ValueError):
+        return None
+    factor = max(size[0] / image.get_width(), size[1] / image.get_height())
+    scaled = pygame.transform.smoothscale(image, (round(image.get_width() * factor), round(image.get_height() * factor)))
+    surface = pygame.Surface(size).convert()
+    surface.blit(scaled, ((size[0] - scaled.get_width()) // 2, (size[1] - scaled.get_height()) // 2))
+    return surface
+
+
 @lru_cache(maxsize=4)
-def side_backdrop(library, size, enabled):
-    """What fills the window beside the frame: SHS HD's faded collage when `enabled` and available (as SHS HD's
-    menus and episodes show it), else the dark fill."""
+def side_backdrop(library, size, enabled, ch_enabled=False):
+    """What fills the window beside the frame: the portrait addon's backdrop when `ch_enabled`, else SHS HD's faded collage
+    when `enabled` and available (as SHS HD's menus and episodes show it), else the dark fill."""
+    backdrop = addon_backdrop(library, size) if ch_enabled else None
+    if backdrop is not None:
+        return backdrop
     collage = hd_collage(library) if enabled else None
     if collage is not None:
         return window_backdrop(collage, size)
@@ -149,7 +170,7 @@ class CodMainMenu(HdMainMenu):
 
     def side_art(self, size):
         """Beside the frame: SHS HD's collage, or the dark fill (owner, 2026-10-14: never the painting stretched)."""
-        return side_backdrop(self.library, size, self.backdrop_enabled())
+        return side_backdrop(self.library, size, self.backdrop_enabled(), self.ch_backdrop_enabled())
 
     def glyph_fonts(self):
         if self.fonts is None:

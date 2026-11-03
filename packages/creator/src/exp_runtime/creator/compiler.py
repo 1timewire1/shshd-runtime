@@ -10,6 +10,9 @@ import struct
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
+from exp_runtime.x360_services import X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
+from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
+from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
 from .model import (EMOTICONS, Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record,
                     validate_structure)
@@ -34,7 +37,8 @@ TEXT_BUFFER_WORDS = 512
 # What a failed survey upload shows: the offline runtime replaces exactly this response with its local receipt
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
-SHS_ONLY_KINDS = frozenset(('loading', 'survey'))
+SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                            'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
 HD_KINDS = frozenset(('faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result'))
 FACEPLACE_ACTIONS = {'enable': 114, 'clear': 118, 'name_chosen': 119, 'face_chosen': 120, 'default_name': 113}
@@ -85,7 +89,7 @@ def variable_names(project):
     names = {n.variable for n in project.nodes if n.kind in ('set', 'branch') and n.variable}
     for node in project.nodes:
         p = parameters(node)
-        if node.kind in ('random', 'word_game', 'football', 'grid', 'relationship', 'score', 'picker'):
+        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'relationship', 'score', 'picker'):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
@@ -158,7 +162,7 @@ def validate_node(project, node, nodes, assets, characters):
         if project.game != 'shs':
             raise ProjectError(f'{label}: an intro running into a loop is SHS presentation; CoD has none')
         loop = assets.get(p['then_loop'])
-        if loop is None or loop.data is None or not is_audio(loop.data):
+        if loop is None or not loop.addon and (loop.data is None or not is_audio(loop.data)):
             raise ProjectError(f'{label}: the loop after the intro must be an embedded MP3 or WAV')
         if p['then_loop'] == p['resource']:
             raise ProjectError(f'{label}: the loop must be another track than the intro')
@@ -166,19 +170,26 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
         raise ProjectError(f'{label}: choose a reusable character')
-    if node.kind in ('random', 'word_game', 'football', 'grid', 'input', 'relationship', 'score') and not p['result'].strip():
+    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'input', 'relationship',
+                     'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
+    if node.kind == 'cutscene':
+        validate_cutscene(label, p, assets)
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
+    if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
+        raise ProjectError('Diss Practice tutorial is 0 or 1')
     if node.kind in ('music', 'sound') and p['resource'] < 0:
         raise ProjectError('Audio resource IDs must be nonnegative')
     music = range(8201, 8210 if project.game == 'cod' else 8233)
     embedded = assets[p['resource']].data if node.kind in ('music', 'sound') and p['resource'] in assets else None
-    if node.kind == 'music' and p['resource'] not in music and not (embedded and is_audio(embedded)):
+    # (An addon's track is its own to check: only the library has its bytes.)
+    from_addon = node.kind in ('music', 'sound') and p['resource'] in assets and bool(assets[p['resource']].addon)
+    if node.kind == 'music' and p['resource'] not in music and not from_addon and not (embedded and is_audio(embedded)):
         raise ProjectError('Choose a native music ID for the selected game, or an embedded MP3 or WAV')
     if node.kind == 'sound' and p['resource'] in music:
         raise ProjectError('This ID selects music; use a Music node')
-    if node.kind == 'sound' and p['resource'] >= 25000 and not (embedded and is_audio(embedded)):
+    if node.kind == 'sound' and p['resource'] >= 25000 and not from_addon and not (embedded and is_audio(embedded)):
         raise ProjectError('Embed the sound effect (MP3 or WAV) before using an episode audio ID')
     for resource in ([node.asset] if node.kind in ('background', 'character_art') else
                      [node.portrait] if node.kind == 'dialogue' and not node.character and node.portrait is not None else []):
@@ -242,6 +253,24 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('left_character', 'right_character'):
             if p[key] and p[key] not in characters:
                 raise ProjectError(f'{label}: unknown grid character')
+
+
+def validate_cutscene(label, p, assets):
+    """A cutscene node's spec is an asset, in the project or an addon; an embedded one is checked, with what it draws and plays."""
+    from exp_runtime.cutscene_spec import read_spec
+    asset = assets.get(p['spec']) if type(p['spec']) is int else None
+    if asset is None:
+        raise ProjectError(f'{label}: choose a cutscene from the project or an add-on')
+    if asset.data is None:
+        return
+    try:
+        spec = read_spec(asset.data)
+    except ValueError as error:
+        raise ProjectError(f'{label}: {error}') from error
+    for resource in ([item['image'] for item in spec['shots'] + spec.get('overlays', [])]
+                     + [item['sound'] for item in spec.get('sounds', [])]):
+        if resource not in assets:
+            raise ProjectError(f'{label}: the cutscene uses resource {resource}, which isn\'t in the project')
 
 
 def validate_presentation(project, node, p, label, characters):
@@ -721,6 +750,20 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'close_dialogue': asm.call(39)
             elif kind == 'random':
                 asm.call(27, p['bound']); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'minigames_available':
+                asm.call(70, X360_MINIGAMES_QUERY); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'cutscene_available':
+                asm.call(70, CUTSCENE_QUERY); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'cutscene':
+                asm.call(CUTSCENE, p['spec'])
+            elif kind == 'x360_slot':
+                asm.call(X360_SLOT); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'x360_leash':
+                asm.call(X360_LEASH); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'x360_puzzle':
+                asm.call(X360_PUZZLE); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'x360_diss':
+                asm.call(X360_DISS, p['tutorial']); asm.emit(0x21); store_variable(p['result'])
             elif kind in ('word_game', 'football', 'grid'):
                 localized = deepcopy(p)
                 for field in ('good', 'bad', 'instructions'):
@@ -826,6 +869,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
     presentation = presentation_record(project)
     if presentation:
         resources[PRESENTATION_RESOURCE] = presentation_bytes(presentation)
+    if project.addons:
+        resources[ADDON_RESOURCE] = requires_bytes([(entry['id'], entry['revision']) for entry in project.addons])
     return Compilation(encode_exp(resources), locations, variables, shared,
                        {key: value for key, value in characters.items() if isinstance(key, str)})
 
@@ -838,8 +883,18 @@ def export_project(project: Project, path, *, language=None):
     atomic_write(path, compile_project(project, language=language))
 
 
-def export_native_slot(project: Project, reference: Path, destination: Path):
+def export_native_slot(project: Project, reference: Path, destination: Path, *, pack_from=None):
+    """A replacement for an original app's episode. The apps can't read addons or this runtime's mechanics (creator/addons.py): a
+    project using a mechanic is refused, and one taking addon assets raises AddonsNeeded unless `pack_from`, the library to pack them
+    from, is given."""
+    from .addons import AddonsNeeded, check_native_export, pack_addons
     reference, destination = Path(reference), Path(destination)
+    try:
+        check_native_export(project)
+    except AddonsNeeded:
+        if pack_from is None:
+            raise
+        project = pack_addons(project, pack_from)
     if reference.resolve() == destination.resolve():
         raise ProjectError('Export a separate replacement file; keep the original episode as a backup')
     archive = ExpArchive(reference.read_bytes())

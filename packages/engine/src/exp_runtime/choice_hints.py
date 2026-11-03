@@ -6,6 +6,7 @@ sounds establish outcomes. Arbitrary counters and dialogue words do not.
 """
 from copy import deepcopy
 from dataclasses import dataclass
+import re
 
 from .content import ContentError
 from .games import GAMES
@@ -19,8 +20,9 @@ SCORE_NOTICES = frozenset(('Score Up!', 'Detective Score Up!'))
 # player"). Track notices (Approval/Athleticism/Order/Chaos...) still say nothing about better or worse.
 SCORE_NOTICE_VALUES = {**{text: 1 for text in SCORE_NOTICES}, 'Score Way Up!': 1, 'Detective Score Down!': -1}
 DECISIONS = frozenset(('choice', 'character_picker', 'text_input', 'word_game',
-                       'word_grid', 'football', 'finished', 'episode_exit'))
-PANELS = frozenset(('dialogue', 'presentation', 'message_panel', 'survey_confirmation',
+                       'word_grid', 'football', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'finished',
+                       'episode_exit'))
+PANELS = frozenset(('dialogue', 'presentation', 'message_panel', 'survey_confirmation', 'cutscene',
                     'loading', 'vm_pause'))
 
 
@@ -186,6 +188,7 @@ def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
 
 
 WORD_GAME_SCORES = 16           # word_game_outcomes tries scores 0..15: a 20 s quiz deals about seven words
+ARENA_RESULTS = 16              # arena_outcomes tries results 0..15 (the library's games grade 0-10)
 
 
 def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
@@ -197,18 +200,54 @@ def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
     if not session.pending or session.pending.name != 'word_game' or session.engine.word_game is None:
         return None
 
-    def story(score):
+    def finish(preview, score):
+        game = preview.engine.word_game
+        game.score = score                                  # as Session.skip_minigame finishes it
+        game.round = max(game.round, score + 1)
+        preview._complete_choice(game.score)                # a queued transition finishes in the preview's loop
+        preview.engine.word_game = None
+    return _outcomes(session, finish, range(WORD_GAME_SCORES), max_steps, max_panels)
+
+
+def x360_slot_outcomes(session, *, max_steps=6000, max_panels=30):
+    """shshd-runtime: the outcomes of the X360 slot machine about to start, for its skip prompt: its points 0 to 5. Dating Beth's has
+    three, parting at 3 and at 5."""
+    if not session.pending or session.pending.name != 'x360_slot':
+        return None
+
+    def finish(preview, points):
+        preview._complete_minigame(result=points)
+    return _outcomes(session, finish, range(6), max_steps, max_panels, numbers=False)
+
+
+def arena_outcomes(session, *, max_steps=40000, max_panels=30):
+    """shshd-runtime: the outcomes of the New Rules arena game about to start (its skip question, service 213 pending),
+    as word_game_outcomes has them, for the results 0 to ARENA_RESULTS - 1 the game could hand its story. It looks 30
+    panels on: The Break Up's last game has a route (a result of exactly 5) that parts from 0-4 only 18 lines later.
+    Checked on all 107 arena games of the 50 New Rules episodes against playing each result 0-40 to the episode's end
+    (2026-10-31): two routes in 100, three in 6, one in 1, and none past 15. Stories that differ only in a number
+    they show are one route (none of those games' do; the Arena Test shows each result)."""
+    if not session.pending or session.pending.name != 'arena_skip':
+        return None
+
+    def finish(preview, result):
+        preview.vm.resume(result)
+        preview.pending = None
+    return _outcomes(session, finish, range(ARENA_RESULTS), max_steps, max_panels, numbers=False)
+
+
+def _outcomes(session, finish, values, max_steps, max_panels, numbers=True):
+    """[(lowest value, highest value or None for "or more")] of the stories `finish(preview, value)` leads to, each
+    value tried on an isolated runtime copy that plays on through its next panels to its next decision; or None.
+    `numbers` False: text that differs only in its numbers reads the same."""
+    def story(value):
         preview = deepcopy(session, {id(session.resources): session.resources,
                                      id(session.vm.program): session.vm.program})
         preview.ephemeral = True
         deadline = preview.vm.steps_executed + max_steps
-        game = preview.engine.word_game
-        game.score = score                                  # as Session.skip_minigame finishes it
-        game.round = max(game.round, score + 1)
         shown = []
         try:
-            preview._complete_choice(game.score)            # a queued transition finishes in the loop below
-            preview.engine.word_game = None
+            finish(preview, value)
             for _ in range(max_panels + 1):
                 if preview.transitioning and preview.engine.scene_transition.phase == 4:
                     preview._finish_transition(advance=False)
@@ -216,7 +255,8 @@ def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
                 if preview.transitioning and preview.engine.scene_transition.phase == 3:
                     preview.engine.scene_transition.clear()
                 details = action.details or {}
-                shown.append((action.name, preview.scene, str(details.get('text') or details.get('title') or '')))
+                text = str(details.get('text') or details.get('title') or '')
+                shown.append((action.name, preview.scene, text if numbers else re.sub(r'\d+', '#', text)))
                 if action.name in DECISIONS or action.name not in PANELS:
                     break
                 if action.name == 'vm_pause':
@@ -236,14 +276,14 @@ def word_game_outcomes(session, *, max_steps=6000, max_panels=6):
         return tuple(shown)
 
     groups = []
-    for score in range(WORD_GAME_SCORES):
-        seen = story(score)
+    for value in values:
+        seen = story(value)
         if seen is None:
             return None
         if groups and groups[-1][2] == seen:
-            groups[-1][1] = score
+            groups[-1][1] = value
         else:
-            groups.append([score, score, seen])
+            groups.append([value, value, seen])
     return [(low, None if index == len(groups) - 1 else high) for index, (low, high, _) in enumerate(groups)]
 
 
