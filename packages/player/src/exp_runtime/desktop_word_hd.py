@@ -19,7 +19,7 @@ import random
 
 import pygame
 
-from .graphics import faded
+from .graphics import faded, opaque
 from .shs.grid_layout import clamp, ease
 from .desktop_football_hd import HdStrings
 from .hd_gl import GLAtlas, ImageFont, draw_quad, to_pil
@@ -759,4 +759,5 @@ class HdWordRenderer:
         self.draw_effects(fx)
         self.banner(game)
         self.tutorial(game)
+        opaque(self.canvas)     # alpha 0 from `convert()` on macOS (desktop_football_hd.HdFootballRenderer.draw)
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

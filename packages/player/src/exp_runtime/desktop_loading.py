@@ -5,6 +5,7 @@ from . import graphics as pygame
 
 from .fonts import TextStyle
 from .hd_scale import S as HD_SCALE
+from .location_pan import default_ease
 from .menu import MenuStrings
 from .ui_assets import Rect, read_ui
 
@@ -123,7 +124,21 @@ class HdLoadingRenderer:
         # (exp-runtime v0.6.0, loading.LoadingScreen.animation_frame); Android's is 500 ms.
         loading = session.engine.loading
         self.draw_band(loading.animation_frame(ios=True) if hasattr(loading, 'animation_frame') else loading.frame)
+        self.entrance(getattr(loading, 'elapsed_ms', self.ENTRANCE_MS))
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
+
+    ENTRANCE_MS, ENTRANCE_PIVOT = 200, 539
+
+    def entrance(self, elapsed_ms):
+        scale = default_ease(min(1., max(0., elapsed_ms) / self.ENTRANCE_MS))
+        if scale >= 1:
+            return
+        canvas = self.canvas
+        width, height = canvas.get_size()
+        band = pygame.transform.smoothscale(canvas, (width, max(1, round(height * scale))))
+        canvas.fill((0, 0, 0, 0))
+        if scale > 0:
+            canvas.blit(band, (0, round(self.ENTRANCE_PIVOT * self.S * (1 - scale))))
 
     def draw_band(self, frame):
         """The band with runner `frame` (23-27) on the transparent canvas, at S (also the menus' episode loading screen:
