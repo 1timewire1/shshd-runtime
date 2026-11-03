@@ -1253,8 +1253,7 @@ class AppScreens:
         if app.busy:
             title = {'previews': 'Preparing episodes', 'data': getattr(app, 'job_title', '')}.get(
                 app.job_kind, 'Importing content')
-            line = app.progress_text if app.job_kind in ('previews', 'data') and app.progress_text else \
-                'Checking and copying your files...'
+            line = app.progress_text or 'Checking and copying your files...'
             self.window(layer, title, line, (), (), note=None if app.job_kind in ('previews', 'data') else IMPORT_NOTE,
                         spinner=True)
         elif app.message:

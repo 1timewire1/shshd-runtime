@@ -208,6 +208,20 @@ class ApplicationUpdateTests(unittest.TestCase):
         with patch.object(app, 'present_frame'):
             app.render_shell()
         self.assertEqual(drawn, [('Preparing episodes', '3 of 40')])
+        # And any other job, before one has reported (kinds from zazatree's fix for this crash, efb42be).
+        for kind in ('bulk', 'copying'):
+            drawn.clear()
+            app.job_kind, app.progress_text = kind, ''
+            with patch.object(app, 'present_frame'):
+                app.render_shell()
+            self.assertEqual(drawn[0][0], 'Importing content')
+            self.assertIn('Checking and copying', drawn[0][1])
+        # What an import reports is its line; a job's end clears it.
+        drawn.clear()
+        app.report_progress('Unpacking 3 of 40 files')
+        with patch.object(app, 'present_frame'):
+            app.render_shell()
+        self.assertEqual(drawn, [('Importing content', 'Unpacking 3 of 40 files')])
 
     def test_yes_opens_only_the_release_page_then_closes_the_game(self):
         app = self.app()

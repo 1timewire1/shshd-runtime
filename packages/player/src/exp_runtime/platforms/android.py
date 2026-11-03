@@ -86,6 +86,8 @@ class Host:
     LIFECYCLE = frozenset()     # the window and app events (pygame's), filled in once pygame is imported (__init__)
     TOUCH = frozenset()         # the finger events: they only feed the pinch, never act, so never dropped either
 
+    next_copy_report = 0.0          # when the busy card next hears how much of the picked files has been copied
+
     def __init__(self):
         from android import activity
         from jnius import autoclass
@@ -197,6 +199,17 @@ class Host:
             self.results.put(('error', str(error)))
 
     @staticmethod
+    def staged_size(folder):
+        """The bytes copied into the staging folder so far (a file can go from under this, as a copy ends)."""
+        size = 0
+        for path in Path(folder).rglob('*'):
+            try:
+                size += path.stat().st_size if path.is_file() else 0
+            except OSError:
+                pass
+        return size
+
+    @staticmethod
     def remove_staged(paths):
         for path in paths:
             shutil.rmtree(path.parent, ignore_errors=True)
@@ -208,6 +221,14 @@ class Host:
             self.imported = []
         if self.app.busy and self.app.job_kind != 'copying':
             return
+        now = time.monotonic()
+        if self.app.job_kind == 'copying' and now >= self.next_copy_report:
+            # The file picker's copy says nothing while it runs, and one 1 GB zip is one file: what has landed so far.
+            from ..application import size_text
+            self.next_copy_report = now + 0.5
+            size = self.staged_size(self.staging)
+            if size:
+                self.app.report_progress(f'Copied {size_text(size)}')
         try:
             kind, value = self.results.get_nowait()
         except Empty:
@@ -219,6 +240,7 @@ class Host:
             return
         if self.app.job_kind == 'copying':
             self.app.job = self.app.job_kind = None
+            self.app.progress_text = ''
         self.pending = False
         if kind == 'error':
             self.app.message = f'Could not read selected files: {value}'

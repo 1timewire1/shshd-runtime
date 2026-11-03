@@ -277,6 +277,10 @@
 
 ### Fixed
 
+- **An import says how far it has got.** The busy card shows what is happening instead of one fixed line: on Android
+  how much of the picked files has copied into the app, then the files unpacked from a bulk archive, then each game's
+  copy and its episodes ("Surviving High School: episode 12 of 300"), and for Add Episodes which of how many. (Suggested
+  by zazatree.)
 - **Music no longer freezes the player.** Pausing music played from a Python file object could deadlock against the
   audio thread, stopping the player at 0 CPU. Music now plays from a temporary file.
 - **Deleting a save lets go of that episode's live game.** A game left for the main menu stays alive behind it, so

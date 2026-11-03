@@ -17,8 +17,12 @@ class ImportTests(unittest.TestCase):
         host.closed = False
         host.results = Queue()
         host.imported = []
-        host.app = SimpleNamespace(busy=False, message='', import_paths=Mock(), job=None, job_kind=None)
+        host.app = SimpleNamespace(busy=False, message='', import_paths=Mock(), job=None, job_kind=None,
+                                   report_progress=Mock(), progress_text='')
         host.app._attempt = lambda operation: operation()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        host.staging = Path(temporary.name)
         return host
 
     def test_picker_cancellation_does_not_import_or_replace_progress(self):
@@ -27,6 +31,26 @@ class ImportTests(unittest.TestCase):
         host.poll()
         self.assertFalse(host.pending)
         host.app.import_paths.assert_not_called()
+
+    def test_the_busy_screen_says_how_much_of_the_picked_files_has_copied(self):
+        host = self.host()
+        host.results.put(('copying', None))
+        host.poll()
+        host.app.busy = True
+        host.next_copy_report = 0.0
+        host.poll()
+        host.app.report_progress.assert_not_called()        # nothing has landed yet
+        (host.staging / 'one').mkdir()
+        (host.staging / 'one' / 'games.zip').write_bytes(b'x' * 2_500_000)
+        host.next_copy_report = 0.0
+        host.poll()
+        host.app.report_progress.assert_called_once_with('Copied 2.5 MB')
+        host.poll()                                         # not again within the half second
+        host.app.report_progress.assert_called_once()
+        host.results.put(('paths', [Path('picked.zip')]))
+        host.app.progress_text = 'Copied 2.5 MB'
+        host.poll()
+        self.assertEqual(host.app.progress_text, '')        # the import's own lines follow
 
     def test_the_busy_screen_shows_while_picked_files_copy(self):
         """A 1 GB zip takes a while to copy into the app: the busy screen shows from the pick until the copy's result,
