@@ -203,12 +203,13 @@ class PickerRow:
 GENERIC = ('premium content', 'special', 'magic school', 'mtx', 'mega packs')
 ALIASES = {'premium': PREMIUM_LABEL}
 _SEASON_LABEL = re.compile(r'season (\d+)', re.IGNORECASE)
+ACRONYMS = ('MTX', 'SHS')       # stay capitals in an all-caps label ("SHS '11", a translated pack's own category)
 
 
 def title_case(label):
     """Catalog categories are sometimes all caps ('SEASON 2'): title-case those, keep authored capitals and acronyms."""
     if label.isupper():
-        return ' '.join(word if word == 'MTX' else word[:1] + word[1:].lower() for word in label.split(' '))
+        return ' '.join(word if word in ACRONYMS else word[:1] + word[1:].lower() for word in label.split(' '))
     return label
 
 

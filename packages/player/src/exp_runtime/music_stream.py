@@ -140,10 +140,12 @@ class MusicStream:
 
     # ------------------------------------------------------------------ native operations
 
-    def play(self, music_id, flag, opener, now, *, held=False):
+    def play(self, music_id, flag, opener, now, *, held=False, takes_loop=False):
         """`playMusic` with Music on. `opener(music_id)` returns (MP3 bytes, start in s). `held`: the pause menu is
         open and nothing is playing (a saved game resumed under it, as `SHSEngine::onTick` opens it after a load), so
-        the cue waits for Resume instead of starting and fading out."""
+        the cue waits for Resume instead of starting and fading out. `takes_loop`: this player's, for a translated pack
+        that asks for a song already playing, now on repeat. `playMusic` keeps the flag it started with, so the song would
+        end and leave silence; here it carries on and repeats (SHS '11's games, whose song the line before may have on)."""
         current = self.current
         if held and current is None:
             self.pending = (music_id, flag, opener)
@@ -155,6 +157,8 @@ class MusicStream:
             if self.fade is not None and not self.fade['store']:
                 self.fade = None
                 self._set_volume(self.volume)
+            if takes_loop and flag and not current['flag']:
+                current.update(flag=True, loops_in_mixer=False)
             return
         if current is not None:
             if self.fade is None:
@@ -364,7 +368,7 @@ class MusicStream:
         word grid's 72 s MP3 (8201, `loops=-1`) once and fell silent (the owner's g54, 2026-10-29); the desktop's
         repeats it. An intro's loop starts after the intro; any other cue at 0."""
         current = self.current
-        if not self.looped_again:
+        if not self.looped_again and current.get('loops_in_mixer', True):
             logging.warning('Music %s stopped while looping; started again', current['id'])
         self.looped_again += 1
         intro = current['length'] if current.get('loop') is not None else None

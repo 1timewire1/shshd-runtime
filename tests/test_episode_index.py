@@ -320,6 +320,7 @@ class NamingTests(unittest.TestCase):
     def test_title_case(self):
         self.assertEqual(ei.title_case('SEASON 2'), 'Season 2')
         self.assertEqual(ei.title_case('MTX'), 'MTX')
+        self.assertEqual(ei.title_case("SHS '11"), "SHS '11")
         self.assertEqual(ei.title_case("Sara's Classic Set"), "Sara's Classic Set")
         self.assertEqual(ei.title_case('SPECIAL: THE CONNED ARTIST'), 'Special: The Conned Artist')
 

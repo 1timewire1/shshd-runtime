@@ -193,6 +193,11 @@ class Session:
         return (self.resources.library.directory / 'saves'
                 / (self.resources.identity['episode_sha256'] + '.shs-save.json'))
 
+    def _badge_sounds(self):
+        """shshd-runtime: a translated pack's own relationship sounds (profile TRANSLATED_BADGE_SOUNDS), or None for its game's."""
+        record = getattr(self.resources, 'record', None) or {}
+        return getattr(GAMES[game_id(self.resources)], 'TRANSLATED_BADGE_SOUNDS', {}).get(record.get('pack_id'))
+
     def _set_build(self):
         library = getattr(self.resources, 'library', None)
         version = library.hd_app_version() if hasattr(library, 'hd_app_version') else None
@@ -385,7 +390,7 @@ class Session:
             return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
-        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss'):
+        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex'):
             return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
@@ -422,6 +427,8 @@ class Session:
             return self._complete_minigame(result=0)    # (its story reads no result)
         elif kind == 'x360_diss':
             return self._complete_minigame(result=PASS_SCORE + 1 if success else 0)
+        elif kind in ('shs11_memory', 'shs11_reflex'):
+            return self._complete_minigame(result=2 if success else 0)
         else:
             # Preserve starting scores where possible, adding enough points for
             # the requested side to win by a touchdown without signed overflow.
@@ -430,6 +437,14 @@ class Session:
             winner = min(32767, max(winner, loser + 7))
             game.home, game.away = (winner, loser) if success else (loser, winner)
         return self._complete_minigame()
+
+    @_sound_batch
+    def skip_shs11(self, result: int):
+        """shshd-runtime: finish the pending SHS '11 game with `result`, the skip prompt's outcome."""
+        if not self.pending or self.pending.name not in ('shs11_memory', 'shs11_reflex') or self.transitioning:
+            raise ValueError("There is no skippable SHS '11 game")
+        self.start_minigame()
+        return self._complete_minigame(result=result)
 
     @_sound_batch
     def skip_x360_slot(self, points: int):
@@ -635,6 +650,7 @@ class Session:
                 queued_notice = self.engine.next_dialogue_notice
                 self.engine.nr_arena_enabled = self.nr_arena
                 self.engine.nr_arena_skip = self.skip_arena
+                self.engine.badge_sounds = self._badge_sounds()
                 self.engine.cutscenes_enabled = self.cutscenes
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':
@@ -827,6 +843,18 @@ class Session:
             if value is not None:
                 raise ValueError('Diss Practice takes a press')
             self.engine.x360_diss.press()
+            return action
+        elif action.name == 'shs11_memory':
+            if value is not None and (type(value) is not int or not 0 <= value < 9):
+                raise ValueError('Memory takes a press, or a cell')
+            self.engine.shs11_memory.press(value)
+            self._shs11_sounds(self.engine.shs11_memory)
+            return action
+        elif action.name == 'shs11_reflex':
+            if value is not None and (type(value) is not int or not 0 <= value < 9):
+                raise ValueError('Reflex takes a press, or a cell')
+            self.engine.shs11_reflex.press(value)
+            self._shs11_sounds(self.engine.shs11_reflex)
             return action
         elif action.name == 'text_input':
             validate_name(value, **self.name_input_metrics())
@@ -1021,6 +1049,11 @@ class Session:
         if game.sound_serial != before:
             self.engine.request_sound(*game.sound_ids)
 
+    def _shs11_sounds(self, game):
+        if game.sounds:
+            self.engine.request_sound(*game.sounds)
+            game.sounds.clear()
+
     def _slot_sounds(self):
         game = self.engine.x360_slot
         if game.sounds:
@@ -1166,6 +1199,14 @@ class Session:
             finished = self.engine.x360_slot.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
             self._slot_sounds()
             return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'shs11_memory':
+            finished = self.engine.shs11_memory.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
+            self._shs11_sounds(self.engine.shs11_memory)
+            return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'shs11_reflex':
+            finished = self.engine.shs11_reflex.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
+            self._shs11_sounds(self.engine.shs11_reflex)
+            return self._complete_minigame() if finished else self.pending
         if self.pending and self.pending.name == 'x360_leash':
             finished = self.engine.x360_leash.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
             return self._complete_minigame() if finished else self.pending
@@ -1239,7 +1280,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=35,
+        return dict(format='shs-runtime-save', version=36,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1280,8 +1321,15 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 36):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 37):
                 raise SaveError('Unsupported save format or version')
+            # Version 36 adds SHS '11's Memory and Reflex (shs11_games.py); an older save never had one, and saw no tutorial.
+            if state['version'] < 36 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('shs11_memory', None)
+                state['engine'].setdefault('shs11_tutorial_seen', False)
+                state['engine'].setdefault('shs11_reflex', None)
+                state['engine'].setdefault('shs11_reflex_tutorial_seen', False)
             # Version 35 adds a storyboard cutscene (cutscene.py); an older save never had one.
             if state['version'] < 35 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
@@ -1621,6 +1669,16 @@ class Session:
                     engine.x360_slot.validate()
                 except ValueError as error:
                     raise SaveError(str(error)) from error
+            if engine.shs11_reflex is not None:
+                try:
+                    engine.shs11_reflex.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
+            if engine.shs11_memory is not None:
+                try:
+                    engine.shs11_memory.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
             if engine.x360_leash is not None:
                 try:
                     engine.x360_leash.validate()
@@ -1711,7 +1769,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,)}
+                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,), 'shs11_memory': (219,), 'shs11_reflex': (220,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

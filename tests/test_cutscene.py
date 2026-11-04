@@ -160,7 +160,7 @@ class SessionTests(unittest.TestCase):
         session, _ = self.played()
         session.tick(700)
         state = session.snapshot()
-        self.assertEqual(state['version'], 35)
+        self.assertEqual(state['version'], 36)
         restored = Session.from_snapshot(session.resources, state)
         self.assertEqual(restored.pending.name, 'cutscene')
         self.assertEqual(restored.engine.cutscene.elapsed_ms, 700)

@@ -84,6 +84,11 @@ def dispatch(self, vm, *, resource_exists=None):
             # shshd-runtime: whether the X360 translations' real minigames play here (the same switch); others take
             # the timed choice the story carries.
             return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
+        from ..shs11_services import SHS11_MINIGAMES_QUERY
+        if selector == SHS11_MINIGAMES_QUERY:
+            # shshd-runtime: whether SHS '11's real minigames play here (the same switch); others take what the
+            # smartphone has at that spot.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
         from ..cutscene import CUTSCENE_QUERY
         if selector == CUTSCENE_QUERY:
             # shshd-runtime: whether storyboard cutscenes play here (a player that draws them); others go straight on.

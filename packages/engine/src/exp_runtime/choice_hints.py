@@ -20,7 +20,7 @@ SCORE_NOTICES = frozenset(('Score Up!', 'Detective Score Up!'))
 # player"). Track notices (Approval/Athleticism/Order/Chaos...) still say nothing about better or worse.
 SCORE_NOTICE_VALUES = {**{text: 1 for text in SCORE_NOTICES}, 'Score Way Up!': 1, 'Detective Score Down!': -1}
 DECISIONS = frozenset(('choice', 'character_picker', 'text_input', 'word_game',
-                       'word_grid', 'football', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'finished',
+                       'word_grid', 'football', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'finished',
                        'episode_exit'))
 PANELS = frozenset(('dialogue', 'presentation', 'message_panel', 'survey_confirmation', 'cutscene',
                     'loading', 'vm_pause'))
@@ -218,6 +218,17 @@ def x360_slot_outcomes(session, *, max_steps=6000, max_panels=30):
     def finish(preview, points):
         preview._complete_minigame(result=points)
     return _outcomes(session, finish, range(6), max_steps, max_panels, numbers=False)
+
+
+def shs11_outcomes(session, *, max_steps=6000, max_panels=30):
+    """shshd-runtime: the outcomes of the SHS '11 game about to start, for its skip prompt: its results 0 to 2. Nearly all its
+    games have two, parting at 2; the Superstore has three."""
+    if not session.pending or session.pending.name not in ('shs11_memory', 'shs11_reflex'):
+        return None
+
+    def finish(preview, result):
+        preview._complete_minigame(result=result)
+    return _outcomes(session, finish, range(3), max_steps, max_panels, numbers=False)
 
 
 def arena_outcomes(session, *, max_steps=40000, max_panels=30):

@@ -27,8 +27,9 @@ try:
     # lacks; CoD never plays either (tools/test_packages.py's cod-player case).
     from .desktop_football_hd import HdFootballRenderer
     from .desktop_word_hd import HdWordRenderer
+    from .desktop_shs11_hd import Shs11HdRenderer
 except ImportError:
-    HdFootballRenderer = HdWordRenderer = None
+    HdFootballRenderer = HdWordRenderer = Shs11HdRenderer = None
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
@@ -38,8 +39,11 @@ from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_directi
 from .desktop_cutscene import CutsceneRenderer
 from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
+from .desktop_shs11_memory import Shs11MemoryRenderer
+from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
+from .shs11_games import PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -61,7 +65,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
-from .choice_hints import ARENA_RESULTS, arena_outcomes, word_game_outcomes, x360_slot_outcomes
+from .choice_hints import ARENA_RESULTS, arena_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -141,6 +145,16 @@ def arena_skip_options(outcomes):
     return labels, tuple(low for low, _ in reversed(outcomes))
 
 
+def shs11_skip_options(outcomes):
+    """(option labels, the result each hands the story) for an SHS '11 game's skip prompt, best first, then "Play" (labels only):
+    Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, Win / Come close / Lose for its three."""
+    if outcomes is None or len(outcomes) == 2:
+        return ('Win', 'Lose', 'Play'), (2, 0)
+    if len(outcomes) == 1:
+        return ('Skip', 'Play'), (2,)
+    return ('Win', 'Come close', 'Lose', 'Play'), (2, 1, 0)
+
+
 class _PromptEngine:
     """The engine as a host prompt's stand-in session shows it: the same state, but no word quiz, so a prompt over
     one is drawn as an ordinary choice."""
@@ -179,6 +193,10 @@ ARENA_ACTIONS = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'a
 # Keys as New Rules' Nokia key codes (nr_arena.KEY_BITS): OK / fire, the joystick, the right soft key.
 LEASH_KEYS = {pygame.K_LEFT: LEFT, pygame.K_RIGHT: RIGHT, pygame.K_UP: UP, pygame.K_DOWN: DOWN,
               pygame.K_a: LEFT, pygame.K_d: RIGHT, pygame.K_w: UP, pygame.K_s: DOWN}
+MEMORY_DIGITS = {**{getattr(pygame, f'K_{n}'): n - 1 for n in range(1, 10)},
+                 **{getattr(pygame, f'K_KP{n}'): n - 1 for n in range(1, 10)}}
+MEMORY_MOVES = {pygame.K_LEFT: (-1, 0), pygame.K_RIGHT: (1, 0), pygame.K_UP: (0, -1), pygame.K_DOWN: (0, 1),
+                pygame.K_a: (-1, 0), pygame.K_d: (1, 0), pygame.K_w: (0, -1), pygame.K_s: (0, 1)}
 ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, pygame.K_UP: -1, pygame.K_DOWN: -2,
               pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
 ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
@@ -260,6 +278,8 @@ class Desktop:
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
+    smartphone_music = True         # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
+    word_grid_skin = False          # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
@@ -408,9 +428,12 @@ class Desktop:
             self.football_renderer = FootballRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
+        self.shs11_hd = Shs11HdRenderer(session.resources, self.dialogue_renderer) if Shs11HdRenderer else None
         self.nr_arena_renderer = NRArenaRenderer(session.resources)
         self.x360_arena_renderer = X360ArenaRenderer(session.resources)
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
+        self.shs11_memory_renderer = Shs11MemoryRenderer(session.resources)
+        self.shs11_reflex_renderer = Shs11ReflexRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
         self.cutscene_renderer = CutsceneRenderer(session.resources)
@@ -682,9 +705,11 @@ class Desktop:
         engine, stream, now = self.session.engine, self.music_stream, pygame.time.get_ticks()
         if stream.volume != self.music_volume:
             stream.set_volume(self.music_volume)
-        if self.music_enabled != self.music_was_enabled:
-            self.music_was_enabled = self.music_enabled
-            if not self.music_enabled:
+        # A translated episode's smartphone music, with its switch off, goes as it does with Music off.
+        enabled = self.music_enabled and (self.smartphone_music or not self.smartphone_switch())
+        if enabled != self.music_was_enabled:
+            self.music_was_enabled = enabled
+            if not enabled:
                 stream.disable(now)                  # setMusicEnabled(false): stopMusic(-1, true)
         token = (engine.music_id, engine.music_flag, engine.music_serial)
         if token != self.music_token:
@@ -692,7 +717,7 @@ class Desktop:
                 stream.reset()                       # a new or reloaded session starts its own cue
             self.music_token = token
             if engine.music_id >= 0:
-                if self.music_enabled:               # playMusic ignores requests while Music is off
+                if enabled:                          # playMusic ignores requests while Music is off
                     music_id, opener = engine.music_id, self._open_cue
                     swaps = self._x360_swaps()
                     if swaps is not None and music_id in swaps[1]:
@@ -700,12 +725,13 @@ class Desktop:
                         # a later request for New Rules' track isn't taken for it.
                         archive, music_id = swaps[2], swaps[1][music_id]
                         opener = lambda _id: (archive.read(music_id), 0)       # noqa: E731
-                    stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open)
+                    stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open,
+                                takes_loop=self.smartphone_switch())
             else:
                 stream.stop(engine.music_stop_ms, now)
         self._x360_tutorial_music(stream, now)
         self._end_x360_music(stream, engine, now)
-        stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
+        stream.update(now, enabled=enabled, menu_open=self.menu_open,
                       paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
         self._sync_pause_song(now)
 
@@ -880,9 +906,20 @@ class Desktop:
                 else:
                     sound = self._sound(asset, lambda: self.session.resources.read_asset(asset))
                 sound.set_volume(self.sound_volume)
+                if asset in self._one_channel():
+                    if self._channel_sound is not None:
+                        self._channel_sound.stop()
+                    self._channel_sound = sound
                 sound.play()
         except (ContentError, pygame.error) as error:
             logging.warning('Sound %s cannot be played: %s', assets, error)
+
+    _channel_sound = None               # the last of a translated pack's one-channel sounds (TRANSLATED_ONE_SOUND_CHANNEL)
+
+    def _one_channel(self):
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return getattr(GAMES.get(game_id(resources)), 'TRANSLATED_ONE_SOUND_CHANNEL', {}).get(record.get('pack_id'), ())
 
     SOUNDS_KEPT = 32
     SOUND_KEPT_SECONDS = 5
@@ -1029,6 +1066,12 @@ class Desktop:
             options = tuple(option.replace(' or more', '') for option in options)       # (5 is all there is)
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
                                        lambda index: self._resolve_x360_slot(action, points, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name in ('shs11_memory', 'shs11_reflex')
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            # shshd-runtime: SHS '11's games offer each result their story treats differently.
+            options, results = shs11_skip_options(shs11_outcomes(self.session))
+            prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, len(results)), options,
+                                       lambda index: self._resolve_shs11(action, results, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
@@ -1086,6 +1129,15 @@ class Desktop:
             self.session.engine.x360_slot.start()       # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_x360_slot(points[index]))
+
+    def _resolve_shs11(self, action, results, index):
+        """An SHS '11 game's skip prompt: an outcome finishes it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(results):
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_shs11(results[index]))
 
     def _resolve_x360_leash(self, action, index):
         """The leash game's skip prompt: Win / Lose finish it with that result, Play plays it."""
@@ -1187,6 +1239,16 @@ class Desktop:
             if len(outcomes) == 1:
                 return f'{quiz} Its score changes nothing that follows.'
             return f'{quiz} Its story goes {len(outcomes)} ways, by score.'
+        if action.name == 'shs11_memory':
+            game = engine.shs11_memory
+            words = list(dict.fromkeys(round_[1] for round_ in game.rounds))
+            shown = ', '.join(words[:8]) + (' ...' if len(words) > 8 else '')
+            return f'Memory. Score {game.win_score} in {round(game.clock_ms / 1000)} seconds. Words: {shown}.'
+        if action.name == 'shs11_reflex':
+            game = engine.shs11_reflex
+            middle = f' {game.close_score} or more comes close.' if outcomes == 3 else ''
+            return (f'Reflex. Score {game.win_score} in {round(game.clock_ms / 1000)} seconds, '
+                    f'picking the right icons to fill the gauge.{middle}')
         game = engine.word_grid
         words = []
         for problem in game.problems:
@@ -1578,18 +1640,20 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Cutscene rendering stopped: %s', error)
-        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss') and not ask and not closed
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex') and not ask and not closed
                 and not self.error):
             try:
                 engine = self.session.engine
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
-                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer}[action.name]
+                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
+                            'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
                 self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
-                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed)
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
+                                                                          getattr(renderer, 'edge_bar', 'bar') == 'bar')
                 self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',))]
                 self.scroll = self.max_scroll = 0
                 self._present()
@@ -1821,6 +1885,19 @@ class Desktop:
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
         return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'MS3_CHARACTER_ART', ())
+
+    def smartphone_switch(self):
+        """shshd-runtime: whether this episode has the smartphone's music (SMARTPHONE_MUSIC_PACKS: translated SHS '11
+        episodes), so the "Smartphone Music" switch changes something. It only picks what's heard: the engine and a save
+        hold the same requests either way, so changing it needs nothing else."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'SMARTPHONE_MUSIC_PACKS', ())
+
+    def word_grid_switch(self):
+        """shshd-runtime: whether the "Use Word Grid Skin" switch is offered: Use Translated Mini-Games on, the games having
+        been asked for by this episode (smartphone_switch's pack), and the HD bundle's word game art there."""
+        return self.arena_minigames and self.shs11_hd is not None and self.shs11_hd.available()
 
     def ch_switch(self):
         """shshd-runtime: whether the library has the game's optional portrait addon (PORTRAIT_ADDON), so the CH
@@ -2514,6 +2591,8 @@ class Desktop:
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
                     **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
+                    **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
+                    **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
@@ -2692,6 +2771,10 @@ class Desktop:
                 self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'ms3_characters':
                 self.set_ms3_characters(not self.ms3_characters)
+            elif command[1] == 'smartphone_music':
+                self.smartphone_music = not self.smartphone_music
+            elif command[1] == 'word_grid_skin':
+                self.word_grid_skin = not self.word_grid_skin
             elif command[1] == 'ch_portraits':
                 self.set_ch_portraits(not self.ch_portraits)
             elif command[1] == 'ch_backdrop':
@@ -2896,7 +2979,7 @@ class Desktop:
             return True
         if event.type == pygame.KEYUP:
             self._puzzle_key_up(event)
-        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2981,6 +3064,20 @@ class Desktop:
                 self.command(('menu',))
             elif 0 <= x <= 768 and 0 <= y <= 1024:
                 self._attempt(lambda: self.session.answer(None))
+            return True
+        if (action and action.name in ('shs11_memory', 'shs11_reflex') and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            frame = self.bg_viewport
+            x = (event.pos[0] - frame.x) * 768 / frame.width
+            y = (event.pos[1] - frame.y) * 1024 / frame.height
+            if 0 <= x < 150 and 880 <= y <= 1024:
+                self.command(('menu',))
+            elif 0 <= x <= 768 and 0 <= y <= 1024:
+                game, renderer = self._shs11_game(action)
+                cell = None if game.phase != PLAY else renderer.cell_at(x, y)
+                renderer.cursor_shown = False
+                if game.phase != PLAY or cell is not None:
+                    self._attempt(lambda: self.session.answer(cell))
             return True
         if (action and action.name == 'x360_leash' and not self.menu_open and not self.error and not asking
                 and (event.type == pygame.MOUSEMOTION
@@ -3340,6 +3437,45 @@ class Desktop:
                 or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
             return False
         self._attempt(lambda: self.session.answer(None))
+        return True
+
+    def shs11_renderer(self, action):
+        """What draws an SHS '11 game: its own look, or the word game's with the switch on and its art there."""
+        if self.word_grid_skin and self.shs11_hd is not None and self.shs11_hd.available():
+            return self.shs11_hd
+        return self.shs11_memory_renderer if action.name == 'shs11_memory' else self.shs11_reflex_renderer
+
+    def _shs11_game(self, action):
+        """(The SHS '11 game in play, its renderer)."""
+        game = self.session.engine.shs11_memory if action.name == 'shs11_memory' else self.session.engine.shs11_reflex
+        return game, self.shs11_renderer(action)
+
+    def _memory_key(self, event):
+        """SHS '11's games: 1 to 9 pick their cells, as '11's keys do. The arrows, WASD and a D-pad move a cursor over the grid and
+        Enter, Space or confirm pick under it, or go on from the tutorial's boxes. True when the key was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ('shs11_memory', 'shs11_reflex') or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        game, renderer = self._shs11_game(action)
+        playing = game.phase == PLAY
+        cell = MEMORY_DIGITS.get(event.key)
+        if cell is not None:
+            if playing:
+                renderer.cursor = cell
+                self._attempt(lambda: self.session.answer(cell))
+            return True
+        if event.key in KEYS_ACTIVATE:
+            chosen = renderer.cursor if playing else None
+            self._attempt(lambda: self.session.answer(chosen))
+            return True
+        move = MEMORY_MOVES.get(event.key)
+        if move is None:
+            return False
+        if playing:
+            column, row = renderer.cursor % 3, renderer.cursor // 3
+            renderer.cursor = (row + move[1]) % 3 * 3 + (column + move[0]) % 3
+            renderer.cursor_shown = True
         return True
 
     def _leash_ready(self):

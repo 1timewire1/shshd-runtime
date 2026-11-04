@@ -66,7 +66,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, smartphone_music=bool, word_grid_skin=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES)
 
@@ -151,6 +151,10 @@ class MenuState:
                     self.hires_portraits = data['hires_portraits']
                 if type(data.get('ms3_characters')) is bool:
                     self.ms3_characters = data['ms3_characters']
+                if type(data.get('smartphone_music')) is bool:
+                    self.smartphone_music = data['smartphone_music']
+                if type(data.get('word_grid_skin')) is bool:
+                    self.word_grid_skin = data['word_grid_skin']
                 if type(data.get('ch_portraits')) is bool:
                     self.ch_portraits = data['ch_portraits']
                 if type(data.get('ch_backdrop')) is bool:
@@ -228,6 +232,8 @@ class MenuState:
         self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
         self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
+        self.smartphone_music = True   # translated SHS '11 episodes: the smartphone's music, else none
+        self.word_grid_skin = False    # ...their minigames in the HD word game's look
         self.ms3_characters = False    # translated X360 episodes: the April build's looks, else the May build's (ContentLibrary)
         # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
         self.ch_portraits = True
@@ -309,7 +315,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    ms3_characters=self.ms3_characters, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls,

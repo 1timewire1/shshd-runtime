@@ -75,8 +75,9 @@ CHOICE_FEEDBACK_SOUNDS = {8007: 1, 8003: -1}
 # jingles, its music tracks 13 and 1, which the smartphone versions replaced with 8007/8003 at the same beats (~590
 # each across the 45 paired stories). They play as episode sound effects (service 79; music, 80, in translations made
 # before 2026-10-25) at the translator's MUSIC_BASE (26980) + track, so for that pack those requests are answer
-# feedback too. Pack -> {resource ID: feedback}.
-TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}}
+# feedback too. Pack -> {resource ID: feedback}. SHS '11's (31600, tools/translate shs11_story.CUE_TRACKS) are its tracks 0
+# and 2, at the beats of 8007 and 8003 too.
+TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}, 31600: {26980: 1, 26980 + 2: -1}}
 # shshd-runtime: a translated episode's own picture for the whole 384x512-unit frame, drawn under the location art
 # where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
 # above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
@@ -98,13 +99,27 @@ HIRES_SWITCH_PACKS = (31300,)
 # shshd-runtime: the "MS3 Characters" switch (ContentLibrary.ms3_characters): pack -> how far above a portrait's ID its
 # April 2009 look is (tools/translate x360.MS3_LOOKS). A portrait with none stays as it is.
 MS3_CHARACTER_ART = {31400: 2000}
+# shshd-runtime: a translated pack's own pictures for the relationship icons, on the smartphone's places and motion
+# (DialogueRenderer.indicator_image): pack -> {SHS's icon: the pack's}. The ring that grows under a new icon stays SHS's.
+TRANSLATED_BADGE_ART = {31600: {3010: 26992, 3011: 26993, 3012: 26994, 3014: 26995, 3016: 26996, 3018: 26997}}
+# shshd-runtime: a translated pack's own sounds for a relationship icon, for and against (`dc` in SHS '11: its value going up
+# or down, whichever icons that shows), in place of SHS's (engine._relationship).
+TRANSLATED_BADGE_SOUNDS = {31600: (26980 + 6, 26980 + 5)}
+# shshd-runtime: a translated pack's sounds that have only one channel between them, as SHS '11's player has (`dk`: a new one
+# stops the last, co.a(dd, dd)): pack -> their resources (Desktop._play_sounds). SHS's own and the music go on as they do.
+TRANSLATED_ONE_SOUND_CHANNEL = {31600: range(26980, 26992)}
+# shshd-runtime: where the "Smartphone Music" switch changes something (Desktop.smartphone_switch): translated packs whose
+# stories carry the smartphone's music (shs11_story.smartphone_music). Off, those calls stay in the story and go unheard.
+# Their sound effects are the game's own either way (owner, 2026-11-03).
+SMARTPHONE_MUSIC_PACKS = (31600,)
 # shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
 # them. Day of Diss (31400's episode 1) has no minigame.
-TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4)}
+TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None}
 # shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).
-TRANSLATED_NAME_SETS = {31300: 'new_rules'}
+# SHS '11's (31600) share theirs too: its `$ZOE` is another playthrough's, kept apart from the smartphone stories'.
+TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11'}
 # shshd-runtime: two-speaker lines in a translated pack (Session.dialogue_duet): pack -> (partner key, expression
 # key), global numbers the translator sets around a line two characters say together ("Both", "Andy and Laura"),
 # the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
@@ -138,14 +153,16 @@ PRESENTATION_RECORD = True
 # 360's green, under their own category (owner, 2026-10-31); their old place was Now Airing's "Date Unknown".
 LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
                 # Day of Diss, Monday Planner, Dating Beth, Puzzle Test (owner, 2026-11-02).
-                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4})}
+                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4}),
+                # SHS '11, the J2ME game (tools/translate shs11_story.py), in its menus' red.
+                'SHS11': dict(badge="'11", color=(214, 47, 89), category="SHS '11")}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)
 # shshd-runtime: a translated pack's own right/wrong sounds for service 71's quiz, pack -> (right, wrong) episode
 # resources. Translated New Rules episodes play its own jingles (tracks 13 and 1, at the translator's MUSIC_BASE
 # 26980 + track) there instead of SHS's (owner, 2026-10-25). An episode without both keeps WORD_GAME_SOUNDS.
-TRANSLATED_WORD_GAME_SOUNDS = {31300: (26980 + 13, 26980 + 1)}
+TRANSLATED_WORD_GAME_SOUNDS = {31300: (26980 + 13, 26980 + 1), 31600: (26980 + 8, 26980 + 7)}
 # Service 78's portrait selector: swapping a portrait to the front, then confirming (Android FUN_000d1b48).
 PICKER_SOUNDS = (8013, 8010)
 # Curly single quotes truncated to one byte by the authoring tool, as in Cause of Death (cod/profile.py): U+2019 as

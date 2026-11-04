@@ -139,6 +139,38 @@ class MusicLoopTests(unittest.TestCase):
             self.assertEqual(music.play.call_args.kwargs, {'loops': -1, 'start': 0})
             self.assertEqual(music.queue.call_count, 1)
 
+    def test_a_song_asked_for_again_on_repeat_goes_on_and_repeats_where_the_pack_says_so(self):
+        # SHS '11's game song: the line before can have the same song on, playing once. It carries on, then loops.
+        from exp_runtime.music_stream import MusicStream
+        track = silent_wav(2)
+        stream = MusicStream()
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            stream.play(8201, 0, lambda music_id: (track, 0), 0)
+            stream.update(1000, enabled=True, menu_open=False, paused=False)
+            music.play.reset_mock()
+            stream.play(8201, 1, lambda music_id: (track, 0), 1000, takes_loop=True)
+            music.play.assert_not_called()                                         # not started over
+            music.get_busy.return_value = False
+            with self.assertNoLogs(level='WARNING'):
+                stream.update(2500, enabled=True, menu_open=False, paused=False)
+            self.assertEqual(music.play.call_args.kwargs, {'loops': -1, 'start': 0})
+            self.assertTrue(stream.loaded)
+
+    def test_elsewhere_a_song_asked_for_again_keeps_the_flag_it_started_with_as_playmusic_does(self):
+        from exp_runtime.music_stream import MusicStream
+        track = silent_wav(2)
+        stream = MusicStream()
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            stream.play(8201, 0, lambda music_id: (track, 0), 0)
+            stream.play(8201, 1, lambda music_id: (track, 0), 1000)
+            music.get_busy.return_value = False
+            music.play.reset_mock()
+            stream.update(2500, enabled=True, menu_open=False, paused=False)
+            music.play.assert_not_called()
+            self.assertFalse(stream.loaded)
+
     def test_a_looping_cue_the_mixer_lets_end_starts_again_and_a_single_one_still_ends(self):
         # Android's SDL_mixer played the word grid's 72 s MP3 (8201, `loops=-1`) once and fell silent (the owner's
         # g54, 2026-10-29): a looping cue found stopped is played again from its start, once logged.

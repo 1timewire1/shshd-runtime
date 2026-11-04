@@ -620,6 +620,20 @@ upstream exp-runtime answer 0 to an unknown selector, so a story goes straight o
 The spec is described in `cutscene.py`. A service 16 before it runs when its last press
 ends it, with the last picture up under the closing blinds.
 
+## 5.4 SHS '11's minigames (shshd-runtime services 219 and 220)
+
+Episodes translated from SHS '11 call these (`seconds`, `target`, `rounds`, `table`, `character`, the player) after
+**70 selector 203** answers 1, which it does only with the player's minigames switch on.
+Otherwise a story takes what it also carries, the smartphone's game at that spot.
+
+| Service | Game | A record of `table` |
+| --- | --- | --- |
+| 219 | Memory | 6 words: cue text, word text, bonus, points a letter, letter time in ms, the round's limit in ms |
+| 220 | Reflex | 13 words: right icons at least, the gauge's size, bonus, points a bar, right, wrong and skull pictures, odds of 1, 2 and 3 bars and of a skull, flash ms, hold ms |
+
+Each waits for the game (`shs11_games.py`, with its tutorial the first time in a story) and
+completes with **2** at 98% of the target or more, **1** above 75%, else **0**.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

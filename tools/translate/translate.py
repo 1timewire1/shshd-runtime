@@ -9,6 +9,7 @@ The x360 command reads the cancelled Xbox 360 prototype's (MS4) data.pak and wri
 projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catalog's, for the cast's looks.
 
     python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR --sounds KG800_JAR --out OUT_DIR
+    python tools/translate/translate.py shs11 --english N73_JAR --story "The New Girl" --twin THE_NEW_GIRL_EXP --out OUT_DIR
 
 The shs11 command writes SHS '11's addon (shs11.py): every background, look and interface picture, and its music.
 
@@ -90,10 +91,12 @@ def main(argv=None):
                     help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
                          'cursor and boards')
     xb.add_argument('--out', type=Path, required=True)
-    s11 = sub.add_parser('shs11', help="SHS '11, the J2ME game: for now its addon (shs11.py)")
-    s11.add_argument('--art', type=Path, required=True, help='a jar with the sharpest art: an Italian 480x800 or 360x640 build')
+    s11 = sub.add_parser('shs11', help="SHS '11, the J2ME game: its addon (shs11.py) or, with --story, a story (shs11_story.py)")
+    s11.add_argument('--art', type=Path, help='a jar with the sharpest art: an Italian 480x800 or 360x640 build')
     s11.add_argument('--english', type=Path, required=True, help='an English 30-script jar, for the cast tables: N73')
-    s11.add_argument('--sounds', type=Path, required=True, help='a jar with all 11 tracks, for the music: KG800')
+    s11.add_argument('--sounds', type=Path, help='a jar with all 11 tracks, for the music: KG800')
+    s11.add_argument('--story', help="with --twin: a story to translate instead of the addon, by title: 'The New Girl', 'Best Party Ever', 'Foreign Exchange', 'Lost Recipe' or 'Secret Ingredient'")
+    s11.add_argument('--twin', type=Path, help="the story's smartphone .exp, for the minigames' words")
     s11.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -177,8 +180,18 @@ def main(argv=None):
 
 
 def translate_shs11(args):
-    """Writes SHS '11's addon."""
+    """Writes SHS '11's addon, or with --story, that story."""
     import shs11
+    if args.story:
+        import shs11_story
+        if not args.twin:
+            raise SystemExit('--story needs --twin')
+        name, data = shs11_story.build(shs11.jar_file(args.english), args.story, args.twin)
+        (args.out / name).write_bytes(data)
+        print(f'{args.out / name}: {len(data) / 1024:.0f} KB')
+        return 0
+    if not args.art or not args.sounds:
+        raise SystemExit('the addon needs --art and --sounds')
     data, spec = shs11.build_addon(shs11.jar_file(args.art), shs11.jar_file(args.english), shs11.jar_file(args.sounds))
     path = args.out / 'S11_Addon.exp'
     path.write_bytes(data)

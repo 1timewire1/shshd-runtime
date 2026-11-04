@@ -1075,6 +1075,12 @@ class Application:
         packs = getattr(GAMES.get(self.library.game_id), 'MS3_CHARACTER_ART', ()) if self.library else ()
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
 
+    def smartphone_music_offered(self):
+        """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
+        SHS '11 episodes)."""
+        packs = getattr(GAMES.get(self.library.game_id), 'SMARTPHONE_MUSIC_PACKS', ()) if self.library else ()
+        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+
     def portrait_addon_offered(self):
         """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
         change something."""
@@ -1087,6 +1093,12 @@ class Application:
             return False
         profile = GAMES.get(self.library.game_id)
         return any(has_translated_minigames(profile, record) for record in self.library.episodes)
+
+    def word_grid_skin_offered(self):
+        """Whether the "Use Word Grid Skin" switch changes something: translated SHS '11 episodes (their minigames) and the
+        HD bundle's word game art are both in the library."""
+        return (self.smartphone_music_offered() and self.minigames_offered()
+                and all(self.library.hd_raw_resource(i) is not None for i in (512, 569, 571, 583)))
 
     def arena_skin_offered(self):
         """Whether the "X360 Arena Skin" switch changes something: translated New Rules episodes (their arena) and the X360
@@ -1105,6 +1117,16 @@ class Application:
         self.library.ms3_characters = self.state.ms3_characters
         if self.game:
             self.game.set_ms3_characters(self.state.ms3_characters)
+
+    def apply_smartphone_music(self):
+        """The "Smartphone Music" switch reaches a paused episode."""
+        if self.game:
+            self.game.smartphone_music = self.state.smartphone_music
+
+    def apply_word_grid_skin(self):
+        """The "Use Word Grid Skin" switch reaches a paused episode."""
+        if self.game:
+            self.game.word_grid_skin = self.state.word_grid_skin
 
     def apply_ch_portraits(self):
         """The CH "HD Portraits in CoD" switch reaches the library; a paused episode loads its portraits afresh."""
@@ -1902,6 +1924,8 @@ class Application:
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.hires_portraits = self.state.hires_portraits
         self.game.ms3_characters = self.state.ms3_characters
+        self.game.smartphone_music = self.state.smartphone_music
+        self.game.word_grid_skin = self.state.word_grid_skin
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
@@ -2004,6 +2028,8 @@ class Application:
         self.state.hd_backdrop = self.game.hd_backdrop
         self.state.hires_portraits = self.game.hires_portraits
         self.state.ms3_characters = self.game.ms3_characters
+        self.state.smartphone_music = self.game.smartphone_music
+        self.state.word_grid_skin = self.game.word_grid_skin
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
@@ -2261,7 +2287,8 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop', 'arena_minigames',
+                               'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop',
+                               'arena_minigames',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
@@ -2275,6 +2302,10 @@ class Application:
                     self.apply_hires_portraits()
                 if key == 'ms3_characters':
                     self.apply_ms3_characters()
+                if key == 'smartphone_music':
+                    self.apply_smartphone_music()
+                if key == 'word_grid_skin':
+                    self.apply_word_grid_skin()
                 if key == 'ch_portraits':
                     self.apply_ch_portraits()
                 if self.game:

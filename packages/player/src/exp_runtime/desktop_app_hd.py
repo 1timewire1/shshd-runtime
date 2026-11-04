@@ -170,7 +170,8 @@ SLIDER = (143, 460)                     # a volume slider's track: its left and 
 # Characters (MS3_CHARACTER_ART), Use
 # Translated Minigames (TRANSLATED_MINIGAMES) and translated Episode Titles (no CoD episode has one). Each game's own Options still has
 # them.
-ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'ms3_characters', 'ch_portraits',
+ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin',
+                    'ch_portraits',
                     'ch_backdrop', 'arena_minigames', 'arena_skin',
                     'title_language')
 
@@ -218,7 +219,8 @@ class AppOptions:
         v, app = self.values(), self.app
         settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'choice_hints', 'skip_minigames',
                                             'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                                            'hd_backdrop', 'hires_portraits', 'ms3_characters', 'ch_portraits', 'ch_backdrop',
+                                            'hd_backdrop', 'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin',
+                                            'ch_portraits', 'ch_backdrop',
                                             'arena_minigames', 'arena_skin',
                                             'skip_sound_prompt')}
         settings.update(music_volume=v['music_volume'] / 100, sound_volume=v['sound_volume'] / 100,

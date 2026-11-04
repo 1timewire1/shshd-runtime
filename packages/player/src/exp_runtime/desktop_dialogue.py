@@ -36,6 +36,7 @@ def _decoded_size(data: bytes) -> tuple[int, int]:
 ANDROID_MASK_SIZE = (128, 150)
 # shshd-runtime: where a translated speaker's emoticon (draw_portrait_effect) is anchored, as fractions of the portrait
 # housing's width (toward the box) and height (up) from its center: the ring's upper corner on the box's side.
+BADGE_UNITS = 24 / 41                   # SHS '11's icon height, 41 art pixels, to the 24 units of SHS's (translated_badge)
 EFFECT_ANCHOR = (0.30, 0.30)
 
 
@@ -47,6 +48,7 @@ class DialogueRenderer:
     gear_pressed = False    # set by Desktop while the pause gear is held
     def __init__(self, resources, text_renderer, image_loader, scale=1):
         self.resources = resources
+        self._badges = {}
         self.text = text_renderer
         self.image = image_loader
         # Pixels per logical (320x480) unit. Every position and size in this
@@ -853,7 +855,11 @@ class DialogueRenderer:
 
     def indicator_image(self, asset_id, k):
         """A relationship icon at canvas density: chrome_image() for the APK (and its HD supplement), or the
-        iPhone IPA's own UI image (ui_image), which is already at its logical size."""
+        iPhone IPA's own UI image (ui_image), which is already at its logical size. A translated pack can have its own
+        (profile TRANSLATED_BADGE_ART)."""
+        own = self.translated_badge(asset_id, k)
+        if own is not None:
+            return own
         library = getattr(self.resources, 'library', self.resources)
         if getattr(library, 'kind', 'apk') != 'ipa':
             return self.chrome_image(asset_id, k)
@@ -861,6 +867,27 @@ class DialogueRenderer:
         if icon is None or k == 1:
             return icon
         return pygame.transform.smoothscale(icon, (round(icon.get_width() * k), round(icon.get_height() * k)))
+
+    def translated_badge(self, asset_id, k):
+        """This pack's own picture for a relationship icon, at the size SHS's would be, or None. The pictures all have the
+        same margin, so one scale keeps a whole icon and its break in proportion."""
+        record = getattr(self.resources, 'record', None) or {}
+        art = getattr(GAMES.get(self.game_id()), 'TRANSLATED_BADGE_ART', {}).get(record.get('pack_id'), {}).get(asset_id)
+        if art is None:
+            return None
+        key = (art, k)
+        found = self._badges.get(key, False)
+        if found is False:
+            try:
+                image = self.image(art)
+            except (ContentError, pygame.error, OSError, ValueError):
+                image = None
+            found = None
+            if image is not None:
+                scale = BADGE_UNITS * k
+                found = pygame.transform.smoothscale(image, (round(image.get_width() * scale), round(image.get_height() * scale)))
+            self._badges[key] = found
+        return found
 
     def relationship_slots(self, mode):
         """Where the relationship icons rest, as offsets from the portrait housing's center in layout units.

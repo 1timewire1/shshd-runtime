@@ -16,6 +16,7 @@ from .nr_arena import NRArena
 from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
 from .x360_diss import DissPractice, X360_DISS
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
+from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
 from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
 from .character_picker import CharacterPicker
@@ -81,7 +82,23 @@ SHS_HD_YIELDS = NATIVE_DEFAULT_YIELDS | frozenset((
 # instead (Ask to Skip Mini-Games, Session.skip_arena; docs/NEW_RULES.md).
 NR_ARENA_SERVICES = frozenset(range(200, 214))
 NR_ARENA_QUERY = 200
+RELATIONSHIP_SKULL = 3011
 NR_BUILD = {1: 2, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}  # New Rules' 32 as the Java (arena) build answers it
+
+
+def badge_sound(change, sounds):
+    """The sound of a translated pack's relationship change: `sounds`' first if it's for the better, its second if for the
+    worse, neither if it's only another icon for the same standing. More skulls are worse, as fewer of anything else are."""
+    if not change.changed or change.asset_id < 0 or change.previous_asset < 0:
+        return None
+    standing = [-count if asset == RELATIONSHIP_SKULL else count
+                for asset, count in ((change.previous_asset, change.previous_count), (change.asset_id, change.count))]
+    return sounds[0] if standing[1] > standing[0] else sounds[1] if standing[1] < standing[0] else None
+
+
+def _shs11_details(character):
+    """An SHS '11 game's action: who a look that shows a portrait shows (the word game's look, desktop_shs11_hd)."""
+    return dict(left_character=-1, left_expression=0, right_character=signed16(character), right_expression=0)
 
 
 @dataclass
@@ -89,6 +106,7 @@ class EngineState:
     # Not saved: the HD build's app version when an HD app bundle is imported (Session sets it); switches the
     # few services whose HD handler differs from Android's.
     hd_version = None
+    badge_sounds = None             # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
     # selector NR_ARENA_QUERY answers 1 only with it on.
     nr_arena_enabled = False
@@ -142,6 +160,10 @@ class EngineState:
     x360_puzzle: JewelPuzzle | None = None      # shshd-runtime: and their jewel puzzle
     cutscene: Cutscene | None = None            # shshd-runtime: a storyboard cutscene
     x360_diss: DissPractice | None = None       # shshd-runtime: and their Diss Practice
+    shs11_memory: MemoryGame | None = None      # shshd-runtime: SHS '11's Memory (shs11_games.py)
+    shs11_tutorial_seen: bool = False           # (per story: see shs11_games.py)
+    shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
+    shs11_reflex_tutorial_seen: bool = False
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -204,6 +226,7 @@ class EngineState:
         self.x360_puzzle = None
         self.cutscene = None
         self.x360_diss = None
+        self.shs11_memory = self.shs11_reflex = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -317,8 +340,9 @@ class EngineState:
         change.validate()
         self.numbers[self.number_key(character, 3000)] = asset
         self.numbers[self.number_key(character, 3001)] = count
-        if not settled and change.sound is not None:
-            self.request_sound(change.sound)
+        sound = change.sound if self.badge_sounds is None else badge_sound(change, self.badge_sounds)
+        if not settled and sound is not None:
+            self.request_sound(sound)
         return change
 
     def _alert_for(self, post) -> None:
@@ -1021,6 +1045,22 @@ class EngineState:
             need(1)
             self.x360_diss = DissPractice.opened(bool(args[0]))
             return EngineAction('x360_diss', request, False)
+        if y == SHS11_MEMORY:                                   # (likewise): seconds, target, rounds, their table, the player
+            need(5)
+            rounds = []
+            for k in range(args[2]):
+                cue, word, *numbers = [vm.read_word(args[3] + ROUND_WORDS * k + i) for i in range(ROUND_WORDS)]
+                rounds.append([self.resolve_text(vm, cue), self.read_text(vm, word), *numbers])
+            self.shs11_memory = MemoryGame.opened(rounds, args[0], args[1], tutorial=not self.shs11_tutorial_seen)
+            self.shs11_tutorial_seen = True
+            return EngineAction('shs11_memory', request, False, _shs11_details(args[4]))
+        if y == SHS11_REFLEX:                                   # (likewise)
+            need(5)
+            rounds = [[signed16(vm.read_word(args[3] + REFLEX_ROUND_WORDS * k + i)) for i in range(REFLEX_ROUND_WORDS)]
+                      for k in range(args[2])]
+            self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1], tutorial=not self.shs11_reflex_tutorial_seen)
+            self.shs11_reflex_tutorial_seen = True
+            return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
         if y == 3:
             need(3)
             if self.choice_builder is None:

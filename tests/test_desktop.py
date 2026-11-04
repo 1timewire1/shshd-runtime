@@ -1154,6 +1154,62 @@ class DesktopTests(unittest.TestCase):
             ui.command(('pause_toggle', 'hires_portraits'))
             self.assertEqual((ui.hires_portraits, resources.library.hires_portraits), (True, True))
 
+    def test_the_smartphone_music_switch_shows_in_translated_11_episodes_and_leaves_its_effects_alone(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from unittest.mock import MagicMock
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import SMARTPHONE_MUSIC_LABEL, switch_badge
+        from exp_runtime.menu import preference_defaults
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        resources = Resources(branching_program())
+        ui = Desktop(Session(resources), audio=False)
+        self.assertNotIn('smartphone_music', ui._pause_settings())              # an ordinary episode
+        resources.record = dict(resources.record, pack_id=31600, episode_id=1)
+        self.assertIs(ui._pause_settings()['smartphone_music'], True)
+        heard = []
+        ui._sound = lambda key, read: (heard.append(key), MagicMock())[1]
+        ui._play_sounds([26982, 8008])
+        saved = []
+        ui.on_settings = lambda: saved.append(ui.smartphone_music)
+        ui.command(('pause_toggle', 'smartphone_music'))
+        self.assertEqual(saved, [False])
+        ui._play_sounds([26982, 8008])
+        self.assertEqual(heard, [26982, 8008] * 2)                              # '11's own, on and off
+        self.assertIs(preference_defaults()['smartphone_music'], True)
+        self.assertEqual(SMARTPHONE_MUSIC_LABEL, 'Smartphone Music')
+        self.assertEqual(switch_badge('smartphone_music')[0], "'11")
+
+    def test_a_translated_11_episodes_music_is_heard_only_with_the_switch_on(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from unittest.mock import MagicMock
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        resources = Resources(branching_program())
+        resources.record = dict(resources.record, pack_id=31600, episode_id=1)
+        ui = Desktop(Session(resources), audio=False)
+        ui.audio, ui.music_stream = True, MagicMock(volume=ui.music_volume)
+        engine = ui.session.engine
+        engine.music_id, engine.music_serial = 8201, engine.music_serial + 1
+        ui._sync_music()
+        self.assertEqual(ui.music_stream.play.call_count, 1)                    # on (the default)
+        ui.smartphone_music = False
+        ui._sync_music()
+        ui.music_stream.disable.assert_called_once()                            # off: as the Music switch goes off
+        self.assertIs(ui.music_stream.update.call_args.kwargs['enabled'], False)
+        engine.music_id, engine.music_serial = 8217, engine.music_serial + 1
+        ui._sync_music()
+        self.assertEqual(ui.music_stream.play.call_count, 1)                    # and a new request goes unheard
+        ui.smartphone_music = True
+        engine.music_id, engine.music_serial = 8201, engine.music_serial + 1
+        ui._sync_music()
+        self.assertEqual(ui.music_stream.play.call_count, 2)
+
     def test_the_ms3_characters_switch_shows_in_x360_episodes_and_swaps_at_once(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
