@@ -43,7 +43,7 @@ from .desktop_shs11_memory import Shs11MemoryRenderer
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
-from .shs11_games import PLAY
+from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -1647,11 +1647,15 @@ class Desktop:
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
                             'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
                             'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
+                if action.name in ('shs11_memory', 'shs11_reflex'):
+                    self._warm_shs11_sounds(getattr(engine, action.name))
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
-                self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
-                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
+                self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(engine.panel.background_id)
+                if self.pending_background is not None:
+                    self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
                                                                           getattr(renderer, 'edge_bar', 'bar') == 'bar')
                 self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',))]
@@ -3444,6 +3448,19 @@ class Desktop:
         if self.word_grid_skin and self.shs11_hd is not None and self.shs11_hd.available():
             return self.shs11_hd
         return self.shs11_memory_renderer if action.name == 'shs11_memory' else self.shs11_reflex_renderer
+
+    def _warm_shs11_sounds(self, game):
+        """Decode a game's sounds as it opens, so that the first of each isn't decoded in the frame it plays in."""
+        if game is self._shs11_warmed or not self.sound_enabled:
+            return
+        self._shs11_warmed = game
+        for asset in SHS11_GAME_SOUNDS:
+            try:
+                self._sound(asset, lambda name=asset: self.session.resources.read_asset(name))
+            except (ContentError, pygame.error) as error:
+                logging.warning('Sound %s cannot be played: %s', asset, error)
+
+    _shs11_warmed = None
 
     def _shs11_game(self, action):
         """(The SHS '11 game in play, its renderer)."""

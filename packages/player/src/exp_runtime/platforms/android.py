@@ -92,8 +92,9 @@ class Host:
         from android import activity
         from jnius import autoclass
         from ..application import Application
-        from .. import desktop_choice, momentum
+        from .. import desktop_choice, desktop_word_hd, momentum
         desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out
+        desktop_word_hd.QUICK_DRAWING = True        # the word game's haze and turning cubes: `haze_layer`, `turn_ms`
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (owner's report)
         self.activity_api = activity
         self.activity = autoclass('org.kivy.android.PythonActivity').mActivity

@@ -43,6 +43,7 @@ TUTORIAL_CELLS = (8, 6, 5, 4, 3, 2, 1, 7, 0)    # co.a(bg): its fixed deal, not 
 # word without its bonus a short rising pad, one with it, or a full gauge, a longer one, and the time up a whistle.
 SOUND_BASE = 26980
 SOUND_WRONG, SOUND_MISSED_BONUS, SOUND_DONE, SOUND_TIME_UP = SOUND_BASE + 7, SOUND_BASE + 8, SOUND_BASE + 9, SOUND_BASE + 10
+GAME_SOUNDS = (SOUND_WRONG, SOUND_MISSED_BONUS, SOUND_DONE, SOUND_TIME_UP)
 # A round in a story's table, in words: cue, word, bonus, points a letter, letter time, its limit.
 ROUND_WORDS = 6
 LETTER_STEP, BAR_STEP = 10, 5           # what every score in '11's games is a multiple of (its tables)

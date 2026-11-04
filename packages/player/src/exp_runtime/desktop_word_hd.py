@@ -18,6 +18,7 @@ import math
 import random
 
 import pygame
+from PIL import Image
 
 from .graphics import faded, opaque
 from .shs.grid_layout import clamp, ease
@@ -43,6 +44,10 @@ POPUP_BODY, POPUP_FOOT, POPUP_HEAD = 47, 48, 49
 BACKGROUND_ORIGIN = (-64, -220)      # fitted against four photos (the image is a touch squashed)
 BACKGROUND_SCALE_Y = .9875
 HAZE_SCALE, HAZE_SPIN = 2 * 2.844, -20.
+QUICK_DRAWING = False               # a phone's cheaper haze and turning cubes (platforms/android.py): `haze_layer`, `turn_ms`
+TURN_STEP_MS = 33                   # a turning cube's pose lasts this long then
+HAZE_QUICK_MS = 25                  # how often it turns then: every second frame at 60 fps, every frame below 40
+HAZE_TURNED_AT = 4                  # the haze is soft, so it turns at a quarter of its size and is then enlarged (a 1456 px turn every frame is slow)
 CLOUD_SPEED = 15
 
 # The cube: 450 wide, 100 deep, cells 522 apart; the camera (`setup3DTransform`,
@@ -169,6 +174,16 @@ class EffectState:
                 self.shards.remove(shard)
 
 
+def turn_ms(elapsed_ms, cell):
+    """How far on to draw a cube `elapsed_ms` into a turn. On a phone, in steps: each new pose of a cube is drawn from scratch, and a
+    pick in Reflex starts up to eight at once. Steps make poses repeat, so they are found ready more often; and the odd cells are half
+    a step off the even ones, so those eight don't all want a new pose in the same frame. The first step moves at once."""
+    if not QUICK_DRAWING:
+        return elapsed_ms
+    offset = (cell % 2) * TURN_STEP_MS // 2
+    return ((elapsed_ms + offset) // TURN_STEP_MS + 1) * TURN_STEP_MS - offset
+
+
 class HdWordRenderer:
     def __init__(self, resources, art):
         self.resources, self.art = resources, art
@@ -176,6 +191,8 @@ class HdWordRenderer:
         self.edge_bar = 'gear'
         self.hd_layer = True
         self._effects = None
+        self._haze = None
+        self._haze_shown = None
 
     # -- assets ---------------------------------------------------------
     def raw(self, resource_id):
@@ -237,23 +254,53 @@ class HdWordRenderer:
     @lru_cache(maxsize=4)
     def background(self, background_id):
         image = self.art.image(background_id)
+        if image is not None:
+            alpha = pygame.image.tobytes(image, 'RGBA')[3::4]
+            if alpha.count(255) == len(alpha):      # an opaque picture needs no black behind it, and scaling keeps it opaque
+                image = image.convert()
         if image is not None and BACKGROUND_SCALE_Y != 1:
             image = pygame.transform.smoothscale(image, (image.get_width(),
                                                          round(image.get_height() * BACKGROUND_SCALE_Y)))
         return image
 
+    def haze(self):
+        """The haze at the size it turns at, made once."""
+        if self._haze is None:
+            image = self.atlas(ATLAS).image(HAZE)
+            self._haze = pygame.transform.smoothscale(image, (round(image.get_width() * HAZE_SCALE / HAZE_TURNED_AT),
+                                                              round(image.get_height() * HAZE_SCALE / HAZE_TURNED_AT)))
+        return self._haze
+
+    def turned_haze(self, game):
+        turned = pygame.transform.rotate(self.haze(), -HAZE_SPIN * game.visual_ms / 1000)
+        part = pygame.Rect(0, 0, FRAME[0] // HAZE_TURNED_AT, FRAME[1] // HAZE_TURNED_AT)
+        part.center = turned.get_rect().center
+        return turned.subsurface(part)
+
+    def haze_layer(self, game):
+        """The haze turned and enlarged to the frame. On a phone that was most of a frame's budget, and past the budget its clocks
+        settle at half speed, so there it enlarges in two steps, the second without smoothing (it is soft, and this is 2 px), and
+        turns at most 30 times a second. Time, not frames: at a low frame rate it still turns every frame."""
+        if not QUICK_DRAWING:
+            return pygame.transform.smoothscale(self.turned_haze(game), FRAME)
+        shown = self._haze_shown
+        if shown is None or shown[0] is not game or not 0 <= game.visual_ms - shown[1] < HAZE_QUICK_MS:
+            half = pygame.transform.smoothscale(self.turned_haze(game), (FRAME[0] // 2, FRAME[1] // 2))
+            shown = self._haze_shown = game, game.visual_ms, pygame.transform.scale(half, FRAME)
+        return shown[2]
+
     def backdrop(self, game, background_id):
-        canvas = self.canvas
-        canvas.fill((0, 0, 0))
+        self.draw_scene(self.canvas, game, background_id, self.haze_layer(game))
+
+    def draw_scene(self, canvas, game, background_id, haze):
         image = self.background(background_id)
+        if (image is None or image.get_flags() & pygame.SRCALPHA
+                or not image.get_rect(topleft=BACKGROUND_ORIGIN).contains(canvas.get_rect())):
+            canvas.fill((0, 0, 0))
         if image is not None:
             canvas.blit(image, BACKGROUND_ORIGIN)
         atlas = self.atlas(ATLAS)
-        # The haze is soft, so it is turned at half size and enlarged (a 1456 px turn every frame is slow).
-        half = pygame.Surface((384, 512), pygame.SRCALPHA).convert_alpha()
-        atlas.draw(half, HAZE, 192 - 128, 256 - 128, sx=HAZE_SCALE / 2, angle=HAZE_SPIN * game.visual_ms / 1000,
-                   pivot=(128, 128))
-        canvas.blit(pygame.transform.smoothscale(half, FRAME), (0, 0))
+        canvas.blit(haze, (0, 0))
         if game.phase == -2:
             return
         entry = game.phase_ms / 1500 if game.phase == -1 else 0.
@@ -612,8 +659,10 @@ class HdWordRenderer:
         left, top = math.floor(min(xs)), math.floor(min(ys))
         surface = pygame.Surface((math.ceil(max(xs)) - left + 1, math.ceil(max(ys)) - top + 1),
                                  pygame.SRCALPHA).convert_alpha()
+        # In a phone's turn the cube is in motion and gone in moments: no smoothing, at about a third of the time.
+        resample = Image.Resampling.NEAREST if QUICK_DRAWING and angle else Image.Resampling.BILINEAR
         for image, quad, opacity in operations:
-            draw_quad(surface, image, [(x - left, y - top) for x, y in quad], opacity)
+            draw_quad(surface, image, [(x - left, y - top) for x, y in quad], opacity, resample)
         return surface, left, top
 
     @staticmethod

@@ -185,7 +185,7 @@ def to_pil(surface):
     return Image.frombytes('RGBA', surface.get_size(), pygame.image.tobytes(surface, 'RGBA'))
 
 
-def draw_quad(canvas, source, quad, alpha=1.):
+def draw_quad(canvas, source, quad, alpha=1., resample=Image.Resampling.BILINEAR):
     """`source` (a PIL RGBA image) projected onto the screen quad (TL, TR, BR, BL),
     perspective-correct, as the GL cube faces are."""
     xs, ys = [p[0] for p in quad], [p[1] for p in quad]
@@ -198,8 +198,7 @@ def draw_quad(canvas, source, quad, alpha=1.):
     coefficients = perspective_coefficients(local, source.size)
     if coefficients is None:
         return
-    warped = source.transform((width, height), Image.Transform.PERSPECTIVE, coefficients,
-                              Image.Resampling.BILINEAR)
+    warped = source.transform((width, height), Image.Transform.PERSPECTIVE, coefficients, resample)
     surface = pygame.image.frombytes(warped.tobytes(), (width, height), 'RGBA').convert_alpha()
     if alpha < 1:
         surface = faded(surface, round(255 * max(0., alpha)))

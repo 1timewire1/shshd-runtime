@@ -20,12 +20,12 @@ import pygame
 
 from .desktop_shs11_memory import memory_spec
 from .desktop_word_hd import (ATLAS, EFFECT_SLOTS, FRAME, HEADING_LINES, HEADING_SLIDE, SHARDS, TOP_FACE, EffectState, HdWordRenderer, Shard,
-                              keyword_pose)
+                              keyword_pose, turn_ms)
 from .graphics import opaque
 from .hd_gl import to_pil
 from .shs.grid_layout import clamp, ease
 from .shs11_games import (AGE, BAD, BARS, BARS_SHOWN, BONUS_SHOWN_MS, CUE, CUE_MS, DEAL, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, HIDDEN,
-                          LOOK, PENALTY, PICTURE, PLAY, READY, RIGHT, RIGHT_PICTURE, SELECT, SHOWN, SHUT_MS, SHUTTING, SKULL, TIME_UP, TIME_UP_MS,
+                          LOOK, PENALTY, PICTURE, PLAY, READY, RIGHT, RIGHT_PICTURE, SELECT, SHOWN, SHUT_MS, SHUTTING, SKULL, SKULL_PICTURE, TIME_UP, TIME_UP_MS,
                           WRONG, WRONG_PICTURE)
 
 BOARD = SimpleNamespace(width=3, height=3)
@@ -152,8 +152,14 @@ class Shs11HdRenderer(HdWordRenderer):
             if turn is None or turn[0] != face:
                 turn = self.turns[cell] = [face, turn[0] if turn else '', game.visual_ms]
             length = ((SHUT_MS if not face else game.row[FLASH_MS_WORD]) if reflex else TURN_MS)
-            angle = (1 - clamp((game.visual_ms - turn[2]) / length)) * 180
+            angle = (1 - clamp(turn_ms(game.visual_ms - turn[2], cell) / length)) * 180
             self.cube(3, 3, cell % 3, cell // 3, mode, face, turn[1] if angle else '', angle=angle)
+
+    def warm_icons(self, game):
+        for row in game.rounds:
+            for picture in (row[RIGHT_PICTURE], row[WRONG_PICTURE], row[SKULL_PICTURE]):
+                for bars in range(len(BAR_FRAMES) + 1):
+                    self.icon_tile(ICON_BASE + picture * 10 + bars)
 
     # -- the rest of the frame --------------------------------------------
     def hud(self, game):
@@ -270,6 +276,8 @@ class Shs11HdRenderer(HdWordRenderer):
         game = session.engine.shs11_reflex if reflex else session.engine.shs11_memory
         if self.game is not game:
             self.game, self.turns, self._effects = game, {}, None
+            if reflex:                          # now, not in the middle of its first set
+                self.warm_icons(game)
         spec = self._spec()[0]
         self.backdrop(game, session.engine.panel.background_id)
         self.portraits(session, game)
