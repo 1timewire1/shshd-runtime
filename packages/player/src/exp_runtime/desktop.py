@@ -109,6 +109,9 @@ CONTINUE_GUARD_MS = 250
 WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 
 
+OPAQUE_ENOUGH = 250
+
+
 def window_margins(size, frame):
     """The parts of a window of `size` outside the rect `frame`."""
     width, height = size
@@ -2218,6 +2221,8 @@ class Desktop:
                 and not layer.get_masks()[3]
                 and layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0])
 
+    _background_cover = None        # what `_blit_art` last covered the whole frame with, opaquely
+
     def _draw_background_layer(self, target_size, viewport, covered=False):
         """Composited directly at window resolution, under the UI canvas.
 
@@ -2240,15 +2245,19 @@ class Desktop:
         """
         # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
-        if not covered:
+        background = self.pending_background
+        placement = None if background is None else self._background_placement(background, target_size)
+        change = self._location_change(background, placement)
+        # What is under an opaque picture that filled the frame last frame and does again needn't be drawn.
+        hidden = (change is None and self.pending_background_alpha >= 255 and placement is not None
+                  and self._background_cover == (id(background), tuple(placement), tuple(viewport)))
+        if not covered and not hidden:
             self.window.fill((0, 0, 0), viewport)
             # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
             frame_backdrop = self._frame_backdrop(viewport.size)
             if frame_backdrop is not None:
                 self.window.blit(frame_backdrop, viewport)
-        background = self.pending_background
-        placement = None if background is None else self._background_placement(background, target_size)
-        change = self._location_change(background, placement)
+        self._background_cover = None
         if placement is not None:
             if change is not None and change['from'] is not None:
                 placement = tuple(a + (b - a) * change['p'] for a, b in zip(change['from'], placement))
@@ -2431,9 +2440,18 @@ class Desktop:
         else:
             source = background if crop is None else background.subsurface(crop)
             scaled_bg = pygame.transform.smoothscale(source, area.size)
+            if min(pygame.image.tobytes(scaled_bg, 'RGBA')[3::4]) >= OPAQUE_ENOUGH:     # smoothscale leaves an opaque picture at 253 or 254
+                scaled_bg = scaled_bg.convert()
             if cache:
                 self._background_layer_cache = (key, scaled_bg)
-        scaled_bg = faded(scaled_bg, round(alpha))
+        if scaled_bg.get_masks()[3]:
+            scaled_bg = faded(scaled_bg, round(alpha))
+        elif alpha < 255:
+            scaled_bg = faded(scaled_bg.copy(), round(alpha))
+        else:
+            # Never given a whole-surface alpha, even 255: that takes a blit from about 1 ms to 33 on a phone.
+            if cache and area == viewport:
+                self._background_cover = (id(background), tuple(placement), tuple(viewport))
         self.window.blit(scaled_bg, area)
 
     def _draw_scene_badge(self, badge, *, previous_glyph=-1):
