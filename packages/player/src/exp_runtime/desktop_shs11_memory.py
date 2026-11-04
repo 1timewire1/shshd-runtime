@@ -11,7 +11,7 @@ import io
 import json
 
 from . import graphics as pygame
-from .shs11_games import BAD, BLANK, CELLS, CUE, DEAL, GOAL, HIDDEN, LOOK, NEXT, PLAY, READY, RIGHT, SHOWN, TIME_UP, WRONG
+from .shs11_games import GRID_TEXT, BAD, BLANK, CELLS, CUE, DEAL, GOAL, HIDDEN, LOOK, NEXT, PLAY, READY, RIGHT, SHOWN, TIME_UP, WRONG
 
 ADDON, SPEC, FORMAT, VERSION = 'shs11', 26199, 'shshd-shs11', 1
 FRAME = (768, 1024)
@@ -272,7 +272,7 @@ class Shs11MemoryRenderer:
 
     def draw(self, session):
         game = session.engine.shs11_memory
-        text = self._spec()[0]['text']
+        text = GRID_TEXT if game.grid else self._spec()[0]['text']
         if self.canvas is None:
             self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
         surface = self.canvas

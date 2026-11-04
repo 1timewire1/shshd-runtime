@@ -31,6 +31,7 @@ from .story_labels import prepare_labels, story_labels
 from .title_screen import TitleScreen
 from .loading import loading_waits, retained_word
 from .minigames import MINIGAMES
+from .shs11_games import GRID_SOUNDS, SOUND_RIGHT_PICK
 from .cutscene import Cutscene
 from .x360_diss import PASS_SCORE
 from .x360_games import SLOTS
@@ -153,6 +154,8 @@ class Session:
     # shshd-runtime: whether New Rules' minigame arena plays (nr_arena.py) where a translated story offers it; off, its
     # story plays the word game or timed choices it carries for apps without the arena. Not saved: read at each call.
     nr_arena = True
+    grids_as_memory = False     # the "Use '11's Memory for Word Grid" switch: asked as each grid opens, so one already open stays
+    shs11_hd_sounds = False     # '11's games drawn in the Word Grid skin have its sounds too (GRID_SOUNDS; owner, 2026-11-04)
     cutscenes = False           # shshd-runtime: whether a player draws storyboard cutscenes (desktop_cutscene)
     # shshd-runtime: Ask to Skip Mini-Games for New Rules' arena: service 213 waits (an 'arena_skip' screen) for the
     # result to give the story instead, or -1 to play. Off, it plays at once. Not saved: read at each call.
@@ -428,7 +431,7 @@ class Session:
         elif kind == 'x360_diss':
             return self._complete_minigame(result=PASS_SCORE + 1 if success else 0)
         elif kind in ('shs11_memory', 'shs11_reflex'):
-            return self._complete_minigame(result=2 if success else 0)
+            return self._complete_minigame(result=getattr(game, 'best_result', 2) if success else 0)
         else:
             # Preserve starting scores where possible, adding enough points for
             # the requested side to win by a touchdown without signed overflow.
@@ -649,6 +652,7 @@ class Session:
             if request.kind == StopKind.YIELD:
                 queued_notice = self.engine.next_dialogue_notice
                 self.engine.nr_arena_enabled = self.nr_arena
+                self.engine.grids_as_memory = self.grids_as_memory
                 self.engine.nr_arena_skip = self.skip_arena
                 self.engine.badge_sounds = self._badge_sounds()
                 self.engine.cutscenes_enabled = self.cutscenes
@@ -1051,7 +1055,12 @@ class Session:
 
     def _shs11_sounds(self, game):
         if game.sounds:
-            self.engine.request_sound(*game.sounds)
+            if self.shs11_hd_sounds or getattr(game, 'grid', False):
+                sounds = [asset for sound in game.sounds for asset in GRID_SOUNDS.get(sound, (sound,))]
+            else:
+                sounds = [sound for sound in game.sounds if sound != SOUND_RIGHT_PICK]
+            if sounds:
+                self.engine.request_sound(*sounds)
             game.sounds.clear()
 
     def _slot_sounds(self):
@@ -1280,7 +1289,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=36,
+        return dict(format='shs-runtime-save', version=37,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1321,8 +1330,12 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 37):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 38):
                 raise SaveError('Unsupported save format or version')
+            # Version 37 lets Memory stand in for a word grid (shs11_games.grid_memory); an older save's never does.
+            if state['version'] < 37 and isinstance(state.get('engine'), dict) and isinstance(state['engine'].get('shs11_memory'), dict):
+                state = deepcopy(state)
+                state['engine']['shs11_memory'].setdefault('grid', False)
             # Version 36 adds SHS '11's Memory and Reflex (shs11_games.py); an older save never had one, and saw no tutorial.
             if state['version'] < 36 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
@@ -1769,7 +1782,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,), 'shs11_memory': (219,), 'shs11_reflex': (220,)}
+                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

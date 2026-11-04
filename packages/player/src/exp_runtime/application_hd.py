@@ -346,6 +346,8 @@ class HdShell:
             settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
+        if self.app.grids_as_memory_offered():
+            settings['grids_as_memory'] = state.grids_as_memory     # ...with SHS '11's addon
         if self.app.word_grid_skin_offered() and state.arena_minigames:
             settings['word_grid_skin'] = state.word_grid_skin       # ...with the HD bundle's word game art
         if self.app.arena_skin_offered() and state.arena_minigames:
@@ -435,6 +437,8 @@ class HdShell:
             self.app.apply_smartphone_music()
         if which == 'word_grid_skin':
             self.app.apply_word_grid_skin()
+        if which == 'grids_as_memory':
+            self.app.apply_grids_as_memory()
         if which == 'ch_portraits':
             self.app.apply_ch_portraits()
         self.app.menu_music_changed(switched=which == 'music')

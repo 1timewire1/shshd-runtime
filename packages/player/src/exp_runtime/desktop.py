@@ -39,11 +39,11 @@ from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_directi
 from .desktop_cutscene import CutsceneRenderer
 from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
-from .desktop_shs11_memory import Shs11MemoryRenderer
+from .desktop_shs11_memory import Shs11MemoryRenderer, memory_spec
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
-from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, PLAY
+from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
 from .desktop_hd_menu import HdMenuWindows
@@ -148,13 +148,13 @@ def arena_skip_options(outcomes):
     return labels, tuple(low for low, _ in reversed(outcomes))
 
 
-def shs11_skip_options(outcomes):
+def shs11_skip_options(outcomes, best=2):
     """(option labels, the result each hands the story) for an SHS '11 game's skip prompt, best first, then "Play" (labels only):
     Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, Win / Come close / Lose for its three."""
     if outcomes is None or len(outcomes) == 2:
-        return ('Win', 'Lose', 'Play'), (2, 0)
+        return ('Win', 'Lose', 'Play'), (best, 0)
     if len(outcomes) == 1:
-        return ('Skip', 'Play'), (2,)
+        return ('Skip', 'Play'), (best,)
     return ('Win', 'Come close', 'Lose', 'Play'), (2, 1, 0)
 
 
@@ -282,7 +282,7 @@ class Desktop:
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
     smartphone_music = True         # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
-    word_grid_skin = False          # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
+    _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
@@ -332,9 +332,53 @@ class Desktop:
         session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
         session.choice_timer = not self._disable_choice_timer
         session.nr_arena = self._arena_minigames
+        session.grids_as_memory = self._grids_as_memory
+        session.shs11_hd_sounds = self._skin_has_its_sounds()
         session.skip_arena = self._skip_minigames
         session.cutscenes = True            # (this player draws them: desktop_cutscene)
         self._session = session
+
+    @property
+    def word_grid_skin(self):
+        """The "Use Word Grid Skin" switch: SHS '11's games in the HD word game's look, and with its sounds (Session.shs11_hd_sounds)."""
+        return self._word_grid_skin
+
+    @word_grid_skin.setter
+    def word_grid_skin(self, value):
+        self._word_grid_skin = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.shs11_hd_sounds = self._skin_has_its_sounds()
+
+    def _skin_has_its_sounds(self):
+        """Only where the skin really draws: without the HD bundle's art, '11's own look keeps '11's own sounds."""
+        hd = getattr(self, 'shs11_hd', None)
+        return self._word_grid_skin and hd is not None and hd.available()
+
+    _grids_as_memory = False
+
+    @property
+    def grids_as_memory(self):
+        """shshd-runtime's "Use '11's Memory for Word Grid" (owner, 2026-11-04): letter grids play as SHS '11's Memory.
+        Asked as each grid opens (shs11_games.grid_memory), so one already open stays as it is."""
+        return self._grids_as_memory
+
+    @grids_as_memory.setter
+    def grids_as_memory(self, value):
+        self._grids_as_memory = bool(value) and self.memory_grid_switch()
+        if getattr(self, '_session', None) is not None:
+            self._session.grids_as_memory = self._grids_as_memory
+
+    def memory_grid_switch(self):
+        """Whether the switch is offered: in SHS, with what can draw the game: the HD word game's art (the Word Grid skin, which it
+        always has), or failing that SHS '11's addon (its own look)."""
+        if game_id(self.session.resources) != 'shs':
+            return False
+        if self.shs11_hd is not None and self.shs11_hd.art_available():
+            return True
+        try:
+            return memory_spec(self.session.resources) is not None
+        except (ContentError, OSError, ValueError):
+            return False
 
     @property
     def skip_minigames(self):
@@ -1072,7 +1116,8 @@ class Desktop:
         if (prompt is None and self.skip_minigames and action is not None and action.name in ('shs11_memory', 'shs11_reflex')
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             # shshd-runtime: SHS '11's games offer each result their story treats differently.
-            options, results = shs11_skip_options(shs11_outcomes(self.session))
+            options, results = shs11_skip_options(shs11_outcomes(self.session),
+                                                  getattr(getattr(self.session.engine, action.name), 'best_result', 2))
             prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, len(results)), options,
                                        lambda index: self._resolve_shs11(action, results, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
@@ -1656,7 +1701,8 @@ class Desktop:
                 self.story_layer = renderer.canvas
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
-                self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(engine.panel.background_id)
+                self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(
+                    action.details.get('background_id', engine.panel.background_id))     # (a grid names its own)
                 if self.pending_background is not None:
                     self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
@@ -2615,6 +2661,7 @@ class Desktop:
                     **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
+                    **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
@@ -2797,6 +2844,8 @@ class Desktop:
                 self.smartphone_music = not self.smartphone_music
             elif command[1] == 'word_grid_skin':
                 self.word_grid_skin = not self.word_grid_skin
+            elif command[1] == 'grids_as_memory':
+                self.grids_as_memory = not self.grids_as_memory
             elif command[1] == 'ch_portraits':
                 self.set_ch_portraits(not self.ch_portraits)
             elif command[1] == 'ch_backdrop':
@@ -3463,7 +3512,9 @@ class Desktop:
 
     def shs11_renderer(self, action):
         """What draws an SHS '11 game: its own look, or the word game's with the switch on and its art there."""
-        if self.word_grid_skin and self.shs11_hd is not None and self.shs11_hd.available():
+        game = self.session.engine.shs11_memory if action.name == 'shs11_memory' else None
+        stands_in = game is not None and game.grid          # in a grid's place it always has a grid's look (owner, 2026-11-04)
+        if self.shs11_hd is not None and (self.shs11_hd.art_available() if stands_in else self.word_grid_skin and self.shs11_hd.available()):
             return self.shs11_hd
         return self.shs11_memory_renderer if action.name == 'shs11_memory' else self.shs11_reflex_renderer
 
@@ -3472,7 +3523,8 @@ class Desktop:
         if game is self._shs11_warmed or not self.sound_enabled:
             return
         self._shs11_warmed = game
-        for asset in SHS11_GAME_SOUNDS:
+        hd_sounds = getattr(game, 'grid', False) or self.session.shs11_hd_sounds
+        for asset in {a for assets in GRID_SOUNDS.values() for a in assets} if hd_sounds else SHS11_GAME_SOUNDS:
             try:
                 self._sound(asset, lambda name=asset: self.session.resources.read_asset(name))
             except (ContentError, pygame.error) as error:

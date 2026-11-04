@@ -1123,6 +1123,23 @@ class Application:
         if self.game:
             self.game.smartphone_music = self.state.smartphone_music
 
+    def grids_as_memory_offered(self):
+        """Whether the "Use '11's Memory for Word Grid" switch can draw its game: in SHS, with the HD word game's art or SHS '11's addon."""
+        from .desktop_shs11_memory import memory_spec
+        if self.library.game_id != 'shs':
+            return False
+        if all(self.library.hd_raw_resource(i) is not None for i in (512, 569, 571, 583)):
+            return True
+        try:
+            return memory_spec(SimpleNamespace(library=self.library)) is not None
+        except (ContentError, OSError, ValueError):
+            return False
+
+    def apply_grids_as_memory(self):
+        """The "Use '11's Memory for Word Grid" switch reaches a paused episode: it's asked as each grid opens."""
+        if self.game:
+            self.game.grids_as_memory = self.state.grids_as_memory
+
     def apply_word_grid_skin(self):
         """The "Use Word Grid Skin" switch reaches a paused episode."""
         if self.game:
@@ -1926,6 +1943,7 @@ class Application:
         self.game.ms3_characters = self.state.ms3_characters
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
+        self.game.grids_as_memory = self.state.grids_as_memory
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
@@ -2030,6 +2048,7 @@ class Application:
         self.state.ms3_characters = self.game.ms3_characters
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
+        self.state.grids_as_memory = self.game.grids_as_memory
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
@@ -2287,7 +2306,7 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop',
+                               'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
                                'arena_minigames',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
@@ -2306,6 +2325,8 @@ class Application:
                     self.apply_smartphone_music()
                 if key == 'word_grid_skin':
                     self.apply_word_grid_skin()
+                if key == 'grids_as_memory':
+                    self.apply_grids_as_memory()
                 if key == 'ch_portraits':
                     self.apply_ch_portraits()
                 if self.game:

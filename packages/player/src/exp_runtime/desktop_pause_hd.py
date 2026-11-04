@@ -46,6 +46,7 @@ SLIDER_ROW = 130
 SIDE_PANELS_LABEL = 'Side Panels'
 CHOICE_HINTS_LABEL = 'Choice Hints'
 SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
+GRIDS_AS_MEMORY_LABEL = "Use '11's Memory for Word Grid"     # SHS '11's game in place of letter grids (owner, 2026-11-04)
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
 SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS episodes open with (upsell_intro.py)
 VIBRATION_SOUND_LABEL = 'Simulated Vibration Sound'
@@ -98,7 +99,7 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
                      ('addons', 'Add-Ons'), ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
-EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames')
+EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'grids_as_memory')
 ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -151,6 +152,7 @@ CYCLE_SIZE, CYCLE_POINTS = (104, 34), 18
 SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VIBRATION_LABEL,
                  'autoplay': AUTOPLAY_LABEL, 'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
+                 'grids_as_memory': GRIDS_AS_MEMORY_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
                  'ms3_characters': MS3_CHARACTERS_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,

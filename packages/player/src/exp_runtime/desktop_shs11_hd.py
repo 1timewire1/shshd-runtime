@@ -24,11 +24,13 @@ from .desktop_word_hd import (ATLAS, EFFECT_SLOTS, FRAME, HEADING_LINES, HEADING
 from .graphics import opaque
 from .hd_gl import to_pil
 from .shs.grid_layout import clamp, ease
-from .shs11_games import (AGE, BAD, BARS, BARS_SHOWN, BONUS_SHOWN_MS, CUE, CUE_MS, DEAL, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, HIDDEN,
+from .shs11_games import (GRID_TEXT, AGE, BAD, BARS, BARS_SHOWN, BONUS_SHOWN_MS, CUE, CUE_MS, DEAL, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, HIDDEN,
                           LOOK, PENALTY, PICTURE, PLAY, READY, RIGHT, RIGHT_PICTURE, SELECT, SHOWN, SHUT_MS, SHUTTING, SKULL, SKULL_PICTURE, TIME_UP, TIME_UP_MS,
                           WRONG, WRONG_PICTURE)
 
 BOARD = SimpleNamespace(width=3, height=3)
+QUESTION_STROKE, QUESTION_EDGE = 120, 60        # how little blue is all stroke, and how much more is all fill
+GRID_QUESTION, QUESTION_FONT = '\uF8FF', 'big'     # a hidden cell's face in Memory in a grid's place, and the font it comes from
 ICON_BASE = 0xE000                      # a tile's "letter" that is one of Reflex's icons: + 10 x its picture + its bars
 BAR_FRAMES = (14, 15, 16)
 ICON_TINT = (60, 120, 225, 255)         # the cube letters' blue
@@ -66,6 +68,10 @@ class Shs11HdRenderer(HdWordRenderer):
         except Exception:                               # a damaged addon: '11's own look says so
             return False
         return found is not None and found[0].get('reflex') is not None and super().available()
+
+    def art_available(self):
+        """The player's HD bundle has the word game's art, which is all Memory in a grid's place needs (it wants no addon)."""
+        return HdWordRenderer.available(self)
 
     def alpha(self, game):
         return None
@@ -110,8 +116,34 @@ class Shs11HdRenderer(HdWordRenderer):
             found = self._pictures['?'] = to_pil(part)
         return found
 
+    def grid_question_mark(self):
+        """The same, for Memory in a grid's place: '11's with its addon (owner, 2026-11-04), so the addon is never needed for it, else
+        the HD word game's big font's. Only that one's white fill, in the cube letters' blue: its orange stroke would make it far
+        heavier than they are. Orange is low in blue, white isn't."""
+        found = self._pictures.get(GRID_QUESTION)
+        if found is None:
+            try:
+                has_addon = self._spec() is not None
+            except Exception:                           # a damaged addon: as if it weren't there
+                has_addon = False
+            if has_addon:
+                found = self._pictures[GRID_QUESTION] = self.question_mark()
+                return found
+            font = self.font(QUESTION_FONT)
+            x, y, w = font.font.glyph('?')
+            part = font.sheet.subsurface((x, y, w, font.height)).copy()
+            for py in range(part.get_height()):
+                for px in range(part.get_width()):
+                    colour = part.get_at((px, py))
+                    keep = clamp((min(colour.r, colour.g, colour.b) - QUESTION_STROKE) / QUESTION_EDGE)
+                    part.set_at((px, py), (*ICON_TINT[:3], round(colour.a * keep)))
+            found = self._pictures[GRID_QUESTION] = to_pil(part.subsurface(part.get_bounding_rect()).copy())
+        return found
+
     def glyph_quad(self, char, vertex, depth, mirrored, symbols):
-        if char == '?':
+        if char == GRID_QUESTION:
+            image, h = self.grid_question_mark(), QUESTION_HEIGHT
+        elif char == '?':
             image, h = self.question_mark(), QUESTION_HEIGHT
         elif ord(char) >= ICON_BASE:
             image, h = self.icon_tile(ord(char))[0], ICON_HEIGHT
@@ -131,7 +163,7 @@ class Shs11HdRenderer(HdWordRenderer):
         if show == WRONG:
             return 'X', 4
         if show == HIDDEN:
-            return '?', 0
+            return GRID_QUESTION if game.grid else '?', 0
         if game.phase in (DEAL, LOOK) and cell in game.order[:len(game.landing)]:
             return game.cells[cell], 0
         return '', 0
@@ -278,8 +310,9 @@ class Shs11HdRenderer(HdWordRenderer):
             self.game, self.turns, self._effects = game, {}, None
             if reflex:                          # now, not in the middle of its first set
                 self.warm_icons(game)
-        spec = self._spec()[0]
-        self.backdrop(game, session.engine.panel.background_id)
+        spec = None if not reflex and game.grid else self._spec()[0]
+        texts = GRID_TEXT if spec is None else spec['text']
+        self.backdrop(game, session.pending.details.get('background_id', session.engine.panel.background_id))
         self.portraits(session, game)
         self.hud(game)
         if reflex and game.row and game.phase != GOAL:
@@ -292,7 +325,7 @@ class Shs11HdRenderer(HdWordRenderer):
         self.shards(game, reflex)
         self.floats(game)
         if not reflex and game.bonus_ms > 0:
-            self.banner_text(spec['text']['spelling'], BONUS_SHOWN_MS - game.bonus_ms, BONUS_SHOWN_MS)
+            self.banner_text(texts['spelling'], BONUS_SHOWN_MS - game.bonus_ms, BONUS_SHOWN_MS)
         if reflex:
             key = REFLEX_BOXES.get(game.phase) if game.tutorial and game.wait_ms <= 0 else None
             if key is not None:
@@ -302,7 +335,7 @@ class Shs11HdRenderer(HdWordRenderer):
             if game.tutorial and game.phase == DEAL:
                 key = 'look'
             if key is not None:
-                self.box(POPUP_TITLES[name], spec['text'][key])
+                self.box(POPUP_TITLES[name], texts[key])
         if game.phase == TIME_UP:
             self.banner_text(self.strings()[57], TIME_UP_MS - game.phase_ms, TIME_UP_MS)
         opaque(self.canvas)

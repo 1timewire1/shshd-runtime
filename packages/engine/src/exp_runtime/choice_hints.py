@@ -228,7 +228,8 @@ def shs11_outcomes(session, *, max_steps=6000, max_panels=30):
 
     def finish(preview, result):
         preview._complete_minigame(result=result)
-    return _outcomes(session, finish, range(3), max_steps, max_panels, numbers=False)
+    game = getattr(session.engine, session.pending.name)
+    return _outcomes(session, finish, range(getattr(game, 'best_result', 2) + 1), max_steps, max_panels, numbers=False)
 
 
 def arena_outcomes(session, *, max_steps=40000, max_panels=30):

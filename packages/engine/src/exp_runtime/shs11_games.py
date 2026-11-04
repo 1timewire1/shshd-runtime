@@ -44,9 +44,82 @@ TUTORIAL_CELLS = (8, 6, 5, 4, 3, 2, 1, 7, 0)    # co.a(bg): its fixed deal, not 
 SOUND_BASE = 26980
 SOUND_WRONG, SOUND_MISSED_BONUS, SOUND_DONE, SOUND_TIME_UP = SOUND_BASE + 7, SOUND_BASE + 8, SOUND_BASE + 9, SOUND_BASE + 10
 GAME_SOUNDS = (SOUND_WRONG, SOUND_MISSED_BONUS, SOUND_DONE, SOUND_TIME_UP)
+# Standing in for a word grid, or with '11's own games in the Word Grid skin (Reflex: the wrong pick, the full gauge as a finished word,
+# the time up), it has the HD minigames' own sounds in place of '11's, chosen by ear (owner, 2026-11-04): a wrong pick is
+# the grid's wrong trace, a word without its bonus the quiz's right answer, one with it the grid's found word, and the time up the grid's.
+# Any finished word also has the tiles breaking (8111, which the grid plays with its found word), as they break either way.
+# Reflex's right picks are silent in '11, which feels empty in the skin: there they have the quiz's right answer (SOUND_RIGHT_PICK is no
+# sound of its own: in '11's look it's dropped).
+SOUND_RIGHT_PICK = -1
+GRID_SOUNDS = {SOUND_WRONG: (8109,), SOUND_MISSED_BONUS: (8001, 8111), SOUND_DONE: (8110, 8111), SOUND_TIME_UP: (8113,),
+               SOUND_RIGHT_PICK: (8001,)}
 # A round in a story's table, in words: cue, word, bonus, points a letter, letter time, its limit.
 ROUND_WORDS = 6
 LETTER_STEP, BAR_STEP = 10, 5           # what every score in '11's games is a multiple of (its tables)
+
+
+# Memory in place of a word grid (the "Use '11's Memory for Word Grid" switch; owner, 2026-11-04): our own idea, as '11 only swapped a
+# grid for Memory once. A round takes '11's usual points and its middle speed. The target is what a player keeps up with: it
+# walks the words at a steady pace through the grid's own time and takes 75% of what that scores. Over '11's own 60 s and five-letter
+# words that comes to the 300-400 its stories ask for (Best Party Ever: 350), and a grid's usual 45 s and 4-6 words fit about once.
+# Its words, here so it needs no addon: '11's, but for how the first says to pick a box (owner, 2026-11-04: on a touch screen too).
+GRID_TEXT = dict(
+    spelling='Spelling Bonus',
+    goal='Your goal in this game is to select boxes in order to find the letters that spell a word.',
+    look='Look closely where the letters of the target word go on the grid and memorize their locations.',
+    select="You can select the boxes in any order, but if you spell the word in the right order, you'll get a Spelling Bonus!",
+    careful='Be careful: selecting a wrong box will result in a time penalty!',
+    ready='Ready to try the real thing? Good luck!',
+    time_up="Time's up!")
+GRID_BONUS, GRID_LETTER_POINTS = 20, 10
+GRID_LETTER_MS, GRID_LIMIT_MS, GRID_LIMIT_LETTER_MS = 570, 4250, 700
+GRID_PICK_MS = 500                      # the pace a target assumes: a pick this often
+GRID_TARGET_PERCENT = 75
+GRID_LEAST_SECONDS = 30                 # shorter ones are scenes of their own (a grid of 8 s), not games to swap
+
+
+def grid_target(rounds, seconds):
+    """The score to ask for of these rounds in this long."""
+    score, left, index = 0, seconds * 1000, 0
+    while True:
+        round_ = rounds[index % len(rounds)]
+        letters = len(round_[1])
+        # The clock starts at the first game's first pick, so the first cue and deal are free.
+        left -= letters * GRID_PICK_MS if index == 0 else (NEXT_MS + CUE_MS + letters * GRID_LETTER_MS // 2 + GRID_LETTER_MS
+                                                           + letters * GRID_PICK_MS)
+        if left < 0:
+            break
+        score += letters * GRID_LETTER_POINTS + GRID_BONUS
+        index += 1
+    least = max(GRID_LETTER_POINTS, score * GRID_TARGET_PERCENT // 100)
+    return least - least % GRID_LETTER_POINTS
+
+
+def grid_memory(grid, random, *, tutorial=False):
+    """The Memory game for this word grid (shs/word_grid.WordGrid, only read), or None where it should stay a grid: pictures,
+    a word that won't fit the board or the letter font, no score to reach, a very short game. The grid's result (service
+    96, reached or not) is still what the story gets."""
+    if (grid.symbols or grid.target <= 0 or grid.duration_ms < GRID_LEAST_SECONDS * 1000 or not grid.problems):
+        return None
+    order = list(range(len(grid.problems)))
+    if grid.shuffle:
+        for i in range(len(order) - 1, 0, -1):
+            j = random.below(i + 1)
+            order[i], order[j] = order[j], order[i]
+    rounds = []
+    for problem in (grid.problems[i] for i in order):
+        cue = ' '.join(problem.heading.split())
+        for word in problem.words:
+            if not (1 <= len(word) <= CELLS and word.isascii() and word.isalpha()):
+                return None
+            rounds.append([cue, word.upper(), GRID_BONUS, GRID_LETTER_POINTS, GRID_LETTER_MS,
+                           max(GRID_LIMIT_MS, len(word) * GRID_LIMIT_LETTER_MS)])
+    if not rounds:
+        return None
+    seconds = grid.duration_ms // 1000
+    game = MemoryGame.opened(rounds, seconds, grid_target(rounds, seconds), tutorial=tutorial)
+    game.grid = True
+    return game
 
 
 def lowest_score(target, percent, step):
@@ -87,6 +160,7 @@ class MemoryGame:
     flash: list[int] = field(default_factory=lambda: [-1, 0])   # the cell just pressed, and how long ago
     sounds: list[int] = field(default_factory=list)     # waiting for the session to play
     visual_ms: int = 0                  # how long it has been up (for its look's clouds and turning cubes; nothing here reads it)
+    grid: bool = False                  # standing in for a word grid (`grid_memory`): its result is 1 or 0, its sounds GRID_SOUNDS
 
     @classmethod
     def opened(cls, rounds, seconds, target, *, tutorial=False):
@@ -94,8 +168,14 @@ class MemoryGame:
                    phase=GOAL if tutorial else NEXT, phase_ms=NEXT_MS if not tutorial else 0)
 
     @property
+    def best_result(self):
+        return 1 if self.grid else 2
+
+    @property
     def result(self):
         percent = self.score * 100 // self.target
+        if self.grid:
+            return int(percent >= WIN_PERCENT)
         return 2 if percent >= WIN_PERCENT else 1 if percent > MIDDLE_PERCENT else 0
 
     @property
@@ -441,6 +521,7 @@ class ReflexGame:
         if kind == RIGHT_ICON:
             self.shows[cell] = RIGHT
             self.pending.append([POINTS_DELAY_MS, self.row[BAR_POINTS] * bars, cell])
+            self.sounds.append(SOUND_RIGHT_PICK)
             self._change_gauge(bars)
         elif kind == WRONG_ICON:
             self.shows[cell] = WRONG

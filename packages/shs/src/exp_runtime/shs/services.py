@@ -4,6 +4,7 @@ from copy import deepcopy
 from ..loading import LoadingScreen, loading_waits
 from ..vm import VMError
 from .football import read_football
+from ..shs11_games import grid_memory
 from .word_grid import read_grid
 from .survey import confirmation as survey_confirmation, is_survey, script_response
 
@@ -130,14 +131,22 @@ def dispatch(self, vm, *, resource_exists=None):
         # Construct transactionally: invalid content leaves the frame and
         # engine random stream available for inspection and a saved stop.
         random = deepcopy(self.random)
-        game.initialize(random)
-        self.word_grid, self.random = game, random
-        self.grid_tutorials_seen |= bool(game.tutorials)
         base, variant = args[5], args[4]
         background = base + variant if base >= 0 and variant in (1, 2) else base
         if resource_exists and not resource_exists(background):
             background = base
-        return EngineAction('word_grid', request, False, dict(
-            background_id=background, left_character=args[6], left_expression=args[7],
-            right_character=args[8], right_expression=args[9]))
+        details = dict(background_id=background, left_character=args[6], left_expression=args[7],
+                       right_character=args[8], right_expression=args[9])
+        # shshd-runtime: the "Use '11's Memory for Word Grid" switch.
+        memory = (grid_memory(game, random, tutorial=not self.shs11_tutorial_seen)
+                  if getattr(self, 'grids_as_memory', False) else None)
+        if memory is not None:
+            self.shs11_memory, self.random = memory, random
+            self.shs11_tutorial_seen = True
+            return EngineAction('shs11_memory', request, False, details)
+        random = deepcopy(self.random)
+        game.initialize(random)
+        self.word_grid, self.random = game, random
+        self.grid_tutorials_seen |= bool(game.tutorials)
+        return EngineAction('word_grid', request, False, details)
     return None

@@ -77,7 +77,8 @@ class SwitchTests(unittest.TestCase):
     def test_it_picks_who_draws_only_with_its_art_there(self):
         from exp_runtime.desktop import Desktop
         own = SimpleNamespace(available=lambda: True)
-        ui = SimpleNamespace(word_grid_skin=True, shs11_hd=own, shs11_memory_renderer='memory', shs11_reflex_renderer='reflex')
+        ui = SimpleNamespace(word_grid_skin=True, shs11_hd=own, shs11_memory_renderer='memory', shs11_reflex_renderer='reflex',
+                             session=SimpleNamespace(engine=SimpleNamespace(shs11_memory=None)))
         action = SimpleNamespace(name='shs11_reflex')
         self.assertIs(Desktop.shs11_renderer(ui, action), own)
         ui.word_grid_skin = False

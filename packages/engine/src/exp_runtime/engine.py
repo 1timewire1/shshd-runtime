@@ -110,6 +110,7 @@ class EngineState:
     # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
     # selector NR_ARENA_QUERY answers 1 only with it on.
     nr_arena_enabled = False
+    grids_as_memory = False         # Not saved: shshd-runtime's "Use '11's Memory for Word Grid" (Session.grids_as_memory sets it)
     cutscenes_enabled = False       # shshd-runtime: service 70 selector CUTSCENE_QUERY (Session.cutscenes)
     # Not saved: whether service 213 asks before an arena game (Session.skip_arena sets it); else it plays at once.
     nr_arena_skip = False
