@@ -1014,7 +1014,7 @@ class EngineState:
         if y == 71:
             need(8)
             good, bad = (pipe_list(self.read_text(vm, ref)) for ref in args[2:4])
-            if len(good) < 2 or len(bad) < 3 or args[4] <= 0:
+            if len(good) < 2 or len(bad) < 2 or args[4] <= 0:
                 return EngineAction('unhandled_yield', request, False, dict(
                     reason='Unsupported word-game lists or nonpositive duration'))
             game = WordGame(good, bad, args[4], args[7], args[4], args[7])

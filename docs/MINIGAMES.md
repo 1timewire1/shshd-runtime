@@ -136,7 +136,9 @@ word_game(
 
 The supported configuration requires at least two positive entries, three
 negative entries and positive duration. Native rejection loops assume those
-list lengths; malformed configurations remain explicit stops here.
+list lengths; malformed configurations remain explicit stops here. This fork
+also takes exactly two negative entries, where the fourth entry is always
+positive: BREW's word games always show two of each ([BREW.md](BREW.md)).
 
 A deal samples one positive index and two distinct negative indices. A random
 bit selects the fourth entry's category; rejection sampling avoids reusing an

@@ -638,7 +638,7 @@ class Session:
                                layout_text(font, self.engine.notice, 2**31, NOTICE_STYLE))
 
     @_sound_batch
-    def advance(self, *, max_steps: int = 100_000, max_events: int = 10_000,
+    def advance(self, *, max_steps: int = 1_000_000, max_events: int = 10_000,
                 observe=None) -> EngineAction:
         if self.pending is not None:
             return self.pending

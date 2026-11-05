@@ -2,7 +2,7 @@
 
 *Surviving High School* '07 and '08 ran on Qualcomm BREW phones, built by Centerscore. They share one engine and are a calendar simulation: a story schedules events on dates and times, and a day planner runs them. This fork is translating their stories into ordinary episodes.
 
-**State: in progress.** The translator and the `shsbrew` addon exist, and Quiz 1 plays through. Most stories still stop on a service with no handler yet (the catch game, for one), which is deliberate: a story that needs something new says so instead of being guessed at.
+**State: in progress.** The translator and the `shsbrew` addon exist, and seven stories play through: Quizzes 1-3, 2.2, 2.5, 3.3 and 9.4. Scripted runs of them match Tardy-Slip's lines, speakers and menus on eight answer paths each. Most other stories still stop on a service with no handler yet (the catch game, for one), which is deliberate: a story that needs something new says so instead of being guessed at.
 
 None of the games' code runs here, and no file of them ships with the runtime: `tools/translate` reads the player's own copies.
 
@@ -20,9 +20,12 @@ The first writes the addon, and the second a story that reads it. `brew_casts.js
 BREW's machine is SHS's, in KiWi's older header, so a story keeps its scripts, with every host call rewritten for SHS's services (`HANDLERS` in `brew.py`).
 
 - **Scripts.** A story's 25001 stays where it is, and its story script, 26000, becomes 25002, since 26000 and up are SHS's episode bank.
+- **Choices.** A quiz has no player character, so it asks in the narrator's gold under `Make your choice!`, as New Rules' Train That Brain! does.
+- **Word games.** BREW's timed menus come from one shared routine: several rounds of a spinning cursor over words with scores, usually two good and two bad, returning a total the story tests. They play as service 71, with BREW's own title and instructions, and its result is scaled onto the best total, so that a full score is every round's best. A single round is a question, and it's the smartphone's `Think fast!`, which takes a random option when time runs out.
+- **Brackets.** BREW puts narration and thoughts alike in brackets. Narration loses them, and a character's bracketed line becomes SHS's thought. Game words lose their brackets and quotes.
 - **Time.** Each Campaign story runs one calendar event, so scheduling it just queues its script. The other stories' calendar isn't built yet.
 - **Numbers.** BREW's numbered values work as SHS's do, except 407: BREW's runs 0 to 100 and SHS's counts icons, so BREW's value stays under its own key and 407 follows it. Below 20, 30 and 40 show 3, 2 and 1 skulls. From 40, 66 and 76 show 1, 2 and 3 smileys, or hearts for the current partner.
-- **Portraits.** A look is a 23-entry list that scripts build and change. Its entries live in saved numbers with a running hash, and each change looks the hash up in the story's table of looks, then points the character at that look's faces. Entry 2 picks the box's colour, as BREW's pink one does.
+- **Portraits.** A look is a 23-entry list that scripts build and change. Its entries live in saved numbers with a running hash. When a character is next shown, a changed hash is looked up in the story's table of looks, and the character is pointed at that look's faces. Setups are still big, as a story can dress 27 characters: `Session.advance`'s safety limit went from 100,000 instructions to a million for it. Entry 2 picks the box's colour, as BREW's pink one does.
 - **Scenes.** Scenes stack: 13 opens one and 18 closes the top one, so what's underneath comes back. The stack lives in saved numbers.
 - **Names.** BREW's stories have their own names table (`TRANSLATED_NAME_SETS`), as its phones' `prefs.sav` was its own, so `$USR` starts as BREW's Jenny, not the smartphone's name.
 - **Narration.** A character named Event is the narrator, as on the smartphone. The real game shows it with an `EVENT` plate and an empty photo frame.

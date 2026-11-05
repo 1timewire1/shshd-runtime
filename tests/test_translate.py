@@ -1054,19 +1054,17 @@ class NovelPatchTests(unittest.TestCase):
 class BrewShimTests(unittest.TestCase):
     """brew.py's shims on authored scripts, run against a small host that keeps SHS's numbers."""
 
-    def context(self, rewriter, looks=()):
-        return dict(rid=25001, kind='single', looks=sorted(looks), hash_factors=rewriter.words(self.brew.HASH_FACTORS),
-                    last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1]),
-                    name_buffer=rewriter.words([0] * self.brew.NAME_WORDS))
+    def context(self, rewriter, looks=(), player=True):
+        return self.brew.script_context(rewriter, 25001, dict(looks), player, rewriter.program)
 
     def setUp(self):
         import brew
         self.brew = brew
 
-    def run_script(self, prog, handlers, looks=(), numbers=None):
+    def run_script(self, prog, handlers, looks=(), numbers=None, player=True):
         """The rewritten script against SHS's number services. Returns (other calls, numbers); R after a handled call is the host's."""
         rewriter = Rewriter(prog)
-        context = self.context(rewriter, looks)
+        context = self.context(rewriter, looks, player)
         for pc, service, argc in rewriter.calls():
             handlers[service](rewriter, pc, argc, context)
         vm, numbers, calls = KiwiVM(rewriter.finish()), {} if numbers is None else numbers, []
@@ -1094,22 +1092,216 @@ class BrewShimTests(unittest.TestCase):
         upgraded = decode_program(self.brew.upgrade(b'kiwi\x01\x00' + body))
         self.assertEqual((upgraded.version, upgraded.previous_flag, [i.opcode for i in upgraded.instructions]), (2, 0, [0x33]))
 
-    def test_a_look_is_found_by_its_list_however_it_was_built(self):
+    def test_a_look_is_found_when_its_character_is_next_shown(self):
         entries = [271, -1, 0, 219, 225]
-        code = []
+        code = [0x5A, (0x1A, 1000), call(13, 2)]
         for value in entries:
             code += [(0x1A, 3), (0x1A, 635), (0x1A, value), call(62, 3)]
-        bank = 27005
-        calls, numbers = self.run_script(program(*code, 0x33), {62: self.brew.list_push},
-                                         [(self.brew.look_hash(entries), bank)])
-        self.assertEqual(calls, [(72, (3, bank))])
+        line = [(0x1A, 3), (0x1A, 0), (0x1A, 2), call(72, 3)]
+        handlers = {62: self.brew.list_push, 64: self.brew.list_set, 13: self.brew.scene_open, 72: self.brew.line}
+        bank, changed_bank = 27005, 27010
+        changed = [271, -1, 0, 219, 300]
+        looks = [(self.brew.look_hash(entries), bank), (self.brew.look_hash(changed), changed_bank)]
+        calls, numbers = self.run_script(program(*code, *line, *line, 0x33, words=text_words('Hi')), handlers, looks)
+        # Found once, however many lines follow, and not while the list was being built.
+        self.assertEqual([c for c in calls if c[0] == 72], [(72, (3, bank))])
+        self.assertLess(calls.index((72, (3, bank))), next(i for i, c in enumerate(calls) if c[0] == 13 and len(c[1]) == 3))
         # Entry 2 is 0: BREW's pink box.
         self.assertEqual(numbers[3, self.brew.THEME], 2)
         # A re-dress to another known look: the hash moves with the changed entry.
-        changed = [271, -1, 0, 219, 300]
-        calls, numbers = self.run_script(program((0x1A, 3), (0x1A, 635), (0x1A, 4), (0x1A, 300), call(64, 4), 0x33),
-                                         {64: self.brew.list_set}, [(self.brew.look_hash(changed), 27010)], numbers)
-        self.assertEqual(calls, [(72, (3, 27010))])
+        redress = [(0x1A, 3), (0x1A, 635), (0x1A, 4), (0x1A, 300), call(64, 4)]
+        numbers[0, self.brew.DEPTH_KEY] = 1
+        calls, numbers = self.run_script(program(*redress, *line, 0x33, words=text_words('Hi')), handlers, looks, numbers)
+        self.assertEqual([c for c in calls if c[0] == 72], [(72, (3, changed_bank))])
+
+    def test_a_big_casts_setup_stays_within_the_sessions_budget(self):
+        """Quiz 3's setup, 16 characters of 23 entries, once ran out searching the look table at every write."""
+        code = []
+        for character in range(16):
+            for value in range(23):
+                code += [(0x1A, character), (0x1A, 635), (0x1A, value + 200), call(62, 3)]
+        rewriter = Rewriter(program(*code, 0x33))
+        context = self.context(rewriter, [(i, 27000 + 5 * i) for i in range(30)])
+        for pc, service, argc in rewriter.calls():
+            self.brew.list_push(rewriter, pc, argc, context)
+        vm, numbers, steps = KiwiVM(rewriter.finish()), {}, 0
+        while True:
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                break
+            steps += 1
+            args = stop.args
+            if stop.yield_id == 52:
+                numbers[args[0], args[1]] = args[2]
+            vm.resume(numbers.get((args[0], args[1]), 0) if stop.yield_id == 53 else 0)
+        self.assertLess(steps, 2500)
+
+    def test_a_timed_menu_counts_its_options_and_takes_a_random_one_at_the_limit(self):
+        options = text_words('One|Two|Three|Four')
+        code = [(0x1A, 0), (0x1A, 0), (0x1A, 500), call(30, 3), (0x1A, 4000), call(31, 1), call(74, 0), 0x33]
+        handlers = {30: self.brew.spinning_menu, 31: self.brew.menu_timer, 74: self.brew.wait}
+        rewriter = Rewriter(program(*code, words=options))
+        context = self.context(rewriter)
+        for pc, service, argc in rewriter.calls():
+            handlers[service](rewriter, pc, argc, context)
+        vm, seen = KiwiVM(rewriter.finish()), []
+        while True:
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                break
+            seen.append((stop.yield_id, stop.args))
+            vm.resume(3 if stop.yield_id == 27 else 0)
+        self.assertIn((27, (4,)), seen)
+        choice = next(args for service, args in seen if service == 1)
+        self.assertEqual((choice[3], choice[4], choice[5]), (4000, 3, -2))
+
+    def test_narration_loses_its_brackets_and_a_characters_become_a_thought(self):
+        text = text_words('(Thinking.)') + text_words('(One.) Two (three.)')
+        words = len(text_words('(Thinking.)'))
+        def said(character):
+            code = [0x5A, (0x1A, 1000), call(13, 2), (0x1A, character), (0x1A, 0), (0x1A, -1), call(72, 3),
+                    (0x1A, character), (0x1A, words), (0x1A, -1), call(72, 3), 0x33]
+            prog = program(*code, words=text)
+            rewriter = Rewriter(prog)
+            context = self.context(rewriter)
+            for pc, service, argc in rewriter.calls():
+                {13: self.brew.scene_open, 72: self.brew.line}[service](rewriter, pc, argc, context)
+            final = rewriter.finish()
+            memory = list(final.main_words) + [0] * final.gap_count + list(final.extra_words)
+            def read(address):
+                out = bytearray()
+                for w in memory[address:]:
+                    for c in (w >> 8, w & 255):
+                        if not c:
+                            return out.decode()
+                        out.append(c)
+            vm, lines = KiwiVM(final), []
+            numbers = {}
+            while True:
+                stop = vm.run()
+                if stop.kind == StopKind.HALT:
+                    return lines
+                args, result = stop.args, 0
+                if stop.yield_id in (44, 54):
+                    numbers[args[0]] = args[1]
+                elif stop.yield_id in (45, 55):
+                    result = numbers.get(args[0], 0)
+                elif stop.yield_id == 73:
+                    result = 27000
+                elif stop.yield_id == 13:
+                    lines.append((args[0], read(args[1])) if args[0] < 0 else ('line', read(args[0]), args[1]))
+                vm.resume(result)
+        narrated = said(-1)
+        self.assertEqual(narrated, [('line', 'Thinking.', self.brew.NARRATOR), ('line', '(One.) Two (three.)', self.brew.NARRATOR)])
+        spoken = said(2)
+        self.assertEqual(spoken, [(-2, 'Thinking.'), ('line', '(One.) Two (three.)', 2)])
+
+    def word_game_run(self, scores, result, rounds=4):
+        """An authored routine like the games', called with a word list and scores; (service 71's arguments as text, what it returned)."""
+        names = ['Good', 'Fine', '(Bad)', 'Worse']
+        words, addresses = [], []
+        for name in names:
+            addresses.append(len(words))
+            words += text_words(name)
+        word_list, score_list, title, options = len(words), len(words) + 4, len(words) + 8, len(words) + 20
+        words += addresses + [s & 0xffff for s in scores] + text_words('Move %d/%d') + [0] * 40
+        routine = 14
+        code = [(0x1A, options), (0x1A, word_list), (0x1A, score_list), (0x1A, 4), (0x1A, 4), (0x1A, -1), (0x1A, rounds), (0x1A, title),
+                (0x1A, 500), (0x1A, 4000), 0x5B, 0x42, (0x29, routine), 0x33][:-1]
+        # the routine: its first instructions are replaced; what matters is that it holds the usual calls.
+        code += [0x33, 0x48, 0x4A, (0x40, options), (0x40, options), (0x1A, 500), call(30, 3), (0x1A, 4000), call(31, 1), call(32, 0), call(74, 0), 0x22, 0x43]
+        prog = program(*code, words=words)
+        start = next(i.pc for i in prog.instructions if i.opcode == 0x48)
+        rewriter = Rewriter(prog)
+        context = self.context(rewriter)
+        self.assertEqual(context['routine'], start)
+        self.brew.word_game(rewriter, start, context)
+        final = rewriter.finish()
+        vm, game = KiwiVM(final), None
+        def read(address):
+            out = bytearray()
+            for w in vm.data[address:]:
+                w &= 0xffff
+                for c in (w >> 8, w & 255):
+                    if not c:
+                        return out.decode()
+                    out.append(c)
+        store = {}
+        for _ in range(4000):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                return game, vm.b
+            args, answer = stop.args, 0
+            if stop.yield_id == 25:
+                vm.data_text = None
+                self.brew_append(vm, args)
+            elif stop.yield_id == 71:
+                game = (read(args[2]), read(args[3]))
+                answer = result
+            elif stop.yield_id == 53:
+                answer = store.get((args[0], args[1]), 0)
+            vm.resume(answer)
+        self.fail('did not halt')
+
+    @staticmethod
+    def brew_append(vm, args):
+        def read(address):
+            out = bytearray()
+            for w in vm.data[address:]:
+                w &= 0xffff
+                for c in (w >> 8, w & 255):
+                    if not c:
+                        return bytes(out)
+                    out.append(c)
+        text = read(args[0]) + read(args[1]) + b'\0'
+        text += b'\0' * (len(text) % 2)
+        for i in range(0, len(text), 2):
+            value = text[i] << 8 | text[i + 1]
+            vm.data[args[0] + i // 2] = value - 65536 if value > 32767 else value
+
+    def test_a_spinning_menu_routine_plays_as_a_word_game_on_its_scores(self):
+        game, total = self.word_game_run([1, 1, 0, 0], 6)
+        # Bad words lose their brackets.
+        self.assertEqual(game, ('Good|Fine', 'Bad|Worse'))
+        self.assertEqual(total, 4)                          # the pass mark is every round's best score
+        self.assertEqual(self.word_game_run([1, 1, 0, 0], 3)[1], 2)
+        self.assertEqual(self.word_game_run([1, 1, 0, 0], 0)[1], 0)
+        self.assertEqual(self.word_game_run([1, 1, 0, 0], 20)[1], 4)        # no more than the best total
+        self.assertEqual(self.word_game_run([2, 1, 0, 0], 6)[1], 8)         # a word worth 2
+
+    def test_a_word_game_with_two_bad_words_shows_two_of_each(self):
+        from exp_runtime.minigames import WordGame
+
+        class Draws:
+            state = 7
+
+            def next(self):
+                self.state = (self.state * 1103515245 + 12345) & 0x7fffffff
+                return self.state >> 8
+
+            def below(self, n):
+                return self.next() % n
+        draws = Draws()
+        game = WordGame(['Move', 'Groove'], ['Fall', 'Trip'], 20000, 3000, 20000, 3000)
+        for _ in range(40):
+            game.deal(draws)
+            self.assertEqual(sorted(game.options), ['Fall', 'Groove', 'Move', 'Trip'])
+            self.assertEqual(sorted(game.weights), [-1, -1, 1, 1])
+
+    def test_a_quiz_asks_in_the_narrators_gold(self):
+        options = text_words('A|B')
+        rewriter = Rewriter(program(0x5A, 0x5A, call(28, 2), call(74, 0), 0x33, words=options))
+        context = self.context(rewriter, player=False)
+        self.brew.menu(rewriter, 2, 2, context)
+        self.brew.wait(rewriter, 3, 0, context)
+        vm = KiwiVM(rewriter.finish())
+        for _ in range(20):
+            stop = vm.run()
+            if stop.yield_id == 1:
+                self.assertEqual(stop.args[5], self.brew.NARRATOR)
+                return
+            vm.resume(0)
+        self.fail('no choice')
 
     def test_relationship_icons_follow_brews_value(self):
         for value, icons in ((0, -3), (19, -3), (20, -2), (30, -1), (40, 0), (65, 0), (66, 1), (76, 2), (100, 2)):

@@ -11,9 +11,15 @@ handler stops the translation, so a story that needs something new says so. Unde
 - **Numbers.** BREW's and SHS's numbered values work alike and share the meaning of 601 and 629. Only 407 differs: BREW's runs 0 to
   100 and SHS's counts icons, so BREW's value stays under RELATIONSHIP_BREW and 407 follows it.
 - **Portraits.** A character's look is a 23-entry list built by 62 and 64. A list's entries live in saved numbers, with a running
-  hash, and each change looks the hash up in the story's table of the looks it can reach (from the catalogue), then points the
-  character at that look's bank of faces. Entry 2 picks the dialogue box's colour, as BREW's pink one does.
+  hash. When the character is next shown, a changed hash is looked up in the story's table of the looks it can reach (from the
+  catalogue), and the character is pointed at that look's bank of faces: searching at every write would run past the Session's
+  instruction budget in a setup with a big cast. Entry 2 picks the dialogue box's colour, as BREW's pink one does.
 - **Scenes.** 13 pushes a scene and 18 closes the top one, so what's underneath comes back. The stack lives in saved numbers.
+- **Word games.** Every story with timed menus has the same routine: several rounds of a spinning menu, drawn from a list of words each
+  with a score, returning the total. That's a word game, so it plays as service 71, with the result scaled onto the routine's total
+  so that each band its story tests stays reachable. A single round is a question, not a game, and stays a timed choice.
+- **Brackets.** BREW puts narration and thoughts alike in `(...)`. Narration loses them, and a character's lines in them become SHS's
+  thoughts, which adds its own.
 
 Nothing here keeps art: a story holds only its scripts, and reads pictures and music from the addon (build_addon).
 """
@@ -75,8 +81,12 @@ NARRATOR = 199                          # no speaker; SHS needs a character (as 
 RELATIONSHIP, THEME = 407, 651          # SHS keys
 RELATIONSHIP_BREW = 30407               # BREW's own 0-100 value
 LIST_KEYS, LIST_SLOTS, LIST_LENGTH = 20000, 32, 31      # an entity's list `key`: LIST_KEYS + (key - 600) x LIST_SLOTS + entry
-LOOK_LIST, LOOK_HASH, PINK_ENTRY = 635, 19999, 2
+LOOK_LIST, LOOK_HASH, LOOK_SHOWN, PINK_ENTRY = 635, 19999, 19998, 2
 CHOICE_PORTRAIT = 1
+CHOICE_TITLE = 'Make your choice!'      # for a quiz: the real player answers, as in New Rules' Train That Brain!
+TIMED_TITLE = 'Think fast!'             # as the smartphone titles its timed choices
+WORD_GAME_MS, WORD_GAME_REFRESH_MS, WORD_GAME_PASS = 20000, 3000, 6     # as the smartphone calls service 71 (as shs11_story)
+LIST_WORDS = 160                        # room for a word game's list, built at run time
 END_TITLE, END_TEXT, END_ARGUMENT = 'End of game', 'Thanks for playing!', 4000      # as the smartphone's closing message
 # A prime for each of a look list's 23 entries, for its hash (16-bit wrapping, as the machine's stored words).
 HASH_FACTORS = (3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89)
@@ -126,7 +136,7 @@ def build_query(rewriter, pc, argc, context):
     """80: (selector) what the build is: 1 -> 2, 2 -> 1, 3 -> 5, else 0 ('08's answers)."""
     def build(s):
         done = s.label()
-        for selector, answer in ((1, 2), (2, 1), (3, 5)):
+        for selector, answer in ((3, 5), (1, 2), (2, 1)):        # (3 first: setups ask it for every portrait part)
             other = s.label()
             s.arg(1); s.push(selector); s.emit(0x0a); s.jump_if_zero(other)
             s.result(answer); s.jump(done)
@@ -201,32 +211,24 @@ def list_key(s, key, entry):
     key(); s.push(600); s.emit(0x51); s.push(LIST_SLOTS); s.emit(0x52); entry(); s.emit(0x50); s.push(LIST_KEYS); s.emit(0x50)
 
 
-def list_write(s, entity, key, entry, value, context):
-    """Store an entry, keep the list's length, and for a look list its hash, the look it now is and its box colour. Three locals
-    come after whatever the caller has: this runs with none pushed before it."""
-    longer, done = s.label(), s.label()
-    # Local 0: the entry's old value.
-    entity(); list_key(s, key, entry); s.call(53, 2); s.push_result()
-    entity(); list_key(s, key, entry); value(); s.call(52, 3)
-    # The length is one past the highest entry written.
-    entity(); list_key(s, key, lambda: s.push(LIST_LENGTH)); s.call(53, 2); s.push_result()   # local 1
-    entry(); s.emit(0x41, 1); s.emit(0x0d); s.jump_if_zero(longer)
-    entity(); list_key(s, key, lambda: s.push(LIST_LENGTH)); entry(); s.push(1); s.emit(0x50); s.call(52, 3)
-    s.label(longer)
+def push_list_base(s, key):
+    """Push the number the first entry of list `key` is held in. A setup writes hundreds of entries, so the shims keep this in a
+    local and do as little as they can per entry."""
+    key(); s.push(600); s.emit(0x51); s.push(LIST_SLOTS); s.emit(0x52); s.push(LIST_KEYS); s.emit(0x50)
+
+
+def list_store(s, entity, key, base, entry, value, old, context):
+    """Store an entry and, in a look list, keep its hash and BREW's box colour: entry 2 at 0 is the pink box. `base` pushes the list's
+    first number, `old` what the entry held."""
+    done = s.label()
+    entity(); base(); entry(); s.emit(0x50); value(); s.call(52, 3)
     key(); s.push(LOOK_LIST); s.emit(0x0a); s.jump_if_zero(done)
-    # Local 2: the new hash.
+    entity(); s.push(LOOK_HASH)
     entity(); s.push(LOOK_HASH); s.call(53, 2); s.push_result()
-    value(); s.emit(0x41, 0); s.emit(0x51)
+    value(); old(); s.emit(0x51)
     s.push(context['hash_factors']); entry(); s.emit(0x50); s.emit(0x3f); s.emit(0x52)
     s.emit(0x50)
-    entity(); s.push(LOOK_HASH); s.emit(0x41, 2); s.call(52, 3)
-    # Local 3: the running offset through the table of (hash, bank).
-    for hash_value, bank in context['looks']:
-        other = s.label()
-        s.emit(0x41, 2); s.push(hash_value); s.emit(0x0a); s.jump_if_zero(other)
-        entity(); s.push(bank); s.call(72, 2)
-        s.label(other)
-    # BREW draws its pink box when entry 2 is 0.
+    s.call(52, 3)
     entry(); s.push(PINK_ENTRY); s.emit(0x0a); s.jump_if_zero(done)
     entity(); s.push(THEME)
     plain, end = s.label(), s.label()
@@ -239,54 +241,53 @@ def list_write(s, entity, key, entry, value, context):
 
 
 def list_set(rewriter, pc, argc, context):
-    """64: (entity, key, entry, value)."""
+    """64: (entity, key, entry, value). The length is one past the highest entry written."""
     def build(s):
-        list_write(s, lambda: s.arg(1), lambda: s.arg(2), lambda: s.arg(3), lambda: s.arg(4), context)
+        entity, key, entry, value = (lambda: s.arg(1)), (lambda: s.arg(2)), (lambda: s.arg(3)), (lambda: s.arg(4))
+        base = lambda: s.emit(0x41, 0)
+        shorter = s.label()
+        push_list_base(s, key)                                                                  # local 0: the list's first number
+        entity(); base(); entry(); s.emit(0x50); s.call(53, 2); s.push_result()                 # local 1: the old value
+        list_store(s, entity, key, base, entry, value, lambda: s.emit(0x41, 1), context)
+        entity(); base(); s.push(LIST_LENGTH); s.emit(0x50); s.call(53, 2); s.push_result()     # local 2: the length
+        entry(); s.emit(0x41, 2); s.emit(0x0d); s.jump_if_zero(shorter)
+        entity(); base(); s.push(LIST_LENGTH); s.emit(0x50); entry(); s.push(1); s.emit(0x50); s.call(52, 3)
+        s.label(shorter)
         s.result(0)
     rewriter.redirect(pc, ('list_set', context['rid']), build)
 
 
 def list_push(rewriter, pc, argc, context):
-    """62: (entity, key, value), up to 23 entries."""
+    """62: (entity, key, value), up to 23 entries. A pushed entry was unset, so it held 0."""
     def build(s):
+        entity, key, value = (lambda: s.arg(1)), (lambda: s.arg(2)), (lambda: s.arg(3))
+        base, entry = (lambda: s.emit(0x41, 0)), (lambda: s.emit(0x41, 1))
         full = s.label()
-        s.arg(1); list_key(s, lambda: s.arg(2), lambda: s.push(LIST_LENGTH)); s.call(53, 2); s.push_result()   # local 0: the length
-        s.emit(0x41, 0); s.push(brew_art.ENTRIES); s.emit(0x0e); s.jump_if_zero(full)
-        # (The helper's locals start after this one.)
-        _list_write_at(s, context)
+        push_list_base(s, key)                                                                  # local 0: the list's first number
+        entity(); base(); s.push(LIST_LENGTH); s.emit(0x50); s.call(53, 2); s.push_result()     # local 1: the length
+        entry(); s.push(brew_art.ENTRIES); s.emit(0x0e); s.jump_if_zero(full)
+        list_store(s, entity, key, base, entry, value, lambda: s.push(0), context)
+        entity(); base(); s.push(LIST_LENGTH); s.emit(0x50); entry(); s.push(1); s.emit(0x50); s.call(52, 3)
         s.label(full)
         s.result(0)
     rewriter.redirect(pc, ('list_push', context['rid']), build)
 
 
-def _list_write_at(s, context):
-    """list_write with the length in local 0 as the entry, and its locals one higher."""
-    done, longer_done = s.label(), s.label()
-    entity, key, value = (lambda: s.arg(1)), (lambda: s.arg(2)), (lambda: s.arg(3))
-    entry = lambda: s.emit(0x41, 0)
-    entity(); list_key(s, key, entry); value(); s.call(52, 3)
-    entity(); list_key(s, key, lambda: s.push(LIST_LENGTH)); entry(); s.push(1); s.emit(0x50); s.call(52, 3)
-    key(); s.push(LOOK_LIST); s.emit(0x0a); s.jump_if_zero(done)
-    # Local 1: the new hash. A pushed entry was unset, so it reads 0.
-    entity(); s.push(LOOK_HASH); s.call(53, 2); s.push_result()
-    value(); s.push(context['hash_factors']); entry(); s.emit(0x50); s.emit(0x3f); s.emit(0x52)
-    s.emit(0x50)
-    entity(); s.push(LOOK_HASH); s.emit(0x41, 1); s.call(52, 3)
+def resolve_look(s, character, context):
+    """Point a character about to be shown at its look's faces, if its list has changed since it was last shown. A list the story's
+    table doesn't know leaves the look it had."""
+    done = s.label()
+    temp = context['hash_temp']
+    s.push(temp); character(); s.push(LOOK_HASH); s.call(53, 2); s.push_result(); s.emit(0x3e); s.emit(0x15)
+    character(); s.push(LOOK_SHOWN); s.call(53, 2); s.push_result(); s.emit(0x40, temp); s.emit(0x0a); s.jump_if_nonzero(done)
+    character(); s.push(LOOK_SHOWN); s.emit(0x40, temp); s.call(52, 3)
     for hash_value, bank in context['looks']:
         other = s.label()
-        s.emit(0x41, 1); s.push(hash_value); s.emit(0x0a); s.jump_if_zero(other)
-        entity(); s.push(bank); s.call(72, 2)
+        s.emit(0x40, temp); s.push(hash_value); s.emit(0x0a); s.jump_if_zero(other)
+        character(); s.push(bank); s.call(72, 2)
+        s.jump(done)
         s.label(other)
-    entry(); s.push(PINK_ENTRY); s.emit(0x0a); s.jump_if_zero(done)
-    entity(); s.push(THEME)
-    plain, end = s.label(), s.label()
-    value(); s.jump_if_nonzero(plain)
-    s.push(2); s.jump(end)
-    s.label(plain); s.push(1)
-    s.label(end)
-    s.call(52, 3)
     s.label(done)
-    del longer_done
 
 
 def list_get(rewriter, pc, argc, context):
@@ -397,20 +398,37 @@ def push_face(s, expression):
 
 
 def say(s, text, speaker, expression, context):
-    """SHS's dialogue for `text` under BREW's speaker (callables pushing them): no speaker or Event is the narrator, a character
-    with no picture says it under its name with none (service 76), and anyone else with their face."""
-    narrated, voice, done = s.label(), s.label(), s.label()
+    """SHS's dialogue for `text` under BREW's speaker (callables pushing them): no speaker or Event is the narrator, a character with no
+    picture says it under its name with none (service 76), and anyone else with their face. A whole line in brackets loses them: it's
+    plain narration from the narrator, and a thought from anyone else. What's shown is kept as the last line, for a choice's question."""
+    narrated, voice, done, plain, found = s.label(), s.label(), s.label(), s.label(), s.label()
+    shown, twin = context['last_line'], context['line_twin']
+    set_word(s, shown, text)
+    set_word(s, twin, lambda: s.push(-1))
+    for address, bare in context['bracketed']:
+        other = s.label()
+        s.emit(0x40, shown); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
+        set_word(s, twin, lambda bare=bare: s.push(bare))
+        set_word(s, shown, lambda bare=bare: s.push(bare))
+        s.jump(found)
+        s.label(other)
+    s.label(found)
     speaker(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(narrated)
     speaker(); s.push(EVENT_CHARACTER_KEY); s.call(55, 1); s.push_result(); s.emit(0x0a); s.jump_if_nonzero(narrated)
+    resolve_look(s, speaker, context)
     speaker(); s.call(73, 1); s.push_result(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(voice)
-    text(); speaker(); push_face(s, expression); s.call(13, 3)
+    s.emit(0x40, twin); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(plain)
+    s.push(-2); s.emit(0x40, twin); speaker(); push_face(s, expression); s.call(13, 4)
+    s.jump(done)
+    s.label(plain)
+    s.emit(0x40, shown); speaker(); push_face(s, expression); s.call(13, 3)
     s.jump(done)
     s.label(voice)
     speaker(); s.push(context['name_buffer']); s.call(61, 2)
-    s.push(context['name_buffer']); text(); s.call(76, 2)
+    s.push(context['name_buffer']); s.emit(0x40, shown); s.call(76, 2)
     s.jump(done)
     s.label(narrated)
-    text(); s.push(NARRATOR); s.call(13, 2)
+    s.emit(0x40, shown); s.push(NARRATOR); s.call(13, 2)
     s.label(done)
 
 
@@ -418,7 +436,6 @@ def line(rewriter, pc, argc, context):
     """72: (speaker, text, expression), dropped with no scene open (shs08.5.mod)."""
     def build(s):
         done = s.label()
-        s.push(context['last_line']); s.arg(2); s.emit(0x3e); s.emit(0x15)
         s.push(DEPTH_KEY); s.call(55, 1); s.push_result(); s.push(1); s.emit(0x0e); s.jump_if_nonzero(done)
         set_global(s, SPEAKER_KEY, lambda: s.arg(1))
         set_global(s, EXPRESSION_KEY, lambda: s.arg(3))
@@ -433,25 +450,87 @@ def narration_queue(rewriter, pc, argc, context):
                       lambda s: (s.push(context['narration']), s.arg(1), s.emit(0x3e), s.emit(0x15), s.result(0)))
 
 
+def set_word(s, address, value):
+    s.push(address); value(); s.emit(0x3e); s.emit(0x15)
+
+
 def menu(rewriter, pc, argc, context):
     """28: (title, `a|b|c`) the menu 74 shows; returns 1."""
     def build(s):
-        s.push(context['menu']); s.arg(1); s.emit(0x3e); s.emit(0x15)
-        s.push(context['menu'] + 1); s.arg(2); s.emit(0x3e); s.emit(0x15)
+        set_word(s, context['menu'], lambda: s.arg(1))
+        set_word(s, context['menu'] + 1, lambda: s.arg(2))
+        set_word(s, context['menu'] + 2, lambda: s.push(-1))
+        set_word(s, context['menu'] + 4, lambda: s.push(-1))
         s.result(1)
     rewriter.redirect(pc, ('menu', context['rid']), build)
 
 
+def spinning_menu(rewriter, pc, argc, context):
+    """30: (title, `a|b|c`, ms) a menu whose cursor jumps to a random other option every interval, and 31 gives it a limit. Only
+    single-round questions get here (word_game takes the rest), and they become the smartphone's "Think fast!", with BREW's title, the
+    question, under it. Time running out takes wherever the cursor is, so here a random option. The spin itself isn't reproduced."""
+    def build(s):
+        set_word(s, context['menu'], lambda: s.text(TIMED_TITLE))
+        set_word(s, context['menu'] + 1, lambda: s.arg(2))
+        set_word(s, context['menu'] + 2, lambda: s.push(-1))
+        set_word(s, context['menu'] + 4, lambda: s.arg(1))
+        # Count the options, packed two bytes a word: local 0 the count, local 1 the word offset.
+        s.push(1); s.push(0)
+        top, end, low = s.label(), s.label(), s.label()
+        s.label(top)
+        s.arg(2); s.emit(0x41, 1); s.emit(0x50); s.emit(0x3f); s.push(256); s.emit(0x53)         # the high byte
+        s.emit(0x13); s.jump_if_nonzero(end)
+        s.arg(2); s.emit(0x41, 1); s.emit(0x50); s.emit(0x3f); s.push(256); s.emit(0x53); s.push(ord('|')); s.emit(0x0a); s.jump_if_zero(low)
+        s.emit(0x23, 0); s.emit(0x41, 0); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.label(low)
+        s.arg(2); s.emit(0x41, 1); s.emit(0x50); s.emit(0x3f); s.push(256); s.emit(0x54)         # the low byte
+        s.emit(0x13); s.jump_if_nonzero(end)
+        other = s.label()
+        s.arg(2); s.emit(0x41, 1); s.emit(0x50); s.emit(0x3f); s.push(256); s.emit(0x54); s.push(ord('|')); s.emit(0x0a); s.jump_if_zero(other)
+        s.emit(0x23, 0); s.emit(0x41, 0); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.label(other)
+        s.emit(0x23, 1); s.emit(0x41, 1); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(top)
+        s.label(end)
+        s.emit(0x41, 0); s.call(27, 1); s.push_result()
+        set_word(s, context['menu'] + 3, lambda: s.emit(0x41, 2))
+        s.result(1)
+    rewriter.redirect(pc, ('spinning_menu', context['rid']), build)
+
+
+def menu_timer(rewriter, pc, argc, context):
+    """31: (ms) the pending menu's limit."""
+    rewriter.redirect(pc, ('menu_timer', context['rid']), lambda s: (set_word(s, context['menu'] + 2, lambda: s.arg(1)), s.result(0)))
+
+
 def wait(rewriter, pc, argc, context):
-    """74: shows the pending menu or narration line. A menu's answer also goes in field 0."""
+    """74: shows the pending menu or narration line. A menu's answer also goes in field 0. A story with no player character (a quiz, the
+    real player answering) asks in the narrator's gold, with no portrait, as New Rules' Train That Brain! does."""
     def build(s):
         no_menu, done = s.label(), s.label()
         s.emit(0x40, context['menu'] + 1); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_menu)
-        s.emit(0x40, context['menu']); s.emit(0x40, context['menu'] + 1); s.emit(0x40, context['last_line'])
-        s.push(-1); s.push(0); s.push(-2); s.push(-1); s.push(CHOICE_PORTRAIT)
+        if context['player']:
+            resolve_look(s, lambda: s.push(PLAYER), context)
+            s.emit(0x40, context['menu'])
+        else:
+            timed, chosen = s.label(), s.label()
+            s.emit(0x40, context['menu'] + 2); s.push(-1); s.emit(0x0a); s.jump_if_zero(timed)
+            s.text(CHOICE_TITLE); s.jump(chosen)
+            s.label(timed)
+            s.emit(0x40, context['menu'])
+            s.label(chosen)
+        s.emit(0x40, context['menu'] + 1)
+        question, asked = s.label(), s.label()
+        s.emit(0x40, context['menu'] + 4); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(question)
+        s.emit(0x40, context['menu'] + 4); s.jump(asked)
+        s.label(question)
+        s.emit(0x40, context['last_line'])
+        s.label(asked)
+        s.emit(0x40, context['menu'] + 2); s.emit(0x40, context['menu'] + 3)
+        s.push(-2 if context['player'] else NARRATOR); s.push(-1); s.push(CHOICE_PORTRAIT)
         s.call(1, 8)
         s.push_result()
-        s.push(context['menu'] + 1); s.push(-1); s.emit(0x3e); s.emit(0x15)
+        set_word(s, context['menu'] + 1, lambda: s.push(-1))
         set_global(s, FIELD_KEY, lambda: s.emit(0x41, 0))
         s.push(FIELD_KEY); s.call(55, 1)
         s.jump(done)
@@ -460,11 +539,101 @@ def wait(rewriter, pc, argc, context):
         s.emit(0x40, context['narration']); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(none)
         say(s, lambda: s.emit(0x40, context['narration']), lambda: (s.push(SPEAKER_KEY), s.call(55, 1), s.push_result()),
             lambda: (s.push(EXPRESSION_KEY), s.call(55, 1), s.push_result()), context)
-        s.push(context['narration']); s.push(-1); s.emit(0x3e); s.emit(0x15)
+        set_word(s, context['narration'], lambda: s.push(-1))
         s.label(none)
         s.result(0)
         s.label(done)
     rewriter.redirect(pc, ('wait', context['rid']), build)
+
+
+def game_page(rewriter, pc, argc, context):
+    """12: (title, text) the page before a word game: its title and description, on the game's own screen."""
+    def build(s):
+        set_word(s, context['page'], lambda: s.arg(1))
+        set_word(s, context['page'] + 1, lambda: s.arg(2))
+        s.result(0)
+    rewriter.redirect(pc, ('game_page', context['rid']), build)
+
+
+def word_game(rewriter, start, context):
+    """The routine with the spinning menu: (options buffer, word list, scores, word count, shown, spare, rounds, title format, spin ms,
+    limit ms, whether the title counts rounds). It returns the total in B, the sum of a score per round. With two rounds or more it plays
+    as service 71: scores above 0 are good words, the rest bad, and the result out of the smartphone's pass mark becomes that share of
+    the best total. One round goes on into the routine, with its page shown first: the shim's frame is the routine's, once its PUSH_FP
+    is done."""
+    def build(s):
+        words, scores, count, rounds = (lambda: s.arg(2)), (lambda: s.arg(3)), (lambda: s.arg(4)), (lambda: s.arg(7))
+        page, good, bad, word = context['page'], context['good'], context['bad'], context['word']
+        game = s.label()
+        rounds(); s.push(2); s.emit(0x0e); s.jump_if_zero(game)
+        no_page = s.label()
+        s.emit(0x40, page + 1); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_page)
+        s.emit(0x40, page); s.emit(0x40, page + 1); s.push(0); s.call(33, 3)
+        set_word(s, page + 1, lambda: s.push(-1))
+        s.label(no_page)
+        s.jump(start + 1)
+        s.label(game)
+        for buffer in (good, bad):
+            set_word(s, buffer, lambda: s.push(0))
+        s.push(0)                                           # local 0: the word
+        s.push(1)                                           # local 1: the best score
+        top, end = s.label(), s.label()
+        s.label(top)
+        s.emit(0x41, 0); count(); s.emit(0x0e); s.jump_if_zero(end)
+        set_word(s, word, lambda: (words(), s.emit(0x41, 0), s.emit(0x50), s.emit(0x3f)))
+        chosen = s.label()
+        for address, bare in context['game_words']:
+            other = s.label()
+            s.emit(0x40, word); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
+            set_word(s, word, lambda bare=bare: s.push(bare))
+            s.jump(chosen)
+            s.label(other)
+        s.label(chosen)
+
+        def append(buffer):
+            first = s.label()
+            s.emit(0x40, buffer); s.jump_if_zero(first)
+            s.push(buffer); s.text('|'); s.call(25, 2)
+            s.label(first)
+            s.push(buffer); s.emit(0x40, word); s.call(25, 2)
+        worse, kept, following = s.label(), s.label(), s.label()
+        scores(); s.emit(0x41, 0); s.emit(0x50); s.emit(0x3f); s.push(0); s.emit(0x0c); s.jump_if_zero(worse)
+        scores(); s.emit(0x41, 0); s.emit(0x50); s.emit(0x3f); s.emit(0x41, 1); s.emit(0x0c); s.jump_if_zero(kept)
+        s.emit(0x23, 1); scores(); s.emit(0x41, 0); s.emit(0x50); s.emit(0x3f); s.emit(0x3e); s.emit(0x15)
+        s.label(kept)
+        append(good)
+        s.jump(following)
+        s.label(worse)
+        append(bad)
+        s.label(following)
+        s.emit(0x23, 0); s.emit(0x41, 0); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(top)
+        s.label(end)
+        resolve_look(s, lambda: s.push(PLAYER), context)
+        titled, title, described, described_end = s.label(), s.label(), s.label(), s.label()
+        s.emit(0x40, page + 1); s.push(-1); s.emit(0x0a); s.jump_if_zero(titled)
+        s.text(TIMED_TITLE); s.jump(title)
+        s.label(titled)
+        s.emit(0x40, page)
+        s.label(title)
+        s.emit(0x40, page + 1); s.push(-1); s.emit(0x0a); s.jump_if_zero(described)
+        s.emit(0x40, context['last_line']); s.jump(described_end)
+        s.label(described)
+        s.emit(0x40, page + 1)
+        s.label(described_end)
+        s.push(good); s.push(bad); s.push(WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(WORD_GAME_REFRESH_MS)
+        s.call(71, 8)
+        s.push_result()                                     # local 2: the result
+        set_word(s, page + 1, lambda: s.push(-1))
+        short, returned = s.label(), s.label()
+        s.emit(0x41, 2); rounds(); s.emit(0x52); s.emit(0x41, 1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
+        rounds(); s.emit(0x41, 1); s.emit(0x52); s.emit(0x0c); s.jump_if_zero(short)
+        rounds(); s.emit(0x41, 1); s.emit(0x52); s.jump(returned)
+        s.label(short)
+        s.emit(0x41, 2); rounds(); s.emit(0x52); s.emit(0x41, 1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
+        s.label(returned)
+        s.emit(0x04)
+    rewriter.replace_function(start, ('word_game', context['rid']), build, 11)
 
 
 def field(rewriter, pc, argc, context):
@@ -532,7 +701,7 @@ def the_end(rewriter, pc, argc, context):
 
 
 HANDLERS = {7: event_text, 8: field, 9: music, 12: titled_page, 13: scene_open, 14: scene_change, 16: narration_queue, 18: scene_close,
-            28: menu, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
+            28: menu, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
             62: list_push, 63: list_get, 64: list_set, 65: list_length, 70: the_end, 71: cast_name, 72: line, 74: wait, 80: build_query}
 # No-ops in BREW (0, 2, 10, 22-26, 32, 54, 75-79); the calendar's setup where there's no calendar (69); art registration, since
 # the addon holds the art (11).
@@ -547,14 +716,11 @@ RENAME = {1: 22,                         # (destination, format, values...)
           73: 66}                        # weighted random
 
 
-def strip_name_marks(program):
-    """A program with `~` taken off the ends of its short strings with no spaces before it: only names end in one, to tell
-    same-named characters apart (`Girl~`, `Girl~~`, `$USR~`), and neither the name plate nor a `$` token shows it."""
-    words = list(program.main_words)
-    out, start = list(words), 0
+def data_strings(program):
+    """(address, bytes) of each NUL-terminated string in a program's main data, packed two bytes a word, and the words it takes."""
+    words, start = program.main_words, 0
     while start < len(words):
-        end, text = start, bytearray()
-        finished = False
+        end, text, finished = start, bytearray(), False
         while end < len(words) and not finished:
             for byte in (words[end] >> 8, words[end] & 255):
                 if byte == 0:
@@ -562,14 +728,114 @@ def strip_name_marks(program):
                     break
                 text.append(byte)
             end += 1
-        if text.endswith(b'~') and len(text) < 40:
-            kept = text.rstrip(b'~') + b'\0'
-            kept += b'\0' * (2 * (end - start) - len(kept))
-            for offset in range(end - start):
-                out[start + offset] = kept[2 * offset] << 8 | kept[2 * offset + 1]
+        yield start, bytes(text), end - start
         start = end
+
+
+def rewrite_strings(program, change):
+    """A program with its strings changed in place: `change(bytes)` gives a string no longer than it was, or None."""
     from dataclasses import replace
+    out = list(program.main_words)
+    for start, text, length in data_strings(program):
+        changed = change(text)
+        if changed is not None:
+            kept = changed + b'\0' * (2 * length - len(changed))
+            for offset in range(length):
+                out[start + offset] = kept[2 * offset] << 8 | kept[2 * offset + 1]
     return replace(program, main_words=tuple(out))
+
+
+def strip_name_marks(program):
+    """Take `~` off the ends of short strings: only names end in one, to tell same-named characters apart (`Girl~`, `Girl~~`, `$USR~`), and
+    neither the name plate nor a `$` token shows it (the real game neither)."""
+    return rewrite_strings(program, lambda text: text.rstrip(b'~') if text.endswith(b'~') and len(text) < 40 else None)
+
+
+def strip_round_counts(program):
+    """Take the round count off a word game's title format, `Bust a move. %d/%d`: only single-round questions still show one."""
+    return rewrite_strings(program, lambda text: text[:-len(b' %d/%d')] if text.endswith(b' %d/%d') else None)
+
+
+def is_printable(text):
+    return all(32 <= byte < 250 or byte in (10, 13) for byte in text)
+
+
+def bracketed(text):
+    """The inside of a string wholly in brackets (`(You notice a girl.)`, not `(Oh.) Hi. (Bye.)`), or None."""
+    if len(text) < 3 or text[:1] != b'(' or text[-1:] != b')' or not is_printable(text):
+        return None
+    depth = 0
+    for index, byte in enumerate(text):
+        depth += (byte == 40) - (byte == 41)
+        if depth == 0 and index < len(text) - 1:
+            return None
+    return text[1:-1]
+
+
+def bare_word(text):
+    """A game word without its bracket or quotes, `(Grab!)` or `"Miss..."`, or None."""
+    stripped = text.strip()
+    if len(stripped) < 3 or not is_printable(stripped):
+        return None
+    if stripped[:1] == b'"' and stripped[-1:] == b'"':
+        return stripped[1:-1]
+    return bracketed(stripped) if stripped[:1] == b'(' else (stripped if stripped != text else None)
+
+
+def spin_routine(program):
+    """Where the routine with the spinning menu starts, or None. It's the same code everywhere it appears (55 scripts, 2026-11-05)."""
+    instructions = program.instructions
+    sites = [i.pc for i in instructions if i.opcode == 0x1f and i.operand >> 8 == 30]
+    if not sites:
+        return None
+    if len(sites) > 1:
+        raise StoryError('a script has more than one spinning menu routine')
+    start = max((i.pc for i in instructions if i.opcode == 0x48 and i.pc <= sites[0]), default=None)
+    if start is None:
+        return None
+    follows = [i.operand >> 8 for i in instructions[sites[0]:sites[0] + 8] if i.opcode == 0x1f]
+    if follows[:4] != [30, 31, 32, 74]:
+        raise StoryError(f'the spinning menu at {sites[0]} is not the usual routine')
+    return start
+
+
+def game_pages(program, start):
+    """The calls of 12 that introduce a word game: a page, then, with only constants between, a call of the routine or of a function
+    that calls it."""
+    instructions = program.instructions
+    callers = {start}
+    for i in range(len(instructions) - 1):
+        if instructions[i].opcode == 0x42 and instructions[i + 1].opcode == 0x29 and instructions[i + 1].operand == start:
+            callers.add(max((j.pc for j in instructions if j.opcode == 0x48 and j.pc <= i), default=start))
+    pages = set()
+    for i, instruction in enumerate(instructions):
+        if instruction.opcode == 0x1f and instruction.operand >> 8 == 12:
+            for j in range(i + 1, min(i + 12, len(instructions) - 1)):
+                if instructions[j].opcode == 0x1f:
+                    break
+                if instructions[j].opcode == 0x42 and instructions[j + 1].opcode == 0x29 and instructions[j + 1].operand in callers:
+                    pages.add(i)
+                    break
+    return pages
+
+
+def script_context(rewriter, script, looks, player, program):
+    """What a script's shims share: scratch words in its data, and its bracketed strings' bare twins."""
+    start = spin_routine(program)
+    thoughts, game_words = [], []
+    for address, text, _ in data_strings(program):
+        bare = bracketed(text)
+        if bare is not None:
+            thoughts.append((address, rewriter.text(bare.decode('latin-1'))))
+        word = bare_word(text) if start is not None else None
+        if word is not None:
+            game_words.append((address, rewriter.text(word.decode('latin-1'))))
+    return dict(rid=script, kind='single', looks=sorted(looks.items()), hash_factors=rewriter.words(HASH_FACTORS),
+                last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
+                name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
+                bracketed=thoughts, game_words=game_words, routine=start, game_pages=game_pages(program, start) if start is not None else (),
+                page=rewriter.words([-1, -1]), word=rewriter.words([0]),
+                good=rewriter.words([0] * LIST_WORDS), bad=rewriter.words([0] * LIST_WORDS))
 
 
 def opening_picture(story):
@@ -611,7 +877,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
     table = {}
     for key, bank in looks.items():
         entries = [int(v) for v in key.split(',')]
-        table[look_hash(entries)] = bank
+        if table.setdefault(look_hash(entries), bank) != bank:
+            raise StoryError(f'{name}: two looks have the same hash')
     title = clean_title(title_of(archive_resources[1]))
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
     extra = [rid for rid in scripts if rid not in (FIRST_SCRIPT, BREW_STORY_SCRIPT)]
@@ -619,13 +886,13 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
         raise StoryError(f'{name}: scripts {extra} need the calendar driver or a script map')
     resources = {}
     for script in scripts:
-        program = strip_name_marks(decode_program(upgrade(archive_resources[script])))
+        program = strip_round_counts(strip_name_marks(decode_program(upgrade(archive_resources[script]))))
         rewriter = Rewriter(program, zero_gap=True)
-        context = dict(rid=script, kind='single', looks=sorted(table.items()), hash_factors=rewriter.words(HASH_FACTORS),
-                       last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1]),
-                       name_buffer=rewriter.words([0] * NAME_WORDS))
+        context = script_context(rewriter, script, table, not title.startswith('Quiz '), program)
         for pc, service, argc in rewriter.calls():
-            if service in RENAME:
+            if service == 12 and pc in context['game_pages']:
+                game_page(rewriter, pc, argc, context)
+            elif service in RENAME:
                 rewriter.rename(pc, RENAME[service])
             elif service in DROPPED:
                 dropped(rewriter, pc, argc, context)
@@ -633,6 +900,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
                 HANDLERS[service](rewriter, pc, argc, context)
             else:
                 raise StoryError(f'{name}, script {script}: service {service} with {argc} arguments has no translation yet')
+        if context['routine'] is not None:
+            word_game(rewriter, context['routine'], context)
         if script == FIRST_SCRIPT:
             rewriter.prologue(lambda s: (s.push(NARRATOR), s.call(75, 1), s.push(PLAYER), s.call(74, 1),
                                          s.push(EVENT_CHARACTER_KEY), s.push(-1), s.call(54, 2),
@@ -792,11 +1061,13 @@ def strip_png(scene):
 
 BADGE_MARGIN = 2
 BROKEN_GAP = 2
+BADGE_SCALE = 6                         # art pixels to the picture's, with no smoothing: the player scales it to SHS's size (TRANSLATED_BADGE_UNITS)
 
 
 def badge_pictures(art):
-    """{resource: PNG} of BREW's relationship icons, whole and broken: BREW's own icons never break, so a broken one is the whole
-    one parted down its middle, for the smartphone's loss animation."""
+    """{resource: PNG} of BREW's relationship icons, whole and broken: BREW's own icons never break, so a broken one is the whole one
+    parted down its middle, for the smartphone's loss animation. They're large and unsmoothed, so that they stay crisp however they're
+    scaled for the screen."""
     found = {}
     for number, name in enumerate(('heart', 'skull', 'smiley')):
         picture = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
@@ -808,8 +1079,8 @@ def badge_pictures(art):
         broken = Image.new('RGBA', whole.size, (0, 0, 0, 0))
         broken.paste(picture.crop((0, 0, half, picture.height)), (BADGE_MARGIN - BROKEN_GAP // 2, BADGE_MARGIN))
         broken.paste(picture.crop((half, 0, picture.width, picture.height)), (BADGE_MARGIN + half + BROKEN_GAP // 2, BADGE_MARGIN))
-        found[BADGE_BASE + number] = brew_art.png(whole)
-        found[BADGE_BASE + 3 + number] = brew_art.png(broken)
+        for base, image in ((BADGE_BASE + number, whole), (BADGE_BASE + 3 + number, broken)):
+            found[base] = brew_art.png(image.resize((image.width * BADGE_SCALE, image.height * BADGE_SCALE), Image.NEAREST))
     return found
 
 

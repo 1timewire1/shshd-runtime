@@ -106,6 +106,8 @@ MS3_CHARACTER_ART = {31400: 2000}
 # (DialogueRenderer.indicator_image): pack -> {SHS's icon: the pack's}. The ring that grows under a new icon stays SHS's.
 TRANSLATED_BADGE_ART = {pack: {3010: 26992, 3011: 26993, 3012: 26994, 3014: 26995, 3016: 26996, 3018: 26997}
                         for pack in (31600, 31000, 31100, 31200)}
+# ...and how its pictures scale to frame units, where it isn't '11's: BREW's are 6 times its 26-pixel icons, shown at SHS's 24 units.
+TRANSLATED_BADGE_UNITS = {pack: 24 / (26 * 6) for pack in (31000, 31100, 31200)}
 # shshd-runtime: a translated pack's own sounds for a relationship icon, for and against (`dc` in SHS '11: its value going up
 # or down, whichever icons that shows), in place of SHS's (engine._relationship).
 TRANSLATED_BADGE_SOUNDS = {31600: (26980 + 6, 26980 + 5)}

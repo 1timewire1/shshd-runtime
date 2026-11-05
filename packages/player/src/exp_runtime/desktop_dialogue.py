@@ -904,7 +904,8 @@ class DialogueRenderer:
                 image = None
             found = None
             if image is not None:
-                scale = BADGE_UNITS * k
+                units = getattr(GAMES.get(self.game_id()), 'TRANSLATED_BADGE_UNITS', {}).get(record.get('pack_id'), BADGE_UNITS)
+                scale = units * k
                 found = pygame.transform.smoothscale(image, (round(image.get_width() * scale), round(image.get_height() * scale)))
             self._badges[key] = found
         return found

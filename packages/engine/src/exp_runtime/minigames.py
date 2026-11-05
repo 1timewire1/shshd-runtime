@@ -38,14 +38,15 @@ class WordGame:
     HD_SELECT_MS, HD_FLY_OFF_MS, HD_FLY_ON_MS, HD_EFFECT_MS = 100, 500, 700, 1000
 
     def deal(self, random):
-        """FUN_000af010: rejection sampling, then exactly twenty pair swaps."""
-        if len(self.good) < 2 or len(self.bad) < 3:
-            raise ValueError('Word game needs at least two good and three bad entries')
+        """FUN_000af010: rejection sampling, then exactly twenty pair swaps. shshd-runtime: with only two bad entries (BREW's word
+        games, which always show two of each) the fourth is always good; native needs three, or its rejection loop never ends."""
+        if len(self.good) < 2 or len(self.bad) < 2:
+            raise ValueError('Word game needs at least two good and two bad entries')
         first, second = random.below(len(self.good)), random.below(len(self.bad))
         third = random.below(len(self.bad))
         while third == second:
             third = random.below(len(self.bad))
-        good_fourth = random.next() & 1 == 0
+        good_fourth = random.next() & 1 == 0 or len(self.bad) == 2
         pool, excluded = (self.good, (first,)) if good_fourth else (self.bad, (second, third))
         fourth = random.below(len(pool))
         while fourth in excluded:
