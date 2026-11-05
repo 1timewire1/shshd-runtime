@@ -141,6 +141,24 @@ Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Me
 python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR --sounds KG800_JAR --out OUT_DIR
 ```
 
+### `shsbrew`: the BREW games
+
+Required by every translated [BREW](BREW.md) story, under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 1, about 17 MB. The stories that need it are still being built.
+
+| Resources | What |
+| --- | --- |
+| 26000-26206 | Locations, three skies each: '08's, then '07's, then a sky alone (`brew.BACKGROUND_BASE`) |
+| 26900-26914 | Music, tracks 8000-8014 |
+| 26991 | The frame backdrop behind a pink box |
+| 26992-26997 | Relationship icons: heart, skull and smiley, whole and then broken |
+| 26998 | The spec: each story's looks |
+| 26999 | The frame backdrop |
+| 27000- | Portraits, five faces each, 381 looks |
+
+```sh
+python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --out OUT_DIR
+```
+
 ### `chslim`: Claire Hart (Slim)
 
 Optional, for Cause of Death. Revision 1, about 21 MB.

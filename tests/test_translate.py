@@ -1050,5 +1050,121 @@ class NovelPatchTests(unittest.TestCase):
             self.patched([{'op': 'remove', 'find': 'Nothing like this'}])
 
 
+@unittest.skipUnless(importlib.util.find_spec('PIL'), 'needs Pillow')
+class BrewShimTests(unittest.TestCase):
+    """brew.py's shims on authored scripts, run against a small host that keeps SHS's numbers."""
+
+    def context(self, rewriter, looks=()):
+        return dict(rid=25001, kind='single', looks=sorted(looks), hash_factors=rewriter.words(self.brew.HASH_FACTORS),
+                    last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1]),
+                    name_buffer=rewriter.words([0] * self.brew.NAME_WORDS))
+
+    def setUp(self):
+        import brew
+        self.brew = brew
+
+    def run_script(self, prog, handlers, looks=(), numbers=None):
+        """The rewritten script against SHS's number services. Returns (other calls, numbers); R after a handled call is the host's."""
+        rewriter = Rewriter(prog)
+        context = self.context(rewriter, looks)
+        for pc, service, argc in rewriter.calls():
+            handlers[service](rewriter, pc, argc, context)
+        vm, numbers, calls = KiwiVM(rewriter.finish()), {} if numbers is None else numbers, []
+        for _ in range(5000):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                return calls, numbers
+            service, args = stop.yield_id, stop.args
+            result = 0
+            if service in (44, 54):
+                numbers[0, args[0]] = args[1]
+            elif service in (45, 55):
+                result = numbers.get((0, args[0]), 0)
+            elif service == 52:
+                numbers[args[0], args[1]] = args[2]
+            elif service == 53:
+                result = numbers.get((args[0], args[1]), 0)
+            else:
+                calls.append((service, args))
+            vm.resume(result)
+        raise AssertionError('the script did not halt')
+
+    def test_upgrade_gives_kiwi_v2_with_the_same_machine(self):
+        body = struct.pack('>4H', 0, 0, 0, 1) + bytes((0x33,))
+        upgraded = decode_program(self.brew.upgrade(b'kiwi\x01\x00' + body))
+        self.assertEqual((upgraded.version, upgraded.previous_flag, [i.opcode for i in upgraded.instructions]), (2, 0, [0x33]))
+
+    def test_a_look_is_found_by_its_list_however_it_was_built(self):
+        entries = [271, -1, 0, 219, 225]
+        code = []
+        for value in entries:
+            code += [(0x1A, 3), (0x1A, 635), (0x1A, value), call(62, 3)]
+        bank = 27005
+        calls, numbers = self.run_script(program(*code, 0x33), {62: self.brew.list_push},
+                                         [(self.brew.look_hash(entries), bank)])
+        self.assertEqual(calls, [(72, (3, bank))])
+        # Entry 2 is 0: BREW's pink box.
+        self.assertEqual(numbers[3, self.brew.THEME], 2)
+        # A re-dress to another known look: the hash moves with the changed entry.
+        changed = [271, -1, 0, 219, 300]
+        calls, numbers = self.run_script(program((0x1A, 3), (0x1A, 635), (0x1A, 4), (0x1A, 300), call(64, 4), 0x33),
+                                         {64: self.brew.list_set}, [(self.brew.look_hash(changed), 27010)], numbers)
+        self.assertEqual(calls, [(72, (3, 27010))])
+
+    def test_relationship_icons_follow_brews_value(self):
+        for value, icons in ((0, -3), (19, -3), (20, -2), (30, -1), (40, 0), (65, 0), (66, 1), (76, 2), (100, 2)):
+            calls, numbers = self.run_script(program((0x1A, 2), (0x1A, 407), (0x1A, value), call(58, 3), 0x33), {58: self.brew.owned_set})
+            self.assertEqual((numbers[2, 407], numbers[2, self.brew.RELATIONSHIP_BREW]), (icons, value))
+        # Other keys pass through, and a read of 407 is BREW's own value.
+        _, numbers = self.run_script(program((0x1A, 2), (0x1A, 406), (0x1A, 50), call(58, 3), 0x33), {58: self.brew.owned_set})
+        self.assertEqual(numbers, {(2, 406): 50})
+        prog = program((0x1A, 2), (0x1A, 407), call(59, 2), 0x21, (0x1A, 9), 0x50, 0x04, 0x33)
+        rewriter = Rewriter(prog)
+        self.brew.owned_get(rewriter, 2, 2, self.context(rewriter))
+        vm = KiwiVM(rewriter.finish())
+        stop = vm.run()
+        self.assertEqual((stop.yield_id, stop.args), (53, (2, self.brew.RELATIONSHIP_BREW)))
+
+    def test_a_line_needs_an_open_scene_and_scenes_stack(self):
+        text = text_words('Hello')
+        line = [(0x1A, 2), (0x1A, 0), (0x1A, 3), call(72, 3)]
+        handlers = {72: self.brew.line, 13: self.brew.scene_open, 18: self.brew.scene_close}
+        calls, _ = self.run_script(program(*line, 0x33, words=text), handlers)
+        self.assertEqual(calls, [])
+        scenes = [0x5A, (0x1A, 1000), call(13, 2), (0x1A, 2), (0x1A, 1005), call(13, 2), *line, call(18, 0), 0x33]
+        calls, _ = self.run_script(program(*scenes, words=text), handlers)
+        base, sky = self.brew.BACKGROUND_BASE, self.brew.SKY_MODES
+        self.assertEqual([c for c in calls if c[0] == 11],
+                         [(11, (0, base)), (11, (0, base + sky * 5 + 2)), (11, (0, base))])
+        self.assertIn((73, (2,)), calls)
+
+    def test_build_query_answers_as_08(self):
+        for selector, answer in ((1, 2), (2, 1), (3, 5), (4, 0)):
+            prog = program((0x1A, selector), call(80, 1), 0x21, 0x04, 0x33)
+            rewriter = Rewriter(prog)
+            self.brew.build_query(rewriter, 1, 1, self.context(rewriter))
+            vm = KiwiVM(rewriter.finish())
+            self.assertEqual(vm.run().kind, StopKind.HALT)
+            self.assertEqual(vm.b, answer)
+
+    def test_name_marks_come_off_only_ends_of_short_strings(self):
+        words = text_words('Girl~~') + text_words('$USR~') + text_words('a~b')
+        stripped = self.brew.strip_name_marks(program(0x33, words=words))
+        self.assertEqual(list(stripped.main_words), text_words('Girl') + [0] + text_words('$USR') + text_words('a~b'))
+
+    def test_a_portrait_bank_fits_the_players_mask_exactly(self):
+        """The player reads art up to twice its 128 x 150 mask as 2x; anything larger is squeezed out of proportion."""
+        from PIL import Image
+        left, top, right, bottom = self.brew.portrait_box((200, 240))
+        width, height = self.brew.portrait_picture(Image.new('RGBA', (right - left, bottom - top))).size
+        self.assertLessEqual(width, 256)
+        self.assertLessEqual(height, 300)
+
+    def test_campaign_numbers(self):
+        for name, number in (('shs085_01_02_shs08.exp', 102), ('shs085_shs08_pt1.pud', 101), ('shs085_12_12_shs08.exp', 1212),
+                             ('shs085_quiz_3.exp', 9003), ('shs085_SP1_shs08.exp', 9101)):
+            self.assertEqual(self.brew.campaign_number(name), number)
+
+
 if __name__ == '__main__':
     unittest.main()

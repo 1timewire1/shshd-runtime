@@ -578,7 +578,7 @@ class Desktop:
         self.press = ButtonPress()
         self.images = OrderedDict()
         self._background_layer_cache = None   # (key, scaled surface) from the last _draw_background_layer call
-        self._frame_backdrop_cache = (None, None)   # (key, scaled surface or None), see _frame_backdrop
+        self._frame_backdrop_cache = (None, {})     # (key, {resource: scaled surface or None}), see _frame_backdrop
         self.buttons = []
         self.scroll = self.max_scroll = 0
         self.screen_token = None
@@ -2386,20 +2386,26 @@ class Desktop:
     def _frame_backdrop(self, size):
         """The playing episode's picture for the whole frame, scaled to `size`, or None for black: the resource its
         pack names in the game profile's TRANSLATED_FRAME_BACKDROP (New Rules' UI backdrop for its translations,
-        whose 3:1 location strips leave bands above and below), when the episode carries it."""
+        whose 3:1 location strips leave bands above and below), when the episode carries it. A pack may have another for
+        the speaker's box colour (TRANSLATED_THEME_BACKDROP: BREW's panel is pink behind a pink box)."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
-        backdrops = getattr(GAMES.get(self.session.engine.game_key), 'TRANSLATED_FRAME_BACKDROP', {})
-        asset_id = backdrops.get(record.get('pack_id'))
+        game = GAMES.get(self.session.engine.game_key)
+        asset_id = getattr(game, 'TRANSLATED_FRAME_BACKDROP', {}).get(record.get('pack_id'))
         exists = getattr(resources, 'exists', None)
         if asset_id is None or exists is None or not exists(asset_id):
             return None
-        key = (id(resources), asset_id, size)
+        themed = getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(self.session.engine.panel.theme)
+        if themed is not None and exists(themed):
+            asset_id = themed
+        key = (id(resources), size)
         if self._frame_backdrop_cache[0] != key:
+            self._frame_backdrop_cache = (key, {})      # (the surfaces of this episode at this size: one per colour)
+        surfaces = self._frame_backdrop_cache[1]
+        if asset_id not in surfaces:
             image = self._image(asset_id)
-            scaled = None if image is None else pygame.transform.smoothscale(image, size)
-            self._frame_backdrop_cache = (key, scaled)
-        return self._frame_backdrop_cache[1]
+            surfaces[asset_id] = None if image is None else pygame.transform.smoothscale(image, size)
+        return surfaces[asset_id]
 
     # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
     # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off

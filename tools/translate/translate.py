@@ -13,6 +13,12 @@ projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catal
 
 The shs11 command writes SHS '11's addon (shs11.py): every background, look and interface picture, and its music.
 
+    python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --out OUT_DIR
+    python tools/translate/translate.py brew --story FILE --addon ADDON.exp --out OUT_DIR
+
+The brew command writes the BREW games' addon (brew.py), or with --story a story that reads it. brew_casts.json is the BREW
+portrait catalogue's, for the looks.
+
 EPISODE can also be `king-of-diss` or `dancing-queen`, the stories built into res_large.pud, or `king-of-diss-lite`, the
 condensed retelling in a Lite Java build (`--lite JAR`); `--downloads DIR` names the .expd folder to learn their
 capitals from. `addon` writes the New Rules addon (every background, the music and the frame backdrop, which the
@@ -98,8 +104,19 @@ def main(argv=None):
     s11.add_argument('--story', help="with --twin: a story to translate instead of the addon, by title: 'The New Girl', 'Best Party Ever', 'Foreign Exchange', 'Lost Recipe' or 'Secret Ingredient'")
     s11.add_argument('--twin', type=Path, help="the story's smartphone .exp, for the minigames' words")
     s11.add_argument('--out', type=Path, required=True)
+    br = sub.add_parser('brew', help="the BREW games ('07, '08): the addon (brew.py) or, with --story, a story")
+    br.add_argument('--base-08', type=Path, help="the '08 game's folder, with game/SHS/res_xlarge.pud and addons/")
+    br.add_argument('--base-07', type=Path, help="the '07 phone's module folder, with res_xlarge.pud")
+    br.add_argument('--casts', type=Path, help='brew_casts.json from the BREW portrait catalogue (the looks)')
+    br.add_argument('--synth', choices=('java', 'sf2', 'none'), default='java', help='how the music is rendered')
+    br.add_argument('--soundfont', type=Path, help='a General MIDI .sf2 bank for --synth sf2')
+    br.add_argument('--story', type=Path, help='a Campaign story to translate instead of the addon')
+    br.add_argument('--addon', type=Path, help='the addon (the command without --story writes it)')
+    br.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.game == 'brew':
+        return translate_brew(args, parser)
     if args.game == 'x360':
         return translate_x360(args)
     if args.game == 'shs11':
@@ -197,6 +214,34 @@ def translate_shs11(args):
     path.write_bytes(data)
     print(f"{path}: {len(data) / 1048576:.1f} MB, {sum(map(len, spec['backgrounds'].values()))} backgrounds, {len(spec['looks'])} looks, "
           f"{len(spec['parts'])} loose parts, {len(spec['interface'])} interface pictures, {len(spec['music'])} tracks")
+    return 0
+
+
+def translate_brew(args, parser):
+    import json
+    import brew
+    if args.story:
+        if not args.addon:
+            parser.error('--story needs --addon')
+        name, data = brew.build_story(args.story, args.addon)
+        (args.out / name).write_bytes(data)
+        print(f'{name}: {len(data):,} bytes')
+        return 0
+    if not (args.base_08 and args.base_07 and args.casts):
+        parser.error('the addon needs --base-08, --base-07 and --casts')
+    render = None
+    if args.synth != 'none':
+        import midi_render
+        if args.synth == 'sf2':
+            if not args.soundfont:
+                parser.error('--synth sf2 needs --soundfont')
+            bank = midi_render.SoundFont(args.soundfont.read_bytes())
+            render = lambda data: midi_render.mp3(midi_render.render(midi_render.parse_midi(data), bank))
+        else:
+            render = lambda data: midi_render.mp3(midi_render.render_java(data))
+    addon, spec = brew.build_addon(json.loads(args.casts.read_text(encoding='utf-8')), {'08': args.base_08, '07': args.base_07}, render)
+    (args.out / f'{brew.ADDON_ID}.exp').write_bytes(addon)
+    print(f"{brew.ADDON_ID}.exp: {len(addon):,} bytes, {len(spec['looks'])} looks, {len(spec['stories'])} stories")
     return 0
 
 

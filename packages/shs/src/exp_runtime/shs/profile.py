@@ -82,7 +82,10 @@ TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}, 31600: {2698
 # where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
 # above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
 # The X360 prototype's translations (31400) show the same strips, so they carry the same backdrop.
-TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999}
+TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999, 31000: 26999, 31100: 26999, 31200: 26999}
+# shshd-runtime: a pack's backdrop for a speaker's box colour (key 651), in place of the one above: pack -> {theme: resource}.
+# BREW's dialogue panel turns pink behind a pink box and back for anyone else (screens.js DialogueScreen, seen in the real game).
+TRANSLATED_THEME_BACKDROP = {pack: {2: 26991} for pack in (31000, 31100, 31200)}
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
@@ -101,7 +104,8 @@ HIRES_SWITCH_PACKS = (31300,)
 MS3_CHARACTER_ART = {31400: 2000}
 # shshd-runtime: a translated pack's own pictures for the relationship icons, on the smartphone's places and motion
 # (DialogueRenderer.indicator_image): pack -> {SHS's icon: the pack's}. The ring that grows under a new icon stays SHS's.
-TRANSLATED_BADGE_ART = {31600: {3010: 26992, 3011: 26993, 3012: 26994, 3014: 26995, 3016: 26996, 3018: 26997}}
+TRANSLATED_BADGE_ART = {pack: {3010: 26992, 3011: 26993, 3012: 26994, 3014: 26995, 3016: 26996, 3018: 26997}
+                        for pack in (31600, 31000, 31100, 31200)}
 # shshd-runtime: a translated pack's own sounds for a relationship icon, for and against (`dc` in SHS '11: its value going up
 # or down, whichever icons that shows), in place of SHS's (engine._relationship).
 TRANSLATED_BADGE_SOUNDS = {31600: (26980 + 6, 26980 + 5)}
@@ -119,7 +123,7 @@ TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None}
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).
 # SHS '11's (31600) share theirs too: its `$ZOE` is another playthrough's, kept apart from the smartphone stories'.
-TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11'}
+TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11', 31000: 'brew', 31100: 'brew', 31200: 'brew'}
 # shshd-runtime: two-speaker lines in a translated pack (Session.dialogue_duet): pack -> (partner key, expression
 # key), global numbers the translator sets around a line two characters say together ("Both", "Andy and Laura"),
 # the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
@@ -156,7 +160,12 @@ LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Ru
                 'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4}),
                 # SHS '11, the J2ME game (tools/translate shs11_story.py), in the orange of the 11 in its logo: between that
                 # 11's outline (216, 96, 32) and its gold fill (248, 176, 8), which is too pale to read on a menu's rows.
-                'SHS11': dict(badge="'11", color=(232, 120, 16), category="SHS '11")}
+                'SHS11': dict(badge="'11", color=(232, 120, 16), category="SHS '11"),
+                # The BREW games (tools/translate brew.py). The '08 Campaign's unnumbered stories go by their in-game dates
+                # (owner, 2026-11-05): Quizzes 1-3 and Special 1 Halloween.
+                'SHS07': dict(badge="'07", color=(80, 112, 200), category="SHS '07"),
+                'SHS08': dict(badge="'08", color=(200, 64, 96), category="SHS '08",
+                              order={9001: 302.5, 9002: 303.5, 9003: 401.5, 9101: 707.5})}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)
