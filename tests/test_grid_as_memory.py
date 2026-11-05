@@ -199,7 +199,7 @@ class SessionTests(unittest.TestCase):
     def sounds_of(self, game, sound, *, skin):
         played = []
         game.sounds.append(sound)
-        Session._shs11_sounds(SimpleNamespace(shs11_hd_sounds=skin, engine=SimpleNamespace(
+        Session._shs11_sounds(SimpleNamespace(shs11_hd_sounds=skin, shs11_seen_this_run=None, engine=SimpleNamespace(
             request_sound=lambda *assets: played.extend(assets))), game)
         self.assertEqual(game.sounds, [])
         return played
@@ -236,7 +236,7 @@ class SessionTests(unittest.TestCase):
         game = self.reflex_with_a_right_icon()
         self.assertTrue(game.press(0))
         played = []
-        Session._shs11_sounds(SimpleNamespace(shs11_hd_sounds=skin, engine=SimpleNamespace(
+        Session._shs11_sounds(SimpleNamespace(shs11_hd_sounds=skin, shs11_seen_this_run=None, engine=SimpleNamespace(
             request_sound=lambda *assets: played.extend(assets))), game)
         self.assertEqual(game.sounds, [])
         return played
@@ -250,6 +250,34 @@ class SessionTests(unittest.TestCase):
     def test_a_sound_outside_the_swaps_is_left_alone(self):
         memory = MemoryGame.opened([round_of('CAT')], 60, 300)
         self.assertEqual(self.sounds_of(memory, 12345, skin=True), [12345])
+
+    def test_with_a_runs_set_a_second_story_skips_it_but_a_skipped_game_does_not_count(self):
+        seen = set()
+        skipped = Session(episode())
+        skipped.grids_as_memory, skipped.shs11_seen_this_run = True, seen
+        skipped.advance()
+        self.assertTrue(skipped.engine.shs11_memory.tutorial)
+        skipped.skip_shs11(1)
+        self.assertEqual(seen, set())               # never shown: the next one still has it
+        played = Session(episode())
+        played.grids_as_memory, played.shs11_seen_this_run = True, seen
+        played.advance()
+        game = played.engine.shs11_memory
+        self.assertTrue(game.tutorial)
+        game.tutorial = False
+        played._shs11_sounds(game)
+        self.assertEqual(seen, {'memory'})
+        last = Session(episode())
+        last.grids_as_memory, last.shs11_seen_this_run = True, seen
+        last.advance()
+        self.assertFalse(last.engine.shs11_memory.tutorial)
+        self.assertTrue(last.engine.shs11_memory.grid)
+
+    def test_a_new_run_shows_it_again(self):
+        again = Session(episode())
+        again.grids_as_memory, again.shs11_seen_this_run = True, set()
+        again.advance()
+        self.assertTrue(again.engine.shs11_memory.tutorial)
 
     def test_a_save_comes_back_as_the_same_game(self):
         session = self.opened()

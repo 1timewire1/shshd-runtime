@@ -64,7 +64,7 @@ class FramePresentationTests(unittest.TestCase):
         faded(renderer.canvas, 100)
         with patch('pygame.time.get_ticks', return_value=1000):
             ui._fade_minigame(action, renderer)
-        self.assertEqual(renderer.canvas.get_alpha(), 255)
+        self.assertIsNone(renderer.canvas.get_alpha())      # not even 255, which still blends
 
     def band_renderer(self):
         from exp_runtime.desktop_loading import HdLoadingRenderer

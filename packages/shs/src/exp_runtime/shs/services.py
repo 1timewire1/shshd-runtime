@@ -4,7 +4,7 @@ from copy import deepcopy
 from ..loading import LoadingScreen, loading_waits
 from ..vm import VMError
 from .football import read_football
-from ..shs11_games import grid_memory
+from ..shs11_games import MemoryGame, grid_memory
 from .word_grid import read_grid
 from .survey import confirmation as survey_confirmation, is_survey, script_response
 
@@ -138,11 +138,12 @@ def dispatch(self, vm, *, resource_exists=None):
         details = dict(background_id=background, left_character=args[6], left_expression=args[7],
                        right_character=args[8], right_expression=args[9])
         # shshd-runtime: the "Use '11's Memory for Word Grid" switch.
-        memory = (grid_memory(game, random, tutorial=not self.shs11_tutorial_seen)
-                  if getattr(self, 'grids_as_memory', False) else None)
+        memory = grid_memory(game, random) if getattr(self, 'grids_as_memory', False) else None
         if memory is not None:
+            if self.shs11_tutorial_due('shs11_tutorial_seen', MemoryGame.KIND):
+                memory = MemoryGame.opened(memory.rounds, memory.total_ms // 1000, memory.target, tutorial=True)
+                memory.grid = True
             self.shs11_memory, self.random = memory, random
-            self.shs11_tutorial_seen = True
             return EngineAction('shs11_memory', request, False, details)
         random = deepcopy(self.random)
         game.initialize(random)

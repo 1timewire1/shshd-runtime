@@ -334,6 +334,7 @@ class Desktop:
         session.nr_arena = self._arena_minigames
         session.grids_as_memory = self._grids_as_memory
         session.shs11_hd_sounds = self._skin_has_its_sounds()
+        session.shs11_seen_this_run = self._shs11_seen_this_run
         session.skip_arena = self._skip_minigames
         session.cutscenes = True            # (this player draws them: desktop_cutscene)
         self._session = session
@@ -353,6 +354,19 @@ class Desktop:
         """Only where the skin really draws: without the HD bundle's art, '11's own look keeps '11's own sounds."""
         hd = getattr(self, 'shs11_hd', None)
         return self._word_grid_skin and hd is not None and hd.available()
+
+    _shs11_seen_this_run = None
+
+    @property
+    def shs11_seen_this_run(self):
+        """The SHS '11 tutorials finished since the app started, a set the Application keeps from episode to episode."""
+        return self._shs11_seen_this_run
+
+    @shs11_seen_this_run.setter
+    def shs11_seen_this_run(self, seen):
+        self._shs11_seen_this_run = seen
+        if getattr(self, '_session', None) is not None:
+            self._session.shs11_seen_this_run = seen
 
     _grids_as_memory = False
 

@@ -16,8 +16,10 @@ else 0 (`cv`, state 7).
 Its oddity is kept: a bad box is an `X`, and the check for the next letter comes first, so in RELAX a bad box counts as the
 X when that's next, and the real X scores as an out-of-order letter afterwards.
 
-Two changes. '11 keeps one "tutorials seen" flag for the whole game; this keeps it per story (EngineState), as a story has
-no way to reach another's. And '11 takes a key's release; this takes the press, as a pointer has no key to hold.
+Each game's tutorial shows once a launch, as '11's flags do (`di`.c and .d: made with the app, never saved, set as the tutorial ends:
+Session.shs11_seen_this_run, kept by the player). Without a player's set, as in a preview, EngineState's flag does for one story.
+
+One change. '11 takes a key's release; this takes the press, as a pointer has no key to hold.
 """
 from dataclasses import dataclass, field
 
@@ -160,6 +162,7 @@ class MemoryGame:
     flash: list[int] = field(default_factory=lambda: [-1, 0])   # the cell just pressed, and how long ago
     sounds: list[int] = field(default_factory=list)     # waiting for the session to play
     visual_ms: int = 0                  # how long it has been up (for its look's clouds and turning cubes; nothing here reads it)
+    KIND = 'memory'                     # (which tutorial: not a field)
     grid: bool = False                  # standing in for a word grid (`grid_memory`): its result is 1 or 0, its sounds GRID_SOUNDS
 
     @classmethod
@@ -402,6 +405,8 @@ class ReflexGame:
     flash: list[int] = field(default_factory=lambda: [-1, 0])
     sounds: list[int] = field(default_factory=list)
     visual_ms: int = 0
+
+    KIND = 'reflex'                     # (which tutorial: not a field)
 
     @classmethod
     def opened(cls, rounds, seconds, target, *, tutorial=False):

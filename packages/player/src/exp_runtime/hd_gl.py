@@ -70,6 +70,12 @@ class GLAtlas:
             surface.blit(self.frame(r), (dx - left, dy - top))
         return surface
 
+    @lru_cache(maxsize=32)
+    def scaled(self, ref, flip, size):
+        """The frame or composite at `size`: most are drawn at one size frame after frame, a spinning haze or ring for one."""
+        image = self.image(ref)
+        return pygame.transform.smoothscale(pygame.transform.flip(image, True, False) if flip else image, size)
+
     def draw(self, canvas, ref, x, y, *, origin=False, alpha=1., sx=1., sy=None, angle=0.,
              pivot=(0, 0), flip=False):
         """`renderCutupEx`: the frame's image placed at (x, y) (its top-left, or its
@@ -88,7 +94,7 @@ class GLAtlas:
         px, py = x + pivot[0], y + pivot[1]
         if sx != 1 or sy != 1:
             size = max(1, round(image.get_width() * abs(sx))), max(1, round(image.get_height() * abs(sy)))
-            image = pygame.transform.smoothscale(image, size)
+            image = self.scaled(ref, flip, size)
         w, h = image.get_size()
         # The scaled image's center, relative to the pivot.
         cx, cy = -pivot[0] * abs(sx) + w / 2, -pivot[1] * abs(sy) + h / 2
@@ -150,35 +156,25 @@ class ImageFont:
             x += self.font.char_width(char, monospace) + self.font.tracking
 
 
-def _solve(matrix, values):
-    """Gauss-Jordan on a small dense system."""
-    n = len(values)
-    rows = [row[:] + [value] for row, value in zip(matrix, values)]
-    for column in range(n):
-        pivot = max(range(column, n), key=lambda r: abs(rows[r][column]))
-        if abs(rows[pivot][column]) < 1e-12:
-            return None
-        rows[column], rows[pivot] = rows[pivot], rows[column]
-        scale = rows[column][column]
-        rows[column] = [v / scale for v in rows[column]]
-        for r in range(n):
-            if r != column and rows[r][column]:
-                factor = rows[r][column]
-                rows[r] = [a - factor * b for a, b in zip(rows[r], rows[column])]
-    return [row[n] for row in rows]
-
-
 def perspective_coefficients(quad, size):
-    """PIL PERSPECTIVE coefficients mapping each output pixel to the source pixel
-    of a `size` image whose corners (TL, TR, BR, BL) land on `quad`."""
-    width, height = size
-    matrix, values = [], []
-    for (x, y), (u, v) in zip(quad, ((0, 0), (width, 0), (width, height), (0, height))):
-        matrix.append([x, y, 1, 0, 0, 0, -x * u, -y * u])
-        values.append(u)
-        matrix.append([0, 0, 0, x, y, 1, -x * v, -y * v])
-        values.append(v)
-    return _solve(matrix, values)
+    """PIL PERSPECTIVE coefficients mapping each output pixel to the source pixel of a `size` image whose corners (TL, TR, BR, BL)
+    land on `quad`, or None for a quad with no area. In closed form (Heckbert's square-to-quad, inverted): every cube face asks for
+    these, and solving the eight equations in Python was a quarter of its cost."""
+    (x0, y0), (x1, y1), (x2, y2), (x3, y3) = quad
+    dx1, dx2, sx = x1 - x2, x3 - x2, x0 - x1 + x2 - x3
+    dy1, dy2, sy = y1 - y2, y3 - y2, y0 - y1 + y2 - y3
+    den = dx1 * dy2 - dx2 * dy1
+    if abs(den) < 1e-12:
+        return None
+    g, h = (sx * dy2 - dx2 * sy) / den, (dx1 * sy - sx * dy1) / den
+    a, b, d, e = x1 - x0 + g * x1, x3 - x0 + h * x3, y1 - y0 + g * y1, y3 - y0 + h * y3
+    last = a * e - b * d
+    if abs(last) < 1e-12:
+        return None
+    width, height = size[0] / last, size[1] / last
+    return ((e - y0 * h) * width, (x0 * h - b) * width, (b * y0 - x0 * e) * width,
+            (y0 * g - d) * height, (a - x0 * g) * height, (x0 * d - a * y0) * height,
+            (d * h - e * g) / last, (b * g - a * h) / last)
 
 
 def to_pil(surface):

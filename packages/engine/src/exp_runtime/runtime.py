@@ -155,6 +155,7 @@ class Session:
     # story plays the word game or timed choices it carries for apps without the arena. Not saved: read at each call.
     nr_arena = True
     grids_as_memory = False     # the "Use '11's Memory for Word Grid" switch: asked as each grid opens, so one already open stays
+    shs11_seen_this_run = None  # the SHS '11 tutorials finished since the app started, from the player (shs11_games.py's note)
     shs11_hd_sounds = False     # '11's games drawn in the Word Grid skin have its sounds too (GRID_SOUNDS; owner, 2026-11-04)
     cutscenes = False           # shshd-runtime: whether a player draws storyboard cutscenes (desktop_cutscene)
     # shshd-runtime: Ask to Skip Mini-Games for New Rules' arena: service 213 waits (an 'arena_skip' screen) for the
@@ -653,6 +654,7 @@ class Session:
                 queued_notice = self.engine.next_dialogue_notice
                 self.engine.nr_arena_enabled = self.nr_arena
                 self.engine.grids_as_memory = self.grids_as_memory
+                self.engine.shs11_seen_this_run = self.shs11_seen_this_run
                 self.engine.nr_arena_skip = self.skip_arena
                 self.engine.badge_sounds = self._badge_sounds()
                 self.engine.cutscenes_enabled = self.cutscenes
@@ -1062,6 +1064,8 @@ class Session:
             if sounds:
                 self.engine.request_sound(*sounds)
             game.sounds.clear()
+        if self.shs11_seen_this_run is not None and not game.tutorial:
+            self.shs11_seen_this_run.add(game.KIND)
 
     def _slot_sounds(self):
         game = self.engine.x360_slot

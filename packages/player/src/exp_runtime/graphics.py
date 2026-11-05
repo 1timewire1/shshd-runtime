@@ -141,9 +141,14 @@ def faded(surface, alpha):
     per_pixel = get_masks is not None and bool(get_masks()[3])
     if alpha is None and per_pixel:
         return surface              # (set_alpha(None) would also switch off its per-pixel blending)
-    if alpha is None or not per_pixel:
-        # 255 rather than None: pygame-ce's set_alpha(None) keeps the last alpha of a surface faded before.
-        surface.set_alpha(255 if alpha is None else max(0, round(alpha)))
+    if alpha is None:
+        # 255 first: pygame-ce's set_alpha(None) can keep the last alpha of a surface faded before. Then None, as a surface left at
+        # 255 still blends: that took a full frame's blit from 0.1 ms to 10 on a PC and from about 1 to 34 on a phone.
+        surface.set_alpha(255)
+        surface.set_alpha(None)
+        return surface
+    if not per_pixel:
+        surface.set_alpha(max(0, round(alpha)))
         return surface
     result = surface.copy()
     result.fill((255, 255, 255, max(0, round(alpha))), special_flags=__getattr__('BLEND_RGBA_MULT'))

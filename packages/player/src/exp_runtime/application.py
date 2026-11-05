@@ -1944,6 +1944,7 @@ class Application:
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
+        self.game.shs11_seen_this_run = self.__dict__.setdefault('shs11_seen_this_run', set())     # (for as long as the app runs)
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin

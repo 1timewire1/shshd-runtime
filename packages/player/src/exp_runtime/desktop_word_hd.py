@@ -45,6 +45,7 @@ BACKGROUND_ORIGIN = (-64, -220)      # fitted against four photos (the image is 
 BACKGROUND_SCALE_Y = .9875
 HAZE_SCALE, HAZE_SPIN = 2 * 2.844, -20.
 QUICK_DRAWING = False               # a phone's cheaper haze and turning cubes (platforms/android.py): `haze_layer`, `turn_ms`
+TURN_STEP_DEGREES = 12              # a real grid's cube, turning 180 in 700 ms, changes pose about 21 times a second then
 TURN_STEP_MS = 33                   # a turning cube's pose lasts this long then
 HAZE_QUICK_MS = 25                  # how often it turns then: every second frame at 60 fps, every frame below 40
 HAZE_TURNED_AT = 4                  # the haze is soft, so it turns at a quarter of its size and is then enlarged (a 1456 px turn every frame is slow)
@@ -518,6 +519,7 @@ class HdWordRenderer:
         size = max(1, round(width * 2)), max(1, round(height * 2))
         return image if image.get_size() == size else pygame.transform.smoothscale(image, size)
 
+    @lru_cache(maxsize=8)
     def masked_portrait(self, image, mirrored):
         """The portrait cut by the 266 x 300 mask (`drawPortrait`'s masked draw)."""
         mask = self.mask()
@@ -613,8 +615,11 @@ class HdWordRenderer:
         Drawn once per pose (cached), then blitted."""
         symbols = symbols or {}
         pictures = tuple(symbols.get(ord(c)) if c else None for c in (front, back))
-        image, left, top = self.cube_image(width, height, col, row, mode, front, back, round(alpha * 50),
-                                           round(size * 200), round(angle * 2), pictures)
+        if QUICK_DRAWING:       # fewer poses: each new one is drawn from scratch, and a new board has fifteen cubes turning at once
+            alpha50, size200, angle2 = round(alpha * 10) * 5, round(size * 20) * 10, round(angle / TURN_STEP_DEGREES) * TURN_STEP_DEGREES * 2
+        else:
+            alpha50, size200, angle2 = round(alpha * 50), round(size * 200), round(angle * 2)
+        image, left, top = self.cube_image(width, height, col, row, mode, front, back, alpha50, size200, angle2, pictures)
         if image is not None:
             self.canvas.blit(image, (left, top))
 
@@ -659,8 +664,8 @@ class HdWordRenderer:
         left, top = math.floor(min(xs)), math.floor(min(ys))
         surface = pygame.Surface((math.ceil(max(xs)) - left + 1, math.ceil(max(ys)) - top + 1),
                                  pygame.SRCALPHA).convert_alpha()
-        # In a phone's turn the cube is in motion and gone in moments: no smoothing, at about a third of the time.
-        resample = Image.Resampling.NEAREST if QUICK_DRAWING and angle else Image.Resampling.BILINEAR
+        # A phone's cube in motion is gone in moments: no smoothing, at about a third of the time.
+        resample = Image.Resampling.NEAREST if QUICK_DRAWING and (angle or size != 1) else Image.Resampling.BILINEAR
         for image, quad, opacity in operations:
             draw_quad(surface, image, [(x - left, y - top) for x, y in quad], opacity, resample)
         return surface, left, top

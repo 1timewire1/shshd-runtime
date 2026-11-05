@@ -110,6 +110,7 @@ class EngineState:
     # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
     # selector NR_ARENA_QUERY answers 1 only with it on.
     nr_arena_enabled = False
+    shs11_seen_this_run = None      # Not saved: the SHS '11 tutorials finished since the app started (Session.shs11_seen_this_run sets it)
     grids_as_memory = False         # Not saved: shshd-runtime's "Use '11's Memory for Word Grid" (Session.grids_as_memory sets it)
     cutscenes_enabled = False       # shshd-runtime: service 70 selector CUTSCENE_QUERY (Session.cutscenes)
     # Not saved: whether service 213 asks before an arena game (Session.skip_arena sets it); else it plays at once.
@@ -354,6 +355,13 @@ class EngineState:
             toast.message = post
         else:
             self.faceplace_toast = FaceplaceToast(post)
+
+    def shs11_tutorial_due(self, flag, kind):
+        """Whether an SHS '11 game opening now shows its tutorial: `shs11_games`' note."""
+        seen = self.shs11_seen_this_run
+        due = kind not in seen if seen is not None else not getattr(self, flag)
+        setattr(self, flag, True)
+        return due
 
     def read_text(self, vm: KiwiVM, reference: int) -> str:
         """FUN_0009f420/0009f258: packed text or a runtime string slot."""
@@ -1052,15 +1060,14 @@ class EngineState:
             for k in range(args[2]):
                 cue, word, *numbers = [vm.read_word(args[3] + ROUND_WORDS * k + i) for i in range(ROUND_WORDS)]
                 rounds.append([self.resolve_text(vm, cue), self.read_text(vm, word), *numbers])
-            self.shs11_memory = MemoryGame.opened(rounds, args[0], args[1], tutorial=not self.shs11_tutorial_seen)
-            self.shs11_tutorial_seen = True
+            self.shs11_memory = MemoryGame.opened(rounds, args[0], args[1], tutorial=self.shs11_tutorial_due('shs11_tutorial_seen', MemoryGame.KIND))
             return EngineAction('shs11_memory', request, False, _shs11_details(args[4]))
         if y == SHS11_REFLEX:                                   # (likewise)
             need(5)
             rounds = [[signed16(vm.read_word(args[3] + REFLEX_ROUND_WORDS * k + i)) for i in range(REFLEX_ROUND_WORDS)]
                       for k in range(args[2])]
-            self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1], tutorial=not self.shs11_reflex_tutorial_seen)
-            self.shs11_reflex_tutorial_seen = True
+            self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1],
+                                                  tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
             return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
         if y == 3:
             need(3)
