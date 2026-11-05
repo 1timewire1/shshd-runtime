@@ -154,8 +154,9 @@ PRESENTATION_RECORD = True
 LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
                 # Day of Diss, Monday Planner, Dating Beth, Puzzle Test (owner, 2026-11-02).
                 'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4}),
-                # SHS '11, the J2ME game (tools/translate shs11_story.py), in its menus' red.
-                'SHS11': dict(badge="'11", color=(214, 47, 89), category="SHS '11")}
+                # SHS '11, the J2ME game (tools/translate shs11_story.py), in the orange of the 11 in its logo: between that
+                # 11's outline (216, 96, 32) and its gold fill (248, 176, 8), which is too pale to read on a menu's rows.
+                'SHS11': dict(badge="'11", color=(232, 120, 16), category="SHS '11")}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)
