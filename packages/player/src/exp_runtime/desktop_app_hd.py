@@ -221,7 +221,7 @@ class AppOptions:
         settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'choice_hints', 'skip_minigames',
                                             'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                             'hd_backdrop', 'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin',
-                                            'grids_as_memory',
+                                            'grids_as_memory', 'skip_ahead',
                                             'ch_portraits', 'ch_backdrop',
                                             'arena_minigames', 'arena_skin',
                                             'skip_sound_prompt')}

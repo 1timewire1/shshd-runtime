@@ -1135,6 +1135,11 @@ class Application:
         except (ContentError, OSError, ValueError):
             return False
 
+    def apply_skip_ahead(self):
+        """The Allow Skip Ahead switch reaches a paused episode."""
+        if self.game:
+            self.game.skip_ahead = self.state.skip_ahead
+
     def apply_grids_as_memory(self):
         """The "Use '11's Memory for Word Grid" switch reaches a paused episode: it's asked as each grid opens."""
         if self.game:
@@ -1944,6 +1949,7 @@ class Application:
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
+        self.game.skip_ahead = self.state.skip_ahead
         self.game.shs11_seen_this_run = self.__dict__.setdefault('shs11_seen_this_run', set())     # (for as long as the app runs)
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.arena_minigames = self.state.arena_minigames
@@ -2050,6 +2056,7 @@ class Application:
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory
+        self.state.skip_ahead = self.game.skip_ahead
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
@@ -2307,7 +2314,7 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
+                               'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'ch_portraits', 'ch_backdrop',
                                'arena_minigames',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
@@ -2328,6 +2335,8 @@ class Application:
                     self.apply_word_grid_skin()
                 if key == 'grids_as_memory':
                     self.apply_grids_as_memory()
+                if key == 'skip_ahead':
+                    self.apply_skip_ahead()
                 if key == 'ch_portraits':
                     self.apply_ch_portraits()
                 if self.game:

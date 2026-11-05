@@ -637,6 +637,14 @@ that need no answer. That row runs the native timeout callback (`Session.expire_
 result. The word quiz (service 71) keeps its clock; that is Ask to Skip Mini-Games'. Hints mark the real options
 only.
 
+**Options → Extras → Allow Skip Ahead** (this player's, off by default): adds **Skip Ahead** to the pause menu, under Resume, and the **N** key. Either one goes straight to the next thing that needs the player (`skip_ahead.py`), and the screen fades in on it. It is an all-games version of SHS '11's hidden code 4687 (`reference/Other Games/docs/SHS_11_JAVA_ENGINE.md`), and is one-shot, unlike that code.
+
+- **It stops at:** a choice, name entry, the look picker, a quiz, a mini-game, the arena, a service with no handler, and the next title card.
+- **It goes past:** dialogue, message panels, cutscenes, loading and poll screens, and the title card it was pressed on. Their sounds and vibration are dropped. The script still runs as in play, so flags, the tree and the wall keep up, and the music is whichever should be playing at the stop.
+- **It never finishes a story:** with nothing left to stop at, it holds on the last line. On that line, it says "Nothing left to skip".
+
+Everything is skipped, read or not. Skipping only what the player has seen is a possible later addition (the owner, 2026-11-04), and would need its own record of lines, as the tree only tracks scenes.
+
 In Cause of Death the Choice Hints switch is named **Choice & Answer Hints**, since only CoD has the typed puzzles
 whose faint answers it also shows. On a device that can vibrate (exp-runtime's iOS host), the Sound page's last
 switch is the game's own **Vibration** (string 11) and the device vibrates; elsewhere it is Simulated Vibration

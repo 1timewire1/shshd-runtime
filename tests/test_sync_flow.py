@@ -43,7 +43,7 @@ class SyncFlowTests(unittest.TestCase):
         app = app_with(self.root, autoplay=True, music=True, vibration=True, device_vibration=False,
                        controller_confirm='south', grid_controls='hold', **{key: False for key in (
                            'sound', 'logging_disabled', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
-                           'skip_upsell_intros', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
+                           'skip_upsell_intros', 'skip_ahead', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
                            'arena_minigames', 'arena_skin', 'skip_sound_prompt')}, music_volume=50, sound_volume=50, order='episode', title_language='en')
         provider = SendProvider(app, ['options', 'episodes'], ['shs'])
         self.assertEqual(provider.offer(['shs']), {'shs': ['a']})

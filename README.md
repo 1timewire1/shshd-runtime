@@ -140,7 +140,8 @@ you close the app.
 
 With the SHS HD IPA (and for Cause of Death), Options lists **General**,
 **Sound**, **Extras** and, on the main menu, **Data Management**. Extras holds
-the play aids: Disable Choice Timer, Choice Hints and Ask to Skip Mini-Games.
+the play aids: Disable Choice Timer, Choice Hints, Ask to Skip Mini-Games and
+Allow Skip Ahead (the Android menus do not offer that last one).
 Without it, SHS uses the original Android menus, where the same switches sit
 under **Options** and **Options → Cheats**.
 

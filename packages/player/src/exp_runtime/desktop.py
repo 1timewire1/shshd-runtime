@@ -65,6 +65,7 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
+from .skip_ahead import can_skip, skip_ahead
 from .choice_hints import ARENA_RESULTS, arena_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
@@ -273,6 +274,7 @@ class Desktop:
     # is out they wait AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS) and advance by themselves (owner's
     # choice, 2026-10-21: longer than the Continue pill's 250 ms expansion, to be safe).
     autoplay = False
+    skip_ahead = False  # Extras' Allow Skip Ahead: the pause menu's row and the N key (skip_ahead.py)
     AUTOPLAY_WAIT_MS = 750
     AUTOPLAY_TITLE_WAIT_MS = 1500
     autoplay_ms = 0
@@ -2659,7 +2661,9 @@ class Desktop:
         buttons = self.pause_renderer.draw(self.canvas, application=self.on_menu_page is not None,
                                             main_menu=self.on_main_menu is not None,
                                             pressed=self.press.pressed or self.menu_focus,
-                                            elapsed_ms=self.pause_elapsed_ms, closing=self.pause_closing)
+                                            elapsed_ms=self.pause_elapsed_ms, closing=self.pause_closing,
+                                            extra_entries=(('Skip Ahead', ('skip_ahead',)),)
+                                            if self.skip_ahead and can_skip(self.session) else ())
         self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                         for rect, command in buttons]
         if pygame.time.get_ticks() < self.message_until:
@@ -2722,7 +2726,8 @@ class Desktop:
                        if pygame.controller_connected() else {}),
                     music_volume=self.music_volume,
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
-                    skip_minigames=self.skip_minigames,
+                    skip_minigames=self.skip_minigames, skip_ahead=self.skip_ahead,
+                    **({'skip_ahead_row': True} if self.skip_ahead and can_skip(self.session) else {}),
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
@@ -2896,6 +2901,8 @@ class Desktop:
                 self.choice_hints = not self.choice_hints
             elif command[1] == 'skip_minigames':
                 self.skip_minigames = not self.skip_minigames
+            elif command[1] == 'skip_ahead':
+                self.skip_ahead = not self.skip_ahead
             elif command[1] == 'skip_ad_intros':
                 self.skip_ad_intros = not self.skip_ad_intros
             elif command[1] == 'autoplay':
@@ -2947,6 +2954,9 @@ class Desktop:
             self._menu_sound()
         if kind == 'menu':
             self.open_pause()
+        elif kind == 'skip_ahead':
+            self._menu_sound()
+            self._skip_ahead()
         elif kind == 'resume':
             # The menu scales from 1 to 0.00001 over 400 ms before the story resumes (`notifyNewMenu`'s zoom run
             # backwards, docs/MAIN_MENU.md); `tick` closes it once the zoom is done.
@@ -3311,6 +3321,9 @@ class Desktop:
             return True
         if event.type == pygame.KEYDOWN:
             self.press.cancel()
+            if event.key == pygame.K_n and self.skip_ahead and self._skip_ahead_ready():
+                self._skip_ahead()
+                return True
             rows = (self._choice_focus_rows(action, asking)
                     if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
                     else [])
@@ -3923,6 +3936,33 @@ class Desktop:
             return MenuStrings.parse(self.session.resources.library.hd_raw_resource(15))[271]
         except (AttributeError, ContentError, ValueError, IndexError):
             return 'Please complete Football Season episode to unlock this feature.'
+
+    def _skip_ahead_ready(self):
+        """Nothing is holding the story up that a skip shouldn't run over."""
+        return (not self.error and not self.fade and self.host_prompt is None and can_skip(self.session)
+                and not (self.notice_stack is not None and self.notice_stack.stack))
+
+    def _skip_ahead(self):
+        """Skip Ahead (skip_ahead.py): the session goes to the next stop, and the screen fades in from black on it, as a
+        warp's does. Its music is whichever should be playing there. The sounds and buzzes along the way are dropped."""
+        if not self._skip_ahead_ready():
+            return
+        moved = []
+        self._attempt(lambda: moved.append(skip_ahead(self.session)))
+        if self.error:
+            return
+        if not moved[0]:
+            self._notice('Nothing left to skip')
+            return
+        engine = self.session.engine
+        self.sound_serial, self.vibration_serial = engine.sound_serial, engine.vibration_serial
+        self.menu_open = self.pause_closing = False
+        self.autoplay_ms = 0
+        self.side_panels.tree_follow = True
+        self.location_pan = LocationPan()
+        self.location_shown = self.location_changing = None
+        self.ui_layers = self.ui_handover = None
+        self.fade = dict(kind=6, phase='in', since=pygame.time.get_ticks(), frozen=None)
 
     def _warp(self, node):
         """`SHSDTView warpToNode:animatedScroll:`: load the scene's saved game and fade the game back in from black; the

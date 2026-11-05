@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from .exp import MAX_PAYLOAD
 from .ui_assets import Raster, UIAssetError, _Reader
 
+_PARSED = {}                            # a string bank's bytes -> its MenuStrings
+
 
 @dataclass(frozen=True)
 class MenuStrings:
@@ -23,6 +25,11 @@ class MenuStrings:
 
     @classmethod
     def parse(cls, data):
+        # Read for every line of dialogue (its continue text, story labels). A bank is a few hundred strings, so
+        # parsing it each time cost about 1 ms a line on a PC. The result is frozen, so a bank is parsed once.
+        parsed = _PARSED.get(data)
+        if parsed is not None:
+            return parsed
         r = _Reader(data)
         version, flags, bank, count = r.unpack('iBhh')
         if (version, flags, bank) != (1, 0, 0) or count < 1:
@@ -36,7 +43,11 @@ class MenuStrings:
             # This older UI bank uses byte characters, unlike EXP metadata's
             # length-prefixed UTF-8 titles.
             strings.append(data[offset:end].decode('latin-1'))
-        return cls(tuple(strings))
+        parsed = cls(tuple(strings))
+        if len(_PARSED) >= 16:          # the games' banks and languages: more only in a test's made-up ones
+            _PARSED.clear()
+        _PARSED[bytes(data)] = parsed
+        return parsed
 
     def __getitem__(self, index):
         if self.roles is not None:

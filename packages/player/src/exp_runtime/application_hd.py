@@ -346,6 +346,7 @@ class HdShell:
             settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
+        settings['skip_ahead'] = state.skip_ahead
         if self.app.grids_as_memory_offered():
             settings['grids_as_memory'] = state.grids_as_memory     # ...with SHS '11's addon
         if self.app.word_grid_skin_offered() and state.arena_minigames:
@@ -439,6 +440,8 @@ class HdShell:
             self.app.apply_word_grid_skin()
         if which == 'grids_as_memory':
             self.app.apply_grids_as_memory()
+        if which == 'skip_ahead':
+            self.app.apply_skip_ahead()
         if which == 'ch_portraits':
             self.app.apply_ch_portraits()
         self.app.menu_music_changed(switched=which == 'music')
