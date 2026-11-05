@@ -140,8 +140,9 @@ you close the app.
 
 With the SHS HD IPA (and for Cause of Death), Options lists **General**,
 **Sound**, **Extras** and, on the main menu, **Data Management**. Extras holds
-the play aids: Disable Choice Timer, Choice Hints, Ask to Skip Mini-Games and
-Allow Skip Ahead (the Android menus do not offer that last one).
+the play aids: Disable Choice Timer, Choice Hints, Ask to Skip Mini-Games,
+Allow Skip Ahead and Use '11's Memory for Word Grid (the Android menus do not
+offer those last two).
 Without it, SHS uses the original Android menus, where the same switches sit
 under **Options** and **Options → Cheats**.
 
@@ -301,7 +302,8 @@ To contribute code, tests, documentation or compatibility reports, start with
 - [Cause of Death](docs/COD.md), its [release dates](docs/COD_RELEASE_DATES.md)
   and [store listing](docs/COD_STORE.md).
 - [Addons](docs/ADDONS.md), and the translated games:
-  [New Rules](docs/NEW_RULES.md) and the [cancelled Xbox 360 game](docs/X360.md).
+  [New Rules](docs/NEW_RULES.md), the [cancelled Xbox 360 game](docs/X360.md) and
+  [SHS '11](docs/SHS11.md).
 - [Episode introductions and week cards](docs/TITLE_SCREENS.md).
 - [Mini games](docs/MINIGAMES.md) and [story services](docs/STORY_SERVICES.md).
 - [Development and tests](docs/DEVELOPMENT.md), [distribution](docs/DISTRIBUTION.md)

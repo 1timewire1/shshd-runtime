@@ -129,6 +129,15 @@ the bridge asks again for its own afterwards. pygame's own resize handling is
 off: it re-made the window surface on Android's UI thread, which crashed SDL on
 rotation; the host re-makes it on SDL's thread.
 
+## Frame rate
+
+A phone's clocks hold 60 fps only if frames fit the budget, so one slow effect costs more than its own time. On Android (`platforms/android.py`):
+
+- `desktop_word_hd.QUICK_DRAWING` rounds the word game's cube poses to fewer steps, leaves moving pieces unsmoothed, and limits its haze by time, not by frames. Limiting it by frames made it visibly choppy.
+- `desktop_dialogue.REUSE_AT_REST` reuses a settled dialogue line's pieces (`dialogue_animation.at_rest`).
+
+Measured on a Moto g54 in the owner's play, 2026-11-04: dialogue about 56 fps, Memory's skin 52, Reflex's skin 53, a real word grid 37 with a low of 30 and 55 at rest. Word grids and the 60-second autosave's 60-100 ms stall are still open.
+
 ## CoD colors
 
 The fork also ported upstream exp-runtime

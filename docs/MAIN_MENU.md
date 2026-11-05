@@ -570,7 +570,10 @@ How the sounds play:
 
 Not applied:
 - The Decision Tree zoom toggle (`-[SHSViewController toggleDTZ]`, 8011 and
-  8017). Ours zooms with the wheel and has no such button.
+  8017). Ours zooms with the wheel and has no such button. HD 1.4.38 never creates
+  that button or its portrait twin (`togglePZ`): no code names either class. Both
+  are ported as an experiment, off unless `SHSHD_TREE_ZOOM=1`, in
+  `desktop_tree_zoom.py`, whose docstring has the details.
 - The store pages' clicks (`SHSMTXMenu`). Their stand-ins, the episode pickers,
   click as rows.
 
@@ -636,6 +639,8 @@ and the portrait picker still wait for the player, and the gear still opens the 
 that need no answer. That row runs the native timeout callback (`Session.expire_choice`), with its own timeout
 result. The word quiz (service 71) keeps its clock; that is Ask to Skip Mini-Games'. Hints mark the real options
 only.
+
+**Options → Extras → Use '11's Memory for Word Grid** (this player's, off by default): letter grids play as SHS '11's Memory. It's offered in SHS with HD's word game art or the `shs11` addon. See [SHS11.md](SHS11.md#memory-in-place-of-letter-grids).
 
 **Options → Extras → Allow Skip Ahead** (this player's, off by default): adds **Skip Ahead** to the pause menu, under Resume, and the **N** key. Either one goes straight to the next thing that needs the player (`skip_ahead.py`), and the screen fades in on it. It is an all-games version of SHS '11's hidden code 4687 (`reference/Other Games/docs/SHS_11_JAVA_ENGINE.md`), and is one-shot, unlike that code.
 

@@ -123,6 +123,24 @@ python tools/translate/translate.py x360 DATA_PAK --story addon --pud RES_LARGE_
     --portraits PORTRAIT_CATALOG --backgrounds BACKGROUNDS --dbp DECK_SHOTS --puzzle PUZZLE_SHOTS --opening OPENING_STILLS --out OUT_DIR
 ```
 
+### `shs11`: Surviving High School '11
+
+Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Memory in place of letter grids. Revision 2, about 9 MB. Its pack is 31600.
+
+| Resources | What |
+| --- | --- |
+| 26000–26049 | Backgrounds, two for each of the 25 locations: 26000 + 2 × location + variant |
+| 26100–26198 | Interface pictures, in gamelib's order |
+| 26199 | The addon's spec, JSON |
+| 26200–26624 | Portraits, 26200 + 5 × look + expression |
+| 26800– | Parts no look draws |
+| 26980–26991 | Music and sound, the last a copy for the story's selector 2 |
+| 26992– | Relationship badges: heart, skull and smiley, whole and then broken |
+
+```sh
+python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR --sounds KG800_JAR --out OUT_DIR
+```
+
 ### `chslim`: Claire Hart (Slim)
 
 Optional, for Cause of Death. Revision 1, about 21 MB.
@@ -180,6 +198,8 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Hi-Res Portraits | NR | New Rules episodes |
 | HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
 | Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
+| Smartphone Music | SHS11 | SHS '11 episodes |
+| Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
 
 ## Data Management
 

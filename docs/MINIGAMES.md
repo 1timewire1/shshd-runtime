@@ -4,6 +4,8 @@ Revision: 2026-09-13. Reference: Android SHS 1.0.9, `lib/armeabi/libshs09.so`,
 SHA-256 `b17aa4c71bc46666d414cafae6fac92bbcd755f3dcccd73975cf05f4a119665b`.
 Addresses below are Ghidra virtual addresses with image base `0x10000`.
 The three mini-game families in this dispatcher are services **71, 94, 96**.
+Translated games add their own: [New Rules' arena](NEW_RULES.md), the
+[X360 games](X360.md#minigames) and [SHS '11's](SHS11.md#minigames).
 Their rules run independently of pygame and return results to the original
 KiWi instruction stream. This is an implemented subset of the original engine,
 not a claim of complete episode support or verified pixel/frame equivalence.
@@ -380,6 +382,10 @@ Evidence: dispatcher 96; record builders `000cd014/000cce44/000ccf0c`;
 generation `000cb570/000c536c/000c512c/000c4318`; input `000d08fc/000cf228/000cf35c`;
 scoring `000c3874`; transitions `000d01a4/000cfb30`; tick `000d1124`;
 camera `000cc398/000c7ef8/000c7f98/0004e114`.
+
+### 5.4 As SHS '11's Memory
+
+With **Options → Extras → Use '11's Memory for Word Grid** on (this player's own, off by default), a letter grid plays as SHS '11's Memory instead, and returns the grid's own result. See [SHS11.md](SHS11.md#memory-in-place-of-letter-grids) for which grids qualify. The story can't tell the difference, and a grid with pictures, or one Memory can't hold, stays a grid.
 
 ## 6. Sprite-atlas and glyph-font payload schemas
 

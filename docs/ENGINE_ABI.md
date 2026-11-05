@@ -632,7 +632,9 @@ Otherwise a story takes what it also carries, the smartphone's game at that spot
 | 220 | Reflex | 13 words: right icons at least, the gauge's size, bonus, points a bar, right, wrong and skull pictures, odds of 1, 2 and 3 bars and of a skull, flash ms, hold ms |
 
 Each waits for the game (`shs11_games.py`, with its tutorial the first time in a story) and
-completes with **2** at 98% of the target or more, **1** above 75%, else **0**.
+completes with **2** at 98% of the target or more, **1** above 75%, else **0**. [SHS11.md](SHS11.md) has the rules.
+
+Service **96**, a word grid, can also open Memory, with the player's "Use '11's Memory for Word Grid" switch on and a grid that fits (`shs11_games.grid_memory`). It then completes with the grid's own result: **1** at 98% of the target or more, else **0**.
 
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 

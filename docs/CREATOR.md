@@ -179,6 +179,8 @@ In MCP: `asset_list` takes `addon`, and `asset_use_addon` takes one, with `copy`
 
 ## Storyboard cutscenes
 
+**SHS '11's games.** The Memory and Reflex nodes play [SHS '11's minigames](SHS11.md#minigames), in SHS projects only. Put them behind a **Real minigames?** node, as with the X360 games, and give other players something else to do. Memory's rounds each have a cue, a word of 1 to 9 capital letters, a bonus, points a letter, a letter time and a limit. Reflex's rounds are the 13 numbers in [ENGINE_ABI.md](ENGINE_ABI.md#54-shs-11s-minigames-shshd-runtime-services-219-and-220). The result is 2, 1 or 0. They draw from HD's word game art or the `shs11` addon, so a project should require one of those.
+
 A storyboard plays stills with a window moving across them, overlays growing or sliding in, and sounds at their moments, then holds for a press. Day of Diss's opening is one ([X360.md](X360.md#day-of-disss-opening)).
 
 1. Add a **Cutscenes?** node, and a condition on its result, so that other players go straight on.
@@ -355,7 +357,7 @@ a replacement for an existing episode slot:
 
 The original apps can't read add-ons or run this runtime's own mechanics, so:
 
-- **A project using a mechanic is blocked,** with the explanation of which: the translated mini-games, the X360 games or storyboard cutscenes, including an imported episode whose scripts call them.
+- **A project using a mechanic is blocked,** with the explanation of which: the translated mini-games, the X360 games, SHS '11's games or storyboard cutscenes, including an imported episode whose scripts call them.
 - **A project that only takes pictures and sounds from add-ons is blocked with an offer** to pack them into the `.exp`, from the selected library. Your project stays as it is. Headlessly, that's `--pack-addons --library PATH`.
 
 [Presentation features](#shshd-runtime-presentation) aren't blocked: other apps ignore them and show the episode as they do.
