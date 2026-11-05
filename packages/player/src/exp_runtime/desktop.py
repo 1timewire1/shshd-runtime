@@ -2150,7 +2150,7 @@ class Desktop:
         zoom_mode = self._tree_zoom_mode()
         if zoom_mode is None:
             self.tree_zoom.close(instantly=True)
-            self.tree_zoom.tab = None
+            self.tree_zoom.tab = self.tree_zoom.portrait_tab = None
         if zoom_mode is not None and self.tree_zoom.showing:
             try:
                 with frame_log.section('panels'):
@@ -2175,6 +2175,10 @@ class Desktop:
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
+            if zoom_mode == 'portrait':
+                self.tree_zoom.draw_portrait_tab(self.window, self.tree_zoom.portrait_tab_rect(self.bg_viewport))
+            else:
+                self.tree_zoom.portrait_tab = None      # `SHSPZButton` is off the screen in landscape
         self._draw_arena_handover()
         self._draw_loading_handover()
         self._draw_transition()
@@ -2186,7 +2190,7 @@ class Desktop:
 
     @property
     def tree_zoom(self):
-        """HD's tree zoom tab (desktop_tree_zoom.py; exploration, with a temporary marker), made when first used."""
+        """HD's tree zoom tab and portrait zoom button (desktop_tree_zoom.py; exploration), made when first used."""
         zoom = self.__dict__.get('_tree_zoom')
         if zoom is None:
             zoom = self.__dict__['_tree_zoom'] = desktop_tree_zoom.TreeZoom()
@@ -2225,9 +2229,6 @@ class Desktop:
             panels.draw_tree(self.window, self.session, 1.0,
                              pygame.Rect(round(start + (end - start) * a), 0, column, height))
             return
-        x, y, w, h = desktop_tree_zoom.PORTRAIT_WALL
-        panels.draw_wall(self.window, self.session, 1.0,
-                         pygame.Rect(round(left + x * s), round(top + y * s), round(w * s), round(h * s)))
         shut, zoomed = desktop_tree_zoom.PORTRAIT_TREE_Y
         w, h = desktop_tree_zoom.PORTRAIT_TREE
         middle = shut + (zoomed - shut) * a
@@ -2237,7 +2238,18 @@ class Desktop:
                 round(left), round(top + (middle - h / 2) * s), round(w * s), round(h * s)))
         finally:
             panels.tree_shape = PANEL
-        self.window.blit(game, (0, round(desktop_tree_zoom.GAME_SHIFT * s * a)))
+        # `SHSEngine::onStart` adds the wall after the tree, so where they overlap the wall is on top. The game comes
+        # last: it is brought to the front (`bringSubviewToFront:`).
+        x, y, w, h = desktop_tree_zoom.PORTRAIT_WALL
+        panels.draw_wall(self.window, self.session, 1.0,
+                         pygame.Rect(round(left + x * s), round(top + y * s), round(w * s), round(h * s)))
+        frame = self.bg_viewport
+        rect = zoom.game_rect(frame)
+        if rect.size == frame.size:
+            self.window.blit(game, (rect.x - frame.x, rect.y - frame.y))
+        else:
+            source = frame.clip(game.get_rect())
+            self.window.blit(pygame.transform.smoothscale(game.subsurface(source), rect.size), rect.topleft)
 
     def _tree_zoom_toggled(self):
         """`toggleDTZ`: zooming in during the story pauses it (`invokePauseMenu`, with its sound 8011); either way
@@ -2256,10 +2268,14 @@ class Desktop:
         result = self.tree_zoom.pointer(event, down=pygame.MOUSEBUTTONDOWN, up=pygame.MOUSEBUTTONUP)
         if result == 'toggled':
             self._tree_zoom_toggled()
+        # `togglePZ` has no sound and no pause: the story carries on in the smaller game.
+        result = result or self.tree_zoom.portrait_pointer(event, down=pygame.MOUSEBUTTONDOWN, up=pygame.MOUSEBUTTONUP)
         if result:
             return True
         if not self.tree_zoom.showing:
             return False
+        if not self.tree_zoom.tree_showing:
+            return self._portrait_zoom_pointer(event)
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.tree_zoom.toggle()
             self._tree_zoom_toggled()
@@ -2267,11 +2283,49 @@ class Desktop:
         pointer = event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)
         if not pointer or not self.tree_zoom.settled:
             return pointer
+        return self._zoomed_panels_pointer(event)
+
+    def _zoomed_panels_pointer(self, event):
+        """A pointer event on the panels a zoom has uncovered. In portrait the wall lies over the tree's right end, so
+        it comes first there. Always used up."""
+        position = pygame.mouse.get_pos() if event.type == pygame.MOUSEWHEEL else event.pos
+        wall = self.side_panels.wall_rect
+        if not self.tree_drag and wall is not None and wall.collidepoint(position):
+            self._wall_pointer(event)
+            return True
         if self._tree_pointer(event) or self._wall_pointer(event):
             return True
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self._tree_click(event.pos)
         return True
+
+    def _portrait_zoom_pointer(self, event):
+        """Input with only the portrait zoom in: what the shrunken game covers is the game's (False, and
+        _portrait_game_event moves it), what it uncovers is the tree's and the wall's. A press stays with whichever got
+        it. True when the event is used up."""
+        zoom = self.tree_zoom
+        pointer = event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)
+        if not pointer:
+            return False
+        if zoom.game_down:
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                zoom.game_down = False
+            return False
+        if not zoom.settled:
+            return True
+        position = pygame.mouse.get_pos() if event.type == pygame.MOUSEWHEEL else event.pos
+        if not (self.tree_drag or self.wall_drag) and zoom.game_rect(self.bg_viewport).collidepoint(position):
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                zoom.game_down = True
+            return False
+        return self._zoomed_panels_pointer(event)
+
+    def _portrait_game_event(self, event):
+        """A pointer event the shrunken game takes, at the same place on the game at full size."""
+        zoom = self.tree_zoom
+        if zoom.portrait_t <= 0 or not hasattr(event, 'pos'):
+            return event
+        return pygame.event.Event(event.type, {**event.dict, 'pos': zoom.to_game(self.bg_viewport, event.pos)})
 
     def _frame_covered(self, alpha):
         """Whether this frame's story layer hides all of the frame (the arena's): nothing under it needs drawing. Not with
@@ -3060,8 +3114,10 @@ class Desktop:
                 pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL,
                 pygame.TEXTINPUT):
             return True                         # the menu is zooming out after Resume: input waits for the story
-        if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
-            return True
+        if self.tree_zoom.tab is not None or self.tree_zoom.showing:
+            if self._tree_zoom_pointer(event):
+                return True
+            event = self._portrait_game_event(event)
         if event.type == pygame.KEYUP:
             self._puzzle_key_up(event)
         if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
