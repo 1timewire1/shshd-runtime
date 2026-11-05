@@ -10,12 +10,14 @@ from .model import Asset, ProjectError, is_audio, is_image
 
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
+                  'shs11_memory': "SHS '11's Memory", 'shs11_reflex': "SHS '11's Reflex",
                   'x360_leash': 'the X360 leash game', 'x360_puzzle': 'the X360 jewel puzzle',
                   'x360_diss': 'X360 Diss Practice', 'cutscene_available': 'storyboard cutscenes',
                   'cutscene': 'storyboard cutscenes'}
-# In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2) and cutscenes (5.3).
+# In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3) and
+# SHS '11's games (5.4).
 MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214, 218), 'the X360 mini-games'),
-                     (range(218, 219), 'storyboard cutscenes'))
+                     (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"))
 
 
 class AddonsNeeded(ProjectError):

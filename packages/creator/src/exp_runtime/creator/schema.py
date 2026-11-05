@@ -6,7 +6,8 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss'))
+                      'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                      'shs11_memory', 'shs11_reflex'))
 
 
 FIELDS = {
@@ -18,6 +19,7 @@ FIELDS = {
     'input': ('text', 'next'), 'title': ('text', 'next'), 'message': ('text', 'next'),
     'notice': ('text', 'next'), 'scene_label': ('text', 'next'),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
+    'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
     'text_default': ('text', 'next'), 'expression_default': ('character', 'expression', 'next'),
     'character_art': ('character', 'asset', 'next'), 'character_name': ('character', 'text', 'next'),
@@ -87,6 +89,13 @@ NOTES = {
                           'does, 0 on any other player, which should go straight on.',
     'cutscene': "shshd-runtime only, behind cutscene_available. Plays the storyboard whose JSON spec is resource `spec`, in the "
                 'project or an addon it requires (see CREATOR.md). It waits at the spec\'s hold for a press.',
+    'shs11_memory': "shshd-runtime only, behind minigames_available. SHS '11's Memory: each round shows a cue, then flashes "
+                    'its word (1 to 9 letters) on nine tiles to pick in order. Target above 0; result is 2 at 98% of it or '
+                    'more, 1 above 75%, else 0. Drawn from the HD word game or the shs11 addon. The character is who it shows, '
+                    'if anyone.',
+    'shs11_reflex': "shshd-runtime only, behind minigames_available. SHS '11's Reflex: tap the right icons to fill a gauge. "
+                    "right, wrong and skull are pictures in '11's icon sheet; the four odds are out of 100. Result as Memory's. "
+                    'Drawn from the HD word game or the shs11 addon.',
     'x360_slot': "shshd-runtime only, behind minigames_available. The X360 prototype's slot machine, drawn from its "
                  'addon; stores the points (the bulbs taken, 0 to 5) in result.',
     'x360_leash': "shshd-runtime only, behind minigames_available. The X360 prototype's leash game, drawn from its "

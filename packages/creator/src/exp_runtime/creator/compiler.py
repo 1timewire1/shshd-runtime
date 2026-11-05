@@ -38,6 +38,7 @@ TEXT_BUFFER_WORDS = 512
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
 SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                            'shs11_memory', 'shs11_reflex',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
 HD_KINDS = frozenset(('faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result'))
@@ -89,7 +90,7 @@ def variable_names(project):
     names = {n.variable for n in project.nodes if n.kind in ('set', 'branch') and n.variable}
     for node in project.nodes:
         p = parameters(node)
-        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'relationship', 'score', 'picker'):
+        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'relationship', 'score', 'picker'):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
@@ -170,7 +171,7 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
         raise ProjectError(f'{label}: choose a reusable character')
-    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'input', 'relationship',
+    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'input', 'relationship',
                      'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
     if node.kind == 'cutscene':
@@ -247,7 +248,7 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('home_result', 'away_result'):
             if p[key] and not p[key].isidentifier():
                 raise ProjectError(f'{label}: {key} must be a variable name')
-    if node.kind in ('word_game', 'football', 'grid'):
+    if node.kind in ('word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex'):
         minigames.validate(node.kind, p)
     if node.kind == 'grid':
         for key in ('left_character', 'right_character'):
@@ -764,12 +765,12 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.call(X360_PUZZLE); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'x360_diss':
                 asm.call(X360_DISS, p['tutorial']); asm.emit(0x21); store_variable(p['result'])
-            elif kind in ('word_game', 'football', 'grid'):
+            elif kind in ('word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex'):
                 localized = deepcopy(p)
                 for field in ('good', 'bad', 'instructions'):
                     if field in localized:
                         localized[field] = [text(f'{field}.{i}', v, raw=True) for i, v in enumerate(p[field])]
-                for field in ('problems', 'tutorials'):
+                for field in ('problems', 'tutorials', 'rounds'):
                     for i, record in enumerate(localized.get(field, [])):
                         for key, value in list(record.items()):
                             if isinstance(value, str): record[key] = text(f'{field}.{i}.{key}', value, raw=True)

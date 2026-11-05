@@ -1,5 +1,11 @@
 """Encode authored minigame tables using the recovered SHS native ABI."""
+from exp_runtime.shs11_services import SHS11_MEMORY, SHS11_REFLEX
+
 from .model import ProjectError
+
+MEMORY_FIELDS = ('bonus', 'points', 'letter_ms', 'limit_ms')
+REFLEX_FIELDS = ('least_right', 'gauge', 'bonus', 'points', 'right', 'wrong', 'skull', 'one_bar', 'two_bars', 'three_bars',
+                 'skulls', 'flash_ms', 'hold_ms')
 
 
 def integer(value, low, high, name):
@@ -15,8 +21,40 @@ def words(values, name, minimum=1):
     return values
 
 
+def validate_shs11(kind, p):
+    """shs11_games.py's rounds, as a story's table holds them (ENGINE_ABI.md 5.4)."""
+    name = 'Memory' if kind == 'shs11_memory' else 'Reflex'
+    integer(p['seconds'], 1, 3276, f'{name} seconds')
+    integer(p['target'], 1, 32767, f'{name} target')
+    rounds = p['rounds']
+    if not isinstance(rounds, list) or not 1 <= len(rounds) <= 256 or any(not isinstance(r, dict) for r in rounds):
+        raise ProjectError(f'{name} needs 1–256 rounds')
+    fields = MEMORY_FIELDS if kind == 'shs11_memory' else REFLEX_FIELDS
+    for i, r in enumerate(rounds, 1):
+        expected = set(fields) | ({'cue', 'word'} if kind == 'shs11_memory' else set())
+        if set(r) != expected:
+            raise ProjectError(f'{name} round {i} needs exactly {sorted(expected)}')
+        for field in fields:
+            integer(r[field], 0, 32767, f'{name} round {i} {field}')
+        if kind == 'shs11_memory':
+            word = r['word']
+            if not isinstance(r['cue'], str) or not r['cue'] or '\0' in r['cue']:
+                raise ProjectError(f'Memory round {i} needs a cue')
+            if not isinstance(word, str) or not 1 <= len(word) <= 9 or not word.isascii() or not word.isalpha() or not word.isupper():
+                raise ProjectError(f'Memory round {i}: the word is 1 to 9 capital letters, for its nine tiles')
+            if r['limit_ms'] < 1:
+                raise ProjectError(f'Memory round {i} needs a time limit')
+        else:
+            if sum(r[odds] for odds in ('one_bar', 'two_bars', 'three_bars', 'skulls')) > 100:
+                raise ProjectError(f'Reflex round {i}: its four odds are out of 100')
+            if r['gauge'] < 1 or r['hold_ms'] < 1:
+                raise ProjectError(f'Reflex round {i} needs a gauge and a hold time')
+
+
 def validate(kind, p):
-    if kind == 'word_game':
+    if kind in ('shs11_memory', 'shs11_reflex'):
+        validate_shs11(kind, p)
+    elif kind == 'word_game':
         words(p['good'], 'Positive words', 2); words(p['bad'], 'Negative words', 3)
         integer(p['duration_ms'], 1, 32767, 'Word-game duration')
         integer(p['refresh_ms'], 0, 32767, 'Word-game refresh')
@@ -111,7 +149,17 @@ def validate(kind, p):
 
 def emit(asm, kind, p, text, character):
     """Return the result in the native R register; caller stores it explicitly."""
-    if kind == 'word_game':
+    if kind in ('shs11_memory', 'shs11_reflex'):
+        table = []
+        for i, r in enumerate(p['rounds']):
+            if kind == 'shs11_memory':
+                table += [text(f'rounds.{i}.cue', r['cue']), text(f'rounds.{i}.word', r['word'])]
+                table += [r[field] for field in MEMORY_FIELDS]
+            else:
+                table += [r[field] for field in REFLEX_FIELDS]
+        asm.call(SHS11_MEMORY if kind == 'shs11_memory' else SHS11_REFLEX, p['seconds'], p['target'], len(p['rounds']),
+                 asm.table(table), character() or -1)
+    elif kind == 'word_game':
         asm.call(71, -1, text('text'), asm.text('|'.join(text(f'good.{i}', v, raw=True) for i, v in enumerate(p['good']))),
                  asm.text('|'.join(text(f'bad.{i}', v, raw=True) for i, v in enumerate(p['bad']))), p['duration_ms'], character('character'), 0, p['refresh_ms'])
     elif kind == 'football':
