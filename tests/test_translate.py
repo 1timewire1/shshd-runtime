@@ -983,5 +983,72 @@ class MidiTests(unittest.TestCase):
         self.assertEqual(len(midi_render.render_java(data, loop=True)), midi_render.RATE // 2)
 
 
+class NovelPatchTests(unittest.TestCase):
+    """novel_patch on an authored two-line script: new words, a removed line and a new scene around the rest."""
+    chapters = {1: ['', 'CHAPTER ONE', '“Hello there,” she said, “old friend—really.” And she left.',
+                    '“*One.* Two. Three.”', '“Amir,” he said. “Is here.”']}
+
+    def script(self):
+        first, second, third = text_words('Keep me'), text_words('Change me'), text_words('Drop me')
+        words = first + second + third
+        return program((0x1A, 0), (0x1B, 0x0102), call(13, 3),
+                       (0x1A, len(first)), (0x1B, 0x0304), call(13, 3),
+                       (0x1A, 32), (0x1A, len(first) + len(second)), 0x5A, call(65, 3), 0x33, words=words)
+
+    def patched(self, ops, renames=None):
+        from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+        from novel_patch import apply
+        exp = encode_exp({1: Metadata(9, 1, ('T',) * 5).to_bytes(), 25001: self.script().to_bytes()})
+        data, _ = apply(dict(ops=ops, pack_id=31500, title='T (Extended)', cast={'Emily': 7},
+                             renames=renames or {}), exp, self.chapters)
+        archive = ExpArchive(data)
+        self.assertEqual((archive.metadata().pack_id, archive.metadata().titles[0]), (31500, 'T (Extended)'))
+        return decode_program(archive.read(25001))
+
+    @staticmethod
+    def said(prog):
+        memory = list(prog.main_words) + [0] * prog.gap_count + list(prog.extra_words)
+        lines = []
+        for service, args in yields(prog):
+            address = args[0] if service == 13 else args[1] if service == 65 else None
+            if address is None:
+                lines.append(service)
+                continue
+            text = b''
+            while memory[address]:
+                text += struct.pack('>H', memory[address])
+                address += 1
+                if not memory[address - 1] & 255:
+                    break
+            lines.append(text.rstrip(b'\0').decode('latin-1'))
+        return lines
+
+    def test_house_style_joins_quotations_at_the_tag(self):
+        from novel_patch import reference
+        self.assertEqual(reference({'ch': 1, 'p': 2}, self.chapters, {}), 'Hello there, old friend... Really.')
+        self.assertEqual(reference({'ch': 1, 'p': 3, 's': [0, 2]}, self.chapters, {}), '`One.` Two.')
+        self.assertEqual(reference({'ch': 1, 'p': 4, 'join': '...'}, self.chapters, {'Amir': 'Dex'}), 'Dex... Is here.')
+
+    def test_long_text_splits_at_sentences(self):
+        from novel_patch import LONGEST_LINE, split_long
+        lines = split_long('A long sentence goes here. ' * 12)
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(all(len(line) <= LONGEST_LINE for line in lines))
+
+    def test_patch_keeps_everything_it_does_not_name(self):
+        prog = self.patched([
+            {'op': 'replace', 'find': 'Change me', 'text': {'own': 'Changed'}},
+            {'op': 'remove', 'find': 'Drop me'},
+            {'op': 'before', 'find': 'Change me', 'do': [
+                {'bg': 1087}, {'say': 'Emily', 'expr': 2, 'text': {'ch': 1, 'p': 3}}, {'music': 8223}]},
+            {'op': 'after', 'find': 'Keep me', 'do': [{'narrate': {'own': 'Own words'}}]}])
+        self.assertEqual(self.said(prog), ['Keep me', 'Own words', 11, '`One.` Two. Three.', 80, 'Changed'])
+
+    def test_a_prefix_must_name_one_place(self):
+        from novel_patch import PatchError
+        with self.assertRaises(PatchError):
+            self.patched([{'op': 'remove', 'find': 'Nothing like this'}])
+
+
 if __name__ == '__main__':
     unittest.main()
