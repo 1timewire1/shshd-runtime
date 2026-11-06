@@ -1114,6 +1114,90 @@ class BrewShimTests(unittest.TestCase):
         calls, numbers = self.run_script(program(*redress, *line, 0x33, words=text_words('Hi')), handlers, looks, numbers)
         self.assertEqual([c for c in calls if c[0] == 72], [(72, (3, changed_bank))])
 
+    def said(self, words, code, captions=None):
+        """What the narrator says and which badges show, running `code` (lines through line()) with a scene open."""
+        rewriter = Rewriter(program(*code, words=words))
+        context = self.context(rewriter)
+        if captions is not None:
+            context['captions'] = [(address, icon, rewriter.text(text)) for address, icon, text in captions]
+        for pc, service, argc in rewriter.calls():
+            {72: self.brew.line, 1: self.brew.title_line}[service](rewriter, pc, argc, context)
+        vm, out, numbers = KiwiVM(rewriter.finish()), [], {(0, self.brew.DEPTH_KEY): 1}
+        globals_ = {self.brew.DEPTH_KEY: 1}
+
+        def read(address):
+            text = bytearray()
+            for w in vm.data[address:]:
+                for c in ((w >> 8) & 255, w & 255):
+                    if not c:
+                        return text.decode()
+                    text.append(c)
+        for _ in range(5000):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                return out
+            args, result = stop.args, 0
+            if stop.yield_id in (52, 53):
+                if stop.yield_id == 52:
+                    numbers[args[0], args[1]] = args[2]
+                else:
+                    result = numbers.get((args[0], args[1]), 0)
+            elif stop.yield_id in (44, 54):
+                globals_[args[0]] = args[1]
+            elif stop.yield_id in (45, 55):
+                result = globals_.get(args[0], 0)
+            elif stop.yield_id == 13:
+                out.append(read(args[0]))
+            elif stop.yield_id == 90:
+                out.append(('badge', args[0], read(args[1]) if args[1] != 0xFFFF and args[1] != -1 else None))
+            vm.resume(result)
+        self.fail('did not halt')
+
+    def test_a_long_line_is_said_in_pieces_at_sentence_ends(self):
+        text = ('It\'s gym class today, and as usual, Jane has forged a doctor\'s note to get out of gym. It\'s not that she hates '
+                'sports, it\'s just that she\'d rather be studying. That 4.0 GPA doesn\'t happen by accident.')
+        said = self.said(text_words(text), [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3), 0x33])
+        self.assertEqual(said, self.brew.split_long(text))
+        self.assertEqual(len(said), 2)
+        self.assertTrue(all(len(piece) <= self.brew.LONGEST_LINE for piece in said))
+
+    def test_the_title_line_is_left_out(self):
+        fmt, title = text_words('%s\n\n%s'), text_words('Hi.')
+        buffer = len(fmt) + len(title)
+        words = fmt + title + [0] * 20
+        code = [(0x1A, buffer), 0x5A, (0x1A, len(fmt)), (0x1A, len(fmt)), call(1, 4),
+                (0x1A, 0xFFFF), (0x1A, buffer), (0x1A, 0xFFFF), call(72, 3),
+                (0x1A, 0xFFFF), (0x1A, len(fmt)), (0x1A, 0xFFFF), call(72, 3), 0x33]
+        self.assertEqual(self.said(words, code), ['Hi.'])
+
+    def test_a_caption_is_a_badge_for_the_next_line_only(self):
+        caption, line = text_words('Monday, after school: At the Gym.'), text_words('Hi.')
+        code = [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3)]
+        code += [(0x1A, 0xFFFF), (0x1A, len(caption)), (0x1A, 0xFFFF), call(72, 3)] * 2 + [0x33]
+        said = self.said(caption + line, code, captions=[(0, 26504, 'MON - At the Gym')])
+        self.assertEqual(said, [('badge', 26504, 'MON - At the Gym'), 'Hi.', ('badge', -1, None), 'Hi.'])
+
+    def test_a_caption_badge_goes_after_the_first_piece_of_a_long_line(self):
+        caption = text_words('Monday: At home.')
+        text = 'A first sentence that runs on for quite a while. ' * 3 + 'And then a second one, which also takes its time to end.' * 2
+        code = [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3), (0x1A, 0xFFFF), (0x1A, len(caption)), (0x1A, 0xFFFF), call(72, 3), 0x33]
+        said = self.said(caption + text_words(text), code, captions=[(0, 26566, 'MON - At home')])
+        pieces = self.brew.split_long(text)
+        self.assertEqual(said, [('badge', 26566, 'MON - At home'), pieces[0], ('badge', -1, None), *pieces[1:]])
+
+    def test_a_caption_badge_names_the_day_and_place_with_brews_icon(self):
+        self.assertEqual(self.brew.caption_badge('Wednesday, after school: Tryouts, Phase 2.'), (self.brew.EVENT_ICON_BASE + 104, 'WED - Tryouts, Phase 2'))
+        self.assertEqual(self.brew.caption_badge('Wednesday night, Inside the party'), (self.brew.EVENT_ICON_BASE + 138, 'WED Night - Inside the party'))
+        self.assertEqual(self.brew.caption_badge('Monday, after school: Driving home alone.')[0], self.brew.EVENT_ICON_BASE + 113)
+        self.assertEqual(self.brew.caption_badge('At school: Meeting Brian.'), (self.brew.EVENT_ICON_BASE + 108, 'At school - Meeting Brian'))
+
+    def test_the_title_card_has_the_events_day_as_brews_planner_heads_it(self):
+        # setup: the calendar (69) from November 18, a Monday, then the event (33) on November 20.
+        code = [(0x1A, 810), (0x1A, 900), (0x1A, 11), (0x1A, 18), (0x1A, 1), (0x1A, 11), (0x1A, 20), call(69, 7)]
+        code += [(0x1A, 26000), 0x5A, 0x5A, 0x5A, (0x1A, 11), (0x1A, 20), (0x1A, 810), (0x1A, 0xFFFF), (0x1A, 104), 0x5A, call(33, 10), 0x33]
+        script = program(*code).to_bytes()
+        self.assertEqual(self.brew.event_date({25001: b'kiwi\x01' + script[6:]}), 'Wednesday, November 20')   # v2 less its link flag
+
     def test_text_entry_is_the_smartphones_and_its_answer_becomes_the_events_text(self):
         title, default = text_words('Enter your name'), text_words('Jenny')
         code = [(0x1A, 0), (0x1A, len(title)), 0x5B, call(29, 3), 0x21, call(99, 1), 0x33]
@@ -1298,6 +1382,7 @@ class BrewShimTests(unittest.TestCase):
         self.assertEqual(self.word_game_run([1, 1, 0, 0], 3)[1], 2)
         self.assertEqual(self.word_game_run([1, 1, 0, 0], 0)[1], 0)
         self.assertEqual(self.word_game_run([1, 1, 0, 0], 20)[1], 4)        # no more than the best total
+        self.assertEqual(self.word_game_run([2, 1, 0, 0], 32767)[1], 8)     # the skip prompt's Win, which once overflowed into a loss
         self.assertEqual(self.word_game_run([2, 1, 0, 0], 6)[1], 8)         # a word worth 2
 
     def test_cues_play_as_sound_or_music_and_the_chimes_are_answer_hints(self):

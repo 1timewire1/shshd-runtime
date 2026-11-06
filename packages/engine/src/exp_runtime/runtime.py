@@ -461,6 +461,17 @@ class Session:
         return self._complete_minigame(result=points)
 
     @_sound_batch
+    def skip_brew_catch(self, score: int):
+        """shshd-runtime: finish the pending BREW catch game with `score` (0 to its target), the skip prompt's outcome
+        (choice_hints.brew_catch_outcomes: a game may have more than winning and losing)."""
+        if not self.pending or self.pending.name != 'brew_catch' or self.transitioning:
+            raise ValueError('There is no skippable catch game')
+        if type(score) is not int or not 0 <= score <= self.engine.brew_catch.target:
+            raise ValueError('A catch game score is from 0 to its target')
+        self.start_minigame()
+        return self._complete_minigame(result=score)
+
+    @_sound_batch
     def skip_word_game(self, score: int):
         """shshd-runtime: finish the pending word quiz with `score`, the skip prompt's outcome
         (choice_hints.word_game_outcomes: a quiz may have more than winning and losing)."""

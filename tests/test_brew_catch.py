@@ -115,11 +115,48 @@ class CatchRulesTests(unittest.TestCase):
             broken.validate()
 
 
+class CatchSkipTests(unittest.TestCase):
+    def test_a_game_with_a_middle_band_offers_each_and_finishes_with_its_score(self):
+        """Most of the Campaign's catch games part at the target only; about 30 also at 30 (0-29, 30-44, 45)."""
+        from exp_runtime.choice_hints import brew_catch_outcomes
+        from exp_runtime.runtime import Session
+        from test_runtime import Resources, host_call, text_words
+        from test_vm import program as vm_program
+        words, refs = text_words('High.', 'Middle.', 'Low.')
+        high, mid, low = refs
+        items = len(words)
+        words += [1, 4, 152, 30, 133, 29, 26, 152, 30, 30]          # one kind of item; sizes: the player's picture, then the item's
+        sizes = items + 4
+        def body(halt):
+            return [*host_call(221, ORBIT, 45, 350, 350, 50, 0, 0, 133, items, sizes, 2),
+                    0x21, (0x1a, 45), 0x0d, (0x2b, 5),         # score >= 45, else on to the next test
+                    *host_call(13, high, 0), (0x29, halt),
+                    0x21, (0x1a, 30), 0x0d, (0x2b, 5),         # score >= 30, else on to the low line
+                    *host_call(13, mid, 0), (0x29, halt),
+                    *host_call(13, low, 0), 0x33]
+        source = vm_program(*body(len(body(0)) - 1), words=words)
+        session = Session(Resources(source))
+        action = session.advance()
+        self.assertEqual(action.name, 'brew_catch')
+        before = session.snapshot()
+        outcomes = brew_catch_outcomes(session)
+        self.assertEqual(outcomes, [(0, 29), (30, 44), (45, None)])
+        self.assertEqual(session.snapshot(), before)
+        from exp_runtime.desktop import brew_catch_skip_options
+        self.assertEqual(brew_catch_skip_options(outcomes, 45),
+                         (('Score 45 or more', 'Score 30 to 44', 'Score 0 to 29', 'Play'), (45, 30, 0)))
+        self.assertEqual(brew_catch_skip_options([(0, 44), (45, None)], 45), (('Win', 'Lose', 'Play'), (45, 0)))
+        with self.assertRaises(ValueError):
+            session.skip_brew_catch(46)
+        action = session.skip_brew_catch(30)
+        self.assertEqual((action.name, action.details['text']), ('dialogue', 'Middle.'))
+
+
 @unittest.skipUnless(HAS_PIL, 'needs Pillow for the translator')
 class CatchCallTests(unittest.TestCase):
-    def run_call(self, query, word_result=5, game_result=40, page=None):
+    def run_call(self, query, word_result=5, game_result=40, page=None, items=None):
         import brew
-        words = [2, -2 & 0xffff, 151, 20, 4, 152, 30]
+        words = list(items or [2, -2 & 0xffff, 151, 20, 4, 152, 30])
         code = [(0x1A, 45), (0x1A, 350), (0x1A, 350), (0x1A, 50), (0x1A, 0), (0x1A, 133), call(19, 6), 0x21, call(99, 1), 0x33]
         if page is not None:                # BREW's page before the game: (title, text) to 12
             title, text = len(words), len(words) + len(test_translate.text_words(page[0]))
@@ -190,6 +227,19 @@ class CatchCallTests(unittest.TestCase):
         self.assertEqual(seen[71][:2], ('Think fast!', 'Dodge the scared faces to keep fear out of your heart! Try to stay happy.'))
         seen = self.run_call(0, 6, page=('Bowl right!', 'Knock down the pins! 55 points to win!'))
         self.assertEqual(seen[71][:2], ('Bowl right!', 'Knock down the pins!'))
+
+    def test_a_game_won_by_the_lowest_score_turns_its_word_game_around(self):
+        page = ('Instructions', "Don't hit the pows! Get the lowest score you can!")
+        for result, score in ((6, 0), (5, 8), (0, 45)):
+            seen = self.run_call(0, result, page=page)
+            self.assertEqual(seen[71], ('Think fast!', "Don't hit the pows!", 'Scared|Nervous', 'Happy|Smile'))
+            self.assertEqual(seen[99], score, result)
+
+    def test_two_kinds_with_one_picture_add_its_words_once(self):
+        items = [(4, 152, 20), (2, 152, 10), (-2, 151, 5)]
+        words = [len(items)] + [v & 0xffff for item in items for v in item]
+        seen = self.run_call(0, 6, items=words)
+        self.assertEqual(seen[71][2:], ('Happy|Smile', 'Scared|Nervous'))
 
     def test_the_real_game_keeps_brews_page_as_it_is(self):
         page = ('Instructions', 'Dodge the scared faces. 45 pts to pass.')

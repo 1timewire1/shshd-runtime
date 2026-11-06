@@ -67,7 +67,7 @@ from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
 from .skip_ahead import can_skip, skip_ahead
-from .choice_hints import ARENA_RESULTS, arena_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
+from .choice_hints import ARENA_RESULTS, arena_outcomes, brew_catch_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -148,6 +148,18 @@ def arena_skip_options(outcomes):
     if outcomes is None:
         return labels, (ARENA_RESULTS - 1, 0)
     return labels, tuple(low for low, _ in reversed(outcomes))
+
+
+def brew_catch_skip_options(outcomes, target):
+    """(option labels, the score each finishes the BREW catch game with) for its skip prompt, as word_game_options labels
+    them (Win / Lose, Skip, or the score ranges), then "Play" (labels only). The best outcome scores the target, as
+    the game itself can at most; any other its lowest score."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None or len(outcomes) == 2:
+        return labels, (target, 0)
+    if len(outcomes) == 1:
+        return labels, (target,)
+    return labels, tuple(target if index == 0 else low for index, (low, _) in enumerate(reversed(outcomes)))
 
 
 def shs11_skip_options(outcomes, best=2):
@@ -1140,8 +1152,12 @@ class Desktop:
                                        lambda index: self._resolve_shs11(action, results, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'brew_catch'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
-            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The catch game: catch the good things, dodge the bad.',
-                                       self.SKIP_OPTIONS, lambda index: self._resolve_brew_catch(action, index))
+            # shshd-runtime: it offers each outcome its story has (choice_hints.brew_catch_outcomes): most two, some three.
+            target = self.session.engine.brew_catch.target
+            outcomes = brew_catch_outcomes(self.session)
+            options, scores = brew_catch_skip_options(outcomes, target)
+            prompt = self._open_prompt(action, 'Skip this mini-game?', self._brew_catch_summary(outcomes, target),
+                                       options, lambda index: self._resolve_brew_catch(action, scores, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
@@ -1209,14 +1225,24 @@ class Desktop:
             return
         self._attempt(lambda: self.session.skip_shs11(results[index]))
 
-    def _resolve_brew_catch(self, action, index):
-        """The catch game's skip prompt: Win / Lose finish it with its target or nothing, Play plays it."""
+    @staticmethod
+    def _brew_catch_summary(outcomes, target):
+        """What the catch game about to start decides, for its skip prompt."""
+        game = 'The catch game: catch the good things, dodge the bad.'
+        if outcomes is None or len(outcomes) == 2:
+            return f'{game} Win scores {target}; Lose scores nothing.'
+        if len(outcomes) == 1:
+            return f'{game} Its score changes nothing that follows.'
+        return f'{game} Its story goes {len(outcomes)} ways, by score (at most {target}).'
+
+    def _resolve_brew_catch(self, action, scores, index):
+        """The catch game's skip prompt: an outcome finishes it with that score (brew_catch_skip_options), Play plays it."""
         if self.session.pending is not action:
             return
-        if index == 2:
+        if index >= len(scores):
             self.minigame_played = action
             return
-        self._attempt(lambda: self.session.skip_minigame(index == 0))
+        self._attempt(lambda: self.session.skip_brew_catch(scores[index]))
 
     def _resolve_x360_leash(self, action, index):
         """The leash game's skip prompt: Win / Lose finish it with that result, Play plays it."""

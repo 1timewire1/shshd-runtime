@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
-from exp_runtime.vm import signed16
+from exp_runtime.vm import KiwiVM, StopKind, signed16
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -43,7 +43,7 @@ from exp_runtime.brew_services import ANGLED, BREW_CATCH, BREW_MINIGAMES_QUERY, 
 from kiwi_rewrite import Rewriter  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 1
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 2   # 2: the event icons
 PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 ADDON_EPISODE = 9999
 TITLE_SUFFIX_07, TITLE_SUFFIX_08 = ' (SHS07)', ' (SHS08)'
@@ -57,6 +57,9 @@ LOCATIONS_08_EXTRA = 12
 LOCATION_07_OFFSET = 40                 # '07's own 1000-1027, after '08's
 SKY_ONLY = 68                           # a scene with no location: its sky alone
 CATCH_BASE = 26300                      # the catch game's frame, ring, digits and captions, then its pictures
+EVENT_ICON_BASE = 26400                 # + a BREW picture's own ID (100-180): its small pictures, which the planner's events use as icons
+EVENT_ICONS = range(100, 181)
+EVENT_ICON_SIZE = 46                    # the smartphone's own badge icons are 44x46 to 45x49
 MUSIC_BASE, MUSIC_TRACKS = 26900, 15    # 8000-8014
 # Sorted by ear (owner, 2026-11-05): these play as sound effects, the rest as music. The game itself plays all of them the same way.
 SOUND_TRACKS = frozenset({1, 4, 8, 9, 11, 12})
@@ -79,6 +82,21 @@ SPEAKER_KEY, EXPRESSION_KEY, DEPTH_KEY, CLOCK_KEY, EVENT_CHARACTER_KEY = 31001, 
 FIELD_KEY = 31010                       # + field: the current event's 16 fields
 SCENE_LOCATION_KEY, SCENE_SKY_KEY = 31030, 31050    # + depth
 EVENT_TEXT = '$BREWEVENT'
+# A story's first line, `Surviving High School` and its title (`%s\n\n%s`, said by Event): the title card already shows the title.
+TITLE_FORMAT = b'%s\n\n%s'
+# The smartphone's own lines run to about 190 characters (99.9% of 209,628 spoken and 54,926 narrated lines, 2026-11-05); BREW's
+# longer ones go out as several, at sentence ends, as the novels' do (novel_patch.LONGEST_LINE).
+LONGEST_LINE = 190
+SENTENCE_END = re.compile(r'(?<!Mr\.)(?<!Ms\.)(?<!Mrs\.)(?<!Dr\.)(?<=[.!?])\s+')
+# Chapter 1's captions (1.1 to 1.3: `Monday, after school: At the Gym.`), which BREW has Event say after a scene change, are
+# the smartphone's time badges (90), shown with the next line only, as Football Star's are.
+# BREW's own icons (owner, 2026-11-05), by what the caption says: car, house, music, plate, TV, heart, basketball, books.
+CAPTION_ICONS = ((('driving', 'riding'), 113), (('home', 'your room'), 166), (('party',), 138), (('coffee', 'ice cream'), 117),
+                 (('movie',), 164), (('hills', "brian's place"), 133),
+                 (('gym', 'game', 'court', 'tryouts', 'halftime', 'locker', 'practice', 'rebounding', 'dribbling', 'championship'), 104))
+CAPTION_ICON = 108
+WEEKDAYS = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
+MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
 EVENT_NAME = 'Event'
 PLAYER = 0                              # BREW's character 0, You, is the player: SHS's primary speaker (74)
 NAME_WORDS = 24                         # room for a character's name, for a voice with no picture
@@ -112,6 +130,9 @@ CATCH_TITLE, CATCH_TEXT = 'Think fast!', 'Catch the good things. Dodge the bad.'
 # generic page title, which becomes the smartphone's banner there (its word games are titled `Snacks!`, `Fight!` and the like).
 CATCH_POINTS = re.compile(rb'\s*\d+\s*(?:pts|points)\s+to\s+(?:pass|win)\s*[.!]?', re.I)
 CATCH_GENERIC_TITLE = b'Instructions'
+# 9.2's two games won by dodging everything (`Don't hit the pows! Get the lowest score you can!`): the word game in their place
+# turns its lists and its result around, and loses the sentence.
+CATCH_LOW = re.compile(rb'\s*Get the lowest score you can!', re.I)
 CATCH_MODES = {19: ORBIT, 20: ANGLED, 21: SIDEWAYS}
 CATCH_LIST_WORDS = 192                  # a word game's lists in its place: up to 14 kinds of item, two words each
 CATCH_FIELD_COLOUR, CATCH_PANEL_COLOUR = (0x44, 0x44, 0xFF), (0xFF, 0xEB, 0xD3)
@@ -431,10 +452,20 @@ def say(s, text, speaker, expression, context):
     """SHS's dialogue for `text` under BREW's speaker (callables pushing them): no speaker or Event is the narrator, a character with no
     picture says it under its name with none (service 76), and anyone else with their face. A whole line in brackets loses them: it's
     plain narration from the narrator, and a thought from anyone else. What's shown is kept as the last line, for a choice's question."""
-    narrated, voice, done, plain, found = s.label(), s.label(), s.label(), s.label(), s.label()
-    shown, twin = context['last_line'], context['line_twin']
+    done, found, spoken = s.label(), s.label(), s.label()
+    shown, twin, badge_up = context['last_line'], context['line_twin'], context['badge_up']
     set_word(s, shown, text)
     set_word(s, twin, lambda: s.push(-1))
+    # An empty line (the story's first, its title: title_line) isn't shown.
+    s.emit(0x40, shown); s.emit(0x3f); s.push(0); s.emit(0x0d)
+    s.emit(0x40, shown); s.emit(0x3f); s.push(256); s.emit(0x0e); s.emit(0x12); s.jump_if_nonzero(done)
+    for address, icon, badge in context['captions']:
+        other = s.label()
+        s.emit(0x40, shown); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
+        s.push(icon); s.push(badge); s.call(90, 2)
+        set_word(s, badge_up, lambda: s.push(1))
+        s.jump(done)
+        s.label(other)
     for address, bare in context['bracketed']:
         other = s.label()
         s.emit(0x40, shown); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
@@ -443,22 +474,62 @@ def say(s, text, speaker, expression, context):
         s.jump(found)
         s.label(other)
     s.label(found)
-    speaker(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(narrated)
-    speaker(); s.push(EVENT_CHARACTER_KEY); s.call(55, 1); s.push_result(); s.emit(0x0a); s.jump_if_nonzero(narrated)
-    resolve_look(s, speaker, context)
-    speaker(); s.call(73, 1); s.push_result(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(voice)
-    s.emit(0x40, twin); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(plain)
-    s.push(-2); s.emit(0x40, twin); speaker(); push_face(s, expression); s.call(13, 4)
-    s.jump(done)
-    s.label(plain)
-    s.emit(0x40, shown); speaker(); push_face(s, expression); s.call(13, 3)
-    s.jump(done)
-    s.label(voice)
-    speaker(); s.push(context['name_buffer']); s.call(61, 2)
-    s.push(context['name_buffer']); s.emit(0x40, shown); s.call(76, 2)
-    s.jump(done)
-    s.label(narrated)
-    s.emit(0x40, shown); s.push(NARRATOR); s.call(13, 2)
+
+    def output(end):
+        narrated, voice, plain = s.label(), s.label(), s.label()
+        speaker(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(narrated)
+        speaker(); s.push(EVENT_CHARACTER_KEY); s.call(55, 1); s.push_result(); s.emit(0x0a); s.jump_if_nonzero(narrated)
+        resolve_look(s, speaker, context)
+        speaker(); s.call(73, 1); s.push_result(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(voice)
+        s.emit(0x40, twin); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(plain)
+        s.push(-2); s.emit(0x40, twin); speaker(); push_face(s, expression); s.call(13, 4)
+        s.jump(end)
+        s.label(plain)
+        s.emit(0x40, shown); speaker(); push_face(s, expression); s.call(13, 3)
+        s.jump(end)
+        s.label(voice)
+        speaker(); s.push(context['name_buffer']); s.call(61, 2)
+        s.push(context['name_buffer']); s.emit(0x40, shown); s.call(76, 2)
+        s.jump(end)
+        s.label(narrated)
+        s.emit(0x40, shown); s.push(NARRATOR); s.call(13, 2)
+        s.jump(end)
+    def clear_badge(then):
+        """Take a time badge away once the message it came with has been read, then go on to `then`."""
+        s.emit(0x40, badge_up); s.jump_if_zero(then)
+        s.push(-1); s.push(-1); s.call(90, 2)
+        set_word(s, badge_up, lambda: s.push(0))
+        s.jump(then)
+    # A line longer than LONGEST_LINE goes out in pieces (long_lines: [count, piece...]), each as the line itself would.
+    table, index = context['pieces'], context['pieces'] + 1
+    chosen, whole, next_piece = s.label(), s.label(), s.label()
+    set_word(s, table, lambda: s.push(-1))
+    for key, pieces in context['long_lines']:
+        other = s.label()
+        s.emit(0x40, shown); s.push(key); s.emit(0x0a); s.jump_if_zero(other)
+        set_word(s, table, lambda pieces=pieces: s.push(pieces))
+        s.jump(chosen)
+        s.label(other)
+    s.label(chosen)
+    s.emit(0x40, table); s.push(-1); s.emit(0x0a); s.jump_if_zero(whole)
+    output(spoken)
+    s.label(whole)
+    set_word(s, index, lambda: s.push(0))
+    s.label(next_piece)
+    s.emit(0x40, index); s.emit(0x40, table); s.emit(0x3f); s.emit(0x0e); s.jump_if_zero(spoken)
+    set_word(s, shown, lambda: (s.emit(0x40, table), s.push(1), s.emit(0x50), s.emit(0x40, index), s.emit(0x50), s.emit(0x3f)))
+    kept = s.label()
+    s.emit(0x40, twin); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(kept)
+    set_word(s, twin, lambda: s.emit(0x40, shown))
+    s.label(kept)
+    set_word(s, index, lambda: (s.emit(0x40, index), s.push(1), s.emit(0x50)))
+    after = s.label()
+    output(after)
+    s.label(after)
+    clear_badge(next_piece)                                 # each piece is a message of its own
+    # A time badge stays for the line after it only, as Football Star's do (90, a line, then 90 with -1).
+    s.label(spoken)
+    clear_badge(done)
     s.label(done)
 
 
@@ -604,6 +675,16 @@ def catch_game(rewriter, pc, argc, context):
         s.emit(0x41, 0); s.arg(list_arg); s.emit(0x3f); s.emit(0x0e); s.jump_if_zero(items_end)
         count_at = lambda field: (s.arg(list_arg), s.push(1 + field), s.emit(0x50), s.emit(0x41, 0), s.push(3), s.emit(0x52), s.emit(0x50), s.emit(0x3f))
         count_at(2); s.push(0); s.emit(0x0c); s.jump_if_zero(kept)
+        # A picture an earlier kind has shown adds its words once (9.2's weights are two kinds of dumbbell).
+        s.emit(0x23, 1); s.push(0); s.emit(0x3e); s.emit(0x15)
+        earlier, new_picture = s.label(), s.label()
+        s.label(earlier)
+        s.emit(0x41, 1); s.emit(0x41, 0); s.emit(0x0e); s.jump_if_zero(new_picture)
+        s.arg(list_arg); s.push(2); s.emit(0x50); s.emit(0x41, 1); s.push(3); s.emit(0x52); s.emit(0x50); s.emit(0x3f)
+        count_at(1); s.emit(0x0a); s.jump_if_nonzero(kept)
+        s.emit(0x23, 1); s.emit(0x41, 1); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(earlier)
+        s.label(new_picture)
         s.emit(0x23, 1); s.push(0); s.emit(0x3e); s.emit(0x15)
         search, found, missing = s.label(), s.label(), s.label()
         s.label(search)
@@ -641,6 +722,14 @@ def catch_game(rewriter, pc, argc, context):
             s.push(buffer); s.text('|'.join(fill)); s.call(25, 2)
             s.label(have)
         resolve_look(s, lambda: s.push(PLAYER), context)
+        low, flagged = s.label(), s.label()
+        for address in context['catch_low']:
+            s.emit(0x40, page + 1); s.push(address); s.emit(0x0a); s.jump_if_nonzero(low)
+        s.push(0); s.jump(flagged)
+        s.label(low)
+        s.push(1)
+        s.label(flagged)                                    # local 2: won by the lowest score
+
         def page_string(slot):
             """The page's string, or its word-game twin (catch_plain) where it has one."""
             end = s.label()
@@ -662,16 +751,26 @@ def catch_game(rewriter, pc, argc, context):
         s.label(described)
         page_string(page + 1)
         s.label(described_end)
-        s.push(good); s.push(bad); s.push(WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(WORD_GAME_REFRESH_MS)
+        # A game won by the lowest score (catch_low): the pictures' words are the ones to avoid, and the score turns around.
+        swapped, lists = s.label(), s.label()
+        s.emit(0x41, 2); s.jump_if_nonzero(swapped)
+        s.push(good); s.push(bad); s.jump(lists)
+        s.label(swapped)
+        s.push(bad); s.push(good)
+        s.label(lists)
+        s.push(WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(WORD_GAME_REFRESH_MS)
         s.call(71, 8)
-        s.push_result()                                     # local 2: the result
+        s.push_result()                                     # local 3: the result
         set_word(s, page + 1, lambda: s.push(-1))
-        short, scored = s.label(), s.label()
-        s.emit(0x41, 2); s.push(WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
+        short, scored, kept_score = s.label(), s.label(), s.label()
+        s.emit(0x41, 3); s.push(WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
         s.arg(1); s.jump(scored)
         s.label(short)
-        s.emit(0x41, 2); s.arg(1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
+        s.emit(0x41, 3); s.arg(1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
         s.label(scored)
+        s.emit(0x41, 2); s.jump_if_zero(kept_score)
+        s.arg(1); s.emit(0x51); s.push(-1); s.emit(0x52)       # the target less it
+        s.label(kept_score)
         s.emit(0x04)
         s.jump(done)
         s.label(real)
@@ -774,9 +873,10 @@ def word_game(rewriter, start, context):
         s.call(71, 8)
         s.push_result()                                     # local 2: the result
         set_word(s, page + 1, lambda: s.push(-1))
+        # A pass is the best total; anything less, its share. Compared before multiplying: the skip prompt's Win is 32767
+        # (Session.skip_minigame), which times the rounds and the best score overflowed a word into a loss (1.1, 2026-11-05).
         short, returned = s.label(), s.label()
-        s.emit(0x41, 2); rounds(); s.emit(0x52); s.emit(0x41, 1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
-        rounds(); s.emit(0x41, 1); s.emit(0x52); s.emit(0x0c); s.jump_if_zero(short)
+        s.emit(0x41, 2); s.push(WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
         rounds(); s.emit(0x41, 1); s.emit(0x52); s.jump(returned)
         s.label(short)
         s.emit(0x41, 2); rounds(); s.emit(0x52); s.emit(0x41, 1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
@@ -861,6 +961,12 @@ def text_entry(rewriter, pc, argc, context):
     rewriter.redirect(pc, 'text_entry', build)
 
 
+def title_line(rewriter, pc, argc, context):
+    """1: (destination, TITLE_FORMAT, `Surviving High School`, title): the story's first line, which the title card already
+    says. It's left empty, and say() shows no empty line."""
+    rewriter.redirect(pc, 'title_line', lambda s: (s.arg(1), s.push(0), s.emit(0x3e), s.emit(0x15), s.result(0)))
+
+
 def titled_page(rewriter, pc, argc, context):
     """12: (title, text) -> SHS 33."""
     rewriter.redirect(pc, 'titled_page', lambda s: (s.arg(1), s.arg(2), s.push(0), s.call(33, 3)))
@@ -930,6 +1036,94 @@ def strip_round_counts(program):
 
 def is_printable(text):
     return all(32 <= byte < 250 or byte in (10, 13) for byte in text)
+
+
+def split_long(text):
+    """A line longer than LONGEST_LINE as several, at sentence ends (one sentence longer than that stays whole)."""
+    if len(text) <= LONGEST_LINE:
+        return [text]
+    lines, current = [], ''
+    for sentence in SENTENCE_END.split(text):
+        if current and len(current) + 1 + len(sentence) > LONGEST_LINE:
+            lines.append(current)
+            current = sentence
+        else:
+            current = f'{current} {sentence}'.strip()
+    lines.append(current)
+    return lines
+
+
+def helper_calls(program, shape):
+    """{string address: count} of the strings passed last to a subroutine whose host calls are `shape` (a call is SAVE_RETURN
+    0x42 then JUMP_ABS 0x29, the subroutine running to RETURN 0x43)."""
+    instructions, helpers, out = program.instructions, set(), {}
+    for k in range(len(instructions) - 1):
+        if instructions[k].opcode == 0x42 and instructions[k + 1].opcode == 0x29:
+            start = instructions[k + 1].operand
+            end = next((m for m in range(start, min(start + 30, len(instructions))) if instructions[m].opcode == 0x43), None)
+            if end is not None and [instructions[m].operand >> 8 for m in range(start, end) if instructions[m].opcode == 0x1f] == shape:
+                helpers.add(start)
+    for k in range(len(instructions) - 2):
+        if (instructions[k].opcode == 0x1a and instructions[k + 1].opcode == 0x42 and instructions[k + 2].opcode == 0x29
+                and instructions[k + 2].operand in helpers):
+            out[instructions[k].operand] = out.get(instructions[k].operand, 0) + 1
+    return out
+
+
+def caption_badge(text):
+    """(icon, badge text) for a Chapter 1 caption: `Wednesday, after school: Tryouts.` is `WED - Tryouts`, as Battle of the
+    Schools writes `Wk. 1, MON - Lunch`. The time of day goes (the icon tells most of it): the badge's region takes about 18
+    characters a line and wraps the rest, to three lines at most, ignoring a line break."""
+    when, colon, where = text.rstrip('.').partition(': ')
+    day, _, time = when.partition(', ')
+    if not colon:                                           # `Wednesday night, Inside the party`
+        where = time
+    if day.split()[0] in WEEKDAYS:
+        words = day.split()
+        day = ' '.join([words[0][:3].upper()] + [w.title() for w in words[1:]])
+    label = f'{day} - {where}' if where else day
+    lower = text.lower()
+    icon = next((icon for words, icon in CAPTION_ICONS if any(w in lower for w in words)), CAPTION_ICON)
+    return EVENT_ICON_BASE + icon, label
+
+
+def title_formats(program):
+    """The pcs of the format calls (1) that build a story's first line from TITLE_FORMAT."""
+    address = next((a for a, text, _ in data_strings(program) if text == TITLE_FORMAT), None)
+    instructions, out = program.instructions, set()
+    for k, i in enumerate(instructions):
+        if i.opcode == 0x1f and i.operand >> 8 == 1 and address is not None and (i.operand & 255) >= 2:
+            pushed = instructions[k - (i.operand & 255) + 1]
+            if (pushed.opcode == 0x5a and address == 0) or (pushed.opcode == 0x1a and pushed.operand == address):
+                out.add(i.pc)
+    return out
+
+
+def event_date(resources):
+    """`Friday, November 9`: the day a Campaign story's setup puts its one event on (33's month and day), and its weekday by
+    the calendar the setup describes (69: start month and day, and that day's weekday), as BREW's planner heads a day. Run
+    in the VM with every other call answered 0; None where there's no event."""
+    vm = KiwiVM(decode_program(upgrade(resources[FIRST_SCRIPT])))
+    event = calendar = None
+    for _ in range(200000):
+        stop = vm.run()
+        if stop.kind == StopKind.HALT:
+            break
+        args = [signed16(a) for a in stop.args]
+        if stop.yield_id == 69:
+            calendar = args
+        elif stop.yield_id == 33:
+            event = args
+        vm.resume(1 if stop.yield_id == 33 else 0)
+    if event is None or calendar is None or not 1 <= event[4] <= 12:
+        return None
+    lengths = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    month, day, index = calendar[2], calendar[3], 0
+    while (month, day) != (event[4], event[5]) and index < 400:
+        day, index = day + 1, index + 1
+        if day > lengths[month - 1]:
+            month, day = month % 12 + 1, 1
+    return f'{WEEKDAYS[(calendar[4] + index) % 7]}, {MONTHS[event[4] - 1]} {event[5]}'
 
 
 def bracketed(text):
@@ -1022,34 +1216,48 @@ def catch_pages(program):
 def script_context(rewriter, script, looks, player, program, catch_sizes=None):
     """What a script's shims share: scratch words in its data, and its bracketed strings' bare twins."""
     start = spin_routine(program)
-    thoughts, game_words = [], []
+    thoughts, game_words, long_lines = [], [], []
+
+    def pieces(key, text):
+        parts = split_long(text)
+        if len(parts) > 1:
+            long_lines.append((key, rewriter.words([len(parts)] + [rewriter.text(part) for part in parts])))
     for address, text, _ in data_strings(program):
         bare = bracketed(text)
         if bare is not None:
             thoughts.append((address, rewriter.text(bare.decode('latin-1'))))
+            pieces(thoughts[-1][1], bare.decode('latin-1'))
+        elif is_printable(text):
+            pieces(address, text.decode('latin-1'))
         word = bare_word(text) if start is not None else None
         if word is not None:
             game_words.append((address, rewriter.text(word.decode('latin-1'))))
+    strings = {address: text.decode('latin-1') for address, text, _ in data_strings(program)}
     catch = {}
     if any(i.opcode == 0x1f and i.operand >> 8 in CATCH_MODES for i in program.instructions):
         words = sorted(CATCH_WORDS.items())
         sizes = sorted((catch_sizes or {}).items())
         # Each page string's twin for the word game: the generic title as the banner, a text without the catch game's points.
-        plain = []
+        plain, low = [], []
         for address, text, _ in data_strings(program):
             if text == CATCH_GENERIC_TITLE:
                 plain.append((address, rewriter.text(CATCH_TITLE)))
-            elif CATCH_POINTS.search(text):
-                plain.append((address, rewriter.text(CATCH_POINTS.sub(b'', text).decode('latin-1'))))
+            elif CATCH_POINTS.search(text) or CATCH_LOW.search(text):
+                if CATCH_LOW.search(text):
+                    low.append(address)
+                plain.append((address, rewriter.text(CATCH_LOW.sub(b'', CATCH_POINTS.sub(b'', text)).decode('latin-1'))))
         catch = dict(catch_good=rewriter.words([0] * CATCH_LIST_WORDS), catch_bad=rewriter.words([0] * CATCH_LIST_WORDS),
-                     catch_plain=plain,
+                     catch_plain=plain, catch_low=low,
                      catch_words=rewriter.words([value for picture, pair in words for value in (picture, rewriter.text(pair[0]), rewriter.text(pair[1]))]),
                      catch_words_count=len(words), catch_sizes_count=len(sizes),
                      catch_sizes=rewriter.words([value for picture, size in sizes for value in (picture, *size)] or [0]))
     return dict(rid=script, kind='single', looks=sorted(looks.items()), hash_factors=rewriter.words(HASH_FACTORS),
                 last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
                 name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
-                bracketed=thoughts, game_words=game_words, routine=start, game_pages=game_pages(program, start) if start is not None else (),
+                bracketed=thoughts, game_words=game_words, routine=start, long_lines=long_lines, pieces=rewriter.words([-1, 0]), badge_up=rewriter.words([0]),
+                captions=[(address, *badge[:1], rewriter.text(badge[1])) for address in helper_calls(program, [14, 72])
+                          for badge in [caption_badge(strings[address])]],
+                title_formats=title_formats(program), game_pages=game_pages(program, start) if start is not None else (),
                 page=rewriter.words([-1, -1]), word=rewriter.words([0]), catch_pages=catch_pages(program), **catch,
                 good=rewriter.words([0] * LIST_WORDS), bad=rewriter.words([0] * LIST_WORDS))
 
@@ -1096,6 +1304,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
         if table.setdefault(look_hash(entries), bank) != bank:
             raise StoryError(f'{name}: two looks have the same hash')
     title = clean_title(title_of(archive_resources[1]))
+    date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
     extra = [rid for rid in scripts if rid not in (FIRST_SCRIPT, BREW_STORY_SCRIPT)]
     if extra:
@@ -1113,6 +1322,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
                 game_page(rewriter, pc, argc, context)
             elif service in CATCH_MODES:
                 catch_game(rewriter, pc, argc, context)
+            elif service == 1 and pc in context['title_formats']:
+                title_line(rewriter, pc, argc, context)
             elif service in RENAME:
                 rewriter.rename(pc, RENAME[service])
             elif service in DROPPED:
@@ -1129,7 +1340,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
                                          s.push(NARRATOR), s.push(-1), s.call(72, 2)))
         else:
-            rewriter.prologue(lambda s: (s.text(title), s.text(''), s.push(card), s.push(0), s.call(8, 4)))
+            rewriter.prologue(lambda s: (s.text(title), s.text(date or ''), s.push(card), s.push(0), s.call(8, 4)))
         target = STORY_SCRIPT if script == BREW_STORY_SCRIPT else FIRST_SCRIPT
         resources[target] = rewriter.finish().to_bytes()
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
@@ -1268,6 +1479,7 @@ def build_addon(casts, games, render_music=None):
             if data is not None:
                 resources[MUSIC_BASE + track] = render_music(data)
     resources.update(badge_pictures(art08))
+    resources.update(event_icons(art08))
     catch_resources, spec['catch'] = catch_pictures(art08, bases['08'])
     resources.update(catch_resources)
     resources[FRAME_BACKDROP] = frame_backdrop(art08)
@@ -1285,6 +1497,25 @@ def strip_png(scene):
 BADGE_MARGIN = 2
 BROKEN_GAP = 2
 BADGE_SCALE = 6                         # art pixels to the picture's, with no smoothing: the player scales it to SHS's size (TRANSLATED_BADGE_UNITS)
+
+
+def event_icons(art):
+    """{resource: PNG} of BREW's small pictures (EVENT_ICONS), for time badges: 4 times with no smoothing, then fitted to
+    EVENT_ICON_SIZE, so their pixels stay sharp at about the smartphone's icon size."""
+    out = {}
+    for picture in EVENT_ICONS:
+        try:
+            left, top, right, bottom = art.bounds(picture)
+        except Exception:
+            continue
+        if not 0 < right - left <= 64 or not 0 < bottom - top <= 64:
+            continue
+        canvas = Image.new('RGBA', (right - left, bottom - top), (0, 0, 0, 0))
+        art.draw(canvas, picture, -left, -top)
+        big = canvas.resize((canvas.width * 4, canvas.height * 4), Image.NEAREST)
+        scale = EVENT_ICON_SIZE / max(canvas.width, canvas.height)
+        out[EVENT_ICON_BASE + picture] = brew_art.png(big.resize((round(canvas.width * scale), round(canvas.height * scale)), Image.LANCZOS))
+    return out
 
 
 def badge_pictures(art):

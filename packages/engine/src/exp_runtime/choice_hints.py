@@ -220,6 +220,41 @@ def x360_slot_outcomes(session, *, max_steps=6000, max_panels=30):
     return _outcomes(session, finish, range(6), max_steps, max_panels, numbers=False)
 
 
+def brew_catch_outcomes(session, *, max_steps=40000, max_panels=30):
+    """shshd-runtime: the outcomes of the BREW catch game about to start, for its skip prompt, as word_game_outcomes has
+    them, over its scores 0 to its target. Most part only at the target; about 30 of the Campaign's also at a lower
+    cut-off (mostly 30: 0-29, 30-44, 45), and Classic and Fall '06 have others (2026-11-05, catch_bands). Every fifth
+    score is tried, then each change is narrowed to the score it happens at. A translated line costs a few hundred
+    instructions, hence the arena's budget."""
+    if not session.pending or session.pending.name != 'brew_catch' or session.engine.brew_catch is None:
+        return None
+    target = session.engine.brew_catch.target
+
+    def finish(preview, score):
+        preview.start_minigame()
+        preview._complete_minigame(result=score)
+    seen = {}
+
+    def story(score):
+        if score not in seen:
+            seen[score] = _preview_story(session, finish, score, max_steps, max_panels, numbers=False)
+        return seen[score]
+    coarse = sorted({*range(0, target + 1, 5), target})
+    if any(story(score) is None for score in coarse):
+        return None
+    cuts = []
+    for low, high in zip(coarse, coarse[1:]):
+        while story(low) != story(high) and high - low > 1:   # one change between them, narrowed by halves
+            middle = (low + high) // 2
+            if story(middle) is None:
+                return None
+            low, high = (middle, high) if story(middle) == story(low) else (low, middle)
+        if story(low) != story(high):
+            cuts.append(high)
+    bounds = [0, *cuts, target + 1]
+    return [(bounds[k], None if k == len(bounds) - 2 else bounds[k + 1] - 1) for k in range(len(bounds) - 1)]
+
+
 def shs11_outcomes(session, *, max_steps=6000, max_panels=30):
     """shshd-runtime: the outcomes of the SHS '11 game about to start, for its skip prompt: its results 0 to 2. Nearly all its
     games have two, parting at 2; the Superstore has three."""
@@ -248,44 +283,50 @@ def arena_outcomes(session, *, max_steps=40000, max_panels=30):
     return _outcomes(session, finish, range(ARENA_RESULTS), max_steps, max_panels, numbers=False)
 
 
+def _preview_story(session, finish, value, max_steps, max_panels, numbers=True):
+    """What `finish(preview, value)` leads to on an isolated runtime copy that plays on through its next panels to its
+    next decision, or None when the copy can't tell."""
+    preview = deepcopy(session, {id(session.resources): session.resources,
+                                 id(session.vm.program): session.vm.program})
+    preview.ephemeral = True
+    deadline = preview.vm.steps_executed + max_steps
+    shown = []
+    try:
+        finish(preview, value)
+        for _ in range(max_panels + 1):
+            if preview.transitioning and preview.engine.scene_transition.phase == 4:
+                preview._finish_transition(advance=False)
+            action = preview.advance(max_steps=deadline - preview.vm.steps_executed, max_events=2000)
+            if preview.transitioning and preview.engine.scene_transition.phase == 3:
+                preview.engine.scene_transition.clear()
+            details = action.details or {}
+            text = str(details.get('text') or details.get('title') or '')
+            shown.append((action.name, preview.scene, text if numbers else re.sub(r'\d+', '#', text)))
+            if action.name in DECISIONS or action.name not in PANELS:
+                break
+            if action.name == 'vm_pause':
+                preview.vm.continue_after_pause()
+                preview.pending = None
+            elif action.name == 'loading':
+                if preview.engine.loading.blocking:
+                    preview.vm.resume(0)
+                preview.engine.loading = preview.pending = None
+            elif action.name == 'survey_confirmation':
+                preview._complete_survey(action)
+            else:
+                preview._complete_panel()
+                preview.engine.title_screen = preview.engine.message_panel = None
+    except (ContentError, VMError, OSError, ValueError, AttributeError):
+        return None
+    return tuple(shown)
+
+
 def _outcomes(session, finish, values, max_steps, max_panels, numbers=True):
     """[(lowest value, highest value or None for "or more")] of the stories `finish(preview, value)` leads to, each
     value tried on an isolated runtime copy that plays on through its next panels to its next decision; or None.
     `numbers` False: text that differs only in its numbers reads the same."""
     def story(value):
-        preview = deepcopy(session, {id(session.resources): session.resources,
-                                     id(session.vm.program): session.vm.program})
-        preview.ephemeral = True
-        deadline = preview.vm.steps_executed + max_steps
-        shown = []
-        try:
-            finish(preview, value)
-            for _ in range(max_panels + 1):
-                if preview.transitioning and preview.engine.scene_transition.phase == 4:
-                    preview._finish_transition(advance=False)
-                action = preview.advance(max_steps=deadline - preview.vm.steps_executed, max_events=2000)
-                if preview.transitioning and preview.engine.scene_transition.phase == 3:
-                    preview.engine.scene_transition.clear()
-                details = action.details or {}
-                text = str(details.get('text') or details.get('title') or '')
-                shown.append((action.name, preview.scene, text if numbers else re.sub(r'\d+', '#', text)))
-                if action.name in DECISIONS or action.name not in PANELS:
-                    break
-                if action.name == 'vm_pause':
-                    preview.vm.continue_after_pause()
-                    preview.pending = None
-                elif action.name == 'loading':
-                    if preview.engine.loading.blocking:
-                        preview.vm.resume(0)
-                    preview.engine.loading = preview.pending = None
-                elif action.name == 'survey_confirmation':
-                    preview._complete_survey(action)
-                else:
-                    preview._complete_panel()
-                    preview.engine.title_screen = preview.engine.message_panel = None
-        except (ContentError, VMError, OSError, ValueError, AttributeError):
-            return None
-        return tuple(shown)
+        return _preview_story(session, finish, value, max_steps, max_panels, numbers)
 
     groups = []
     for value in values:
