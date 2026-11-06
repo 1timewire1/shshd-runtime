@@ -1269,6 +1269,15 @@ class BrewShimTests(unittest.TestCase):
         self.assertEqual(self.word_game_run([1, 1, 0, 0], 20)[1], 4)        # no more than the best total
         self.assertEqual(self.word_game_run([2, 1, 0, 0], 6)[1], 8)         # a word worth 2
 
+    def test_cues_play_as_sound_or_music_and_the_chimes_are_answer_hints(self):
+        from exp_runtime.shs import profile
+        for cue, service, args in ((8011, 79, (self.brew.MUSIC_BASE + 11,)), (8000, 80, (self.brew.MUSIC_BASE, 0)), (8003, 80, (self.brew.MUSIC_BASE + 3, 0))):
+            calls, _ = self.run_script(program((0x1A, cue), call(9, 1), 0x33), {9: self.brew.music})
+            self.assertEqual(calls, [(service, args)])
+        self.assertEqual(profile.TRANSLATED_FEEDBACK_MUSIC[31000],
+                         {self.brew.MUSIC_BASE + track: feedback for track, feedback in self.brew.FEEDBACK_TRACKS.items()})
+        self.assertLessEqual(set(self.brew.FEEDBACK_TRACKS), self.brew.SOUND_TRACKS)
+
     def test_a_word_game_with_two_bad_words_shows_two_of_each(self):
         from exp_runtime.minigames import WordGame
 

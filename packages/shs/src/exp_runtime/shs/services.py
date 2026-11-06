@@ -90,6 +90,10 @@ def dispatch(self, vm, *, resource_exists=None):
             # shshd-runtime: whether SHS '11's real minigames play here (the same switch); others take what the
             # smartphone has at that spot.
             return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
+        from ..brew_services import BREW_MINIGAMES_QUERY
+        if selector == BREW_MINIGAMES_QUERY:
+            # shshd-runtime: whether the BREW games' catch game plays here (the same switch); others take timed word choices.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
         from ..cutscene import CUTSCENE_QUERY
         if selector == CUTSCENE_QUERY:
             # shshd-runtime: whether storyboard cutscenes play here (a player that draws them); others go straight on.

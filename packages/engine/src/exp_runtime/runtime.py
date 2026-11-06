@@ -394,7 +394,7 @@ class Session:
             return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
-        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex'):
+        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch'):
             return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
@@ -427,6 +427,8 @@ class Session:
             return self._complete_minigame(result=SLOTS if success else 0)
         elif kind == 'x360_leash':
             return self._complete_minigame(result=int(success))
+        elif kind == 'brew_catch':
+            return self._complete_minigame(result=game.target if success else 0)
         elif kind == 'x360_puzzle':
             return self._complete_minigame(result=0)    # (its story reads no result)
         elif kind == 'x360_diss':
@@ -826,6 +828,11 @@ class Session:
             self.engine.x360_slot.press()
             self._slot_sounds()
             return action
+        elif action.name == 'brew_catch':
+            if value is not None:
+                raise ValueError('The catch game takes a press')
+            self.engine.brew_catch.press()
+            return action
         elif action.name == 'x360_leash':
             if value is not None:
                 raise ValueError('The leash game takes a press')
@@ -1220,6 +1227,9 @@ class Session:
             finished = self.engine.shs11_reflex.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
             self._shs11_sounds(self.engine.shs11_reflex)
             return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'brew_catch':
+            finished = self.engine.brew_catch.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
+            return self._complete_minigame() if finished else self.pending
         if self.pending and self.pending.name == 'x360_leash':
             finished = self.engine.x360_leash.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
             return self._complete_minigame() if finished else self.pending
@@ -1293,7 +1303,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=37,
+        return dict(format='shs-runtime-save', version=38,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1334,8 +1344,12 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 38):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 39):
                 raise SaveError('Unsupported save format or version')
+            # Version 38 adds the BREW games' catch game (brew_catch.py); an older save never had one open.
+            if state['version'] < 38 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('brew_catch', None)
             # Version 37 lets Memory stand in for a word grid (shs11_games.grid_memory); an older save's never does.
             if state['version'] < 37 and isinstance(state.get('engine'), dict) and isinstance(state['engine'].get('shs11_memory'), dict):
                 state = deepcopy(state)
@@ -1696,6 +1710,11 @@ class Session:
                     engine.shs11_memory.validate()
                 except ValueError as error:
                     raise SaveError(str(error)) from error
+            if engine.brew_catch is not None:
+                try:
+                    engine.brew_catch.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
             if engine.x360_leash is not None:
                 try:
                     engine.x360_leash.validate()
@@ -1786,7 +1805,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,)}
+                           'brew_catch': (221,), 'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

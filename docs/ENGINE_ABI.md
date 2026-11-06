@@ -636,6 +636,15 @@ completes with **2** at 98% of the target or more, **1** above 75%, else **0**. 
 
 Service **96**, a word grid, can also open Memory, with the player's "Use '11's Memory for Word Grid" switch on and a grid that fits (`shs11_games.grid_memory`). It then completes with the grid's own result: **1** at 98% of the target or more, else **0**.
 
+## 5.5 The BREW games' catch game (shshd-runtime service 221)
+
+Episodes translated from the BREW games call it after **70 selector 204** answers 1, which it does only with the player's
+minigames switch on. Otherwise a story plays a word game (71) in its place. Its 11 arguments: the kind (1 angled, 2 sideways,
+3 orbit, as BREW's services 20, 21 and 19), the target, ms between items, speed, spread, the odds (of coming at the angle, or
+from the left), the angle, the player's picture, a list of items (its length, then value, picture and count each), a table of
+sizes (picture, width, height each) and how many sizes it holds. It waits for the game (`brew_catch.py`) and completes with
+the score, from 0 to the target. The scripts test it themselves. [BREW.md](BREW.md) has more.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

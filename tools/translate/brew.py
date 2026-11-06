@@ -29,7 +29,7 @@ from pathlib import Path
 import re
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
 from exp_runtime.decode.bytecode import decode_program
@@ -39,6 +39,7 @@ from exp_runtime.vm import signed16
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import brew_art  # noqa: E402
+from exp_runtime.brew_services import ANGLED, BREW_CATCH, BREW_MINIGAMES_QUERY, ORBIT, SIDEWAYS  # noqa: E402
 from kiwi_rewrite import Rewriter  # noqa: E402
 import nr_art  # noqa: E402
 
@@ -55,7 +56,12 @@ LOCATIONS_08 = 28                       # 1000-1027; then 2000-2011
 LOCATIONS_08_EXTRA = 12
 LOCATION_07_OFFSET = 40                 # '07's own 1000-1027, after '08's
 SKY_ONLY = 68                           # a scene with no location: its sky alone
+CATCH_BASE = 26300                      # the catch game's frame, ring, digits and captions, then its pictures
 MUSIC_BASE, MUSIC_TRACKS = 26900, 15    # 8000-8014
+# Sorted by ear (owner, 2026-11-05): these play as sound effects, the rest as music. The game itself plays all of them the same way.
+SOUND_TRACKS = frozenset({1, 4, 8, 9, 11, 12})
+# 8011 is the correct chime and 8001 the incorrect one (owner): the runtime's Answer hints read them (shs/profile.py).
+FEEDBACK_TRACKS = {11: 1, 1: -1}
 SPEC = 26998                            # what the addon holds, JSON
 FRAME_BACKDROP, PINK_BACKDROP = 26999, 26991        # the panel, and behind a pink box (profile TRANSLATED_THEME_BACKDROP)
 BADGE_BASE = 26992                      # heart, skull, smiley, each whole then each broken (profile TRANSLATED_BADGE_ART)
@@ -87,6 +93,30 @@ CHOICE_TITLE = 'Make your choice!'      # for a quiz: the real player answers, a
 TIMED_TITLE = 'Think fast!'             # as the smartphone titles its timed choices
 WORD_GAME_MS, WORD_GAME_REFRESH_MS, WORD_GAME_PASS = 20000, 3000, 6     # as the smartphone calls service 71 (as shs11_story)
 LIST_WORDS = 160                        # room for a word game's list, built at run time
+# The catch game. Pictures it shows, each with two words for the word game in its place (the owner's switch off). The art has no names:
+# these are by eye, and from what the stories call them on the page before.
+CATCH_WORDS = {80: ('Heart', 'Love'), 82: ('Smiley', 'Grin'), 102: ('Paintbrush', 'Paint'), 103: ('Dumbbell', 'Weights'), 104: ('Basketball', 'Hoops'),
+               107: ('Blue helmet', 'Blue team'), 108: ('Books', 'Studying'), 109: ('Eye roll', 'Boredom'), 110: ('Whispers', 'Gossip'),
+               111: ('Burger', 'Lunch'), 113: ('Red car', 'Hot rod'), 114: ('Blue car', 'Sports car'), 116: ('Cross', 'Prayer'),
+               117: ('Plate', 'Dinner'), 119: ('Flowers', 'Bouquet'), 120: ('Football', 'Pass'), 122: ('Fried egg', 'Breakfast'),
+               123: ('Garlic', 'Clove'), 125: ('Glasses', 'Laser eyes'), 127: ('Sneaker', 'Fast feet'), 128: ('Laughter', 'Giggles'),
+               130: ('Lightning', 'Bolt'), 131: ('Lips', 'Kiss'), 133: ('Hearts', 'Romance'), 134: ('Pi', 'Math'), 136: ('Cash', 'Money'),
+               137: ('Sunrise', 'Sunshine'), 138: ('Music', 'Tune'), 140: ('X', 'Mistake'), 143: ('Cell phone', 'Text'), 144: ('Phone', 'Call'),
+               145: ('Pow!', 'Wham!'), 146: ('Fist', 'Punch'), 148: ('Red helmet', 'Red team'), 149: ('Runner', 'Sprint'), 150: ('Salad', 'Side dish'),
+               151: ('Scared', 'Nervous'), 152: ('Happy', 'Smile'), 154: ('Test tube', 'Chemistry'), 155: ('Shakespeare', 'Bust'), 156: ('Zzz', 'Sleep'),
+               157: ('Steak', 'Meat'), 158: ('Suit', 'Tuxedo'), 160: ('Taco', 'Snack'), 162: ('Ticket', 'Coupon'), 163: ('Toilet', 'Flush'),
+               164: ('TV', 'Channel'), 165: ('Zombie', 'Brains'), 166: ('House', 'Home'), 279: ('Snake', 'Slither')}
+CATCH_GOOD_WORDS, CATCH_BAD_WORDS = ('Catch it!', 'Grab it!'), ('Dodge it!', 'Avoid it!')   # where a story's own pictures have no words
+CATCH_TITLE, CATCH_TEXT = 'Think fast!', 'Catch the good things. Dodge the bad.'
+# The catch game's own points, which mean nothing in the word game played in its place (`45 pts to pass.`, `55 points to win!`); its
+# generic page title, which becomes the smartphone's banner there (its word games are titled `Snacks!`, `Fight!` and the like).
+CATCH_POINTS = re.compile(rb'\s*\d+\s*(?:pts|points)\s+to\s+(?:pass|win)\s*[.!]?', re.I)
+CATCH_GENERIC_TITLE = b'Instructions'
+CATCH_MODES = {19: ORBIT, 20: ANGLED, 21: SIDEWAYS}
+CATCH_LIST_WORDS = 192                  # a word game's lists in its place: up to 14 kinds of item, two words each
+CATCH_FIELD_COLOUR, CATCH_PANEL_COLOUR = (0x44, 0x44, 0xFF), (0xFF, 0xEB, 0xD3)
+CATCH_EDGE_DARK, CATCH_EDGE_LIGHT = (0x75, 0x95, 0xAE), (0xC3, 0xCC, 0xCE)
+CATCH_SCALE = 3
 END_TITLE, END_TEXT, END_ARGUMENT = 'End of game', 'Thanks for playing!', 4000      # as the smartphone's closing message
 # A prime for each of a look list's 23 entries, for its hash (16-bit wrapping, as the machine's stored words).
 HASH_FACTORS = (3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89)
@@ -546,6 +576,125 @@ def wait(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('wait', context['rid']), build)
 
 
+def catch_game(rewriter, pc, argc, context):
+    """19, 20, 21: the catch game, whose score BREW's scripts read from R, usually testing it against the target. Service 221 where
+    the player has the switch on, with the page before it as a panel. Otherwise, a word game under that page, its items' words good or
+    bad by their value: its result out of the smartphone's pass mark is that share of the target, which reaches every band the
+    scripts test (all 181 sites' constants, 2026-11-05: at a target of 45, a score of 6 gives 45, then 37, 30, 22 and so on). It goes on
+    in B for the push after the call, as what it has to do on the way out would replace R."""
+    service = rewriter.code[pc][1] >> 8
+    mode = CATCH_MODES[service]
+    reads = rewriter.code[pc + 1] == (0x21, None)
+    if reads:
+        rewriter.code[pc + 1] = (0x08, None)
+    page, good, bad = context['page'], context['catch_good'], context['catch_bad']
+    list_arg = 5 if mode == ORBIT else 4
+    sprite_arg = 6 if mode == ORBIT else 5
+
+    def build(s):
+        real, done = s.label(), s.label()
+        s.push(BREW_MINIGAMES_QUERY); s.call(70, 1)
+        s.push_result(); s.jump_if_nonzero(real)
+        for buffer in (good, bad):
+            set_word(s, buffer, lambda buffer=buffer: s.push(0))
+        s.push(0)                                           # local 0: the kind of item
+        s.push(0)                                           # local 1: the entry in the table of words
+        items, items_end, kept = s.label(), s.label(), s.label()
+        s.label(items)
+        s.emit(0x41, 0); s.arg(list_arg); s.emit(0x3f); s.emit(0x0e); s.jump_if_zero(items_end)
+        count_at = lambda field: (s.arg(list_arg), s.push(1 + field), s.emit(0x50), s.emit(0x41, 0), s.push(3), s.emit(0x52), s.emit(0x50), s.emit(0x3f))
+        count_at(2); s.push(0); s.emit(0x0c); s.jump_if_zero(kept)
+        s.emit(0x23, 1); s.push(0); s.emit(0x3e); s.emit(0x15)
+        search, found, missing = s.label(), s.label(), s.label()
+        s.label(search)
+        s.emit(0x41, 1); s.push(context['catch_words_count']); s.emit(0x0e); s.jump_if_zero(missing)
+        s.push(context['catch_words']); s.emit(0x41, 1); s.push(3); s.emit(0x52); s.emit(0x50); s.emit(0x3f)
+        count_at(1); s.emit(0x0a); s.jump_if_nonzero(found)
+        s.emit(0x23, 1); s.emit(0x41, 1); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(search)
+        s.label(missing)
+        # A picture with no words adds nothing: the lists are filled up below.
+        s.jump(kept)
+        s.label(found)
+
+        def add(buffer, word):
+            first = s.label()
+            s.emit(0x40, buffer); s.jump_if_zero(first)
+            s.push(buffer); s.text('|'); s.call(25, 2)
+            s.label(first)
+            s.push(buffer); word(); s.emit(0x3f); s.call(25, 2)
+        word_at = lambda k: (lambda: (s.push(context['catch_words'] + 1 + k), s.emit(0x41, 1), s.push(3), s.emit(0x52), s.emit(0x50)))
+        worse, following = s.label(), s.label()
+        count_at(0); s.push(0); s.emit(0x0c); s.jump_if_zero(worse)
+        add(good, word_at(0)); add(good, word_at(1))
+        s.jump(following)
+        s.label(worse)
+        add(bad, word_at(0)); add(bad, word_at(1))
+        s.label(following)
+        s.label(kept)
+        s.emit(0x23, 0); s.emit(0x41, 0); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(items)
+        s.label(items_end)
+        for buffer, fill in ((good, CATCH_GOOD_WORDS), (bad, CATCH_BAD_WORDS)):
+            have = s.label()
+            s.emit(0x40, buffer); s.jump_if_nonzero(have)
+            s.push(buffer); s.text('|'.join(fill)); s.call(25, 2)
+            s.label(have)
+        resolve_look(s, lambda: s.push(PLAYER), context)
+        def page_string(slot):
+            """The page's string, or its word-game twin (catch_plain) where it has one."""
+            end = s.label()
+            for address, twin in context['catch_plain']:
+                other = s.label()
+                s.emit(0x40, slot); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
+                s.push(twin); s.jump(end)
+                s.label(other)
+            s.emit(0x40, slot)
+            s.label(end)
+        titled, title, described, described_end = s.label(), s.label(), s.label(), s.label()
+        s.emit(0x40, page + 1); s.push(-1); s.emit(0x0a); s.jump_if_zero(titled)
+        s.text(CATCH_TITLE); s.jump(title)
+        s.label(titled)
+        page_string(page)
+        s.label(title)
+        s.emit(0x40, page + 1); s.push(-1); s.emit(0x0a); s.jump_if_zero(described)
+        s.text(CATCH_TEXT); s.jump(described_end)
+        s.label(described)
+        page_string(page + 1)
+        s.label(described_end)
+        s.push(good); s.push(bad); s.push(WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(WORD_GAME_REFRESH_MS)
+        s.call(71, 8)
+        s.push_result()                                     # local 2: the result
+        set_word(s, page + 1, lambda: s.push(-1))
+        short, scored = s.label(), s.label()
+        s.emit(0x41, 2); s.push(WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
+        s.arg(1); s.jump(scored)
+        s.label(short)
+        s.emit(0x41, 2); s.arg(1); s.emit(0x52); s.push(WORD_GAME_PASS); s.emit(0x53)
+        s.label(scored)
+        s.emit(0x04)
+        s.jump(done)
+        s.label(real)
+        no_page = s.label()
+        s.emit(0x40, page + 1); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_page)
+        s.emit(0x40, page); s.emit(0x40, page + 1); s.push(0); s.call(33, 3)
+        set_word(s, page + 1, lambda: s.push(-1))
+        s.label(no_page)
+        s.push(mode); s.arg(1); s.arg(2); s.arg(3)
+        if mode == ORBIT:
+            s.arg(4); s.push(0); s.push(0)
+        elif mode == ANGLED:
+            s.push(0); s.arg(6); s.arg(7)
+        else:
+            s.push(0); s.arg(6); s.push(0)
+        s.arg(sprite_arg); s.arg(list_arg); s.push(context['catch_sizes']); s.push(context['catch_sizes_count'])
+        s.call(BREW_CATCH, 11)
+        s.push_result(); s.emit(0x04)
+        s.label(done)
+        s.result(0)
+    rewriter.redirect(pc, ('catch', context['rid'], service, reads), build)
+
+
 def game_page(rewriter, pc, argc, context):
     """12: (title, text) the page before a word game: its title and description, on the game's own screen."""
     def build(s):
@@ -670,9 +819,20 @@ def schedule(rewriter, pc, argc, context):
 
 
 def music(rewriter, pc, argc, context):
-    """9: (track) plays once; a short MIDI cue on the phones, so it stops nothing else."""
-    rewriter.redirect(pc, 'music', lambda s: (s.arg(1), s.push(8000), s.emit(0x51), s.push(MUSIC_BASE), s.emit(0x50), s.push(0),
-                                              s.call(80, 2), s.result(0)))
+    """9: (track) plays once: SHS 79 for SOUND_TRACKS, which leaves any music playing, or 80 for the rest."""
+    def build(s):
+        def resource():
+            s.arg(1); s.push(8000); s.emit(0x51); s.push(MUSIC_BASE); s.emit(0x50)
+        sound, done = s.label(), s.label()
+        for track in sorted(SOUND_TRACKS):
+            s.arg(1); s.push(8000 + track); s.emit(0x0a); s.jump_if_nonzero(sound)
+        resource(); s.push(0); s.call(80, 2)
+        s.jump(done)
+        s.label(sound)
+        resource(); s.call(79, 1)
+        s.label(done)
+        s.result(0)
+    rewriter.redirect(pc, 'music', build)
 
 
 def stored_text_get(rewriter, pc, argc, context):
@@ -819,7 +979,35 @@ def game_pages(program, start):
     return pages
 
 
-def script_context(rewriter, script, looks, player, program):
+def fix_surviving_college(rewriter):
+    """6.1 Surviving College picks its ending from 6 points up, then below 5, so exactly 5 has none and the story stops there,
+    in BREW too (Tardy-Slip shows it). The owner's fix (2026-11-05): 5 takes the lower ending, as `< 6`."""
+    code = rewriter.code
+    found = [k for k in range(len(code) - 5) if code[k] == (0x1A, 5) and code[k + 1] == (0x0E, None)
+             and code[k + 3] == (0x1A, 1001) and code[k + 4] == (0x1A, 119)]
+    if len(found) != 1:
+        raise StoryError(f'6.1: the ending test is not where it was ({len(found)} found)')
+    code[found[0]] = (0x1A, 6)
+
+
+STORY_FIXES = {'shs085_06_01_shs08.exp': fix_surviving_college}
+
+
+def catch_pages(program):
+    """The calls of 12 that introduce a catch game: the last host call before one, and one that jumps past that to the game."""
+    instructions = program.instructions
+    hosts = [k for k, i in enumerate(instructions) if i.opcode == 0x1f]
+    pages = set()
+    for n, k in enumerate(hosts):
+        if instructions[k].operand >> 8 not in CATCH_MODES or not n or instructions[hosts[n - 1]].operand >> 8 != 12:
+            continue
+        pages.add(instructions[hosts[n - 1]].pc)
+        if n > 1 and instructions[hosts[n - 2]].operand >> 8 == 12 and any(i.opcode == 0x28 for i in instructions[hosts[n - 2]:hosts[n - 1]]):
+            pages.add(instructions[hosts[n - 2]].pc)
+    return pages
+
+
+def script_context(rewriter, script, looks, player, program, catch_sizes=None):
     """What a script's shims share: scratch words in its data, and its bracketed strings' bare twins."""
     start = spin_routine(program)
     thoughts, game_words = [], []
@@ -830,11 +1018,27 @@ def script_context(rewriter, script, looks, player, program):
         word = bare_word(text) if start is not None else None
         if word is not None:
             game_words.append((address, rewriter.text(word.decode('latin-1'))))
+    catch = {}
+    if any(i.opcode == 0x1f and i.operand >> 8 in CATCH_MODES for i in program.instructions):
+        words = sorted(CATCH_WORDS.items())
+        sizes = sorted((catch_sizes or {}).items())
+        # Each page string's twin for the word game: the generic title as the banner, a text without the catch game's points.
+        plain = []
+        for address, text, _ in data_strings(program):
+            if text == CATCH_GENERIC_TITLE:
+                plain.append((address, rewriter.text(CATCH_TITLE)))
+            elif CATCH_POINTS.search(text):
+                plain.append((address, rewriter.text(CATCH_POINTS.sub(b'', text).decode('latin-1'))))
+        catch = dict(catch_good=rewriter.words([0] * CATCH_LIST_WORDS), catch_bad=rewriter.words([0] * CATCH_LIST_WORDS),
+                     catch_plain=plain,
+                     catch_words=rewriter.words([value for picture, pair in words for value in (picture, rewriter.text(pair[0]), rewriter.text(pair[1]))]),
+                     catch_words_count=len(words), catch_sizes_count=len(sizes),
+                     catch_sizes=rewriter.words([value for picture, size in sizes for value in (picture, *size)] or [0]))
     return dict(rid=script, kind='single', looks=sorted(looks.items()), hash_factors=rewriter.words(HASH_FACTORS),
                 last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
                 name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
                 bracketed=thoughts, game_words=game_words, routine=start, game_pages=game_pages(program, start) if start is not None else (),
-                page=rewriter.words([-1, -1]), word=rewriter.words([0]),
+                page=rewriter.words([-1, -1]), word=rewriter.words([0]), catch_pages=catch_pages(program), **catch,
                 good=rewriter.words([0] * LIST_WORDS), bad=rewriter.words([0] * LIST_WORDS))
 
 
@@ -888,10 +1092,15 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
     for script in scripts:
         program = strip_round_counts(strip_name_marks(decode_program(upgrade(archive_resources[script]))))
         rewriter = Rewriter(program, zero_gap=True)
-        context = script_context(rewriter, script, table, not title.startswith('Quiz '), program)
+        if name in STORY_FIXES and script == BREW_STORY_SCRIPT:
+            STORY_FIXES[name](rewriter)
+        sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()}
+        context = script_context(rewriter, script, table, not title.startswith('Quiz '), program, sizes)
         for pc, service, argc in rewriter.calls():
-            if service == 12 and pc in context['game_pages']:
+            if service == 12 and (pc in context['game_pages'] or pc in context['catch_pages']):
                 game_page(rewriter, pc, argc, context)
+            elif service in CATCH_MODES:
+                catch_game(rewriter, pc, argc, context)
             elif service in RENAME:
                 rewriter.rename(pc, RENAME[service])
             elif service in DROPPED:
@@ -1047,6 +1256,8 @@ def build_addon(casts, games, render_music=None):
             if data is not None:
                 resources[MUSIC_BASE + track] = render_music(data)
     resources.update(badge_pictures(art08))
+    catch_resources, spec['catch'] = catch_pictures(art08, bases['08'])
+    resources.update(catch_resources)
     resources[FRAME_BACKDROP] = frame_backdrop(art08)
     resources[PINK_BACKDROP] = frame_backdrop(art08, PINK_PANEL_FRAME)
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
@@ -1081,6 +1292,56 @@ def badge_pictures(art):
         broken.paste(picture.crop((half, 0, picture.width, picture.height)), (BADGE_MARGIN + half + BROKEN_GAP // 2, BADGE_MARGIN))
         for base, image in ((BADGE_BASE + number, whole), (BADGE_BASE + 3 + number, broken)):
             found[base] = brew_art.png(image.resize((image.width * BADGE_SCALE, image.height * BADGE_SCALE), Image.NEAREST))
+    return found
+
+
+def catch_pictures(art, pack):
+    """({resource: PNG}, spec) of the catch game: BREW's frame (FUN_00005b94, as Tardy-Slip's CatchScreen draws it), its ring, digits and
+    captions, and every item and player picture, at 3 times with no smoothing."""
+    def up(image):
+        return brew_art.png(image.resize((image.width * CATCH_SCALE, image.height * CATCH_SCALE), Image.NEAREST))
+
+    frame = Image.new('RGBA', (240, 320), (0, 0, 0, 0))
+    paint = ImageDraw.Draw(frame)
+    paint.rectangle((1, 29, 238, 318), fill=CATCH_PANEL_COLOUR)
+    paint.line((5, 33, 234, 33), fill=CATCH_EDGE_DARK)
+    paint.line((5, 33, 5, 314), fill=CATCH_EDGE_DARK)
+    paint.line((5, 314, 234, 314), fill=CATCH_EDGE_LIGHT)
+    paint.line((234, 33, 234, 314), fill=CATCH_EDGE_LIGHT)
+    paint.rectangle((6, 34, 233, 313), fill=CATCH_FIELD_COLOUR)
+    for image, x, y in ((34, 1, 29), (35, 227, 29), (32, 1, 307), (33, 227, 307)):
+        art.draw(frame, image, x, y)
+    bar_x, cap = 36, 8
+    for x in range(bar_x + 20, bar_x + 168 - cap, 8):
+        art.draw(frame, 40, x, 6)
+    art.draw(frame, 41, bar_x + 168 - cap, 6)
+    ring = Image.new('RGBA', (28, 34), (0, 0, 0, 0))
+    art.draw(ring, 39, 0, 0)
+    resources = {CATCH_BASE: up(frame), CATCH_BASE + 1: up(ring)}
+    for digit in range(10):
+        resources[CATCH_BASE + 2 + digit] = up(brew_art.font_text(pack, str(digit)))
+    captions = brew_strings(pack)[58:60]
+    for k, caption in enumerate(captions):
+        resources[CATCH_BASE + 12 + k] = up(brew_art.font_text(pack, caption))
+    pictures = {}
+    for n, picture in enumerate(sorted(CATCH_WORDS)):
+        left, top, right, bottom = art.bounds(picture)
+        canvas = Image.new('RGBA', (right - left, bottom - top), (0, 0, 0, 0))
+        art.draw(canvas, picture, -left, -top)
+        resources[CATCH_BASE + 14 + n] = up(canvas)
+        pictures[str(picture)] = [CATCH_BASE + 14 + n, right - left, bottom - top]
+    return resources, dict(frame=CATCH_BASE, ring=CATCH_BASE + 1, digits=list(range(CATCH_BASE + 2, CATCH_BASE + 12)),
+                           captions=[CATCH_BASE + 12, CATCH_BASE + 13], pictures=pictures)
+
+
+def brew_strings(pack):
+    """The UI string table (resource 9): a header up to the first, then each with a length before it and a zero after."""
+    raw = pack[9]
+    at, found = raw.index(b'\x09Main Menu'), []
+    while at < len(raw):
+        length = raw[at]
+        found.append(raw[at + 1:at + 1 + length].decode('latin-1'))
+        at += length + 2
     return found
 
 

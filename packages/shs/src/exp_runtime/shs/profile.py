@@ -77,7 +77,8 @@ CHOICE_FEEDBACK_SOUNDS = {8007: 1, 8003: -1}
 # before 2026-10-25) at the translator's MUSIC_BASE (26980) + track, so for that pack those requests are answer
 # feedback too. Pack -> {resource ID: feedback}. SHS '11's (31600, tools/translate shs11_story.CUE_TRACKS) are its tracks 0
 # and 2, at the beats of 8007 and 8003 too.
-TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}, 31600: {26980: 1, 26980 + 2: -1}}
+TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}, 31600: {26980: 1, 26980 + 2: -1},
+                             **{pack: {26900 + 11: 1, 26900 + 1: -1} for pack in (31000, 31100, 31200)}}
 # shshd-runtime: a translated episode's own picture for the whole 384x512-unit frame, drawn under the location art
 # where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
 # above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
@@ -120,7 +121,7 @@ TRANSLATED_ONE_SOUND_CHANNEL = {31600: range(26980, 26992)}
 SMARTPHONE_MUSIC_PACKS = (31600,)
 # shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
 # them. Day of Diss (31400's episode 1) has no minigame.
-TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None}
+TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None, 31000: None, 31100: None, 31200: None}
 # shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).

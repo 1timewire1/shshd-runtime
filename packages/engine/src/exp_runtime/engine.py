@@ -16,6 +16,7 @@ from .nr_arena import NRArena
 from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
 from .x360_diss import DissPractice, X360_DISS
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
+from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
 from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
@@ -166,6 +167,7 @@ class EngineState:
     shs11_tutorial_seen: bool = False           # (per story: see shs11_games.py)
     shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
     shs11_reflex_tutorial_seen: bool = False
+    brew_catch: CatchGame | None = None         # shshd-runtime: the BREW games' catch game (brew_catch.py)
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -228,7 +230,7 @@ class EngineState:
         self.x360_puzzle = None
         self.cutscene = None
         self.x360_diss = None
-        self.shs11_memory = self.shs11_reflex = None
+        self.shs11_memory = self.shs11_reflex = self.brew_catch = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -1069,6 +1071,19 @@ class EngineState:
             self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1],
                                                   tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
             return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
+        if y == BREW_CATCH:                                     # (likewise): the kind, target, spawn ms, speed, spread, chance, angle,
+            need(11)                                            # player's picture, list of items, table of sizes, sizes in it
+            count = signed16(vm.read_word(args[8]))
+            if not 0 <= count <= MAX_ITEMS:
+                raise VMError('A catch game has too many kinds of item')
+            items = [tuple(signed16(vm.read_word(args[8] + 1 + ITEM_WORDS * k + i)) for i in range(ITEM_WORDS)) for k in range(count)]
+            sizes = {signed16(vm.read_word(args[9] + 3 * k)): (vm.read_word(args[9] + 3 * k + 1), vm.read_word(args[9] + 3 * k + 2))
+                     for k in range(args[10])}
+            mode, target, interval, speed, spread, chance, angle, sprite = (signed16(v) for v in args[:8])
+            if sprite not in sizes or any(item[1] not in sizes for item in items):
+                raise VMError('A catch game shows a picture with no size')
+            self.brew_catch = CatchGame.opened(mode, target, interval, speed, spread, chance, angle, sprite, items, sizes, self.random)
+            return EngineAction('brew_catch', request, False)
         if y == 3:
             need(3)
             if self.choice_builder is None:

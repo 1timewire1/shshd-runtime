@@ -40,6 +40,7 @@ from .desktop_cutscene import CutsceneRenderer
 from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
 from .desktop_shs11_memory import Shs11MemoryRenderer, memory_spec
+from .desktop_brew_catch import BrewCatchRenderer
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
@@ -497,6 +498,7 @@ class Desktop:
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
         self.shs11_memory_renderer = Shs11MemoryRenderer(session.resources)
         self.shs11_reflex_renderer = Shs11ReflexRenderer(session.resources)
+        self.brew_catch_renderer = BrewCatchRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
         self.cutscene_renderer = CutsceneRenderer(session.resources)
@@ -1136,6 +1138,10 @@ class Desktop:
                                                   getattr(getattr(self.session.engine, action.name), 'best_result', 2))
             prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, len(results)), options,
                                        lambda index: self._resolve_shs11(action, results, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'brew_catch'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The catch game: catch the good things, dodge the bad.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_brew_catch(action, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
@@ -1202,6 +1208,15 @@ class Desktop:
             self.minigame_played = action
             return
         self._attempt(lambda: self.session.skip_shs11(results[index]))
+
+    def _resolve_brew_catch(self, action, index):
+        """The catch game's skip prompt: Win / Lose finish it with its target or nothing, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
 
     def _resolve_x360_leash(self, action, index):
         """The leash game's skip prompt: Win / Lose finish it with that result, Play plays it."""
@@ -1704,12 +1719,12 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Cutscene rendering stopped: %s', error)
-        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex') and not ask and not closed
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch') and not ask and not closed
                 and not self.error):
             try:
                 engine = self.session.engine
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
-                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
+                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer, 'brew_catch': self.brew_catch_renderer,
                             'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
                 if action.name in ('shs11_memory', 'shs11_reflex'):
                     self._warm_shs11_sounds(getattr(engine, action.name))
@@ -3212,7 +3227,7 @@ class Desktop:
             if command is not None:
                 self.command(command)
             return True
-        if (action and action.name in ('x360_slot', 'x360_diss') and not self.menu_open and not self.error and not asking
+        if (action and action.name in ('x360_slot', 'x360_diss', 'brew_catch') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             frame = self.bg_viewport
             x = (event.pos[0] - frame.x) * 768 / frame.width
@@ -3593,7 +3608,7 @@ class Desktop:
         """The slot machine and Diss Practice take one input: Enter, Space or a controller's confirm. True when the key
         was one."""
         action = self.session.pending
-        if (action is None or action.name not in ('x360_slot', 'x360_diss') or self.menu_open or self.error
+        if (action is None or action.name not in ('x360_slot', 'x360_diss', 'brew_catch') or self.menu_open or self.error
                 or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
             return False
         self._attempt(lambda: self.session.answer(None))

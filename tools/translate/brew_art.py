@@ -282,6 +282,32 @@ def location(art, resource, mode):
     return scene.convert('RGB')
 
 
+def font_text(pack, text, sheet=2, metrics=3):
+    """`text` in one of BREW's fonts: a BMP glyph sheet and its metrics (u8 space, u8 gap, s8 tracking, u16 count, u8 height, then
+    (u8 character, u16 x, u16 y, u8 width) per glyph). Its characters fall back to the other case."""
+    data = pack[metrics]
+    space, gap, tracking = data[0], data[1], struct.unpack_from('b', data, 2)[0]
+    count, height = struct.unpack_from('>H', data, 3)[0], data[5]
+    glyphs = {}
+    for k in range(count):
+        character, x, y, width = struct.unpack_from('>BHHB', data, 6 + 6 * k)
+        glyphs[chr(character)] = (x, y, width)
+    art = Art([pack]).image(sheet)
+    placed, x = [], 0
+    for character in text:
+        glyph = glyphs.get(character) or glyphs.get(character.swapcase())
+        if glyph is None:
+            x += space
+            continue
+        placed.append((glyph, x))
+        x += glyph[2] + gap + tracking
+    canvas = Image.new('RGBA', (max(1, x), height), (0, 0, 0, 0))
+    for (left, top, width), at in placed:
+        part = art.crop((left, top, left + width, top + height))
+        canvas.paste(part, (at, 0), part)
+    return canvas
+
+
 def png(image, optimize=True):
     out = io.BytesIO()
     image.save(out, 'PNG', optimize=optimize)

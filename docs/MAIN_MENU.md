@@ -606,7 +606,7 @@ gains/correct answers, red recognized losses/wrong answers or a
 no-gain alternative when another option has a known gain, amber mixed effects.
 Episodes translated from SHS: New Rules (`tools/translate`, pack 31300) also count New Rules' own right/wrong answer
 jingles, which they play as episode music where the smartphone versions play SHS's correct/wrong sounds
-(`shs/profile.py` `TRANSLATED_FEEDBACK_MUSIC`).
+(`shs/profile.py` `TRANSLATED_FEEDBACK_MUSIC`). Those from SHS '11 and the BREW games do the same with their own chimes.
 Unresolved choices retain their original styling. It applies to ordinary
 choices, including their actual randomized/custom return values. Service 71
 word quizzes use the current deal's explicit good/bad weights, including bad

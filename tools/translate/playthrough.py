@@ -128,6 +128,14 @@ def steps(s, answers, name, limit, record):
                     if turn % 3 == 0:
                         game.move(('up', 'right', 'down', 'left')[turn // 3 % 4])
                 action = s.tick(33)
+        elif kind == 'brew_catch':
+            record.append(dict(kind=kind))
+            turn = 0
+            while s.pending is not None and s.pending.name == kind:      # turns back now and then, and lets the items run out
+                turn += 1
+                if turn % 37 == 0 and s.engine.brew_catch.remaining:
+                    s.answer(None)
+                action = s.tick(33)
         elif kind == 'x360_leash':
             record.append(dict(kind=kind))
             turn = 0
