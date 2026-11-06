@@ -1072,7 +1072,8 @@ class EngineState:
                                                   tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
             return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
         if y == BREW_CATCH:                                     # (likewise): the kind, target, spawn ms, speed, spread, chance, angle,
-            need(11)                                            # player's picture, list of items, table of sizes, sizes in it
+            if len(args) != 12:                                 # player's picture, list of items, table of sizes, sizes in it, and
+                need(11)                                        # (12th, optional) the story's cut-offs, for the skip prompt only
             count = signed16(vm.read_word(args[8]))
             if not 0 <= count <= MAX_ITEMS:
                 raise VMError('A catch game has too many kinds of item')

@@ -159,6 +159,8 @@ def brew_catch_skip_options(outcomes, target):
         return labels, (target, 0)
     if len(outcomes) == 1:
         return labels, (target,)
+    best = outcomes[-1][0]                      # nothing scores more than the target, so the best names it
+    labels = (f'Score {target}' if best >= target else f'Score {best} to {target}', *labels[1:])
     return labels, tuple(target if index == 0 else low for index, (low, _) in enumerate(reversed(outcomes)))
 
 
@@ -296,6 +298,7 @@ class Desktop:
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
+    java_look = False               # translated BREW episodes: the "Java '08 Look" switch (set_java_look)
     smartphone_music = True         # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
@@ -1996,6 +1999,16 @@ class Desktop:
         record = getattr(resources, 'record', None) or {}
         return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'MS3_CHARACTER_ART', ())
 
+    def java_look_switch(self):
+        """shshd-runtime: whether this episode has the Java '08 demo's look to choose (JAVA_LOOK_ART: translated BREW
+        episodes, with an addon that carries it), so the "Java '08 Look" switch changes something."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        if record.get('pack_id') not in getattr(GAMES.get(game_id(resources)), 'JAVA_LOOK_ART', ()):
+            return False
+        from .desktop_brew_catch import library_has_java_look
+        return library_has_java_look(getattr(resources, 'library', None))
+
     def smartphone_switch(self):
         """shshd-runtime: whether this episode has the smartphone's music (SMARTPHONE_MUSIC_PACKS: translated SHS '11
         episodes), so the "Smartphone Music" switch changes something. It only picks what's heard: the engine and a save
@@ -2042,6 +2055,20 @@ class Desktop:
         if library is not None:
             library.ms3_characters = enabled
         self._drop_portraits()
+
+    def set_java_look(self, enabled):
+        """shshd-runtime: the "Java '08 Look" switch: the library serves the Java copies of the BREW addon's pictures from the
+        next one drawn (EpisodeResources._java_look), so every cached picture is dropped; the catch game picks its skin as it
+        draws. Saves name the addon's own pictures, so they need nothing of their own."""
+        self.java_look = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.java_look = enabled
+        self._drop_portraits()
+        self.dialogue_renderer.drop_translated_badges()
+        self.brew_catch_renderer.drop_images()
+        self._frame_backdrop_cache = (None, {})          # both box colours' backdrops, as scaled so far
+        self.badge_hd._tab_cache = None                  # a time badge on screen, with its icon
 
     def set_ch_portraits(self, enabled):
         """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""
@@ -2439,7 +2466,7 @@ class Desktop:
         themed = getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(self.session.engine.panel.theme)
         if themed is not None and exists(themed):
             asset_id = themed
-        key = (id(resources), size)
+        key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False))
         if self._frame_backdrop_cache[0] != key:
             self._frame_backdrop_cache = (key, {})      # (the surfaces of this episode at this size: one per colour)
         surfaces = self._frame_backdrop_cache[1]
@@ -2779,6 +2806,7 @@ class Desktop:
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
                     **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
+                    **({'java_look': self.java_look} if self.java_look_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
@@ -2962,6 +2990,8 @@ class Desktop:
                 self.set_hires_portraits(not self.hires_portraits)
             elif command[1] == 'ms3_characters':
                 self.set_ms3_characters(not self.ms3_characters)
+            elif command[1] == 'java_look':
+                self.set_java_look(not self.java_look)
             elif command[1] == 'smartphone_music':
                 self.smartphone_music = not self.smartphone_music
             elif command[1] == 'word_grid_skin':

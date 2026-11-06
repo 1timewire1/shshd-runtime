@@ -888,6 +888,10 @@ class DialogueRenderer:
             return icon
         return pygame.transform.smoothscale(icon, (round(icon.get_width() * k), round(icon.get_height() * k)))
 
+    def drop_translated_badges(self):
+        """Forget the translated relationship icons drawn so far (a look switch has changed which pictures they are)."""
+        self._badges.clear()
+
     def translated_badge(self, asset_id, k):
         """This pack's own picture for a relationship icon, at the size SHS's would be, or None. The pictures all have the
         same margin, so one scale keeps a whole icon and its break in proportion."""

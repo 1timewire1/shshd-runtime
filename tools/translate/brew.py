@@ -43,7 +43,7 @@ from exp_runtime.brew_services import ANGLED, BREW_CATCH, BREW_MINIGAMES_QUERY, 
 from kiwi_rewrite import Rewriter  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 2   # 2: the event icons
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 3   # 2: the event icons; 3: the Java '08 look
 PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 ADDON_EPISODE = 9999
 TITLE_SUFFIX_07, TITLE_SUFFIX_08 = ' (SHS07)', ' (SHS08)'
@@ -59,6 +59,9 @@ SKY_ONLY = 68                           # a scene with no location: its sky alon
 CATCH_BASE = 26300                      # the catch game's frame, ring, digits and captions, then its pictures
 EVENT_ICON_BASE = 26400                 # + a BREW picture's own ID (100-180): its small pictures, which the planner's events use as icons
 EVENT_ICONS = range(100, 181)
+# The "Java '08 Look" (Stage 2d): the Java demo's own picture for one of the addon's, this far above it (profile JAVA_LOOK_ART).
+# Built only when the demo's jar is given (build_addon java_jar); a picture with no Java copy stays BREW's.
+JAVA_OFFSET = 10000
 EVENT_ICON_SIZE = 46                    # the smartphone's own badge icons are 44x46 to 45x49
 MUSIC_BASE, MUSIC_TRACKS = 26900, 15    # 8000-8014
 # Sorted by ear (owner, 2026-11-05): these play as sound effects, the rest as music. The game itself plays all of them the same way.
@@ -647,6 +650,45 @@ def wait(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('wait', context['rid']), build)
 
 
+CATCH_COMPARES = {0x0a: '==', 0x0b: '!=', 0x0c: '>', 0x0d: '>=', 0x0e: '<', 0x0f: '<='}
+CATCH_CUT_REACH = 400                   # instructions after a catch game in which its score is read
+
+
+def catch_cuts(code, pc):
+    """The scores at which the story after the catch game at `pc` can go another way, for its skip prompt
+    (choice_hints.brew_catch_outcomes), or None when it can't tell. BREW stores the result (R) and reads it back with a short
+    load; every read up to the next catch game (or CATCH_CUT_REACH) must compare it with a constant (`>= 45`, `== 0`), each
+    giving where the answer changes. A read used any other way (a sum, a call) gives None, and the prompt tries the scores
+    one by one instead. A read can be another value kept in the same place later on: that only adds cuts, which costs a
+    preview, never an outcome. Checked against the score-by-score search on every catch game the Campaign reaches."""
+    ops = [item[0] for item in code]
+    if ops[pc + 1:pc + 4] != [0x21, 0x3e, 0x15]:
+        return None
+    load = tuple(code[pc + 4:pc + 6])
+    end = next((k for k in range(pc + 1, min(pc + CATCH_CUT_REACH, len(code)))
+                if code[k][0] == 0x1f and (code[k][1] >> 8) in CATCH_MODES), min(pc + CATCH_CUT_REACH, len(code)))
+    cuts, k = set(), pc + 4
+    while k < end - 1:
+        if tuple(code[k:k + 2]) != load:
+            k += 1
+            continue
+        if k + 3 >= len(code):
+            return None
+        (push, value), (compare, _) = code[k + 2], code[k + 3]
+        if push in (0x5a, 0x5b):
+            value = push - 0x5a
+        elif push in (0x1a, 0x1b):
+            value = signed16(value)
+        else:
+            return None
+        if compare not in CATCH_COMPARES:
+            return None
+        sign = CATCH_COMPARES[compare]
+        cuts |= {value} if sign in ('>=', '<') else {value + 1} if sign in ('>', '<=') else {value, value + 1}
+        k += 4
+    return sorted(c for c in cuts if c > 0)
+
+
 def catch_game(rewriter, pc, argc, context):
     """19, 20, 21: the catch game, whose score BREW's scripts read from R, usually testing it against the target. Service 221 where
     the player has the switch on, with the page before it as a panel. Otherwise, a word game under that page, its items' words good or
@@ -656,6 +698,8 @@ def catch_game(rewriter, pc, argc, context):
     service = rewriter.code[pc][1] >> 8
     mode = CATCH_MODES[service]
     reads = rewriter.code[pc + 1] == (0x21, None)
+    cuts = catch_cuts(rewriter.code, pc)
+    cut_table = -1 if cuts is None else rewriter.words([len(cuts), *cuts])
     if reads:
         rewriter.code[pc + 1] = (0x08, None)
     page, good, bad = context['page'], context['catch_good'], context['catch_bad']
@@ -787,11 +831,12 @@ def catch_game(rewriter, pc, argc, context):
         else:
             s.push(0); s.arg(6); s.push(0)
         s.arg(sprite_arg); s.arg(list_arg); s.push(context['catch_sizes']); s.push(context['catch_sizes_count'])
-        s.call(BREW_CATCH, 11)
+        s.push(cut_table)
+        s.call(BREW_CATCH, 12)
         s.push_result(); s.emit(0x04)
         s.label(done)
         s.result(0)
-    rewriter.redirect(pc, ('catch', context['rid'], service, reads), build)
+    rewriter.redirect(pc, ('catch', context['rid'], service, reads, None if cuts is None else tuple(cuts)), build)
 
 
 def game_page(rewriter, pc, argc, context):
@@ -1423,7 +1468,7 @@ def portrait_picture(face):
     return big.resize((big.width // 2, big.height // 2), Image.BOX)
 
 
-def build_addon(casts, games, render_music=None):
+def build_addon(casts, games, render_music=None, java_jar=None):
     """The addon's resources and spec, from the portrait catalogue's casts (brew_casts.json) and the games' folders: `games`
     {'08': the '08 folder, '07: the VX9800 module folder}. Every look any story shows, every location at every sky, the music,
     the relationship icons and the frame's backdrop."""
@@ -1481,6 +1526,9 @@ def build_addon(casts, games, render_music=None):
     resources.update(badge_pictures(art08))
     resources.update(event_icons(art08))
     catch_resources, spec['catch'] = catch_pictures(art08, bases['08'])
+    if java_jar is not None:
+        java_resources, spec['catch']['java'] = java_look(java_jar, spec['catch'], art08)
+        resources.update(java_resources)
     resources.update(catch_resources)
     resources[FRAME_BACKDROP] = frame_backdrop(art08)
     resources[PINK_BACKDROP] = frame_backdrop(art08, PINK_PANEL_FRAME)
@@ -1589,6 +1637,79 @@ def brew_strings(pack):
 
 
 PANEL_FRAME, PINK_PANEL_FRAME, BAR_FRAME = 12 + 2, 12 + 3, 12 + 30  # BREW's dialogue layout: the panel's tiles and the bar under the location
+
+
+def strip_edges():
+    """(width, height) of the frame backdrop at the strip's density, and where the strip's top and bottom are in it once
+    scaled BACKGROUND_SCALE times."""
+    per_unit = STRIP_WIDTH / nr_art.BACKGROUND_UNITS
+    width, height = (round(side * per_unit) for side in nr_art.FRAME_UNITS)
+    pixels = per_unit * BACKGROUND_SCALE
+    half = STRIP_HEIGHT * nr_art.BACKGROUND_UNITS / STRIP_WIDTH / 2
+    return (width, height), round((nr_art.STRIP_CENTRE_UNITS - half) * pixels), round((nr_art.STRIP_CENTRE_UNITS + half) * pixels)
+
+
+def java_look(jar, catch_spec, art):
+    """({resource: PNG}, the catch game's Java skin spec) of the Java '08 demo's look, each picture JAVA_OFFSET above the BREW one
+    it stands in for: the frame's backdrop (its "SHS" tile, with its name bar above and below the strip), the relationship icons,
+    the small pictures as time-badge icons, and the catch game's screen, header text, end panel and pictures (its skin is drawn
+    by desktop_brew_catch). Java's pictures are about half BREW's size, so they go in at twice BREW's scale, and keep whole
+    pixels. Java has no copy of BREW's house (166), which stays BREW's."""
+    import brew_java
+    jar_resources = brew_java.resources(jar)
+    frames = brew_java.sheet(jar_resources[brew_java.UI_SHEET])
+    lettering = brew_java.font(jar_resources[brew_java.OUTLINED_FONT])
+    out = {}
+    size, top, bottom = strip_edges()
+    backdrop = brew_art.png(brew_java.backdrop(frames, size, top, bottom, BACKGROUND_SCALE).quantize(255))
+    out[FRAME_BACKDROP + JAVA_OFFSET] = out[PINK_BACKDROP + JAVA_OFFSET] = backdrop
+    margin = BADGE_MARGIN // 2
+    for number, frame in enumerate((brew_java.HEART, brew_java.SKULL, brew_java.SMILEY)):
+        picture = frames[frame].crop(frames[frame].getbbox())
+        whole = Image.new('RGBA', (picture.width + 2 * margin, picture.height + 2 * margin), (0, 0, 0, 0))
+        whole.paste(picture, (margin, margin))
+        half = picture.width // 2
+        broken = Image.new('RGBA', whole.size, (0, 0, 0, 0))
+        broken.paste(picture.crop((0, 0, half, picture.height)), (margin - BROKEN_GAP // 4, margin))
+        broken.paste(picture.crop((half, 0, picture.width, picture.height)), (margin + half + BROKEN_GAP // 4, margin))
+        for base, image in ((BADGE_BASE + number, whole), (BADGE_BASE + 3 + number, broken)):
+            out[base + JAVA_OFFSET] = brew_art.png(image.resize((image.width * BADGE_SCALE * 2, image.height * BADGE_SCALE * 2), Image.NEAREST))
+    pairs = brew_java.pairs(small_pictures(art))
+    for picture, index in pairs.items():
+        image = brew_java.small_picture(jar_resources, index)
+        big = image.resize((image.width * 8, image.height * 8), Image.NEAREST)
+        scale = EVENT_ICON_SIZE / max(image.width * 2, image.height * 2)
+        out[EVENT_ICON_BASE + picture + JAVA_OFFSET] = brew_art.png(
+            big.resize((round(image.width * 2 * scale), round(image.height * 2 * scale)), Image.LANCZOS))
+
+    def up(image, times=CATCH_SCALE):
+        return brew_art.png(image.resize((image.width * times, image.height * times), Image.NEAREST))
+    base = CATCH_BASE + JAVA_OFFSET
+    out[base] = up(brew_java.catch_frame(frames))
+    out[base + 1] = up(brew_java.text(lettering, 'SCORE: '))
+    for digit in range(10):
+        out[base + 2 + digit] = up(brew_java.text(lettering, str(digit)))
+    out[base + 12] = up(brew_java.finished_panel(lettering))
+    skin = dict(frame=base, label=base + 1, digits=list(range(base + 2, base + 12)), finished=base + 12, pictures={})
+    for n, picture in enumerate(sorted(int(p) for p in catch_spec['pictures'])):
+        if picture in pairs:
+            image = brew_java.small_picture(jar_resources, pairs[picture])
+            out[base + 14 + n] = up(image, CATCH_SCALE * 2)
+            skin['pictures'][str(picture)] = [base + 14 + n, image.width * 2, image.height * 2]
+    return out, skin
+
+
+def small_pictures(art):
+    """BREW's 56 small pictures (EVENT_ICONS at most 64 pixels a side), which Java's 56 pair with (brew_java.pairs)."""
+    found = []
+    for picture in EVENT_ICONS:
+        try:
+            left, top, right, bottom = art.bounds(picture)
+        except Exception:
+            continue
+        if 0 < right - left <= 64 and 0 < bottom - top <= 64:
+            found.append(picture)
+    return found
 
 
 def frame_backdrop(art, panel=PANEL_FRAME):

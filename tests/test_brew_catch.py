@@ -144,12 +144,57 @@ class CatchSkipTests(unittest.TestCase):
         self.assertEqual(session.snapshot(), before)
         from exp_runtime.desktop import brew_catch_skip_options
         self.assertEqual(brew_catch_skip_options(outcomes, 45),
-                         (('Score 45 or more', 'Score 30 to 44', 'Score 0 to 29', 'Play'), (45, 30, 0)))
+                         (('Score 45', 'Score 30 to 44', 'Score 0 to 29', 'Play'), (45, 30, 0)))
         self.assertEqual(brew_catch_skip_options([(0, 44), (45, None)], 45), (('Win', 'Lose', 'Play'), (45, 0)))
         with self.assertRaises(ValueError):
             session.skip_brew_catch(46)
         action = session.skip_brew_catch(30)
         self.assertEqual((action.name, action.details['text']), ('dialogue', 'Middle.'))
+
+    def test_with_the_translators_cut_offs_it_previews_one_score_per_stretch(self):
+        # Faster on the phone (owner, 2026-11-06: the prompt took 1-2.3 s on the g54 trying every fifth score).
+        from unittest import mock
+        from exp_runtime import choice_hints
+        from exp_runtime.runtime import Session
+        from test_runtime import Resources, host_call, text_words
+        from test_vm import program as vm_program
+        words, (high, mid, low) = text_words('High.', 'Middle.', 'Low.')
+        items = len(words)
+        words += [1, 4, 152, 30, 133, 29, 26, 152, 30, 30]
+        sizes, cuts = items + 4, items + 10
+        words += [2, 30, 45]                                        # the translator's table: two cut-offs
+
+        def body(halt):
+            return [*host_call(221, ORBIT, 45, 350, 350, 50, 0, 0, 133, items, sizes, 2, cuts),
+                    0x21, (0x1a, 45), 0x0d, (0x2b, 5), *host_call(13, high, 0), (0x29, halt),
+                    0x21, (0x1a, 30), 0x0d, (0x2b, 5), *host_call(13, mid, 0), (0x29, halt),
+                    *host_call(13, low, 0), 0x33]
+        session = Session(Resources(vm_program(*body(len(body(0)) - 1), words=words)))
+        session.advance()
+        self.assertEqual(choice_hints.brew_catch_cuts(session), [30, 45])
+        tried, real = [], choice_hints._preview_story
+
+        def counted(s, finish, value, *args, **kwargs):
+            tried.append(value)
+            return real(s, finish, value, *args, **kwargs)
+        with mock.patch.object(choice_hints, '_preview_story', counted):
+            outcomes = choice_hints.brew_catch_outcomes(session)
+        self.assertEqual((outcomes, tried), ([(0, 29), (30, 44), (45, None)], [0, 30, 45]))
+
+
+@unittest.skipUnless(HAS_PIL, 'needs Pillow for the translator')
+class CatchCutTests(unittest.TestCase):
+    def test_the_cut_offs_are_read_from_each_comparison_of_the_stored_score(self):
+        import brew
+        catch = (0x1f, 19 << 8 | 6)
+        store = [(0x21, None), (0x3e, None), (0x15, None)]
+        load = [(0x5f, None), (0x3f, None)]
+        code = [catch, *store, *load, (0x1a, 45), (0x0d, None), *load, (0x1a, 30), (0x0e, None),
+                *load, (0x5a, None), (0x0a, None), (0x33, None)]
+        self.assertEqual(brew.catch_cuts(code, 0), [1, 30, 45])        # >= 45, < 30, == 0
+        summed = [catch, *store, *load, (0x1a, 45), (0x0d, None), *load, (0x50, None), (0x33, None)]
+        self.assertIsNone(brew.catch_cuts(summed, 0))                  # a sum: the prompt tries every score instead
+        self.assertIsNone(brew.catch_cuts([catch, (0x33, None)], 0))    # the result never kept
 
 
 @unittest.skipUnless(HAS_PIL, 'needs Pillow for the translator')

@@ -642,7 +642,9 @@ Episodes translated from the BREW games call it after **70 selector 204** answer
 minigames switch on. Otherwise a story plays a word game (71) in its place. Its 11 arguments: the kind (1 angled, 2 sideways,
 3 orbit, as BREW's services 20, 21 and 19), the target, ms between items, speed, spread, the odds (of coming at the angle, or
 from the left), the angle, the player's picture, a list of items (its length, then value, picture and count each), a table of
-sizes (picture, width, height each) and how many sizes it holds. It waits for the game (`brew_catch.py`) and completes with
+sizes (picture, width, height each) and how many sizes it holds. A 12th, optional: a table of the scores at which the story after it can go another way (a count, then
+the scores; -1 for none), read by the translator from the story's own comparisons. Only the skip prompt reads it
+(`choice_hints.brew_catch_outcomes`: one preview per stretch of scores instead of trying them in turn). It waits for the game (`brew_catch.py`) and completes with
 the score, from 0 to the target. The scripts test it themselves. [BREW.md](BREW.md) has more.
 
 ## 6. iOS HD-build-only services (Faceplace / DT view)

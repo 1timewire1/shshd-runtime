@@ -59,6 +59,7 @@ AUTOPLAY_LABEL = 'Autoplay Dialogue'           # dialogue advances by itself (th
 DISABLE_CHOICE_TIMER_LABEL = 'Disable Choice Timer'     # timed choices wait (this player's)
 HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes: the X1i's redrawn faces
 MS3_CHARACTERS_LABEL = 'MS3 Characters'         # translated X360 episodes: the April build's looks, else the May build's
+JAVA_LOOK_LABEL = "Java '08 Look"               # translated BREW episodes: the Java '08 demo's backdrop, icons and catch game
 SMARTPHONE_MUSIC_LABEL = 'Smartphone Music'     # translated SHS '11 episodes: the smartphone's music, else none
 WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD word game's look (with its art imported)
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
@@ -68,7 +69,7 @@ ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X36
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
-SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
                  'ch_portraits': 'CHC',
                  'ch_backdrop': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
@@ -102,7 +103,7 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'grids_as_memory')
-ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin', 'arena_skin')
+ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'java_look', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
 # About's rows; both are offered by the main menu only.
@@ -157,7 +158,7 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VI
                  'grids_as_memory': GRIDS_AS_MEMORY_LABEL, 'skip_ahead': ALLOW_SKIP_AHEAD_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
-                 'ms3_characters': MS3_CHARACTERS_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,
+                 'ms3_characters': MS3_CHARACTERS_LABEL, 'java_look': JAVA_LOOK_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,
                  'ch_portraits': CH_PORTRAITS_LABEL,
                  'ch_backdrop': CH_BACKDROP_LABEL,
                  'arena_minigames': ARENA_MINIGAMES_LABEL, 'arena_skin': ARENA_SKIN_LABEL,

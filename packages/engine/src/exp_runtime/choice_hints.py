@@ -220,6 +220,27 @@ def x360_slot_outcomes(session, *, max_steps=6000, max_panels=30):
     return _outcomes(session, finish, range(6), max_steps, max_panels, numbers=False)
 
 
+# With the translator's cut-offs, a preview only confirms that the stretches either side of one tell different stories, which shows
+# within a few messages: CUT_PANELS of them (all 75 the Campaign reaches matched the full search at 2, 2026-11-06; 4 leaves room).
+CUT_PANELS = 4
+
+
+def brew_catch_cuts(session):
+    """The cut-offs the translator handed the pending catch game (service 221's 12th argument: a table of a count and the
+    scores at which its story can go another way), or None when it gave none (-1) or the call has 11 arguments."""
+    request = getattr(session.pending, 'request', None)
+    args = getattr(request, 'args', ())
+    if len(args) < 12 or args[11] == 0xFFFF or args[11] < 0:
+        return None
+    try:
+        count = session.vm.read_word(args[11])
+        if not 0 <= count <= 32:
+            return None
+        return [session.vm.read_word(args[11] + 1 + k) for k in range(count)]
+    except (IndexError, VMError):
+        return None
+
+
 def brew_catch_outcomes(session, *, max_steps=40000, max_panels=30):
     """shshd-runtime: the outcomes of the BREW catch game about to start, for its skip prompt, as word_game_outcomes has
     them, over its scores 0 to its target. Most part only at the target; about 30 of the Campaign's also at a lower
@@ -233,6 +254,20 @@ def brew_catch_outcomes(session, *, max_steps=40000, max_panels=30):
     def finish(preview, score):
         preview.start_minigame()
         preview._complete_minigame(result=score)
+    cuts = brew_catch_cuts(session)
+    if cuts is not None:
+        # The translator read where the story parts (brew.catch_cuts): one score per stretch tells each stretch's story.
+        starts = sorted({0, *(c for c in cuts if 0 < c <= target)})
+        groups = []
+        for start in starts:
+            seen = _preview_story(session, finish, start, max_steps, CUT_PANELS, numbers=False)
+            if seen is None:
+                break
+            if groups and groups[-1][1] == seen:
+                continue
+            groups.append([start, seen])
+        else:
+            return [(low, None if k == len(groups) - 1 else groups[k + 1][0] - 1) for k, (low, _) in enumerate(groups)]
     seen = {}
 
     def story(score):

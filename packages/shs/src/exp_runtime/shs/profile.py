@@ -87,6 +87,10 @@ TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999, 31000: 26999, 31100: 26
 # shshd-runtime: a pack's backdrop for a speaker's box colour (key 651), in place of the one above: pack -> {theme: resource}.
 # BREW's dialogue panel turns pink behind a pink box and back for anyone else (screens.js DialogueScreen, seen in the real game).
 TRANSLATED_THEME_BACKDROP = {pack: {2: 26991} for pack in (31000, 31100, 31200)}
+# shshd-runtime: the "Java '08 Look" switch (ContentLibrary.java_look): pack -> how far above one of its addon's pictures the Java
+# '08 demo's own copy is (tools/translate brew.JAVA_OFFSET): the frame's backdrop, the relationship icons, the time-badge icons
+# and the catch game's art. A picture with no copy stays as it is; the catch game draws Java's skin (desktop_brew_catch).
+JAVA_LOOK_ART = {pack: 10000 for pack in (31000, 31100, 31200)}
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.

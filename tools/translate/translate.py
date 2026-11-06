@@ -13,7 +13,7 @@ projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catal
 
 The shs11 command writes SHS '11's addon (shs11.py): every background, look and interface picture, and its music.
 
-    python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --out OUT_DIR
+    python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON [--java-08 DEMO_JAR] --out OUT_DIR
     python tools/translate/translate.py brew --story FILE --addon ADDON.exp --out OUT_DIR
 
 The brew command writes the BREW games' addon (brew.py), or with --story a story that reads it. brew_casts.json is the BREW
@@ -108,6 +108,7 @@ def main(argv=None):
     br.add_argument('--base-08', type=Path, help="the '08 game's folder, with game/SHS/res_xlarge.pud and addons/")
     br.add_argument('--base-07', type=Path, help="the '07 phone's module folder, with res_xlarge.pud")
     br.add_argument('--casts', type=Path, help='brew_casts.json from the BREW portrait catalogue (the looks)')
+    br.add_argument('--java-08', type=Path, help="the Java '08 demo's jar: its look, for the addon's \"Java '08 Look\" switch")
     br.add_argument('--synth', choices=('java', 'sf2', 'none'), default='java', help='how the music is rendered')
     br.add_argument('--soundfont', type=Path, help='a General MIDI .sf2 bank for --synth sf2')
     br.add_argument('--story', type=Path, help='a Campaign story to translate instead of the addon')
@@ -239,7 +240,8 @@ def translate_brew(args, parser):
             render = lambda data: midi_render.mp3(midi_render.render(midi_render.parse_midi(data), bank))
         else:
             render = lambda data: midi_render.mp3(midi_render.render_java(data))
-    addon, spec = brew.build_addon(json.loads(args.casts.read_text(encoding='utf-8')), {'08': args.base_08, '07': args.base_07}, render)
+    addon, spec = brew.build_addon(json.loads(args.casts.read_text(encoding='utf-8')), {'08': args.base_08, '07': args.base_07}, render,
+                                   args.java_08)
     (args.out / f'{brew.ADDON_ID}.exp').write_bytes(addon)
     print(f"{brew.ADDON_ID}.exp: {len(addon):,} bytes, {len(spec['looks'])} looks, {len(spec['stories'])} stories")
     return 0

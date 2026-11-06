@@ -1238,6 +1238,38 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(MS3_CHARACTERS_LABEL, 'MS3 Characters')
         self.assertIsNotNone(switch_badge('ms3_characters'))
 
+    def test_the_java_look_switch_shows_in_brew_episodes_and_swaps_at_once(self):
+        # Hot swappable, as the portrait switches are (owner, 2026-11-06): every picture the look changes is drawn afresh,
+        # the frame's backdrop for both box colours and a time badge on screen too.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from unittest import mock
+        from exp_runtime import desktop_brew_catch
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import JAVA_LOOK_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(desktop_brew_catch, 'library_has_java_look', lambda library: True):
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            resources.library.java_look = False
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('java_look', ui._pause_settings())                 # an ordinary episode
+            for pack in (31000, 31100, 31200):                                  # the BREW games' three packs
+                resources.record = dict(resources.record, pack_id=pack)
+                self.assertIs(ui._pause_settings()['java_look'], False)
+            saved = []
+            ui.on_settings = lambda: saved.append(ui.java_look)
+            ui.images[26999] = None
+            ui._frame_backdrop_cache = ('key', {26991: None, 26999: None})
+            ui.badge_hd._tab_cache = ('badge', None)
+            ui.command(('pause_toggle', 'java_look'))
+            self.assertEqual((ui.java_look, resources.library.java_look, saved), (True, True, [True]))
+            self.assertEqual((len(ui.images), ui._frame_backdrop_cache, ui.badge_hd._tab_cache), (0, (None, {}), None))
+        self.assertEqual(JAVA_LOOK_LABEL, "Java '08 Look")
+        self.assertIsNotNone(switch_badge('java_look'))
+
     def test_the_x360_episodes_offer_the_minigames_switch_where_they_have_minigames_and_never_hi_res(self):
         # The Hi-Res switch is New Rules' (owner, 2026-11-01); Use Translated Mini-Games goes where there's something to
         # switch: every New Rules episode, and the X360's but Day of Diss.

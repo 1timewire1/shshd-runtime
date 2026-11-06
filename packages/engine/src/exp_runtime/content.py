@@ -788,6 +788,7 @@ class ContentLibrary:
         # higher-resolution ones (the game profile's TRANSLATED_PORTRAIT_ART), False New Rules' WinMo ones.
         self.hires_portraits = True
         self.ms3_characters = False     # translated X360 episodes: the April build's looks (MS3_CHARACTER_ART)
+        self.java_look = False          # translated BREW episodes: the Java '08 demo's look (JAVA_LOOK_ART)
         self.ch_portraits = True        # CoD with its portrait addon (PORTRAIT_ADDON): Claire Hart's sharper originals
         self._portrait_addon_map = None, None
         self._twins = None
@@ -1591,6 +1592,9 @@ class EpisodeResources:
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
+        java = self._java_look(resource_id)
+        if java is not None:
+            return self._bank_read(java)
         sharper = self._addon_portrait(resource_id)
         if sharper is not None:
             return sharper
@@ -1644,6 +1648,16 @@ class EpisodeResources:
             self._addon_pictures[resource_id] = spec['resources'].get(f'{key}:{resource_id}', spec['portraits'].get(key))
         target = self._addon_pictures[resource_id]
         return None if target is None else found[1].read(target)
+
+    def _java_look(self, resource_id):
+        """shshd-runtime: the resource holding the Java '08 demo's copy of a translated BREW episode's addon picture, while the
+        player wants that look (library.java_look; the profile's JAVA_LOOK_ART: pack -> how far above it the copy is), or None."""
+        if resource_id < 26000 or not getattr(self.library, 'java_look', False):
+            return None
+        offset = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'JAVA_LOOK_ART', {}).get(self.record.get('pack_id'))
+        if offset is None or self._bank_archive(resource_id + offset) is None:
+            return None
+        return resource_id + offset
 
     def _hires_portrait(self, resource_id):
         """shshd-runtime: the resource holding the hi-res copy of a translated episode's portrait, when the player

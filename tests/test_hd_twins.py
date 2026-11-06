@@ -263,6 +263,17 @@ class HiresPortraitTests(unittest.TestCase):
         self.assertEqual(self.resources(31400, {26200: self.winmo, 27200: self.x1i}).read_asset(26200), self.x1i)
         self.assertEqual(self.resources(31300, assets).read_asset(26200), self.x1i)     # New Rules has no April
 
+    def test_the_java_look_switch_shows_the_java_copy_of_a_brew_addon_picture_where_there_is_one(self):
+        brew, java = picture((60, 60), (200, 10, 10, 255)), picture((30, 30), (10, 10, 200, 255))
+        assets = {26999: brew, 36999: java, 26566: brew}                # the backdrop, its Java copy; a picture with none
+        self.library.hd_art_mode = 'off'
+        self.assertEqual(self.resources(31000, assets).read_asset(26999), brew)          # off by default
+        self.library.java_look = True
+        resources = self.resources(31000, assets)
+        self.assertEqual(resources.read_asset(26999), java)
+        self.assertEqual(resources.read_asset(26566), brew)                              # (BREW's house has no Java copy)
+        self.assertEqual(self.resources(31300, assets).read_asset(26999), brew)          # only the BREW packs
+
     def test_a_save_loads_with_whichever_portrait_set_is_current(self):
         # A save names the portrait the story set (26200), never the hi-res copy (+1000) the switch reads, and the
         # switch is not part of the save's content identity: a save made with either set opens under the other, and

@@ -373,7 +373,7 @@ class CodPauseTests(unittest.TestCase):
 
     def test_the_add_ons_page_holds_the_translated_games_switches(self):
         from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
-        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'ms3_characters', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin',
+        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'ms3_characters', 'java_look', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin',
                                       'arena_skin'))
         self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
         self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
