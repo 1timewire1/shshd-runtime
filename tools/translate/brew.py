@@ -849,6 +849,18 @@ def player_name(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('player_name', context['rid']), lambda s: (s.text('$USR'), s.arg(1), s.call(46, 2), s.result(0)))
 
 
+def text_entry(rewriter, pc, argc, context):
+    """29: (title, default, 0): BREW's text entry, as the smartphone's own (17). BREW keeps the answer as the event's text, which
+    its scripts read straight after with 7 (and store with 52, as `$USR` or `$CAT_NAME`), so it goes under EVENT_TEXT, where
+    event_text reads it. BREW's entry has only a title, as '11's does."""
+    def build(s):
+        s.arg(1); s.text(''); s.arg(2); s.call(17, 3)
+        s.push_result()                                     # a local: the next call replaces R
+        s.text(EVENT_TEXT); s.emit(0x41, 0); s.call(46, 2)
+        s.result(1)
+    rewriter.redirect(pc, 'text_entry', build)
+
+
 def titled_page(rewriter, pc, argc, context):
     """12: (title, text) -> SHS 33."""
     rewriter.redirect(pc, 'titled_page', lambda s: (s.arg(1), s.arg(2), s.push(0), s.call(33, 3)))
@@ -861,7 +873,7 @@ def the_end(rewriter, pc, argc, context):
 
 
 HANDLERS = {7: event_text, 8: field, 9: music, 12: titled_page, 13: scene_open, 14: scene_change, 16: narration_queue, 18: scene_close,
-            28: menu, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
+            28: menu, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
             62: list_push, 63: list_get, 64: list_set, 65: list_length, 70: the_end, 71: cast_name, 72: line, 74: wait, 80: build_query}
 # No-ops in BREW (0, 2, 10, 22-26, 32, 54, 75-79); the calendar's setup where there's no calendar (69); art registration, since
 # the addon holds the art (11).

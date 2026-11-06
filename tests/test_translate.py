@@ -1114,6 +1114,37 @@ class BrewShimTests(unittest.TestCase):
         calls, numbers = self.run_script(program(*redress, *line, 0x33, words=text_words('Hi')), handlers, looks, numbers)
         self.assertEqual([c for c in calls if c[0] == 72], [(72, (3, changed_bank))])
 
+    def test_text_entry_is_the_smartphones_and_its_answer_becomes_the_events_text(self):
+        title, default = text_words('Enter your name'), text_words('Jenny')
+        code = [(0x1A, 0), (0x1A, len(title)), 0x5B, call(29, 3), 0x21, call(99, 1), 0x33]
+        rewriter = Rewriter(program(*code, words=title + default))
+        context = self.context(rewriter)
+        for pc, service, argc in rewriter.calls():
+            if service == 29:
+                self.brew.text_entry(rewriter, pc, argc, context)
+        vm, seen = KiwiVM(rewriter.finish()), []
+
+        def read(address):
+            out = bytearray()
+            for w in vm.data[address:]:
+                for c in ((w >> 8) & 255, w & 255):
+                    if not c:
+                        return out.decode()
+                    out.append(c)
+        for _ in range(100):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                break
+            args = stop.args
+            if stop.yield_id == 17:
+                seen.append((17, read(args[0]), read(args[1]), read(args[2])))
+            elif stop.yield_id == 46:
+                seen.append((46, read(args[0]), args[1]))
+            else:
+                seen.append((stop.yield_id, tuple(args)))
+            vm.resume(0x7FF5 if stop.yield_id == 17 else 0)
+        self.assertEqual(seen, [(17, 'Enter your name', '', 'Jenny'), (46, self.brew.EVENT_TEXT, 0x7FF5), (99, (1,))])
+
     def test_a_big_casts_setup_stays_within_the_sessions_budget(self):
         """Quiz 3's setup, 16 characters of 23 entries, once ran out searching the look table at every write."""
         code = []
