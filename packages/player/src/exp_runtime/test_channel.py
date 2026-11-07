@@ -20,6 +20,8 @@ it's done, so real clocks (fades, timers) run as in play.
     pause / resume              the pause menu
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...)
     game shs|cod                pick a game, as the game picker does (`open` needs one picked)
+    import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
+    window yes|no|ok|LABEL|N    press a button of the menu's open window (`state` shows it as `window`), or the Nth
     open TITLE                  start the episode whose title contains TITLE (or whose id starts with TITLE), from the
                                 beginning; of several copies, the newest import
     run-until KIND [SECONDS]    advance lines until KIND shows (choice, brew_catch, word_game, text_input, prompt,
@@ -188,6 +190,10 @@ class Commands:
         prompt = getattr(app.shell, 'prompt', None) if app.shell else None
         if prompt is not None:
             out['menu_prompt'] = str(prompt)[:200]
+        window = self._window()
+        if window is not None:
+            menu = window[0]
+            out['window'] = dict(title=str(menu.title), text=str(menu.message)[:400], buttons=[str(item.label) for item in window[1]])
         if game is None:
             return out
         session = game.session
@@ -359,6 +365,43 @@ class Commands:
         self.app.enter_episode(resume=False)
         result = yield from self._until(lambda: self.game is not None and self.game.session.pending is not None, 60)
         return result
+
+    def _window(self):
+        """The menu window that's open on top (a confirmation, a notice, the launch's questions): (menu, its buttons), or
+        None. A game's own window gives string ids for its text, this player's own gives text."""
+        shell = self.app.shell
+        stack = getattr(shell, 'stack', None)
+        if stack is None or not stack.stack or getattr(shell, 'data', None) is None:
+            return None
+        return shell.data.menu(stack.current), shell.data.items(stack.current)
+
+    def do_window(self, rest):
+        """Press a button of the open window: `yes` (its verb, the last), `no`, `ok`, a label, or its position (0 first)."""
+        window = self._window()
+        if window is None:
+            return dict(ok=False, error='no window is open')
+        buttons, wanted = window[1], rest.strip().lower()
+        if wanted.isdigit():
+            found = buttons[int(wanted)] if int(wanted) < len(buttons) else None
+        else:
+            found = buttons[-1] if wanted == 'yes' else next((b for b in buttons if str(b.label).lower() == wanted), None)
+        if found is None:
+            return dict(ok=False, error=f'no button {rest!r}: {[str(b.label) for b in buttons]}')
+        self.app.shell.stack.press(found)
+        return self._idle(60)
+
+    def do_import(self, rest):
+        """Add Episodes with a file the app can read (on Android, one in its own files folder): replies once the import
+        is done, with its message, or with a window if it asks something."""
+        path = Path(rest.strip())
+        if not path.exists():
+            return dict(ok=False, error=f'no file {rest!r}')
+        self.app.import_paths([path])
+        return self._idle(600)
+
+    def _idle(self, seconds):
+        """A job: until the app is free (no import or other work) or a window asks something; then the state."""
+        return self._until(lambda: not self.app.busy and getattr(self.app, 'job', None) is None, seconds, quiet=True)
 
     def do_wait(self, rest):
         return self._settled(float(rest or 1))

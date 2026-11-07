@@ -313,6 +313,14 @@ class Editor(QMainWindow):
             widget.valueChanged.connect(lambda value, key=key: self.set_project(key, value))
             project_row.addWidget(QLabel(label))
             project_row.addWidget(widget)
+        # shshd-runtime: the episode's version (episode_version.py); 0 shows as None, an export without one.
+        self.episode_version = QSpinBox()
+        self.episode_version.setRange(0, 65535)
+        self.episode_version.setSpecialValueText('None')
+        self.episode_version.setToolTip('A newer version replaces an older copy of this episode when it is imported')
+        self.episode_version.valueChanged.connect(lambda value: self.set_project('episode_version', value or None))
+        project_row.addWidget(QLabel('Version'))
+        project_row.addWidget(self.episode_version)
         column.addLayout(project_row)
         splitter = QSplitter()
         left = QWidget()
@@ -398,7 +406,8 @@ class Editor(QMainWindow):
         position = focus.cursorPosition() if isinstance(focus, QLineEdit) else None
         scroll = self.inspector.verticalScrollBar().value()
         for widget, value in ((self.title, self.project.title), (self.game, self.project.game),
-                              (self.pack, self.project.pack_id), (self.episode_id, self.project.episode_id)):
+                              (self.pack, self.project.pack_id), (self.episode_id, self.project.episode_id),
+                              (self.episode_version, self.project.episode_version or 0)):
             widget.blockSignals(True)
             if isinstance(widget, QComboBox):
                 widget.setCurrentIndex(widget.findData(value))

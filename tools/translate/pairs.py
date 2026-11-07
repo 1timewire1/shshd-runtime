@@ -23,10 +23,16 @@ def lines_of(programs):
     return {norm(text) for program in programs for _, text in strings(program) if len(text) >= 25}
 
 
+# The packs this fork's translations use (BREW 31000-31200, New Rules 31300, X360 31400, the novel 31500, SHS '11 31600):
+# never a twin, and never evidence for casing, which must learn from the smartphone episodes alone. (Only New Rules' own
+# pack was left out until 2026-11-06, so BREW's stories in a library turned "mathematics" into a class name.)
+TRANSLATED_PACKS = range(31000, 32000)
+
+
 def library_episodes(library):
     manifest = json.loads((library / 'library.json').read_text(encoding='utf-8'))
     for record in manifest['episodes']:
-        if 'file' not in record or record.get('pack_id') == newrules.PACK_ID:
+        if 'file' not in record or record.get('pack_id') in TRANSLATED_PACKS:
             continue                            # a translation already imported is never its own twin
         archive = ExpArchive((library / record['file']).read_bytes())
         programs = [decode_program(archive.read(r)) for r in archive.entries if archive.read(r)[:4] == b'kiwi']

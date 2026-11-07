@@ -14,6 +14,7 @@ import re
 import struct
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
+from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.nr_arena import SHAKE
@@ -22,6 +23,9 @@ from exp_runtime.vm import KiwiVM, StopKind, VMError
 from kiwi_rewrite import Rewriter
 import nr_art
 
+# The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
+# version replaces it too. Raise it when a build must never be replaced by an earlier one.
+STORY_VERSION = 1
 PACK_ID = 31300                         # the owner's block for New Rules (TRANSLATOR_PLAN.md decision 5)
 NARRATOR = 199                          # New Rules narrates without a speaker (box mode -4); SHS needs a character
 PLAYER = 1                              # the primary speaker (74) when a story has no dialogue to judge by
@@ -487,6 +491,7 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         report.music = len(tracks)
     if addon is not None:
         resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+    resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     # The tag tells the importer this is a New Rules story, which the picker never hides as its smartphone version.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources), report

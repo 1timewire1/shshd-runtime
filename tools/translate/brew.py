@@ -32,6 +32,7 @@ import sys
 from PIL import Image, ImageDraw
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
+from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.vm import KiwiVM, StopKind, signed16
@@ -45,6 +46,9 @@ import nr_art  # noqa: E402
 
 ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 3   # 2: the event icons; 3: the Java '08 look
 PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
+# The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
+# version replaces it too. Raise it when a build must never be replaced by an earlier one.
+STORY_VERSION = 1
 ADDON_EPISODE = 9999
 TITLE_SUFFIX_07, TITLE_SUFFIX_08 = ' (SHS07)', ' (SHS08)'
 FIRST_SCRIPT, STORY_SCRIPT, BREW_STORY_SCRIPT = 25001, 25002, 26000
@@ -1389,6 +1393,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card):
         target = STORY_SCRIPT if script == BREW_STORY_SCRIPT else FIRST_SCRIPT
         resources[target] = rewriter.finish().to_bytes()
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+    resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
 

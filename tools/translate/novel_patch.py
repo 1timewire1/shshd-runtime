@@ -256,6 +256,8 @@ def apply(patch, exp, chapters):
     for script in scripts:
         resources[script.rid] = script.finish().to_bytes()
     metadata = archive.metadata()
+    from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
+    resources[VERSION_RECORD] = version_bytes(patch.get('version', 1))     # (episode_version.py: newer replaces older)
     resources[1] = Metadata(patch['pack_id'], patch.get('episode_id', metadata.episode_id),
                             (patch['title'],) * 5).to_bytes()
     return encode_exp(resources), report

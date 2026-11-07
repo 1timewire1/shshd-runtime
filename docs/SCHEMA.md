@@ -430,3 +430,28 @@ addon, not missing art. A malformed record is set aside with a warning.
 The New Rules translations (`tools/translate`, pack 31300) share the `shsnr`
 addon: every background in every time-of-day mode (26000–26173), the music
 (26980–26994) and the frame backdrop (26999).
+
+## Episode version extension (shshd-runtime)
+
+An episode may contain resource **5** beginning with `SHSHD-EPISODE `,
+followed by UTF-8 JSON with `format: "shshd-episode"`, `version: 1` and
+`revision`, the episode's version (1–65535; `episode_version.py`; owner,
+2026-11-06). This is SHSHD Runtime metadata, not a recovered native format;
+native players and upstream exp-runtime never read resource 5.
+
+**Import.** Copies are the same episode when their pack, episode number and
+release (`variant`) match. An episode with a version:
+- replaces the library's copies that have no version, or an older or equal one
+  (a rebuild at the same version, as with an addon), with their saved games,
+  undo chains, previews and Decision Trees;
+- is left out when the library holds a newer copy;
+- never replaces a built-in episode or the one being played.
+
+A copy that would be replaced but has a game in progress (an autosave or a
+saved game) is asked about first: the import stops before writing anything,
+and the player chooses Replace or No (keep it beside the new one). A save
+only loads into the build it was made in, so it can't move to the new
+version. Menus without a confirmation window, and Sync Devices, keep it.
+An episode without a version imports as before: distinct copies stay side by
+side. The translators (`tools/translate`) write version 1, and the creator
+writes a project's **Version** when it has one.

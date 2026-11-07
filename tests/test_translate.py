@@ -1483,5 +1483,28 @@ class BrewShimTests(unittest.TestCase):
             self.assertEqual(self.brew.campaign_number(name), number)
 
 
+class CasingEvidenceTests(unittest.TestCase):
+    def test_translations_in_a_library_are_never_read_as_smartphone_text(self):
+        # Casing learns capitals from the library's own episodes; this fork's translations (BREW's "Mathematics" class
+        # among them) would teach it wrongly (2026-11-06).
+        import json
+        import tempfile
+        import pairs
+        from test_content import archive
+        from test_vm import program
+        from exp_runtime.exp import Metadata
+        with tempfile.TemporaryDirectory() as folder:
+            library = Path(folder)
+            (library / 'content').mkdir()
+            records = []
+            for pack in (7, 31000, 31300, 31600):
+                name = f'content/{pack}.exp'
+                (library / name).write_bytes(archive({1: Metadata(pack, 1, ('x',) * 5).to_bytes(),
+                                                      25001: program(0x33).to_bytes()}))
+                records.append(dict(id=str(pack), pack_id=pack, episode_id=1, file=name, titles=['x']))
+            (library / 'library.json').write_text(json.dumps(dict(episodes=records)), encoding='utf-8')
+            self.assertEqual([record['pack_id'] for record, _ in pairs.library_episodes(library)], [7])
+
+
 if __name__ == '__main__':
     unittest.main()

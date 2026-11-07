@@ -139,6 +139,9 @@ class Project:
     emoticons: list[int | None] = field(default_factory=lambda: [None] * len(EMOTICONS))
     # shshd-runtime: the addons the export declares, {id, revision} each (version 3; docs/ADDONS.md).
     addons: list[dict] = field(default_factory=list)
+    # shshd-runtime: the episode's version (episode_version.py), 1-65535, or None for none: a newer export replaces an
+    # older copy when imported (owner, 2026-11-06).
+    episode_version: int | None = None
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -225,6 +228,8 @@ def validate_structure(project: Project):
         raise ProjectError('Choose the SHS or CoD game profile')
     _integer(project.pack_id, 0, 32767, 'Pack ID')
     _integer(project.episode_id, 1, 32767, 'Episode ID')
+    if project.episode_version is not None:
+        _integer(project.episode_version, 1, 65535, 'Episode version')
     if not isinstance(project.nodes, list) or not 1 <= len(project.nodes) <= 20000:
         raise ProjectError('A project needs between 1 and 20000 nodes')
     ids = set()
@@ -415,6 +420,7 @@ def project_from_record(data):
             data['emoticons'] = [None] * len(EMOTICONS)
         # shshd-runtime: added within version 3, which hasn't been in a release: a project saved before them has neither.
         data.setdefault('addons', [])
+        data.setdefault('episode_version', None)
         for asset in data['assets']:
             asset.setdefault('addon', '')
         nodes = []

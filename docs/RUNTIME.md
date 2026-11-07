@@ -401,7 +401,9 @@ Set `SHSHD_TEST_CHANNEL` to a port before launching to let a script drive the ru
 2026-11-06): one command a line on 127.0.0.1, one JSON reply a line. Commands run on the app's own thread between
 frames, as input would, and act on its state rather than the screen: `state` (the screen, the pending story screen with
 its text and options, a skip prompt, switches, the undo chain), `continue`, `answer N`, `type TEXT`, `key NAME`,
-`back`, `skip`, `undo`, `pause`, `resume`, `set KEY on|off`, `game shs|cod` (as the game picker), `open TITLE` (or an
+`back`, `skip`, `undo`, `pause`, `resume`, `set KEY on|off`, `game shs|cod` (as the game picker), `import PATH` (Add
+Episodes with a file the app can read; it waits for the import), `window yes|no|ok|LABEL` (a button of the menu's
+confirmation or notice, which `state` shows as `window`), `open TITLE` (or an
 id prefix; of several imported copies, the newest), `run-until KIND [SECONDS]` (lines advance until that screen, or the
 first stop it can't pass, a skip prompt included), `wait`, `timing on|off` (fps, median, p90, worst frame, and each
 frame of 100 ms or more with the command running and what showed after it), `profile on|off [WORD]` (cProfile on the

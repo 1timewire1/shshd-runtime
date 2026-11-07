@@ -20,7 +20,7 @@ from . import graphics as pygame
 
 from .app_icon import icon_surface, set_window_icon
 from .app_info import PROJECT_URL
-from .content import ContentError, ContentLibrary, file_digest, import_game, is_bundled
+from .content import ContentError, ContentLibrary, ReplaceSavedEpisodes, file_digest, import_game, is_bundled
 from .desktop import Desktop, SIZE, DEFAULT_WINDOW_SIZE
 from .application_hd import WARP_UNLOCKED_MENU, HdShell
 from .desktop_app_hd import BROWSER_ROW, AppScreens
@@ -626,12 +626,49 @@ class Application:
             run()
 
     def added_text(self, count):
-        """What Add Episodes brought, with add-ons named apart."""
-        addons = getattr(self.library, 'last_addons_added', 0)
+        """What Add Episodes brought, with add-ons named apart, and what newer versions replaced (episode_version.py)."""
+        library = self.library
+        addons = getattr(library, 'last_addons_added', 0)
         episodes = count - addons
         parts = ([f'{episodes} episode{"s" if episodes != 1 else ""}'] if episodes else []) + (
             [f'{addons} add-on{"s" if addons != 1 else ""}'] if addons else [])
-        return f'Added {" and ".join(parts)}.'
+        text = f'Added {" and ".join(parts)}.' if parts else 'No new episodes were added.'
+        replaced, kept, older = (len(getattr(library, name, ())) for name in ('last_replaced', 'last_kept', 'last_older'))
+        if replaced:
+            text += f' {replaced} older cop{"ies were" if replaced != 1 else "y was"} replaced.'
+        if kept:
+            text += f' {kept} older cop{"ies" if kept != 1 else "y"} with a saved game {"were" if kept != 1 else "was"} kept.'
+        if older:
+            text += f' {older} older version{"s were" if older != 1 else " was"} left out: a newer one is here.'
+        return text
+
+    def add_episode_files(self, paths, replace_saved=None):
+        """Add Episodes on the worker. A newer version replacing a copy with a saved game asks first (owner,
+        2026-11-06): the library stops before writing anything, and `ask_replace_saved` runs it again with the answer.
+        The episode being played is never replaced."""
+        playing = self.game.session.resources.record['id'] if self.game is not None else None
+        self.import_paths_pending = list(paths)
+        self.job_kind = 'episodes'
+        self.job = self.executor.submit(self.library.add_episodes, paths, self.report_progress,
+                                        replace_saved=replace_saved, keep=(playing,) if playing else ())
+
+    def ask_replace_saved(self, error):
+        """Newer versions would replace episodes that have games in progress: Replace drops them with their saves; No
+        keeps those copies beside the new ones. A menu without a confirmation window keeps them."""
+        paths = self.import_paths_pending
+        names = list(dict.fromkeys((record.get('titles') or [record['name']])[0] for record in error.records))
+        count = len(names)                  # (an episode with two saved copies is named once)
+        shown = ', '.join(names[:4]) + (f' and {count - 4} more' if count > 4 else '')
+        if self.shell is None:
+            self.add_episode_files(paths, replace_saved=False)
+            return
+        self.shell.confirm('Replace Saved Episodes?',
+                           f'Newer versions replace {shown}, which ha{"ve" if count != 1 else "s"} a game in progress. '
+                           'Replacing deletes those saved games and Decision Trees; a saved game only loads in the '
+                           'version it was made in. No keeps the old cop'
+                           f'{"ies" if count != 1 else "y"} beside the new.', 'Replace',
+                           lambda: self.add_episode_files(paths, replace_saved=True),
+                           cancel=lambda: self.add_episode_files(paths, replace_saved=False))
 
     def exported(self, result):
         """Export Episodes is done: its notice, or the offer of the addons those episodes need."""
@@ -671,20 +708,8 @@ class Application:
     def delete_episodes(self, library, ids):
         """Delete Episodes: the episodes, their saved games, screenshots, previews and Decision Trees. HD art already
         built from an HD episode stays in the twin store."""
-        import shutil
-        records = [library.select(record_id) for record_id in ids]
-        for record in records:
-            for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
-                (library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
-            from .undo import clear
-            clear(library.directory, record['id'])
-            for suffix in ('.jpg', '.none'):
-                (library.directory / 'thumbs' / (record['id'] + suffix)).unlink(missing_ok=True)
-            files, folder = self.tree_files(record, library)
-            for path in files:
-                path.unlink(missing_ok=True)
-            if folder is not None and folder.is_dir():
-                shutil.rmtree(folder)
+        for record_id in ids:
+            library.forget_episode_files(library.select(record_id))
         count = library.remove_episodes(ids)
         return ('Episodes Deleted',
                 f'{count} episode{"s were" if count != 1 else " was"} deleted from {self.title_of(library)}.')
@@ -2271,8 +2296,7 @@ class Application:
             self.job_kind = 'music'
             self.job = self.executor.submit(self.library.add_music_apk, paths[0])
         else:
-            self.job_kind = 'episodes'
-            self.job = self.executor.submit(self.library.add_episodes, paths, self.report_progress)
+            self.add_episode_files(paths)
         self.focus = None
         self.cancel_pointer()
         pygame.key.stop_text_input()
@@ -2493,8 +2517,14 @@ class Application:
                     self.episode_scroll = self.scroll = 0
                     self.picker = None
                     self.show('main' if self.shell is not None else 'episodes', remember=False)
-                    self.message = self.added_text(result) if result else 'Library updated. No new episodes were added.'
+                    self.message = (self.added_text(result) if result or getattr(self.library, 'last_older', None)
+                                    else 'Library updated. No new episodes were added.')
                     self.prepare_previews()
+            except ReplaceSavedEpisodes as error:
+                if kind == 'episodes':
+                    self.ask_replace_saved(error)
+                else:
+                    self.message = str(error)
             except ERRORS as error:
                 self.message = str(error)
         self.flush_drops()

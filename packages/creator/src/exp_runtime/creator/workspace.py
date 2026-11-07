@@ -48,7 +48,8 @@ class Workspace:
         project = state.project
         return {'revision': state.revision, 'live': state.live, 'unsaved': state.unsaved,
                 'title': project.title, 'game': project.game,
-                'pack_id': project.pack_id, 'episode_id': project.episode_id, 'start': project.start,
+                'pack_id': project.pack_id, 'episode_id': project.episode_id,
+                'episode_version': project.episode_version, 'start': project.start,
                 'language': project.language, 'locales': project.locales, 'library': project.library,
                 'emoticons': project.emoticons,
                 'native': bool(project.native), 'node_count': len(project.nodes),

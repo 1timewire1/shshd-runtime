@@ -229,7 +229,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 
 Elsewhere:
 
-- **Add Episodes** takes addons, and says how many of each came.
+- **Add Episodes** takes addons, and says how many of each came. Episodes have versions of their own (resource 5, [SCHEMA.md](SCHEMA.md#episode-version-extension-shshd-runtime)): a newer one replaces an older copy, and the notice says how many were replaced, kept or left out.
 - **Library Info** lists them, and **Storage** counts them apart from episodes.
 - **Verify Library** checks them. A damaged file is removed, and importing the addon again restores it, as it does an episode's.
 - **Export Episodes** exports only what you chose. When those episodes need addons, it says so afterwards and offers to export those too.

@@ -47,6 +47,23 @@ class CustomWindowTests(unittest.TestCase):
         self.assertEqual(notices, [('Saves Deleted', '3')])
         self.assertIsNone(shell.confirmed)
 
+    def test_a_confirmations_no_can_run_an_action_of_its_own(self):
+        # Add Episodes' question about replacing saved episodes goes on either way (owner, 2026-11-06).
+        from exp_runtime.application_hd import HdShell
+        from exp_runtime.menu_engine import BACK, ENGINE
+        shell = HdShell.__new__(HdShell)
+        shell.data = Mock()
+        shell.stack = Mock(stack=[])
+        shell.app = SimpleNamespace(_attempt=lambda operation: operation(), state=None)
+        ran = []
+        shell.confirm('Replace?', 'Older copies...', 'Replace', lambda: ran.append('yes'), cancel=lambda: ran.append('no'))
+        buttons = shell.data.add_window.call_args[0][3]
+        self.assertEqual(buttons[0], ('No', ((ENGINE, HdShell.DECLINE_ACTION),)))
+        shell.perform(HdShell.DECLINE_ACTION)
+        self.assertEqual((ran, shell.confirmed, shell.declined), (['no'], None, None))
+        shell.confirm('Delete?', 'x', 'Delete', lambda: None)               # without one, No only closes it
+        self.assertEqual(shell.data.add_window.call_args[0][3][0], ('No', ((BACK, 0),)))
+
 
 class UserFolderTests(unittest.TestCase):
     def test_a_host_names_where_the_players_files_go(self):
@@ -231,6 +248,8 @@ class LibraryActionTests(unittest.TestCase):
                                      file='content/f.exp', builtin='football-star'),
                                 dict(id='p', sha256='p', titles=['P'], name='P.exp', apk_member='assets/P.exp')]
         app.library.select = lambda key: next(r for r in app.library.episodes if r['id'] == key)
+        from exp_runtime.content import ContentLibrary
+        app.library.forget_episode_files = lambda record: ContentLibrary.forget_episode_files(app.library, record)
         return app
 
     def test_each_episode_list_offers_the_episodes_it_can_act_on(self):

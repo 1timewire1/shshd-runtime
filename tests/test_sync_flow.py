@@ -63,13 +63,13 @@ class SyncFlowTests(unittest.TestCase):
 
     def test_the_result_reads_the_same_on_both_devices(self):
         app = app_with(self.root)
-        app.library.add_episodes = lambda paths: 1
+        app.library.add_episodes = lambda paths, **options: 1
         host = ReceiveHost(SyncFlow(app))
         stage = self.root / 'stage'
         (stage / 'shs' / 'episodes' / '0').mkdir(parents=True)
         (stage / 'shs' / 'episodes' / '0' / 'B.exp').write_bytes(b'')
         self.assertEqual(host.apply({'categories': ['episodes']}, stage, ['shs']), '1 episode was synced.')
-        app.library.add_episodes = lambda paths: 3
+        app.library.add_episodes = lambda paths, **options: 3
         self.assertEqual(host.apply({'categories': ['episodes']}, stage, ['shs']), '3 episodes were synced.')
         (stage / 'shs' / 'episodes' / '0' / 'B.exp').unlink()
         self.assertEqual(host.apply({'categories': []}, stage, ['shs']), 'Nothing needed to change.')

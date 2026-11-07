@@ -177,6 +177,10 @@ An embedded image's automatic ID can match one an add-on's own cutscene draws. T
 
 In MCP: `asset_list` takes `addon`, and `asset_use_addon` takes one, with `copy` to embed.
 
+## Episode version
+
+**Version**, beside Pack and Episode, is the episode's version (None, or 1–65535; [SCHEMA.md](SCHEMA.md#episode-version-extension-shshd-runtime)). With one, importing a newer export replaces an older copy of the episode in a player's library instead of sitting beside it; an episode with a game in progress is asked about first. The `.expproj` keeps it as `episode_version` (projects saved before it have none), importing an export brings it back, and MCP's `project` edit takes it.
+
 ## Storyboard cutscenes
 
 **SHS '11's games.** The Memory and Reflex nodes play [SHS '11's minigames](SHS11.md#minigames), in SHS projects only. Put them behind a **Real minigames?** node, as with the X360 games, and give other players something else to do. Memory's rounds each have a cue, a word of 1 to 9 capital letters, a bonus, points a letter, a letter time and a limit. Reflex's rounds are the 13 numbers in [ENGINE_ABI.md](ENGINE_ABI.md#54-shs-11s-minigames-shshd-runtime-services-219-and-220). The result is 2, 1 or 0. They draw from HD's word game art or the `shs11` addon, so a project should require one of those.

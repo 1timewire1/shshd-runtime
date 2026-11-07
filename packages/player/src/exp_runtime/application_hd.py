@@ -773,9 +773,10 @@ class HdShell:
     def perform(self, number):
         """`SHSEngine::doMenuEngineAction` for the actions the menus of this shell use."""
         state = self.app.state
-        if number == self.CONFIRM_ACTION:             # a Data Management confirmation's Yes
+        if number in (self.CONFIRM_ACTION, self.DECLINE_ACTION):    # a Data Management confirmation's Yes (or its No)
             self.stack.clear()
-            action, self.confirmed = self.confirmed, None
+            action = self.confirmed if number == self.CONFIRM_ACTION else self.declined
+            self.confirmed = self.declined = None
             if action is not None:
                 self.app._attempt(action)
             return
@@ -827,14 +828,17 @@ class HdShell:
     # Data Management's confirmations and notices: windows of this player's own in the shell's menu engine
     # (menu_engine.MenuEngineData.add_window), drawn as "Delete Saved Game?" is.
     CONFIRM_MENU, NOTICE_MENU, CONFIRM_ACTION = CUSTOM_MENUS, CUSTOM_MENUS + 1, CUSTOM_MENUS
+    DECLINE_ACTION = CUSTOM_MENUS + 1   # (an action number: its own namespace, apart from the menus')
     confirmed = None                # what the confirmation window's Yes does
+    declined = None                 # what its No does, when it does something (else it only closes)
 
-    def confirm(self, title, message, verb, action):
+    def confirm(self, title, message, verb, action, cancel=None):
         """Ask before a Data Management action: `title` and `message`, No and `verb` (orange, as a Yes is); `verb`
-        runs `action`."""
-        self.data.add_window(self.CONFIRM_MENU, title, message, (('No', ((BACK, 0),)),
+        runs `action`, No runs `cancel` if given (Add Episodes' question goes on either way)."""
+        no = ((ENGINE, self.DECLINE_ACTION),) if cancel is not None else ((BACK, 0),)
+        self.data.add_window(self.CONFIRM_MENU, title, message, (('No', no),
                                                                 (verb, ((ENGINE, self.CONFIRM_ACTION),))))
-        self.confirmed = action
+        self.confirmed, self.declined = action, cancel
         self.open_window(self.CONFIRM_MENU)
 
     def notify(self, title, message):

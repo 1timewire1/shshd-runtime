@@ -594,7 +594,8 @@ class ReceiveHost:
                 parts.append('the options')
         episodes = stage / 'episodes'
         if episodes.is_dir() and any(episodes.rglob('*.exp')):
-            added = library.add_episodes([episodes])
+            # (a newer version replaces an older copy, except one with a game in progress: nobody's there to ask)
+            added = library.add_episodes([episodes], replace_saved=False)
             addons = getattr(library, 'last_addons_added', 0) if added else 0
             if added - addons or not addons:
                 parts.append(f'{added - addons} episode{"s" if added - addons != 1 else ""}')

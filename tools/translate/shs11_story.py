@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import re
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, requires_bytes
+from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.vm import signed16
@@ -30,6 +31,9 @@ from exp_runtime.shs11_services import SHS11_MEMORY, SHS11_MINIGAMES_QUERY, SHS1
 from kiwi_rewrite import Rewriter
 import shs11
 
+# The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
+# version replaces it too. Raise it when a build must never be replaced by an earlier one.
+STORY_VERSION = 1
 FIRST_SCRIPT = 25001                    # where SHS starts an episode
 TITLE_SUFFIX = ' (SHS11)'
 NARRATOR = 199                          # '11 narrates with no speaker; SHS needs a character (as newrules.NARRATOR)
@@ -936,6 +940,7 @@ def translate(res, story, twin_archive):
                                          s.push(NARRATOR), s.push(-1), s.call(72, 2)))
         resources[FIRST_SCRIPT + script - story.scripts[0]] = rewriter.finish().to_bytes()
     resources[ADDON_RECORD] = requires_bytes([(shs11.ADDON_ID, shs11.ADDON_REVISION)])
+    resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     resources[1] = Metadata(shs11.PACK_ID, story.number, (story.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources)
 

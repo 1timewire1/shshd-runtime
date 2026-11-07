@@ -26,6 +26,7 @@ from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
 from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS, game_id
 from .addons import IDENTIFIER as ADDON_IDENTIFIER, addon_record
+from .episode_version import episode_revision
 from .presentation import EFFECTS, presentation_record
 
 
@@ -405,6 +406,21 @@ def _episode_zip_inputs(package, catalog_name):
         raise ContentError(f'No EXP episodes or {catalog_name} found in {Path(package.filename).name}')
     return episodes, sidecars
 
+
+
+class ReplaceSavedEpisodes(ContentError):
+    """shshd-runtime: an import would replace older copies of episodes that have games in progress; it stopped before
+    writing anything, for the player to say whether they go (`add_episodes(..., replace_saved=...)`)."""
+
+    def __init__(self, records):
+        self.records = list(records)
+        names = ', '.join(dict.fromkeys((r.get('titles') or [r['name']])[0] for r in self.records))
+        super().__init__(f'Newer versions would replace episodes with saved games: {names}')
+
+
+def _same_episode(a, b):
+    """shshd-runtime: copies of one episode, for versions (episode_version.py): the same pack, number and release."""
+    return (a['pack_id'], a['episode_id'], a.get('variant')) == (b['pack_id'], b['episode_id'], b.get('variant'))
 
 @contextmanager
 def _episode_inputs(paths, *, game):
@@ -1083,6 +1099,33 @@ class ContentLibrary:
             (self.directory / record['file']).unlink(missing_ok=True)
         return len(gone)
 
+    def has_saved_game(self, record) -> bool:
+        """shshd-runtime: whether an episode has a game in progress (its autosave or its saved game)."""
+        saves = self.directory / 'saves'
+        return any((saves / (record['id'] + suffix)).is_file() for suffix in ('.shs-auto.json', '.shs-save.json'))
+
+    def forget_episode_files(self, record):
+        """shshd-runtime: an episode's own files beside its content (Delete Episodes, or a newer version replacing it):
+        its saved games and screenshot, its undo chain, its preview, and its Decision Tree with its scenes' saves.
+        Football Star's scenes are the top level of `dtsaves/`, which other episodes' folders sit in."""
+        from types import SimpleNamespace
+        from .runtime import Session
+        from .undo import clear
+        saves = self.directory / 'saves'
+        for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
+            (saves / (record['id'] + suffix)).unlink(missing_ok=True)
+        clear(self.directory, record['id'])
+        for suffix in ('.jpg', '.none'):
+            (self.directory / 'thumbs' / (record['id'] + suffix)).unlink(missing_ok=True)
+        resources = SimpleNamespace(library=self, record=record, identity={'episode_sha256': record['sha256']})
+        tree, scenes = Session.tree_files(resources)
+        tree.unlink(missing_ok=True)
+        if Session.original_tree(resources):
+            for path in scenes.glob('*.json.gz'):
+                path.unlink(missing_ok=True)
+        elif scenes.is_dir():
+            shutil.rmtree(scenes)
+
     def remove_addons(self, ids) -> int:
         """shshd-runtime: the addons with these record ids out of the library, as remove_episodes; how many went. Episodes that
         need one say so until it's imported again (EpisodeResources.check_addons)."""
@@ -1213,13 +1256,18 @@ class ContentLibrary:
             self.manifest, self.music_apk, self.music_members = updated, retained, members
             return len(members)
 
-    def add_episodes(self, paths: list[Path], progress=None) -> int:
+    def add_episodes(self, paths: list[Path], progress=None, *, replace_saved=None, keep=()) -> int:
         """Validate a batch before atomically publishing an expanded manifest.
 
         Content is copied under its hash; existing content and saves are never
         replaced. Duplicate filenames become aliases for catalog matching. A
         failed validation leaves the entire library unchanged. A store listing
         (CoD's mtxprods) in the batch replaces the library's.
+
+        shshd-runtime: a versioned episode (episode_version.py) replaces the
+        library's older copies of itself instead (`_install_episodes`);
+        `replace_saved` answers whether one with a saved game goes too; ids
+        in `keep` (the episode being played) always stay.
         """
         with _episode_inputs(paths, game=self.game_id) as (candidates, catalog):
             store = _store_listing(paths, game=self.game_id)
@@ -1232,7 +1280,7 @@ class ContentLibrary:
                     if progress:
                         progress(f'Episode {index + 1} of {len(candidates)}')
                     yield path.read_bytes(), path.name, {}
-            return self._install_episodes(episodes(), catalog=catalog, store=store)
+            return self._install_episodes(episodes(), catalog=catalog, store=store, replace_saved=replace_saved, keep=keep)
 
     def store_listing(self):
         """The imported store listing (CoD's mtxprods products, cod/store.py) as data, or None."""
@@ -1314,13 +1362,21 @@ class ContentLibrary:
         self._install_episodes([record])
         return sum(1 for e in lost if (self.directory / e['file']).is_file())
 
-    def _install_episodes(self, episodes, *, catalog=None, drop=(), store=None) -> int:
+    def _install_episodes(self, episodes, *, catalog=None, drop=(), store=None, replace_saved=None, keep=()) -> int:
+        """shshd-runtime: an episode with a version (episode_version.py) replaces the library's copies of the same episode
+        (pack, episode number, release) that have none or an older or equal one (a rebuild at the same version, as an
+        addon's), and is itself left out if a newer copy is held (owner, 2026-11-06). A copy being replaced that has a
+        saved game is asked about (owner): with `replace_saved` None the import stops before writing anything and
+        raises ReplaceSavedEpisodes naming them; True replaces them too, False keeps them beside the new one.
+        `last_replaced`, `last_kept` and `last_older` say what happened."""
+        self.last_replaced, self.last_kept, self.last_older = [], [], []
         records = {e['id']: e for e in self.episodes if e['id'] not in drop}
         addons = {a['addon']: a for a in self.addons}
         catalog = self.catalog.merge(catalog) if catalog is not None else self.catalog
         with tempfile.TemporaryDirectory(prefix='.exp-import-', dir=self.directory) as temporary:
             stage = Path(temporary)
             additions, repairs, repaired, addon_additions = [], [], set(), []
+            asking = []                                     # older copies with saved games, when replace_saved is None
             listed = {record['id'] for record in self.episodes}     # in the library before this batch
             for data, name, source in episodes:
                 sha = digest(data)
@@ -1360,13 +1416,35 @@ class ContentLibrary:
                               scripts=sorted(programs), file=f'content/{sha}.exp', **source,
                               **episode_index_fields(archive, programs))
                 record.update(legacy_fields(record['titles'], self.game_id, meta.episode_id))
+                revision = episode_revision(archive)
+                if revision is not None:
+                    record['revision'] = revision
+                    copies = [r for r in records.values() if _same_episode(r, record) and not r.get('builtin')]
+                    if any(r.get('revision', 0) > revision for r in copies):
+                        self.last_older.append(record)          # a newer copy is held: this one is left out
+                        continue
+                    for old in copies:
+                        if old['id'] in keep:
+                            self.last_kept.append(old)
+                            continue
+                        if self.has_saved_game(old) and replace_saved is not True:
+                            (asking if replace_saved is None else self.last_kept).append(old)
+                            continue
+                        del records[old['id']]
+                        if old in additions:                    # (an older one earlier in this batch)
+                            additions.remove(old)
+                        else:
+                            self.last_replaced.append(old)
                 (stage / (sha + '.exp')).write_bytes(data)
                 records[sha] = record
                 additions.append(record)
+            if asking:
+                raise ReplaceSavedEpisodes(asking)
             store_sha = digest(store) if store is not None else None
             for record in repairs:
                 (stage / (record['id'] + '.exp')).replace(self.directory / record['file'])
-            if (not additions and not addon_additions and not drop and list(records.values()) == self.episodes
+            if (not additions and not addon_additions and not drop and not self.last_replaced
+                    and list(records.values()) == self.episodes
                     and catalog.entries == self.catalog.entries
                     and (store is None or self.manifest.get('store', {}).get('sha256') == store_sha)):
                 return 0
@@ -1394,6 +1472,9 @@ class ContentLibrary:
             self.addons = updated.get('addons', [])
             for record in replaced:                                 # an older revision of an addon just imported
                 self._addon_archives.pop(record['id'], None)
+                (self.directory / record['file']).unlink(missing_ok=True)
+            for record in self.last_replaced:                       # an older version of an episode just imported
+                self.forget_episode_files(record)
                 (self.directory / record['file']).unlink(missing_ok=True)
             self._store = None
             self.catalog = catalog

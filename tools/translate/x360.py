@@ -46,6 +46,9 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
 ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 14
+# The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
+# version replaces it too. Raise it when a build must never be replaced by an earlier one.
+STORY_VERSION = 1
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
@@ -1372,7 +1375,7 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     assets, chained = music_assets(music_files if story.own_music and music_files else {}, music, under)
     builder = Builder(proto, story, music, chained)
     project = Project(title=story.title + TITLE_SUFFIX, game='shs', pack_id=PACK_ID, episode_id=story.episode_id,
-                      nodes=[])
+                      episode_version=STORY_VERSION, nodes=[])
     project.assets.extend(assets)
     # New Rules backgrounds only for the locations the prototype's own don't cover
     scenes_covered = story.event_scenes and all(scene in backgrounds for scene in story.event_scenes.values())

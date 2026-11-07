@@ -33,6 +33,9 @@ def import_exp(data, *, game='shs'):
     if record and record.get('project'):
         document = record['project']
         declared = _declared_addons(archive)
+        if document.get('episode_version') is None:
+            from exp_runtime.episode_version import episode_revision
+            document['episode_version'] = episode_revision(archive)
         if not document.get('addons'):
             document['addons'] = [dict(id=name, revision=revision) for name, revision in declared]
         for asset in document.get('assets', []):
@@ -53,6 +56,8 @@ def import_exp(data, *, game='shs'):
                                                      for key, value in resources.items()}})
     project.locales = {language: {'title': title} for language, title in
                       zip(('en', 'fr', 'it', 'de', 'es'), meta.titles)}
+    from exp_runtime.episode_version import episode_revision
+    project.episode_version = episode_revision(archive)
     for script, program in sorted(archive.programs().items()):
         instructions = program.instructions
         if not instructions:
