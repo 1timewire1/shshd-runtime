@@ -281,7 +281,10 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
         lines = len(text_in_region(option, label, Rect(0, 0, label_width, g.row_height / d), 0x19, None, (), d)[0].lines)
         heights.append(g.row_height + max(0, lines - 2) * pitch)
     rows_height, shown = sum(heights), len(heights)
-    while rows_height and header_height + rows_height + footer_height + description_height > g.panel_limit:
+    # shshd-runtime: the player's own prompts may ask for more room than the native limit (details' panel_limit: a skip
+    # prompt's page of seven rows under its description, desktop.Desktop._open_prompt).
+    limit = max(g.panel_limit, details.get('panel_limit', 0))
+    while rows_height and header_height + rows_height + footer_height + description_height > limit:
         shown -= 1
         rows_height -= heights[shown]
     total = header_height + rows_height + footer_height + description_height

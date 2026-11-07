@@ -196,6 +196,27 @@ class CatchCutTests(unittest.TestCase):
         self.assertIsNone(brew.catch_cuts(summed, 0))                  # a sum: the prompt tries every score instead
         self.assertIsNone(brew.catch_cuts([catch, (0x33, None)], 0))    # the result never kept
 
+    def test_a_helpers_own_local_is_read_only_within_the_helper(self):
+        # Classic and M.A.S.H. keep the score in a local of the helper the catch game is in (owner, 2026-11-07: their skip
+        # prompts were slow on the g54). The local is the frame address pushed before the call's arguments.
+        import brew
+        args = [(0x1a, 45), (0x1a, 350), (0x1a, 350), (0x1a, 50), (0x40, 900), (0x1a, 152)]
+        call = [(0x5f, None), *args, (0x1f, 19 << 8 | 6), (0x21, None), (0x3e, None), (0x15, None)]
+        other = [(0x22, None), (0x43, None), (0x48, None), (0x4a, None), (0x5f, None), (0x3f, None), (0x50, None)]
+        at = 7
+        # Compared as itself, as `0x41 0`, and the other way round (`30 <= score`); another function's local 0 isn't it.
+        code = [*call, (0x5f, None), (0x3f, None), (0x1a, 45), (0x0d, None), (0x41, 0), (0x1a, 20), (0x0e, None),
+                (0x1a, 30), (0x5f, None), (0x3f, None), (0x0f, None), *other]
+        self.assertEqual(brew.catch_cuts(code, at), [20, 30, 45])
+        # Never read back: it changes nothing.
+        self.assertEqual(brew.catch_cuts([*call, (0x5b, None), *other], at), [])
+        # Never taken, and a service answering in R (random, 6) replaces it before anything reads R.
+        untaken = [*args, (0x1f, 19 << 8 | 6), (0x5b, None), (0x1a, 4), (0x1f, 6 << 8 | 1), (0x21, None), (0x33, None)]
+        self.assertEqual(brew.catch_cuts(untaken, 6), [])
+        # A service that answers nothing (a line, 72) leaves R: the next read may be the score.
+        kept = [*args, (0x1f, 19 << 8 | 6), (0x1a, 4), (0x1f, 72 << 8 | 1), (0x21, None), (0x33, None)]
+        self.assertIsNone(brew.catch_cuts(kept, 6))
+
 
 @unittest.skipUnless(HAS_PIL, 'needs Pillow for the translator')
 class CatchCallTests(unittest.TestCase):

@@ -1,0 +1,36 @@
+"""shshd-runtime: "a(n)" in the BREW games' formatted lines, made "a" or "an" by the word filled in (engine.choose_articles)."""
+import unittest
+
+from exp_runtime.engine import choose_articles
+from exp_runtime.runtime import Session
+from test_runtime import Resources, host_call, text_words
+from test_vm import program
+
+
+class ArticleTests(unittest.TestCase):
+    def test_the_word_after_it_picks_a_or_an(self):
+        # M.A.S.H. Pack 1's houses and cars, and Fall '06's grades, said by their letter's name.
+        for text, expected in (('in a(n) mansion', 'in a mansion'), ('in a(n) apartment', 'in an apartment'),
+                               ('driving a(n) orange hearse', 'driving an orange hearse'),
+                               ('a(n) A in Math, a(n) B in Art, a(n) F in French and a(n) C- overall',
+                                'an A in Math, a B in Art, an F in French and a C- overall'),
+                               ('A(n) hour', 'An hour'), ('a(n) university', 'a university'),
+                               ('a(n) "Alone" poster', 'an "Alone" poster')):
+            self.assertEqual(choose_articles(text), expected)
+        for kept in ('a(n)', 'banana(n) x', 'plain text'):
+            self.assertEqual(choose_articles(kept), kept)
+
+    def test_only_a_brew_packs_formatted_lines_change(self):
+        words, (destination, pattern, house) = text_words('                                ', 'You live in a(n) %s.',
+                                                            'apartment')
+        for pack, expected in ((31100, 'You live in an apartment.'), (5, 'You live in a(n) apartment.')):
+            with self.subTest(pack=pack):
+                resources = Resources(program(*host_call(22, destination, pattern, house), 0x33, words=words))
+                resources.record['pack_id'] = pack
+                session = Session(resources)
+                session.advance()
+                self.assertEqual(session.engine.read_text(session.vm, destination), expected)
+
+
+if __name__ == '__main__':
+    unittest.main()

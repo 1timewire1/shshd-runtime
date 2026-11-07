@@ -5,6 +5,7 @@ handlers remain pending; episode exits are terminal application handoffs.
 See docs/ENGINE_ABI.md for native addresses and current limitations.
 """
 from copy import deepcopy
+import re
 from dataclasses import asdict, dataclass, field
 from typing import ClassVar
 
@@ -102,12 +103,40 @@ def _shs11_details(character):
     return dict(left_character=-1, left_expression=0, right_character=signed16(character), right_expression=0)
 
 
+# shshd-runtime: "a(n)" before a word a script fills in (the BREW games' `a(n) %s`), as "a" or "an" by the word's sound (choose_articles).
+ARTICLE_SLOT = re.compile(r'\b([Aa])\(n\)(\s+)(\S+)')
+LETTER_NAMES_WITH_VOWELS = set('AEFHILMNORSX')                # an A, an F, an S: a grade or letter said by its name
+A_BEFORE = ('uni', 'use', 'usu', 'uti', 'ure', 'uro', 'eu', 'one', 'once', 'ewe')    # a university, a one-way...
+AN_BEFORE = ('hour', 'honest', 'honor', 'honour', 'heir')                          # ...an hour
+
+
+def choose_articles(text):
+    """`text` with each "a(n) word" made "a word" or "an word" by how the word begins; "A(n)" keeps its capital."""
+    def article(match):
+        letter, space, word = match.groups()
+        core = word.strip("\"'(").rstrip("+-.,!?;:)\"'")
+        if not core:
+            return match.group(0)
+        if len(core) == 1 and core.isalpha():
+            an = core.upper() in LETTER_NAMES_WITH_VOWELS
+        else:
+            lower = core.lower()
+            an = (lower[0] in 'aeiou' and not lower.startswith(A_BEFORE)) or lower.startswith(AN_BEFORE)
+        return letter + ('n' if an else '') + space + word
+    return ARTICLE_SLOT.sub(article, text)
+
+
 @dataclass
 class EngineState:
     # Not saved: the HD build's app version when an HD app bundle is imported (Session sets it); switches the
     # few services whose HD handler differs from Android's.
     hd_version = None
     badge_sounds = None             # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
+    # Not saved: whether service 22 makes "a(n) word" "a word" or "an word" (a pack in TRANSLATED_ARTICLE_PACKS; Session sets it).
+    choose_articles = False
+    # Not saved: a translated pack's own portrait picker layouts, by count (TRANSLATED_PICKER_LAYOUTS; Session sets it). Service 78
+    # takes one of those counts even past the native five (the BREW M.A.S.H. packs' ten photos).
+    picker_layouts = None
     # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
     # selector NR_ARENA_QUERY answers 1 only with it on.
     nr_arena_enabled = False
@@ -810,6 +839,8 @@ class EngineState:
                     index += 1
                 if keep_last:
                     out += pattern[-1]
+                if self.choose_articles:
+                    out = choose_articles(out)
                 self.write_text(vm, args[0], out)
             return complete('format_into_memory', destination=args[0])
         if y == 26:
@@ -1007,11 +1038,12 @@ class EngineState:
         if y == 78:
             need(3)
             text, count, address = args
-            if not 1 <= count <= 5:
+            layout = (self.picker_layouts or {}).get(count)
+            if layout is None and not 1 <= count <= 5:
                 raise VMError('Character selection requires 1 to 5 character IDs')
             characters = [signed16(vm.read_word(address + i)) for i in range(count)]
             prompt = self.resolve_text(vm, text)
-            self.character_picker = CharacterPicker.start(characters)
+            self.character_picker = CharacterPicker.start(characters, *(() if layout is None else (layout,)))
             return EngineAction('character_picker', request, False, dict(text=prompt))
         if y == 71:
             need(8)

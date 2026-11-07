@@ -279,13 +279,24 @@ def brew_catch_outcomes(session, *, max_steps=40000, max_panels=30):
         return None
     cuts = []
     for low, high in zip(coarse, coarse[1:]):
-        while story(low) != story(high) and high - low > 1:   # one change between them, narrowed by halves
+        a, b = story(low), story(high)
+        if a == b:
+            continue
+        # One change between them, narrowed by halves. A preview need only play as far as the two stories part (`depth`
+        # panels): a shorter one is the start of the longer, so the narrowing previews stop there (owner, 2026-11-07: the
+        # M.A.S.H. packs' fifteen-way prompts were slow to open).
+        depth = next((k for k, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
+        side = a[:depth + 1]
+        while high - low > 1:
             middle = (low + high) // 2
-            if story(middle) is None:
+            if middle in seen:
+                near = seen[middle] and seen[middle][:depth + 1]
+            else:
+                near = _preview_story(session, finish, middle, max_steps, depth, numbers=False)
+            if near is None:
                 return None
-            low, high = (middle, high) if story(middle) == story(low) else (low, middle)
-        if story(low) != story(high):
-            cuts.append(high)
+            low, high = (middle, high) if near == side else (low, middle)
+        cuts.append(high)
     bounds = [0, *cuts, target + 1]
     return [(bounds[k], None if k == len(bounds) - 2 else bounds[k + 1] - 1) for k in range(len(bounds) - 1)]
 

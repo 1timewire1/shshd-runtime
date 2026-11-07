@@ -35,7 +35,9 @@ def session(data, game='shs', addons=(), arena=True):
                 program = decode_program(addon.read(LINKED_SCRIPT))
                 return program if program.previous_flag else None
         return None
-    resources = SimpleNamespace(library=SimpleNamespace(game_id=game, directory=Path('.')), record={'titles': ['']},
+    metadata = archive.metadata()               # (its pack, as the library's record has it: a translated pack's own layouts)
+    resources = SimpleNamespace(library=SimpleNamespace(game_id=game, directory=Path('.')),
+                                record={'titles': [''], 'pack_id': metadata.pack_id, 'episode_id': metadata.episode_id},
                                 identity=dict(profile='translate', episode_sha256=digest(data)),
                                 program=programs.__getitem__, linked_program=linked_program,
                                 exists=lambda key: key in archive.entries or any(key in a.entries for a in addons))

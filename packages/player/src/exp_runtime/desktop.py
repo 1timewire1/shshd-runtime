@@ -176,6 +176,20 @@ def shs11_skip_options(outcomes, best=2):
     return ('Win', 'Come close', 'Lose', 'Play'), (2, 1, 0)
 
 
+# shshd-runtime: a skip prompt's outcomes are worked out on this worker, from a copy of the session, with the loading band on
+# show if they take longer than PROMPT_QUICK_S (owner, 2026-11-07: M.A.S.H. 3 and 4's took 2 s on the g54).
+_PROMPT_WORKER = None
+PROMPT_SEARCHING = object()
+
+
+def _prompt_worker():
+    global _PROMPT_WORKER
+    if _PROMPT_WORKER is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _PROMPT_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix='skip-prompt')
+    return _PROMPT_WORKER
+
+
 class _PromptEngine:
     """The engine as a host prompt's stand-in session shows it: the same state, but no word quiz, so a prompt over
     one is drawn as an ordinary choice."""
@@ -1124,12 +1138,46 @@ class Desktop:
 
     SKIP_OPTIONS = ('Win', 'Lose', 'Play')
 
-    def _host_prompt(self):
+    PROMPT_QUICK_S = 0.1        # a skip prompt's outcomes found this fast show it at once; slower, the loading band first
+    prompt_job = None           # the outcome search under way: {action, future, started}
+
+    def _search_outcomes(self, action, search, wait=False):
+        """`search(session)`'s outcomes for the skip prompt of `action`, worked out on the prompt worker from a copy of the
+        session; PROMPT_SEARCHING while it runs past PROMPT_QUICK_S (the loading band shows meanwhile: _loading_prompt), or
+        at once with `wait`. A search that fails gives None, as the outcome functions do when they can't tell."""
+        from concurrent.futures import TimeoutError as Pending
+        job = self.prompt_job
+        if job is None or job['action'] is not action:
+            session = self.session
+            vm = getattr(session, 'vm', None)
+            if vm is None:
+                return search(session)          # (a stand-in session, as tests use: nothing to copy)
+            copy = deepcopy(session, {id(session.resources): session.resources, id(vm.program): vm.program})
+            copy.ephemeral = True
+            job = self.prompt_job = dict(action=action, future=_prompt_worker().submit(search, copy),
+                                         started=pygame.time.get_ticks())
+        try:
+            outcomes = job['future'].result(timeout=None if wait else 0 if job.get('waited') else self.PROMPT_QUICK_S)
+        except Pending:
+            job['waited'] = True
+            return PROMPT_SEARCHING
+        except Exception:               # noqa: BLE001 -- a search that fails: the prompt offers what it can without one
+            outcomes = None
+        self.prompt_job = None
+        return outcomes
+
+    def _loading_prompt(self, action):
+        """A stand-in prompt while its outcomes are worked out: it holds the game as the prompt does, takes no picks, and is
+        drawn as the loading band (render)."""
+        self.host_prompt = dict(action=action, session=None, options=(), resolve=lambda index: None, loading=True)
+        return self.host_prompt
+
+    def _host_prompt(self, wait=False):
         """The host prompt over the pending screen, or None; the mini-game prompt opens the first time a football game,
-        word grid or word quiz (service 71, both games) is seen."""
+        word grid or word quiz (service 71, both games) is seen. `wait`: don't stand in while its outcomes are worked out."""
         action = self.session.pending
         prompt = self.host_prompt
-        if prompt is not None and prompt['action'] is not action:
+        if prompt is not None and (prompt['action'] is not action or prompt.get('loading')):
             prompt = self.host_prompt = None
         if (prompt is None and self.skip_minigames and action is not None
                 and action.name in ('football', 'word_grid', 'word_game')
@@ -1137,7 +1185,9 @@ class Desktop:
             if action.name == 'word_game':
                 # shshd-runtime: a quiz offers each outcome its story has (choice_hints.word_game_outcomes): most have
                 # two, some three (Football Star's movie date: 0-3, 4-5, 6 or more), a vote package's one.
-                outcomes = word_game_outcomes(self.session)
+                outcomes = self._search_outcomes(action, word_game_outcomes, wait)
+                if outcomes is PROMPT_SEARCHING:
+                    return self._loading_prompt(action)
                 options, scores = word_game_options(outcomes)
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, outcomes),
                                            options, lambda index: self._resolve_word_game(action, scores, index))
@@ -1147,7 +1197,9 @@ class Desktop:
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_slot'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             # shshd-runtime: the X360's slot machine offers each outcome its story has.
-            outcomes = x360_slot_outcomes(self.session)
+            outcomes = self._search_outcomes(action, x360_slot_outcomes, wait)
+            if outcomes is PROMPT_SEARCHING:
+                return self._loading_prompt(action)
             options, points = arena_skip_options(outcomes)
             options = tuple(option.replace(' or more', '') for option in options)       # (5 is all there is)
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
@@ -1155,15 +1207,19 @@ class Desktop:
         if (prompt is None and self.skip_minigames and action is not None and action.name in ('shs11_memory', 'shs11_reflex')
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             # shshd-runtime: SHS '11's games offer each result their story treats differently.
-            options, results = shs11_skip_options(shs11_outcomes(self.session),
-                                                  getattr(getattr(self.session.engine, action.name), 'best_result', 2))
+            outcomes = self._search_outcomes(action, shs11_outcomes, wait)
+            if outcomes is PROMPT_SEARCHING:
+                return self._loading_prompt(action)
+            options, results = shs11_skip_options(outcomes, getattr(getattr(self.session.engine, action.name), 'best_result', 2))
             prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, len(results)), options,
                                        lambda index: self._resolve_shs11(action, results, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'brew_catch'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             # shshd-runtime: it offers each outcome its story has (choice_hints.brew_catch_outcomes): most two, some three.
             target = self.session.engine.brew_catch.target
-            outcomes = brew_catch_outcomes(self.session)
+            outcomes = self._search_outcomes(action, brew_catch_outcomes, wait)
+            if outcomes is PROMPT_SEARCHING:
+                return self._loading_prompt(action)
             options, scores = brew_catch_skip_options(outcomes, target)
             prompt = self._open_prompt(action, 'Skip this mini-game?', self._brew_catch_summary(outcomes, target),
                                        options, lambda index: self._resolve_brew_catch(action, scores, index))
@@ -1183,7 +1239,9 @@ class Desktop:
             if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
                 # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
                 # the results 0-15): most two, a few three.
-                outcomes = arena_outcomes(self.session)
+                outcomes = self._search_outcomes(action, arena_outcomes, wait)
+                if outcomes is PROMPT_SEARCHING:
+                    return self._loading_prompt(action)
                 options, results = arena_skip_options(outcomes)
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._arena_summary(outcomes), options,
                                            lambda index: self._resolve_arena_skip(action, results, index))
@@ -1293,11 +1351,38 @@ class Desktop:
                 self.x360_arena_renderer.hits.clear()   # (the game before's)
             self._attempt(lambda: self.session.answer(index))
 
-    def _open_prompt(self, action, title, text, options, resolve):
+    PROMPT_PAGE = 5             # outcomes on a page of a skip prompt with more than PROMPT_ROWS rows
+    PROMPT_ROWS = 7
+    # The HD panel's height limit for these prompts, past the native 964 points: seven rows under a four-line description (a catch
+    # game's, with its page) need 975 (owner, 2026-11-07: a bit taller rather than a scroll).
+    PROMPT_PANEL_LIMIT = 984
+
+    def _open_prompt(self, action, title, text, options, resolve, page=0):
         """A narrator-style choice (no character: the gold theme, no portrait) over `action`; `resolve(index)` runs
-        once the pick has closed it."""
+        once the pick has closed it. A skip prompt with more outcomes than its panel shows at once (more than
+        PROMPT_ROWS rows, its last Play) goes in pages of PROMPT_PAGE outcomes, each with Next Page (the last back to the
+        first) and Play (owner, 2026-11-07: M.A.S.H.'s catch games go fifteen ways)."""
+        options = tuple(options)
+        if len(options) > self.PROMPT_ROWS and options[-1] == 'Play':
+            outcomes, size = options[:-1], self.PROMPT_PAGE
+            pages = -(-len(outcomes) // size)
+            shown = outcomes[page * size:(page + 1) * size]
+
+            def turn(index):
+                if index < len(shown):
+                    resolve(page * size + index)
+                elif index == len(shown):
+                    # The next page is there at once: no closing, fade-in or fly-on (owner, 2026-11-07: paging felt slow).
+                    self._open_prompt(action, title, text, options, resolve, (page + 1) % pages)['instant'] = True
+                else:
+                    resolve(len(outcomes))                  # Play
+            prompt = self._open_prompt(action, title, f'{text} Page {page + 1} of {pages}.', shown + ('Next Page', 'Play'),
+                                       turn)
+            prompt['next_row'] = len(shown)
+            return prompt
         details = dict(title=title, text=text, options=list(options), values=list(range(len(options))),
-                       enabled=[True] * len(options), timeout_ms=0, timeout_result=0, character_id=-1, portrait_mode=0)
+                       enabled=[True] * len(options), timeout_ms=0, timeout_result=0, character_id=-1, portrait_mode=0,
+                       panel_limit=self.PROMPT_PANEL_LIMIT)
         stand_in = SimpleNamespace(pending=SimpleNamespace(name='choice', details=details, request=None),
                                    engine=_PromptEngine(self.session.engine), vm=SimpleNamespace(steps_executed=0),
                                    scene=self.session.scene, remaining_ms=None, resources=self.session.resources)
@@ -1621,6 +1706,30 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Panel rendering stopped: %s', error)
+        if ask and ask.get('loading') and not self.error:
+            # A skip prompt's outcomes being worked out (_search_outcomes): service 91's loading band over the scene (HD's, or
+            # Android's where HD's can't be drawn, as service 91 picks), from a stand-in for the state it reads, as the poll's
+            # bar is; it takes no clicks but the gear.
+            job = self.prompt_job or {}
+            elapsed = max(0, pygame.time.get_ticks() - job.get('started', pygame.time.get_ticks()))
+            renderer = self.loading_hd if self.loading_hd.available() else self.loading_renderer
+            loading = LoadingScreen(blocking=False, elapsed_ms=min(3000, elapsed))
+            loading.elapsed_ms = elapsed                    # (its own clock, past service 91's 3 s cap: the runner keeps running)
+            view = SimpleNamespace(engine=SimpleNamespace(panel=self.session.engine.panel, loading=loading))
+            buttons = renderer.draw(self.canvas, view) or [((-32, 422, 92, 58), ('menu',))]     # (the gear: the pause menu)
+            if getattr(renderer, 'hd_layer', False):
+                self.story_layer = renderer.canvas
+            self.pending_background = getattr(renderer, 'pending_background', None)
+            self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
+            self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command) for rect, command in buttons]
+            edge_bar = getattr(renderer, 'edge_bar', None)
+            if edge_bar:
+                # No hint under it: service 91's "Touch the screen to continue" asks for a tap this band doesn't take.
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
+                                                                          edge_bar == 'bar')
+            self.scroll = self.max_scroll = 0
+            self._present()
+            return
         if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input', *ARENA_ACTIONS) and not self.error:
             try:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
@@ -1691,9 +1800,12 @@ class Desktop:
         # The skip prompt (`_minigame_ask`) is drawn as a choice, from a stand-in for the session.
         source = ask['session'] if ask else self._choice_source()
         if (action and (action.name in ('choice', 'word_game') or ask) and not self.error and not closed
+                and not (ask and ask.get('loading'))
                 and hasattr(self.session.resources, 'read_asset')):
             try:
                 page = self.choice_renderer.page(source)
+                if ask and ask.get('instant'):
+                    self.choice_renderer.age_ms, ask['instant'] = 60_000, False      # a prompt's next page: shown at once
                 self.max_scroll = page.max_scroll * 1.5
                 self.scroll = min(self.scroll, self.max_scroll)
                 pointer = None
@@ -2484,7 +2596,13 @@ class Desktop:
         exists = getattr(resources, 'exists', None)
         if asset_id is None or exists is None or not exists(asset_id):
             return None
-        themed = getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(self.session.engine.panel.theme)
+        engine = self.session.engine
+        theme = engine.panel.theme
+        picker, pending = engine.character_picker, self.session.pending
+        if picker is not None and pending is not None and pending.name == 'character_picker' and picker.characters:
+            # On a portrait picker it follows the highlighted portrait: a boy's blue, a girl's pink (owner, 2026-11-07).
+            theme = engine.numbers.get(engine.number_key(picker.characters[picker.selected], 651), 0)
+        themed = getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(theme)
         if themed is not None and exists(themed):
             asset_id = themed
         key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False))
@@ -3122,7 +3240,7 @@ class Desktop:
             elif ask is not None:
                 if kind == 'choose' and 0 <= command[1] < len(ask['options']):
                     self._menu_sound()
-                    if self._hd_choice_drawn():
+                    if self._hd_choice_drawn() and command[1] != ask.get('next_row'):
                         self.choice_closing = dict(action=action, index=command[1], ms=0, prompt=ask)
                     else:
                         self.host_prompt = None
@@ -3176,6 +3294,8 @@ class Desktop:
             return [SimpleNamespace(index=index, rect=None)
                     for index, enabled in enumerate(action.details['enabled']) if enabled]
         try:
+            if asking and self.host_prompt.get('loading'):
+                return []
             page = self.choice_renderer.page(self.host_prompt['session'] if asking else self._choice_source())
         except (ContentError, pygame.error, OSError, ValueError):
             return []
@@ -3430,9 +3550,11 @@ class Desktop:
             return True
         if event.type == pygame.KEYDOWN:
             self.press.cancel()
-            if event.key == pygame.K_n and self.skip_ahead and self._skip_ahead_ready():
+            # The letter shortcuts are letters while a name is typed (owner, 2026-11-07: a name with a `u` undid the game).
+            typing = action is not None and action.name == 'text_input'
+            if event.key == pygame.K_n and not typing and self.skip_ahead and self._skip_ahead_ready():
                 self._skip_ahead()
-            if event.key == pygame.K_u and self._undo_ready():
+            if event.key == pygame.K_u and not typing and self._undo_ready():
                 self._undo()
                 return True
             rows = (self._choice_focus_rows(action, asking)
@@ -3454,11 +3576,13 @@ class Desktop:
                 if picker is not None and picker.characters and not picker.moving:
                     step = 1 if event.key == pygame.K_RIGHT else -1
                     self.command(('choose', (picker.selected + step) % len(picker.characters)))
-            elif action and action.name == 'character_picker' and pygame.K_1 <= event.key <= pygame.K_5:
+            elif action and action.name == 'character_picker' and (pygame.K_1 <= event.key <= pygame.K_9 or event.key == pygame.K_0):
                 picker = self.session.engine.character_picker
+                # 1-9, and 0 for a tenth (a translated pack's ten photos, BREW's M.A.S.H.; owner, 2026-11-07).
                 # Keys wait for a running swap to end (CharacterPicker.moving): mashed keys left the rings misplaced.
-                if event.key - pygame.K_1 < len(picker.characters) and not picker.moving:
-                    self.command(('choose', event.key - pygame.K_1))
+                index = 9 if event.key == pygame.K_0 else event.key - pygame.K_1
+                if index < len(picker.characters) and not picker.moving:
+                    self.command(('choose', index))
             elif action and (action.name in ('choice', 'word_game', 'football') or asking) and pygame.K_1 <= event.key <= pygame.K_9:
                 index = event.key - pygame.K_1
                 if asking:
@@ -4164,7 +4288,7 @@ class Desktop:
         self.ui_layers = self.ui_handover = None
         self.fade = dict(kind=6, phase='in', since=pygame.time.get_ticks(), frozen=None)
         if restart:
-            prompt = self._host_prompt()                            # (Skip Mini-games: its prompt, answered Play)
+            prompt = self._host_prompt(wait=True)                   # (Skip Mini-games: its prompt, answered Play)
             if prompt is not None and prompt['action'] is restored.pending:
                 self.host_prompt = None
                 prompt['resolve'](len(prompt['options']) - 1)

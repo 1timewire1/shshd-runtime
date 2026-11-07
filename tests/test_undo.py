@@ -151,6 +151,31 @@ class UndoInThePlayer(unittest.TestCase):
         self.assertEqual(self.ui.session.pending.name, 'choice')
         self.assertEqual(self.ui.fade['phase'], 'in')
 
+    def test_typing_a_u_into_a_name_types_it(self):
+        # The `u` (Undo) and `n` (Skip Ahead) keys are letters while a name is entered (owner, 2026-11-07: M.A.S.H.).
+        from exp_runtime.desktop import Desktop
+        words, (title, options, first, name, prompt, default) = text_words('Choose', 'Left|Right', 'A fork.', 'Name',
+                                                                          'Who are you?', '')
+        resources = Resources(program(*host_call(1, title, options, first, 0, 1, -1, -1, 0),
+                                      *host_call(17, name, prompt, default), 0x21, 0x33, words=words, gap=2))
+        resources.library.directory = Path(self.temporary.name)
+        resources.record = dict(resources.record, id='y')
+        session = Session(resources)
+        session.advance()
+        ui = Desktop(session, audio=False)
+        ui.undo = ui.skip_ahead = True
+        ui.tick(0)
+        answer_screen(session, 0)
+        ui.tick(0)
+        self.assertEqual(session.pending.name, 'text_input')
+        self.assertTrue(ui._undo_ready())                               # Undo could go back, from the pause menu
+        for key, letter in ((self.pygame.K_u, 'u'), (self.pygame.K_n, 'n')):
+            ui.handle_event(self.pygame.event.Event(self.pygame.KEYDOWN, key=key, mod=0, unicode=letter))
+            ui.handle_event(self.pygame.event.Event(self.pygame.TEXTINPUT, text=letter))
+        self.assertEqual(session.pending.name, 'text_input')
+        self.assertIsNone(ui.fade)
+        self.assertEqual(session.pending.details['draft'][-2:], 'un')
+
     def test_undo_in_a_game_under_way_restarts_it(self):
         from unittest import mock
         self.ui.undo = True

@@ -1900,3 +1900,68 @@ class DesktopTests(unittest.TestCase):
         ui.tick(1000)
         ui.tick(1000)
         self.assertEqual([c.args[0] for c in ui.session.tick.call_args_list[1:]], [0, 100])
+
+
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class PromptPageTests(unittest.TestCase):
+    """A skip prompt with more outcomes than its panel shows at once goes in pages of five, each with Next Page and Play
+    (owner, 2026-11-07: M.A.S.H.'s catch games go fifteen ways)."""
+
+    def test_fifteen_outcomes_go_in_three_pages_and_each_pick_keeps_its_place(self):
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+        self.addCleanup(pygame.quit)
+        ui = Desktop(Session(Resources(branching_program())), audio=False)
+        action, picked = ui.session.pending, []
+        options = tuple(f'Outcome {n}' for n in range(15)) + ('Play',)
+        ui._open_prompt(action, 'Skip this mini-game?', 'Fifteen ways.', options, picked.append)
+
+        def page():
+            prompt = ui.host_prompt
+            return prompt['session'].pending.details['text'], prompt['options']
+        text, shown = page()
+        self.assertEqual(text, 'Fifteen ways. Page 1 of 3.')
+        self.assertEqual(shown, ('Outcome 0', 'Outcome 1', 'Outcome 2', 'Outcome 3', 'Outcome 4', 'Next Page', 'Play'))
+        self.assertGreater(ui.host_prompt['session'].pending.details['panel_limit'], 964)    # room for seven rows
+        self.assertEqual(ui.host_prompt['next_row'], 5)                 # (a tap on it turns the page at once)
+        self.assertFalse(ui.host_prompt.get('instant'))                 # the first page opens as any prompt does
+        ui.host_prompt['resolve'](5)                                    # Next Page
+        self.assertEqual(page()[1][:2], ('Outcome 5', 'Outcome 6'))
+        self.assertTrue(ui.host_prompt['instant'])                      # no fade-in or fly-on for a turned page
+        ui.host_prompt['resolve'](1)                                    # the second on page 2
+        self.assertEqual(picked, [6])
+        for _ in range(2):
+            ui.host_prompt['resolve'](5)
+        self.assertEqual(page()[0], 'Fifteen ways. Page 1 of 3.')       # the last page's Next Page goes back to the first
+        ui.host_prompt['resolve'](6)                                    # Play: the index after every outcome
+        self.assertEqual(picked, [6, 15])
+        # Seven rows or fewer stay one page.
+        ui._open_prompt(action, 'Skip this mini-game?', 'Six ways.', tuple(f'O{n}' for n in range(6)) + ('Play',), picked.append)
+        self.assertEqual(page(), ('Six ways.', ('O0', 'O1', 'O2', 'O3', 'O4', 'O5', 'Play')))
+
+    def test_a_slow_outcome_search_shows_the_loading_band_until_it_is_done(self):
+        # The outcomes are worked out on a worker; one taking longer than PROMPT_QUICK_S stands in with the loading band
+        # (owner, 2026-11-07: M.A.S.H. 3 and 4's took 2 s on the g54). Undo's restart waits for the real one.
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import threading
+        from exp_runtime.desktop import Desktop, PROMPT_SEARCHING
+        import pygame
+        self.addCleanup(pygame.quit)
+        ui = Desktop(Session(Resources(branching_program())), audio=False)
+        action, gate = ui.session.pending, threading.Event()
+
+        def slow(session):
+            gate.wait(5)
+            return [(0, 44), (45, None)]
+        self.assertIs(ui._search_outcomes(action, slow), PROMPT_SEARCHING)
+        stand_in = ui._loading_prompt(action)
+        self.assertTrue(stand_in['loading'])
+        self.assertEqual(stand_in['options'], ())
+        ui.render()                                                     # drawn as the band, not a choice
+        self.assertIs(ui._search_outcomes(action, slow), PROMPT_SEARCHING)
+        gate.set()
+        self.assertEqual(ui._search_outcomes(action, slow, wait=True), [(0, 44), (45, None)])
+        self.assertIsNone(ui.prompt_job)
+        quick = ui._search_outcomes(action, lambda session: [(0, None)])   # a quick one: no band
+        self.assertEqual(quick, [(0, None)])

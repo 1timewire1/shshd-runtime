@@ -155,6 +155,9 @@ GREY_BODIES = (-1, 143, 144, 164)
 BLUE_THEME, PINK_THEME, GREY_THEME = 1, 2, 3
 CHOICE_PORTRAIT = 1
 CHOICE_TITLE = 'Make your choice!'      # for a quiz: the real player answers, as in New Rules' Train That Brain!
+# The portrait choice's title (27): BREW's string 51 is `Pick Your Best Self Portrait`, wider than the HD picker's one line (412 of
+# 300 units in its title face; the native picker overlaps a second line), so this shorter one (275).
+PORTRAIT_TITLE = 'Pick a Self Portrait'
 TIMED_TITLE = 'Think fast!'             # as the smartphone titles its timed choices
 WORD_GAME_MS, WORD_GAME_REFRESH_MS, WORD_GAME_PASS = 20000, 3000, 6     # as the smartphone calls service 71 (as shs11_story)
 LIST_WORDS = 160                        # room for a word game's list, built at run time
@@ -650,6 +653,16 @@ def menu(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('menu', context['rid']), build)
 
 
+def portrait_choice(rewriter, pc, argc, context):
+    """27: (count, list) the portrait choice 74 shows: the characters in the list (the M.A.S.H. packs' photos) as SHS's portrait
+    picker (78), whose answer is the chosen one's place in the list, as BREW's. Returns 1."""
+    def build(s):
+        set_word(s, context['portraits'], lambda: s.arg(1))
+        set_word(s, context['portraits'] + 1, lambda: s.arg(2))
+        s.result(1)
+    rewriter.redirect(pc, ('portrait_choice', context['rid']), build)
+
+
 def spinning_menu(rewriter, pc, argc, context):
     """30: (title, `a|b|c`, ms) a menu whose cursor jumps to a random other option every interval, and 31 gives it a limit. Only
     single-round questions get here (word_game takes the rest), and they become the smartphone's "Think fast!", with BREW's title, the
@@ -693,6 +706,24 @@ def wait(rewriter, pc, argc, context):
     real player answering) asks in the narrator's gold, with no portrait, as New Rules' Train That Brain! does."""
     def build(s):
         no_menu, done = s.label(), s.label()
+        if context.get('portraits') is not None:
+            portraits, no_portraits, each, shown = context['portraits'], s.label(), s.label(), s.label()
+            s.emit(0x40, portraits); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_portraits)
+            # Each photo's look first, as a line's speaker gets: the picker shows the faces their lists name.
+            set_word(s, portraits + 2, lambda: s.push(0))
+            s.label(each)
+            s.emit(0x40, portraits + 2); s.emit(0x40, portraits); s.emit(0x0e); s.jump_if_zero(shown)
+            resolve_look(s, lambda: (s.emit(0x40, portraits + 1), s.emit(0x40, portraits + 2), s.emit(0x50), s.emit(0x3f)), context)
+            set_word(s, portraits + 2, lambda: (s.emit(0x40, portraits + 2), s.push(1), s.emit(0x50)))
+            s.jump(each)
+            s.label(shown)
+            s.text(PORTRAIT_TITLE); s.emit(0x40, portraits); s.emit(0x40, portraits + 1); s.call(78, 3)
+            s.push_result()
+            set_word(s, portraits, lambda: s.push(-1))
+            set_global(s, FIELD_KEY, lambda: s.emit(0x41, 0))
+            s.push(FIELD_KEY); s.call(55, 1)
+            s.jump(done)
+            s.label(no_portraits)
         s.emit(0x40, context['menu'] + 1); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_menu)
         if context['player']:
             resolve_look(s, lambda: s.push(PLAYER), context)
@@ -735,6 +766,24 @@ CATCH_COMPARES = {0x0a: '==', 0x0b: '!=', 0x0c: '>', 0x0d: '>=', 0x0e: '<', 0x0f
 CATCH_CUT_REACH = 400                   # instructions after a catch game in which its score is read
 
 
+# BREW services that answer in R, replacing what a catch game left there: random (6), a field (8), stored numbers (51, 59, 61),
+# list reads (63, 65), string equality (3), a weighted pick (73).
+R_SERVICES = {3, 6, 8, 51, 59, 61, 63, 65, 73}
+CATCH_PUSHES = {0x1a: 1, 0x1b: 2, 0x40: 1, 0x41: 1, 0x5a: 1, 0x5b: 1, 0x5f: 1, 0x60: 1, 0x61: 1, 0x62: 1}
+
+
+def catch_store_target(code, pc):
+    """The frame address (0x5f-0x62, or 0x23 n: a local's place) the catch game at `pc` stores its score in, when its arguments are single
+    pushes (0x1b pushes two) and that address comes just before them; else None."""
+    wanted, k = code[pc][1] & 255, pc - 1
+    while wanted > 0 and k >= 0 and code[k][0] in CATCH_PUSHES:
+        wanted -= CATCH_PUSHES[code[k][0]]
+        k -= 1
+    if wanted != 0 or k < 0 or not (0x5f <= code[k][0] <= 0x62 or code[k][0] == 0x23):
+        return None
+    return code[k]
+
+
 def catch_cuts(code, pc):
     """The scores at which the story after the catch game at `pc` can go another way, for its skip prompt
     (choice_hints.brew_catch_outcomes), or None when it can't tell. BREW stores the result (R) and reads it back with a short
@@ -744,29 +793,61 @@ def catch_cuts(code, pc):
     preview, never an outcome. Checked against the score-by-score search on every catch game the Campaign reaches."""
     ops = [item[0] for item in code]
     if ops[pc + 1:pc + 4] != [0x21, 0x3e, 0x15]:
+        # A score never taken (M.A.S.H. 2 and 6): before anything reads R, straight on, a service that answers in R (BREW's 6,
+        # a random number) replaces it. It changes nothing. Services that answer nothing leave R as it was, so they don't count.
+        k = pc + 1
+        while k < len(code) and (ops[k] in CATCH_PUSHES or ops[k] in (0x23, 0x1f)):
+            if ops[k] == 0x1f and code[k][1] >> 8 in R_SERVICES:
+                return []
+            k += 1
         return None
     load = tuple(code[pc + 4:pc + 6])
     end = next((k for k in range(pc + 1, min(pc + CATCH_CUT_REACH, len(code)))
                 if code[k][0] == 0x1f and (code[k][1] >> 8) in CATCH_MODES), min(pc + CATCH_CUT_REACH, len(code)))
+    # A helper keeping the score in a local of its own (Classic, M.A.S.H.; Stage 4): the local is the frame address pushed before
+    # the call's arguments, and only the helper's own code (up to the next function's PUSH_FP) can read it; other functions'
+    # locals of the same number aren't it. A score it never reads back changes nothing: no cuts, one outcome.
+    target = catch_store_target(code, pc)
+    local = None
+    if target is not None:
+        load = (target, (0x3f, None))
+        # (Its value is also read as 0x41 with the local's number: 9.3 Monkeyssori.)
+        local = target[1] if target[0] == 0x23 else target[0] - 0x5f
+        end = next((k for k in range(pc + 1, len(code)) if code[k][0] == 0x48), len(code))
+
+    def read(k):
+        """How many instructions read the score at `k` (a load and a dereference, or one 0x41), or 0."""
+        if tuple(code[k:k + 2]) == load:
+            return 2
+        return 1 if local is not None and code[k][0] == 0x41 and signed16(code[k][1]) == local else 0
+    if target is not None and not any(read(k) for k in range(pc + 4, end - 1)):
+        return []
     cuts, k = set(), pc + 4
     while k < end - 1:
-        if tuple(code[k:k + 2]) != load:
+        size = read(k)
+        if not size:
             k += 1
             continue
-        if k + 3 >= len(code):
+        if k + size + 1 >= len(code):
             return None
-        (push, value), (compare, _) = code[k + 2], code[k + 3]
+        (push, value), (compare, _) = code[k + size], code[k + size + 1]
+        flipped = False
+        if code[k + size][0] in CATCH_COMPARES and code[k - 1][0] in (0x1a, 0x5a, 0x5b):
+            # The constant first (`30 <= score`, Classic's ranges): the same test, the other way round.
+            (push, value), compare, flipped = code[k - 1], code[k + 2][0], True
         if push in (0x5a, 0x5b):
             value = push - 0x5a
-        elif push in (0x1a, 0x1b):
+        elif push in (0x1a, 0x1b) and not (flipped and push == 0x1b):
             value = signed16(value)
         else:
             return None
         if compare not in CATCH_COMPARES:
             return None
         sign = CATCH_COMPARES[compare]
+        if flipped:
+            sign = {'<=': '>=', '<': '>', '>=': '<=', '>': '<'}.get(sign, sign)
         cuts |= {value} if sign in ('>=', '<') else {value + 1} if sign in ('>', '<=') else {value, value + 1}
-        k += 4
+        k += size + (1 if flipped else 2)
     return sorted(c for c in cuts if c > 0)
 
 
@@ -1486,7 +1567,7 @@ def the_end(rewriter, pc, argc, context):
 
 HANDLERS = {7: event_text, 8: field, 9: music, 12: titled_page, 13: scene_open, 14: scene_change, 15: name_plate, 16: narration_queue,
             18: scene_close,
-            28: menu, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
+            27: portrait_choice, 28: menu, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
             62: list_push, 63: list_get, 64: list_set, 65: list_length, 70: the_end, 71: cast_name, 72: line, 74: wait, 80: build_query}
 # No-ops in BREW (0, 2, 10, 22-26, 32, 54, 75-79); the calendar's setup where there's no calendar (69); art registration, since
 # the addon holds the art (11).
@@ -1880,6 +1961,8 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
                           for badge in [caption_badge(strings[address])]],
                 title_formats=title_formats(program), game_pages=game_pages(program, start) if start is not None else (),
                 page=rewriter.words([-1, -1]), word=rewriter.words([0]), catch_pages=catch_pages(program), **catch,
+                # (only a script with a portrait choice takes its words: a big story's data is close to the VM's stack)
+                portraits=rewriter.words([-1, 0, 0]) if any(i.opcode == 0x1f and i.operand >> 8 == 27 for i in program.instructions) else None,
                 good=rewriter.words([0] * LIST_WORDS), bad=rewriter.words([0] * LIST_WORDS))
 
 
@@ -1931,7 +2014,10 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     title = clean_title(title_of(archive_resources[1])) + title_extra
     date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
-    extra = [rid for rid in scripts if rid not in (FIRST_SCRIPT, BREW_STORY_SCRIPT)]
+    # The story script is 26000, or 25002 in a story without one (the M.A.S.H. packs, whose setup schedules 25002; Stage 4): a
+    # Classic event runs the story script whichever its number (calendar_step), so only where it goes changes.
+    story_script = STORY_SCRIPT if calendar and BREW_STORY_SCRIPT not in scripts and STORY_SCRIPT in scripts else BREW_STORY_SCRIPT
+    extra = [rid for rid in scripts if rid not in (FIRST_SCRIPT, story_script)]
     if extra:
         raise StoryError(f'{name}: scripts {extra} need the calendar driver or a script map')
     resources = {}
@@ -1939,7 +2025,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         program = strip_quotes(strip_round_counts(strip_name_marks(decode_program(upgrade(archive_resources[script])))))
         rewriter = Rewriter(program, zero_gap=True)
         drop_page_pauses(rewriter)
-        if name in STORY_FIXES and script == BREW_STORY_SCRIPT:
+        if name in STORY_FIXES and script == story_script:
             STORY_FIXES[name](rewriter)
         sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()}
         context = script_context(rewriter, script, table, not title.startswith('Quiz '), program, sizes)
@@ -1982,7 +2068,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
                 lambda: (s.text(title), s.push(context['date_buffer']), s.push(card), s.push(0), s.call(8, 4))))
         else:
             rewriter.prologue(lambda s: (s.text(title), s.text(date or ''), s.push(card), s.push(0), s.call(8, 4)))
-        target = STORY_SCRIPT if script == BREW_STORY_SCRIPT else FIRST_SCRIPT
+        target = STORY_SCRIPT if script == story_script else FIRST_SCRIPT
         resources[target] = rewriter.finish().to_bytes()
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)

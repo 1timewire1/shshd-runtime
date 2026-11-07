@@ -55,6 +55,15 @@ again. The next minigame gets a new prompt, even in the same scene. Existing
 saves already in play are not interrupted. Both skips remain available from
 the pause menu while that minigame is active and the preference is enabled.
 
+shshd-runtime: where the prompt offers each outcome its story has (word games,
+the BREW catch game, the New Rules arena, the X360 slot machine, SHS '11's
+games), those outcomes are worked out on a worker thread from a copy of the
+session (`Desktop._search_outcomes`). One done within 0.1 s opens the prompt at
+once; a slower one stands in with service 91's loading band (its native 0.4 s
+delay and 0.4 s entrance) until it is ready, the game held as under the prompt.
+Undo's restart, which answers Play, waits for it instead (owner, 2026-11-07:
+M.A.S.H. 3 and 4's catch prompts took 2 s on the g54).
+
 This covers SHS football and word grids, plus the four-option word-selection
 game shared with CoD. The inspected CoD collection contains service-71 calls;
 its services 94/96 are not SHS minigames. Ordinary choices, including timed

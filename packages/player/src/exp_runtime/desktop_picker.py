@@ -10,6 +10,18 @@ from .menu import MenuStrings
 from .ui_assets import Rect, read_ui
 
 
+def panel_theme(session):
+    """The picker panel's colour: its first portrait's theme, as the native selector draws it, or, in a pack whose frame changes
+    colour with the box (TRANSLATED_THEME_BACKDROP, the BREW games), the highlighted portrait's, so the panel and the frame
+    change together (owner, 2026-11-07)."""
+    from .games import GAMES
+    picker, engine = session.engine.character_picker, session.engine
+    record = getattr(session.resources, 'record', None) or {}
+    themed = record.get('pack_id') in getattr(GAMES.get(engine.game_key), 'TRANSLATED_THEME_BACKDROP', {})
+    character = picker.characters[picker.selected if themed else 0]
+    return engine.numbers.get(engine.number_key(character, 651), 0)
+
+
 class CharacterPickerRenderer:
     def __init__(self, resources, text_renderer, artwork):
         self.resources, self.text, self.art = resources, text_renderer, artwork
@@ -42,7 +54,7 @@ class CharacterPickerRenderer:
         self.canvas.fill((0, 0, 0, 0))
         self.pending_background = self.art.image(engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, engine)
-        theme = engine.numbers.get(engine.number_key(picker.characters[0], 651), 0)
+        theme = panel_theme(session)
         # FUN_000d2238/FUN_000d2558 override layout 47's root to this rectangle.
         self.art.box(self.canvas, Rect(0, 120, 320, 240), theme)
         for index, character in enumerate(picker.characters):
@@ -138,7 +150,7 @@ class HdCharacterPickerRenderer:
         canvas, U = self.canvas, self.U
         canvas.fill((0, 0, 0, 0))
         self.pending_background = self.art.image(engine.panel.background_id)
-        theme = engine.numbers.get(engine.number_key(picker.characters[0], 651), 0)
+        theme = panel_theme(session)
         x, y, width, height = self.PANEL
         self.art.box(canvas, Rect(x, y, width, height), theme, alpha=243, scale=U)
         for index, character in enumerate(picker.characters):
@@ -218,7 +230,7 @@ class CodCharacterPickerRenderer(CharacterPickerRenderer):
         canvas.fill((0, 0, 0, 0))
         self.pending_background = self.art.image(engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, engine)
-        theme = engine.numbers.get(engine.number_key(picker.characters[0], 651), 0)
+        theme = panel_theme(session)
         self.art.box(canvas, Rect(0, 120, 320, 240), theme, alpha=243, scale=U)
         for index, character in enumerate(picker.characters):
             variants = engine.character_art_variants.get(character, [-1])

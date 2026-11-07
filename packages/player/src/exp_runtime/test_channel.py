@@ -205,7 +205,9 @@ class Commands:
         if action is not None:
             out['pending'] = action.name
             out.update({key: action.details[key] for key in TEXT_KEYS if key in action.details})
-        if game.host_prompt is not None:
+        if game.host_prompt is not None and game.host_prompt.get('loading'):
+            out['prompt'] = dict(loading=True)             # its outcomes still being worked out (the loading band)
+        elif game.host_prompt is not None:
             out['prompt'] = dict(title=game.host_prompt['session'].pending.details['title'],
                                  text=game.host_prompt['session'].pending.details['text'],
                                  options=list(game.host_prompt['options']))
@@ -418,7 +420,7 @@ class Commands:
                 return False
             action = game.session.pending
             if game.host_prompt is not None:                # a mini-game's skip prompt: that game (or a stop it can't pass)
-                return True
+                return not game.host_prompt.get('loading')  # (once its outcomes are worked out)
             if action is None or game.session.episode_ended:
                 return True
             if kind == 'stop':
@@ -440,7 +442,8 @@ class Commands:
         result = yield from self._until(reached, seconds, step, every=0.12)
         action = self.game.session.pending if self.game is not None else None
         result['reached'] = bool(result.get('reached')) and (kind in ('stop', 'any') or (action is not None and action.name == kind)
-                                                               or (kind == 'prompt' and self.game.host_prompt is not None))
+                                                               or (kind == 'prompt' and self.game.host_prompt is not None
+                                                                   and not self.game.host_prompt.get('loading')))
         return result
 
     def do_timing(self, rest):

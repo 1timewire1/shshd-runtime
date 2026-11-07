@@ -17,7 +17,7 @@ from .engine import POLL_WAIT_MS, EngineAction, EngineState
 from .dialogue_animation import (DialogueAnimation, DialoguePortrait, DialogueHistory,
                                  ExpressionTransition, EXPRESSION_MS, IOS_EXPRESSION_MS)
 from .background import BackgroundPan
-from .character_picker import CharacterPicker, POSITIONS
+from .character_picker import CharacterPicker, POSITIONS, MOST as PICKER_MOST
 from .fade_transition import FadeTransition
 from .dialogue_notice import hd_letter_start_ms, hd_notice_lifetime, notice_lifetime, notice_limit
 from .dt_state import install_state
@@ -670,6 +670,9 @@ class Session:
                 self.engine.shs11_seen_this_run = self.shs11_seen_this_run
                 self.engine.nr_arena_skip = self.skip_arena
                 self.engine.badge_sounds = self._badge_sounds()
+                self.engine.picker_layouts = self._picker_layouts()
+                self.engine.choose_articles = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
+                    GAMES[game_id(self.resources)], 'TRANSLATED_ARTICLE_PACKS', ())
                 self.engine.cutscenes_enabled = self.cutscenes
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':
@@ -989,14 +992,17 @@ class Session:
             return sounds
         return profile.WORD_GAME_SOUNDS
 
-    def _place_picker(self):
-        """shshd-runtime: a translated pack's own layout for a new portrait picker (the game profile's
-        TRANSLATED_PICKER_LAYOUTS, by portrait count); every other episode keeps the native slots."""
-        picker = self.engine.character_picker
+    def _picker_layouts(self):
+        """shshd-runtime: a translated pack's own portrait picker layouts (the game profile's TRANSLATED_PICKER_LAYOUTS, by portrait
+        count), which service 78 starts its picker in; every other episode keeps the native slots."""
         record = getattr(self.resources, 'record', None) or {}
-        layouts = getattr(GAMES[game_id(self.resources)], 'TRANSLATED_PICKER_LAYOUTS', {})
-        positions = layouts.get(record.get('pack_id'), {}).get(len(picker.characters))
-        if positions is not None:
+        return getattr(GAMES[game_id(self.resources)], 'TRANSLATED_PICKER_LAYOUTS', {}).get(record.get('pack_id'))
+
+    def _place_picker(self):
+        """A new portrait picker in its pack's own layout (_picker_layouts), if service 78 didn't already start it there."""
+        picker = self.engine.character_picker
+        positions = (self._picker_layouts() or {}).get(len(picker.characters))
+        if positions is not None and picker.positions != [tuple(p) for p in positions]:
             self.engine.character_picker = CharacterPicker.start(picker.characters, positions)
 
     def _complete_panel(self):
@@ -1865,7 +1871,7 @@ class Session:
                     if engine.character_picker is None or len(request.args) != 3:
                         raise SaveError('Character selection is missing its native state')
                     text, count, address = request.args
-                    if (not 1 <= count <= 5 or
+                    if (not 1 <= count <= PICKER_MOST or
                             engine.character_picker.characters != [signed16(session.vm.read_word(address + i))
                                                                for i in range(count)]
                             or details['text'] not in (engine.resolve_text(session.vm, text), engine.substitute(

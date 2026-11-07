@@ -67,7 +67,8 @@ class CharacterPickerTests(unittest.TestCase):
     def test_a_translated_pack_places_four_portraits_its_own_way_and_others_keep_the_native_slots(self):
         from exp_runtime.shs.profile import TRANSLATED_PICKER_LAYOUTS
         layout = TRANSLATED_PICKER_LAYOUTS[31300][4]
-        for pack, count, expected in ((31300, 4, layout), (5, 4, POSITIONS[:4]), (31300, 5, POSITIONS)):
+        # (BREW's four-photo M.A.S.H. packs, Classic's 31100, take it too; owner, 2026-11-07.)
+        for pack, count, expected in ((31300, 4, layout), (31100, 4, layout), (5, 4, POSITIONS[:4]), (31300, 5, POSITIONS)):
             with self.subTest(pack=pack, count=count):
                 r = picker_resources(count=count)
                 r.record['pack_id'] = pack
@@ -79,6 +80,99 @@ class CharacterPickerTests(unittest.TestCase):
                 self.assertEqual(picker.hit((x, y)), min(2, count - 1))
                 restored = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
                 self.assertEqual(restored.engine.character_picker.positions[:count], [tuple(p) for p in expected])
+
+    def test_a_translated_layout_takes_ten_portraits_with_smaller_unselected_ones(self):
+        # The BREW M.A.S.H. packs offer ten photos (owner, 2026-11-07): their layout's slots carry their own scale.
+        from exp_runtime.shs.profile import TRANSLATED_PICKER_LAYOUTS
+        layout = TRANSLATED_PICKER_LAYOUTS[31100][10]
+        words, (text,) = text_words('Pick a Self Portrait')
+        array = len(words)
+        words += list(range(80, 90))
+        make = lambda pack: Resources(program(*host_call(78, text, 10, array), 0x21, (0x1f, 0xfe01), words=words))
+        r = make(31100)
+        r.record['pack_id'] = 31100
+        s = Session(r)
+        s.advance()
+        picker = s.engine.character_picker
+        self.assertEqual(picker.characters, list(range(80, 90)))
+        self.assertEqual([p.end for p in picker.portraits][:2], [(160.0, 275.0, 1.0), (34.0, 232.0, 0.4)])
+        x, y, _ = layout[5]
+        self.assertEqual(picker.hit((x + 23, y)), 5)                # a small slot's radius is 61 x 0.4
+        self.assertIsNone(picker.hit((x + 26, y)))
+        s.answer(5)
+        self.assertEqual(picker.portraits[0].end, (x, y, 0.4))      # the old front photo takes the slot, at its scale
+        picker.tick(50)
+        restored = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
+        self.assertEqual(restored.engine.character_picker.positions, [tuple(p) for p in layout])
+        self.assertEqual(s.answer().request.args, (5,))
+        # Anywhere else, ten stays past the native limit.
+        with self.assertRaises(VMError):
+            Session(make(5)).advance()
+
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_number_keys_reach_the_sixth_to_tenth_photos(self):
+        # 6-9 and 0 pick photos six to ten where a picker has them (owner, 2026-11-07).
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        from exp_runtime.desktop import Desktop
+        import pygame
+        self.addCleanup(pygame.quit)
+        words, (text,) = text_words('Pick a Self Portrait')
+        array = len(words)
+        words += list(range(80, 90))
+        r = Resources(program(*host_call(78, text, 10, array), 0x21, (0x1f, 0xfe01), words=words))
+        r.record['pack_id'] = 31100
+        s = Session(r)
+        s.advance()
+        ui = Desktop(s, audio=False)
+        ui.viewport = pygame.Rect(0, 0, 480, 720)
+        picker = s.engine.character_picker
+        for key, index in ((pygame.K_0, 9), (pygame.K_6, 5), (pygame.K_1, 0)):
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=key, mod=0, unicode=''))
+            self.assertEqual(picker.selected, index)
+            picker.tick(50)
+
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_a_translated_frame_follows_the_highlighted_portraits_colour(self):
+        # BREW's panel is pink behind a pink box (TRANSLATED_THEME_BACKDROP); on a picker it follows the highlighted photo, a
+        # boy's blue and a girl's pink (owner, 2026-11-07), not the last speaker's.
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        from io import BytesIO
+        from exp_runtime.desktop import Desktop
+        import pygame
+        self.addCleanup(pygame.quit)
+        pygame.display.init()
+        pygame.display.set_mode((1, 1))
+
+        def png(color):
+            surface = pygame.Surface((8, 8))
+            surface.fill(color)
+            stream = BytesIO()
+            pygame.image.save(surface, stream, 'x.png')
+            return stream.getvalue()
+        assets = {26999: png((40, 60, 200)), 26991: png((220, 90, 120))}
+        r = picker_resources(count=3)
+        r.record['pack_id'] = 31100
+        r.read_asset = lambda rid: assets[rid]
+        r.exists = lambda rid: rid in assets
+        s = Session(r)
+        s.advance()
+        ui = Desktop(s, audio=False)
+        s.engine.panel.theme = 2                                    # the last speaker was a girl
+        for index, theme in ((0, 1), (1, 2), (2, 1)):
+            s.engine.numbers[s.engine.number_key(s.engine.character_picker.characters[index], 651)] = theme
+        from exp_runtime.desktop_picker import panel_theme
+        colour = lambda: tuple(ui._frame_backdrop((8, 8)).get_at((4, 4)))[:3]
+        self.assertEqual((colour(), panel_theme(s)), ((40, 60, 200), 1))    # the first photo, a boy's: blue
+        s.answer(1)
+        self.assertEqual((colour(), panel_theme(s)), ((220, 90, 120), 2))   # the panel changes with it
+        s.engine.character_picker.tick(50)
+        s.answer(2)
+        self.assertEqual((colour(), panel_theme(s)), ((40, 60, 200), 1))
+        r.record['pack_id'] = 5                                     # any other episode: the native first portrait's
+        self.assertEqual(panel_theme(s), 1)
+        s.engine.character_picker.tick(50)
+        s.answer(1)
+        self.assertEqual(panel_theme(s), 1)
 
     def test_a_save_from_before_picker_layouts_keeps_the_native_slots(self):
         s = Session(picker_resources())

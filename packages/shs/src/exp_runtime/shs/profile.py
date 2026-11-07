@@ -101,7 +101,17 @@ BREW_08_BACKGROUNDS = {pack: ((26000 + 3 * 40, 26000 + 3 * 68, -3 * 40), (29000,
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
-TRANSLATED_PICKER_LAYOUTS = {31300: {4: [(160, 275), (52, 241), (160, 170), (269, 241)]}}
+# The BREW M.A.S.H. packs (Classic, 31100; Stage 4) offer ten photos, past the native five (owner, 2026-11-07: try a bigger
+# picker before pages): the chosen one in front as ever, the other nine at 0.4 (a slot's third number), two either side of it
+# and five in a row behind, left to right.
+MASH_PICKER = [(160, 275), (34, 232, .4), (84, 232, .4), (56, 168, .4), (108, 168, .4), (160, 168, .4), (212, 168, .4),
+               (264, 168, .4), (236, 232, .4), (286, 232, .4)]
+FOUR_PICKER = [(160, 275), (52, 241), (160, 170), (269, 241)]
+# Four photos (M.A.S.H. 2, 3, 4 and 6) take New Rules' four-face layout too: the native slots leave one side empty (owner).
+# shshd-runtime: packs whose formatted lines say "a(n) %s" (the BREW games: M.A.S.H. Pack 1's houses and cars, Fall '06's grades),
+# where the engine picks "a" or "an" by the word filled in (engine.choose_articles; owner, 2026-11-07).
+TRANSLATED_ARTICLE_PACKS = (31000, 31100, 31200)
+TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER}}
 # shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
 # (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
 # New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at
