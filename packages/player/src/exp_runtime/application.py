@@ -177,6 +177,11 @@ class Application:
         self.file_picker = file_picker
         self.url_opener = url_opener
         self.settings = AppSettings(settings_path)
+        # shshd-runtime: a script's way in (test_channel.py), only when SHSHD_TEST_CHANNEL names a port: debug builds only
+        # on Android, where only `run-as` can set it.
+        from .launcher import user_data_directory
+        from . import test_channel
+        self.test_channel = test_channel.from_environment(user_data_directory() / 'test-shots')
         self.updates = UpdateCheck(update_fetcher)
         self.check_updates = check_updates  # Diagnostics can remain entirely offline.
         self.update_prompt = None
@@ -389,6 +394,8 @@ class Application:
         record = self.library.select(episode)
         for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
             (self.library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
+        from .undo import clear
+        clear(self.library.directory, record['id'])                 # its undo chain goes with it
         # A game left for the main menu stays alive behind it, and counts as saved (refresh_saves): Continue would resume
         # it as if nothing was deleted, and its next autosave would bring the save back.
         if self.game is not None and self.game.session.resources.record['id'] == record['id']:
@@ -669,6 +676,8 @@ class Application:
         for record in records:
             for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
                 (library.directory / 'saves' / (record['id'] + suffix)).unlink(missing_ok=True)
+            from .undo import clear
+            clear(library.directory, record['id'])
             for suffix in ('.jpg', '.none'):
                 (library.directory / 'thumbs' / (record['id'] + suffix)).unlink(missing_ok=True)
             files, folder = self.tree_files(record, library)
@@ -1156,6 +1165,11 @@ class Application:
         """The Allow Skip Ahead switch reaches a paused episode."""
         if self.game:
             self.game.skip_ahead = self.state.skip_ahead
+
+    def apply_undo(self):
+        """The Allow Undo switch reaches a paused episode."""
+        if self.game:
+            self.game.undo = self.state.undo
 
     def apply_grids_as_memory(self):
         """The "Use '11's Memory for Word Grid" switch reaches a paused episode: it's asked as each grid opens."""
@@ -1969,6 +1983,7 @@ class Application:
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
         self.game.skip_ahead = self.state.skip_ahead
+        self.game.undo = self.state.undo
         self.game.shs11_seen_this_run = self.__dict__.setdefault('shs11_seen_this_run', set())     # (for as long as the app runs)
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.arena_minigames = self.state.arena_minigames
@@ -2077,6 +2092,7 @@ class Application:
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory
         self.state.skip_ahead = self.game.skip_ahead
+        self.state.undo = self.game.undo
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
@@ -2334,7 +2350,7 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'ch_portraits', 'ch_backdrop',
+                               'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
                                'arena_minigames',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
@@ -2359,6 +2375,8 @@ class Application:
                     self.apply_grids_as_memory()
                 if key == 'skip_ahead':
                     self.apply_skip_ahead()
+                if key == 'undo':
+                    self.apply_undo()
                 if key == 'ch_portraits':
                     self.apply_ch_portraits()
                 if self.game:
@@ -2930,6 +2948,8 @@ class Application:
                 if running:
                     with frame_log.section('tick'):
                         self.tick(elapsed)
+                    if self.test_channel is not None:
+                        self.test_channel.poll(self)
                 if frame_log.LOG is not None:
                     frame_log.LOG.frame(elapsed, *self._frame_log_place())
         finally:

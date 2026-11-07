@@ -66,7 +66,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES)
 
@@ -159,6 +159,8 @@ class MenuState:
                     self.word_grid_skin = data['word_grid_skin']
                 if type(data.get('skip_ahead')) is bool:
                     self.skip_ahead = data['skip_ahead']
+                if type(data.get('undo')) is bool:
+                    self.undo = data['undo']
                 if type(data.get('grids_as_memory')) is bool:
                     self.grids_as_memory = data['grids_as_memory']
                 if type(data.get('ch_portraits')) is bool:
@@ -240,6 +242,7 @@ class MenuState:
         self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
         self.smartphone_music = True   # translated SHS '11 episodes: the smartphone's music, else none
         self.skip_ahead = False        # Skip Ahead is offered in a story (skip_ahead.py)
+        self.undo = False              # Undo keeps its saves and is offered in a story (undo.py)
         self.grids_as_memory = False   # letter grids play as SHS '11's Memory, with its addon
         self.word_grid_skin = False    # ...their minigames in the HD word game's look
         self.ms3_characters = False    # translated X360 episodes: the April build's looks, else the May build's (ContentLibrary)
@@ -324,7 +327,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls,
@@ -351,6 +354,9 @@ class MenuState:
         if hasattr(resources, 'check_addons'):
             resources.check_addons()            # shshd-runtime: a clear message, not missing art, without its addon
         path = self.resume_path(episode) if resume else None
+        if path is None:
+            from .undo import clear
+            clear(self.library.directory, resources.record['id'])     # a fresh start: the last playthrough's undo chain goes
         session = Session.load(resources, path) if path else Session(resources)
         # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in
         # Hector's Guide) must reach the table, not lose to the last playthrough's value when the window shares it.

@@ -48,7 +48,8 @@ def progress_files(directory):
         if (directory / name).is_dir():
             files += [(path.relative_to(directory).as_posix(), path) for path in sorted((directory / name).rglob('*'))
                       if path.is_file()]
-    return [(name, path) for name, path in files if MEMBER.fullmatch(name)]
+    # An episode's undo chain (undo.py, saves/<id>.shs-undo/) is this device's working state: never synced or backed up.
+    return [(name, path) for name, path in files if MEMBER.fullmatch(name) and '.shs-undo/' not in name]
 
 
 def saved_ids(names):

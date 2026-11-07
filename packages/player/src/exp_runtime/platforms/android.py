@@ -506,6 +506,8 @@ class Host:
                     # A resumed frame must not advance timers by the sleep duration.
                     with frame_log.section('tick'):
                         self.app.tick(elapsed if was_active and self.app.active else 0)
+                    if self.app.test_channel is not None:             # (test_channel.py: debug builds only)
+                        self.app.test_channel.poll(self.app)
                     self.panels_orientation(elapsed if self.app.active else 0)
                     if self.app.active:
                         with frame_log.section('render'):

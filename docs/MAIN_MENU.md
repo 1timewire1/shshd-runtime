@@ -650,6 +650,14 @@ only.
 
 Everything is skipped, read or not. Skipping only what the player has seen is a possible later addition (the owner, 2026-11-04), and would need its own record of lines, as the tree only tracks scenes.
 
+**Options → Extras → Allow Undo** (this player's, off by default; owner, 2026-11-06): Skip Ahead's inverse (`undo.py`). While it's on, the game keeps a save each time the story reaches one of Skip Ahead's stops (title cards included), taken as it comes up. **Undo** in the pause menu, under Resume, and the **U** key load the latest, so a wrong choice or a lost mini-game can be taken back; the screen fades in on it.
+
+- **Past the latest save:** back to it. **Sitting at it** (an unanswered choice): it's deleted and the one before loads.
+- **In a mini-game under way:** that game starts over from its own save (owner). With Skip Mini-games on, the restart skips the prompt, since Play was already picked; at the skip prompt itself, Undo goes back one, as at any stop. This covers the engine's games (catch, word games and grids, football, SHS '11's, the X360's). New Rules' arena games are the story's own script and undo stop by stop.
+- After an undo the chain ends where it landed, so a new path never meets the old one's saves.
+- A save is the whole game, randomness included, so a random pick comes out the same. The story tree isn't part of it: scenes seen stay seen.
+- The chain lives beside the autosave (`saves/<episode>.shs-undo/`, about 10 KB a save, at most 400), survives closing the app, and goes when the episode ends, starts over or its saved game is deleted. It is never synced or backed up. Nothing is kept while the switch is off.
+
 In Cause of Death the Choice Hints switch is named **Choice & Answer Hints**, since only CoD has the typed puzzles
 whose faint answers it also shows. On a device that can vibrate (exp-runtime's iOS host), the Sound page's last
 switch is the game's own **Vibration** (string 11) and the device vibrates; elsewhere it is Simulated Vibration

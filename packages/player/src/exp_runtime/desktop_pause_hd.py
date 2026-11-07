@@ -47,6 +47,8 @@ SIDE_PANELS_LABEL = 'Side Panels'
 CHOICE_HINTS_LABEL = 'Choice Hints'
 SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AHEAD_LABEL = 'Skip Ahead'                # the pause menu's row, and its key's action (skip_ahead.py)
+UNDO_LABEL = 'Undo'                            # the pause menu's row: back to the last stop kept (undo.py)
+ALLOW_UNDO_LABEL = 'Allow Undo'                # Extras: keeps a save at each stop and offers that row (owner, 2026-11-06)
 ALLOW_SKIP_AHEAD_LABEL = 'Allow Skip Ahead'    # Extras: offers that row and key (owner, 2026-11-04)
 GRIDS_AS_MEMORY_LABEL = "Use '11's Memory for Word Grid"     # SHS '11's game in place of letter grids (owner, 2026-11-04)
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
@@ -102,7 +104,7 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
                      ('addons', 'Add-Ons'), ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
-EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'grids_as_memory')
+EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'undo', 'grids_as_memory')
 ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'java_look', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin', 'arena_skin')
 # General's last row on the main menu: the episode title language, a button that steps through the languages
 # (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
@@ -155,7 +157,7 @@ CYCLE_SIZE, CYCLE_POINTS = (104, 34), 18
 SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VIBRATION_LABEL,
                  'autoplay': AUTOPLAY_LABEL, 'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
-                 'grids_as_memory': GRIDS_AS_MEMORY_LABEL, 'skip_ahead': ALLOW_SKIP_AHEAD_LABEL,
+                 'grids_as_memory': GRIDS_AS_MEMORY_LABEL, 'skip_ahead': ALLOW_SKIP_AHEAD_LABEL, 'undo': ALLOW_UNDO_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
                  'ms3_characters': MS3_CHARACTERS_LABEL, 'java_look': JAVA_LOOK_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,
@@ -614,6 +616,8 @@ class HdPauseMenu:
             entries = [(strings[20], ('resume',)), (strings[10], ('pause_open', 'options')),
                        (strings[120], ('pause_open', 'help'))]
             entries.append((strings[9], ('main_menu',)))
+            if settings.get('undo_row'):
+                entries.insert(1, (UNDO_LABEL, ('undo',)))
             if settings.get('skip_ahead_row'):
                 entries.insert(1, (SKIP_AHEAD_LABEL, ('skip_ahead',)))
             entries += list(host_rows)

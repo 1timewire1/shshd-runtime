@@ -67,6 +67,8 @@ from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
 from .skip_ahead import can_skip, skip_ahead
+from .undo import chain_for
+from .minigames import MINIGAMES
 from .choice_hints import ARENA_RESULTS, arena_outcomes, brew_catch_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
@@ -290,6 +292,9 @@ class Desktop:
     # choice, 2026-10-21: longer than the Continue pill's 250 ms expansion, to be safe).
     autoplay = False
     skip_ahead = False  # Extras' Allow Skip Ahead: the pause menu's row and the N key (skip_ahead.py)
+    undo = False        # Extras' Allow Undo: a save at each stop, the pause menu's Undo row and the U key (undo.py)
+    _undo_chain = None  # (record id, its UndoChain)
+    _undo_seen = None   # the pending screen last looked at for a save
     AUTOPLAY_WAIT_MS = 750
     AUTOPLAY_TITLE_WAIT_MS = 1500
     autoplay_ms = 0
@@ -2736,8 +2741,9 @@ class Desktop:
                                             main_menu=self.on_main_menu is not None,
                                             pressed=self.press.pressed or self.menu_focus,
                                             elapsed_ms=self.pause_elapsed_ms, closing=self.pause_closing,
-                                            extra_entries=(('Skip Ahead', ('skip_ahead',)),)
-                                            if self.skip_ahead and can_skip(self.session) else ())
+                                            extra_entries=((('Skip Ahead', ('skip_ahead',)),)
+                                                           if self.skip_ahead and can_skip(self.session) else ())
+                                            + ((('Undo', ('undo',)),) if self._undo_ready() else ()))
         self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                         for rect, command in buttons]
         if pygame.time.get_ticks() < self.message_until:
@@ -2802,6 +2808,7 @@ class Desktop:
                     sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ahead=self.skip_ahead,
                     **({'skip_ahead_row': True} if self.skip_ahead and can_skip(self.session) else {}),
+                    undo=self.undo, **({'undo_row': True} if self._undo_ready() else {}),
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
@@ -2978,6 +2985,8 @@ class Desktop:
                 self.skip_minigames = not self.skip_minigames
             elif command[1] == 'skip_ahead':
                 self.skip_ahead = not self.skip_ahead
+            elif command[1] == 'undo':
+                self.undo = not self.undo
             elif command[1] == 'skip_ad_intros':
                 self.skip_ad_intros = not self.skip_ad_intros
             elif command[1] == 'autoplay':
@@ -3034,6 +3043,9 @@ class Desktop:
         elif kind == 'skip_ahead':
             self._menu_sound()
             self._skip_ahead()
+        elif kind == 'undo':
+            self._menu_sound()
+            self._undo()
         elif kind == 'resume':
             # The menu scales from 1 to 0.00001 over 400 ms before the story resumes (`notifyNewMenu`'s zoom run
             # backwards, docs/MAIN_MENU.md); `tick` closes it once the zoom is done.
@@ -3400,6 +3412,8 @@ class Desktop:
             self.press.cancel()
             if event.key == pygame.K_n and self.skip_ahead and self._skip_ahead_ready():
                 self._skip_ahead()
+            if event.key == pygame.K_u and self._undo_ready():
+                self._undo()
                 return True
             rows = (self._choice_focus_rows(action, asking)
                     if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
@@ -4041,6 +4055,89 @@ class Desktop:
         self.ui_layers = self.ui_handover = None
         self.fade = dict(kind=6, phase='in', since=pygame.time.get_ticks(), frozen=None)
 
+    def _undo_for(self, session):
+        """The undo chain of the episode `session` plays (undo.py), or None."""
+        record_id = (getattr(session.resources, 'record', None) or {}).get('id')
+        if self._undo_chain is None or self._undo_chain[0] != record_id:
+            self._undo_chain = (record_id, chain_for(session))
+        return self._undo_chain[1]
+
+    def _record_undo(self):
+        """Each frame, while Allow Undo is on: a save when a new stop has come up; the chain goes once the episode ends."""
+        session = self.session
+        if not self.undo or self.error or getattr(session, 'ephemeral', False):
+            return
+        chain = self._undo_for(session)
+        if chain is None:
+            return
+        if session.episode_ended:
+            if self._undo_seen is not False:
+                chain.clear()
+                self._undo_seen = False
+            return
+        action = session.pending
+        if action is None or action is self._undo_seen or session.transitioning:
+            return
+        self._undo_seen = action
+        self._attempt(lambda: chain.record(session))
+
+    def _undo_ready(self):
+        """Undo is on, nothing holds the story up, and there's a save to go back to. A mini-game's skip prompt doesn't
+        hold it: the pause menu opens over the prompt, which is a stop of its own (undoing there goes back one)."""
+        if not self.undo or self.error or self.fade or self.session.episode_ended:
+            return False
+        chain = self._undo_for(self.session)
+        return chain is not None and (chain.can_undo(self.session) or self._undo_restarts())
+
+    def _undo_restarts(self):
+        """Whether Undo restarts the mini-game under way rather than going back (owner, 2026-11-06): one of the engine's
+        games is being played (with Skip Mini-games on, Play was picked: at its skip prompt it goes back as at any
+        stop) and its save is the chain's latest. New Rules' arena games are the story's own script, stops and all."""
+        action = self.session.pending
+        if action is None or action.name not in MINIGAMES:
+            return False
+        if self.host_prompt is not None and self.host_prompt['action'] is action:
+            return False                                            # (still at its skip prompt)
+        chain = self._undo_for(self.session)
+        return chain is not None and chain.at_latest(self.session)
+
+    def _undo(self):
+        """Undo (undo.py): back to the last stop kept, faded in from black as Skip Ahead's and a warp's are. In a
+        mini-game under way, that game from its start, without its skip prompt (Play was already picked)."""
+        if not self._undo_ready():
+            return
+        restart = self._undo_restarts()
+        try:
+            chain = self._undo_for(self.session)
+            restored = chain.restart(self.session) if restart else chain.undo(self.session)
+        except (SaveError, VMError, OSError, ValueError) as error:
+            self._notice(f'Could not undo: {error}')
+            return
+        if restored is None:
+            return
+        restored.share_names(self.session.engine.strings)          # the one names table (Session.share_names)
+        if hasattr(self.session, 'process'):
+            self.session.process.attach(restored, restored=True)
+        self.session = restored
+        self._undo_seen = restored.pending                          # (it's the chain's end already)
+        self.error, self.music_token = None, None
+        self.sound_serial = restored.engine.sound_serial
+        self.vibration_serial = restored.engine.vibration_serial
+        self.menu_open = self.pause_closing = False
+        self.host_prompt = None
+        self.minigame_played = None
+        self.autoplay_ms = 0
+        self.side_panels.tree_follow = True
+        self.location_pan = LocationPan()
+        self.location_shown = self.location_changing = None
+        self.ui_layers = self.ui_handover = None
+        self.fade = dict(kind=6, phase='in', since=pygame.time.get_ticks(), frozen=None)
+        if restart:
+            prompt = self._host_prompt()                            # (Skip Mini-games: its prompt, answered Play)
+            if prompt is not None and prompt['action'] is restored.pending:
+                self.host_prompt = None
+                prompt['resolve'](len(prompt['options']) - 1)
+
     def _warp(self, node):
         """`SHSDTView warpToNode:animatedScroll:`: load the scene's saved game and fade the game back in from black; the
         side panels stay open and the tree scrolls to the scene."""
@@ -4099,6 +4196,7 @@ class Desktop:
             panels.wall_scrolled_at = pygame.time.get_ticks()
 
     def tick(self, elapsed_ms):
+        self._record_undo()
         if self.active:
             self._coast_panels()
             self._grid_hold(elapsed_ms)

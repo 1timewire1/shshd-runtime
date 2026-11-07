@@ -395,6 +395,25 @@ flip, then the tick and event handling, with the screen, menu stage and pending 
 render less those parts. Without the variable nothing is timed or written. The 2026-10-21 measurements and what
 is still slow are in CHANGELOG.md ("Smoother menus").
 
+### Test channel (this fork)
+
+Set `SHSHD_TEST_CHANNEL` to a port before launching to let a script drive the running app (`test_channel.py`; owner,
+2026-11-06): one command a line on 127.0.0.1, one JSON reply a line. Commands run on the app's own thread between
+frames, as input would, and act on its state rather than the screen: `state` (the screen, the pending story screen with
+its text and options, a skip prompt, switches, the undo chain), `continue`, `answer N`, `type TEXT`, `key NAME`,
+`back`, `skip`, `undo`, `pause`, `resume`, `set KEY on|off`, `game shs|cod` (as the game picker), `open TITLE` (or an
+id prefix; of several imported copies, the newest), `run-until KIND [SECONDS]` (lines advance until that screen, or the
+first stop it can't pass, a skip prompt included), `wait`, `timing on|off` (fps, median, p90, worst frame, and each
+frame of 100 ms or more with the command running and what showed after it), `profile on|off [WORD]` (cProfile on the
+app's thread; the costliest calls, only those naming WORD if given) and `shot NAME`. Actions wait for a fade or
+transition before and after, as a player would; `answer` refuses a row a player couldn't pick rather than hand it to
+the game.
+
+`tools/test_channel.py` is the client. On Android, `--adb SERIAL --enable` writes the variable into the app's
+`p4a_env_vars.txt` with `run-as`, so only a debuggable build can have it (a release build never listens); an update
+resets that file. `--adb` forwards the port over USB, `--pull NAME OUT` fetches a shot. Without the variable nothing
+listens.
+
 ## Resource and execution boundaries
 
 | Layer | Responsibility |

@@ -864,7 +864,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
   - **Sound:** Game Music and Sound FX, with their sliders. On the main menu, **Skip Sound Prompt** last (owner,
     2026-10-29): the launch goes on without "Play with sound?", Music and Sound as they are set.
   - **Extras** (owner, 2026-10-21): the play aids, Disable Choice Timer, Choice Hints (CoD: Choice & Answer Hints),
-    Ask to Skip Mini-Games (CoD's word quizzes too) and Allow Skip Ahead (docs/MAIN_MENU.md). On the main menu, SHS adds **Unlock Warping** while its
+    Ask to Skip Mini-Games (CoD's word quizzes too), Allow Skip Ahead and Allow Undo (docs/MAIN_MENU.md). On the main menu, SHS adds **Unlock Warping** while its
     story tree is still locked (owner, 2026-10-29): an action row that clears the lock Football Season clears, shows
     the app's own notice (menu 29, "Options Unlocked", string 272, zooming in) and then is gone. Finishing Football Season shows the same
     notice when the main menu next comes up, as `SHSEngine::setAppMode` does (flag +0x6490b).
