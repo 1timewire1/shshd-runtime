@@ -1087,6 +1087,28 @@ class BrewShimTests(unittest.TestCase):
             vm.resume(result)
         raise AssertionError('the script did not halt')
 
+    def test_quotes_go_only_where_they_wrap_a_whole_line_or_option(self):
+        # '07 quotes every spoken line; SHS's box doesn't (owner, 2026-11-06). A choice list quotes each option.
+        unquote = self.brew.unquote
+        self.assertEqual(unquote(b'"Yeah. I wonder what this is all about?"'), b'Yeah. I wonder what this is all about?')
+        self.assertEqual(unquote(b'"Yeah, definitely." | "Actually... Nah."'), b'Yeah, definitely. | Actually... Nah.')
+        self.assertEqual(unquote(b"\"Why see 'Blood Baby'?\""), b"Why see 'Blood Baby'?")
+        for kept in (b'"Hi," she said.', b'He said "no".', b'plain', b'"'):
+            self.assertIsNone(unquote(kept), kept)
+        self.assertEqual(unquote(b'"A "b" c"'), b'A "b" c')
+        # Speech quoting a title keeps the inner pair (Trick or Treat, owner 2026-11-07); narrated quotes and split lines stay.
+        self.assertEqual(unquote(b'"I just got this one, "Alone," that is cool."'), b'I just got this one, "Alone," that is cool.')
+        self.assertEqual(unquote(b'"And, "taping of Mates" is three words."'), b'And, "taping of Mates" is three words.')
+        for kept in (b'"A" and "B"', b'"Hi," she said, "bye."', b'"I think so..." (Oh, wow.) "Uh, could you roll off me?"'):
+            self.assertIsNone(unquote(kept), kept)
+
+    def test_entry_title_and_a_quoted_bracketed_option_are_tidied(self):
+        # Owner, 2026-11-07: '07's name entry has no brackets; Male Cheerleader quotes a bracketed option as well.
+        tidy = self.brew.tidy
+        self.assertEqual(tidy(b'(Enter name:)'), b'Enter name:')
+        self.assertIsNone(tidy(b'(Please enter your name.)'))
+        self.assertEqual(tidy(b'Okay.|"(Point at Beth and say, "Let\'s go.")" '), b'Okay.|Point at Beth and say, "Let\'s go." ')
+
     def test_upgrade_gives_kiwi_v2_with_the_same_machine(self):
         body = struct.pack('>4H', 0, 0, 0, 1) + bytes((0x33,))
         upgraded = decode_program(self.brew.upgrade(b'kiwi\x01\x00' + body))
@@ -1108,6 +1130,13 @@ class BrewShimTests(unittest.TestCase):
         self.assertLess(calls.index((72, (3, bank))), next(i for i, c in enumerate(calls) if c[0] == 13 and len(c[1]) == 3))
         # Entry 2 is 0: BREW's pink box.
         self.assertEqual(numbers[3, self.brew.THEME], 2)
+        # A thing's look (the phone, 144) or one with no picture is the smartphone's grey box (owner, 2026-11-07).
+        for body in (144, -1):
+            code = [0x5A]
+            for value in (body, -1, 1):
+                code += [(0x1A, 7), (0x1A, 635), (0x1A, value), call(62, 3)]
+            _, grey = self.run_script(program(*code, 0x33), {62: self.brew.list_push}, looks)
+            self.assertEqual(grey[7, self.brew.THEME], self.brew.GREY_THEME, body)
         # A re-dress to another known look: the hash moves with the changed entry.
         redress = [(0x1A, 3), (0x1A, 635), (0x1A, 4), (0x1A, 300), call(64, 4)]
         numbers[0, self.brew.DEPTH_KEY] = 1
@@ -1147,11 +1176,32 @@ class BrewShimTests(unittest.TestCase):
             elif stop.yield_id in (45, 55):
                 result = globals_.get(args[0], 0)
             elif stop.yield_id == 13:
-                out.append(read(args[0]))
+                thought = len(args) == 4 and args[0] in (0xFFFE, -2)
+                out.append(('thought', read(args[1])) if thought else read(args[0]))
             elif stop.yield_id == 90:
                 out.append(('badge', args[0], read(args[1]) if args[1] != 0xFFFF and args[1] != -1 else None))
             vm.resume(result)
         self.fail('did not halt')
+
+    def test_a_line_led_by_speech_splits_from_its_asides_and_one_led_by_an_aside_does_not(self):
+        # Owner, 2026-11-06 (Detention to the Rescue): '07 mixes quoted speech and bracketed asides in one line.
+        led = '"Excellent. And we got Lyle." (She opens a pocket and the lizard pops his head out.)'
+        said = self.said(text_words(led), [(0x1A, 3), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3), 0x33])
+        self.assertEqual(said, ['Excellent. And we got Lyle.', ('thought', 'She opens a pocket and the lizard pops his head out.')])
+        self.assertEqual(self.brew.tidy(b'(Whispers.) "Calm down, little guy..."'), b'(Whispers.) Calm down, little guy...')
+        self.assertEqual(self.brew.shown_parts(b'(Whispers.) Calm down, little guy...'), [(b'(Whispers.) Calm down, little guy...', False)])
+
+    def test_choice_options_lose_brackets_but_lines_keep_theirs(self):
+        self.assertEqual(self.brew.tidy(b"(Play it off like it's a joke.)|(Kiss Angie.)"), b"Play it off like it's a joke.|Kiss Angie.")
+        self.assertEqual(self.brew.tidy(b'"Yes."|(Shrug.)'), b'Yes.|Shrug.')
+        for kept in (b'(She sighs.)', b'(A) and (B)|Other', b'He said "no" (quietly).'):
+            self.assertIsNone(self.brew.tidy(kept), kept)
+
+    def test_a_word_games_question_gets_its_names(self):
+        # Service 71 shows its texts raw (ENGINE_ABI), so the translator fills `$USR` in first (Detention, 2026-11-06).
+        rewriter = Rewriter(program(0x33, words=text_words("Don't worry, $USR! Hand me a $TOOL.") + text_words('Plain.')))
+        found = self.brew.named_texts(rewriter.program, rewriter)
+        self.assertEqual([keys for _, _, keys in found], [['$USR', '$TOOL']])
 
     def test_a_long_line_is_said_in_pieces_at_sentence_ends(self):
         text = ('It\'s gym class today, and as usual, Jane has forged a doctor\'s note to get out of gym. It\'s not that she hates '
@@ -1412,6 +1462,7 @@ class BrewShimTests(unittest.TestCase):
             game.deal(draws)
             self.assertEqual(sorted(game.options), ['Fall', 'Groove', 'Move', 'Trip'])
             self.assertEqual(sorted(game.weights), [-1, -1, 1, 1])
+            game.validate()                         # and a save of it loads (Undo, the autosave), 2026-11-06
 
     def test_a_quiz_asks_in_the_narrators_gold(self):
         options = text_words('A|B')
@@ -1481,6 +1532,96 @@ class BrewShimTests(unittest.TestCase):
         for name, number in (('shs085_01_02_shs08.exp', 102), ('shs085_shs08_pt1.pud', 101), ('shs085_12_12_shs08.exp', 1212),
                              ('shs085_quiz_3.exp', 9003), ('shs085_SP1_shs08.exp', 9101)):
             self.assertEqual(self.brew.campaign_number(name), number)
+
+    def test_classic_numbers_include_the_unnumbered_files(self):
+        # Stage 3b: Trick or Treat is clsc_halloween.exp; French Connection's number ends its name; the rest follow 73.
+        for name, number in (('clsc_034_Hooky.exp', 34), ('clsc_061_BREW_Spreading_Rumors.exp', 61), ('clsc_fr_conn_014.exp', 14),
+                             ('clsc_cs_idol.exp', 74), ('clsc_halloween.exp', 75), ('clsc_mash01.exp', 76), ('clsc_mash06.exp', 81),
+                             ('clsc_winter_love_day.exp', 82)):
+            self.assertEqual(self.brew.classic_number(name), number)
+        with self.assertRaises(self.brew.StoryError):
+            self.brew.classic_number('meatloaf.exp')            # an '07 copy needs the Classic folder, to find it by title
+
+
+CLASSIC_07 = (Path(__file__).resolve().parents[2] / 'reference' / 'Other Games' / "Surviving High School '07 (BREW)" / 'VX9800-backup-complete'
+              / 'brew' / 'mod' / '32411')
+BREW_08 = Path(__file__).resolve().parents[2] / 'reference' / 'Other Games' / "Surviving High School '08 (BREW)"
+
+
+@unittest.skipUnless(importlib.util.find_spec('PIL') and (CLASSIC_07 / 'detention.exp').is_file() and BREW_08.is_dir(),
+                     "needs Pillow and the player's own BREW game files")
+class BrewCalendarTests(unittest.TestCase):
+    """A Classic story on the calendar (Stage 3a): Detention to the Rescue runs over two days, as on BREW."""
+
+    def test_its_events_run_in_order_under_a_card_for_each_date_and_a_badge_for_each_event(self):
+        import brew
+        from exp_runtime.exp import ExpArchive
+        spec = None                     # the BREW addon in the player's test library (read only)
+        for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp')):
+            archive = ExpArchive(path.read_bytes())
+            if brew.SPEC in archive.entries and archive.read(4).find(b'shsbrew') >= 0:
+                spec, addon_path = archive, path
+                break
+        if spec is None:
+            self.skipTest('needs the BREW addon in the test library')
+        name, data = brew.build_classic(CLASSIC_07 / 'detention.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        self.assertEqual(name, 'Detention_to_the_Rescue_SHS07.exp')
+        import playthrough as pt
+        session = pt.session(data, addons=[spec])
+        session.engine.random.state = 1
+        cards, badges = [], []
+        session.advance()
+        for _ in range(6000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            badge = session.engine.scene_badge
+            if badge is not None and (not badges or badges[-1] != badge.text):
+                badges.append(badge.text)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished'):
+                break
+            if action.name == 'presentation':
+                cards.append(action.details.get('subtitle'))
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == 'presentation':
+                    session.answer()
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'choice':
+                if not session.choice_ready:
+                    session.tick(250)
+                session.answer(0)
+            elif action.name in ('message_panel', 'loading'):
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            else:
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+        self.assertEqual(cards, ['Monday, April 10', 'Wednesday, April 12'])
+        self.assertEqual([b.strip() for b in badges], ['Computer Class', 'Detention', 'Extra! Extra!'])
+
+    def test_an_08_classic_copy_is_a_campaign_episode_on_the_calendar(self):
+        # Stage 3b: Funky Monkey's '08 file, which really differs from '07's, is its own `(Classic)` entry under '08.
+        import brew
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+        name, data = brew.build_classic_copy(BREW_08 / 'addons' / 'Classic' / 'clsc_038_Monkey.exp', addon_path)
+        self.assertEqual(name, 'Funky_Monkey_Classic_SHS08.exp')
+        metadata = ExpArchive(data).metadata()
+        self.assertEqual((metadata.pack_id, metadata.episode_id, metadata.title),
+                         (brew.PACK_CAMPAIGN, 9238, 'Funky Monkey (Classic) (SHS08)'))
+        # The calendar's driver is the story script's prologue: the setup queues it.
+        story = brew.decode_program(ExpArchive(data).read(brew.STORY_SCRIPT))
+        self.assertIn(brew.EVENTS_KEY, [i.operand for i in story.instructions if i.opcode == 0x1a])
 
 
 class CasingEvidenceTests(unittest.TestCase):

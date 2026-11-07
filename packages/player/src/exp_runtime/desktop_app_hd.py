@@ -170,7 +170,8 @@ SLIDER = (143, 460)                     # a volume slider's track: its left and 
 # Characters (MS3_CHARACTER_ART), Use
 # Translated Minigames (TRANSLATED_MINIGAMES) and translated Episode Titles (no CoD episode has one). Each game's own Options still has
 # them.
-ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin',
+ONE_GAME_OPTIONS = ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds',
+                    'smartphone_music', 'word_grid_skin',
                     'grids_as_memory',
                     'ch_portraits',
                     'ch_backdrop', 'arena_minigames', 'arena_skin',
@@ -220,7 +221,8 @@ class AppOptions:
         v, app = self.values(), self.app
         settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'choice_hints', 'skip_minigames',
                                             'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                                            'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin',
+                                            'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds',
+                                            'smartphone_music', 'word_grid_skin',
                                             'grids_as_memory', 'skip_ahead', 'undo',
                                             'ch_portraits', 'ch_backdrop',
                                             'arena_minigames', 'arena_skin',

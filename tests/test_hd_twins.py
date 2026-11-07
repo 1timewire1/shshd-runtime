@@ -274,6 +274,21 @@ class HiresPortraitTests(unittest.TestCase):
         self.assertEqual(resources.read_asset(26566), brew)                              # (BREW's house has no Java copy)
         self.assertEqual(self.resources(31300, assets).read_asset(26999), brew)          # only the BREW packs
 
+    def test_the_08_backgrounds_switch_shows_08s_shared_locations_in_an_07_story(self):
+        # Decision 7B: an '07-badged BREW story (packs 31100, 31200) names '07's copy of a shared location (26120 on); the
+        # switch serves '08's, 120 below, and '08's redraw of a Classic story's own picture, 500 above it, where there is one.
+        old, new, own, redraw = (picture((24, 8), colour) for colour in ((200, 10, 10, 255), (10, 200, 10, 255), (10, 10, 200, 255),
+                                                                          (200, 200, 10, 255)))
+        assets = {26120: old, 26000: new, 29000: own, 29500: redraw, 29003: own}
+        self.library.hd_art_mode = 'off'
+        self.assertEqual(self.resources(31100, assets).read_asset(26120), old)          # '07's by default
+        self.library.brew_08_backgrounds = True
+        self.assertEqual(self.resources(31100, assets).read_asset(26120), new)
+        self.assertEqual(self.resources(31200, assets).read_asset(26120), new)
+        self.assertEqual(self.resources(31100, assets).read_asset(29000), redraw)      # '08's redraw of an own picture
+        self.assertEqual(self.resources(31100, assets).read_asset(29003), own)         # (one it never redrew)
+        self.assertEqual(self.resources(31000, assets).read_asset(26120), old)          # (not an '07 story)
+
     def test_a_save_loads_with_whichever_portrait_set_is_current(self):
         # A save names the portrait the story set (26200), never the hi-res copy (+1000) the switch reads, and the
         # switch is not part of the save's content identity: a save made with either set opens under the other, and

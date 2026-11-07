@@ -113,7 +113,8 @@ class WordGame:
         return self.duration_ms > 0 and self.remaining_ms < 0 and self.selected < 0
 
     def validate(self):
-        if (len(self.good) < 2 or len(self.bad) < 3 or self.duration_ms <= 0
+        # (Two bad entries, as `deal` allows for BREW's word games: a save made in one must load, Undo's and the autosave alike.)
+        if (len(self.good) < 2 or len(self.bad) < 2 or self.duration_ms <= 0
                 or self.duration_ms > 32767 or not -32768 <= self.refresh_ms <= 32767
                 or not (-self.HD_SELECT_MS if self.hd else 0) <= self.remaining_ms <= self.duration_ms
                 or not self.refresh_ms - self.duration_ms <= self.refresh_remaining_ms <= self.refresh_ms

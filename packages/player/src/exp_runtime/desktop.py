@@ -304,6 +304,7 @@ class Desktop:
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
     ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
     java_look = False               # translated BREW episodes: the "Java '08 Look" switch (set_java_look)
+    brew_08_backgrounds = False     # '07-badged BREW episodes: the "'08 Backgrounds" switch (set_brew_08_backgrounds)
     smartphone_music = True         # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
@@ -2014,6 +2015,12 @@ class Desktop:
         from .desktop_brew_catch import library_has_java_look
         return library_has_java_look(getattr(resources, 'library', None))
 
+    def brew_08_switch(self):
+        """shshd-runtime: whether this episode shows BREW's shared locations in '07's art (BREW_08_BACKGROUNDS), so the "'08
+        Backgrounds" switch changes something."""
+        record = getattr(self.session.resources, 'record', None) or {}
+        return record.get('pack_id') in getattr(GAMES.get(game_id(self.session.resources)), 'BREW_08_BACKGROUNDS', ())
+
     def smartphone_switch(self):
         """shshd-runtime: whether this episode has the smartphone's music (SMARTPHONE_MUSIC_PACKS: translated SHS '11
         episodes), so the "Smartphone Music" switch changes something. It only picks what's heard: the engine and a save
@@ -2074,6 +2081,15 @@ class Desktop:
         self.brew_catch_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})          # both box colours' backdrops, as scaled so far
         self.badge_hd._tab_cache = None                  # a time badge on screen, with its icon
+
+    def set_brew_08_backgrounds(self, enabled):
+        """shshd-runtime: the "'08 Backgrounds" switch: the library serves '08's shared locations from the next picture drawn
+        (EpisodeResources._brew_08_background), so cached pictures are dropped. Saves name '07's, so they need nothing."""
+        self.brew_08_backgrounds = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.brew_08_backgrounds = enabled
+        self._drop_portraits()
 
     def set_ch_portraits(self, enabled):
         """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""
@@ -2814,6 +2830,7 @@ class Desktop:
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
                     **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
                     **({'java_look': self.java_look} if self.java_look_switch() else {}),
+                    **({'brew_08_backgrounds': self.brew_08_backgrounds} if self.brew_08_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
@@ -3001,6 +3018,8 @@ class Desktop:
                 self.set_ms3_characters(not self.ms3_characters)
             elif command[1] == 'java_look':
                 self.set_java_look(not self.java_look)
+            elif command[1] == 'brew_08_backgrounds':
+                self.set_brew_08_backgrounds(not self.brew_08_backgrounds)
             elif command[1] == 'smartphone_music':
                 self.smartphone_music = not self.smartphone_music
             elif command[1] == 'word_grid_skin':
@@ -3258,7 +3277,7 @@ class Desktop:
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
             hit = self._gear_hit(event.pos) or (self.viewport.collidepoint(event.pos) and any(
-                command == ('menu',) and rect.collidepoint(x, y) for rect, command in self.buttons))
+                command == ('menu',) and self._button_hit(rect, command, x, y) for rect, command in self.buttons))
             if event.type == pygame.MOUSEBUTTONDOWN and hit:
                 self.gear_pointer_down = True
                 self.press.update('down', ('menu',), self._press_token())
@@ -3353,7 +3372,8 @@ class Desktop:
                 frame = self.bg_viewport
                 x = (event.pos[0] - frame.x) * 768 / frame.width
                 y = (event.pos[1] - frame.y) * 1024 / frame.height
-                gear = 0 <= x < 150 and 880 <= y <= 1024
+                (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS     # (in points, twice the units)
+                gear = (x - 2 * cx) ** 2 + (y - 2 * cy) ** 2 <= (2 * radius) ** 2
             else:
                 x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
                 y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
@@ -3398,7 +3418,7 @@ class Desktop:
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
-            hit = (next((command for rect, command in self.buttons if rect.collidepoint(x, y)), None)
+            hit = (next((command for rect, command in self.buttons if self._button_hit(rect, command, x, y)), None)
                    if self.viewport.collidepoint(event.pos) else None)
             phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEBUTTONUP: 'up',
                      pygame.MOUSEMOTION: 'move'}[event.type]
@@ -3473,29 +3493,40 @@ class Desktop:
                 x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
                 y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
                 for rect, command in self.buttons:
-                    if rect.collidepoint(x, y):
+                    if self._button_hit(rect, command, x, y):
                         self.command(command)
                         break
         self._sync_text_input()
         return True
 
-    # HD's gear (pack 155 frame 58, 74 x 72 units) sits flush with the frame's left and bottom edges, partly in the
-    # 32-unit margin outside the UI column, so its touch area is tested in frame units, not column units.
-    GEAR_FRAME_RECT = (-3.5, 441, 74, 71)
+    # HD's gear (pack 155 frame 58, 74 x 72 units placed at (-3.5, 441)) sits flush with the frame's left and bottom
+    # edges, partly in the 32-unit margin outside the UI column, so its touch area is tested in frame units, not column
+    # units. Its frame is mostly transparent: the gear itself fills (0, 462)-(47, 511), centred at (23.5, 486.5), 26.4
+    # units at most from the centre (the pressed glow 30.8). The touch area is that circle at the glow's radius; the
+    # frame's box and the column buttons' rect (-32, 422, 92, 58) reached twice as far right and 24 units above, so taps
+    # on the bar opened the pause menu (owner, 2026-11-07).
+    GEAR_FRAME_CENTRE, GEAR_FRAME_RADIUS = (23.5, 486.5), 30
+
+    def _hd_gear_shown(self):
+        try:
+            return self.dialogue_renderer.hd_bar() is not None
+        except (AttributeError, ValueError, pygame.error):
+            return False
 
     def _gear_hit(self, position):
-        if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open:
-            return False
-        try:
-            if self.dialogue_renderer.hd_bar() is None:
-                return False
-        except (AttributeError, ValueError, pygame.error):
+        if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open or not self._hd_gear_shown():
             return False
         frame = self.bg_viewport
         unit = frame.width / FRAME_UNITS[0]
         x, y = (position[0] - frame.x) / unit, (position[1] - frame.y) / unit
-        left, top, width, height = self.GEAR_FRAME_RECT
-        return left <= x <= left + width and top <= y <= top + height
+        (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS
+        return (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2
+
+    def _button_hit(self, rect, command, x, y):
+        """A button under column point (x, y). With HD's gear, the gear's own button is `_gear_hit`, not its rect."""
+        if command == ('menu',) and self._hd_gear_shown():
+            return False
+        return rect.collidepoint(x, y)
 
     # -- warping through the story tree (SHSDTView touchesEnded / SHSDTTitleOverView / SHSDTHelpOverView) --------
 

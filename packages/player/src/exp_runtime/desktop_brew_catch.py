@@ -97,6 +97,16 @@ class BrewCatchRenderer:
     def alpha(self, game):
         return None
 
+    def java_look(self):
+        """Whether this episode wears the Java '08 Look: the switch is on and it's one of the packs the look is for (JAVA_LOOK_ART:
+        '08's, not '07's, owner, 2026-11-06)."""
+        library = getattr(self.resources, 'library', None)
+        if not getattr(library, 'java_look', False):
+            return False
+        from .games import GAMES
+        record = getattr(self.resources, 'record', None) or {}
+        return record.get('pack_id') in getattr(GAMES.get(getattr(library, 'game_id', None)), 'JAVA_LOOK_ART', ())
+
     def drop_images(self):
         """Forget the pictures loaded so far (the "Java '08 Look" switch changed)."""
         self._images.clear()
@@ -106,7 +116,7 @@ class BrewCatchRenderer:
     def draw(self, session):
         game = session.engine.brew_catch
         spec = self._spec()[0]
-        if getattr(getattr(self.resources, 'library', None), 'java_look', False) and 'java' in spec:
+        if self.java_look() and 'java' in spec:
             return self.draw_java(game, spec)
         surface = self._start(spec['frame'])
         field = pygame.Rect(LEFT + FIELD_X * SCALE, FIELD_Y * SCALE, FIELD_WIDTH * SCALE, FIELD_HEIGHT * SCALE)

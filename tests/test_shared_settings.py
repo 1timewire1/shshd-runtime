@@ -149,7 +149,7 @@ class UnlockWarpingTests(unittest.TestCase):
             grids_as_memory=False, memory_grid_switch=lambda: False, skip_ahead=False, undo=False, _undo_ready=lambda: False,
             vibration_enabled=False, music_enabled=True, sound_enabled=True, music_volume=1, sound_volume=1,
             panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
-            backdrop_switch=lambda: False, hires_switch=lambda: False, ms3_switch=lambda: False, java_look_switch=lambda: False, ch_switch=lambda: False,
+            backdrop_switch=lambda: False, hires_switch=lambda: False, ms3_switch=lambda: False, java_look_switch=lambda: False, brew_08_switch=lambda: False, ch_switch=lambda: False,
         minigames_switch=lambda: False, smartphone_switch=lambda: False)))
 
 if __name__ == '__main__':

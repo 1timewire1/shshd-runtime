@@ -14,6 +14,7 @@ panel, decompiled".
   own). The description widget is 65 (node 4): text height + its 20-point delta, plus 20 points when there is no
   character; with a portrait the text is measured with 1, 2 then 3 of ARR_LINE_OFFSETS_MENU_LEFT/RIGHT until it
   fits that many lines. Rows are 88 points each, dropped from the computation while the panel exceeds 964 points.
+  (shshd-runtime: a label past two lines makes its row taller; see hd_choice_page.)
   The footer is widget 3, or 22 when timed (its score capsule, node 13, hidden). The panel is centred,
   top = (1024 - total) / 2, and only then is a portrait's description raised to 136 points.
 - `drawSelf` (000504e4): header, description widget, a separator at the description's bottom ((179,179,179), 6
@@ -267,9 +268,22 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     footer_height = bank.layouts[footer].height
     options = [(index, label) for index, (label, enabled) in enumerate(zip(details['options'], details['enabled']))
                if enabled]
-    rows_height = len(options) * g.row_height
+    table_x, _ = g.units(g.panel_x + g.table_inset, 0)
+    table_width = (g.panel_width - 2 * g.table_inset) / d
+    hx, vy = g.label_padding
+    label_width = table_width - 2 * hx / d
+    # shshd-runtime: a label that wraps past two lines gets a taller row, one option line more for each (a translated
+    # story's long option, BREW's Male Cheerleader; owner, 2026-11-07). Native rows are all 88 points, whatever the
+    # label; a label of one or two lines keeps exactly that.
+    pitch = round((option.cap + option.gap) * d)
+    heights = []
+    for _, label in options:
+        lines = len(text_in_region(option, label, Rect(0, 0, label_width, g.row_height / d), 0x19, None, (), d)[0].lines)
+        heights.append(g.row_height + max(0, lines - 2) * pitch)
+    rows_height, shown = sum(heights), len(heights)
     while rows_height and header_height + rows_height + footer_height + description_height > g.panel_limit:
-        rows_height -= g.row_height
+        shown -= 1
+        rows_height -= heights[shown]
     total = header_height + rows_height + footer_height + description_height
     top = int((g.screen_height - total) / 2)
     if has_portrait and description_height < g.description_minimum:
@@ -291,15 +305,13 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
         description, text, Rect(x, y, rw / d, rh / d), 0x19 if has_portrait else 0x1a, color, offsets, d)
 
     rows = []
-    table_x, _ = g.units(g.panel_x + g.table_inset, 0)
-    table_width = (g.panel_width - 2 * g.table_inset) / d
-    for position, (index, label) in enumerate(options):
-        cell_top = rows_top + position * g.row_height
+    cell_top = rows_top
+    for position, ((index, label), row_height) in enumerate(zip(options, heights)):
         _, cell_y = g.units(0, cell_top)
-        hx, vy = g.label_padding
-        region_rect = Rect(table_x + hx / d, cell_y + vy / d, table_width - 2 * hx / d, (g.row_height - 2 * vy) / d)
+        region_rect = Rect(table_x + hx / d, cell_y + vy / d, label_width, (row_height - 2 * vy) / d)
         layout, origin = text_in_region(option, label, region_rect, 0x19, option_color, (), d)
-        rows.append(HdRow(index, position, Rect(table_x, cell_y, table_width, g.row_height / d), layout, origin))
+        rows.append(HdRow(index, position, Rect(table_x, cell_y, table_width, row_height / d), layout, origin))
+        cell_top += row_height
     _, table_y = g.units(0, rows_top)
     table = Rect(table_x, table_y, table_width, rows_height / d)
 
@@ -320,7 +332,7 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     return HdChoicePage(theme, top, header, header_height, tall, description_height, rows_top, rows_height,
                         footer, footer_top, footer_height, title_font, title_layout, title_origin,
                         description_layout, description_origin, description_font, tuple(rows), portrait, clip,
-                        max(0, (len(options) * g.row_height - rows_height) / d), table, timer,
+                        max(0, (sum(heights) - rows_height) / d), table, timer,
                         tuple(argb(c) for c in ROW_COLORS.get(theme, ROW_COLORS[0])), scored, geometry=g)
 
 

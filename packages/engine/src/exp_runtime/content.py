@@ -422,6 +422,21 @@ def _same_episode(a, b):
     """shshd-runtime: copies of one episode, for versions (episode_version.py): the same pack, number and release."""
     return (a['pack_id'], a['episode_id'], a.get('variant')) == (b['pack_id'], b['episode_id'], b.get('variant'))
 
+
+def _finished_save(path):
+    """shshd-runtime: a save made at its episode's end (has_saved_game); False for one that can't be read."""
+    try:
+        if path.stat().st_size > 8 * 1024 * 1024:
+            return False
+        saved = json.loads(path.read_text(encoding='utf-8'))
+        pending = saved.get('pending')
+        name = pending.get('name') if isinstance(pending, dict) else None
+        scene_loads = saved.get('scene_loads', 0)
+        return name == 'episode_exit' or (name == 'finished' and type(scene_loads) is int and scene_loads > 0)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 @contextmanager
 def _episode_inputs(paths, *, game):
     """Collect EXPs and optional native category sidecars as one import batch."""
@@ -805,6 +820,7 @@ class ContentLibrary:
         self.hires_portraits = True
         self.ms3_characters = False     # translated X360 episodes: the April build's looks (MS3_CHARACTER_ART)
         self.java_look = False          # translated BREW episodes: the Java '08 demo's look (JAVA_LOOK_ART)
+        self.brew_08_backgrounds = False    # '07-badged BREW episodes: '08's shared locations (BREW_08_BACKGROUNDS)
         self.ch_portraits = True        # CoD with its portrait addon (PORTRAIT_ADDON): Claire Hart's sharper originals
         self._portrait_addon_map = None, None
         self._twins = None
@@ -1100,9 +1116,12 @@ class ContentLibrary:
         return len(gone)
 
     def has_saved_game(self, record) -> bool:
-        """shshd-runtime: whether an episode has a game in progress (its autosave or its saved game)."""
+        """shshd-runtime: whether an episode has a game in progress (its autosave or its saved game). A save made at the
+        episode's end (Session.episode_ended: waiting at its exit, or `finished` after a scene load) is not one: the menu
+        offers no Continue for it either (MenuState.resume_path). A save that can't be read counts, so nothing is lost."""
         saves = self.directory / 'saves'
-        return any((saves / (record['id'] + suffix)).is_file() for suffix in ('.shs-auto.json', '.shs-save.json'))
+        return any(path.is_file() and not _finished_save(path)
+                   for path in (saves / (record['id'] + suffix) for suffix in ('.shs-auto.json', '.shs-save.json')))
 
     def forget_episode_files(self, record):
         """shshd-runtime: an episode's own files beside its content (Delete Episodes, or a newer version replacing it):
@@ -1673,6 +1692,7 @@ class EpisodeResources:
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
+        resource_id = self._brew_08_background(resource_id)
         java = self._java_look(resource_id)
         if java is not None:
             return self._bank_read(java)
@@ -1729,6 +1749,18 @@ class EpisodeResources:
             self._addon_pictures[resource_id] = spec['resources'].get(f'{key}:{resource_id}', spec['portraits'].get(key))
         target = self._addon_pictures[resource_id]
         return None if target is None else found[1].read(target)
+
+    def _brew_08_background(self, resource_id):
+        """shshd-runtime: '08's copy of a shared location an '07-badged BREW episode shows, while the player wants '08's
+        (library.brew_08_backgrounds; the profile's BREW_08_BACKGROUNDS: pack -> ranges of (first, end, offset): the shared locations, and a
+        Classic story's own pictures '08 redrew); else the resource itself."""
+        if resource_id < 26000 or not getattr(self.library, 'brew_08_backgrounds', False):
+            return resource_id
+        ranges = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'BREW_08_BACKGROUNDS', {}).get(self.record.get('pack_id'), ())
+        for first, end, offset in ranges:
+            if first <= resource_id < end and self._bank_archive(resource_id + offset) is not None:
+                return resource_id + offset
+        return resource_id
 
     def _java_look(self, resource_id):
         """shshd-runtime: the resource holding the Java '08 demo's copy of a translated BREW episode's addon picture, while the

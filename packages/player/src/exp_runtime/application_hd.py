@@ -342,6 +342,8 @@ class HdShell:
             settings['ms3_characters'] = state.ms3_characters
         if self.app.java_look_offered():
             settings['java_look'] = state.java_look
+        if self.app.brew_08_backgrounds_offered():
+            settings['brew_08_backgrounds'] = state.brew_08_backgrounds
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
@@ -439,6 +441,8 @@ class HdShell:
             self.app.apply_ms3_characters()
         if which == 'java_look':
             self.app.apply_java_look()
+        if which == 'brew_08_backgrounds':
+            self.app.apply_brew_08_backgrounds()
         if which == 'smartphone_music':
             self.app.apply_smartphone_music()
         if which == 'word_grid_skin':

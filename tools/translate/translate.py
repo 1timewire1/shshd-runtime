@@ -113,6 +113,9 @@ def main(argv=None):
     br.add_argument('--soundfont', type=Path, help='a General MIDI .sf2 bank for --synth sf2')
     br.add_argument('--story', type=Path, help='a Campaign story to translate instead of the addon')
     br.add_argument('--addon', type=Path, help='the addon (the command without --story writes it)')
+    br.add_argument('--classic', action='store_true', help="--story is a Classic story ('07, on the calendar)")
+    br.add_argument('--classic-copy', action='store_true', help="--story is '08's file of a Classic story, as its `(Classic)` copy")
+    br.add_argument('--classic-folder', type=Path, help="'08's addons/Classic, for an '07 file's Classic number (by title)")
     br.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -224,7 +227,12 @@ def translate_brew(args, parser):
     if args.story:
         if not args.addon:
             parser.error('--story needs --addon')
-        name, data = brew.build_story(args.story, args.addon)
+        if args.classic_copy:
+            name, data = brew.build_classic_copy(args.story, args.addon)
+        elif args.classic:
+            name, data = brew.build_classic(args.story, args.addon, args.classic_folder)
+        else:
+            name, data = brew.build_story(args.story, args.addon)
         (args.out / name).write_bytes(data)
         print(f'{name}: {len(data):,} bytes')
         return 0

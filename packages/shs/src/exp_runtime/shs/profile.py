@@ -90,7 +90,14 @@ TRANSLATED_THEME_BACKDROP = {pack: {2: 26991} for pack in (31000, 31100, 31200)}
 # shshd-runtime: the "Java '08 Look" switch (ContentLibrary.java_look): pack -> how far above one of its addon's pictures the Java
 # '08 demo's own copy is (tools/translate brew.JAVA_OFFSET): the frame's backdrop, the relationship icons, the time-badge icons
 # and the catch game's art. A picture with no copy stays as it is; the catch game draws Java's skin (desktop_brew_catch).
-JAVA_LOOK_ART = {pack: 10000 for pack in (31000, 31100, 31200)}
+# The '08 Campaign only (owner, 2026-11-06): '07's stories never had it; frames shared across the BREW games and New Rules may
+# come later.
+JAVA_LOOK_ART = {31000: 10000}
+# shshd-runtime: the "'08 Backgrounds" switch (ContentLibrary.brew_08_backgrounds; decision 7B): an '07-badged BREW story (Classic,
+# Fall '06) shows '07's copies of the 28 shared locations (tools/translate brew.LOCATION_07_OFFSET); on, '08's, which the addon
+# keeps 40 locations x 3 skies below them. pack -> (first, end, offset).
+# A Classic story's own pictures (29000 up) move to '08's redraws, 500 above them, where the addon has one (brew.OWN_08_REDRAWS).
+BREW_08_BACKGROUNDS = {pack: ((26000 + 3 * 40, 26000 + 3 * 68, -3 * 40), (29000, 29500, 500)) for pack in (31100, 31200)}
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
@@ -130,7 +137,9 @@ TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None, 31000: None,
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).
 # SHS '11's (31600) share theirs too: its `$ZOE` is another playthrough's, kept apart from the smartphone stories'.
-TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11', 31000: 'brew', 31100: 'brew', 31200: 'brew'}
+# '07 and '08 were separate apps, each with its own prefs.sav, so each keeps its own table (owner, 2026-11-06): a name typed in an
+# '07 story never reaches an '08 one, whose stories set `$USR` to Jenny when it's empty.
+TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11', 31000: 'brew', 31100: 'brew07', 31200: 'brew07'}
 # shshd-runtime: two-speaker lines in a translated pack (Session.dialogue_duet): pack -> (partner key, expression
 # key), global numbers the translator sets around a line two characters say together ("Both", "Andy and Laura"),
 # the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
@@ -164,14 +173,16 @@ PRESENTATION_RECORD = True
 # 360's green, under their own category (owner, 2026-10-31); their old place was Now Airing's "Date Unknown".
 LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
                 # Day of Diss, Monday Planner, Dating Beth, Puzzle Test (owner, 2026-11-02).
-                'SHSX360': dict(badge='X360', color=(16, 124, 16), category='Xbox 360', order={4: 2, 3: 3, 2: 4}),
+                'SHSX360': dict(badge='X360', color=(24, 150, 24), category='Xbox 360', order={4: 2, 3: 3, 2: 4}),
                 # SHS '11, the J2ME game (tools/translate shs11_story.py), in the orange of the 11 in its logo: between that
                 # 11's outline (216, 96, 32) and its gold fill (248, 176, 8), which is too pale to read on a menu's rows.
                 'SHS11': dict(badge="'11", color=(232, 120, 16), category="SHS '11"),
-                # The BREW games (tools/translate brew.py). The '08 Campaign's unnumbered stories go by their in-game dates
+                # The BREW games (tools/translate brew.py), in the Windows Mobile games' own badge colours (owner, 2026-11-06): SHS1's
+                # green for '07, SHS2's purple for '08 (X360's green was brightened beside it). The '08 Campaign's unnumbered stories go by their in-game dates
                 # (owner, 2026-11-05): Quizzes 1-3 and Special 1 Halloween.
-                'SHS07': dict(badge="'07", color=(80, 112, 200), category="SHS '07"),
-                'SHS08': dict(badge="'08", color=(200, 64, 96), category="SHS '08",
+                # '07 above '08 in the episode list (`section`: where its section sorts, before the Campaign's pack 31000; owner, 2026-11-06).
+                'SHS07': dict(badge="'07", color=(17, 77, 0), category="SHS '07", section=30999),
+                'SHS08': dict(badge="'08", color=(132, 44, 173), category="SHS '08",
                               order={9001: 302.5, 9002: 303.5, 9003: 401.5, 9101: 707.5})}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False

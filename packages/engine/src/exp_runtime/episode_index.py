@@ -247,10 +247,23 @@ def _range(records):
     return f'{lo}–{hi}' if lo != hi else str(lo)
 
 
+def section_place(record):
+    """shshd-runtime: where a translation's section sorts among the others: its game's `section` in the profile's LEGACY_GAMES
+    (the BREW '07 group above '08's, owner, 2026-11-06), else its pack."""
+    tag = record.get('legacy')
+    if tag:
+        from .games import GAMES
+        for profile in list(GAMES.values()):
+            info = getattr(profile, 'LEGACY_GAMES', {}).get(tag)
+            if info is not None and 'section' in info:
+                return info['section']
+    return record['pack_id']
+
+
 def sort_key(record):
     """Season packs first in numeric order; specials and one-off packs (ids below 100) after them. A translated
-    episode's `order` (content.legacy_fields) stands in for its id."""
-    pack = record['pack_id']
+    episode's `order` (content.legacy_fields) stands in for its id, and its game's `section` for its pack."""
+    pack = section_place(record)
     return (pack if pack >= 100 else 10 ** 6 + pack, record.get('order', record['episode_id']), record['id'])
 
 

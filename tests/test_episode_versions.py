@@ -113,6 +113,28 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(list(self.ids()), [digest(episode(1, text=b'three'))])
         self.assertFalse((saves / f'{old}.shs-auto.json').exists())
 
+    def test_a_save_made_at_the_end_is_not_a_game_in_progress(self):
+        # The menu offers no Continue for a finished episode's save, so its replacement isn't asked about (owner, 2026-11-07).
+        old = digest(episode(text=b'one'))
+        self.add(episode(text=b'one'))
+        saves = self.target / 'saves'
+        saves.mkdir(exist_ok=True)
+        auto, manual = saves / f'{old}.shs-auto.json', saves / f'{old}.shs-save.json'
+        auto.write_text('{"pending": {"name": "episode_exit", "details": {}}, "scene_loads": 2}', encoding='utf-8')
+        self.add(episode(1, text=b'two'))
+        self.assertEqual(list(self.ids()), [digest(episode(1, text=b'two'))])
+        self.assertFalse(auto.exists())
+        # A halt before any scene loads is still resumable; a manual slot with progress beside a finished autosave counts.
+        old = digest(episode(1, text=b'two'))
+        auto = saves / f'{old}.shs-auto.json'
+        auto.write_text('{"pending": {"name": "finished", "details": {}}, "scene_loads": 0}', encoding='utf-8')
+        with self.assertRaises(ReplaceSavedEpisodes):
+            self.add(episode(1, text=b'three'))
+        auto.write_text('{"pending": {"name": "episode_exit", "details": {}}, "scene_loads": 2}', encoding='utf-8')
+        (saves / f'{old}.shs-save.json').write_text('{"pending": {"name": "choice", "details": {}}}', encoding='utf-8')
+        with self.assertRaises(ReplaceSavedEpisodes):
+            self.add(episode(1, text=b'three'))
+
     def test_the_episode_being_played_stays(self):
         old = digest(episode(text=b'one'))
         self.add(episode(text=b'one'))

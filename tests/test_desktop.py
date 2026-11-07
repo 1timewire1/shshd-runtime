@@ -1256,9 +1256,11 @@ class DesktopTests(unittest.TestCase):
             resources.library.java_look = False
             ui = Desktop(Session(resources), audio=False)
             self.assertNotIn('java_look', ui._pause_settings())                 # an ordinary episode
-            for pack in (31000, 31100, 31200):                                  # the BREW games' three packs
+            for pack in (31100, 31200):                                         # '07's stories never had it (owner)
                 resources.record = dict(resources.record, pack_id=pack)
-                self.assertIs(ui._pause_settings()['java_look'], False)
+                self.assertNotIn('java_look', ui._pause_settings())
+            resources.record = dict(resources.record, pack_id=31000)            # the '08 Campaign
+            self.assertIs(ui._pause_settings()['java_look'], False)
             saved = []
             ui.on_settings = lambda: saved.append(ui.java_look)
             ui.images[26999] = None
@@ -1590,7 +1592,7 @@ class DesktopTests(unittest.TestCase):
         self.assertIs(renderer2.chrome_image(3010), same_size)
         self.assertIsNone(renderer.chrome_image(-1))
 
-    def test_hd_gear_touch_area_covers_the_icon_including_the_side_margin(self):
+    def test_hd_gear_touch_area_is_the_icon_including_the_side_margin(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
         from exp_runtime.desktop import Desktop
@@ -1606,17 +1608,19 @@ class DesktopTests(unittest.TestCase):
             ui.dialogue_renderer.hd_chrome = lambda: True
             ui.buttons.append((pygame.Rect(0, 0, 1, 1), ('menu',)))    # the screen offers the gear
             frame, unit = ui.bg_viewport, ui.bg_viewport.width / 384
-            # The gear's left third lies in the 32-unit margin outside the UI column; its top is above the
-            # old touch rectangle. The frame's corner outside the icon's box does nothing.
-            for x, y in ((0, 445), (33, 447), (33, 505), (66, 477)):
+            # The gear's left third lies in the 32-unit margin outside the UI column. Its touch area is the visible gear
+            # (centre (23.5, 486.5), radius 30), not the frame's box or the screens' column rect (-32, 422, 92, 58),
+            # which reached far onto the bar (owner, 2026-11-07).
+            menu = (pygame.Rect(-48, 633, 138, 87), ('menu',))           # the column rect, in canvas pixels
+            for x, y in ((23.5, 486.5), (1, 486), (23.5, 460), (23.5, 511), (50, 486), (42, 505)):
                 ui.menu_open = False
-                ui.buttons = [(pygame.Rect(0, 0, 1, 1), ('menu',))]
+                ui.buttons = [menu]
                 for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):     # held, then released to open
                     ui.handle_event(pygame.event.Event(kind, button=1, pos=(frame.x + x * unit, frame.y + y * unit)))
                 self.assertTrue(ui.menu_open, (x, y))
             ui.menu_open = False
-            for x, y in ((75, 477), (33, 435)):
-                ui.buttons = [(pygame.Rect(0, 0, 1, 1), ('menu',))]
+            for x, y in ((66, 477), (75, 477), (33, 447), (0, 445), (60, 455)):
+                ui.buttons = [menu]
                 for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
                     ui.handle_event(pygame.event.Event(kind, button=1, pos=(frame.x + x * unit, frame.y + y * unit)))
                 self.assertFalse(ui.menu_open, (x, y))

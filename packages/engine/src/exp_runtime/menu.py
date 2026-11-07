@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 
 from .content import is_bundled
+from .episode_index import section_place
 from .languages import TITLE_LANGUAGES, episode_title
 from .games import GAMES, game_id
 from .launcher import default_library, remember_library
@@ -50,7 +51,7 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
     sections = [EpisodeSection(key, label, tuple(episodes)) for key, (label, episodes) in groups.items()]
     sections.sort(key=lambda section: (
         section.title.casefold() != mega_label.casefold(),
-        min((e['pack_id'], e['episode_id']) for e in section.episodes), section.key))
+        min((section_place(e), e['episode_id']) for e in section.episodes), section.key))
     resumed = tuple(e for e in records if e['id'] in saved)
     if resumed:
         sections.insert(0, EpisodeSection('saved', saved_label, resumed))
@@ -66,7 +67,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES)
 
@@ -153,6 +154,8 @@ class MenuState:
                     self.ms3_characters = data['ms3_characters']
                 if type(data.get('java_look')) is bool:
                     self.java_look = data['java_look']
+                if type(data.get('brew_08_backgrounds')) is bool:
+                    self.brew_08_backgrounds = data['brew_08_backgrounds']
                 if type(data.get('smartphone_music')) is bool:
                     self.smartphone_music = data['smartphone_music']
                 if type(data.get('word_grid_skin')) is bool:
@@ -247,6 +250,7 @@ class MenuState:
         self.word_grid_skin = False    # ...their minigames in the HD word game's look
         self.ms3_characters = False    # translated X360 episodes: the April build's looks, else the May build's (ContentLibrary)
         self.java_look = False         # translated BREW episodes: the Java '08 demo's look, else BREW's (ContentLibrary)
+        self.brew_08_backgrounds = False   # '07-badged BREW episodes: '08's shared locations, else '07's (decision 7B)
         # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
         self.ch_portraits = True
         self.ch_backdrop = True
@@ -327,7 +331,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls,

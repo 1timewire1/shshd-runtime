@@ -419,6 +419,7 @@ class Application:
         self.apply_hires_portraits()
         self.apply_ms3_characters()
         self.apply_java_look()
+        self.apply_brew_08_backgrounds()
         self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
@@ -1006,6 +1007,7 @@ class Application:
         self.apply_hires_portraits()
         self.apply_ms3_characters()
         self.apply_java_look()
+        self.apply_brew_08_backgrounds()
         self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
@@ -1120,6 +1122,12 @@ class Application:
         from .desktop_brew_catch import library_has_java_look
         return library_has_java_look(self.library)
 
+    def brew_08_backgrounds_offered(self):
+        """Whether the library has an episode the "'08 Backgrounds" switch changes (BREW_08_BACKGROUNDS: '07-badged BREW
+        episodes)."""
+        packs = getattr(GAMES.get(self.library.game_id), 'BREW_08_BACKGROUNDS', ()) if self.library else ()
+        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+
     def smartphone_music_offered(self):
         """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
         SHS '11 episodes)."""
@@ -1168,6 +1176,12 @@ class Application:
         self.library.java_look = self.state.java_look
         if self.game:
             self.game.set_java_look(self.state.java_look)
+
+    def apply_brew_08_backgrounds(self):
+        """The "'08 Backgrounds" switch reaches the library; a paused episode draws its pictures afresh."""
+        self.library.brew_08_backgrounds = self.state.brew_08_backgrounds
+        if self.game:
+            self.game.set_brew_08_backgrounds(self.state.brew_08_backgrounds)
 
     def apply_smartphone_music(self):
         """The "Smartphone Music" switch reaches a paused episode."""
@@ -1381,6 +1395,7 @@ class Application:
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
         library.java_look = state.java_look
+        library.brew_08_backgrounds = state.brew_08_backgrounds
         library.ch_portraits = state.ch_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
@@ -2004,6 +2019,7 @@ class Application:
         self.game.hires_portraits = self.state.hires_portraits
         self.game.ms3_characters = self.state.ms3_characters
         self.game.java_look = self.state.java_look
+        self.game.brew_08_backgrounds = self.state.brew_08_backgrounds
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
@@ -2113,6 +2129,7 @@ class Application:
         self.state.hires_portraits = self.game.hires_portraits
         self.state.ms3_characters = self.game.ms3_characters
         self.state.java_look = self.game.java_look
+        self.state.brew_08_backgrounds = self.game.brew_08_backgrounds
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory
@@ -2375,7 +2392,7 @@ class Application:
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
-                               'arena_minigames',
+                               'arena_minigames', 'brew_08_backgrounds',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
@@ -2391,6 +2408,8 @@ class Application:
                     self.apply_ms3_characters()
                 if key == 'java_look':
                     self.apply_java_look()
+                if key == 'brew_08_backgrounds':
+                    self.apply_brew_08_backgrounds()
                 if key == 'smartphone_music':
                     self.apply_smartphone_music()
                 if key == 'word_grid_skin':

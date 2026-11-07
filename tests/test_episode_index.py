@@ -198,6 +198,18 @@ class RowTests(unittest.TestCase):
         self.assertEqual([r['titles'][0] for r in row.episodes],
                          ['King of Diss', 'Dancing Queen', 'Making Some Dough', 'King of Diss Lite'])
 
+    def test_the_brew_07_group_comes_before_the_08_campaign(self):
+        # Owner, 2026-11-06: '07's section sorts above '08's although its pack (31100) is the higher (LEGACY_GAMES `section`),
+        # in the picker's rows and the plain episode list alike.
+        from exp_runtime.menu import group_episodes
+        campaign = dict(record(1, 31000, 206, 'Wendy vs. Lenny'), legacy='SHS08', category="SHS '08")
+        classic = dict(record(2, 31100, 34, 'Playing Hooky'), legacy='SHS07', category="SHS '07")
+        rows = self.rows([campaign, classic], EpisodeCatalog())
+        self.assertEqual([r.title for r in rows], ["SHS '07", "SHS '08"])
+        sections = group_episodes([campaign, classic], EpisodeCatalog(), mega_label='Mega Packs', novel_label='Novel',
+                                  saved_label='Saved')
+        self.assertEqual([s.episodes[0]['pack_id'] for s in sections], [31100, 31000])
+
     def test_bundled_episodes_are_mega_packs_and_first(self):
         records = [record(1, 101, 1, 'A', variant='hd'), record(2, 5, 9, 'Football', variant='hd')]
         rows = self.rows(records, EpisodeCatalog(), bundled=lambda r: r['pack_id'] == 5)
