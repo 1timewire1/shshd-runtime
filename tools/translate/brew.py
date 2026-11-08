@@ -45,8 +45,9 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 import newrules  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 5   # 2: the event icons; 3: the Java '08 look;
-# 4: Classic stories' own backgrounds; 5: '08's redraws of them
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 7   # 2: the event icons; 3: the Java '08 look;
+# 4: Classic stories' own backgrounds; 5: '08's redraws of them; 6: the stories' own catch picture (OWN_CATCH_PICTURES); 7: that
+# picture as an event icon too (OWN_ICON_BASE), and King of the Road's Michael centred (CENTRE_OWN_BODY)
 PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
@@ -118,6 +119,19 @@ START_MONTH_KEY, START_DATE_KEY, WEEKDAY_KEY, DAY_START_KEY, LAST_DAY_KEY, DAY_K
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 EVENT_BASE, EVENT_STRIDE, MOST_EVENTS = 31100, 24, 32     # event n's numbers at EVENT_BASE + (n - 1) x EVENT_STRIDE
 EVENT_MINUTE, EVENT_DURATION, EVENT_ICON, EVENT_FLAG, EVENT_STATE, EVENT_DAY, EVENT_FIELDS = 0, 1, 2, 3, 4, 5, 8
+# The SHS script an event runs (the story's, or another its setup schedules: CS Idol's school days), and on a recurring event's
+# first copy, how many copies it has (34: one per day; 35 sets a field on them all). Stage 5.
+EVENT_SCRIPT, EVENT_COPIES = 6, 7
+NO_BADGE = -32768                       # an event's icon when it has no name, and so no badge
+WEEKLY_FIRST_KEY = 31082                # 34's answer, the first copy's number (read into R with 55)
+# A badge is up (it goes after the next message), the running event's badge icon, and where a date caption was just formatted
+# (date_caption): saved numbers, so that every script of a story sees them (CS Idol's school days run a script of their own).
+BADGE_UP_KEY, BADGE_ICON_KEY, DATE_CAPTION_KEY = 31083, 31084, 31085
+OPENER_WORDS = 30                       # the longest event opener (in words of two letters) that dots() looks at: 60 characters
+# The running event's planner slot (its minute, to the half hour, as the planner's rows), for its badge's time; and an event just
+# started, whose first line is its opener (dots), badge or not (owner, 2026-11-07).
+BADGE_TIME_KEY, OPENER_KEY = 31086, 31087
+BADGE_TIME_FORMAT = '%d:%d%d %s - '     # `3:00 PM - `, then the event's name
 WAITING, PENDING, DONE = 0, 1, 2                 # an event's state: not reached, due with no time of its own, run
 EVENT_TEXT_KEY, EVENT_NAME_KEY = '$BREWEV%d', '$BREWNAME%d'     # each event's text (7) and name (its badge)
 SLOT_MINUTES, DAY_MINUTES = 30, 1440
@@ -139,6 +153,9 @@ CAPTION_ICONS = ((('driving', 'riding'), 113), (('home', 'your room'), 166), (('
 CAPTION_ICON = 108
 WEEKDAYS = ('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
 MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+# A school day's caption, `School\nMarch %d` (CS Idol, Artistic Differences, The School Paper: formatted with today's date, 43, then
+# said): the badge `March 1 - School`, as Battle of the Schools: Guys words its badges (owner, 2026-11-07).
+DATE_CAPTION = re.compile(rb'^([^\n]+)\n(' + b'|'.join(m.encode() for m in MONTHS) + rb') %d$')
 EVENT_NAME = 'Event'
 PLAYER = 0                              # BREW's character 0, You, is the player: SHS's primary speaker (74)
 NAME_WORDS = 24                         # room for a character's name, for a voice with no picture
@@ -175,6 +192,15 @@ CATCH_WORDS = {80: ('Heart', 'Love'), 82: ('Smiley', 'Grin'), 102: ('Paintbrush'
                157: ('Steak', 'Meat'), 158: ('Suit', 'Tuxedo'), 160: ('Taco', 'Snack'), 162: ('Ticket', 'Coupon'), 163: ('Toilet', 'Flush'),
                164: ('TV', 'Channel'), 165: ('Zombie', 'Brains'), 166: ('House', 'Home'), 279: ('Snake', 'Slither')}
 CATCH_GOOD_WORDS, CATCH_BAD_WORDS = ('Catch it!', 'Grab it!'), ('Dodge it!', 'Avoid it!')   # where a story's own pictures have no words
+# A story's own pictures that its catch game shows: {picture: the SHA-1 of its BMP}. Invisible Man, Skating Dating and CS Idol (as an
+# event's icon) each carry the same yawning face as 26501, in their 26500 bundle; other stories' 26501 is something else, so a story
+# gets this picture's size only when its own copy is this one, and otherwise its catch game stops as before.
+OWN_CATCH_PICTURES = {26501: '8204515d46f4e7a38e12bb9e4f749bb27b011893'}
+OWN_ICON_BASE = 26600                   # + n: the n-th of OWN_CATCH_PICTURES as an event icon (CS Idol's Practice shows the yawning face)
+# A look whose body is a story's own whole picture (entry 0, 26000 up) is centred on that picture when its hotspot sits this many
+# art pixels or more off its middle: King of the Road's Michael (4.5 to the left; BREW draws him off-centre too). The other own-picture
+# looks (Emalee, Yewande, Stephanie, Josh) are centred already (owner, 2026-11-07).
+CENTRE_OWN_BODY = 2
 CATCH_TITLE, CATCH_TEXT = 'Think fast!', 'Catch the good things. Dodge the bad.'
 # The catch game's own points, which mean nothing in the word game played in its place (`45 pts to pass.`, `55 points to win!`); its
 # generic page title, which becomes the smartphone's banner there (its word games are titled `Snacks!`, `Fight!` and the like).
@@ -510,12 +536,45 @@ def push_face(s, expression):
     s.label(done)
 
 
+def dots(s, shown, context):
+    """With a badge just up (the narration that opens an event, as `Lunch time.`), a short line that ends in a single stop ends
+    in three, so it runs on into what follows (owner, 2026-11-07): `shown` then points at a copy in context's dots buffer."""
+    at, last_word, last, before = (context['dots'] + k for k in range(4))
+    plain, walk, found, full = s.label(), s.label(), s.label(), s.label()
+    s.emit(0x40, context['opener_now']); get_global(s, BADGE_UP_KEY); s.emit(0x11); s.jump_if_zero(plain)
+    s.emit(0x40, shown); s.push(0); s.emit(0x0e); s.jump_if_nonzero(plain)              # (a string handle or nothing: as it is)
+    s.emit(0x40, shown); s.push(0x7FF5); s.emit(0x0d); s.jump_if_nonzero(plain)
+    set_word(s, at, lambda: s.emit(0x40, shown))
+    set_word(s, last_word, lambda: s.push(0))
+    s.label(walk)
+    s.emit(0x40, at); s.emit(0x40, shown); s.emit(0x51); s.push(OPENER_WORDS); s.emit(0x0c); s.jump_if_nonzero(plain)
+    s.emit(0x40, at); s.emit(0x3f); s.jump_if_zero(full)                                 # a word of 0: the last ended the word before
+    s.emit(0x40, at); s.emit(0x3f); s.push(256); s.emit(0x54); s.jump_if_zero(found)     # its second letter is the end
+    set_word(s, last_word, lambda: (s.emit(0x40, at), s.emit(0x3f)))
+    set_word(s, at, lambda: (s.emit(0x40, at), s.push(1), s.emit(0x50)))
+    s.jump(walk)
+    s.label(found)
+    set_word(s, last, lambda: (s.emit(0x40, at), s.emit(0x3f), s.push(256), s.emit(0x53)))
+    set_word(s, before, lambda: (s.emit(0x40, last_word), s.push(256), s.emit(0x54)))
+    end = s.label()
+    s.jump(end)
+    s.label(full)
+    set_word(s, last, lambda: (s.emit(0x40, last_word), s.push(256), s.emit(0x54)))
+    set_word(s, before, lambda: (s.emit(0x40, last_word), s.push(256), s.emit(0x53)))
+    s.label(end)
+    s.emit(0x40, last); s.push(ord('.')); s.emit(0x0b); s.jump_if_nonzero(plain)
+    s.emit(0x40, before); s.push(ord('.')); s.emit(0x0a); s.jump_if_nonzero(plain)
+    s.push(context['dots_buffer']); s.text('%s..'); s.emit(0x40, shown); s.call(22, 3)
+    set_word(s, shown, lambda: s.push(context['dots_buffer']))
+    s.label(plain)
+
+
 def say(s, text, speaker, expression, context):
     """SHS's dialogue for `text` under BREW's speaker (callables pushing them): no speaker or Event is the narrator, a character with no
     picture says it under its name with none (service 76), and anyone else with their face. A whole line in brackets loses them: it's
     plain narration from the narrator, and a thought from anyone else. What's shown is kept as the last line, for a choice's question."""
     done, found, spoken = s.label(), s.label(), s.label()
-    shown, twin, badge_up = context['last_line'], context['line_twin'], context['badge_up']
+    shown, twin = context['last_line'], context['line_twin']
     set_word(s, shown, text)
     set_word(s, twin, lambda: s.push(-1))
     # An empty line (the story's first, its title: title_line) isn't shown.
@@ -525,9 +584,17 @@ def say(s, text, speaker, expression, context):
         other = s.label()
         s.emit(0x40, shown); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
         s.push(icon); s.push(badge); s.call(90, 2)
-        set_word(s, badge_up, lambda: s.push(1))
+        set_global(s, BADGE_UP_KEY, lambda: s.push(1))
         s.jump(done)
         s.label(other)
+    if context.get('date_captions'):
+        not_date = s.label()
+        s.emit(0x40, shown); get_global(s, DATE_CAPTION_KEY); s.emit(0x0a); s.jump_if_zero(not_date)
+        set_global(s, DATE_CAPTION_KEY, lambda: s.push(0))
+        get_global(s, BADGE_ICON_KEY); s.emit(0x40, shown); s.call(90, 2)
+        set_global(s, BADGE_UP_KEY, lambda: s.push(1))
+        s.jump(done)
+        s.label(not_date)
     for address, bare in context['bracketed']:
         other = s.label()
         s.emit(0x40, shown); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
@@ -536,6 +603,8 @@ def say(s, text, speaker, expression, context):
         s.jump(found)
         s.label(other)
     s.label(found)
+    set_word(s, context['opener_now'], lambda: get_global(s, OPENER_KEY))
+    set_global(s, OPENER_KEY, lambda: s.push(0))
 
     def output(end):
         narrated, voice, plain, unnamed = s.label(), s.label(), s.label(), s.label()
@@ -559,13 +628,14 @@ def say(s, text, speaker, expression, context):
         s.push(context['name_buffer']); s.emit(0x40, shown); s.call(76, 2)
         s.jump(end)
         s.label(narrated)
+        dots(s, shown, context)
         s.emit(0x40, shown); s.push(NARRATOR); s.call(13, 2)
         s.jump(end)
     def clear_badge(then):
         """Take a time badge away once the message it came with has been read, then go on to `then`."""
-        s.emit(0x40, badge_up); s.jump_if_zero(then)
+        get_global(s, BADGE_UP_KEY); s.jump_if_zero(then)
         s.push(-1); s.push(-1); s.call(90, 2)
-        set_word(s, badge_up, lambda: s.push(0))
+        set_global(s, BADGE_UP_KEY, lambda: s.push(0))
         s.jump(then)
     # A line longer than LONGEST_LINE goes out in pieces (long_lines: [count, piece...]), each as the line itself would.
     table, index = context['pieces'], context['pieces'] + 1
@@ -624,6 +694,10 @@ def line(rewriter, pc, argc, context):
     """72: (speaker, text, expression), dropped with no scene open (shs08.5.mod)."""
     def build(s):
         done = s.label()
+        # A name plate (15) is for the text 74 shows (16's), not a speaker's line: one set by a helper that queues a line and
+        # never shows it (Trouble with MoonDog's Radio, Goth Girls Cry Too's Phone; Stage 5) goes, as Tardy-Slip's 72 names
+        # the speaker.
+        set_word(s, context['plate'], lambda: s.push(-1))
         s.push(DEPTH_KEY); s.call(55, 1); s.push_result(); s.push(1); s.emit(0x0e); s.jump_if_nonzero(done)
         set_global(s, SPEAKER_KEY, lambda: s.arg(1))
         set_global(s, EXPRESSION_KEY, lambda: s.arg(3))
@@ -1039,7 +1113,7 @@ def named_words(program, rewriter, start):
 def calendar_words(rewriter):
     """What a Classic story's scripts need for the calendar (calendar_step), added only to theirs."""
     return dict(key_buffer=rewriter.words([0] * 16), cal_j=rewriter.words([0]), cal_best=rewriter.words([0]),
-                cal_slot=rewriter.words([0]), cal_t=rewriter.words([0, 0, 0]), date_buffer=rewriter.words([0] * 24),
+                cal_slot=rewriter.words([0]), cal_t=rewriter.words([0, 0, 0]), date_buffer=rewriter.words([0] * 24), badge_buffer=rewriter.words([0] * 32),
                 month_days=rewriter.words(MONTH_DAYS), weekday_names=rewriter.words([rewriter.text(n) for n in WEEKDAYS]),
                 month_names=rewriter.words([rewriter.text(n) for n in MONTHS]))
 
@@ -1238,8 +1312,8 @@ def push_next_school_day(s, day):
     s.label(end)
 
 
-def write_date(s, context, day):
-    """`Wednesday, April 12` for day `day` into the context's date buffer (as BREW's planner heads a day)."""
+def date_of(s, context, day):
+    """Day `day`'s month (1-12, in cal_t) and date (cal_t + 1), as brew-calendar.js `dateOf`."""
     m, d, k = context['cal_t'], context['cal_t'] + 1, context['cal_t'] + 2
     loop, done, same = s.label(), s.label(), s.label()
     set_word(s, m, lambda: get_global(s, START_MONTH_KEY))
@@ -1255,6 +1329,12 @@ def write_date(s, context, day):
     set_word(s, k, lambda: (s.emit(0x40, k), s.push(1), s.emit(0x50)))
     s.jump(loop)
     s.label(done)
+
+
+def write_date(s, context, day):
+    """`Wednesday, April 12` for day `day` into the context's date buffer (as BREW's planner heads a day)."""
+    m, d = context['cal_t'], context['cal_t'] + 1
+    date_of(s, context, day)
     s.push(context['date_buffer']); s.text('%s, %s %d')
     s.push(context['weekday_names']); push_weekday(s, day); s.emit(0x50); s.emit(0x3f)
     s.push(context['month_names']); s.emit(0x40, m); s.push(1); s.emit(0x51); s.emit(0x50); s.emit(0x3f)
@@ -1279,31 +1359,57 @@ def calendar_setup(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('calendar_setup', context['rid']), build)
 
 
-def schedule_calendar(rewriter, pc, argc, context):
-    """33 with the calendar: the event joins the list, waiting, with no fields yet; its text and name are kept under its number.
-    Returns its number (0 for no script, as BREW)."""
-    buffer = context['key_buffer']
+def push_event_script(s, context, script):
+    """Push the SHS script that BREW script `script` (a callable) became (context's script map; the story's for any other)."""
+    end = s.label()
+    for brew_id, shs_id in sorted(context['script_map'].items()):
+        if shs_id == STORY_SCRIPT:
+            continue
+        other = s.label()
+        script(); s.push(brew_id); s.emit(0x0a); s.jump_if_zero(other)
+        s.push(shs_id); s.jump(end)
+        s.label(other)
+    s.push(STORY_SCRIPT)
+    s.label(end)
 
+
+def add_event(s, context, script, minute, duration, icon, flag, text, name, day):
+    """A new event on the list (EVENTS_KEY up by one), waiting, with no fields yet; its text and name kept under its number."""
+    buffer, field, fields_done = context['key_buffer'], s.label(), s.label()
+    set_global(s, EVENTS_KEY, lambda: (get_global(s, EVENTS_KEY), s.push(1), s.emit(0x50)))
+    number = lambda: get_global(s, EVENTS_KEY)
+    for offset, value in ((EVENT_MINUTE, minute), (EVENT_DURATION, duration), (EVENT_ICON, icon), (EVENT_FLAG, flag)):
+        event_set(s, number, offset, value)
+    event_set(s, number, EVENT_STATE, lambda: s.push(WAITING))
+    event_set(s, number, EVENT_DAY, day)
+    event_set(s, number, EVENT_SCRIPT, lambda: push_event_script(s, context, script))
+    event_set(s, number, EVENT_COPIES, lambda: s.push(1))
+    set_word(s, context['cal_j'], lambda: s.push(0))
+    s.label(field)
+    s.emit(0x40, context['cal_j']); s.push(16); s.emit(0x0e); s.jump_if_zero(fields_done)
+    event_key(s, number, EVENT_FIELDS); s.emit(0x40, context['cal_j']); s.emit(0x50); s.push(0); s.call(54, 2)
+    set_word(s, context['cal_j'], lambda: (s.emit(0x40, context['cal_j']), s.push(1), s.emit(0x50)))
+    s.jump(field)
+    s.label(fields_done)
+    keyed_text(s, EVENT_TEXT_KEY, number, buffer); s.push(buffer); text(); s.call(46, 2)
+    keyed_text(s, EVENT_NAME_KEY, number, buffer); s.push(buffer); name(); s.call(46, 2)
+    named = s.label()
+    name(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(named)   # (a string handle, 0x7FF5 on, or any address not in the data:
+    name(); s.push(0x7FF5); s.emit(0x0e); s.jump_if_zero(named) #  taken as named)
+    name(); s.emit(0x3f); s.jump_if_nonzero(named)              # (the name's first two letters: 0 for none)
+    event_set(s, number, EVENT_ICON, lambda: s.push(NO_BADGE))
+    s.label(named)
+
+
+def schedule_calendar(rewriter, pc, argc, context):
+    """33 with the calendar: (script, text, name, caption, month, day, minute, duration, icon, flag). The event joins the list.
+    Returns its number (0 for no script, as BREW)."""
     def build(s):
-        none, field, fields_done = s.label(), s.label(), s.label()
+        none, end = s.label(), s.label()
         s.arg(1); s.push(0); s.emit(0x0f); s.jump_if_nonzero(none)
-        set_global(s, EVENTS_KEY, lambda: (get_global(s, EVENTS_KEY), s.push(1), s.emit(0x50)))
-        number = lambda: get_global(s, EVENTS_KEY)
-        for offset, i in ((EVENT_MINUTE, 7), (EVENT_DURATION, 8), (EVENT_ICON, 9), (EVENT_FLAG, 10)):
-            event_set(s, number, offset, lambda i=i: s.arg(i))
-        event_set(s, number, EVENT_STATE, lambda: s.push(WAITING))
-        event_set(s, number, EVENT_DAY, lambda: push_day_index(s, context, lambda: s.arg(5), lambda: s.arg(6)))
-        set_word(s, context['cal_j'], lambda: s.push(0))
-        s.label(field)
-        s.emit(0x40, context['cal_j']); s.push(16); s.emit(0x0e); s.jump_if_zero(fields_done)
-        event_key(s, number, EVENT_FIELDS); s.emit(0x40, context['cal_j']); s.emit(0x50); s.push(0); s.call(54, 2)
-        set_word(s, context['cal_j'], lambda: (s.emit(0x40, context['cal_j']), s.push(1), s.emit(0x50)))
-        s.jump(field)
-        s.label(fields_done)
-        keyed_text(s, EVENT_TEXT_KEY, number, buffer); s.push(buffer); s.arg(2); s.call(46, 2)
-        keyed_text(s, EVENT_NAME_KEY, number, buffer); s.push(buffer); s.arg(3); s.call(46, 2)
+        add_event(s, context, lambda: s.arg(1), lambda: s.arg(7), lambda: s.arg(8), lambda: s.arg(9), lambda: s.arg(10),
+                  lambda: s.arg(2), lambda: s.arg(3), lambda: push_day_index(s, context, lambda: s.arg(5), lambda: s.arg(6)))
         s.push(EVENTS_KEY); s.call(55, 1)                   # R: its number
-        end = s.label()
         s.jump(end)
         s.label(none)
         s.result(0)
@@ -1311,16 +1417,126 @@ def schedule_calendar(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('schedule_calendar', context['rid']), build)
 
 
+WEEKDAY_ABBREVIATIONS = ('su', 'mo', 'tu', 'we', 'th', 'fr', 'sa')
+
+
+def weekday_mask(text):
+    """The weekdays a 34 call names (`Mon|Wed|Fri`, by their first two letters, as brew-calendar.js `weekdaysBetween`), as bits."""
+    mask = 0
+    for part in text.replace(',', '|').split('|'):
+        key = part.strip().lower()[:2]
+        if key in WEEKDAY_ABBREVIATIONS:
+            mask |= 1 << WEEKDAY_ABBREVIATIONS.index(key)
+    return mask
+
+
+def schedule_weekly(rewriter, pc, argc, context):
+    """34: (script, text, name, caption, weekdays, month, day, to month, to day, minute, duration, icon, flag): an event on each of
+    those weekdays from the one date to the other, as copies on the list (one a day; 35 sets a field on them all). Returns the
+    first's number (0 for no script, as BREW). The weekdays are a constant the translator reads (CS Idol, Stage 5)."""
+    program = context['program']
+    values = newrules.pushed_values(program, rewriter.code_base + pc, argc)
+    weekdays = values[4] if values and len(values) > 4 else None
+    if isinstance(weekdays, int):                           # (a string's data address: CS Idol's `Mo,We,Fr` is at 65)
+        weekdays = next((text for address, text, _ in data_strings(program) if address == weekdays), None)
+    if not isinstance(weekdays, (bytes, str)):
+        raise StoryError(f'34 at {pc}: its weekdays are not a constant')
+    mask = weekday_mask(weekdays.decode('latin-1') if isinstance(weekdays, bytes) else weekdays)
+    if context['kind'] != 'calendar':
+        raise StoryError('34 schedules an event on several days, which needs the calendar driver')
+    first, day = context['cal_t'] + 2, context['cal_best']        # (scratch: the first copy's number, and the day)
+
+    def build(s):
+        none, end, loop, next_day, done = s.label(), s.label(), s.label(), s.label(), s.label()
+        s.arg(1); s.push(0); s.emit(0x0f); s.jump_if_nonzero(none)
+        set_word(s, first, lambda: (get_global(s, EVENTS_KEY), s.push(1), s.emit(0x50)))
+        set_word(s, day, lambda: push_day_index(s, context, lambda: s.arg(6), lambda: s.arg(7)))
+        s.label(loop)
+        s.emit(0x40, day); push_day_index(s, context, lambda: s.arg(8), lambda: s.arg(9)); s.emit(0x0f); s.jump_if_zero(done)
+        # Bit `weekday` of the mask: the mask divided by 2 ** weekday, odd.
+        power, shifted = s.label(), s.label()
+        s.push(mask)
+        set_word(s, context['cal_j'], lambda: push_weekday(s, lambda: s.emit(0x40, day)))
+        s.label(power)
+        s.emit(0x40, context['cal_j']); s.jump_if_zero(shifted)
+        s.push(2); s.emit(0x53)
+        set_word(s, context['cal_j'], lambda: (s.emit(0x40, context['cal_j']), s.push(1), s.emit(0x51)))
+        s.jump(power)
+        s.label(shifted)
+        s.push(2); s.emit(0x54); s.jump_if_zero(next_day)
+        add_event(s, context, lambda: s.arg(1), lambda: s.arg(10), lambda: s.arg(11), lambda: s.arg(12), lambda: s.arg(13),
+                  lambda: s.arg(2), lambda: s.arg(3), lambda: s.emit(0x40, day))
+        s.label(next_day)
+        set_word(s, day, lambda: (s.emit(0x40, day), s.push(1), s.emit(0x50)))
+        s.jump(loop)
+        s.label(done)
+        # The first copy keeps how many there are; with none, nothing was added and the answer is 0.
+        nothing = s.label()
+        get_global(s, EVENTS_KEY); s.emit(0x40, first); s.emit(0x0e); s.jump_if_nonzero(nothing)
+        event_set(s, lambda: s.emit(0x40, first), EVENT_COPIES,
+                  lambda: (get_global(s, EVENTS_KEY), s.emit(0x40, first), s.emit(0x51), s.push(1), s.emit(0x50)))
+        set_global(s, WEEKLY_FIRST_KEY, lambda: s.emit(0x40, first))
+        s.push(WEEKLY_FIRST_KEY); s.call(55, 1)             # R: the first copy's number
+        s.jump(end)
+        s.label(nothing)
+        s.result(0)
+        s.jump(end)
+        s.label(none)
+        s.result(0)
+        s.label(end)
+    rewriter.redirect(pc, ('schedule_weekly', context['rid'], pc), build)
+
+
+def today_date(rewriter, pc, argc, context):
+    """43: (month, date) addresses: today's month and date (42: the next school day's), as brew-calendar.js `dateOf`."""
+    service = rewriter.code[pc][1] >> 8
+    m, d = context['cal_t'], context['cal_t'] + 1
+
+    def build(s):
+        if service == 42:
+            set_word(s, context['cal_best'], lambda: push_next_school_day(s, lambda: get_global(s, DAY_KEY)))
+            date_of(s, context, lambda: s.emit(0x40, context['cal_best']))
+        else:
+            date_of(s, context, lambda: get_global(s, DAY_KEY))
+        s.arg(1); s.emit(0x40, m); s.emit(0x3e); s.emit(0x15)
+        s.arg(2); s.emit(0x40, d); s.emit(0x3e); s.emit(0x15)
+        s.result(0)
+    rewriter.redirect(pc, ('today_date', context['rid'], service), build)
+
+
 def field_set_calendar(rewriter, pc, argc, context):
     """35 with the calendar: (event, field, value) on that event's own fields, which its script reads (8) when it runs."""
     def build(s):
-        skip = s.label()
+        skip, each, done = s.label(), s.label(), s.label()
         s.arg(1); s.push(1); s.emit(0x0e); s.arg(2); s.push(0); s.emit(0x0e); s.emit(0x11)
         s.arg(2); s.push(15); s.emit(0x0c); s.emit(0x11); s.jump_if_nonzero(skip)
-        event_key(s, lambda: s.arg(1), EVENT_FIELDS); s.arg(2); s.emit(0x50); s.arg(3); s.call(54, 2)
+        # (A recurring event's copies (34) all take it: copies 0 to EVENT_COPIES - 1 after the one named.)
+        s.push(0)                                           # local 0: the copy
+        s.label(each)
+        s.emit(0x41, 0); event_get(s, lambda: s.arg(1), EVENT_COPIES); s.emit(0x0e); s.jump_if_zero(done)
+        event_key(s, lambda: (s.arg(1), s.emit(0x41, 0), s.emit(0x50)), EVENT_FIELDS); s.arg(2); s.emit(0x50); s.arg(3)
+        s.call(54, 2)
+        s.emit(0x23, 0); s.emit(0x41, 0); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(each)
+        s.label(done)
         s.label(skip)
         s.result(0)
     rewriter.redirect(pc, 'field_set_calendar', build)
+
+
+def push_badge_time(s):
+    """Push the running event's planner slot (BADGE_TIME_KEY) as BADGE_TIME_FORMAT's four values: hour (1-12), the minutes' two
+    digits, and `AM` or `PM`."""
+    minute = lambda: get_global(s, BADGE_TIME_KEY)
+    minute(); s.push(60); s.emit(0x53); s.push(11); s.emit(0x50); s.push(12); s.emit(0x54); s.push(1); s.emit(0x50)
+    minute(); s.push(60); s.emit(0x54); s.push(10); s.emit(0x53)
+    minute(); s.push(10); s.emit(0x54)
+    pm, done = s.label(), s.label()
+    minute(); s.push(720); s.emit(0x0e); s.jump_if_zero(pm)
+    s.text('AM'); s.jump(done)
+    s.label(pm)
+    s.text('PM')
+    s.label(done)
 
 
 def calendar_step(s, context, title_card, end_story, date_card):
@@ -1464,12 +1680,30 @@ def calendar_step(s, context, title_card, end_story, date_card):
     s.text(EVENT_TEXT); s.push(context['key_buffer']); s.text(''); s.push(-1); s.call(47, 3); s.push_result(); s.call(46, 2)
     s.push(STORY_SCRIPT); s.push(0); s.call(10, 2)
     badge, icon, chosen, started = s.label(), s.label(), s.label(), s.label()
+    set_global(s, BADGE_TIME_KEY, lambda: (event_get(s, B, EVENT_MINUTE), s.push(SLOT_MINUTES), s.emit(0x53), s.push(SLOT_MINUTES),
+                                           s.emit(0x52)))
+    # The event's badge icon (an icon outside BREW's own small pictures, as CS Idol's 26501, one of its registered pictures, or none,
+    # takes the location badge), kept for a date caption its script shows (date_caption).
+    for n, picture in enumerate(sorted(OWN_CATCH_PICTURES)):
+        if picture not in context.get('own_missing', set(OWN_CATCH_PICTURES)):
+            not_own = s.label()
+            event_get(s, B, EVENT_ICON); s.push(picture); s.emit(0x0a); s.jump_if_zero(not_own)
+            set_global(s, BADGE_ICON_KEY, lambda n=n: s.push(OWN_ICON_BASE + n)); s.jump(chosen)
+            s.label(not_own)
+    event_get(s, B, EVENT_ICON); s.push(EVENT_ICONS.start); s.emit(0x0e)
+    event_get(s, B, EVENT_ICON); s.push(EVENT_ICONS.stop); s.emit(0x0d); s.emit(0x11); s.jump_if_zero(icon)
+    set_global(s, BADGE_ICON_KEY, lambda: s.push(LOCATION_BADGE)); s.jump(chosen)
+    s.label(icon)
+    set_global(s, BADGE_ICON_KEY, lambda: (event_get(s, B, EVENT_ICON), s.push(EVENT_ICON_BASE), s.emit(0x50)))
+    s.label(chosen)
     get_global(s, STARTED_KEY); s.jump_if_nonzero(badge)
     set_global(s, STARTED_KEY, lambda: s.push(1))
     set_global(s, SHOWN_DAY_KEY, lambda: get_global(s, DAY_KEY))
     title_card()
     s.jump(started)
     s.label(badge)
+    # Every event after the first (which the title card opens) starts with its opener (dots), badge or not.
+    set_global(s, OPENER_KEY, lambda: s.push(1))
     # A new date: its card first (decision 3), as Battle of the Schools' week cards.
     same_day = s.label()
     get_global(s, DAY_KEY); get_global(s, SHOWN_DAY_KEY); s.emit(0x0a); s.jump_if_nonzero(same_day)
@@ -1477,16 +1711,33 @@ def calendar_step(s, context, title_card, end_story, date_card):
     write_date(s, context, lambda: get_global(s, DAY_KEY))
     date_card()
     s.label(same_day)
-    event_get(s, B, EVENT_ICON); s.push(0); s.emit(0x0e); s.jump_if_zero(icon)
-    s.push(LOCATION_BADGE); s.jump(chosen)
-    s.label(icon)
-    event_get(s, B, EVENT_ICON); s.push(EVENT_ICON_BASE); s.emit(0x50)
-    s.label(chosen)
+    named, shown = s.label(), s.label()
+    event_get(s, B, EVENT_ICON); s.push(NO_BADGE); s.emit(0x0a); s.jump_if_zero(named)
+    # An event with no name (CS Idol's lunchtimes, Rock Band Pt 1's `After school.`; BREW's planner has no row for them) shows just
+    # its time, `12:00 PM`, under the location badge (owner, 2026-11-07, to be looked at in the badge review); unless a badge is
+    # still up that no message has shown yet (CS Idol's `9:00 AM - School`, which comes with lunch's first line), which stays.
+    get_global(s, BADGE_UP_KEY); s.jump_if_nonzero(started)
+    s.push(context['badge_buffer']); s.text(BADGE_TIME_FORMAT[:-len(' - ')])
+    push_badge_time(s)
+    s.call(22, 6)
+    s.jump(shown)
+    s.label(named)
+    # `3:00 PM - Practice`: the time the planner jumps to, then the event's name (owner, 2026-11-07).
+    s.push(context['badge_buffer']); s.text(BADGE_TIME_FORMAT + '%s')
+    push_badge_time(s)
     keyed_text(s, EVENT_NAME_KEY, B, context['key_buffer'])
     s.push(context['key_buffer']); s.text(''); s.push(-1); s.call(47, 3); s.push_result()
-    s.call(90, 2)
-    set_word(s, context['badge_up'], lambda: s.push(1))
+    s.call(22, 7)
+    s.label(shown)
+    get_global(s, BADGE_ICON_KEY); s.push(context['badge_buffer']); s.call(90, 2)
+    set_global(s, BADGE_UP_KEY, lambda: s.push(1))
     s.label(started)
+    own = s.label()
+    event_get(s, B, EVENT_SCRIPT); s.push(STORY_SCRIPT); s.emit(0x0a); s.jump_if_nonzero(own)
+    event_get(s, B, EVENT_SCRIPT); s.jump_if_zero(own)        # (0: an event scheduled before Stage 5's script numbers)
+    event_get(s, B, EVENT_SCRIPT); s.push(0); s.call(10, 2)
+    s.emit(0x33)
+    s.label(own)
 
 
 def schedule(rewriter, pc, argc, context):
@@ -1567,7 +1818,7 @@ def the_end(rewriter, pc, argc, context):
 
 HANDLERS = {7: event_text, 8: field, 9: music, 12: titled_page, 13: scene_open, 14: scene_change, 15: name_plate, 16: narration_queue,
             18: scene_close,
-            27: portrait_choice, 28: menu, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
+            27: portrait_choice, 28: menu, 34: schedule_weekly, 42: today_date, 43: today_date, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
             62: list_push, 63: list_get, 64: list_set, 65: list_length, 70: the_end, 71: cast_name, 72: line, 74: wait, 80: build_query}
 # No-ops in BREW (0, 2, 10, 22-26, 32, 54, 75-79); the calendar's setup where there's no calendar (69); art registration, since
 # the addon holds the art (11).
@@ -1776,6 +2027,31 @@ def caption_badge(text):
     return EVENT_ICON_BASE + icon, label
 
 
+def date_captions(program, rewriter):
+    """{pc: the new format's address} of the format calls (1) that fill a school day's caption (DATE_CAPTION) with a date."""
+    captions = {address: DATE_CAPTION.match(text) for address, text, _ in data_strings(program) if DATE_CAPTION.match(text)}
+    out, instructions = {}, program.instructions
+    for k, i in enumerate(instructions):
+        if i.opcode != 0x1f or i.operand >> 8 != 1 or (i.operand & 255) != 3:
+            continue
+        # The caption's address pushed since the previous host call (0x5a pushes 0: CS Idol's caption is its script's first string).
+        start = next((j + 1 for j in range(k - 1, -1, -1) if instructions[j].opcode == 0x1f), 0)
+        pushed = [0 if x.opcode == 0x5a else x.operand for x in instructions[start:k] if x.opcode in (0x1a, 0x5a)]
+        found = [address for address in pushed if address in captions]
+        if len(found) == 1:
+            match = captions[found[0]]
+            out[i.pc] = rewriter.text(BADGE_TIME_FORMAT + match.group(1).decode('latin-1'))
+    return out
+
+
+def date_caption(rewriter, pc, argc, context):
+    """1: (destination, a school day's caption, date): `9:00 AM - School`, the running event's time, into the destination, remembered
+    (DATE_CAPTION_KEY) so that say() shows it as the event's badge, not a line (owner, 2026-11-07: dates are on the cards)."""
+    new = context['date_captions'][pc]
+    rewriter.redirect(pc, ('date_caption', pc), lambda s: (set_global(s, DATE_CAPTION_KEY, lambda: s.arg(1)),
+                                                           s.arg(1), s.push(new), push_badge_time(s), s.call(22, 6)))
+
+
 def title_formats(program):
     """The pcs of the format calls (1) that build a story's first line from TITLE_FORMAT."""
     address = next((a for a, text, _ in data_strings(program) if text == TITLE_FORMAT), None)
@@ -1865,7 +2141,8 @@ def game_pages(program, start):
     pages = set()
     for i, instruction in enumerate(instructions):
         if instruction.opcode == 0x1f and instruction.operand >> 8 == 12:
-            for j in range(i + 1, min(i + 12, len(instructions) - 1)):
+            # (20: The School Paper's page has a pause and six two-value pushes before its call; Stage 5.)
+            for j in range(i + 1, min(i + 20, len(instructions) - 1)):
                 if instructions[j].opcode == 0x1f:
                     break
                 if instructions[j].opcode == 0x42 and instructions[j + 1].opcode == 0x29 and instructions[j + 1].operand in callers:
@@ -1886,6 +2163,29 @@ def fix_surviving_college(rewriter):
 
 
 STORY_FIXES = {'shs085_06_01_shs08.exp': fix_surviving_college}
+
+
+FUNKY_MONKEY_ENDINGS = (2507, 2568, 2623, 2684, 2751)     # '07 monkey.exp: each ending's music push, its first instruction
+OWN_SCENE_26505 = 26505
+
+
+def fix_funky_monkey_07(rewriter, context):
+    """'08's Funky Monkey opens five of its endings with a scene change (14: speaker kept, day sky, its own picture 26505), where '07's
+    keep whatever was showing. '07's copy keeps its own writing, and its date, but takes '08's fixes to its code (owner, 2026-11-07)."""
+    code = rewriter.code
+    for pc in FUNKY_MONKEY_ENDINGS:
+        if not (code[pc - 2][0] == 0x48 and code[pc][0] == 0x1a and 8000 <= code[pc][1] < 8000 + MUSIC_TRACKS and code[pc + 1] == (0x1f, 9 << 8 | 1)):
+            raise StoryError(f"Funky Monkey ('07): no ending starts at {pc}")
+
+        def build(s):
+            depth = lambda: (s.push(DEPTH_KEY), s.call(55, 1), s.push_result())
+            s.push(SCENE_SKY_KEY); depth(); s.emit(0x50); s.push(0); s.call(54, 2)
+            s.push(SCENE_LOCATION_KEY); depth(); s.emit(0x50); s.push(OWN_SCENE_26505); s.call(54, 2)
+            show_top_scene(s, context)
+        rewriter.insert(pc, build)
+
+
+CONTEXT_FIXES = {'monkey.exp': fix_funky_monkey_07}     # story fixes that need the script's context (its own pictures)
 
 
 def catch_pages(program):
@@ -1954,12 +2254,12 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
                      catch_sizes=rewriter.words([value for picture, size in sizes for value in (picture, *size)] or [0]))
     return dict(rid=script, kind='single', looks=sorted(looks.items()), hash_factors=rewriter.words(HASH_FACTORS),
                 plate=rewriter.words([-1]), **named_words(program, rewriter, start),
-                last_line=rewriter.words([-1]), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
+                last_line=rewriter.words([-1]), dots=rewriter.words([0, 0, 0, 0]), opener_now=rewriter.words([0]), dots_buffer=rewriter.words([0] * (OPENER_WORDS + 4)), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
                 name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
-                bracketed=thoughts, game_words=game_words, routine=start, long_lines=long_lines, pieces=rewriter.words([-1, 0, 0]), badge_up=rewriter.words([0]),
+                bracketed=thoughts, game_words=game_words, routine=start, long_lines=long_lines, pieces=rewriter.words([-1, 0, 0]),
                 captions=[(address, *badge[:1], rewriter.text(badge[1])) for address in helper_calls(program, [14, 72])
                           for badge in [caption_badge(strings[address])]],
-                title_formats=title_formats(program), game_pages=game_pages(program, start) if start is not None else (),
+                title_formats=title_formats(program), date_captions=date_captions(program, rewriter), game_pages=game_pages(program, start) if start is not None else (),
                 page=rewriter.words([-1, -1]), word=rewriter.words([0]), catch_pages=catch_pages(program), **catch,
                 # (only a script with a portrait choice takes its words: a big story's data is close to the VM's stack)
                 portraits=rewriter.words([-1, 0, 0]) if any(i.opcode == 0x1f and i.operand >> 8 == 27 for i in program.instructions) else None,
@@ -2015,11 +2315,25 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
     # The story script is 26000, or 25002 in a story without one (the M.A.S.H. packs, whose setup schedules 25002; Stage 4): a
-    # Classic event runs the story script whichever its number (calendar_step), so only where it goes changes.
+    # Classic event runs the story script whichever its number (calendar_step), so only where it goes changes. A Classic story
+    # whose events all schedule one other script has that as its story (Artistic Differences' 25003; Stage 5).
     story_script = STORY_SCRIPT if calendar and BREW_STORY_SCRIPT not in scripts and STORY_SCRIPT in scripts else BREW_STORY_SCRIPT
-    extra = [rid for rid in scripts if rid not in (FIRST_SCRIPT, story_script)]
+    scheduled = scheduled_scripts(archive_resources, scripts)
+    if calendar and len(scheduled) == 1 and next(iter(scheduled)) in scripts:
+        story_script = next(iter(scheduled))
+    # A script nothing schedules or names is left out: Stage 5's CS Idol, Artistic Differences and The School Paper carry an
+    # 88-byte `School / March %d` date screen no event runs.
+    unused = [rid for rid in scripts if rid not in (FIRST_SCRIPT, story_script) and not script_named(archive_resources, scripts, rid)]
+    scripts = [rid for rid in scripts if rid not in unused]
+    # Other scripts the events schedule (CS Idol's school days, 26001; Stage 5) follow the story's, from 25003 on.
+    script_map = {FIRST_SCRIPT: FIRST_SCRIPT, story_script: STORY_SCRIPT}
+    for rid in sorted(scheduled - {story_script}):
+        if calendar and rid in scripts:
+            script_map[rid] = STORY_SCRIPT + len(script_map) - 1
+    extra = [rid for rid in scripts if rid not in script_map]
     if extra:
         raise StoryError(f'{name}: scripts {extra} need the calendar driver or a script map')
+    own_missing = missing_own_pictures(archive_resources)
     resources = {}
     for script in scripts:
         program = strip_quotes(strip_round_counts(strip_name_marks(decode_program(upgrade(archive_resources[script])))))
@@ -2027,14 +2341,19 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         drop_page_pauses(rewriter)
         if name in STORY_FIXES and script == story_script:
             STORY_FIXES[name](rewriter)
-        sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()}
+        sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()
+                 if int(picture) not in own_missing}
         context = script_context(rewriter, script, table, not title.startswith('Quiz '), program, sizes)
         context['kind'] = 'calendar' if calendar else 'single'
+        context['program'], context['script_map'] = program, script_map
+        context['own_missing'] = own_missing
         if calendar:
             context.update(calendar_words(rewriter))
         context['backgrounds_07'] = pack != PACK_CAMPAIGN          # '07's shared locations; an '08 copy shows '08's
         context['own_backgrounds'] = sorted((int(location), OWN_BACKGROUND_INDEX + n)
                                             for location, n in spec.get('backgrounds', {}).get(name, {}).items())
+        if name in CONTEXT_FIXES and script == story_script:
+            CONTEXT_FIXES[name](rewriter, context)
         for pc, service, argc in rewriter.calls():
             if service == 69 and calendar:
                 calendar_setup(rewriter, pc, argc, context)
@@ -2042,6 +2361,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
                 game_page(rewriter, pc, argc, context)
             elif service in CATCH_MODES:
                 catch_game(rewriter, pc, argc, context)
+            elif service == 1 and pc in context['date_captions']:
+                date_caption(rewriter, pc, argc, context)
             elif service == 1 and pc in context['title_formats']:
                 title_line(rewriter, pc, argc, context)
             elif service in RENAME:
@@ -2061,14 +2382,18 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
                                          s.push(NARRATOR), s.push(-1), s.call(72, 2),
                                          *((s.push(STORY_SCRIPT), s.push(0), s.call(10, 2)) if calendar else ())))
-        elif calendar:
+        elif calendar and script == story_script:
+            # The title card has the day the first event runs on (CS Idol's setup schedules its last school day last, Stage 5).
             rewriter.prologue(lambda s, context=context: calendar_step(
-                s, context, lambda: (s.text(title), s.text(date or ''), s.push(card), s.push(0), s.call(8, 4)),
+                s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)),
+                                     s.text(title), s.push(context['date_buffer']), s.push(card), s.push(0), s.call(8, 4)),
                 lambda: (s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0), s.emit(0x33)),
                 lambda: (s.text(title), s.push(context['date_buffer']), s.push(card), s.push(0), s.call(8, 4))))
+        elif calendar:
+            pass                                            # an event's own script: the driver already showed its card or badge
         else:
             rewriter.prologue(lambda s: (s.text(title), s.text(date or ''), s.push(card), s.push(0), s.call(8, 4)))
-        target = STORY_SCRIPT if script == story_script else FIRST_SCRIPT
+        target = script_map[script]
         resources[target] = rewriter.finish().to_bytes()
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
@@ -2165,6 +2490,27 @@ def own_fingerprint(png):
     return hashlib.sha256(Image.open(io.BytesIO(png)).convert('RGB').tobytes()).hexdigest()[:16]
 
 
+def scheduled_scripts(resources, scripts):
+    """The scripts a story's events schedule (33's first argument, where it is a constant)."""
+    found = set()
+    for rid in scripts:
+        program = decode_program(upgrade(resources[rid]))
+        for instruction in program.instructions:
+            if instruction.opcode == 0x1f and instruction.operand >> 8 in (33, 34):
+                values = newrules.pushed_values(program, instruction.pc, instruction.operand & 255)
+                if values and isinstance(values[0], int):
+                    found.add(values[0])
+    return found
+
+
+def script_named(resources, scripts, rid):
+    """Whether any script pushes `rid` (to schedule it, queue it or name it in any other way)."""
+    for other in scripts:
+        if any(i.opcode == 0x1a and i.operand == rid for i in decode_program(upgrade(resources[other])).instructions):
+            return True
+    return False
+
+
 def own_locations(pack):
     """The locations a story's scenes (13, 14) name that aren't the shared ones (1000-1027, 2000-2011): its own pictures."""
     found = set()
@@ -2180,6 +2526,23 @@ def own_locations(pack):
                                                                      or 2000 <= location < 2000 + LOCATIONS_08_EXTRA):
                     found.add(location)
     return sorted(found)
+
+
+def own_resources(archive_resources):
+    """A story's resources with its CMB0 bundles opened (BREW numbers a bundle's members resource + 1 + k)."""
+    found = dict(archive_resources)
+    for rid, data in archive_resources.items():
+        if data[:4] == b'CMB0':
+            for member, payload in nr_art.cmb0(data, rid).items():
+                found.setdefault(member, payload)
+    return found
+
+
+def missing_own_pictures(archive_resources):
+    """The OWN_CATCH_PICTURES this story doesn't hold as the addon's copy (none, or a picture of its own by that number)."""
+    found = own_resources(archive_resources)
+    return {picture for picture, digest in OWN_CATCH_PICTURES.items()
+            if picture not in found or hashlib.sha1(found[picture]).hexdigest() != digest}
 
 
 def story_packs(entry, games, bases):
@@ -2203,6 +2566,13 @@ def faces_of(art, entries):
     if pictures[0] is None or pictures[0].getbbox() is None:
         return None
     return pictures
+
+
+def shifted(picture, dx):
+    """A picture moved `dx` pixels across on a canvas of its own size."""
+    out = Image.new(picture.mode, picture.size, (0, 0, 0, 0))
+    out.paste(picture, (dx, 0))
+    return out
 
 
 def portrait_box(canvas_size):
@@ -2282,6 +2652,10 @@ def build_addon(casts, games, render_music=None, java_jar=None):
             if faces is None:
                 looks[key] = -1
                 continue
+            body = member['list'][0]
+            bounds = art.bounds(body) if isinstance(body, int) and body >= 26000 else None
+            if bounds and abs(bounds[0] + bounds[2]) >= 2 * CENTRE_OWN_BODY:
+                faces = [shifted(face, -round((bounds[0] + bounds[2]) / 2)) for face in faces]
             box = portrait_box(faces[0].size)
             for face in faces:
                 drawn = face.getbbox()
@@ -2304,7 +2678,16 @@ def build_addon(casts, games, render_music=None, java_jar=None):
                 resources[MUSIC_BASE + track] = render_music(data)
     resources.update(badge_pictures(art08))
     resources.update(event_icons(art08))
-    catch_resources, spec['catch'] = catch_pictures(art08, bases['08'])
+    own_art = {}
+    for entry in casts:
+        packs = loaded.get(entry['file']) or story_packs(entry, games, bases)
+        for picture in set(OWN_CATCH_PICTURES) - set(own_art) - missing_own_pictures(packs[0]):
+            own_art[picture] = brew_art.Art(packs[:1])
+    if set(own_art) != set(OWN_CATCH_PICTURES):
+        raise StoryError(f'No story holds the own catch pictures {sorted(set(OWN_CATCH_PICTURES) - set(own_art))}')
+    catch_resources, spec['catch'] = catch_pictures(art08, bases['08'], own_art)
+    for n, picture in enumerate(sorted(OWN_CATCH_PICTURES)):
+        resources.update(event_icons(own_art[picture], {picture: OWN_ICON_BASE + n}))
     if java_jar is not None:
         java_resources, spec['catch']['java'] = java_look(java_jar, spec['catch'], art08)
         resources.update(java_resources)
@@ -2326,11 +2709,12 @@ BROKEN_GAP = 2
 BADGE_SCALE = 6                         # art pixels to the picture's, with no smoothing: the player scales it to SHS's size (TRANSLATED_BADGE_UNITS)
 
 
-def event_icons(art):
-    """{resource: PNG} of BREW's small pictures (EVENT_ICONS), for time badges: 4 times with no smoothing, then fitted to
-    EVENT_ICON_SIZE, so their pixels stay sharp at about the smartphone's icon size."""
+def event_icons(art, pictures=None):
+    """{resource: PNG} of BREW's small pictures (EVENT_ICONS, or `pictures`: {picture: resource}), for time badges: 4 times with no
+    smoothing, then fitted to EVENT_ICON_SIZE, so their pixels stay sharp at about the smartphone's icon size."""
     out = {}
-    for picture in EVENT_ICONS:
+    targets = pictures or {picture: EVENT_ICON_BASE + picture for picture in EVENT_ICONS}
+    for picture, resource in targets.items():
         try:
             left, top, right, bottom = art.bounds(picture)
         except Exception:
@@ -2341,7 +2725,7 @@ def event_icons(art):
         art.draw(canvas, picture, -left, -top)
         big = canvas.resize((canvas.width * 4, canvas.height * 4), Image.NEAREST)
         scale = EVENT_ICON_SIZE / max(canvas.width, canvas.height)
-        out[EVENT_ICON_BASE + picture] = brew_art.png(big.resize((round(canvas.width * scale), round(canvas.height * scale)), Image.LANCZOS))
+        out[resource] = brew_art.png(big.resize((round(canvas.width * scale), round(canvas.height * scale)), Image.LANCZOS))
     return out
 
 
@@ -2365,9 +2749,10 @@ def badge_pictures(art):
     return found
 
 
-def catch_pictures(art, pack):
+def catch_pictures(art, pack, own_art=None):
     """({resource: PNG}, spec) of the catch game: BREW's frame (FUN_00005b94, as Tardy-Slip's CatchScreen draws it), its ring, digits and
-    captions, and every item and player picture, at 3 times with no smoothing."""
+    captions, and every item and player picture, at 3 times with no smoothing; then the stories' own (`own_art`: picture -> an Art
+    over the story that holds it)."""
     def up(image):
         return brew_art.png(image.resize((image.width * CATCH_SCALE, image.height * CATCH_SCALE), Image.NEAREST))
 
@@ -2394,7 +2779,8 @@ def catch_pictures(art, pack):
     for k, caption in enumerate(captions):
         resources[CATCH_BASE + 12 + k] = up(brew_art.font_text(pack, caption))
     pictures = {}
-    for n, picture in enumerate(sorted(CATCH_WORDS)):
+    shown = [(picture, art) for picture in sorted(CATCH_WORDS)] + sorted((own_art or {}).items())
+    for n, (picture, art) in enumerate(shown):
         left, top, right, bottom = art.bounds(picture)
         canvas = Image.new('RGBA', (right - left, bottom - top), (0, 0, 0, 0))
         art.draw(canvas, picture, -left, -top)

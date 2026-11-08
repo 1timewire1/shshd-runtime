@@ -134,6 +134,9 @@ class EngineState:
     badge_sounds = None             # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: whether service 22 makes "a(n) word" "a word" or "an word" (a pack in TRANSLATED_ARTICLE_PACKS; Session sets it).
     choose_articles = False
+    # Not saved: whether a word game of three words, at least one good and one bad, plays (WordGame.three_words: a pack in
+    # TRANSLATED_THREE_WORD_PACKS, the BREW games; Session sets it). Elsewhere it stays the stop it is natively.
+    three_word_games = False
     # Not saved: a translated pack's own portrait picker layouts, by count (TRANSLATED_PICKER_LAYOUTS; Session sets it). Service 78
     # takes one of those counts even past the native five (the BREW M.A.S.H. packs' ten photos).
     picker_layouts = None
@@ -1048,7 +1051,8 @@ class EngineState:
         if y == 71:
             need(8)
             good, bad = (pipe_list(self.read_text(vm, ref)) for ref in args[2:4])
-            if len(good) < 2 or len(bad) < 2 or args[4] <= 0:
+            three = self.three_word_games and len(good) + len(bad) == 3 and bool(good) and bool(bad)   # shshd-runtime: BREW's menus of three
+            if (len(good) < 2 or len(bad) < 2) and not three or args[4] <= 0:
                 return EngineAction('unhandled_yield', request, False, dict(
                     reason='Unsupported word-game lists or nonpositive duration'))
             game = WordGame(good, bad, args[4], args[7], args[4], args[7])

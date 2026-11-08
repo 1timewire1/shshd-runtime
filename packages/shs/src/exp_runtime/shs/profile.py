@@ -111,6 +111,13 @@ FOUR_PICKER = [(160, 275), (52, 241), (160, 170), (269, 241)]
 # shshd-runtime: packs whose formatted lines say "a(n) %s" (the BREW games: M.A.S.H. Pack 1's houses and cars, Fall '06's grades),
 # where the engine picks "a" or "an" by the word filled in (engine.choose_articles; owner, 2026-11-07).
 TRANSLATED_ARTICLE_PACKS = (31000, 31100, 31200)
+# shshd-runtime: packs whose title and date cards show the date as the card's title and the story's name under it (the BREW games:
+# a story over several days opens each day with a card, so the date matters most; owner, 2026-11-07). The episode's preview picture,
+# taken from its first card, keeps the story's name as the title (episode_thumbnails, Desktop capture).
+TRANSLATED_DATE_FIRST_PACKS = (31000, 31100, 31200)
+# shshd-runtime: packs whose word games may have three words, one or two of them good (BREW's Skating Dating and Artistic Differences,
+# Stage 5; engine.three_word_games). Native needs two good and two bad, and stops otherwise.
+TRANSLATED_THREE_WORD_PACKS = (31000, 31100, 31200)
 TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER}}
 # shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
 # (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.

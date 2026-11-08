@@ -278,6 +278,27 @@ FOOTBALL_KEYPAD = {pygame.K_KP7: 0, pygame.K_KP8: 1, pygame.K_KP9: 2, pygame.K_K
                    pygame.K_KP6: 5, pygame.K_KP1: 6, pygame.K_KP2: 7, pygame.K_KP3: 8}
 
 
+class _DateFirstCard:
+    """shshd-runtime: a session as a date-first card's renderer sees it (Desktop._date_first): the pending card's title and subtitle
+    swapped, everything else the session's own."""
+
+    def __init__(self, session):
+        self._session = session
+        details = session.pending.details
+        self.pending = _Swapped(session.pending, dict(details, title=details['subtitle'], subtitle=details['title']))
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
+class _Swapped:
+    def __init__(self, pending, details):
+        self._pending, self.details = pending, details
+
+    def __getattr__(self, name):
+        return getattr(self._pending, name)
+
+
 class Desktop:
     story_layer = None
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
@@ -1763,6 +1784,8 @@ class Desktop:
                     view = SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=poll))
                     renderer.draw(self.canvas, view)
                     buttons = []
+                elif action.name == 'presentation' and self._date_first(details):
+                    buttons = renderer.draw(self.canvas, _DateFirstCard(self.session))
                 else:
                     buttons = renderer.draw(None if action.name == 'text_input' else self.canvas,
                                             self.session, **options)
@@ -2883,6 +2906,14 @@ class Desktop:
         if pygame.time.get_ticks() < self.message_until:
             self._text(self.message, 30, 640, 420, font=self.small)
 
+    def _date_first(self, details):
+        """shshd-runtime: whether this card shows its date as the title (TRANSLATED_DATE_FIRST_PACKS: the BREW games). Not in a
+        capture: an episode's preview picture keeps the story's name as the title (owner, 2026-11-07)."""
+        if self.capture or not details.get('subtitle'):
+            return False
+        record = getattr(self.session.resources, 'record', None) or {}
+        return record.get('pack_id') in getattr(GAMES[game_id(self.session.resources)], 'TRANSLATED_DATE_FIRST_PACKS', ())
+
     def _title_renderer(self):
         """The chapter / week card: Cause of Death's own (SHS HD's at iPhone size), HD's with an HD bundle, else
         Android's."""
@@ -3588,7 +3619,7 @@ class Desktop:
                 if asking:
                     if index < len(self.host_prompt['options']):
                         self.command(('choose', index))
-                elif action.name == 'football' or (action.name == 'word_game' and index < 4) or (action.name == 'choice'
+                elif action.name == 'football' or (action.name == 'word_game' and index < len(self.session.engine.word_game.options)) or (action.name == 'choice'
                         and index < len(action.details['options']) and action.details['enabled'][index]):
                     self.command(('choose', index))
             elif action and action.name == 'text_input' and event.key == pygame.K_BACKSPACE:

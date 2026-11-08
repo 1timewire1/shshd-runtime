@@ -1512,6 +1512,34 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNotNone(ui.pending_background)
             self.assertEqual(ui.pending_background.get_size(), (64, 64))
 
+    def test_a_brew_card_shows_its_date_as_the_title_but_its_preview_keeps_the_story_name(self):
+        # Owner, 2026-11-07: in the BREW packs (TRANSLATED_DATE_FIRST_PACKS) the date matters most, so the card swaps its title and
+        # subtitle; a capture (the episode's preview picture) keeps the story's name as the title.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from types import SimpleNamespace
+        from exp_runtime.desktop import Desktop, _DateFirstCard
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            card = dict(title='CS Idol', subtitle='Monday, March 1', asset_id=1)
+            for pack_id, capture, subtitle, expected in ((31100, False, True, True), (31000, False, True, True),
+                                                         (31100, True, True, False), (1, False, True, False),
+                                                         (31100, False, False, False)):
+                resources.record = dict(resources.record, pack_id=pack_id)
+                ui.capture = capture
+                self.assertEqual(ui._date_first(dict(card, subtitle=card['subtitle'] if subtitle else '')), expected,
+                                 (pack_id, capture, subtitle))
+            ui.session.pending = SimpleNamespace(name='presentation', details=card, request=None)
+            seen = _DateFirstCard(ui.session)
+            self.assertEqual((seen.pending.details['title'], seen.pending.details['subtitle']), ('Monday, March 1', 'CS Idol'))
+            self.assertEqual((seen.pending.name, seen.engine), ('presentation', ui.session.engine))
+            self.assertEqual(card['title'], 'CS Idol')              # the session's own card is untouched
+
     def test_a_translated_episodes_end_card_keeps_its_frame_backdrop_under_the_last_scene(self):
         # The end-of-episode card's sepia backdrop (Desktop.snapshot) stretches an ordinary episode's last scene over
         # the frame; a translated pack's 3:1 strip stays where the episode showed it, over its TRANSLATED_FRAME_BACKDROP

@@ -3,6 +3,7 @@ import importlib.util
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+import re
 import shutil
 import struct
 import sys
@@ -1180,6 +1181,12 @@ class BrewShimTests(unittest.TestCase):
                 out.append(('thought', read(args[1])) if thought else read(args[0]))
             elif stop.yield_id == 90:
                 out.append(('badge', args[0], read(args[1]) if args[1] != 0xFFFF and args[1] != -1 else None))
+            elif stop.yield_id == 22:                       # format, %s and %d only (an event opener's `%s..`: dots)
+                values = iter(args[2:])
+                text = re.sub(r'%[sd]', lambda m: read(next(values)) if m.group() == '%s' else str(next(values)), read(args[1]))
+                data = text.encode() + b'\0' * (2 - len(text.encode()) % 2)
+                for k in range(0, len(data), 2):
+                    vm.data[args[0] + k // 2] = data[k] << 8 | data[k + 1]
             vm.resume(result)
         self.fail('did not halt')
 
@@ -1225,7 +1232,8 @@ class BrewShimTests(unittest.TestCase):
         code = [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3)]
         code += [(0x1A, 0xFFFF), (0x1A, len(caption)), (0x1A, 0xFFFF), call(72, 3)] * 2 + [0x33]
         said = self.said(caption + line, code, captions=[(0, 26504, 'MON - At the Gym')])
-        self.assertEqual(said, [('badge', 26504, 'MON - At the Gym'), 'Hi.', ('badge', -1, None), 'Hi.'])
+        # The line said with the badge ends in three dots (an event's opener, owner 2026-11-07); the next is as written.
+        self.assertEqual(said, [('badge', 26504, 'MON - At the Gym'), 'Hi...', ('badge', -1, None), 'Hi.'])
 
     def test_a_caption_badge_goes_after_the_first_piece_of_a_long_line(self):
         caption = text_words('Monday: At home.')
@@ -1464,6 +1472,56 @@ class BrewShimTests(unittest.TestCase):
             self.assertEqual(sorted(game.weights), [-1, -1, 1, 1])
             game.validate()                         # and a save of it loads (Undo, the autosave), 2026-11-06
 
+    def test_a_word_game_of_one_good_word_and_two_bad_shows_all_three(self):
+        # Stage 5: Skating Dating's spinning menu has three words; native's word game needs two of each.
+        from exp_runtime.minigames import WordGame
+
+        class Draws:
+            state = 3
+
+            def below(self, n):
+                self.state = (self.state * 1103515245 + 12345) & 0x7fffffff
+                return (self.state >> 8) % n
+        game = WordGame(['Skate'], ['Fall', 'Trip'], 20000, 3000, 20000, 3000)
+        self.assertTrue(game.three_words)
+        for _ in range(20):
+            game.deal(Draws())
+            self.assertEqual(sorted(game.options), ['Fall', 'Skate', 'Trip'])
+            self.assertEqual(game.weights[game.options.index('Skate')], 1)
+            game.validate()
+        game.pick(2, Draws())
+        with self.assertRaises(ValueError):
+            game.pick(3, Draws())
+        self.assertFalse(WordGame(['A', 'B'], ['C', 'D'], 20000, 3000, 20000, 3000).three_words)
+        # Artistic Differences: two good and one bad.
+        drops = WordGame(['1 drop', '2 drops'], ['0 drops'], 20000, 3000, 20000, 3000)
+        drops.deal(Draws())
+        self.assertEqual(sorted(drops.weights), [-1, 1, 1])
+        self.assertEqual(drops.weights[drops.options.index('0 drops')], -1)
+        drops.validate()
+
+    def test_weekly_events_name_their_weekdays_by_two_letters(self):
+        # 34 (CS Idol's school days): brew-calendar.js weekdaysBetween reads each day's first two letters.
+        mask = self.brew.weekday_mask
+        self.assertEqual(mask('Mo,We,Fr'), 0b0101010)
+        self.assertEqual(mask('Tue|Thu'), 0b0010100)
+        self.assertEqual(mask('Sunday|sa'), 0b1000001)
+        self.assertEqual(mask(''), 0)
+
+    def test_a_storys_own_catch_picture_is_the_addons_only_when_it_is_the_same_picture(self):
+        # Stage 5: Invisible Man and Skating Dating catch their own 26501, in their 26500 bundle; other stories' 26501 differs.
+        import hashlib
+        from unittest import mock
+
+        def bundle(payload):
+            return b'CMB0\x01' + struct.pack('>I', 9) + payload
+        picture = b'BM' + bytes(range(40))
+        with mock.patch.dict(self.brew.OWN_CATCH_PICTURES, {26501: hashlib.sha1(picture).hexdigest()}, clear=True):
+            missing = self.brew.missing_own_pictures
+            self.assertEqual(missing({26500: bundle(picture)}), set())
+            self.assertEqual(missing({26500: bundle(b'BM' + bytes(40))}), {26501})
+            self.assertEqual(missing({1: b'kiwi'}), {26501})
+
     def test_a_quiz_asks_in_the_narrators_gold(self):
         options = text_words('A|B')
         rewriter = Rewriter(program(0x5A, 0x5A, call(28, 2), call(74, 0), 0x33, words=options))
@@ -1603,7 +1661,99 @@ class BrewCalendarTests(unittest.TestCase):
                 session.engine.word_game.score = 6
                 session._complete_minigame()
         self.assertEqual(cards, ['Monday, April 10', 'Wednesday, April 12'])
-        self.assertEqual([b.strip() for b in badges], ['Computer Class', 'Detention', 'Extra! Extra!'])
+        # Each badge has the time the planner jumps to (owner, 2026-11-07).
+        self.assertEqual([b.strip() for b in badges], ['10:30 AM - Computer Class', '3:00 PM - Detention', '9:00 AM - Extra! Extra!'])
+
+    def play_cards(self, data, addon):
+        """A Classic build's date cards and badges, on first answers with games won."""
+        import playthrough as pt
+        session = pt.session(data, addons=[addon])
+        session.engine.random.state = 1
+        cards, badges = [], []
+        session.advance()
+        for _ in range(8000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            badge = session.engine.scene_badge
+            if badge is not None and (not badges or badges[-1] != badge.text):
+                badges.append(badge.text)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished'):
+                return cards, [b.strip() for b in badges], action and action.name
+            if action.name == 'presentation':
+                cards.append(action.details.get('subtitle'))
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == 'presentation':
+                    session.answer()
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'choice':
+                if not session.choice_ready:
+                    session.tick(250)
+                session.answer(0)
+            elif action.name in ('message_panel', 'loading'):
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            elif action.name == 'brew_catch':
+                session._complete_minigame(result=session.engine.brew_catch.target)
+            else:
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+        self.fail('the story did not end')
+
+    def test_weekly_school_days_run_on_their_weekdays_from_the_first_events_day(self):
+        # Stage 5: CS Idol's school (34, Mo,We,Fr, its own script) runs on each of them; the setup schedules March 10 last, but the
+        # title card has March 1, the first event's day, as Tardy-Slip's calendar runs; its nameless lunchtimes have no badge;
+        # a badge goes after its first message in any of the story's scripts.
+        import brew
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+        import json
+        if '26501' not in json.loads(ExpArchive(addon_path.read_bytes()).read(brew.SPEC))['catch']['pictures']:
+            self.skipTest("needs the BREW addon's revision 6 (its catch game catches the yawning face)")
+        name, data = brew.build_classic(BREW_08 / 'addons' / 'Classic' / 'clsc_cs_idol.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        self.assertEqual(name, 'CS_Idol_SHS07.exp')
+        cards, badges, end = self.play_cards(data, ExpArchive(addon_path.read_bytes()))
+        self.assertEqual(end, 'episode_exit')
+        self.assertEqual(cards, ['Monday, March 1', 'Wednesday, March 3', 'Friday, March 5', 'Monday, March 8', 'Wednesday, March 10',
+                                 'Friday, March 12', 'Monday, March 15'])
+        # Each school day's caption (`School / March %d`, narration in BREW) is its badge, and every badge shows the time the planner
+        # jumps to, not a date, which the cards have (owner, 2026-11-07); a nameless event (March 5's breakfast) shows just its time. March
+        # 12 and 15 say nothing at school, so Practice and CS Idol come straight after.
+        self.assertEqual(badges, ['9:00 AM - School', "4:30 PM - Dad's Suprise", '9:00 AM - School', '3:00 PM - Audition', '7:30 AM',
+                                  '9:00 AM - School', '3:00 PM - At Home', '9:00 AM - School', '3:00 PM - Practice', '9:00 AM - School', '3:00 PM - Practice',
+                                  '3:00 PM - CS Idol'])
+
+    def test_07_funky_monkey_takes_08s_ending_scenes(self):
+        # Owner, 2026-11-07: Funky Monkey's '07 entry keeps its writing but takes '08's code fixes: five endings open on its own
+        # scene (14 to 26505), where '07's kept whatever was showing.
+        import brew
+        from unittest import mock
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+
+        def scenes():
+            _, data = brew.build_classic(CLASSIC_07 / 'monkey.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+            story = brew.decode_program(ExpArchive(data).read(brew.STORY_SCRIPT))
+            return sum(1 for i in story.instructions if (i.opcode, i.operand) == (0x1a, brew.OWN_SCENE_26505))
+        fixed = scenes()
+        with mock.patch.dict(brew.CONTEXT_FIXES, {}, clear=True):
+            plain = scenes()
+        self.assertEqual((fixed - plain) % len(brew.FUNKY_MONKEY_ENDINGS), 0)       # (each the same scene change, inserted once)
+        self.assertGreater(fixed, plain)
 
     def test_an_08_classic_copy_is_a_campaign_episode_on_the_calendar(self):
         # Stage 3b: Funky Monkey's '08 file, which really differs from '07's, is its own `(Classic)` entry under '08.

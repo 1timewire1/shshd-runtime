@@ -673,6 +673,8 @@ class Session:
                 self.engine.picker_layouts = self._picker_layouts()
                 self.engine.choose_articles = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
                     GAMES[game_id(self.resources)], 'TRANSLATED_ARTICLE_PACKS', ())
+                self.engine.three_word_games = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
+                    GAMES[game_id(self.resources)], 'TRANSLATED_THREE_WORD_PACKS', ())
                 self.engine.cutscenes_enabled = self.cutscenes
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':

@@ -97,7 +97,7 @@ class ChoiceRenderer:
         game = session.engine.word_game
         key = id(session), session.scene, session.vm.steps_executed, game.round if game else None
         if game:
-            details = dict(details, options=game.options, enabled=[True] * 4, minigame=True)
+            details = dict(details, options=game.options, enabled=[True] * len(game.options), minigame=True)
         if key != self.cached_key:
             if self.layout is None:
                 self.layout = ChoiceLayout(self.resources)
@@ -530,7 +530,8 @@ class ChoiceRenderer:
         if game is None:
             return fly_on(row.position, self.age_ms / 1000)
         if game.fly_off_ms:
-            return 1 - fly_off(row.position, game.fly_off_row, (game.HD_FLY_OFF_MS - game.fly_off_ms) / 1000)
+            return 1 - fly_off(row.position, game.fly_off_row, (game.HD_FLY_OFF_MS - game.fly_off_ms) / 1000,
+                               count=len(game.options))
         if game.fly_off_row >= 0:
             return 0.
         return fly_on(row.position, game.shown_ms / 1000, QUIZ_FLY_ON_SECONDS)
