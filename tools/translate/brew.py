@@ -133,10 +133,37 @@ OPENER_WORDS = 30                       # the longest event opener (in words of 
 BADGE_TIME_KEY, OPENER_KEY = 31086, 31087
 BADGE_TIME_FORMAT = '%d:%d%d %s - '     # `3:00 PM - `, then the event's name
 WAITING, PENDING, DONE = 0, 1, 2                 # an event's state: not reached, due with no time of its own, run
+# The season driver (Fall '06, Stage 6): a whole term's calendar, about 240 events with a weekly event on every school day, so
+# each event is kept once (SEASON_EVENTS + (n - 1) x EVENT_STRIDE, the Classic driver's offsets) and each day has a list of the
+# events on it (DAY_LISTS + day x DAY_SLOTS: the count, then the events in the order they were put there), as brew-calendar.js
+# keeps `events` and `entries`. Below 20000, clear of the stories' own numbers (all under 1100) and the lists (LIST_KEYS).
+SEASON_EVENTS, SEASON_MOST_EVENTS = 4000, 400
+DAY_LISTS, DAY_SLOTS, SEASON_MOST_DAYS = 14000, 32, 120
+PENDING_LIST, PENDING_SLOTS = 18000, 64     # the due events, in order (count, then events), as brew-calendar.js `pending`
+CHECKED_KEY, CURRENT_KEY, LAST_ENTRY_DAY_KEY = 31088, 31089, 31090     # brew-calendar.js `checked` and `current`; the last day with an entry
+DRIVER_SCRIPT = 25099                   # a season story's driver, a script of its own (every event has its own script)
+FLAG_KEYS = 10000                       # 56 / 57's flags (character, key, index): the character's number FLAG_KEYS + key x 64 + index
+SEASON_TITLE, SEASON_EPISODE = "Fall '06 Football Season", 1
+RESULT_KEY = 31091                      # a season service's answer, read into R with 55
+# Events BREW runs inside another (Stage 6b): 37 puts the due ones with no time of their own on the nested list, and at the
+# script's next wait (72, 12, 74, 29: BREW_WAITING_SYSCALLS), or when it ends, the nest runner (NEST_SCRIPT) runs each through the
+# runtime's service 223, which comes back to the waiting script, its registers and event text kept (NEST_SAVES + depth x 20).
+NESTED_LIST, NEST_SCRIPT, NEST_DEPTH_KEY, NEST_SAVES, NESTED_SCRIPT_SERVICE = 18070, 25098, 31092, 19000, 223
+NEST_WAITS = (72, 12, 74, 29)
+# Fall '06's dates (owner, 2026-11-07): a card each week, `Week 1 of 13` over the school days it holds (`September 13-17`, Monday to
+# Friday, as BREW's calendar keeps Monday, Wednesday and Friday), as Football Star's week cards (`Week 1 of 8` over a line); and a
+# narration line at the start of each day, `Monday, September 13.` The week last shown is a saved number.
+SHOWN_WEEK_KEY = 31093
+WEEK_TITLE, DAY_LINE = 'Week %d of %d', '%s.'
+WEEK_RANGE, WEEK_RANGE_MONTHS, WEEK_ONE_DAY = '%s %d-%d', '%s %d - %s %d', '%s %d'
 EVENT_TEXT_KEY, EVENT_NAME_KEY = '$BREWEV%d', '$BREWNAME%d'     # each event's text (7) and name (its badge)
 SLOT_MINUTES, DAY_MINUTES = 30, 1440
 LOCATION_BADGE = 3104                   # the smartphone's own location badge ("Counselor's Office", "Lunch"), for an event with no icon
 SCENE_LOCATION_KEY, SCENE_SKY_KEY = 31030, 31050    # + depth
+# A season's scene stack has room of its own (Stage 6): Fall '06 opens more scenes than it closes (BREW only counts them), about
+# one level every two school days, and past 20 the Classic places (31030, 31050 + depth) run into the calendar's own numbers.
+SEASON_SCENE_LOCATION_KEY, SEASON_SCENE_SKY_KEY = 18100, 18600    # + depth, to 499
+_SCENE_LAYOUT = {'location': SCENE_LOCATION_KEY, 'sky': SCENE_SKY_KEY}
 EVENT_TEXT = '$BREWEVENT'
 # A story's first line, `Surviving High School` and its title (`%s\n\n%s`, said by Event): the title card already shows the title.
 TITLE_FORMAT = b'%s\n\n%s'
@@ -470,7 +497,7 @@ def show_top_scene(s, context):
     s.push(0)
     get_depth = lambda: (s.push(DEPTH_KEY), s.call(55, 1), s.push_result())
     top = lambda base: (lambda: (s.push(base), get_depth(), s.emit(0x50), s.call(55, 1), s.push_result()))
-    push_picture(s, top(SCENE_LOCATION_KEY), top(SCENE_SKY_KEY), context)
+    push_picture(s, top(_SCENE_LAYOUT['location']), top(_SCENE_LAYOUT['sky']), context)
     s.call(11, 2)
 
 
@@ -479,8 +506,8 @@ def scene_open(rewriter, pc, argc, context):
     def build(s):
         depth = lambda: (s.push(DEPTH_KEY), s.call(55, 1), s.push_result())
         s.push(DEPTH_KEY); depth(); s.push(1); s.emit(0x50); s.call(54, 2)
-        s.push(SCENE_LOCATION_KEY); depth(); s.emit(0x50); s.arg(2); s.call(54, 2)
-        s.push(SCENE_SKY_KEY); depth(); s.emit(0x50); s.arg(1); s.call(54, 2)
+        s.push(_SCENE_LAYOUT['location']); depth(); s.emit(0x50); s.arg(2); s.call(54, 2)
+        s.push(_SCENE_LAYOUT['sky']); depth(); s.emit(0x50); s.arg(1); s.call(54, 2)
         set_global(s, SPEAKER_KEY, lambda: s.push(-1))
         show_top_scene(s, context)
         s.result(1)
@@ -499,10 +526,10 @@ def scene_change(rewriter, pc, argc, context):
         s.label(keep)
         no_sky, no_location = s.label(), s.label()
         s.arg(2); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_sky)
-        s.push(SCENE_SKY_KEY); depth(); s.emit(0x50); s.arg(2); s.call(54, 2)
+        s.push(_SCENE_LAYOUT['sky']); depth(); s.emit(0x50); s.arg(2); s.call(54, 2)
         s.label(no_sky)
         s.arg(3); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_location)
-        s.push(SCENE_LOCATION_KEY); depth(); s.emit(0x50); s.arg(3); s.call(54, 2)
+        s.push(_SCENE_LAYOUT['location']); depth(); s.emit(0x50); s.arg(3); s.call(54, 2)
         s.label(no_location)
         s.arg(2); s.push(-1); s.emit(0x0a); s.jump_if_zero(change)
         s.arg(3); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(shown)
@@ -1232,6 +1259,8 @@ def field_set(rewriter, pc, argc, context):
     """35: (event, field, value). A Campaign story has one event, so its fields are simply the current ones."""
     if context['kind'] == 'calendar':
         return field_set_calendar(rewriter, pc, argc, context)
+    if context['kind'] == 'season':
+        return season_field_set(rewriter, pc, argc, context)
     rewriter.redirect(pc, 'field_set', lambda s: (s.arg(2), s.push(FIELD_KEY), s.emit(0x50), s.arg(3), s.call(54, 2), s.result(0)))
 
 
@@ -1244,9 +1273,12 @@ def event_text(rewriter, pc, argc, context):
     rewriter.redirect(pc, ('event_text', context['rid']), build)
 
 
+_EVENT_LAYOUT = {'base': EVENT_BASE}   # (where events are kept: the Classic driver's, or SEASON_EVENTS while a season is translated)
+
+
 def event_key(s, number, offset):
     """Push event `number`'s (a callable pushing it, 1 first) saved-number key at `offset`."""
-    number(); s.push(1); s.emit(0x51); s.push(EVENT_STRIDE); s.emit(0x52); s.push(EVENT_BASE + offset); s.emit(0x50)
+    number(); s.push(1); s.emit(0x51); s.push(EVENT_STRIDE); s.emit(0x52); s.push(_EVENT_LAYOUT['base'] + offset); s.emit(0x50)
 
 
 def event_get(s, number, offset):
@@ -1434,6 +1466,8 @@ def schedule_weekly(rewriter, pc, argc, context):
     """34: (script, text, name, caption, weekdays, month, day, to month, to day, minute, duration, icon, flag): an event on each of
     those weekdays from the one date to the other, as copies on the list (one a day; 35 sets a field on them all). Returns the
     first's number (0 for no script, as BREW). The weekdays are a constant the translator reads (CS Idol, Stage 5)."""
+    if context['kind'] == 'season':
+        return season_weekly(rewriter, pc, argc, context)
     program = context['program']
     values = newrules.pushed_values(program, rewriter.code_base + pc, argc)
     weekdays = values[4] if values and len(values) > 4 else None
@@ -1670,15 +1704,22 @@ def calendar_step(s, context, title_card, end_story, date_card):
 
     s.label(over)
     end_story()
-    # Run event `best`: its fields become the registers, its text 7's; this script comes back after it.
     s.label(run)
+    run_event(s, context, B, title_card, date_card, STORY_SCRIPT)
+
+
+def run_event(s, context, B, title_card, date_card, driver):
+    """Run event B (a callable pushing its number): its fields become the registers 8 reads, its text 7's; the driver's script
+    (`driver`) is queued to come back after it, then the event's own script, unless that is the driver's (a Classic story's
+    events run on in its story script). The first event comes under the title card, a new day's under its card, and each
+    with its badge."""
     event_set(s, B, EVENT_STATE, lambda: s.push(DONE))
     set_global(s, ACTIVE_KEY, B)
     for field in range(16):
         set_global(s, FIELD_KEY + field, lambda field=field: event_get(s, B, EVENT_FIELDS + field))
     keyed_text(s, EVENT_TEXT_KEY, B, context['key_buffer'])
     s.text(EVENT_TEXT); s.push(context['key_buffer']); s.text(''); s.push(-1); s.call(47, 3); s.push_result(); s.call(46, 2)
-    s.push(STORY_SCRIPT); s.push(0); s.call(10, 2)
+    s.push(driver); s.push(0); s.call(10, 2)
     badge, icon, chosen, started = s.label(), s.label(), s.label(), s.label()
     set_global(s, BADGE_TIME_KEY, lambda: (event_get(s, B, EVENT_MINUTE), s.push(SLOT_MINUTES), s.emit(0x53), s.push(SLOT_MINUTES),
                                            s.emit(0x52)))
@@ -1733,11 +1774,738 @@ def calendar_step(s, context, title_card, end_story, date_card):
     set_global(s, BADGE_UP_KEY, lambda: s.push(1))
     s.label(started)
     own = s.label()
-    event_get(s, B, EVENT_SCRIPT); s.push(STORY_SCRIPT); s.emit(0x0a); s.jump_if_nonzero(own)
+    event_get(s, B, EVENT_SCRIPT); s.push(driver); s.emit(0x0a); s.jump_if_nonzero(own)
     event_get(s, B, EVENT_SCRIPT); s.jump_if_zero(own)        # (0: an event scheduled before Stage 5's script numbers)
     event_get(s, B, EVENT_SCRIPT); s.push(0); s.call(10, 2)
     s.emit(0x33)
     s.label(own)
+
+
+# -- the season driver (Fall '06, Stage 6) ---------------------------------------------------------------------------------------
+def season_words(rewriter):
+    """Scratch words for the season driver and its services."""
+    return dict(season=rewriter.words([0] * 16))
+
+
+def sw(context, i):
+    """Scratch word i of the season driver's (season_words)."""
+    return context['season'] + i
+
+
+def day_key(s, day, entry=None):
+    """Push day `day`'s list count key, or with `entry` (a callable, from 0) that entry's."""
+    s.push(DAY_LISTS); day(); s.push(DAY_SLOTS); s.emit(0x52); s.emit(0x50)
+    if entry is not None:
+        entry(); s.emit(0x50); s.push(1); s.emit(0x50)
+
+
+def day_count(s, day):
+    day_key(s, day); s.call(55, 1); s.push_result()
+
+
+def each_day_entry(s, context, day, body):
+    """for each event on day `day` (a callable), in the order they were put there: body(), with the event's number in scratch
+    word 1 (body may jump out). Uses scratch words 0 and 1."""
+    k, ent = sw(context, 0), sw(context, 1)
+    top, done = s.label(), s.label()
+    set_word(s, k, lambda: s.push(0))
+    s.label(top)
+    s.emit(0x40, k); day_count(s, day); s.emit(0x0e); s.jump_if_zero(done)
+    set_word(s, ent, lambda: (day_key(s, day, lambda: s.emit(0x40, k)), s.call(55, 1), s.push_result()))
+    body()
+    set_word(s, k, lambda: (s.emit(0x40, k), s.push(1), s.emit(0x50)))
+    s.jump(top)
+    s.label(done)
+
+
+def day_add(s, context, day, number):
+    """Put event `number` on day `day`'s list (callables; days outside the season's are left off, as brew-calendar.js never
+    reaches them)."""
+    skip, later = s.label(), s.label()
+    D = lambda: s.emit(0x40, sw(context, 12))
+    set_word(s, sw(context, 12), day)
+    D(); s.push(0); s.emit(0x0e); D(); s.push(SEASON_MOST_DAYS); s.emit(0x0d); s.emit(0x11); s.jump_if_nonzero(skip)
+    day_count(s, D); s.push(DAY_SLOTS - 1); s.emit(0x0d); s.jump_if_nonzero(skip)
+    day_key(s, D, lambda: day_count(s, D)); number(); s.call(54, 2)
+    day_key(s, D); day_count(s, D); s.push(1); s.emit(0x50); s.call(54, 2)
+    D(); get_global(s, LAST_ENTRY_DAY_KEY); s.emit(0x0f); s.jump_if_nonzero(later)
+    set_global(s, LAST_ENTRY_DAY_KEY, D)
+    s.label(later)
+    s.label(skip)
+
+
+def pending_push(s, number, queue=PENDING_LIST):
+    """Event `number` joins the due list (brew-calendar.js `pending`), or another list (`queue`: its count, then its events)."""
+    full = s.label()
+    get_global(s, queue); s.push(PENDING_SLOTS - 1); s.emit(0x0d); s.jump_if_nonzero(full)
+    s.push(queue + 1); get_global(s, queue); s.emit(0x50); number(); s.call(54, 2)
+    set_global(s, queue, lambda: (get_global(s, queue), s.push(1), s.emit(0x50)))
+    s.label(full)
+
+
+def pending_shift(s, context, into, queue=PENDING_LIST):
+    """The first due event (or `queue`'s) into word `into`, the rest moved up."""
+    i = sw(context, 13)
+    top, done = s.label(), s.label()
+    set_word(s, into, lambda: get_global(s, queue + 1))
+    set_word(s, i, lambda: s.push(1))
+    s.label(top)
+    s.emit(0x40, i); get_global(s, queue); s.emit(0x0e); s.jump_if_zero(done)
+    s.push(queue); s.emit(0x40, i); s.emit(0x50)
+    s.push(queue + 1); s.emit(0x40, i); s.emit(0x50); s.call(55, 1); s.push_result()
+    s.call(54, 2)
+    set_word(s, i, lambda: (s.emit(0x40, i), s.push(1), s.emit(0x50)))
+    s.jump(top)
+    s.label(done)
+    set_global(s, queue, lambda: (get_global(s, queue), s.push(1), s.emit(0x51)))
+
+
+def nested_check(s):
+    """With events on the nested list, run them now (the nest runner, through service 223), then go on. Not inside a nested event:
+    the native engine runs them in a slot of their own, one after another, each to its end (FUN_0000af08, FUN_0000c09c), so a
+    nested event's waits don't start the next (Tardy-Slip's `runNested` does)."""
+    none = s.label()
+    get_global(s, NESTED_LIST); s.jump_if_zero(none)
+    get_global(s, NEST_DEPTH_KEY); s.jump_if_nonzero(none)
+    s.push(NEST_SCRIPT); s.call(NESTED_SCRIPT_SERVICE, 1)
+    s.label(none)
+
+
+def nest_runner(s, context):
+    """The nest runner's script (NEST_SCRIPT): story.js `runNested`. Each event on the nested list, in order, runs its script to its
+    end inside the waiting one (events it fires join the list and run after it): the registers (FIELD_KEY) and event text are kept by depth and the event's own set, then put back. The current
+    timed event stays the one that was running."""
+    ent, depth = sw(context, 1), sw(context, 2)
+    E = lambda: s.emit(0x40, ent)
+    top, done = s.label(), s.label()
+    set_global(s, NEST_DEPTH_KEY, lambda: (get_global(s, NEST_DEPTH_KEY), s.push(1), s.emit(0x50)))
+    set_word(s, depth, lambda: get_global(s, NEST_DEPTH_KEY))
+    s.label(top)
+    get_global(s, NESTED_LIST); s.jump_if_zero(done)
+    pending_shift(s, context, ent, NESTED_LIST)
+    save = lambda field: (s.push(NEST_SAVES), s.emit(0x40, depth), s.push(20), s.emit(0x52), s.emit(0x50), s.push(field), s.emit(0x50))
+    for field in range(16):
+        save(field); get_global(s, FIELD_KEY + field); s.call(54, 2)
+        set_global(s, FIELD_KEY + field, lambda field=field: event_get(s, E, EVENT_FIELDS + field))
+    keyed_text(s, '$BREWNEST%d', lambda: s.emit(0x40, depth), context['key_buffer'])
+    s.push(context['key_buffer']); s.text(EVENT_TEXT); s.text(''); s.push(-1); s.call(47, 3); s.push_result(); s.call(46, 2)
+    keyed_text(s, EVENT_TEXT_KEY, E, context['key_buffer'])
+    s.text(EVENT_TEXT); s.push(context['key_buffer']); s.text(''); s.push(-1); s.call(47, 3); s.push_result(); s.call(46, 2)
+    event_get(s, E, EVENT_SCRIPT); s.call(NESTED_SCRIPT_SERVICE, 1)
+    for field in range(16):
+        set_global(s, FIELD_KEY + field, lambda field=field: (save(field), s.call(55, 1), s.push_result()))
+    keyed_text(s, '$BREWNEST%d', lambda: s.emit(0x40, depth), context['key_buffer'])
+    s.text(EVENT_TEXT); s.push(context['key_buffer']); s.text(''); s.push(-1); s.call(47, 3); s.push_result(); s.call(46, 2)
+    s.jump(top)
+    s.label(done)
+    set_global(s, NEST_DEPTH_KEY, lambda: (get_global(s, NEST_DEPTH_KEY), s.push(1), s.emit(0x51)))
+
+
+def push_larger(s, a, b):
+    """Push the larger of two values (callables)."""
+    first, end = s.label(), s.label()
+    a(); b(); s.emit(0x0d); s.jump_if_nonzero(first)
+    b(); s.jump(end)
+    s.label(first)
+    a()
+    s.label(end)
+
+
+def advance_to(s, context, t):
+    """brew-calendar.js `advanceTo`: the clock moves on to `t` (a callable) if that's later; past the day's end, the next school day
+    at its start, or none (day -1) after the last."""
+    T, N = sw(context, 10), sw(context, 11)
+    later, done, finished = s.label(), s.label(), s.label()
+    set_word(s, T, t)
+    s.emit(0x40, T); get_global(s, CLOCK_KEY); s.emit(0x0c); s.jump_if_zero(later)
+    set_global(s, CLOCK_KEY, lambda: s.emit(0x40, T))
+    s.label(later)
+    get_global(s, CLOCK_KEY); get_global(s, DAY_END_KEY); s.emit(0x0f); s.jump_if_nonzero(done)
+    set_word(s, N, lambda: push_next_school_day(s, lambda: get_global(s, DAY_KEY)))
+    s.emit(0x40, N); s.push(0); s.emit(0x0e); s.emit(0x40, N); get_global(s, LAST_DAY_KEY); s.emit(0x0c); s.emit(0x11)
+    s.jump_if_nonzero(finished)
+    set_global(s, DAY_KEY, lambda: s.emit(0x40, N))
+    set_global(s, CLOCK_KEY, lambda: get_global(s, DAY_START_KEY))
+    set_global(s, CHECKED_KEY, lambda: (get_global(s, DAY_START_KEY), s.push(1), s.emit(0x51)))
+    s.jump(done)
+    s.label(finished)
+    set_global(s, DAY_KEY, lambda: s.push(-1))
+    s.label(done)
+
+
+def push_school_weekday(s, day):
+    """Push day `day`'s weekday counted from Monday (0 Monday, 6 Sunday)."""
+    push_weekday(s, day); s.push(6); s.emit(0x50); s.push(7); s.emit(0x54)
+
+
+def push_week(s, day):
+    """Push the season's week number (from 1) of day `day` (a callable): weeks run Monday to Sunday, the first from the calendar's
+    first day."""
+    day(); push_school_weekday(s, day); s.emit(0x51)
+    push_school_weekday(s, lambda: s.push(0)); s.emit(0x50)
+    s.push(7); s.emit(0x53); s.push(1); s.emit(0x50)
+
+
+def week_card(s, context, card):
+    """A new week's card, when today is in a week not shown yet: `Week 1 of 13` over the dates of its school days, Monday (or the
+    calendar's first day) to Friday (or its last)."""
+    first, last, first_month, first_date, week = (context['week_words'] + n for n in range(5))
+    m, d = context['cal_t'], context['cal_t'] + 1
+    W = lambda word: (lambda: s.emit(0x40, word))
+    today = lambda: get_global(s, DAY_KEY)
+    shown = s.label()
+    set_word(s, week, lambda: push_week(s, today))
+    s.emit(0x40, week); get_global(s, SHOWN_WEEK_KEY); s.emit(0x0a); s.jump_if_nonzero(shown)
+    set_global(s, SHOWN_WEEK_KEY, W(week))
+    set_word(s, first, lambda: (today(), push_school_weekday(s, today), s.emit(0x51)))
+    set_word(s, last, lambda: (s.emit(0x40, first), s.push(4), s.emit(0x50)))
+    on, within = s.label(), s.label()
+    s.emit(0x40, first); s.push(0); s.emit(0x0e); s.jump_if_zero(on)
+    set_word(s, first, lambda: s.push(0))
+    s.label(on)
+    s.emit(0x40, last); get_global(s, LAST_DAY_KEY); s.emit(0x0d); s.jump_if_zero(within)
+    set_word(s, last, lambda: get_global(s, LAST_DAY_KEY))
+    s.label(within)
+    date_of(s, context, W(first))
+    set_word(s, first_month, W(m))
+    set_word(s, first_date, W(d))
+    date_of(s, context, W(last))
+    month = lambda word: (s.push(context['month_names']), s.emit(0x40, word), s.push(1), s.emit(0x51), s.emit(0x50), s.emit(0x3f))
+    months, written, one_day = s.label(), s.label(), s.label()
+    s.emit(0x40, first_month); s.emit(0x40, m); s.emit(0x0a); s.jump_if_zero(months)
+    s.emit(0x40, first_date); s.emit(0x40, d); s.emit(0x0a); s.jump_if_nonzero(one_day)
+    s.push(context['date_range_buffer']); s.text(WEEK_RANGE); month(first_month); s.emit(0x40, first_date); s.emit(0x40, d)
+    s.call(22, 5); s.jump(written)
+    s.label(one_day)
+    s.push(context['date_range_buffer']); s.text(WEEK_ONE_DAY); month(first_month); s.emit(0x40, first_date)
+    s.call(22, 4); s.jump(written)
+    s.label(months)
+    s.push(context['date_range_buffer']); s.text(WEEK_RANGE_MONTHS); month(first_month); s.emit(0x40, first_date); month(m)
+    s.emit(0x40, d)
+    s.call(22, 6)
+    s.label(written)
+    s.push(context['week_buffer']); s.text(WEEK_TITLE); s.emit(0x40, week); push_week(s, lambda: get_global(s, LAST_DAY_KEY))
+    s.call(22, 4)
+    s.push(context['week_buffer']); s.push(context['date_range_buffer']); s.push(card); s.push(0); s.call(8, 4)
+    s.label(shown)
+
+
+def day_line(s, context):
+    """Today's narration line, `Monday, September 13.`, from the date (write_date) in the date buffer."""
+    s.push(context['day_line_buffer']); s.text(DAY_LINE); s.push(context['date_buffer']); s.call(22, 3)
+    s.push(context['day_line_buffer']); s.push(NARRATOR); s.call(13, 2)
+
+
+def season_step(s, context, title_card, end_story, date_card):
+    """The season driver's script (DRIVER_SCRIPT): brew-calendar.js `finish` then `step`, until an event runs (run_event) or the
+    calendar is over. Events due with no time of their own run first, in order; then this half hour's timed event (a flagged one
+    first) runs; with none, the half hour's untimed events become due and the clock moves on. A half hour with nothing on is passed
+    straight to the next that has something, which ends where stepping through each would."""
+    ent, best, slot, cur, end, anything, nxt, target = (sw(context, i) for i in (1, 2, 3, 8, 9, 7, 5, 6))
+    E, B, C = (lambda: s.emit(0x40, ent)), (lambda: s.emit(0x40, best)), (lambda: s.emit(0x40, cur))
+    today = lambda: get_global(s, DAY_KEY)
+    clock = lambda: get_global(s, CLOCK_KEY)
+    loop, run, over = s.label(), s.label(), s.label()
+    # A script has just ended: events on the nested list run first, as story.js runs them before its next event.
+    nested_check(s)
+    # finish(): the timed event that ran. Untimed events inside its span become due; the clock moves past its end.
+    no_current, not_later = s.label(), s.label()
+    get_global(s, CURRENT_KEY); s.jump_if_zero(no_current)
+    set_word(s, cur, lambda: get_global(s, CURRENT_KEY))
+    set_global(s, CURRENT_KEY, lambda: s.push(0))
+    today(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(no_current)
+    set_word(s, end, lambda: (event_get(s, C, EVENT_MINUTE), push_larger(s, lambda: event_get(s, C, EVENT_DURATION), lambda: s.push(0)),
+                              s.emit(0x50), s.push(1), s.emit(0x51)))
+    s.emit(0x40, end); get_global(s, CHECKED_KEY); s.emit(0x0c); s.jump_if_zero(not_later)
+
+    def inside():
+        skip = s.label()
+        event_get(s, E, EVENT_MINUTE); get_global(s, CHECKED_KEY); s.emit(0x0f); s.jump_if_nonzero(skip)
+        event_get(s, E, EVENT_MINUTE); s.emit(0x40, end); s.emit(0x0c); s.jump_if_nonzero(skip)
+        event_get(s, E, EVENT_DURATION); s.push(0); s.emit(0x0e); s.jump_if_zero(skip)
+        pending_push(s, E)
+        s.label(skip)
+    each_day_entry(s, context, today, inside)
+    set_global(s, CHECKED_KEY, lambda: s.emit(0x40, end))
+    s.label(not_later)
+    advance_to(s, context, lambda: push_larger(s, clock, lambda: push_larger(s, lambda: (s.emit(0x40, end), s.push(1), s.emit(0x50)),
+                                                                               lambda: (event_get(s, C, EVENT_MINUTE), s.push(1), s.emit(0x50)))))
+    s.label(no_current)
+
+    s.label(loop)
+    none_due = s.label()
+    get_global(s, PENDING_LIST); s.jump_if_zero(none_due)
+    pending_shift(s, context, best)
+    s.jump(run)
+    s.label(none_due)
+    today(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(over)
+    # Anything left, today or after?
+    left = s.label()
+    get_global(s, LAST_ENTRY_DAY_KEY); today(); s.emit(0x0c); s.jump_if_nonzero(left)
+
+    def later_today():
+        skip = s.label()
+        event_get(s, E, EVENT_MINUTE); clock(); s.emit(0x0e); s.jump_if_nonzero(skip)
+        s.jump(left)
+        s.label(skip)
+    each_day_entry(s, context, today, later_today)
+    s.jump(over)
+    s.label(left)
+    # This half hour.
+    capped = s.label()
+    set_word(s, slot, lambda: (clock(), s.push(SLOT_MINUTES), s.emit(0x53), s.push(SLOT_MINUTES), s.emit(0x52),
+                               s.push(SLOT_MINUTES - 1), s.emit(0x50)))
+    s.emit(0x40, slot); s.push(DAY_MINUTES); s.emit(0x0f); s.jump_if_nonzero(capped)
+    set_word(s, slot, lambda: s.push(DAY_MINUTES))
+    s.label(capped)
+    in_slot = lambda skip: (event_get(s, E, EVENT_MINUTE), clock(), s.emit(0x0e), s.jump_if_nonzero(skip),
+                            event_get(s, E, EVENT_MINUTE), s.emit(0x40, slot), s.emit(0x0c), s.jump_if_nonzero(skip))
+    set_word(s, best, lambda: s.push(0))
+
+    def timed():
+        skip, take = s.label(), s.label()
+        in_slot(skip)
+        event_get(s, E, EVENT_DURATION); s.push(0); s.emit(0x0e); s.jump_if_nonzero(skip)
+        B(); s.jump_if_zero(take)
+        event_get(s, E, EVENT_FLAG); s.jump_if_zero(skip)
+        event_get(s, B, EVENT_FLAG); s.jump_if_nonzero(skip)
+        s.label(take)
+        set_word(s, best, E)
+        s.label(skip)
+    each_day_entry(s, context, today, timed)
+    untimed = s.label()
+    B(); s.jump_if_zero(untimed)
+    set_global(s, CLOCK_KEY, lambda: push_larger(s, clock, lambda: event_get(s, B, EVENT_MINUTE)))
+    set_global(s, CHECKED_KEY, clock)
+    set_global(s, CURRENT_KEY, B)
+    s.jump(run)
+    s.label(untimed)
+    set_word(s, anything, lambda: s.push(0))
+
+    def due():
+        skip = s.label()
+        in_slot(skip)
+        pending_push(s, E)
+        set_word(s, anything, lambda: s.push(1))
+        s.label(skip)
+    each_day_entry(s, context, today, due)
+    set_global(s, CHECKED_KEY, lambda: push_larger(s, lambda: get_global(s, CHECKED_KEY), lambda: s.emit(0x40, slot)))
+    idle = s.label()
+    s.emit(0x40, anything); s.jump_if_zero(idle)
+    advance_to(s, context, lambda: (s.emit(0x40, slot), s.push(1), s.emit(0x50)))
+    s.jump(loop)
+    s.label(idle)
+    # Nothing this half hour: on to the next half hour today that has something, or past the day's end.
+    set_word(s, nxt, lambda: s.push(32767))
+
+    def after():
+        skip = s.label()
+        event_get(s, E, EVENT_MINUTE); s.emit(0x40, slot); s.emit(0x0f); s.jump_if_nonzero(skip)
+        event_get(s, E, EVENT_MINUTE); s.emit(0x40, nxt); s.emit(0x0d); s.jump_if_nonzero(skip)
+        set_word(s, nxt, lambda: event_get(s, E, EVENT_MINUTE))
+        s.label(skip)
+    each_day_entry(s, context, today, after)
+    next_day = s.label()
+    s.emit(0x40, nxt); s.push(32767); s.emit(0x0a); s.jump_if_nonzero(next_day)
+    set_word(s, target, lambda: (s.emit(0x40, nxt), s.push(SLOT_MINUTES), s.emit(0x53), s.push(SLOT_MINUTES), s.emit(0x52)))
+    s.emit(0x40, target); get_global(s, DAY_END_KEY); s.emit(0x0c); s.jump_if_nonzero(next_day)
+    set_global(s, CHECKED_KEY, lambda: push_larger(s, lambda: get_global(s, CHECKED_KEY), lambda: (s.emit(0x40, target), s.push(1), s.emit(0x51))))
+    advance_to(s, context, lambda: s.emit(0x40, target))
+    s.jump(loop)
+    s.label(next_day)
+    advance_to(s, context, lambda: push_larger(s, lambda: (s.emit(0x40, slot), s.push(1), s.emit(0x50)),
+                                               lambda: (get_global(s, DAY_END_KEY), s.push(1), s.emit(0x50))))
+    s.jump(loop)
+    s.label(over)
+    end_story()
+    s.label(run)
+    run_event(s, context, B, title_card, date_card, DRIVER_SCRIPT)
+
+
+def season_answer(s, value):
+    """R = value (a callable): through RESULT_KEY, as a shim can only set a constant otherwise."""
+    set_global(s, RESULT_KEY, value)
+    s.push(RESULT_KEY); s.call(55, 1)
+
+
+def season_setup(rewriter, pc, argc, context):
+    """69 in a season: as calendar_setup, and the season's own state: nothing checked, no current event, no day lists, nothing due."""
+    def build(s):
+        set_global(s, CLOCK_KEY, lambda: s.arg(1))
+        set_global(s, DAY_START_KEY, lambda: s.arg(1))
+        set_global(s, DAY_END_KEY, lambda: s.arg(2))
+        set_global(s, START_MONTH_KEY, lambda: s.arg(3))
+        set_global(s, START_DATE_KEY, lambda: s.arg(4))
+        set_global(s, WEEKDAY_KEY, lambda: s.arg(5))
+        set_global(s, LAST_DAY_KEY, lambda: push_day_index(s, context, lambda: s.arg(6), lambda: s.arg(7)))
+        for key in (EVENTS_KEY, ACTIVE_KEY, STARTED_KEY, DAY_KEY, SHOWN_DAY_KEY, CURRENT_KEY, PENDING_LIST, NESTED_LIST, NEST_DEPTH_KEY,
+                    SHOWN_WEEK_KEY):
+            set_global(s, key, lambda: s.push(0))
+        set_global(s, CHECKED_KEY, lambda: (s.arg(1), s.push(1), s.emit(0x51)))
+        set_global(s, LAST_ENTRY_DAY_KEY, lambda: s.push(-1))
+        d, top, done = sw(context, 14), s.label(), s.label()
+        set_word(s, d, lambda: s.push(0))
+        s.label(top)
+        s.emit(0x40, d); s.push(SEASON_MOST_DAYS); s.emit(0x0e); s.jump_if_zero(done)
+        day_key(s, lambda: s.emit(0x40, d)); s.push(0); s.call(54, 2)
+        set_word(s, d, lambda: (s.emit(0x40, d), s.push(1), s.emit(0x50)))
+        s.jump(top)
+        s.label(done)
+        s.result(0)
+    rewriter.redirect(pc, ('season_setup', context['rid']), build)
+
+
+def season_schedule(rewriter, pc, argc, context):
+    """33 in a season: the event, once, on its day's list. Returns its number (0 for no script)."""
+    def build(s):
+        none, end = s.label(), s.label()
+        s.arg(1); s.push(0); s.emit(0x0f); s.jump_if_nonzero(none)
+        add_event(s, context, lambda: s.arg(1), lambda: s.arg(7), lambda: s.arg(8), lambda: s.arg(9), lambda: s.arg(10),
+                  lambda: s.arg(2), lambda: s.arg(3), lambda: s.push(-1))
+        day_add(s, context, lambda: push_day_index(s, context, lambda: s.arg(5), lambda: s.arg(6)), lambda: get_global(s, EVENTS_KEY))
+        s.push(EVENTS_KEY); s.call(55, 1)
+        s.jump(end)
+        s.label(none)
+        s.result(0)
+        s.label(end)
+    rewriter.redirect(pc, ('season_schedule', context['rid']), build)
+
+
+def constant_text(rewriter, pc, argc, context, index, what):
+    """A call's argument `index` (from 0) as a constant string (pushed directly, or by its data address)."""
+    program = context['program']
+    values = newrules.pushed_values(program, rewriter.code_base + pc, argc)
+    value = values[index] if values and len(values) > index else None
+    if isinstance(value, int):
+        value = next((text for address, text, _ in data_strings(program) if address == value), None)
+    if not isinstance(value, (bytes, str)) and what in ('34', '44'):
+        # Fall '06's weekly calls build their other arguments from tables, which pushed_values can't follow; the weekdays are
+        # still a string pushed for the call, the only one that names weekdays (`Mo,We,Fr`).
+        strings = {address: text for address, text, _ in data_strings(program)}
+        instructions = program.instructions
+        k = next(n for n, i in enumerate(instructions) if i.pc == rewriter.code_base + pc)
+        start = next((j + 1 for j in range(k - 1, -1, -1) if instructions[j].opcode == 0x1f), 0)
+        names = {strings[i.operand] for i in instructions[start:k] if i.opcode == 0x1a and i.operand in strings
+                 and is_weekday_list(strings[i.operand])}
+        if len(names) == 1:
+            value = names.pop()
+    if not isinstance(value, (bytes, str)):
+        raise StoryError(f'{what} at {pc}: not a constant')
+    return value.decode('latin-1') if isinstance(value, bytes) else value
+
+
+def is_weekday_list(text):
+    """Whether a string is a list of weekdays (`Mo,We,Fr`, `Friday`)."""
+    parts = [part.strip().lower() for part in text.decode('latin-1').replace(',', '|').split('|')]
+    return bool(parts) and all(part[:2] in WEEKDAY_ABBREVIATIONS and WEEKDAYS[WEEKDAY_ABBREVIATIONS.index(part[:2])].lower()
+                                .startswith(part) for part in parts)
+
+
+def season_weekly(rewriter, pc, argc, context):
+    """34 in a season: the event once, on each of the weekdays (a constant) from the one date to the other. Returns its number."""
+    mask = weekday_mask(constant_text(rewriter, pc, argc, context, 4, '34'))
+
+    def build(s):
+        none, end, loop, next_day, done, power, shifted = (s.label() for _ in range(7))
+        day, j = sw(context, 14), sw(context, 15)
+        s.arg(1); s.push(0); s.emit(0x0f); s.jump_if_nonzero(none)
+        add_event(s, context, lambda: s.arg(1), lambda: s.arg(10), lambda: s.arg(11), lambda: s.arg(12), lambda: s.arg(13),
+                  lambda: s.arg(2), lambda: s.arg(3), lambda: s.push(-1))
+        set_word(s, day, lambda: push_day_index(s, context, lambda: s.arg(6), lambda: s.arg(7)))
+        s.label(loop)
+        s.emit(0x40, day); push_day_index(s, context, lambda: s.arg(8), lambda: s.arg(9)); s.emit(0x0f); s.jump_if_zero(done)
+        s.push(mask)
+        set_word(s, j, lambda: push_weekday(s, lambda: s.emit(0x40, day)))
+        s.label(power)
+        s.emit(0x40, j); s.jump_if_zero(shifted)
+        s.push(2); s.emit(0x53)
+        set_word(s, j, lambda: (s.emit(0x40, j), s.push(1), s.emit(0x51)))
+        s.jump(power)
+        s.label(shifted)
+        s.push(2); s.emit(0x54); s.jump_if_zero(next_day)
+        day_add(s, context, lambda: s.emit(0x40, day), lambda: get_global(s, EVENTS_KEY))
+        s.label(next_day)
+        set_word(s, day, lambda: (s.emit(0x40, day), s.push(1), s.emit(0x50)))
+        s.jump(loop)
+        s.label(done)
+        s.push(EVENTS_KEY); s.call(55, 1)
+        s.jump(end)
+        s.label(none)
+        s.result(0)
+        s.label(end)
+    rewriter.redirect(pc, ('season_weekly', context['rid'], pc), build)
+
+
+def season_field_set(rewriter, pc, argc, context):
+    """35 in a season: (event, field, value) on the event, which every day it's on shares (brew-calendar.js keeps it once)."""
+    def build(s):
+        skip = s.label()
+        s.arg(1); s.push(1); s.emit(0x0e); s.arg(2); s.push(0); s.emit(0x0e); s.emit(0x11)
+        s.arg(2); s.push(15); s.emit(0x0c); s.emit(0x11); s.jump_if_nonzero(skip)
+        event_key(s, lambda: s.arg(1), EVENT_FIELDS); s.arg(2); s.emit(0x50); s.arg(3); s.call(54, 2)
+        s.label(skip)
+        s.result(0)
+    rewriter.redirect(pc, 'season_field_set', build)
+
+
+def season_only(rewriter, pc, service, context):
+    if context['kind'] != 'season':
+        raise StoryError(f'service {service} at {pc} needs the season driver')
+
+
+def unschedule(rewriter, pc, argc, context):
+    """36: (name, month, day): the first event of that name off that day's list (brew-calendar.js `unscheduleByName`)."""
+    season_only(rewriter, pc, 36, context)
+
+    def build(s):
+        ent, k = sw(context, 1), sw(context, 0)
+        day, gone, done = sw(context, 14), s.label(), s.label()
+        set_word(s, day, lambda: push_day_index(s, context, lambda: s.arg(2), lambda: s.arg(3)))
+        D = lambda: s.emit(0x40, day)
+
+        def same():
+            skip = s.label()
+            keyed_text(s, EVENT_NAME_KEY, lambda: s.emit(0x40, ent), context['key_buffer'])
+            s.push(context['key_buffer']); s.text(''); s.push(-1); s.call(47, 3); s.push_result()
+            s.arg(1); s.call(24, 2); s.push_result(); s.jump_if_zero(skip)
+            s.jump(gone)
+            s.label(skip)
+        each_day_entry(s, context, D, same)
+        s.jump(done)
+        # Take entry k off: the ones after it move up.
+        s.label(gone)
+        top, moved = s.label(), s.label()
+        s.label(top)
+        s.emit(0x40, k); s.push(1); s.emit(0x50); day_count(s, D); s.emit(0x0e); s.jump_if_zero(moved)
+        day_key(s, D, lambda: s.emit(0x40, k))
+        day_key(s, D, lambda: (s.emit(0x40, k), s.push(1), s.emit(0x50))); s.call(55, 1); s.push_result()
+        s.call(54, 2)
+        set_word(s, k, lambda: (s.emit(0x40, k), s.push(1), s.emit(0x50)))
+        s.jump(top)
+        s.label(moved)
+        day_key(s, D); day_count(s, D); s.push(1); s.emit(0x51); s.call(54, 2)
+        s.label(done)
+        s.result(0)
+    rewriter.redirect(pc, ('unschedule', context['rid']), build)
+
+
+def fire_due(rewriter, pc, argc, context):
+    """37: the untimed events whose minute has come since the last check (brew-calendar.js `fireDue`), on the nested list: BREW
+    runs them at the script's next wait (NEST_WAITS), or when it ends. As the native fire (FUN_00017c88): a window with any event
+    in it starts the list afresh, and the check moves to now (capped at the day's end) even when nothing was due."""
+    season_only(rewriter, pc, 37, context)
+
+    def build(s):
+        now, done, fresh = sw(context, 14), s.label(), sw(context, 15)
+        E = lambda: s.emit(0x40, sw(context, 1))
+        set_word(s, now, lambda: get_global(s, CLOCK_KEY))
+        capped = s.label()
+        s.emit(0x40, now); s.push(DAY_MINUTES); s.emit(0x0f); s.jump_if_nonzero(capped)
+        set_word(s, now, lambda: s.push(DAY_MINUTES))
+        s.label(capped)
+        get_global(s, DAY_KEY); s.push(0); s.emit(0x0e); s.jump_if_nonzero(done)
+        checked = s.label()
+        s.emit(0x40, now); get_global(s, CHECKED_KEY); s.emit(0x0f); s.jump_if_nonzero(checked)
+        set_word(s, fresh, lambda: s.push(1))
+
+        def due():
+            skip, kept = s.label(), s.label()
+            event_get(s, E, EVENT_MINUTE); get_global(s, CHECKED_KEY); s.emit(0x0f); s.jump_if_nonzero(skip)
+            event_get(s, E, EVENT_MINUTE); s.emit(0x40, now); s.emit(0x0c); s.jump_if_nonzero(skip)
+            s.emit(0x40, fresh); s.jump_if_zero(kept)
+            set_global(s, NESTED_LIST, lambda: s.push(0))
+            set_word(s, fresh, lambda: s.push(0))
+            s.label(kept)
+            event_get(s, E, EVENT_DURATION); s.push(0); s.emit(0x0e); s.jump_if_zero(skip)
+            pending_push(s, E, NESTED_LIST)
+            s.label(skip)
+        each_day_entry(s, context, lambda: get_global(s, DAY_KEY), due)
+        s.label(checked)
+        set_global(s, CHECKED_KEY, lambda: s.emit(0x40, now))
+        s.label(done)
+        s.result(0)
+    rewriter.redirect(pc, ('fire_due', context['rid']), build)
+
+
+def advance_within(rewriter, pc, argc, context):
+    """38: (percent) the clock to that share of the current event's span (brew-calendar.js `advanceWithin`). The share is worked
+    out in whole hundreds and the rest, as a word can't hold a percent of a day."""
+    season_only(rewriter, pc, 38, context)
+
+    def build(s):
+        done, span = s.label(), sw(context, 14)
+        C = lambda: get_global(s, CURRENT_KEY)
+        C(); s.jump_if_zero(done)
+        set_word(s, span, lambda: (push_larger(s, lambda: event_get(s, C, EVENT_DURATION), lambda: s.push(0)), s.push(1), s.emit(0x51)))
+        set_global(s, CLOCK_KEY, lambda: (event_get(s, C, EVENT_MINUTE),
+                                          s.arg(1), s.emit(0x40, span), s.push(100), s.emit(0x53), s.emit(0x52), s.emit(0x50),
+                                          s.arg(1), s.emit(0x40, span), s.push(100), s.emit(0x54), s.emit(0x52), s.push(100), s.emit(0x53),
+                                          s.emit(0x50)))
+        s.label(done)
+        s.result(0)
+    rewriter.redirect(pc, ('advance_within', context['rid']), build)
+
+
+def clock_set(rewriter, pc, argc, context):
+    """39: (minute) the clock."""
+    season_only(rewriter, pc, 39, context)
+    rewriter.redirect(pc, 'clock_set', lambda s: (set_global(s, CLOCK_KEY, lambda: s.arg(1)), s.result(0)))
+
+
+def clock_get(rewriter, pc, argc, context):
+    """41: the clock."""
+    season_only(rewriter, pc, 41, context)
+    rewriter.redirect(pc, 'clock_get', lambda s: (s.push(CLOCK_KEY), s.call(55, 1)))
+
+
+def next_weekday(rewriter, pc, argc, context):
+    """44: (weekday, month address, date address): the date there moved on, school day by school day, to that weekday (story.js:
+    a day whose name shares the weekday's first or second letter). The weekday is read as it runs (Fall '06 works some out)."""
+    season_only(rewriter, pc, 44, context)
+    m, d = context['cal_t'], context['cal_t'] + 1
+    letters = rewriter.words([ord(c) for day in WEEKDAYS for c in day[:2]])
+
+    def build(s):
+        day, j, tries, word = sw(context, 14), sw(context, 15), sw(context, 13), sw(context, 12)
+        loop, found = s.label(), s.label()
+        set_word(s, word, lambda: (s.arg(1), s.emit(0x3f)))
+        set_word(s, day, lambda: push_day_index(s, context, lambda: (s.arg(2), s.emit(0x3f)), lambda: (s.arg(3), s.emit(0x3f))))
+        set_word(s, tries, lambda: s.push(0))
+        s.label(loop)
+        s.emit(0x40, tries); s.push(400); s.emit(0x0d); s.jump_if_nonzero(found)
+        set_word(s, j, lambda: (push_weekday(s, lambda: s.emit(0x40, day)), s.push(2), s.emit(0x52), s.push(letters), s.emit(0x50)))
+        s.emit(0x40, j); s.emit(0x3f); s.emit(0x40, word); s.push(256); s.emit(0x53); s.emit(0x0a)
+        s.emit(0x40, j); s.push(1); s.emit(0x50); s.emit(0x3f); s.emit(0x40, word); s.push(256); s.emit(0x54); s.emit(0x0a)
+        s.emit(0x11); s.jump_if_nonzero(found)
+        set_word(s, j, lambda: push_next_school_day(s, lambda: s.emit(0x40, day)))
+        s.emit(0x40, j); s.push(0); s.emit(0x0e); s.jump_if_nonzero(found)
+        set_word(s, day, lambda: s.emit(0x40, j))
+        set_word(s, tries, lambda: (s.emit(0x40, tries), s.push(1), s.emit(0x50)))
+        s.jump(loop)
+        s.label(found)
+        date_of(s, context, lambda: s.emit(0x40, day))
+        s.arg(2); s.emit(0x40, m); s.emit(0x3e); s.emit(0x15)
+        s.arg(3); s.emit(0x40, d); s.emit(0x3e); s.emit(0x15)
+        s.result(0)
+    rewriter.redirect(pc, ('next_weekday', context['rid']), build)
+
+
+def days_between(rewriter, pc, argc, context):
+    """45: (month, day, month, day): days from the first date to the second."""
+    season_only(rewriter, pc, 45, context)
+    rewriter.redirect(pc, ('days_between', context['rid']), lambda s: season_answer(s, lambda: (
+        push_day_index(s, context, lambda: s.arg(3), lambda: s.arg(4)),
+        push_day_index(s, context, lambda: s.arg(1), lambda: s.arg(2)), s.emit(0x51))))
+
+
+def event_flag(rewriter, pc, argc, context):
+    """46: (event) whether its flag is set."""
+    season_only(rewriter, pc, 46, context)
+
+    def build(s):
+        no = s.label()
+        season_answer(s, lambda: s.push(0))
+        event_get(s, lambda: s.arg(1), EVENT_FLAG); s.jump_if_zero(no)
+        season_answer(s, lambda: s.push(1))
+        s.label(no)
+    rewriter.redirect(pc, ('event_flag', context['rid']), build)
+
+
+def window_events(rewriter, pc, argc, context):
+    """47: (month, day, from, to) how many of that day's events overlap the window; 48 (the same, address) writes their numbers
+    there and answers nothing (brew-calendar.js `inWindow`: an event starts or ends inside it, or spans it)."""
+    service = rewriter.code[pc][1] >> 8
+    season_only(rewriter, pc, service, context)
+
+    def build(s):
+        day, count, end = sw(context, 14), sw(context, 15), sw(context, 13)
+        E = lambda: s.emit(0x40, sw(context, 1))
+        set_word(s, day, lambda: push_day_index(s, context, lambda: s.arg(1), lambda: s.arg(2)))
+        set_word(s, count, lambda: s.push(0))
+
+        def check():
+            take, skip, second, third = s.label(), s.label(), s.label(), s.label()
+            set_word(s, end, lambda: (event_get(s, E, EVENT_MINUTE), event_get(s, E, EVENT_DURATION), s.emit(0x50)))
+            s.arg(3); event_get(s, E, EVENT_MINUTE); s.emit(0x0f); event_get(s, E, EVENT_MINUTE); s.arg(4); s.emit(0x0f); s.emit(0x12)
+            s.jump_if_zero(second)
+            s.jump(take)
+            s.label(second)
+            s.arg(3); s.emit(0x40, end); s.emit(0x0f); s.emit(0x40, end); s.arg(4); s.emit(0x0f); s.emit(0x12)
+            s.jump_if_zero(third)
+            s.jump(take)
+            s.label(third)
+            event_get(s, E, EVENT_MINUTE); s.arg(3); s.emit(0x0f); s.arg(4); s.emit(0x40, end); s.emit(0x0f); s.emit(0x12)
+            s.jump_if_zero(skip)
+            s.label(take)
+            if service == 48:
+                s.arg(5); s.emit(0x40, count); s.emit(0x50); E(); s.emit(0x3e); s.emit(0x15)
+            set_word(s, count, lambda: (s.emit(0x40, count), s.push(1), s.emit(0x50)))
+            s.label(skip)
+        each_day_entry(s, context, lambda: s.emit(0x40, day), check)
+        if service == 47:
+            season_answer(s, lambda: s.emit(0x40, count))
+        else:
+            s.result(0)
+    rewriter.redirect(pc, ('window_events', context['rid'], service), build)
+
+
+def flag_set(rewriter, pc, argc, context):
+    """56: (character, key, index, value) a flag, kept as the character's number FLAG_KEYS + key x 64 + index."""
+    rewriter.redirect(pc, 'flag_set', lambda s: (s.arg(1), s.arg(2), s.push(64), s.emit(0x52), s.arg(3), s.emit(0x50),
+                                                 s.push(FLAG_KEYS), s.emit(0x50), s.arg(4), s.call(52, 3), s.result(0)))
+
+
+def flag_get(rewriter, pc, argc, context):
+    """57: (character, key, index) a flag (0 when unset)."""
+    rewriter.redirect(pc, 'flag_get', lambda s: (s.arg(1), s.arg(2), s.push(64), s.emit(0x52), s.arg(3), s.emit(0x50),
+                                                 s.push(FLAG_KEYS), s.emit(0x50), s.call(53, 2)))
+
+
+def list_remove(rewriter, pc, argc, context):
+    """66: (entity, key, entry) that entry out of the list, the ones after it moved up (story.js: `splice`)."""
+    def build(s):
+        entity, key = (lambda: s.arg(1)), (lambda: s.arg(2))
+        base, entry, length = (lambda: s.emit(0x41, 0)), (lambda: s.emit(0x41, 1)), (lambda: s.emit(0x41, 2))
+        top, done, skip = s.label(), s.label(), s.label()
+        push_list_base(s, key)                                                                  # local 0: the list's first number
+        s.arg(3)                                                                                # local 1: the entry
+        entity(); base(); s.push(LIST_LENGTH); s.emit(0x50); s.call(53, 2); s.push_result()     # local 2: the length
+        entry(); s.push(0); s.emit(0x0e); entry(); length(); s.emit(0x0d); s.emit(0x11); s.jump_if_nonzero(skip)
+        s.label(top)
+        entry(); s.push(1); s.emit(0x50); length(); s.emit(0x0e); s.jump_if_zero(done)
+        list_store(s, entity, key, base, entry,
+                   lambda: (entity(), base(), entry(), s.emit(0x50), s.push(1), s.emit(0x50), s.call(53, 2), s.push_result()),
+                   lambda: (entity(), base(), entry(), s.emit(0x50), s.call(53, 2), s.push_result()), context)
+        s.emit(0x23, 1); entry(); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(top)
+        s.label(done)
+        list_store(s, entity, key, base, entry, lambda: s.push(0),
+                   lambda: (entity(), base(), entry(), s.emit(0x50), s.call(53, 2), s.push_result()), context)
+        entity(); base(); s.push(LIST_LENGTH); s.emit(0x50); length(); s.push(1); s.emit(0x51); s.call(52, 3)
+        s.label(skip)
+        s.result(0)
+    rewriter.redirect(pc, ('list_remove', context['rid']), build)
+
+
+CAST_MOST = 100                         # characters 67 looks among
+
+
+def character_named(rewriter, pc, argc, context):
+    """67: (name) the first character with that name, or -1 (story.js: case aside, which SHS's string check doesn't)."""
+    def build(s):
+        i, top, found, none = sw(context, 14), s.label(), s.label(), s.label()
+        set_word(s, i, lambda: s.push(0))
+        s.label(top)
+        s.emit(0x40, i); s.push(CAST_MOST); s.emit(0x0e); s.jump_if_zero(none)
+        s.emit(0x40, i); s.push(context['name_buffer']); s.call(61, 2)
+        s.push(context['name_buffer']); s.arg(1); s.call(24, 2); s.push_result(); s.jump_if_nonzero(found)
+        set_word(s, i, lambda: (s.emit(0x40, i), s.push(1), s.emit(0x50)))
+        s.jump(top)
+        s.label(none)
+        set_word(s, i, lambda: s.push(-1))
+        s.label(found)
+        season_answer(s, lambda: s.emit(0x40, i))
+    rewriter.redirect(pc, ('character_named', context['rid']), build)
 
 
 def schedule(rewriter, pc, argc, context):
@@ -1745,6 +2513,8 @@ def schedule(rewriter, pc, argc, context):
     queued, its text and clock kept. Returns the event's ID. A Classic story's events go on the calendar (schedule_calendar)."""
     if context['kind'] == 'calendar':
         return schedule_calendar(rewriter, pc, argc, context)
+    if context['kind'] == 'season':
+        return season_schedule(rewriter, pc, argc, context)
     if context['kind'] != 'single':
         raise StoryError('this story schedules more than one event, which needs the calendar driver')
 
@@ -1818,11 +2588,13 @@ def the_end(rewriter, pc, argc, context):
 
 HANDLERS = {7: event_text, 8: field, 9: music, 12: titled_page, 13: scene_open, 14: scene_change, 15: name_plate, 16: narration_queue,
             18: scene_close,
-            27: portrait_choice, 28: menu, 34: schedule_weekly, 42: today_date, 43: today_date, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
+            27: portrait_choice, 28: menu, 34: schedule_weekly, 42: today_date, 43: today_date,
+            36: unschedule, 37: fire_due, 38: advance_within, 39: clock_set, 41: clock_get, 44: next_weekday, 45: days_between,
+            46: event_flag, 47: window_events, 48: window_events, 56: flag_set, 57: flag_get, 66: list_remove, 67: character_named, 29: text_entry, 30: spinning_menu, 31: menu_timer, 33: schedule, 35: field_set, 49: player_name, 53: stored_text_get, 55: cast_name, 58: owned_set, 59: owned_get,
             62: list_push, 63: list_get, 64: list_set, 65: list_length, 70: the_end, 71: cast_name, 72: line, 74: wait, 80: build_query}
 # No-ops in BREW (0, 2, 10, 22-26, 32, 54, 75-79); the calendar's setup where there's no calendar (69); art registration, since
 # the addon holds the art (11).
-DROPPED = {0, 2, 10, 11, 22, 23, 24, 25, 26, 32, 54, 69, 75, 76, 77, 78, 79}
+DROPPED = {0, 2, 10, 11, 17, 22, 23, 24, 25, 26, 32, 54, 69, 75, 76, 77, 78, 79}   # 17: Fall '06 only ever clears the box's icons
 RENAME = {1: 22,                         # (destination, format, values...)
           3: 24,                         # string equality
           4: 25,                         # concatenate
@@ -2113,17 +2885,37 @@ def bare_word(text):
     return bracketed(stripped) if stripped[:1] == b'(' else (stripped if stripped != text else None)
 
 
+ROUTINE_SHAPE = '443018798db8'           # the first 12 hex digits of the SHA-1 of the word-game routine's opcodes
+
+
+def routine_shape(instructions, start):
+    """The fingerprint of the function starting at `start`: its opcodes up to the next function, SHA-1, 12 hex digits."""
+    k = next(n for n, i in enumerate(instructions) if i.pc == start)
+    end = next((n for n in range(k + 1, len(instructions)) if instructions[n].opcode == 0x48), len(instructions))
+    return hashlib.sha1(bytes(i.opcode for i in instructions[k:end])).hexdigest()[:12]
+
+
 def spin_routine(program):
     """Where the routine with the spinning menu starts, or None. It's the same code everywhere it appears (55 scripts, 2026-11-05)."""
     instructions = program.instructions
-    sites = [i.pc for i in instructions if i.opcode == 0x1f and i.operand >> 8 == 30]
-    if not sites:
+    # (A spinning menu outside any function is a question of its own, which spinning_menu handles: Fall '06's 25023 has two, its
+    # exercise rounds `Lap %d/%d` and `Rep %d/%d`; Stage 6.)
+    starts = {}
+    for i in instructions:
+        if i.opcode == 0x1f and i.operand >> 8 == 30:
+            start = max((j.pc for j in instructions if j.opcode == 0x48 and j.pc <= i.pc), default=None)
+            if start is not None:
+                starts.setdefault(start, i.pc)
+    # Only BREW's shared word-game routine is replaced (word_game): the same 70 instructions in all 64 scripts that have it, by the
+    # opcodes' fingerprint. Fall '06's other functions with a spinning menu (25002's mood tutorial, 25040's `Say something:`
+    # conversation, whose words count as flirty, nice or stupid) keep theirs as a question, its answer in register 0 (Stage 6).
+    starts = {start: site for start, site in starts.items() if routine_shape(instructions, start) == ROUTINE_SHAPE}
+    if not starts:
         return None
-    if len(sites) > 1:
+    if len(starts) > 1:
         raise StoryError('a script has more than one spinning menu routine')
-    start = max((i.pc for i in instructions if i.opcode == 0x48 and i.pc <= sites[0]), default=None)
-    if start is None:
-        return None
+    start, site = next(iter(starts.items()))
+    sites = [site]
     follows = [i.operand >> 8 for i in instructions[sites[0]:sites[0] + 8] if i.opcode == 0x1f]
     if follows[:4] != [30, 31, 32, 74]:
         raise StoryError(f'the spinning menu at {sites[0]} is not the usual routine')
@@ -2179,8 +2971,8 @@ def fix_funky_monkey_07(rewriter, context):
 
         def build(s):
             depth = lambda: (s.push(DEPTH_KEY), s.call(55, 1), s.push_result())
-            s.push(SCENE_SKY_KEY); depth(); s.emit(0x50); s.push(0); s.call(54, 2)
-            s.push(SCENE_LOCATION_KEY); depth(); s.emit(0x50); s.push(OWN_SCENE_26505); s.call(54, 2)
+            s.push(_SCENE_LAYOUT['sky']); depth(); s.emit(0x50); s.push(0); s.call(54, 2)
+            s.push(_SCENE_LAYOUT['location']); depth(); s.emit(0x50); s.push(OWN_SCENE_26505); s.call(54, 2)
             show_top_scene(s, context)
         rewriter.insert(pc, build)
 
@@ -2292,17 +3084,24 @@ def opening_picture(story):
 
 
 def translate(archive_resources, name, spec, pack=PACK_CAMPAIGN, episode=0, suffix=TITLE_SUFFIX_08, calendar=None,
-              title_extra=''):
+              title_extra='', title=None):
     """A story's SHS `.exp` bytes, from its resources by ID and the addon's spec. Twice over: its title card shows the first
     picture the story does, which takes the story itself to find. `calendar` (default: a Classic story) runs its events on the
     calendar driver, as an '08 `(Classic)` copy does in the Campaign's pack; `title_extra` follows its title."""
     calendar = pack == PACK_CLASSIC if calendar is None else calendar
-    return _translate(archive_resources, name, spec, pack, episode, suffix,
-                      opening_picture(_translate(archive_resources, name, spec, pack, episode, suffix, -1, calendar,
-                                                 title_extra)), calendar, title_extra)
+    # (A season keeps its events in its own place: SEASON_EVENTS.)
+    _EVENT_LAYOUT['base'] = SEASON_EVENTS if calendar == 'season' else EVENT_BASE
+    _SCENE_LAYOUT.update(location=SEASON_SCENE_LOCATION_KEY, sky=SEASON_SCENE_SKY_KEY) if calendar == 'season' else None
+    try:
+        return _translate(archive_resources, name, spec, pack, episode, suffix,
+                          opening_picture(_translate(archive_resources, name, spec, pack, episode, suffix, -1, calendar,
+                                                     title_extra, title)), calendar, title_extra, title)
+    finally:
+        _EVENT_LAYOUT['base'] = EVENT_BASE
+        _SCENE_LAYOUT.update(location=SCENE_LOCATION_KEY, sky=SCENE_SKY_KEY)
 
 
-def _translate(archive_resources, name, spec, pack, episode, suffix, card, calendar, title_extra=''):
+def _translate(archive_resources, name, spec, pack, episode, suffix, card, calendar, title_extra='', title=None):
     looks = spec['stories'].get(name)
     if looks is None:
         raise StoryError(f'the addon has no looks for {name}')
@@ -2311,7 +3110,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         entries = [int(v) for v in key.split(',')]
         if table.setdefault(look_hash(entries), bank) != bank:
             raise StoryError(f'{name}: two looks have the same hash')
-    title = clean_title(title_of(archive_resources[1])) + title_extra
+    season = calendar == 'season'
+    title = (title or clean_title(title_of(archive_resources[1]))) + title_extra
     date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
     # The story script is 26000, or 25002 in a story without one (the M.A.S.H. packs, whose setup schedules 25002; Stage 4): a
@@ -2323,13 +3123,22 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         story_script = next(iter(scheduled))
     # A script nothing schedules or names is left out: Stage 5's CS Idol, Artistic Differences and The School Paper carry an
     # 88-byte `School / March %d` date screen no event runs.
-    unused = [rid for rid in scripts if rid not in (FIRST_SCRIPT, story_script) and not script_named(archive_resources, scripts, rid)]
+    if season:
+        # A season's events run scripts 25002 to 25050, each its own, so every script keeps its number and the driver has one of
+        # its own (DRIVER_SCRIPT, made below). All of them are kept: they choose one another at run time.
+        story_script, unused = None, []
+        script_map = {rid: rid for rid in scripts}
+        if DRIVER_SCRIPT in scripts or NEST_SCRIPT in scripts:
+            raise StoryError(f'{name} has a script {DRIVER_SCRIPT} or {NEST_SCRIPT}, which the season driver takes')
+    else:
+        unused = [rid for rid in scripts if rid not in (FIRST_SCRIPT, story_script) and not script_named(archive_resources, scripts, rid)]
     scripts = [rid for rid in scripts if rid not in unused]
-    # Other scripts the events schedule (CS Idol's school days, 26001; Stage 5) follow the story's, from 25003 on.
-    script_map = {FIRST_SCRIPT: FIRST_SCRIPT, story_script: STORY_SCRIPT}
-    for rid in sorted(scheduled - {story_script}):
-        if calendar and rid in scripts:
-            script_map[rid] = STORY_SCRIPT + len(script_map) - 1
+    if not season:
+        # Other scripts the events schedule (CS Idol's school days, 26001; Stage 5) follow the story's, from 25003 on.
+        script_map = {FIRST_SCRIPT: FIRST_SCRIPT, story_script: STORY_SCRIPT}
+        for rid in sorted(scheduled - {story_script}):
+            if calendar and rid in scripts:
+                script_map[rid] = STORY_SCRIPT + len(script_map) - 1
     extra = [rid for rid in scripts if rid not in script_map]
     if extra:
         raise StoryError(f'{name}: scripts {extra} need the calendar driver or a script map')
@@ -2344,18 +3153,22 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()
                  if int(picture) not in own_missing}
         context = script_context(rewriter, script, table, not title.startswith('Quiz '), program, sizes)
-        context['kind'] = 'calendar' if calendar else 'single'
+        context['kind'] = 'season' if season else 'calendar' if calendar else 'single'
         context['program'], context['script_map'] = program, script_map
         context['own_missing'] = own_missing
         if calendar:
             context.update(calendar_words(rewriter))
+        if season:
+            context.update(season_words(rewriter))
         context['backgrounds_07'] = pack != PACK_CAMPAIGN          # '07's shared locations; an '08 copy shows '08's
         context['own_backgrounds'] = sorted((int(location), OWN_BACKGROUND_INDEX + n)
                                             for location, n in spec.get('backgrounds', {}).get(name, {}).items())
         if name in CONTEXT_FIXES and script == story_script:
             CONTEXT_FIXES[name](rewriter, context)
         for pc, service, argc in rewriter.calls():
-            if service == 69 and calendar:
+            if service == 69 and season:
+                season_setup(rewriter, pc, argc, context)
+            elif service == 69 and calendar:
                 calendar_setup(rewriter, pc, argc, context)
             elif service == 12 and (pc in context['game_pages'] or pc in context['catch_pages']):
                 game_page(rewriter, pc, argc, context)
@@ -2373,6 +3186,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
                 HANDLERS[service](rewriter, pc, argc, context)
             else:
                 raise StoryError(f'{name}, script {script}: service {service} with {argc} arguments has no translation yet')
+            if season and service in NEST_WAITS and rewriter.sites.get(pc, ('',))[0] == 'shim':
+                rewriter.before(pc, nested_check)
         if context['routine'] is not None:
             word_game(rewriter, context['routine'], context)
         if script == FIRST_SCRIPT:
@@ -2381,7 +3196,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
                                          s.push(EVENT_CHARACTER_KEY), s.push(-1), s.call(54, 2),
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
                                          s.push(NARRATOR), s.push(-1), s.call(72, 2),
-                                         *((s.push(STORY_SCRIPT), s.push(0), s.call(10, 2)) if calendar else ())))
+                                         *((s.push(DRIVER_SCRIPT if season else STORY_SCRIPT), s.push(0), s.call(10, 2))
+                                           if calendar else ())))
         elif calendar and script == story_script:
             # The title card has the day the first event runs on (CS Idol's setup schedules its last school day last, Stage 5).
             rewriter.prologue(lambda s, context=context: calendar_step(
@@ -2395,10 +3211,55 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
             rewriter.prologue(lambda s: (s.text(title), s.text(date or ''), s.push(card), s.push(0), s.call(8, 4)))
         target = script_map[script]
         resources[target] = rewriter.finish().to_bytes()
+    if season:
+        resources[DRIVER_SCRIPT] = season_driver(name, spec, table, title, card, own_missing)
+        resources[NEST_SCRIPT] = season_script(spec, table, own_missing, nest_runner)
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
+
+
+EMPTY_SCRIPT = b'kiwi\x01\x00' + bytes(6) + b'\x00\x01' + bytes((0x33,))   # KiWi v1: no data, one instruction, HALT
+
+
+def season_driver(name, spec, table, title, card, own_missing):
+    """The season driver's script (DRIVER_SCRIPT): a script that is only the driver (season_step), with its title card, date cards and
+    the story's end."""
+    program = decode_program(upgrade(EMPTY_SCRIPT))
+    rewriter = Rewriter(program, zero_gap=True)
+    sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()
+             if int(picture) not in own_missing}
+    context = script_context(rewriter, DRIVER_SCRIPT, table, True, program, sizes)
+    context.update(kind='season', program=program, script_map={}, own_missing=own_missing)
+    context.update(calendar_words(rewriter))
+    context.update(season_words(rewriter))
+    context.update(week_words=rewriter.words([0] * 5), week_buffer=rewriter.words([0] * 12),
+                   date_range_buffer=rewriter.words([0] * 24), day_line_buffer=rewriter.words([0] * 24))
+    # The first event opens on week 1's card, as later weeks' (the story's name is the library's: owner, 2026-11-07); every new day
+    # starts with its narration line, under a new week's card first.
+    def step(s):
+        new_day = lambda: (week_card(s, context, card), day_line(s, context))
+        season_step(
+            s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)), new_day()),
+            lambda: (s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0), s.emit(0x33)),
+            new_day)
+    rewriter.prologue(step)
+    return rewriter.finish().to_bytes()
+
+
+def season_script(spec, table, own_missing, body):
+    """A season's own script, holding only `body(s, context)`."""
+    program = decode_program(upgrade(EMPTY_SCRIPT))
+    rewriter = Rewriter(program, zero_gap=True)
+    sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()
+             if int(picture) not in own_missing}
+    context = script_context(rewriter, NEST_SCRIPT, table, True, program, sizes)
+    context.update(kind='season', program=program, script_map={}, own_missing=own_missing)
+    context.update(calendar_words(rewriter))
+    context.update(season_words(rewriter))
+    rewriter.prologue(lambda s: body(s, context))
+    return rewriter.finish().to_bytes()
 
 
 def campaign_number(name):
@@ -2467,6 +3328,16 @@ def build_classic(path, addon_path, classic_folder=None):
     resources = read_archive(path)
     story = translate(resources, path.name, spec, PACK_CLASSIC, classic_number(path, classic_folder), TITLE_SUFFIX_07)
     return file_name(clean_title(title_of(resources[1])), TITLE_SUFFIX_07), story
+
+
+def build_season(path, addon_path):
+    """(file name, bytes) of Fall '06 Football Season (`'07`, pack 31200), from '07's base pack and the addon: a whole term on the
+    season driver."""
+    path = Path(path)
+    spec = json.loads(ExpArchive(Path(addon_path).read_bytes()).read(SPEC))
+    resources = read_archive(path)
+    story = translate(resources, path.name, spec, PACK_SEASON, SEASON_EPISODE, TITLE_SUFFIX_07, calendar='season', title=SEASON_TITLE)
+    return file_name(SEASON_TITLE, TITLE_SUFFIX_07), story
 
 
 def build_story(path, addon_path):

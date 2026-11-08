@@ -191,7 +191,7 @@ class ServiceTests(unittest.TestCase):
         session.answer(None)
         session.tick(240)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 38)
+        self.assertEqual(state['version'], 39)
         again = Session.from_snapshot(resources(program(*host_call(slot.X360_SLOT), 0x21, 0x33)), state)
         self.assertEqual(again.pending.name, 'x360_slot')
         self.assertEqual(again.engine.x360_slot, session.engine.x360_slot)

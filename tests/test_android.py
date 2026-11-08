@@ -121,6 +121,30 @@ class FontTests(unittest.TestCase):
             with patch.object(android, 'SYSTEM_FONTS', Path(root) / 'none'):
                 self.assertIsNone(match('verdana'))
 
+    def test_the_font_folders_are_listed_once_a_few_seconds_not_every_call(self):
+        """The time badge asks for Arial every frame: a fresh listing each call cost ~28 ms on a Moto g54. The listing is
+        kept FONT_RESCAN_S, so a face a bulk import adds is still found soon after."""
+        from exp_runtime.platforms import android
+        with tempfile.TemporaryDirectory() as root:
+            fonts, scans, now = Path(root) / 'fonts', [], [100.0]
+            fonts.mkdir()
+            (fonts / 'arial.ttf').write_bytes(b'authored stand-in')
+
+            def directories():
+                scans.append(1)
+                return [fonts]
+            match = android.font_finder(directories)
+            with patch.object(android.time, 'monotonic', lambda: now[0]), \
+                    patch.object(android, 'SYSTEM_FONTS', Path(root) / 'none'):
+                for _ in range(50):
+                    self.assertEqual(Path(match('arial')).name, 'arial.ttf')
+                (fonts / 'verdana.ttf').write_bytes(b'authored stand-in')
+                self.assertIsNone(match('verdana'))
+                self.assertEqual(len(scans), 1)
+                now[0] += android.FONT_RESCAN_S
+                self.assertEqual(Path(match('verdana')).name, 'verdana.ttf')
+                self.assertEqual(len(scans), 2)
+
 
 class SidePanelTests(unittest.TestCase):
     def test_side_panels_turn_the_app_to_landscape_and_go_off_in_portrait(self):

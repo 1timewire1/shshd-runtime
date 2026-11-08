@@ -282,7 +282,7 @@ class SessionTests(unittest.TestCase):
     def test_a_save_comes_back_as_the_same_game(self):
         session = self.opened()
         state = session.snapshot()
-        self.assertEqual(state['version'], 38)
+        self.assertEqual(state['version'], 39)
         restored = Session.from_snapshot(episode(), state)
         self.assertEqual(restored.pending.name, 'shs11_memory')
         self.assertTrue(restored.engine.shs11_memory.grid)

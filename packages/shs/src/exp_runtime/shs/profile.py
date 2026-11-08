@@ -113,12 +113,20 @@ FOUR_PICKER = [(160, 275), (52, 241), (160, 170), (269, 241)]
 TRANSLATED_ARTICLE_PACKS = (31000, 31100, 31200)
 # shshd-runtime: packs whose title and date cards show the date as the card's title and the story's name under it (the BREW games:
 # a story over several days opens each day with a card, so the date matters most; owner, 2026-11-07). The episode's preview picture,
-# taken from its first card, keeps the story's name as the title (episode_thumbnails, Desktop capture).
-TRANSLATED_DATE_FIRST_PACKS = (31000, 31100, 31200)
+# taken from its first card, keeps the story's name as the title (episode_thumbnails, Desktop capture). Fall '06 (31200) isn't one: its
+# cards are week cards, `Week 1 of 13` over the week's dates (owner, 2026-11-07).
+TRANSLATED_DATE_FIRST_PACKS = (31000, 31100)
 # shshd-runtime: packs whose word games may have three words, one or two of them good (BREW's Skating Dating and Artistic Differences,
 # Stage 5; engine.three_word_games). Native needs two good and two bad, and stops otherwise.
 TRANSLATED_THREE_WORD_PACKS = (31000, 31100, 31200)
-TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER}}
+# shshd-runtime: packs whose menus drop a blank last option, as BREW's (FUN_0000d6a0; engine.brew_menus): an option list ending in `|`
+# has one option fewer. SHS's own menus keep it (2026-11-07, the decompiled BREW engine check).
+TRANSLATED_BREW_MENU_PACKS = (31000, 31100, 31200)
+# Six photos (Fall '06's look choice, Stage 6): the chosen photo in front and the other five small in a row behind it, as the
+# ten-photo layout's middle row.
+SIX_PICKER = [(160, 275), (56, 168, .4), (108, 168, .4), (160, 168, .4), (212, 168, .4), (264, 168, .4)]
+TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER},
+                             31200: {4: FOUR_PICKER, 6: SIX_PICKER, 10: MASH_PICKER}}
 # shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
 # (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
 # New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at

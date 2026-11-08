@@ -124,6 +124,7 @@ class Rewriter:
         self.extra = list(program.extra_words)
         self.data_end = len(program.main_words) + program.gap_count + len(self.extra)
         self.strings, self.shims, self.sites, self.start = {}, {}, {}, None
+        self.befores = {}                       # pc -> a block run before a redirected call (`before`)
 
     # -- data ------------------------------------------------------------------------------------------------------
     def words(self, values):
@@ -218,6 +219,16 @@ class Rewriter:
         build(shim)
         self.sites[pc] = ('insert', shim)
 
+    def before(self, pc, build):
+        """Code run just before the redirected call at `pc` goes to its shim, with the call's arguments already pushed (no frame;
+        it must leave the stack as it found it)."""
+        pc -= self.code_base
+        if self.sites.get(pc, ('',))[0] != 'shim':
+            raise RewriteError(f'nothing is redirected at {pc + self.code_base}')
+        shim = Shim(self, 0)
+        build(shim)
+        self.befores[pc] = shim
+
     def prologue(self, build):
         """Code that runs once before the program's first instruction (built like a shim body, without arguments)."""
         self.start = Shim(self, 0)
@@ -254,7 +265,10 @@ class Rewriter:
         for key, shim in self.shims.items():
             starts[key] = put(lambda start, shim=shim: _assemble(shim, start))
         for pc, site in sorted(self.sites.items()):
-            if site[0] == 'shim':
+            if site[0] == 'shim' and pc in self.befores:
+                code[pc] = (0x29, put(lambda start, block=self.befores[pc], key=site[1], pc=pc:
+                                      _assemble(block, start, frame=False) + [(0x1a, base + pc), (0x29, starts[key])]))
+            elif site[0] == 'shim':
                 code[pc] = (0x29, put([(0x1a, base + pc), (0x29, starts[site[1]])]))
             elif site[0] == 'insert':
                 displaced = code[pc]

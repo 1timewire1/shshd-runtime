@@ -139,6 +139,9 @@ def _sound_batch(operation):
     return run
 
 
+NESTED_SCRIPT_SERVICE, NESTED_SCRIPT_DEPTH = 223, 16
+
+
 class Session:
     """Execute original KiWi code until real player input is required.
 
@@ -165,6 +168,10 @@ class Session:
     # partner is new. Not saved: a restore takes it from the restored line.
     _duet_line = None
 
+    # shshd-runtime: service 223 (script) runs that script and comes back (NESTED_SCRIPT_SERVICE): the scripts waiting for one
+    # to end, innermost last, each (scene, its machine with the call pending). Saved (version 39).
+    nest_stack = ()
+
     def __init__(self, resources: EpisodeResources, *, start_script: int = 25001, ephemeral: bool = False):
         GAMES[game_id(resources)]  # Fail before executing with a missing adapter.
         self.resources = resources
@@ -184,6 +191,7 @@ class Session:
         self.pending: EngineAction | None = None
         self.remaining_ms: int | None = None
         self.scene_loads = 0
+        self.nest_stack = []
         self._load_dt_view()
         self._vibrations = 0
 
@@ -651,8 +659,10 @@ class Session:
                                layout_text(font, self.engine.notice, 2**31, NOTICE_STYLE))
 
     @_sound_batch
-    def advance(self, *, max_steps: int = 1_000_000, max_events: int = 10_000,
+    def advance(self, *, max_steps: int = 1_000_000, max_events: int = 50_000,
                 observe=None) -> EngineAction:
+        # shshd-runtime: up to 50,000 host calls before an input (from 10,000): BREW's Fall '06 dresses its whole cast in its
+        # setup, about 13,000 calls on the translated story's lists (Stage 6). A safety net for runaway scripts, not a pace.
         if self.pending is not None:
             return self.pending
         if max_steps < 1 or max_events < 1:
@@ -663,6 +673,23 @@ class Session:
             if remaining <= 0:
                 raise VMError('Session instruction budget exceeded before the next input')
             request = self.vm.run(remaining)
+            if request.kind == StopKind.YIELD and request.yield_id == NESTED_SCRIPT_SERVICE:
+                # shshd-runtime: (script) run it now and come back here when it ends, as BREW runs an event inside another
+                # (translated Fall '06; Stage 6b). The caller's machine waits with its call pending.
+                if len(request.args) != 1 or len(self.nest_stack) >= NESTED_SCRIPT_DEPTH:
+                    raise VMError('Service 223 runs one script, and nests at most 16 deep')
+                program = self.resources.program(request.args[0])
+                self.nest_stack.append((self.scene, self.vm))
+                deadline -= self.vm.steps_executed
+                self.vm = KiwiVM(program, stack_capacity=len(self.vm._stack))
+                self.scene = request.args[0]
+                continue
+            if request.kind == StopKind.HALT and self.nest_stack:
+                deadline -= self.vm.steps_executed                  # (the budget is counted on whichever machine runs)
+                self.scene, self.vm = self.nest_stack.pop()
+                deadline += self.vm.steps_executed
+                self.vm.resume(0)
+                continue
             if request.kind == StopKind.YIELD:
                 queued_notice = self.engine.next_dialogue_notice
                 self.engine.nr_arena_enabled = self.nr_arena
@@ -675,6 +702,8 @@ class Session:
                     GAMES[game_id(self.resources)], 'TRANSLATED_ARTICLE_PACKS', ())
                 self.engine.three_word_games = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
                     GAMES[game_id(self.resources)], 'TRANSLATED_THREE_WORD_PACKS', ())
+                self.engine.brew_menus = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
+                    GAMES[game_id(self.resources)], 'TRANSLATED_BREW_MENU_PACKS', ())
                 self.engine.cutscenes_enabled = self.cutscenes
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':
@@ -1322,10 +1351,12 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=38,
+        return dict(format='shs-runtime-save', version=39,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
+                    nested=[dict(scene=scene, script_sha256=digest(vm.program.to_bytes()), vm=vm.snapshot())
+                            for scene, vm in self.nest_stack],
                     pending=dict(name=self.pending.name, details=deepcopy(self.pending.details))
                     if self.pending else None,
                     remaining_ms=self.remaining_ms, scene_loads=self.scene_loads)
@@ -1363,7 +1394,7 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 39):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 40):
                 raise SaveError('Unsupported save format or version')
             # Version 38 adds the BREW games' catch game (brew_catch.py); an older save never had one open.
             if state['version'] < 38 and isinstance(state.get('engine'), dict):
@@ -1663,6 +1694,17 @@ class Session:
             if state['script_sha256'] != digest(session.vm.program.to_bytes()):
                 raise SaveError('Saved script does not match the loaded script')
             session.vm = KiwiVM.from_snapshot(session.vm.program, state['vm'], linked=session.vm.linked)
+            # Version 39: the scripts waiting for a nested one to end (service 223); an older save has none.
+            nested = state.get('nested', []) if state['version'] >= 39 else []
+            if not isinstance(nested, list) or len(nested) > NESTED_SCRIPT_DEPTH:
+                raise SaveError('Invalid nested scripts in save')
+            for entry in nested:
+                if not isinstance(entry, dict) or type(entry.get('scene')) is not int or not 0 <= entry['scene'] <= 65535:
+                    raise SaveError('Invalid nested script in save')
+                program = resources.program(entry['scene'])
+                if entry.get('script_sha256') != digest(program.to_bytes()):
+                    raise SaveError('Saved nested script does not match the loaded script')
+                session.nest_stack.append((entry['scene'], KiwiVM.from_snapshot(program, entry['vm'])))
             library_view = session.engine.dt_view          # the library's own tree, read when the session was made
             engine_state = dict(state['engine'])
             saved_view = dict(engine_state['dt_view'])

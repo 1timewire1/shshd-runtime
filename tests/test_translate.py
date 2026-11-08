@@ -1386,7 +1386,10 @@ class BrewShimTests(unittest.TestCase):
         prog = program(*code, words=words)
         start = next(i.pc for i in prog.instructions if i.opcode == 0x48)
         rewriter = Rewriter(prog)
-        context = self.context(rewriter)
+        # (The real routine is told by its opcodes' fingerprint, ROUTINE_SHAPE; this authored one has its own.)
+        from unittest import mock
+        with mock.patch.object(self.brew, 'ROUTINE_SHAPE', self.brew.routine_shape(prog.instructions, start)):
+            context = self.context(rewriter)
         self.assertEqual(context['routine'], start)
         self.brew.word_game(rewriter, start, context)
         final = rewriter.finish()
@@ -1499,6 +1502,14 @@ class BrewShimTests(unittest.TestCase):
         self.assertEqual(sorted(drops.weights), [-1, 1, 1])
         self.assertEqual(drops.weights[drops.options.index('0 drops')], -1)
         drops.validate()
+
+    def test_a_weekday_list_is_told_from_other_strings(self):
+        # Stage 6: Fall '06's weekly calls build their other arguments from tables; the weekdays are the one weekday string pushed.
+        is_list = self.brew.is_weekday_list
+        for text in (b'Mo,We,Fr', b'Fr', b'Friday', b'Mon|Wed'):
+            self.assertTrue(is_list(text), text)
+        for text in (b'Free Time', b'Monday Planner', b'French', b'', b'Mo,Lunch'):
+            self.assertFalse(is_list(text), text)
 
     def test_weekly_events_name_their_weekdays_by_two_letters(self):
         # 34 (CS Idol's school days): brew-calendar.js weekdaysBetween reads each day's first two letters.
@@ -1732,6 +1743,78 @@ class BrewCalendarTests(unittest.TestCase):
         self.assertEqual(badges, ['9:00 AM - School', "4:30 PM - Dad's Suprise", '9:00 AM - School', '3:00 PM - Audition', '7:30 AM',
                                   '9:00 AM - School', '3:00 PM - At Home', '9:00 AM - School', '3:00 PM - Practice', '9:00 AM - School', '3:00 PM - Practice',
                                   '3:00 PM - CS Idol'])
+
+    def test_fall_06_runs_its_term_on_the_season_driver(self):
+        # Stage 6a: '07's built-in season, on the season driver (events kept once, a list per day), runs its first school week
+        # Monday to Friday with time badges, its spinning menus outside the word-game routine as questions. Stage 6c (owner,
+        # 2026-11-07): a card each week, `Week 1 of 13` over its school days' dates, and a narration line naming each new day.
+        import brew
+        from exp_runtime.exp import ExpArchive
+        pud = CLASSIC_07 / 'res_xlarge.pud'
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None or not pud.is_file():
+            self.skipTest("needs the BREW addon in the test library and '07's base pack")
+        name, data = brew.build_season(pud, addon_path)
+        self.assertEqual(name, 'Fall_06_Football_Season_SHS07.exp')
+        archive = ExpArchive(data)
+        self.assertEqual((archive.metadata().pack_id, archive.metadata().episode_id), (brew.PACK_SEASON, brew.SEASON_EPISODE))
+        self.assertIn(brew.DRIVER_SCRIPT, archive.entries)
+        import playthrough as pt
+        session = pt.session(data, addons=[ExpArchive(addon_path.read_bytes())])
+        session.engine.random.state = 1
+        cards, badges, seen, nested, days = [], [], Counter(), Counter(), []
+        session.advance()
+        for _ in range(3000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            nested[(session.scene, len(session.nest_stack))] += session.scene in (25039, 25040)
+            badge = session.engine.scene_badge
+            if badge is not None and (not badges or badges[-1] != badge.text):
+                badges.append(badge.text)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished') or len(days) > 3:
+                break
+            if action.name == 'dialogue' and re.fullmatch(r'\w+day, \w+ \d+\.', action.details.get('text') or ''):
+                days.append((len(cards), action.details['text']))
+            if action.name == 'presentation':
+                cards.append((action.details.get('title'), action.details.get('subtitle')))
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == 'presentation':
+                    session.answer()
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'choice':
+                if not session.choice_ready:
+                    session.tick(250)
+                options = action.details.get('options') or ['']
+                key = tuple(options)
+                session.answer(seen[key] % len(options))      # (a menu that comes back moves on: the tutorial asks till it's right)
+                seen[key] += 1
+            elif action.name == 'character_picker':
+                session.answer(0); session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            elif action.name == 'brew_catch':
+                session._complete_minigame(result=session.engine.brew_catch.target)
+            elif action.name == 'word_game':
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+            else:
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+        self.assertEqual(cards, [('Week 1 of 13', 'September 13-17'), ('Week 2 of 13', 'September 20-24')])
+        self.assertEqual(days, [(1, 'Monday, September 13.'), (1, 'Wednesday, September 15.'), (1, 'Friday, September 17.'),
+                                (2, 'Monday, September 20.')])
+        self.assertIn('3:00 PM - Free Time', [b.strip() for b in badges])     # (the weekly Free Time; classes follow the answers)
+        # Stage 6b: a class's due events (37) run inside it at its next wait, through the nest runner, one level deep: the native
+        # engine runs them one after another, each to its end, never one inside another (FUN_0000af08).
+        self.assertTrue(sum(nested.values()), 'no class event ran')
+        self.assertEqual({depth for (scene, depth), count in nested.items() if count}, {2})
 
     def test_07_funky_monkey_takes_08s_ending_scenes(self):
         # Owner, 2026-11-07: Funky Monkey's '07 entry keeps its writing but takes '08's code fixes: five endings open on its own

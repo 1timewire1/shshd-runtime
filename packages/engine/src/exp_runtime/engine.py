@@ -137,6 +137,10 @@ class EngineState:
     # Not saved: whether a word game of three words, at least one good and one bad, plays (WordGame.three_words: a pack in
     # TRANSLATED_THREE_WORD_PACKS, the BREW games; Session sets it). Elsewhere it stays the stop it is natively.
     three_word_games = False
+    # Not saved: whether a choice drops a blank last option, as BREW's menus do (FUN_0000d6a0 adds the part after the last `|` only
+    # when something other than spaces and control characters is left; a pack in TRANSLATED_BREW_MENU_PACKS; Session sets it).
+    # SHS keeps it, blank (FUN_000b04b8).
+    brew_menus = False
     # Not saved: a translated pack's own portrait picker layouts, by count (TRANSLATED_PICKER_LAYOUTS; Session sets it). Service 78
     # takes one of those counts even past the native five (the BREW M.A.S.H. packs' ten photos).
     picker_layouts = None
@@ -1028,6 +1032,8 @@ class EngineState:
                 # FUN_000b04b8 leaves a blank last field when it is whitespace.
                 if options and not options[-1].strip():
                     options[-1] = ''
+                if self.brew_menus and len(options) > 1 and all(ord(c) <= 0x20 for c in options[-1]):
+                    options.pop()                       # shshd-runtime: BREW's menus (Fall '06's math answers end in `|`)
                 character = self.ui_defaults.get(74, -1) if args[5] == -2 else args[5]
                 return EngineAction('choice', request, False, dict(
                     title=title, text=text, options=options, values=list(range(len(options))),

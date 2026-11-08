@@ -170,7 +170,7 @@ class StoryTests(unittest.TestCase):
         session.answer(None)
         session.tick(1000)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 38)
+        self.assertEqual(state['version'], 39)
         again = Session.from_snapshot(resources(built()), state)
         self.assertEqual(again.pending.name, 'shs11_memory')
         self.assertEqual(again.engine.shs11_memory, session.engine.shs11_memory)

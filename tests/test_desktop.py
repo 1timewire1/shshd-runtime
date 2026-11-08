@@ -1527,7 +1527,8 @@ class DesktopTests(unittest.TestCase):
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
             card = dict(title='CS Idol', subtitle='Monday, March 1', asset_id=1)
-            for pack_id, capture, subtitle, expected in ((31100, False, True, True), (31000, False, True, True),
+            # (Fall '06, 31200, keeps the title on top: its cards are week cards, `Week 1 of 13` over the dates.)
+            for pack_id, capture, subtitle, expected in ((31100, False, True, True), (31000, False, True, True), (31200, False, True, False),
                                                          (31100, True, True, False), (1, False, True, False),
                                                          (31100, False, False, False)):
                 resources.record = dict(resources.record, pack_id=pack_id)

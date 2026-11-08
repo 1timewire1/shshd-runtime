@@ -26,6 +26,7 @@ FONT_FILES['arialrounded'] = FONT_FILES['arialroundedmtbold']
 FONT_FILES['trebuchet'] = FONT_FILES['trebuchetms']
 FONT_SUFFIXES = ('.ttf', '.otf', '.ttc')
 SYSTEM_FONTS = Path('/system/fonts')
+FONT_RESCAN_S = 5.0                     # how long match_font trusts its listing of the font folders
 # How long side panels turned on in portrait wait for the app to turn to landscape before they switch off.
 PANELS_ROTATE_MS = 3000
 # Android screens come in every shape (the owner's point): only one this much taller than wide counts as portrait
@@ -59,8 +60,14 @@ def logical_size(window):
 def font_finder(directories):
     """pygame's `match_font` for Android: a face the player supplied (FONT_FILES, in `directories()`'s folders),
     else Android's own Roboto in the asked style, so text still draws (in another face) without the files."""
-    def match_font(name, bold=False, italic=False):
-        families = [part.strip().lower().replace(' ', '') for part in str(name).split(',')]
+    # The folders' faces, kept FONT_RESCAN_S: callers ask every frame (the time badge's `available`), and a scan took
+    # about 28 ms a call on a Moto g54 (2026-11-07). Faces a bulk import adds are found once the listing is that old.
+    listing = [None, {}]
+
+    def faces():
+        now = time.monotonic()
+        if listing[0] is not None and now - listing[0] < FONT_RESCAN_S:
+            return listing[1]
         files = {}
         for directory in directories():
             try:
@@ -69,6 +76,12 @@ def font_finder(directories):
                         files.setdefault(path.stem.lower(), str(path))
             except OSError:
                 continue
+        listing[:] = [now, files]
+        return files
+
+    def match_font(name, bold=False, italic=False):
+        families = [part.strip().lower().replace(' ', '') for part in str(name).split(',')]
+        files = faces()
         for family in families:
             for stem in FONT_FILES.get(family, {}).get((bool(bold), bool(italic)), (family,)):
                 if stem in files:

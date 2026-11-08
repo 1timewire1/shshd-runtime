@@ -94,7 +94,7 @@ This is an unofficial fan preservation project, not affiliated with or endorsed 
 [shshd-runtime](https://github.com/1timewire1/shshd-runtime) by 1timewire1
 Based on the original [exp-runtime](https://github.com/joshrmcdaniel/exp-runtime) by Josh Mcdaniel
 
-Special thanks to Alejandro for preserving Surviving High School HD, zazatree for their code contributions, and the [Surviving High School Community Discord](https://discord.gg/reJT83aAeD) in general for keeping the game alive! This project wouldn't have been possible without their contributions.
+Special thanks to Alejandro for preserving Surviving High School HD, zazatree for their code contributions, jtenzer for [Tardy Slip](https://github.com/jtenzer/Tardy-Slip), the BREW games' player our BREW translations are checked against, and the [Surviving High School Community Discord](https://discord.gg/reJT83aAeD) in general for keeping the game alive! This project wouldn't have been possible without their contributions.
 
 Credits:
 Andrew Shvarts
