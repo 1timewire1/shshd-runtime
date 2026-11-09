@@ -772,6 +772,25 @@ class Editor(QMainWindow):
         brings.setWordWrap(True)
         form.addRow(brings)
 
+        titles = {addon_id: title for title, addon_id in available}
+
+        def describe():
+            """What the primary brings (its chosen edition's switch only) and what each extra adds, by the add-ons' names."""
+            addon_id, edition = primary_box.currentData(), edition_box.currentData()
+            lines = []
+            for _, other in available:
+                if other not in declared and other != addon_id:
+                    continue
+                own, extra = ADDON_FEATURES.get(other, ((), ()))
+                name = escape(titles.get(other, other))
+                if other == addon_id:
+                    own = tuple(line for line in own if not line.startswith("'0") or line.startswith(f"'{edition} only: "))
+                    shown = [line.split(' only: ', 1)[-1] for line in own + extra]
+                    lines.append(f'<b>{name}</b> (primary): ' + (escape('; '.join(shown)) or 'its pictures and sounds'))
+                else:
+                    lines.append(f'<b>{name}</b> (extra): ' + (escape('; '.join(extra)) or 'its pictures and sounds'))
+            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the smartphone game does.')
+
         def update():
             addon_id = primary_box.currentData()
             editions = ADDON_EDITIONS.get(addon_id, ())
@@ -783,17 +802,9 @@ class Editor(QMainWindow):
                 edition_box.setCurrentIndex(editions.index(primary['edition']))
             edition_box.setEnabled(bool(editions))
             edition_box.blockSignals(False)
-            lines = []
-            for _, other in available:
-                if other not in declared and other != addon_id:
-                    continue
-                own, extra = ADDON_FEATURES.get(other, ((), ()))
-                if other == addon_id:
-                    lines.append(f'<b>{other} (primary)</b>: ' + ('; '.join(own + extra) or 'its pictures and sounds'))
-                else:
-                    lines.append(f'<b>{other} (extra)</b>: ' + ('; '.join(extra) or 'its pictures and sounds'))
-            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the smartphone game does.')
+            describe()
         primary_box.currentIndexChanged.connect(update)
+        edition_box.currentIndexChanged.connect(describe)
         update()
         form.addRow(QLabel('<b>Settings that need no add-on</b>'))
         boxes = {}

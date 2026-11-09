@@ -15,7 +15,8 @@ NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'x360_slot': 's
 # declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
 ADDON_FEATURES = {
     'shsbrew': (("BREW's frame around the scene, pink behind a pink box", "BREW's relationship icons",
-                 "BREW's right/wrong music for answer hints", "'08: the Java '08 Look switch; '07: the '08 Backgrounds switch"),
+                 "BREW's right/wrong music for answer hints", "'08 only: the Java '08 Look switch",
+                 "'07 only: the '08 Backgrounds switch"),
                 ('The catch game',)),
     'shs11': (("SHS '11's relationship icons and their sounds", "SHS '11's one sound channel",
                "SHS '11's right/wrong music for answer hints"), ("SHS '11's Memory", "SHS '11's Reflex")),
