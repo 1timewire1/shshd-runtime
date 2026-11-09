@@ -148,17 +148,28 @@ python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR
 
 ### `shsbrew`: the BREW games
 
-Required by every translated [BREW](BREW.md) story, under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 1, about 17 MB. The stories that need it are still being built.
+Required by every translated [BREW](BREW.md) story (126: the '08 Campaign, the Classic stories, the M.A.S.H. packs and Fall
+'06), under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 10,
+about 18.8 MB; the stories ask for revision 7, since 8 to 10 only redraw pictures.
 
 | Resources | What |
 | --- | --- |
 | 26000-26206 | Locations, three skies each: '08's, then '07's, then a sky alone (`brew.BACKGROUND_BASE`) |
+| 26300-26364 | The catch game: frame, ring, digits, captions, then each item and player picture (`brew.CATCH_BASE`) |
+| 26400 + picture | Time badge icons, BREW's small pictures 101-166 at the smartphone's size, 92 pixels (`EVENT_ICON_BASE`) |
+| 26600 | A story's own icon: CS Idol's yawning face (`OWN_ICON_BASE`) |
 | 26900-26914 | Music, tracks 8000-8014 |
 | 26991 | The frame backdrop behind a pink box |
 | 26992-26997 | Relationship icons: heart, skull and smiley, whole and then broken |
-| 26998 | The spec: each story's looks |
+| 26998 | The spec: each story's looks, the Classic stories' own backgrounds, the catch game |
 | 26999 | The frame backdrop |
 | 27000- | Portraits, five faces each, 381 looks |
+| 29000- | The Classic stories' own backgrounds, three skies each; '08's redraws of eleven of them 500 above |
+| 36000- | The Java '08 Look: the demo's copy of a picture, 10000 above BREW's (frame, relationship icons, badge icons, catch game) |
+
+Revisions: 2 the event icons; 3 the Java '08 Look; 4 the Classic stories' own backgrounds; 5 '08's redraws of them; 6 the
+yawning face the catch games show; 7 that face as an event icon, and King of the Road's Michael centred; 8 the TV turned to face
+the middle; 9 the Kid lowered onto the ring; 10 the badge icons at the smartphone's size.
 
 ```sh
 python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --out OUT_DIR

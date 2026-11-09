@@ -115,6 +115,7 @@ def main(argv=None):
     br.add_argument('--addon', type=Path, help='the addon (the command without --story writes it)')
     br.add_argument('--classic', action='store_true', help="--story is a Classic story ('07, on the calendar)")
     br.add_argument('--classic-copy', action='store_true', help="--story is '08's file of a Classic story, as its `(Classic)` copy")
+    br.add_argument('--season', action='store_true', help="--story is '07's res_xlarge.pud: its built-in Fall '06 Football Season")
     br.add_argument('--classic-folder', type=Path, help="'08's addons/Classic, for an '07 file's Classic number (by title)")
     br.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
@@ -227,7 +228,9 @@ def translate_brew(args, parser):
     if args.story:
         if not args.addon:
             parser.error('--story needs --addon')
-        if args.classic_copy:
+        if args.season:
+            name, data = brew.build_season(args.story, args.addon)
+        elif args.classic_copy:
             name, data = brew.build_classic_copy(args.story, args.addon)
         elif args.classic:
             name, data = brew.build_classic(args.story, args.addon, args.classic_folder)

@@ -4,6 +4,27 @@
 
 ### Added
 
+- **The BREW games, SHS '07 and '08, translated** (`tools/translate/translate.py brew`; [BREW.md](docs/BREW.md)). 126
+  stories under their own badges: the '08 Campaign (pack 31000), the Classic stories and M.A.S.H. packs as '07 (31100),
+  and Fall '06 Football Season (31200), with the `shsbrew` add-on (revision 10) holding their art and music. Each
+  matches the Tardy-Slip reference player on its tested answer paths.
+  - **Calendar:** the Classic stories run on a calendar driver (days, date cards, time badges with BREW's icons at
+    the smartphone's size), and Fall '06 on a season driver with week cards and events run inside others.
+  - **The catch game** plays for real behind Use Translated Mini-Games (service 221), or as a word game; its skip prompt
+    knows where each story parts.
+  - **Look and text:** BREW's frame, pink behind a pink box; grey boxes for things and animals; name plates; '07's
+    art and a '08 Backgrounds switch; the Java '08 Look switch for '08; `a(n)` and plurals; BREW's menus.
+  - **Runtime:** service 223 runs a script and comes back (save version 39); pickers of four, six and ten photos.
+- **Undo** (Options -> Extras -> Allow Undo, off by default): a save at every stop Skip Ahead makes; the pause menu's
+  Undo loads the last, and again the one before. A mini-game under way restarts from its own save.
+- **Episode versions** (resource 5): a newer import replaces the library's older copies of the same episode, asking
+  first about one with a game in progress. The translators write version 1; the Creator has a Version box.
+- **Test channel** (`SHSHD_TEST_CHANNEL`, 127.0.0.1 only; debuggable Android builds): drive the app by its state.
+- **Options' choice pages:** Episode Titles, Start In, Confirm Button and Word Grid Controls open a page of their
+  values, and show the current one under their names.
+- **HD choices** stop above the bottom bar and scroll the rest, with touch dragging, momentum, and arrows that show
+  more options above or below.
+
 - **Creator: a primary add-on and extras** (owner, 2026-11-09). A project picks the add-on its episode is built on (BREW
   '08 or '07, '11, New Rules, X360) and takes that game's frame, relationship icons, answer music and switches; other
   add-ons are extras for their pictures, sounds and mini-games, aliased so a shared number never reaches the wrong one.

@@ -497,6 +497,11 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
   this player adds (General / Sound / Extras / Data Management) slide like native pages.
+- **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Episode Titles and Start In,
+  the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
+  letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
+  picking one sets it and slides back (`desktop_pause_hd.CHOICE_NAMES`, screen `choice:<key>`). They were buttons that
+  stepped through the values.
   Native exits (`notifyMenuRemoved` -> `animateView` with the exit byte) are not
   decompiled, so the reverse slide is ours.
 - **Music switch.** In the main menu, off fades the menu's song over 1000 ms

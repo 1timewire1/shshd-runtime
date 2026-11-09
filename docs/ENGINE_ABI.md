@@ -647,6 +647,28 @@ the scores; -1 for none), read by the translator from the story's own comparison
 (`choice_hints.brew_catch_outcomes`: one preview per stretch of scores instead of trying them in turn). It waits for the game (`brew_catch.py`) and completes with
 the score, from 0 to the target. The scripts test it themselves. [BREW.md](BREW.md) has more.
 
+## 5.6 Running a script and coming back (shshd-runtime service 223)
+
+Service **223** (`script`) runs scene script `script` to its end and then returns to the instruction after the call, as a
+call into another scene would if SHS had one. The caller's frames wait on a stack that saves keep (save version 39). Fall '06's
+nest runner uses it for the events BREW runs inside another (service 37), one after another, as the decompiled '08 engine
+does (`FUN_0000af08`). It takes exactly one argument and nests at most 16 deep (`NESTED_SCRIPT_DEPTH`); the inner script's end
+(a halt) resumes the caller with 0. Native players and upstream exp-runtime
+stop at it as an unknown service. [BREW.md](BREW.md) has the season driver around it.
+
+## 5.7 The BREW packs' text and menus
+
+In the BREW translations (profile `TRANSLATED_ARTICLE_PACKS`, `TRANSLATED_BREW_MENU_PACKS`, `TRANSLATED_THREE_WORD_PACKS`), and
+in an episode made in the Creator that declares the same setting (SCHEMA.md "Presentation extension"), some native services
+answer as BREW's engine did:
+
+- **22 and 0** (formatting): `a(n)` before a word becomes `a` or `an` by that word, and `word(s)` or `word(es)` after a number
+  the singular for 1 and the plural otherwise (`engine.choose_articles`, `choose_plurals`). Service 0 only for a Creator episode
+  that asks.
+- **1** (a menu): a blank last option, from a list ending in `|`, is dropped, as BREW's menu builder does (`FUN_0000d6a0`);
+  SHS keeps it.
+- **71** (a word game) may have three words, one or two of them good; natively it stops without two of each.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

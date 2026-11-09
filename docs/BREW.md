@@ -2,7 +2,7 @@
 
 *Surviving High School* '07 and '08 ran on Qualcomm BREW phones, built by Centerscore. They share one engine and are a calendar simulation: a story schedules events on dates and times, and a day planner runs them. This fork is translating their stories into ordinary episodes.
 
-**State: in progress.** The translator and the `shsbrew` addon exist. The whole '08 Campaign plays through (63 stories), and the first 18 Classic stories (Stage 3a, 2026-11-06), with their calendar. Seven stories were first: Quizzes 1-3, 2.2, 2.5, 3.3 and 9.4. Scripted runs of them match Tardy-Slip's lines, speakers and menus on eight answer paths each. Most other stories still stop on a service with no handler yet (the catch game, for one), which is deliberate: a story that needs something new says so instead of being guessed at.
+**State: complete** (2026-11-09). All 126 stories play: the whole '08 Campaign (63 stories, pack 31000), the 55 Classic stories and six M.A.S.H. packs as '07 (31100), '08's `(Classic)` copy of Funky Monkey, and Fall '06 Football Season (31200), with the `shsbrew` addon (revision 10). Every story's scripted runs match the Tardy-Slip reference player's lines, speakers and menus on its tested answer paths. A story that met something new stopped on it instead of guessing; none does now. Episodes made in the Creator can take BREW as their primary add-on ([CREATOR.md](CREATOR.md#the-primary-add-on-and-extras)).
 
 None of the games' code runs here, and no file of them ships with the runtime: `tools/translate` reads the player's own copies.
 
@@ -13,9 +13,10 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 python tools/translate/translate.py brew --story FILE --addon shsbrew.exp --out OUT_DIR
 python tools/translate/translate.py brew --classic --story FILE --classic-folder CLASSIC_08_FOLDER --addon shsbrew.exp --out OUT_DIR
 python tools/translate/translate.py brew --classic-copy --story CLASSIC_08_FILE --addon shsbrew.exp --out OUT_DIR
+python tools/translate/translate.py brew --season --story MODULE_07_FOLDER/res_xlarge.pud --addon shsbrew.exp --out OUT_DIR
 ```
 
-The first writes the addon, and the rest a story that reads it: a Campaign story, a Classic story (`'07`; `--classic-folder` is '08's `addons/Classic`, where an '07 file finds its number by title), or '08's `(Classic)` copy of one. `brew_casts.json` is the BREW portrait catalogue's list of each story's looks.
+The first writes the addon, and the rest a story that reads it: a Campaign story, a Classic story (`'07`; `--classic-folder` is '08's `addons/Classic`, where an '07 file finds its number by title), or '08's `(Classic)` copy of one, or Fall '06 from '07's base pack (`--season`). `brew_casts.json` is the BREW portrait catalogue's list of each story's looks.
 
 ## How a story is translated
 

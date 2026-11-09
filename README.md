@@ -302,8 +302,8 @@ To contribute code, tests, documentation or compatibility reports, start with
 - [Cause of Death](docs/COD.md), its [release dates](docs/COD_RELEASE_DATES.md)
   and [store listing](docs/COD_STORE.md).
 - [Addons](docs/ADDONS.md), and the translated games:
-  [New Rules](docs/NEW_RULES.md), the [cancelled Xbox 360 game](docs/X360.md) and
-  [SHS '11](docs/SHS11.md).
+  [New Rules](docs/NEW_RULES.md), the [cancelled Xbox 360 game](docs/X360.md),
+  [SHS '11](docs/SHS11.md) and the [BREW games, SHS '07 and '08](docs/BREW.md).
 - [Episode introductions and week cards](docs/TITLE_SCREENS.md).
 - [Mini games](docs/MINIGAMES.md) and [story services](docs/STORY_SERVICES.md).
 - [Development and tests](docs/DEVELOPMENT.md), [distribution](docs/DISTRIBUTION.md)
