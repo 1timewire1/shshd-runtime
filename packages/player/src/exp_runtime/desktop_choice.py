@@ -497,6 +497,12 @@ class ChoiceRenderer:
             self.draw_hd_label(row, rect, scroll, self.label_home(row, game), g, theme)
             if hit.height > 0:
                 buttons.append((hit, ('choose', row.index)))
+        if page.max_scroll:
+            # shshd-runtime: more options above or below (owner, 2026-11-09): a fade over the edge row and a chevron that way.
+            if scroll > .5:
+                self.draw_hd_more(table, up=True)
+            if scroll < page.max_scroll - .5:
+                self.draw_hd_more(table, up=False)
         self.canvas.set_clip(None)
         if page.portrait is not None:
             self.draw_hd_portrait(session, page)
@@ -565,6 +571,28 @@ class ChoiceRenderer:
         density = geometry.density if geometry is not None else 2
         for offset in label_offsets(home, geometry):
             self.canvas.blit(cache[key], (round((rect.x + offset / density) * k), round(rect.y * k)))
+
+    MORE_FADE, MORE_CHEVRON = 22, (84, 92, 112)     # the fade's height (units) and the chevron's colour
+
+    def draw_hd_more(self, table, *, up):
+        """shshd-runtime: a choice's rows go on past the table's top (`up`) or bottom: the edge fades to white and a chevron
+        points the way the hidden rows are (owner, 2026-11-09: on a phone the scroll bar alone didn't say so)."""
+        k = self.scale
+        height = max(1, round(self.MORE_FADE * k))
+        key = (table.width, height, up)
+        cache = self.__dict__.setdefault('_more', {})
+        if key not in cache:
+            band = pygame.Surface((table.width, height), pygame.SRCALPHA).convert_alpha()
+            for y in range(height):
+                t = (height - y) / height if up else (y + 1) / height
+                band.fill((255, 255, 255, round(230 * t ** 1.5)), (0, y, table.width, 1))
+            cx, cy, w, h, t = table.width / 2, height * (.38 if up else .62), 9 * k, 4.5 * k, max(2, round(1.6 * k))
+            d = -1 if up else 1                     # the chevron's point: up, or down
+            points = [(cx - w, cy - d * h / 2), (cx, cy + d * h / 2), (cx + w, cy - d * h / 2),
+                      (cx + w, cy - d * h / 2 - d * t), (cx, cy + d * h / 2 - d * t), (cx - w, cy - d * h / 2 - d * t)]
+            pygame.draw.polygon(band, self.MORE_CHEVRON + (255,), points)
+            cache[key] = band
+        self.canvas.blit(cache[key], (table.x, table.y if up else table.bottom - height))
 
     def draw_hd_portrait(self, session, page):
         """The menu's SHSPortraitLayer: ring clipped by clipPortraitHousing, disc, then the expression-zero art."""

@@ -35,6 +35,9 @@ from .ui_assets import Rect
 PANEL_X, PANEL_WIDTH = 104, 560
 ROW_HEIGHT = 88
 PANEL_LIMIT = 964
+# shshd-runtime: the HD bottom bar's band top in points: its 72-unit layer at the frame's foot, the band 48 units down
+# (desktop_dialogue.bottom_bar_layer), at 1024 / 480 points a unit.
+HD_BAR_TOP = int((480 - 72 + 48) * 1024 / 480)
 TABLE_INSET = 6
 LABEL_PADDING = (24, 12)
 HEADER_NO_PORTRAIT, HEADER_LEFT, HEADER_RIGHT = 8, 7, 16
@@ -101,6 +104,10 @@ class PanelGeometry:
     effect_rise: int = 30
     running_man: tuple = (28, 5, .07)
     running_drop: int = 1
+    # shshd-runtime: where the bottom bar's band starts, in points (0: no check). The panel never reaches past it: rows that
+    # would scroll into view instead (owner, 2026-11-08: a Fall '06 menu's last option ran under the bar). Native lets a
+    # panel at its limit (PANEL_LIMIT, centred) end 22 points into the bar.
+    bar_top: int = 0
 
     def units(self, x, y):
         """Points to column units."""
@@ -109,7 +116,8 @@ class PanelGeometry:
 
 HD_GEOMETRY = PanelGeometry(2, COLUMN, 1024, PANEL_X, PANEL_WIDTH, ROW_HEIGHT, PANEL_LIMIT, TABLE_INSET, LABEL_PADDING,
                             PORTRAIT_DESCRIPTION_MINIMUM, NO_PORTRAIT_EXTRA, MENU_LINE_OFFSETS, TITLE_LINE_OFFSETS,
-                            (36, 100), 74, 694, 256, 10, TIMER_CENTER, TIMER_SIZE, -600)
+                            (36, 100), 74, 694, 256, 10, TIMER_CENTER, TIMER_SIZE, -600,
+                            bar_top=HD_BAR_TOP)
 # Cause of Death: setMetrics(20, 0, 280, ..); 44-point rows; the panel kept within 450 points and centred in 480; a
 # portrait's description raised to 68; 10 more without a character; ARR_LINE_OFFSETS_MENU_LEFT {95; 95,85; 95,85,65}
 # and ARR_TITLE_LINE_OFFSETS_LEFT/RIGHT {0,20} / {0,5} (read from the binary); labels inset 12 x 6; the box line 18 or
@@ -284,7 +292,16 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     # shshd-runtime: the player's own prompts may ask for more room than the native limit (details' panel_limit: a skip
     # prompt's page of seven rows under its description, desktop.Desktop._open_prompt).
     limit = max(g.panel_limit, details.get('panel_limit', 0))
-    while rows_height and header_height + rows_height + footer_height + description_height > limit:
+    # shshd-runtime: the description as it will be drawn (a portrait's is raised to its minimum below), and the panel's foot
+    # kept above the bottom bar (g.bar_top): it is centred on the height without that minimum, as native, then drawn with it.
+    drawn = max(description_height, g.description_minimum) if has_portrait else description_height
+
+    def overflows(rows):
+        total = header_height + rows + footer_height + description_height
+        if total > limit:
+            return True
+        return bool(g.bar_top) and int((g.screen_height - total) / 2) + total - description_height + drawn > g.bar_top
+    while rows_height and overflows(rows_height):
         shown -= 1
         rows_height -= heights[shown]
     total = header_height + rows_height + footer_height + description_height

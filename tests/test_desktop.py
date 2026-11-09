@@ -1932,6 +1932,67 @@ class DesktopTests(unittest.TestCase):
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class ChoiceDragTests(unittest.TestCase):
+    """A choice whose rows don't all fit scrolls under a dragging finger (owner, 2026-11-08: on the g54 the scroll bar showed
+    but touch couldn't move it); a drag picks nothing, and a tap still picks."""
+
+    def test_a_drag_scrolls_the_rows_and_picks_nothing_but_a_tap_still_picks(self):
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.momentum import Fling
+        from exp_runtime.pointer import ButtonPress
+        view = SimpleNamespace(max_scroll=90.0, scroll=0.0, menu_open=False, press=ButtonPress(), choice_drag=None,
+                               CHOICE_DRAG_START=Desktop.CHOICE_DRAG_START, choice_fling=Fling())
+        drag = lambda phase, y: Desktop._choice_drag(view, phase, y)
+        row = ('choose', 6)
+        self.assertFalse(drag('down', 300)); view.press.update('down', row)
+        self.assertFalse(drag('move', 298))                     # (under the threshold: still a press)
+        self.assertEqual(view.press.pressed, row)
+        self.assertTrue(drag('move', 260))                      # 40 units up: the rows follow the finger
+        self.assertEqual((view.scroll, view.press.pressed), (60.0, None))
+        self.assertTrue(drag('move', 100))                      # no further than the last row
+        self.assertEqual(view.scroll, 90.0)
+        self.assertTrue(drag('up', 100))                        # handled: nothing picked
+        self.assertIsNone(view.choice_drag)
+        self.assertFalse(drag('down', 200)); view.press.update('down', row)
+        self.assertFalse(drag('up', 201))                       # a tap goes on to the press, which picks the row
+        self.assertEqual(view.press.update('up', row), row)
+        view.max_scroll = 0
+        self.assertFalse(drag('down', 200)); self.assertFalse(drag('move', 100))    # a choice that fits never scrolls
+
+    def test_a_flick_glides_on_to_the_last_row_and_a_touch_catches_it(self):
+        # Owner, 2026-11-09: momentum (touch hosts), as native's table view decelerates.
+        from exp_runtime import momentum
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.pointer import ButtonPress
+        view = SimpleNamespace(max_scroll=300.0, scroll=0.0, menu_open=False, press=ButtonPress(), choice_drag=None,
+                               CHOICE_DRAG_START=Desktop.CHOICE_DRAG_START, choice_fling=momentum.Fling())
+        drag = lambda phase, y: Desktop._choice_drag(view, phase, y)
+        coast = lambda: Desktop._coast_choice(view)
+        with patch.object(momentum, 'ENABLED', True):
+            for ms, y in ((0, 300), (16, 290), (32, 280), (48, 270)):
+                momentum.EVENT_TIME = 1000 + ms
+                drag('down' if ms == 0 else 'move', y)
+            self.addCleanup(setattr, momentum, 'EVENT_TIME', None)
+            self.assertTrue(drag('up', 270))
+            after_drag = view.scroll
+            momentum.EVENT_TIME = 1100; coast()
+            self.assertGreater(view.scroll, after_drag)                 # gliding on in the flick's direction
+            momentum.EVENT_TIME = 1150
+            self.assertTrue(drag('down', 200))                          # a touch catches it: no row is pressed
+            held = view.scroll
+            momentum.EVENT_TIME = 1300; coast()
+            self.assertEqual(view.scroll, held)
+            self.assertTrue(drag('up', 200))
+            for ms, y in ((0, 300), (16, 200), (32, 100)):                # a hard flick stops at the last row
+                momentum.EVENT_TIME = 2000 + ms
+                drag('down' if ms == 0 else 'move', y)
+            drag('up', 100)
+            for ms in range(100, 3000, 100):
+                momentum.EVENT_TIME = 2000 + ms; coast()
+            self.assertEqual(view.scroll, 300.0)
+            self.assertFalse(view.choice_fling.moving)
+
+
 class PromptPageTests(unittest.TestCase):
     """A skip prompt with more outcomes than its panel shows at once goes in pages of five, each with Next Page and Play
     (owner, 2026-11-07: M.A.S.H.'s catch games go fifteen ways)."""

@@ -566,6 +566,7 @@ class Desktop:
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
         self.tree_fling, self.wall_fling = momentum.Fling(momentum.RATE_FAST), momentum.Fling()
+        self.choice_fling = momentum.Fling()        # a long choice's rows gliding on after a flick (touch hosts)
         if self.dialogue_renderer.game_id() == 'cod':
             # Cause of Death's own Pause / Options / Help & About (its menu engine windows in its own art).
             from .desktop_cod_pause import CodPauseMenu
@@ -2625,7 +2626,11 @@ class Desktop:
         if picker is not None and pending is not None and pending.name == 'character_picker' and picker.characters:
             # On a portrait picker it follows the highlighted portrait: a boy's blue, a girl's pink (owner, 2026-11-07).
             theme = engine.numbers.get(engine.number_key(picker.characters[picker.selected], 651), 0)
-        themed = getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(theme)
+        elif pending is not None and pending.name == 'choice':
+            # On a choice it follows the choice's own box (desktop_choice: its character's theme), not the last line's
+            # speaker: the player's choices are blue after a girl's pink line (owner, 2026-11-09).
+            theme = engine.numbers.get(engine.number_key((pending.details or {}).get('character_id', -1), 651), 0)
+        themed =getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(theme)
         if themed is not None and exists(themed):
             asset_id = themed
         key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False))
@@ -3575,6 +3580,8 @@ class Desktop:
                      pygame.MOUSEMOTION: 'move'}[event.type]
             if event.type == pygame.MOUSEMOTION:
                 self.choice_focus = self.menu_focus = None
+            if self._choice_drag(phase, y):
+                return True
             command = self.press.update(phase, hit, self._press_token())
             if command is not None:
                 self.command(command)
@@ -3684,6 +3691,56 @@ class Desktop:
         return rect.collidepoint(x, y)
 
     # -- warping through the story tree (SHSDTView touchesEnded / SHSDTTitleOverView / SHSDTHelpOverView) --------
+
+    # -- a choice too long for its panel (hd_choice: the rows that don't fit scroll) ------------------------------------
+
+    choice_drag = None          # [y at the press (column units), scroll then, moved] while a finger is down on a choice
+    CHOICE_DRAG_START = 4       # column units a finger moves before it scrolls the rows instead of pressing one
+
+    def _choice_drag(self, phase, y):
+        """A drag scrolls a choice's rows when they don't all fit, as native's table view scrolls under the finger
+        (owner, 2026-11-08: the scroll bar showed on the g54 but touch couldn't move it; only the wheel and keys did).
+        Once the finger has moved it picks nothing on release, and a flick glides on (momentum, on touch hosts; owner,
+        2026-11-09). A touch that catches a gliding list only stops it. True when the event was the drag's."""
+        if phase == 'down':
+            caught = self.choice_fling.stop()
+            self.choice_drag = [y, self.scroll, False, caught] if self.max_scroll > 0 and not self.menu_open else None
+            if caught and self.choice_drag is not None:
+                self.press.cancel()
+                return True
+            return False
+        drag = self.choice_drag
+        if drag is None:
+            return False
+        if phase == 'up':
+            self.choice_drag = None
+            if drag[2]:
+                self.choice_fling.release()
+            if drag[2] or drag[3]:
+                self.press.cancel()
+                return True
+            return False
+        if not drag[2] and abs(y - drag[0]) < self.CHOICE_DRAG_START:
+            return drag[3]
+        if not drag[2]:
+            drag[2] = True
+            self.press.cancel()
+        self.scroll = min(self.max_scroll, max(0, drag[1] - (y - drag[0]) * 1.5))
+        self.choice_fling.track(self.scroll)
+        return True
+
+    def _coast_choice(self):
+        """Each frame: a flicked choice's rows gliding on, until they slow to nothing or reach the first or last row."""
+        fling = getattr(self, 'choice_fling', None)
+        if fling is None:
+            return
+        if getattr(self, 'max_scroll', 0) <= 0:
+            fling.stop()
+            return
+        values = fling.step(self.scroll)
+        if values is not None:
+            self.scroll = min(self.max_scroll, max(0, values[0]))
+            fling.settled(self.scroll)
 
     tree_drag = None            # [pointer, scroll (y, x) at the start, moved] while a finger is down on the tree
 
@@ -4385,6 +4442,7 @@ class Desktop:
         self._record_undo()
         if self.active:
             self._coast_panels()
+            self._coast_choice()
             self._grid_hold(elapsed_ms)
             self._leash_stick()
             self._puzzle_frame(elapsed_ms)

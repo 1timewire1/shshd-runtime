@@ -45,9 +45,10 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 import newrules  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 7   # 2: the event icons; 3: the Java '08 look;
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 10   # 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
 # 4: Classic stories' own backgrounds; 5: '08's redraws of them; 6: the stories' own catch picture (OWN_CATCH_PICTURES); 7: that
 # picture as an event icon too (OWN_ICON_BASE), and King of the Road's Michael centred (CENTRE_OWN_BODY)
+ADDON_REQUIRED = 7                      # what a story needs: rev 8 only redraws the TV, so the stories built for 7 stay as they are
 PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
@@ -88,7 +89,9 @@ EVENT_ICONS = range(100, 181)
 # The "Java '08 Look" (Stage 2d): the Java demo's own picture for one of the addon's, this far above it (profile JAVA_LOOK_ART).
 # Built only when the demo's jar is given (build_addon java_jar); a picture with no Java copy stays BREW's.
 JAVA_OFFSET = 10000
-EVENT_ICON_SIZE = 46                    # the smartphone's own badge icons are 44x46 to 45x49
+# The smartphone's own badge icons are 2x art, 86 to 110 pixels a side (the location badge 3104: 90 x 94), and the badge draws an
+# icon's pixels as frame points: so BREW's are fitted to this (rev 10; 46 before, half the smartphone's; owner, 2026-11-09).
+EVENT_ICON_SIZE = 92
 MUSIC_BASE, MUSIC_TRACKS = 26900, 15    # 8000-8014
 # Sorted by ear (owner, 2026-11-05): these play as sound effects, the rest as music. The game itself plays all of them the same way.
 SOUND_TRACKS = frozenset({1, 4, 8, 9, 11, 12})
@@ -158,7 +161,9 @@ WEEK_TITLE, DAY_LINE = 'Week %d of %d', '%s.'
 WEEK_RANGE, WEEK_RANGE_MONTHS, WEEK_ONE_DAY = '%s %d-%d', '%s %d - %s %d', '%s %d'
 EVENT_TEXT_KEY, EVENT_NAME_KEY = '$BREWEV%d', '$BREWNAME%d'     # each event's text (7) and name (its badge)
 SLOT_MINUTES, DAY_MINUTES = 30, 1440
-LOCATION_BADGE = 3104                   # the smartphone's own location badge ("Counselor's Office", "Lunch"), for an event with no icon
+# An event with no icon of BREW's own shows its cell phone (143, the add-on's 26543) for now; it took the smartphone's location badge
+# (3104) before (owner, 2026-11-09: to be assigned in the badge review).
+NO_ICON_BADGE = 143
 SCENE_LOCATION_KEY, SCENE_SKY_KEY = 31030, 31050    # + depth
 # A season's scene stack has room of its own (Stage 6): Fall '06 opens more scenes than it closes (BREW only counts them), about
 # one level every two school days, and past 20 the Classic places (31030, 31050 + depth) run into the calendar's own numbers.
@@ -194,9 +199,17 @@ LIST_KEYS, LIST_SLOTS, LIST_LENGTH = 20000, 32, 31      # an entity's list `key`
 LOOK_LIST, LOOK_HASH, LOOK_SHOWN, PINK_ENTRY = 635, 19999, 19998, 2
 # A look whose entry 0 (its body) is one of these isn't a person: no picture at all (Book, Note, Radio), or a thing's (the computer
 # 143, the phone 144, the TV 164; brew_casts.json). Its box is the smartphone's grey one (theme 3), as the smartphone's things speak
-# (owner, 2026-11-07). Animals (276-280) keep a person's.
-GREY_BODIES = (-1, 143, 144, 164)
+# (owner, 2026-11-07). So are the animals' (Barry/Badger 276, the dogs 277 and 280, Lyle/Lizard 279), as the smartphone's speak
+# (owner, 2026-11-09); the Kid (278) is a person.
+GREY_BODIES = (-1, 143, 144, 164, 276, 277, 279, 280)
 BLUE_THEME, PINK_THEME, GREY_THEME = 1, 2, 3
+# A thing drawn turned to one side, mirrored in the add-on's portraits so it faces the middle from the right, where a thing always
+# speaks: the smartphone mirrors a right-hand portrait except in the grey box (owner, 2026-11-08: the TV, 164; the desk phone and
+# the handheld computer already face the right way). Only its portraits: the event icons and catch pictures stay as drawn.
+MIRRORED_BODIES = (164,)
+# A person drawn standing higher in its frame than the rest, lowered this many art pixels in the add-on's portraits so it sits on the
+# ring as they do (their busts end 7 art pixels above the picture's foot): the Kid, 278 (18 above; owner, 2026-11-09).
+LOWERED_BODIES = {278: 11}
 CHOICE_PORTRAIT = 1
 CHOICE_TITLE = 'Make your choice!'      # for a quiz: the real player answers, as in New Rules' Train That Brain!
 # The portrait choice's title (27): BREW's string 51 is `Pick Your Best Self Portrait`, wider than the HD picker's one line (412 of
@@ -635,8 +648,25 @@ def say(s, text, speaker, expression, context):
 
     def output(end):
         narrated, voice, plain, unnamed = s.label(), s.label(), s.label(), s.label()
-        # A name the story set for this line's plate (15): the line goes out under it, with no portrait.
+        # A name the story set for this line's plate (15): the line goes out under it, with no portrait. A plate that adds nothing
+        # (blank, or the line's own first word: `Art` over `Art class.`) goes, and the line is the narrator's (owner, 2026-11-08).
         s.emit(0x40, context['plate']); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(unnamed)
+        if context.get('plates'):
+            plate_is_noise(s, context, shown, narrated)
+            # The plate is only the name BREW's panel shows: its picture stays the scene's speaker's (14), as Tardy-Slip's
+            # brewName sets only the dialogue's name (Fall '06's ending: the Kid's face under `Elmo`; owner, 2026-11-09). A
+            # speaker with a face says it under the plate's name for that line; anyone else's goes out as the name alone.
+            faceless = s.label()
+            speaker(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(faceless)
+            speaker(); s.push(EVENT_CHARACTER_KEY); s.call(55, 1); s.push_result(); s.emit(0x0a); s.jump_if_nonzero(faceless)
+            resolve_look(s, speaker, context)
+            speaker(); s.call(73, 1); s.push_result(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(faceless)
+            speaker(); s.push(context['plate_name']); s.call(61, 2)
+            speaker(); s.emit(0x40, context['plate']); s.call(64, 2)
+            s.emit(0x40, shown); speaker(); push_face(s, expression); s.call(13, 3)
+            speaker(); s.push(context['plate_name']); s.call(64, 2)
+            s.jump(end)
+            s.label(faceless)
         s.emit(0x40, context['plate']); s.emit(0x40, shown); s.call(76, 2)
         s.jump(end)
         s.label(unnamed)
@@ -707,6 +737,41 @@ def say(s, text, speaker, expression, context):
     set_word(s, context['plate'], lambda: s.push(-1))
     clear_badge(done)
     s.label(done)
+
+
+def push_text_byte(s, text, index):
+    """Push byte `index` (a word) of the string at the address in word `text`: high byte first, two to a word. A byte from 0x80 up
+    comes out other than itself, but the same from either string, which is all plate_is_noise compares."""
+    s.emit(0x40, text); s.emit(0x40, index); s.push(2); s.emit(0x53); s.emit(0x50); s.emit(0x3f)
+    odd, done = s.label(), s.label()
+    s.emit(0x40, index); s.push(2); s.emit(0x54); s.jump_if_nonzero(odd)
+    s.push(256); s.emit(0x53); s.jump(done)
+    s.label(odd)
+    s.push(256); s.emit(0x54)
+    s.label(done)
+
+
+def plate_is_noise(s, context, line, noise):
+    """Jump to `noise` when the plate (word context['plate']) adds nothing to the line (the address in word `line`): it's blank, or
+    the line starts with it and then a space (`Art` over `Art class.`; owner, 2026-11-08)."""
+    i, byte = context['plate_scan'], context['plate_scan'] + 1
+    top, kept = s.label(), s.label()
+    for text in (context['plate'], line):                   # (a dynamic string's handle, 0x7FF5 up, isn't an address to read)
+        s.emit(0x40, text); s.push(0x7FF5); s.emit(0x0d); s.emit(0x40, text); s.push(0); s.emit(0x0e); s.emit(0x11)
+        s.jump_if_nonzero(kept)
+    set_word(s, i, lambda: s.push(0))
+    push_text_byte(s, context['plate'], i); s.push(0x20); s.emit(0x0c); s.jump_if_zero(noise)     # blank: nothing above a space
+    s.label(top)
+    s.emit(0x40, i); s.push(40); s.emit(0x0c); s.jump_if_nonzero(kept)
+    set_word(s, byte, lambda: push_text_byte(s, context['plate'], i))
+    end_of_plate = s.label()
+    s.emit(0x40, byte); s.jump_if_zero(end_of_plate)
+    push_text_byte(s, line, i); s.emit(0x40, byte); s.emit(0x0b); s.jump_if_nonzero(kept)
+    set_word(s, i, lambda: (s.emit(0x40, i), s.push(1), s.emit(0x50)))
+    s.jump(top)
+    s.label(end_of_plate)
+    push_text_byte(s, line, i); s.push(0x20); s.emit(0x0a); s.jump_if_nonzero(noise)
+    s.label(kept)
 
 
 def name_plate(rewriter, pc, argc, context):
@@ -1724,7 +1789,7 @@ def run_event(s, context, B, title_card, date_card, driver):
     set_global(s, BADGE_TIME_KEY, lambda: (event_get(s, B, EVENT_MINUTE), s.push(SLOT_MINUTES), s.emit(0x53), s.push(SLOT_MINUTES),
                                            s.emit(0x52)))
     # The event's badge icon (an icon outside BREW's own small pictures, as CS Idol's 26501, one of its registered pictures, or none,
-    # takes the location badge), kept for a date caption its script shows (date_caption).
+    # takes NO_ICON_BADGE), kept for a date caption its script shows (date_caption).
     for n, picture in enumerate(sorted(OWN_CATCH_PICTURES)):
         if picture not in context.get('own_missing', set(OWN_CATCH_PICTURES)):
             not_own = s.label()
@@ -1733,7 +1798,7 @@ def run_event(s, context, B, title_card, date_card, driver):
             s.label(not_own)
     event_get(s, B, EVENT_ICON); s.push(EVENT_ICONS.start); s.emit(0x0e)
     event_get(s, B, EVENT_ICON); s.push(EVENT_ICONS.stop); s.emit(0x0d); s.emit(0x11); s.jump_if_zero(icon)
-    set_global(s, BADGE_ICON_KEY, lambda: s.push(LOCATION_BADGE)); s.jump(chosen)
+    set_global(s, BADGE_ICON_KEY, lambda: s.push(EVENT_ICON_BASE + NO_ICON_BADGE)); s.jump(chosen)
     s.label(icon)
     set_global(s, BADGE_ICON_KEY, lambda: (event_get(s, B, EVENT_ICON), s.push(EVENT_ICON_BASE), s.emit(0x50)))
     s.label(chosen)
@@ -3045,7 +3110,9 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
                      catch_words_count=len(words), catch_sizes_count=len(sizes),
                      catch_sizes=rewriter.words([value for picture, size in sizes for value in (picture, *size)] or [0]))
     return dict(rid=script, kind='single', looks=sorted(looks.items()), hash_factors=rewriter.words(HASH_FACTORS),
-                plate=rewriter.words([-1]), **named_words(program, rewriter, start),
+                plate=rewriter.words([-1]), plate_scan=rewriter.words([0, 0]) if any(i.opcode == 0x1f and i.operand >> 8 == 15 for i in program.instructions) else None,
+                plate_name=rewriter.words([0] * NAME_WORDS) if any(i.opcode == 0x1f and i.operand >> 8 == 15 for i in program.instructions) else None,
+                plates=any(i.opcode == 0x1f and i.operand >> 8 == 15 for i in program.instructions), **named_words(program, rewriter, start),
                 last_line=rewriter.words([-1]), dots=rewriter.words([0, 0, 0, 0]), opener_now=rewriter.words([0]), dots_buffer=rewriter.words([0] * (OPENER_WORDS + 4)), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
                 name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
                 bracketed=thoughts, game_words=game_words, routine=start, long_lines=long_lines, pieces=rewriter.words([-1, 0, 0]),
@@ -3214,7 +3281,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     if season:
         resources[DRIVER_SCRIPT] = season_driver(name, spec, table, title, card, own_missing)
         resources[NEST_SCRIPT] = season_script(spec, table, own_missing, nest_runner)
-    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REQUIRED)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
@@ -3439,10 +3506,10 @@ def faces_of(art, entries):
     return pictures
 
 
-def shifted(picture, dx):
-    """A picture moved `dx` pixels across on a canvas of its own size."""
+def shifted(picture, dx, dy=0):
+    """A picture moved `dx` pixels across (and `dy` down) on a canvas of its own size."""
     out = Image.new(picture.mode, picture.size, (0, 0, 0, 0))
-    out.paste(picture, (dx, 0))
+    out.paste(picture, (dx, dy))
     return out
 
 
@@ -3527,6 +3594,10 @@ def build_addon(casts, games, render_music=None, java_jar=None):
             bounds = art.bounds(body) if isinstance(body, int) and body >= 26000 else None
             if bounds and abs(bounds[0] + bounds[2]) >= 2 * CENTRE_OWN_BODY:
                 faces = [shifted(face, -round((bounds[0] + bounds[2]) / 2)) for face in faces]
+            if body in MIRRORED_BODIES:
+                faces = [face.transpose(Image.FLIP_LEFT_RIGHT) for face in faces]
+            if body in LOWERED_BODIES:
+                faces = [shifted(face, 0, LOWERED_BODIES[body]) for face in faces]
             box = portrait_box(faces[0].size)
             for face in faces:
                 drawn = face.getbbox()
@@ -3581,8 +3652,8 @@ BADGE_SCALE = 6                         # art pixels to the picture's, with no s
 
 
 def event_icons(art, pictures=None):
-    """{resource: PNG} of BREW's small pictures (EVENT_ICONS, or `pictures`: {picture: resource}), for time badges: 4 times with no
-    smoothing, then fitted to EVENT_ICON_SIZE, so their pixels stay sharp at about the smartphone's icon size."""
+    """{resource: PNG} of BREW's small pictures (EVENT_ICONS, or `pictures`: {picture: resource}), for time badges: 8 times with no
+    smoothing, then fitted to EVENT_ICON_SIZE, so their pixels stay sharp at the smartphone's icon size."""
     out = {}
     targets = pictures or {picture: EVENT_ICON_BASE + picture for picture in EVENT_ICONS}
     for picture, resource in targets.items():
@@ -3594,7 +3665,7 @@ def event_icons(art, pictures=None):
             continue
         canvas = Image.new('RGBA', (right - left, bottom - top), (0, 0, 0, 0))
         art.draw(canvas, picture, -left, -top)
-        big = canvas.resize((canvas.width * 4, canvas.height * 4), Image.NEAREST)
+        big = canvas.resize((canvas.width * 8, canvas.height * 8), Image.NEAREST)
         scale = EVENT_ICON_SIZE / max(canvas.width, canvas.height)
         out[resource] = brew_art.png(big.resize((round(canvas.width * scale), round(canvas.height * scale)), Image.LANCZOS))
     return out

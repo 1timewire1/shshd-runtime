@@ -174,6 +174,40 @@ class CharacterPickerTests(unittest.TestCase):
         s.answer(1)
         self.assertEqual(panel_theme(s), 1)
 
+    @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+    def test_a_translated_frame_follows_a_choices_own_colour(self):
+        # On a choice the frame takes the choice's box colour (its character's theme), not the last line's: the player's choices
+        # are blue after a girl's pink line (owner, 2026-11-09).
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        from io import BytesIO
+        from exp_runtime.desktop import Desktop
+        import pygame
+        self.addCleanup(pygame.quit)
+        pygame.display.init()
+        pygame.display.set_mode((1, 1))
+
+        def png(color):
+            surface = pygame.Surface((8, 8))
+            surface.fill(color)
+            stream = BytesIO()
+            pygame.image.save(surface, stream, 'x.png')
+            return stream.getvalue()
+        assets = {26999: png((40, 60, 200)), 26991: png((220, 90, 120))}
+        colour = lambda ui: tuple(ui._frame_backdrop((8, 8)).get_at((4, 4)))[:3]
+        words, (title, options) = text_words('You', 'Yes|No')
+        for chooser, theme, expected in ((7, 1, (40, 60, 200)), (7, 2, (220, 90, 120)), (-1, 0, (40, 60, 200))):
+            with self.subTest(chooser=chooser, theme=theme):
+                r = Resources(program(*host_call(1, title, options, -1, 0, 0, chooser, -1, 0), 0x33, words=words))
+                r.record = dict(r.record, pack_id=31100)
+                r.read_asset = lambda rid: assets[rid]
+                r.exists = lambda rid: rid in assets
+                s = Session(r)
+                if chooser >= 0:
+                    s.engine.numbers[s.engine.number_key(chooser, 651)] = theme
+                self.assertEqual(s.advance().name, 'choice')
+                s.engine.panel.theme = 2                            # the last line was a girl's
+                self.assertEqual(colour(Desktop(s, audio=False)), expected)
+
     def test_a_save_from_before_picker_layouts_keeps_the_native_slots(self):
         s = Session(picker_resources())
         s.advance()

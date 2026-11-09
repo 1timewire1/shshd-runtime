@@ -1764,7 +1764,7 @@ class BrewCalendarTests(unittest.TestCase):
         import playthrough as pt
         session = pt.session(data, addons=[ExpArchive(addon_path.read_bytes())])
         session.engine.random.state = 1
-        cards, badges, seen, nested, days = [], [], Counter(), Counter(), []
+        cards, badges, seen, nested, days, classes = [], [], Counter(), Counter(), [], []
         session.advance()
         for _ in range(3000):
             while session.transitioning:
@@ -1778,6 +1778,8 @@ class BrewCalendarTests(unittest.TestCase):
                 break
             if action.name == 'dialogue' and re.fullmatch(r'\w+day, \w+ \d+\.', action.details.get('text') or ''):
                 days.append((len(cards), action.details['text']))
+            if action.name == 'dialogue' and re.fullmatch(r'\w+ class\.+', action.details.get('text') or ''):
+                classes.append((action.details.get('speaker') or '', action.details['text']))
             if action.name == 'presentation':
                 cards.append((action.details.get('title'), action.details.get('subtitle')))
                 session.tick(4000)
@@ -1810,6 +1812,9 @@ class BrewCalendarTests(unittest.TestCase):
         self.assertEqual(cards, [('Week 1 of 13', 'September 13-17'), ('Week 2 of 13', 'September 20-24')])
         self.assertEqual(days, [(1, 'Monday, September 13.'), (1, 'Wednesday, September 15.'), (1, 'Friday, September 17.'),
                                 (2, 'Monday, September 20.')])
+        # Owner, 2026-11-08: a class's plate (`Art` over `Art class.`) adds nothing, so the line is the narrator's.
+        self.assertTrue(classes)
+        self.assertEqual({speaker for speaker, _ in classes}, {''})
         self.assertIn('3:00 PM - Free Time', [b.strip() for b in badges])     # (the weekly Free Time; classes follow the answers)
         # Stage 6b: a class's due events (37) run inside it at its next wait, through the nest runner, one level deep: the native
         # engine runs them one after another, each to its end, never one inside another (FUN_0000af08).

@@ -1,7 +1,7 @@
-"""shshd-runtime: "a(n)" in the BREW games' formatted lines, made "a" or "an" by the word filled in (engine.choose_articles)."""
+"""shshd-runtime: "a(n)" in the BREW games' formatted lines, made "a" or "an" by the word filled in (engine.choose_articles), and "word(s)" made singular or plural by the number before it (choose_plurals)."""
 import unittest
 
-from exp_runtime.engine import choose_articles
+from exp_runtime.engine import choose_articles, choose_plurals
 from exp_runtime.runtime import Session
 from test_runtime import Resources, host_call, text_words
 from test_vm import program
@@ -19,6 +19,17 @@ class ArticleTests(unittest.TestCase):
             self.assertEqual(choose_articles(text), expected)
         for kept in ('a(n)', 'banana(n) x', 'plain text'):
             self.assertEqual(choose_articles(kept), kept)
+
+    def test_the_number_before_it_picks_singular_or_plural(self):
+        # Fall '06's season record after each game (owner, 2026-11-09): "(s)" and "(es)" go when the count is 1.
+        for text, expected in (('4 Win(s) and 0 Loss(es). You have 3 more game(s) to go.',
+                                '4 Wins and 0 Losses. You have 3 more games to go.'),
+                               ('1 Win(s) and 1 Loss(es). You have 1 more game(s) to go.',
+                                '1 Win and 1 Loss. You have 1 more game to go.'),
+                               ('11 Win(s)', '11 Wins'), ('-1 point(s)', '-1 point')):
+            self.assertEqual(choose_plurals(text), expected)
+        for kept in ('Win(s)', 'a game(s)', 'plain text'):
+            self.assertEqual(choose_plurals(kept), kept)
 
     def test_only_a_brew_packs_formatted_lines_change(self):
         words, (destination, pattern, house) = text_words('                                ', 'You live in a(n) %s.',

@@ -110,6 +110,17 @@ A_BEFORE = ('uni', 'use', 'usu', 'uti', 'ure', 'uro', 'eu', 'one', 'once', 'ewe'
 AN_BEFORE = ('hour', 'honest', 'honor', 'honour', 'heir')                          # ...an hour
 
 
+# shshd-runtime: "word(s)" / "word(es)" after a number a script fills in (Fall '06's record: `%d Win(s) and %d Loss(es).  You
+# have %d more game(s) to go.`), as the singular for 1 and the plural otherwise (choose_plurals; owner, 2026-11-09). The number may
+# come up to two words before (`3 more game(s)`).
+PLURAL_SLOT = re.compile(r"\b(-?\d+)((?:\s+[A-Za-z']+){0,2}?\s+)([A-Za-z]+)\((s|es)\)")
+
+
+def choose_plurals(text):
+    """`text` with each "N ... word(s)" made "word" when N is 1 and "words" otherwise ("Loss(es)": "Loss" or "Losses")."""
+    return PLURAL_SLOT.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + ('' if m.group(1) in ('1', '-1') else m.group(4)), text)
+
+
 def choose_articles(text):
     """`text` with each "a(n) word" made "a word" or "an word" by how the word begins; "A(n)" keeps its capital."""
     def article(match):
@@ -132,7 +143,8 @@ class EngineState:
     # few services whose HD handler differs from Android's.
     hd_version = None
     badge_sounds = None             # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
-    # Not saved: whether service 22 makes "a(n) word" "a word" or "an word" (a pack in TRANSLATED_ARTICLE_PACKS; Session sets it).
+    # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
+    # TRANSLATED_ARTICLE_PACKS; Session sets it).
     choose_articles = False
     # Not saved: whether a word game of three words, at least one good and one bad, plays (WordGame.three_words: a pack in
     # TRANSLATED_THREE_WORD_PACKS, the BREW games; Session sets it). Elsewhere it stays the stop it is natively.
@@ -847,7 +859,7 @@ class EngineState:
                 if keep_last:
                     out += pattern[-1]
                 if self.choose_articles:
-                    out = choose_articles(out)
+                    out = choose_plurals(choose_articles(out))
                 self.write_text(vm, args[0], out)
             return complete('format_into_memory', destination=args[0])
         if y == 26:
