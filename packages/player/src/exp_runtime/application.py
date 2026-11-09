@@ -1685,13 +1685,14 @@ class Application:
         found = self.library.addon(entry[0]) if entry is not None and hasattr(self.library, 'addon') else None
         if found is None or entry[1] not in found[1].entries:
             return None
-        return found[1].read(entry[1])
+        from .audio import mp3_from
+        return mp3_from(found[1].read(entry[1]), entry[2] if len(entry) > 2 else 0)
 
     def title_music_offered(self):
         """Title Screen Music's choices here: Default, Auto, and each translated game whose addon the library holds."""
         table = getattr(GAMES.get(self.library.game_id), 'TITLE_MUSIC', {}) if self.library else {}
         offered = ['default', 'auto']
-        for game, (addon, resource) in table.items():
+        for game, (addon, resource, *_) in table.items():
             found = self.library.addon(addon) if hasattr(self.library, 'addon') else None
             if found is not None and resource in found[1].entries:
                 offered.append(game)

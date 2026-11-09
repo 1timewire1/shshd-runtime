@@ -150,3 +150,18 @@ class TitleMusicTests(unittest.TestCase):
             with self.subTest(pack=pack):
                 app.remember_title_game(episode(pack, presentation))
                 self.assertEqual(app.state.last_title_game, expected)
+
+
+class Mp3FromTests(unittest.TestCase):
+    """audio.mp3_from: an MP3 starting at the whole frame that holds a time, for '11's title tune (owner, 2026-11-09)."""
+
+    def test_it_starts_at_the_frame_holding_the_time_and_leaves_other_data_alone(self):
+        from exp_runtime.audio import mp3_from, mp3_length_ms
+        frame = b'\xff\xfb\x90\x00' + bytes(413)                   # MPEG-1 layer III, 128 kbit/s, 44.1 kHz: 417 bytes, 26.1 ms
+        tag = b'ID3\x04\x00\x00\x00\x00\x00\x05' + bytes(5)
+        data = tag + b''.join(frame[:3] + bytes([n]) + frame[4:] for n in range(10))
+        self.assertEqual(mp3_from(data, 100)[:4], frame[:3] + bytes([3]))      # 78-104 ms: the fourth frame
+        self.assertEqual(len(mp3_from(data, 100)), 7 * len(frame))
+        self.assertEqual(mp3_length_ms(mp3_from(data, 100)), 182)
+        self.assertIs(mp3_from(data, 0), data)
+        self.assertEqual(mp3_from(b'RIFF....WAVE', 500), b'RIFF....WAVE')

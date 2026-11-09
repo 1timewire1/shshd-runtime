@@ -252,7 +252,7 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | '07 / '08 | `shsbrew` | 26906 | Track 8006, the MIDI both games share |
 | New Rules | `shsnr` | 26988 | Track 8 |
 | X360 | `shsx360` (revision 15) | 26996 | `music/main_menu` |
-| '11 | `shs11` | 26981 | Track 1, the main menu's one full tune |
+| '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
 
 ## Data Management
 

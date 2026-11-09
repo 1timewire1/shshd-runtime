@@ -38,3 +38,27 @@ def mp3_length_ms(data: bytes) -> int | None:
         samples += 1152 if mpeg1 else 576
         i += max(size, 1)
     return None if rate is None else samples * 1000 // rate
+
+
+def mp3_from(data: bytes, start_ms: int) -> bytes:
+    """An MP3 (layer III) starting at the first whole frame at or before `start_ms`, without its ID3 tag: the frames before it
+    left out, so any player starts there (Add-Ons' Title Screen Music: '11's tune opens with 0.92 s of silence; owner,
+    2026-11-09). The data as it is if it isn't one or `start_ms` is 0."""
+    i, samples = 0, 0
+    if data[:3] == b'ID3' and len(data) >= 10:
+        i = 10 + ((data[6] & 0x7f) << 21 | (data[7] & 0x7f) << 14 | (data[8] & 0x7f) << 7 | data[9] & 0x7f)
+    while start_ms > 0 and i + 4 <= len(data):
+        b1, b2 = data[i + 1], data[i + 2]
+        version, layer = b1 >> 3 & 3, b1 >> 1 & 3
+        if data[i] != 0xff or b1 & 0xe0 != 0xe0 or version == 1 or layer != 1 or b2 >> 4 in (0, 15) or b2 >> 2 & 3 == 3:
+            i += 1
+            continue
+        rate = _RATES[version][b2 >> 2 & 3]
+        mpeg1 = version == 3
+        frame = 1152 if mpeg1 else 576
+        if (samples + frame) * 1000 > start_ms * rate:
+            return data[i:]              # this frame reaches past start_ms: it starts here
+        bitrate = _BITRATES[1 if mpeg1 else 2][b2 >> 4] * 1000
+        samples += frame
+        i += max((144 if mpeg1 else 72) * bitrate // rate + (b2 >> 1 & 1), 1)
+    return data
