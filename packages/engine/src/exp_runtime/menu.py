@@ -286,11 +286,17 @@ class MenuState:
         record = self.library.select(episode)
         return self.library.directory / 'saves' / (record['id'] + '.shs-shot.jpg')
 
-    def names_for(self, record):
+    def names_for(self, record, resources=None):
         """The name-replacement table an episode's sessions share: its translated game's own (the profile's
-        TRANSLATED_NAME_SETS, by pack), else the library's."""
-        sets = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'TRANSLATED_NAME_SETS', {})
+        TRANSLATED_NAME_SETS, by pack), the Creator's for an episode made there (presentation `creator`, CREATOR_NAME_SET;
+        owner, 2026-11-09), else the library's."""
+        profile = GAMES.get(getattr(self.library, 'game_id', None))
+        sets = getattr(profile, 'TRANSLATED_NAME_SETS', {})
         key = sets.get(record.get('pack_id')) if isinstance(record, dict) else None
+        if key is None and resources is not None:
+            from .content import declared
+            if declared(resources, 'creator'):
+                key = getattr(profile, 'CREATOR_NAME_SET', None)
         return self.names if key is None else self.name_sets.setdefault(key, {})
 
     def resume_path(self, episode):
@@ -364,7 +370,7 @@ class MenuState:
         session = Session.load(resources, path) if path else Session(resources)
         # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in
         # Hector's Guide) must reach the table, not lose to the last playthrough's value when the window shares it.
-        session.share_names(self.names_for(resources.record))
+        session.share_names(self.names_for(resources.record, resources))
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)

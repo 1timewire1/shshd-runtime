@@ -44,8 +44,9 @@ def observe_effects(session, preview, action, effects):
         if not feedback:
             # shshd-runtime: a translated New Rules episode's right/wrong jingles (shs/profile.py), sound effects
             # (79) since 2026-10-25 and music (80) in earlier translations.
-            record = getattr(getattr(session, 'resources', None), 'record', None) or {}
-            cues = getattr(profile, 'TRANSLATED_FEEDBACK_MUSIC', {}).get(record.get('pack_id'), {})
+            from .content import pack_setting
+            resources = getattr(session, 'resources', None)
+            cues = (pack_setting(resources, 'TRANSLATED_FEEDBACK_MUSIC', {}) if resources is not None else {}) or {}
             feedback = cues.get(action.details['asset_id'], 0)
         if feedback:
             # Opposite cues must not cancel each other.

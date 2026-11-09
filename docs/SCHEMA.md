@@ -374,6 +374,14 @@ exp-runtime never read 3. Every member is optional:
 | `narration_theme` | key | A named line without a portrait (mode 3) in blue (1), pink (2) or gray (3) |
 | `portrait_effects` | `{key, images}` | An emoticon over the speaker: effect 1–6 (lightning, sweat, anger, heart, exclamation, question), `images` its six episode images or `null` |
 | `music_loops` | `{"intro": loop}` | An intro music resource running into its loop without a gap |
+| `creator` | `true` | Made in the Creator: the episode keeps the Creator's own names table (player.json `name_sets["creator"]`) |
+| `addons` | `{primary, edition}` | The add-on whose settings that need its pictures and sounds the episode takes: frame backdrop, relationship icons and sounds, answer-feedback music, one sound channel, its switches. `edition` is `"08"` or `"07"` for `shsbrew`, `""` otherwise |
+| `word_forms` | `true` | `a(n)` and `word(s)` in formatted lines (service 22) become `a`/`an` and singular/plural |
+| `date_first` | `true` | Title and date cards show the date as the title |
+| `three_word_games` | `true` | A word game (71) may have three words, one or two of them good |
+| `big_pickers` | `true` | A portrait picker (78) may offer up to ten photos |
+| `minigames` | `true` | The episode plays translated mini-games, so the player offers their switch for it |
+| `aliases` | `{"resource": [addon, resource]}` | A picture or sound taken from an extra add-on, under one of the episode's numbers |
 
 Keys are SHS global numbers (owner 0, service 54) that the script sets around
 the line and clears after it: the duet partner as its character ID + 1 (0
@@ -384,8 +392,15 @@ behind it.
 
 The runtime honours the record in the SHS profile (`PRESENTATION_RECORD`;
 `content.presentation_feature`). Episodes translated by `tools/translate`
-(packs 31300 and 31400) keep their settings in the profile's `TRANSLATED_*`
-tables, which take precedence. A malformed record is set aside with a warning
+(packs 31000-31600) keep their settings in the profile's `TRANSLATED_*`
+tables, which take precedence. An episode naming a primary add-on reads the
+tables of that add-on's translated pack (`ADDON_FEATURE_PACKS`:
+`content.feature_pack`), but only for the settings that need the add-on's
+pictures and sounds; the others it declares one by one (`free_setting`). With
+a primary, the switches that move an add-on's pictures (Java '08 Look, '08
+Backgrounds, Hi-Res Portraits, MS3 Characters) move only the add-on's, never
+the episode's own. An alias reaches the add-on it names before the usual
+lookup, in which the first add-on listed (the primary) wins. A malformed record is set aside with a warning
 and the episode plays without it. An app without the feature shows the first
 speaker alone, the yellow named-line box, no emoticon, and the intro with its
 own repeat flag. The episode creator writes the record when a project uses

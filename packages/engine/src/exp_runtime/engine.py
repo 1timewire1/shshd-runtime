@@ -640,6 +640,10 @@ class EngineState:
                     argument += 1
                 self.dynamic_strings[10] += char
                 position += 1
+            if self.choose_articles:
+                # shshd-runtime: as service 22's, for an episode made in the Creator, whose `{placeholders}` format here
+                # (presentation `word_forms`; owner, 2026-11-09).
+                self.dynamic_strings[10] = choose_plurals(choose_articles(self.dynamic_strings[10]))
             self.dynamic_strings[slot] = self.dynamic_strings[10]
             return complete('format_string', 0x7ff5 + slot, slot=slot)
         if y in (50, 51):

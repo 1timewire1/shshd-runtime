@@ -47,6 +47,11 @@ An import can hold addons and the episodes that need them together, in any order
 For a required addon, an episode-bank resource (26000 and up) resolves from the episode first, then from each addon in the order
 the episode lists them (`EpisodeResources._bank_archive`). Lower IDs keep coming from the game package.
 
+The addons reuse numbers (the frame backdrop 26999 and the relationship icons 26991-26997 are in several), so in an episode that
+lists more than one, the first wins. An episode made in the Creator lists its primary add-on first, and names each picture or sound
+it takes from another (an extra) in an alias table (SCHEMA.md "Presentation extension", `aliases`), which is read before that
+lookup. Mini-games read their art from their own addon directly, whatever else the episode lists.
+
 An optional addon is never part of that lookup. Whatever uses it asks the library for it and reads its archive directly. This means
 its IDs can't collide with an episode's own.
 
@@ -242,7 +247,7 @@ They travel in the offer step of [`lan_sync.py`](../packages/engine/src/exp_runt
 
 ## In the Creator
 
-See [CREATOR.md](CREATOR.md#add-ons). A project can take pictures, sounds and cutscenes from an addon by reference, or copy pictures and sounds in. It can't make one yet: that's what the steps below are for.
+See [CREATOR.md](CREATOR.md#add-ons). A project can take pictures, sounds and cutscenes from an addon by reference, or copy pictures and sounds in. One addon can be its **primary**: the episode then takes that addon's settings (frame, relationship icons, answer music, switches) as its translated stories have them. Others are extras, for their pictures, sounds and mini-games. It can't make an addon yet: that's what the steps below are for.
 
 ## Writing your own
 

@@ -127,6 +127,19 @@ TRANSLATED_BREW_MENU_PACKS = (31000, 31100, 31200)
 SIX_PICKER = [(160, 275), (56, 168, .4), (108, 168, .4), (160, 168, .4), (212, 168, .4), (264, 168, .4)]
 TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER},
                              31200: {4: FOUR_PICKER, 6: SIX_PICKER, 10: MASH_PICKER}}
+
+
+def _seven_to_nine(count):
+    """Seven to nine photos: the chosen one in front, two small either side of it (as the ten-photo layout), and the rest in a
+    row behind, centred, 52 apart as the ten-photo layout's five."""
+    behind = count - 5
+    first = 160 - 26 * (behind - 1)
+    return MASH_PICKER[:3] + [(first + 52 * n, 168, .4) for n in range(behind)] + MASH_PICKER[8:]
+
+
+# shshd-runtime: an episode made in the Creator may offer up to ten photos (presentation `big_pickers`; owner, 2026-11-09): BREW's
+# layouts for four, six and ten, and the ten-photo layout's shape for seven to nine. One to three and five keep the native slots.
+CREATOR_PICKER_LAYOUTS = {4: FOUR_PICKER, 6: SIX_PICKER, **{n: _seven_to_nine(n) for n in (7, 8, 9)}, 10: MASH_PICKER}
 # shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
 # (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
 # New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at
@@ -189,6 +202,15 @@ TRANSLATED_MUSIC_LOOPS = {31400: {26900: 26901}}
 # episode creator writes it) and the runtime honours it (content.presentation_feature); the tables above win for
 # their packs. An app without them shows one speaker, the yellow named-line box, no emoticon, and the intro alone.
 PRESENTATION_RECORD = True
+# shshd-runtime: an episode made in the Creator takes the settings of its primary add-on that need the add-on's pictures and
+# sounds (presentation `addons`: frame backdrop, relationship icons and sounds, answer-feedback music, one sound channel, and the
+# add-on's switches) from the tables above as if it were that add-on's translated pack (content.feature_pack; owner,
+# 2026-11-09, CREATOR_ADDONS_PLAN.md). (add-on, edition) -> pack. The settings that need no add-on it declares one by one.
+ADDON_FEATURE_PACKS = {('shsbrew', '08'): 31000, ('shsbrew', '07'): 31100, ('shs11', ''): 31600, ('shsnr', ''): 31300,
+                       ('shsx360', ''): 31400}
+# The names table every episode made in the Creator shares (presentation `creator`; player.json `name_sets`), apart from the
+# smartphone stories' and each translation's (owner, 2026-11-09).
+CREATOR_NAME_SET = 'creator'
 # shshd-runtime: episodes translated from other SHS games, recognised on import by their title's tag (content.py
 # legacy_fields: "Lovers' Lane (SHSNR)" imports as "Lovers' Lane"): tag -> the picker's badge, its colour in the list
 # view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`

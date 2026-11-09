@@ -177,11 +177,48 @@ An embedded image's automatic ID can match one an add-on's own cutscene draws. T
 
 In MCP: `asset_list` takes `addon`, and `asset_use_addon` takes one, with `copy` to embed.
 
+### The primary add-on and extras
+
+**Add-ons and settings…** (SHS projects; owner, 2026-11-09) picks the episode's **primary** add-on: the translated game it's
+built on. The episode then takes that game's settings that need its pictures and sounds, as its translated stories have them:
+
+| Primary | It brings |
+| --- | --- |
+| `shsbrew`, '08 or '07 | BREW's frame around the scene, pink behind a pink box; its relationship icons; its right/wrong music for answer hints; '08 the Java '08 Look switch, '07 the '08 Backgrounds switch |
+| `shs11` | '11's relationship icons and their sounds; its one sound channel; its right/wrong music |
+| `shsnr` | New Rules' frame; the Hi-Res Portraits switch; its right/wrong music |
+| `shsx360` | The X360 frame; the MS3 Characters switch |
+
+The primary is listed first, so its pictures win where add-ons share a number. Every other add-on the project uses is an
+**extra**: its pictures and sounds keep their numbers, aliased to it in the export, and its mini-games play from it. Adding a
+mini-game node declares its add-on (the catch game `shsbrew`, Memory and Reflex `shs11`, the X360 games `shsx360`), and an export
+without it is refused. Players need every add-on the episode lists. The switches only move the add-on's pictures, never the
+project's own. The project still can't take two pictures with the same number from different add-ons: copy one in instead.
+
+The same dialog turns on the translated games' settings that need no add-on: `a(n)` and `word(s)` picked by the word or number
+in formatted lines, title cards with the date first, word games of three words, and portrait pickers of up to ten photos (the
+**Choose a look** node then takes up to ten characters; seven to nine use the ten-photo layout's shape).
+
+Every episode made in the Creator keeps the Creator's own names table, apart from the smartphone stories' and every translation's
+(a name typed in one is the one the others use). It shows in the episode lists as itself, not as the primary's game. Projects using
+the translators' packs (31000-31699) get none of this: their game's own tables apply.
+
+The `.expproj` keeps the primary as `primary` and `edition` on its `addons` entry, and the settings as `options`; projects saved
+before them have neither. In MCP: `project_set_primary_addon` (library, addon or null, edition), and `project_update` takes
+`options`.
+
 ## Episode version
 
 **Version**, beside Pack and Episode, is the episode's version (None, or 1–65535; [SCHEMA.md](SCHEMA.md#episode-version-extension-shshd-runtime)). With one, importing a newer export replaces an older copy of the episode in a player's library instead of sitting beside it; an episode with a game in progress is asked about first. The `.expproj` keeps it as `episode_version` (projects saved before it have none), importing an export brings it back, and MCP's `project` edit takes it.
 
 ## Storyboard cutscenes
+
+**The BREW catch game.** The **Catch game (BREW)** node plays [the BREW games' catch game](BREW.md), in SHS projects with the
+`shsbrew` add-on. Put it behind **Real minigames?** and give other players a word game. Its settings are the kind (angled: items
+fall at an angle, a chance of them at it; sideways: from the left; orbit: round a circle the spread wide), the target, the time
+between items, their speed, the player's picture, and the items: a value, a picture and how many. Pictures are BREW picture
+numbers from the add-on, the same numbers as its badge icons, whose sizes come from the project's library. The result
+is the score, 0 to the target. Branches on it tell the skip prompt where the story parts.
 
 **SHS '11's games.** The Memory and Reflex nodes play [SHS '11's minigames](SHS11.md#minigames), in SHS projects only. Put them behind a **Real minigames?** node, as with the X360 games, and give other players something else to do. Memory's rounds each have a cue, a word of 1 to 9 capital letters, a bonus, points a letter, a letter time and a limit. Reflex's rounds are the 13 numbers in [ENGINE_ABI.md](ENGINE_ABI.md#54-shs-11s-minigames-shshd-runtime-services-219-and-220). The result is 2, 1 or 0. They draw from HD's word game art or the `shs11` addon, so a project should require one of those.
 
@@ -361,7 +398,7 @@ a replacement for an existing episode slot:
 
 The original apps can't read add-ons or run this runtime's own mechanics, so:
 
-- **A project using a mechanic is blocked,** with the explanation of which: the translated mini-games, the X360 games, SHS '11's games or storyboard cutscenes, including an imported episode whose scripts call them.
+- **A project using a mechanic is blocked,** with the explanation of which: the translated mini-games, the X360 games, SHS '11's games, the BREW catch game or storyboard cutscenes, including an imported episode whose scripts call them.
 - **A project that only takes pictures and sounds from add-ons is blocked with an offer** to pack them into the `.exp`, from the selected library. Your project stays as it is. Headlessly, that's `--pack-addons --library PATH`.
 
 [Presentation features](#shshd-runtime-presentation) aren't blocked: other apps ignore them and show the episode as they do.

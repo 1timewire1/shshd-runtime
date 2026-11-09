@@ -8,8 +8,25 @@ from copy import deepcopy
 
 from .model import Asset, ProjectError, is_audio, is_image
 
+# The add-on whose mini-game a node plays: the episode needs it, as the primary or an extra (owner, 2026-11-09).
+NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 'shsx360',
+               'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'brew_catch': 'shsbrew'}
+# What a primary add-on brings (its settings that need its pictures and sounds; the runtime's ADDON_FEATURE_PACKS) and what any
+# declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
+ADDON_FEATURES = {
+    'shsbrew': (("BREW's frame around the scene, pink behind a pink box", "BREW's relationship icons",
+                 "BREW's right/wrong music for answer hints", "'08: the Java '08 Look switch; '07: the '08 Backgrounds switch"),
+                ('The catch game',)),
+    'shs11': (("SHS '11's relationship icons and their sounds", "SHS '11's one sound channel",
+               "SHS '11's right/wrong music for answer hints"), ("SHS '11's Memory", "SHS '11's Reflex")),
+    'shsnr': (("New Rules' frame around the scene", 'The Hi-Res Portraits switch', "New Rules' right/wrong music for answer hints"),
+              ()),
+    'shsx360': (("The X360 frame around the scene", 'The MS3 Characters switch'),
+                ('The slot machine', 'The leash game', 'The jewel puzzle', 'Diss Practice')),
+}
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
+                  'brew_catch': "the BREW games' catch game",
                   'shs11_memory': "SHS '11's Memory", 'shs11_reflex': "SHS '11's Reflex",
                   'x360_leash': 'the X360 leash game', 'x360_puzzle': 'the X360 jewel puzzle',
                   'x360_diss': 'X360 Diss Practice', 'cutscene_available': 'storyboard cutscenes',
@@ -17,7 +34,8 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
 # In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3) and
 # SHS '11's games (5.4).
 MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214, 218), 'the X360 mini-games'),
-                     (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"))
+                     (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"),
+                     (range(221, 222), "the BREW games' catch game"))
 
 
 class AddonsNeeded(ProjectError):
@@ -87,10 +105,49 @@ def require_addon(project, addon_id, revision):
 
 
 def drop_unused_addons(project):
-    """No asset takes from it any more: the project doesn't need it. An imported episode's list stays as its scripts need it."""
+    """No asset takes from it any more, it isn't the primary and no node plays its mini-game: the project doesn't need it. An
+    imported episode's list stays as its scripts need it."""
     if not project.native:
-        used = {asset.addon for asset in project.assets if asset.addon}
-        project.addons = [entry for entry in project.addons if entry['id'] in used]
+        used = ({asset.addon for asset in project.assets if asset.addon}
+                | {NODE_ADDONS[node.kind] for node in project.nodes if node.kind in NODE_ADDONS})
+        project.addons = [entry for entry in project.addons if entry['id'] in used or entry.get('primary')]
+
+
+def set_primary_addon(project, library, addon_id, edition=''):
+    """Make an add-on the project's primary (declaring it at the library's revision if it isn't yet), with its edition (BREW: '08
+    or '07); any other primary becomes an extra. None for `addon_id` leaves the project with no primary. The primary is listed
+    first: where add-ons share a number, an episode reads the first's."""
+    from .model import ADDON_EDITIONS
+    found = None
+    if addon_id is not None:                    # (checked first: a refused change leaves the project as it was)
+        editions = ADDON_EDITIONS.get(addon_id, ('',))
+        if edition not in editions:
+            raise ProjectError(f'Choose the {addon_id} add-on\'s edition: {" or ".join(e for e in editions)}')
+        found = library.addon(addon_id) if library is not None else None
+        if found is None and not any(entry['id'] == addon_id for entry in project.addons):
+            raise ProjectError(f'The library has no {addon_id} add-on.')
+    for entry in project.addons:
+        entry.pop('primary', None)
+        entry.pop('edition', None)
+    if addon_id is None:
+        return
+    if found is not None:
+        require_addon(project, addon_id, found[0]['revision'])
+    entry = next(entry for entry in project.addons if entry['id'] == addon_id)
+    entry['primary'], entry['edition'] = True, edition
+    project.addons.remove(entry)
+    project.addons.insert(0, entry)
+
+
+def require_node_addon(project, library, kind):
+    """A node playing an add-on's mini-game was added: the project declares that add-on (an extra unless it's the primary)."""
+    addon_id = NODE_ADDONS.get(kind)
+    if addon_id is None or any(entry['id'] == addon_id for entry in project.addons):
+        return
+    found = library.addon(addon_id) if library is not None else None
+    if found is None:
+        raise ProjectError(f'This needs the {addon_id} add-on: import it into the library first.')
+    require_addon(project, addon_id, found[0]['revision'])
 
 
 def use_addon_asset(project, library, addon_id, resource):
@@ -114,7 +171,8 @@ def use_addon_asset(project, library, addon_id, resource):
     existing = next((asset for asset in project.assets if asset.id == resource), None)
     if existing is not None:
         if existing.addon != addon_id:
-            raise ProjectError(f'The project already holds its own resource {resource}. Copy this one in instead.')
+            holder = f'from the {existing.addon} add-on' if existing.addon else 'of its own'
+            raise ProjectError(f'The project already takes resource {resource} {holder}. Copy this one in instead.')
         return existing
     asset = Asset(resource, f'{record["title"]} {resource}', None, addon_id)
     project.assets.append(asset)

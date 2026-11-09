@@ -31,6 +31,19 @@ class ArticleTests(unittest.TestCase):
         for kept in ('Win(s)', 'a game(s)', 'plain text'):
             self.assertEqual(choose_plurals(kept), kept)
 
+    def test_a_creator_episodes_placeholders_change_where_it_asks(self):
+        # A Creator episode's `{placeholders}` format through service 0; its `word_forms` setting picks the forms there too
+        # (owner, 2026-11-09).
+        words, (pattern,) = text_words('%d game(s) left')
+        for presentation, expected in (({'word_forms': True}, '1 game left'), ({}, '1 game(s) left')):
+            with self.subTest(presentation=presentation):
+                resources = Resources(program(*host_call(0, pattern, 1), 0x33, words=words))
+                resources.record['pack_id'] = 30000
+                resources.presentation = presentation
+                session = Session(resources)
+                session.advance()
+                self.assertEqual(session.engine.dynamic_strings[0], expected)
+
     def test_only_a_brew_packs_formatted_lines_change(self):
         words, (destination, pattern, house) = text_words('                                ', 'You live in a(n) %s.',
                                                             'apartment')

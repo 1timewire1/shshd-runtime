@@ -895,8 +895,8 @@ class DialogueRenderer:
     def translated_badge(self, asset_id, k):
         """This pack's own picture for a relationship icon, at the size SHS's would be, or None. The pictures all have the
         same margin, so one scale keeps a whole icon and its break in proportion."""
-        record = getattr(self.resources, 'record', None) or {}
-        art = getattr(GAMES.get(self.game_id()), 'TRANSLATED_BADGE_ART', {}).get(record.get('pack_id'), {}).get(asset_id)
+        from .content import pack_setting
+        art = (pack_setting(self.resources, 'TRANSLATED_BADGE_ART', {}) or {}).get(asset_id) if self.resources is not None else None
         if art is None:
             return None
         key = (art, k)
@@ -908,7 +908,7 @@ class DialogueRenderer:
                 image = None
             found = None
             if image is not None:
-                units = getattr(GAMES.get(self.game_id()), 'TRANSLATED_BADGE_UNITS', {}).get(record.get('pack_id'), BADGE_UNITS)
+                units = pack_setting(self.resources, 'TRANSLATED_BADGE_UNITS', BADGE_UNITS)
                 scale = units * k
                 found = pygame.transform.smoothscale(image, (round(image.get_width() * scale), round(image.get_height() * scale)))
             self._badges[key] = found

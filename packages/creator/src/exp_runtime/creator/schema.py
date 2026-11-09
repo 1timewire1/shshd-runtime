@@ -7,7 +7,7 @@ from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
                       'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
-                      'shs11_memory', 'shs11_reflex'))
+                      'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
 FIELDS = {
@@ -19,7 +19,7 @@ FIELDS = {
     'input': ('text', 'next'), 'title': ('text', 'next'), 'message': ('text', 'next'),
     'notice': ('text', 'next'), 'scene_label': ('text', 'next'),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
-    'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'),
+    'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'), 'brew_catch': ('next',),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
     'text_default': ('text', 'next'), 'expression_default': ('character', 'expression', 'next'),
     'character_art': ('character', 'asset', 'next'), 'character_name': ('character', 'text', 'next'),
@@ -59,7 +59,8 @@ NOTES = {
     'expression_default': 'The expression a character\'s dialogue uses when its expression is -1 (service 5).',
     'character_art': 'Changes a character\'s portrait base (service 72); five consecutive IDs are its expressions.',
     'character_name': 'Renames a character; the name may contain $KEY. capitalize applies the native case rule (49).',
-    'picker': 'Shows 1-5 reusable characters (params.characters) to choose a look from, stores the zero-based index '
+    'picker': 'Shows 1-5 reusable characters (params.characters; up to 10 with the project option big_pickers, SHSHD Runtime only) '
+              'to choose a look from, stores the zero-based index '
               'in params.result and, when character is set, gives that character the chosen look\'s portrait.',
     'vibrate': 'Native vibration (service 82); the desktop plays a buzz.',
     'faceplace': 'SHS HD only. params.action: enable (114, show the wall for this episode), clear (118), name_chosen '
@@ -93,6 +94,12 @@ NOTES = {
                     'its word (1 to 9 letters) on nine tiles to pick in order. Target above 0; result is 2 at 98% of it or '
                     'more, 1 above 75%, else 0. Drawn from the HD word game or the shs11 addon. The character is who it shows, '
                     'if anyone.',
+    'brew_catch': "shshd-runtime only, behind minigames_available; needs the shsbrew add-on. The BREW games' catch game: items fall "
+                  '(kind angled: at `angle` degrees with `chance` percent of them; sideways: from the left with `chance` percent; '
+                  'orbit: round a circle `spread` wide) every interval_ms at `speed`, and the player moves to catch them. Each item '
+                  'is {value, picture, count}; the player and pictures are BREW picture numbers from the add-on (sizes are read '
+                  'from it, or given as {picture: [width, height]}). Result: the score, 0 to target. Branches on it set the skip '
+                  "prompt's stretches.",
     'shs11_reflex': "shshd-runtime only, behind minigames_available. SHS '11's Reflex: tap the right icons to fill a gauge. "
                     "right, wrong and skull are pictures in '11's icon sheet; the four odds are out of 100. Result as Memory's. "
                     'Drawn from the HD word game or the shs11 addon.',

@@ -73,7 +73,8 @@ def create_server(root):
     @edit_tool(name='project_update')
     def update_project(path: str, revision: str, changes: dict) -> dict:
         """Change title/game/IDs/start/language/locales/library/emoticons (six image asset IDs or null, the
-        dialogue params.emoticon images). Use project_get's revision."""
+        dialogue params.emoticon images)/options (SHSHD Runtime settings that need no add-on, each true or false:
+        word_forms, date_first, three_word_games, big_pickers). Use project_get's revision."""
         return workspace.update(path, revision, changes)
 
     @edit_tool(name='graph_edit_node')
@@ -118,6 +119,11 @@ def create_server(root):
     def use_addon(path: str, revision: str, library: str, addon: str, resource: int, copy: bool = False) -> dict:
         """Take a picture, sound or cutscene from a library's add-on by reference, keeping its ID and declaring the add-on; or, with copy, embed a picture or sound so that no add-on is needed."""
         return workspace.addon_asset(path, revision, library, addon, resource, copy)
+
+    @edit_tool(name='project_set_primary_addon')
+    def set_primary_addon(path: str, revision: str, library: str, addon: str | None, edition: str = '') -> dict:
+        """Make a library add-on the episode's primary (SHS, SHSHD Runtime only): its frame, relationship icons, answer music and switches come with it, its pictures win where add-ons share a number, and players need it. edition: '08 or '07 for shsbrew, '' otherwise. null leaves no primary; other declared add-ons are extras."""
+        return workspace.primary_addon(path, revision, library, addon, edition)
 
     @edit_tool(name='asset_import_library_image')
     def add_library_image(path: str, revision: str, library: str,

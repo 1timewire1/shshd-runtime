@@ -14,10 +14,9 @@ def panel_theme(session):
     """The picker panel's colour: its first portrait's theme, as the native selector draws it, or, in a pack whose frame changes
     colour with the box (TRANSLATED_THEME_BACKDROP, the BREW games), the highlighted portrait's, so the panel and the frame
     change together (owner, 2026-11-07)."""
-    from .games import GAMES
+    from .content import pack_setting
     picker, engine = session.engine.character_picker, session.engine
-    record = getattr(session.resources, 'record', None) or {}
-    themed = record.get('pack_id') in getattr(GAMES.get(engine.game_key), 'TRANSLATED_THEME_BACKDROP', {})
+    themed = bool(pack_setting(session.resources, 'TRANSLATED_THEME_BACKDROP'))
     character = picker.characters[picker.selected if themed else 0]
     return engine.numbers.get(engine.number_key(character, 651), 0)
 

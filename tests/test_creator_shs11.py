@@ -13,9 +13,10 @@ from exp_runtime.shs11_services import SHS11_MEMORY, SHS11_REFLEX
 
 
 def project(kind, params=None, game='shs'):
+    # Its game plays from '11's add-on, so the project declares it (owner, 2026-11-09).
     return Project(title='Games', game=game, start='a', nodes=[
         Node('a', kind, params=params if params is not None else {}, next='b'),
-        Node('b', 'end')])
+        Node('b', 'end')], addons=[dict(id='shs11', revision=2)])
 
 
 def compiled(kind, params=None):

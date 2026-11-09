@@ -23,7 +23,7 @@ KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 
          'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
          'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
          'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
-         'open_url', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'end', 'native')
+         'open_url', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
@@ -137,8 +137,11 @@ class Project:
     native: dict = field(default_factory=dict)
     # shshd-runtime: the image of each emoticon (EMOTICONS), None for one the project doesn't use (version 3).
     emoticons: list[int | None] = field(default_factory=lambda: [None] * len(EMOTICONS))
-    # shshd-runtime: the addons the export declares, {id, revision} each (version 3; docs/ADDONS.md).
+    # shshd-runtime: the addons the export declares, {id, revision} each (version 3; docs/ADDONS.md). One may be the primary
+    # ({..., primary: true, edition}: its settings come with it, and it's listed first; owner, 2026-11-09), the others extras.
     addons: list[dict] = field(default_factory=list)
+    # shshd-runtime: the translated games' settings that need no add-on, each on or off (FREE_SETTINGS; owner, 2026-11-09).
+    options: dict = field(default_factory=dict)
     # shshd-runtime: the episode's version (episode_version.py), 1-65535, or None for none: a newer export replaces an
     # older copy when imported (owner, 2026-11-06).
     episode_version: int | None = None
@@ -206,12 +209,40 @@ def _string(value, label, limit=60000):
         raise ProjectError(f'Invalid Unicode in {label}') from error
 
 
+# The translated games' settings that need no add-on (presentation.py), which a project turns on one by one: name -> label.
+FREE_SETTINGS = {'word_forms': '"a(n)" and "word(s)" picked by the word or number (BREW)',
+                 'date_first': 'Title cards show the date first (BREW)',
+                 'three_word_games': 'Word games of three words (BREW)',
+                 'big_pickers': 'Portrait pickers of up to ten photos (BREW)'}
+# A primary add-on's editions, where it serves more than one game: BREW's '07 and '08 stories have different switches.
+ADDON_EDITIONS = {'shsbrew': ('08', '07')}
+
+
+def primary_addon(project):
+    """The project's primary add-on entry, or None."""
+    return next((entry for entry in project.addons if entry.get('primary')), None)
+
+
 def _validate_addons(project):
     from exp_runtime.addons import requires_bytes
     if not isinstance(project.addons, list):
         raise ProjectError('Invalid add-on list')
+    if not isinstance(project.options, dict) or any(key not in FREE_SETTINGS or type(value) is not bool
+                                                    for key, value in project.options.items()):
+        raise ProjectError('Invalid episode options')
     if not project.addons:
         return
+    primaries = [entry for entry in project.addons if entry.get('primary')]
+    if len(primaries) > 1:
+        raise ProjectError('Only one add-on can be the primary')
+    for entry in project.addons:
+        if set(entry) - {'id', 'revision', 'primary', 'edition'}:
+            raise ProjectError(f'Invalid add-on entry: {sorted(entry)}')
+        editions = ADDON_EDITIONS.get(entry.get('id'), ('',))
+        if entry.get('primary') and entry.get('edition', '') not in editions:
+            raise ProjectError(f'The {entry.get("id")} add-on\'s edition must be one of {", ".join(repr(e) for e in editions)}')
+    if primaries and project.addons[0] is not primaries[0]:
+        raise ProjectError('The primary add-on must be listed first')
     try:
         requires_bytes([(entry['id'], entry['revision']) for entry in project.addons])
     except (KeyError, TypeError, ValueError) as error:
@@ -420,6 +451,7 @@ def project_from_record(data):
             data['emoticons'] = [None] * len(EMOTICONS)
         # shshd-runtime: added within version 3, which hasn't been in a release: a project saved before them has neither.
         data.setdefault('addons', [])
+        data.setdefault('options', {})
         data.setdefault('episode_version', None)
         for asset in data['assets']:
             asset.setdefault('addon', '')

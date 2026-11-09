@@ -12,7 +12,7 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              notice='Dialogue notification', emphasis='Emphasize dialogue', scene_label='Scene label',
              pan='Background pan', transition='Screen transition', close_dialogue='Close dialogue',
              random='Random variable', minigames_available='Real minigames?', cutscene_available='Cutscenes?', cutscene='Storyboard cutscene', x360_slot='X360 slot machine', x360_leash='X360 leash game', x360_puzzle='X360 jewel puzzle', x360_diss='X360 Diss Practice', word_game='Timed word choices', football='Football (SHS)',
-             grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", scene='Scene link',
+             grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", brew_catch='Catch game (BREW)', scene='Scene link',
              flag='Property flag', speakers='Player / narrator', set_text='Set text', text_default='Text default',
              expression_default='Default expression', character_art='Character art', character_name='Rename character',
              picker='Choose a look', vibrate='Vibrate',
@@ -72,6 +72,11 @@ DEFAULTS = {
                                  'one_bar': 25, 'two_bars': 40, 'three_bars': 20, 'skulls': 15,
                                  'flash_ms': 300, 'hold_ms': 2100}],
                      'result': 'reflex_result'},
+    # shshd-runtime: the BREW games' catch game (ENGINE_ABI.md 5.5), with the settings most of the '08 Campaign's open with: items
+    # and the player are BREW picture numbers, which the shsbrew add-on draws (sizes: {picture: [width, height]}, read from it).
+    'brew_catch': {'kind': 'angled', 'target': 45, 'interval_ms': 520, 'speed': 330, 'spread': 50, 'chance': 65, 'angle': 40,
+                   'player': 109, 'items': [{'value': 3, 'picture': 149, 'count': 25}, {'value': -3, 'picture': 156, 'count': 15}],
+                   'sizes': {}, 'result': 'catch_score'},
     'scene': {},
     'flag': {'owner': 0, 'key': 400, 'bit': 0, 'value': True},
     'speakers': {'player': '', 'narrator': ''},
@@ -84,7 +89,7 @@ DEFAULTS = {
     'open_url': {'url': ''}, 'survey': {'poll_id': 1001, 'answers': ['rating'], 'results': []},
     'end': {}, 'native': {},
 }
-INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'picker'))
+INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'picker'))
 
 
 def parameters(node):

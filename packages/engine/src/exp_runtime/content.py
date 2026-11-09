@@ -745,6 +745,7 @@ class ContentLibrary:
         self.addons = m.get('addons', [])
         self._addon_archives = {}
         self._episode_requires = {}     # an episode's sha -> the addons it declares (episode_requires)
+        self._episode_presentation = {}     # an episode's sha -> its presentation record (episode_presentation)
         from .episode_catalog import EpisodeCatalog
         self.catalog = EpisodeCatalog.from_data(m.get('episode_catalog', []))
         if 'store' in m and (getattr(GAMES[self.game_id], 'STORE_FILENAME', None) is None
@@ -1078,6 +1079,31 @@ class ContentLibrary:
                     found = tuple(declared[1])
             self._episode_requires[sha] = found
         return found
+
+    def episode_presentation(self, record: dict):
+        """shshd-runtime: an episode's presentation record (resource 3, presentation.normalize), {} for none or a malformed
+        one. Read from its file once, as episode_requires is."""
+        sha = record.get('sha256')
+        found = self._episode_presentation.get(sha)
+        if found is None:
+            found = {}
+            if 'file' in record:
+                try:
+                    found = presentation_record(ExpArchive(self._content_file(record, '.exp').read_bytes())) or {}
+                except (ContentError, OSError):
+                    found = {}
+            self._episode_presentation[sha] = found
+        return found
+
+    def feature_packs(self):
+        """shshd-runtime: the packs whose add-on settings the library's episodes have (content.feature_pack): each
+        translation's own, and each episode made in the Creator its primary add-on's."""
+        mapping = getattr(GAMES.get(getattr(self, 'game_id', None)), 'ADDON_FEATURE_PACKS', {})
+        packs = set()
+        for record in self.episodes:
+            primary = self.episode_presentation(record).get('addons')
+            packs.add(mapping.get(tuple(primary), record.get('pack_id')) if primary else record.get('pack_id'))
+        return packs
 
     def addon_users(self, addon: dict):
         """shshd-runtime: the episodes that need an addon record, or an addon it stands in for."""
@@ -1562,6 +1588,46 @@ def presentation_feature(resources, name):
     return (getattr(resources, 'presentation', None) or {}).get(name)
 
 
+def declared(resources, name):
+    """shshd-runtime: an episode's own declaration of a presentation member (resource 3), where its game accepts one
+    (PRESENTATION_RECORD); None otherwise."""
+    if not getattr(GAMES.get(game_id(resources)), 'PRESENTATION_RECORD', False):
+        return None
+    return (getattr(resources, 'presentation', None) or {}).get(name)
+
+
+def feature_pack(resources):
+    """shshd-runtime: the pack whose settings that need an add-on's pictures and sounds an episode has (the profile's tables
+    of translated packs: frame backdrop, relationship icons, answer-feedback music, the add-ons' switches): an episode made
+    in the Creator takes its primary add-on's (presentation `addons`, mapped by ADDON_FEATURE_PACKS; owner, 2026-11-09),
+    any other its own pack's."""
+    primary = declared(resources, 'addons')
+    if primary is not None:
+        pack = getattr(GAMES.get(game_id(resources)), 'ADDON_FEATURE_PACKS', {}).get(tuple(primary))
+        if pack is not None:
+            return pack
+    return (getattr(resources, 'record', None) or {}).get('pack_id')
+
+
+def pack_setting(resources, table, default=None):
+    """shshd-runtime: an episode's entry in one of the profile's per-pack tables of settings that need an add-on
+    (feature_pack), or `default`."""
+    entries = getattr(GAMES.get(game_id(resources)), table, None) or {}
+    pack = feature_pack(resources)
+    if isinstance(entries, dict):
+        return entries.get(pack, default)
+    return pack in entries or default
+
+
+def free_setting(resources, table, member):
+    """shshd-runtime: whether an episode has a setting that needs no add-on: its pack is in the profile's `table` (a
+    translation), or it declares `member` (resource 3: an episode made in the Creator)."""
+    record = getattr(resources, 'record', None) or {}
+    if record.get('pack_id') in getattr(GAMES.get(game_id(resources)), table, ()):
+        return True
+    return bool(declared(resources, member))
+
+
 class EpisodeResources:
     def __init__(self, library: ContentLibrary, record: dict, archive: ExpArchive):
         self.library, self.record, self.archive = library, record, archive
@@ -1622,9 +1688,21 @@ class EpisodeResources:
     def _bank_archive(self, resource_id):
         """The archive holding an episode-bank resource (26000 and up): the episode's own, else the first required
         addon with it; None when neither has it."""
+        return self._resolve(resource_id)[0]
+
+    def _resolve(self, resource_id):
+        """(archive, resource) for an episode-bank resource: the episode's own; else, for a number the episode aliases to an
+        add-on (presentation `aliases`: an extra add-on's picture or sound in an episode made in the Creator), that
+        add-on's resource; else the first required addon with it. (None, resource) when none has it."""
         if resource_id in self.archive.entries or not self.required_addons:
-            return self.archive if resource_id in self.archive.entries else None
-        return next((archive for archive in self._addons() if resource_id in archive.entries), None)
+            return (self.archive if resource_id in self.archive.entries else None), resource_id
+        alias = (declared(self, 'aliases') or {}).get(resource_id)
+        if alias is not None:
+            found = self.library.addon(alias[0]) if hasattr(self.library, 'addon') else None
+            if found is not None and alias[1] in found[1].entries:
+                return found[1], alias[1]
+            return None, resource_id
+        return next((archive for archive in self._addons() if resource_id in archive.entries), None), resource_id
 
     # New Rules loads its minigame library (25200) beside whichever story runs: a linked segment (VM_SPEC.md §2.3).
     LINKED_SCRIPT = 25200
@@ -1650,7 +1728,7 @@ class EpisodeResources:
     def _bank_read(self, resource_id):
         if not hasattr(self.archive, 'entries'):            # a stand-in archive that only reads
             return self.archive.read(resource_id)
-        archive = self._bank_archive(resource_id)
+        archive, resource_id = self._resolve(resource_id)
         return (archive or self.archive).read(resource_id)
 
     @property
@@ -1750,13 +1828,20 @@ class EpisodeResources:
         target = self._addon_pictures[resource_id]
         return None if target is None else found[1].read(target)
 
+    def _own_picture(self, resource_id):
+        """shshd-runtime: whether an episode made in the Creator holds this picture itself: its primary add-on's switches move
+        only the add-on's pictures (feature_pack). A translated episode's pictures are its add-on's, and always move."""
+        return declared(self, 'addons') is not None and resource_id in getattr(self.archive, 'entries', ())
+
     def _brew_08_background(self, resource_id):
         """shshd-runtime: '08's copy of a shared location an '07-badged BREW episode shows, while the player wants '08's
         (library.brew_08_backgrounds; the profile's BREW_08_BACKGROUNDS: pack -> ranges of (first, end, offset): the shared locations, and a
         Classic story's own pictures '08 redrew); else the resource itself."""
         if resource_id < 26000 or not getattr(self.library, 'brew_08_backgrounds', False):
             return resource_id
-        ranges = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'BREW_08_BACKGROUNDS', {}).get(self.record.get('pack_id'), ())
+        ranges = pack_setting(self, 'BREW_08_BACKGROUNDS', ())
+        if ranges and self._own_picture(resource_id):
+            return resource_id
         for first, end, offset in ranges:
             if first <= resource_id < end and self._bank_archive(resource_id + offset) is not None:
                 return resource_id + offset
@@ -1767,8 +1852,8 @@ class EpisodeResources:
         player wants that look (library.java_look; the profile's JAVA_LOOK_ART: pack -> how far above it the copy is), or None."""
         if resource_id < 26000 or not getattr(self.library, 'java_look', False):
             return None
-        offset = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'JAVA_LOOK_ART', {}).get(self.record.get('pack_id'))
-        if offset is None or self._bank_archive(resource_id + offset) is None:
+        offset = pack_setting(self, 'JAVA_LOOK_ART')
+        if offset is None or self._own_picture(resource_id) or self._bank_archive(resource_id + offset) is None:
             return None
         return resource_id + offset
 
@@ -1778,11 +1863,11 @@ class EpisodeResources:
         one: the game profile's TRANSLATED_PORTRAIT_ART, pack -> (first, end, offset), moves portraits in [first, end)
         by offset. Else None."""
         profile = GAMES.get(getattr(self.library, 'game_id', None))
-        pack = self.record.get('pack_id')
+        pack = feature_pack(self)
         if not getattr(self.library, 'hires_portraits', False) and pack in getattr(profile, 'HIRES_SWITCH_PACKS', ()):
             return None
         span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(pack)
-        if span is None or not span[0] <= resource_id < span[1]:
+        if span is None or not span[0] <= resource_id < span[1] or self._own_picture(resource_id):
             return None
         offset = getattr(profile, 'MS3_CHARACTER_ART', {}).get(pack)
         if offset is not None and getattr(self.library, 'ms3_characters', False):

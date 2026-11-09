@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Creator: a primary add-on and extras** (owner, 2026-11-09). A project picks the add-on its episode is built on (BREW
+  '08 or '07, '11, New Rules, X360) and takes that game's frame, relationship icons, answer music and switches; other
+  add-ons are extras for their pictures, sounds and mini-games, aliased so a shared number never reaches the wrong one.
+  Settings that need no add-on (`a(n)`/plurals, date-first cards, three-word word games, pickers of up to ten photos)
+  are project options. Every Creator episode keeps the Creator's own names table. New node: the BREW catch game.
+  MCP: `project_set_primary_addon`, `project_update(options=)`. Runtime: presentation record members `creator`,
+  `addons`, `aliases`, `word_forms`, `date_first`, `three_word_games`, `big_pickers`, `minigames`.
+
 - **Addons: shared resource packs for episodes.** An addon is an `.exp` file holding resources several episodes use,
   such as a translated game's backgrounds and music; each episode declares the addons it reads (resource 4,
   SCHEMA.md "Addon extension") instead of carrying its own copies.

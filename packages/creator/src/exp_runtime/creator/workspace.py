@@ -55,7 +55,7 @@ class Workspace:
                 'native': bool(project.native), 'node_count': len(project.nodes),
                 'nodes': [asdict(n) for n in project.nodes[offset:offset + limit]],
                 'characters': [asdict(c) for c in project.characters],
-                'addons': project.addons,
+                'addons': project.addons, 'options': project.options,
                 'assets': [{'id': a.id, 'name': a.name, 'embedded': a.data is not None, 'addon': a.addon,
                             'bytes': len(a.data) if a.data else 0} for a in project.assets]}
 
@@ -241,6 +241,17 @@ class Workspace:
         def apply(project):
             with ContentLibrary(path) as content:
                 (copy_addon_asset if copy else use_addon_asset)(project, content, addon, resource)
+        return self.edit(name, revision, apply)
+
+    def primary_addon(self, name, revision, library, addon, edition=''):
+        from exp_runtime.content import ContentLibrary
+        from .addons import drop_unused_addons, set_primary_addon
+        path = self.path(library)
+
+        def apply(project):
+            with ContentLibrary(path) as content:
+                set_primary_addon(project, content, addon, edition)
+            drop_unused_addons(project)
         return self.edit(name, revision, apply)
 
     def import_episode(self, source, destination, game='shs'):

@@ -103,9 +103,8 @@ class BrewCatchRenderer:
         library = getattr(self.resources, 'library', None)
         if not getattr(library, 'java_look', False):
             return False
-        from .games import GAMES
-        record = getattr(self.resources, 'record', None) or {}
-        return record.get('pack_id') in getattr(GAMES.get(getattr(library, 'game_id', None)), 'JAVA_LOOK_ART', ())
+        from .content import pack_setting
+        return pack_setting(self.resources, 'JAVA_LOOK_ART') is not None
 
     def drop_images(self):
         """Forget the pictures loaded so far (the "Java '08 Look" switch changed)."""

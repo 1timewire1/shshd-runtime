@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDia
     QSpinBox, QSplitter, QTextEdit, QToolBar, QVBoxLayout, QWidget)
 
 from exp_runtime.exp import ContentError
-from .addons import AddonsNeeded, copy_addon_asset, drop_unused_addons, use_addon_asset
+from .addons import (ADDON_FEATURES, AddonsNeeded, NODE_ADDONS, copy_addon_asset, drop_unused_addons, require_node_addon,
+                     set_primary_addon, use_addon_asset)
 from .cutscenes import blank_spec, cutscene_assets, read_project_spec, save_cutscene
 from .assets import addon_asset_ids, image_png, import_library_image, player_library
 from .compiler import compile_project, export_project, export_native_slot
@@ -335,6 +336,7 @@ class Editor(QMainWindow):
         toolbox.addWidget(button)
         for label, callback in (('Characters…', self.characters), ('Translations…', self.translations),
                                 ('Emoticon images…', self.emoticon_images),
+                                ('Add-ons and settings…', self.addon_settings),
                                 ('Auto arrange', self.arrange), ('Copy nodes', self.copy),
                                 ('Paste nodes', self.paste), ('Duplicate nodes', self.duplicate)):
             button = QPushButton(label); button.clicked.connect(callback); toolbox.addWidget(button)
@@ -495,6 +497,13 @@ class Editor(QMainWindow):
         if kind == 'choice':
             node.options = [Choice('First choice'), Choice('Second choice')]
         self.project.nodes.append(node)
+        if kind in NODE_ADDONS:
+            # Its game plays from an add-on's art: the episode declares it, an extra unless it's the primary (owner, 2026-11-09).
+            try:
+                with self.open_library() as library:
+                    require_node_addon(self.project, library, kind)
+            except (ProjectError, ContentError, OSError) as error:
+                self.statusBar().showMessage(f'{error} The episode needs it before it can be exported.')
         self.selected = node.id
         self.refresh()
 
@@ -719,6 +728,95 @@ class Editor(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.set_project('emoticons', [box.currentData() for box in boxes])
             self.show_properties()
+
+    def open_library(self):
+        """The project's library (a context manager), or a stand-in with no add-ons when none is chosen."""
+        from contextlib import nullcontext
+        from types import SimpleNamespace
+        if not self.project.library:
+            return nullcontext(SimpleNamespace(addons=[], addon=lambda addon_id: None))
+        from exp_runtime.content import ContentLibrary
+        return ContentLibrary(Path(self.project.library))
+
+    def addon_settings(self):
+        """The primary add-on (its settings come with it, and the episode needs it), BREW's edition, what each declared add-on
+        brings, and the translated games' settings that need no add-on (owner, 2026-11-09)."""
+        from .model import ADDON_EDITIONS, FREE_SETTINGS, primary_addon
+        if self.project.native:
+            self.error('Native projects keep their original presentation.'); return
+        if self.project.game != 'shs':
+            self.error('Add-ons and their settings are for Surviving High School episodes.'); return
+        try:
+            with self.open_library() as library:
+                available = [(addon['title'], addon['addon']) for addon in library.addons]
+        except (ContentError, OSError) as error:
+            self.error(error); return
+        declared = {entry['id'] for entry in self.project.addons}
+        available += [(entry['id'], entry['id']) for entry in self.project.addons
+                      if entry['id'] not in {addon_id for _, addon_id in available}]
+        primary = primary_addon(self.project)
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Add-ons and settings')
+        form = QFormLayout(dialog)
+        intro = QLabel('The primary add-on gives the episode its look: its frame, relationship icons, answer music and switches. '
+                       'Its pictures win where add-ons share a number. Other add-ons are extras, for their pictures, sounds '
+                       'and mini-games. Players need every add-on the episode uses.'
+                       + ('' if self.project.library else ' Choose an imported library to pick from its add-ons.'))
+        intro.setWordWrap(True)
+        form.addRow(intro)
+        primary_box = self.combo([('None', None)] + available, primary['id'] if primary else None, lambda value: None)
+        form.addRow('Primary add-on', primary_box)
+        edition_box = QComboBox()
+        form.addRow('Edition', edition_box)
+        brings = QLabel()
+        brings.setWordWrap(True)
+        form.addRow(brings)
+
+        def update():
+            addon_id = primary_box.currentData()
+            editions = ADDON_EDITIONS.get(addon_id, ())
+            edition_box.blockSignals(True)
+            edition_box.clear()
+            for edition in editions:
+                edition_box.addItem(f"'{edition}", edition)
+            if primary and primary['id'] == addon_id and primary.get('edition') in editions:
+                edition_box.setCurrentIndex(editions.index(primary['edition']))
+            edition_box.setEnabled(bool(editions))
+            edition_box.blockSignals(False)
+            lines = []
+            for _, other in available:
+                if other not in declared and other != addon_id:
+                    continue
+                own, extra = ADDON_FEATURES.get(other, ((), ()))
+                if other == addon_id:
+                    lines.append(f'<b>{other} (primary)</b>: ' + ('; '.join(own + extra) or 'its pictures and sounds'))
+                else:
+                    lines.append(f'<b>{other} (extra)</b>: ' + ('; '.join(extra) or 'its pictures and sounds'))
+            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the smartphone game does.')
+        primary_box.currentIndexChanged.connect(update)
+        update()
+        form.addRow(QLabel('<b>Settings that need no add-on</b>'))
+        boxes = {}
+        for name, label in FREE_SETTINGS.items():
+            boxes[name] = QCheckBox(label)
+            boxes[name].setChecked(bool(self.project.options.get(name)))
+            form.addRow(boxes[name])
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        candidate = deepcopy(self.project)
+        try:
+            with self.open_library() as library:
+                set_primary_addon(candidate, library, primary_box.currentData(), edition_box.currentData() or '')
+            candidate.options = {name: True for name, box in boxes.items() if box.isChecked()}
+            drop_unused_addons(candidate)
+        except (ProjectError, ContentError, OSError) as error:
+            self.error(error); return
+        self.remember()
+        self.project = candidate
+        self.refresh()
 
     def edit_cutscene(self):
         """The selected cutscene node's timeline: its own if it has one in the project, else a new one. An add-on's can't be edited

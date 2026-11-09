@@ -35,7 +35,7 @@ def apply(workspace, project, operation):
             raise ProjectError('Create a new project to change the game after importing resources')
         if changes.get('library'): changes['library'] = str(workspace.path(changes['library']))
         patch_record(project, changes, {'title', 'game', 'pack_id', 'episode_id', 'start', 'language', 'locales', 'library',
-                                        'emoticons', 'episode_version'})
+                                        'emoticons', 'episode_version', 'options'})
     elif op in ('node', 'character'):
         key = operation['id']
         if not isinstance(key, str) or not key: raise ProjectError('An edit needs a nonempty ID')

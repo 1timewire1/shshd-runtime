@@ -1105,19 +1105,19 @@ class Application:
         """Whether the library has an episode with a second, hi-res portrait set to choose (the game profile's
         HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
         packs = getattr(GAMES.get(self.library.game_id), 'HIRES_SWITCH_PACKS', ()) if self.library else ()
-        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+        return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
     def ms3_characters_offered(self):
         """Whether the library has an episode the "MS3 Characters" switch changes (MS3_CHARACTER_ART: translated X360
         episodes)."""
         packs = getattr(GAMES.get(self.library.game_id), 'MS3_CHARACTER_ART', ()) if self.library else ()
-        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+        return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
     def java_look_offered(self):
         """Whether the library has an episode the "Java '08 Look" switch changes (JAVA_LOOK_ART: translated BREW episodes) and
         the BREW addon carries that look (built with the Java '08 demo's jar)."""
         packs = getattr(GAMES.get(self.library.game_id), 'JAVA_LOOK_ART', ()) if self.library else ()
-        if not packs or not any(record.get('pack_id') in packs for record in self.library.episodes):
+        if not packs or not set(packs) & self.library.feature_packs():
             return False
         from .desktop_brew_catch import library_has_java_look
         return library_has_java_look(self.library)
@@ -1126,7 +1126,7 @@ class Application:
         """Whether the library has an episode the "'08 Backgrounds" switch changes (BREW_08_BACKGROUNDS: '07-badged BREW
         episodes)."""
         packs = getattr(GAMES.get(self.library.game_id), 'BREW_08_BACKGROUNDS', ()) if self.library else ()
-        return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
+        return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
     def smartphone_music_offered(self):
         """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
@@ -1145,7 +1145,8 @@ class Application:
         if not self.library:
             return False
         profile = GAMES.get(self.library.game_id)
-        return any(has_translated_minigames(profile, record) for record in self.library.episodes)
+        return any(has_translated_minigames(profile, record, self.library.episode_presentation(record))
+                   for record in self.library.episodes)
 
     def word_grid_skin_offered(self):
         """Whether the "Use Word Grid Skin" switch changes something: translated SHS '11 episodes (their minigames) and the
@@ -1995,7 +1996,7 @@ class Application:
             if settings is not None and self.selected_game in GAMES:
                 self._attempt(lambda: settings.set_last_game(self.selected_game))     # Start In's Last Played
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
-                                names=self.state.names_for(session.resources.record),
+                                names=self.state.names_for(session.resources.record, session.resources),
                                 vibration_enabled=self.state.vibration,
                                 device_vibration_enabled=self.state.device_vibration,
                                 episode_title=self.state.title(session.resources.record), on_menu_page=self.show)

@@ -18,6 +18,7 @@ from .app_icon import set_window_icon
 from .content import ContentError, presentation_feature
 from .audio import music_cue
 from .games import GAMES, game_id, has_translated_minigames
+from .content import feature_pack, free_setting, pack_setting
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -1039,9 +1040,7 @@ class Desktop:
     _channel_sound = None               # the last of a translated pack's one-channel sounds (TRANSLATED_ONE_SOUND_CHANNEL)
 
     def _one_channel(self):
-        resources = self.session.resources
-        record = getattr(resources, 'record', None) or {}
-        return getattr(GAMES.get(game_id(resources)), 'TRANSLATED_ONE_SOUND_CHANNEL', {}).get(record.get('pack_id'), ())
+        return pack_setting(self.session.resources, 'TRANSLATED_ONE_SOUND_CHANNEL', ()) or ()
 
     SOUNDS_KEPT = 32
     SOUND_KEPT_SECONDS = 5
@@ -2130,23 +2129,18 @@ class Desktop:
     def hires_switch(self):
         """shshd-runtime: whether this episode has a second, hi-res portrait set to choose (the game profile's
         HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
-        resources = self.session.resources
-        record = getattr(resources, 'record', None) or {}
-        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'HIRES_SWITCH_PACKS', ())
+        return feature_pack(self.session.resources) in getattr(GAMES.get(game_id(self.session.resources)), 'HIRES_SWITCH_PACKS', ())
 
     def ms3_switch(self):
         """shshd-runtime: whether this episode has the April build's looks to choose (MS3_CHARACTER_ART: translated X360
         episodes), so the "MS3 Characters" switch changes something."""
-        resources = self.session.resources
-        record = getattr(resources, 'record', None) or {}
-        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'MS3_CHARACTER_ART', ())
+        return feature_pack(self.session.resources) in getattr(GAMES.get(game_id(self.session.resources)), 'MS3_CHARACTER_ART', ())
 
     def java_look_switch(self):
         """shshd-runtime: whether this episode has the Java '08 demo's look to choose (JAVA_LOOK_ART: translated BREW
         episodes, with an addon that carries it), so the "Java '08 Look" switch changes something."""
         resources = self.session.resources
-        record = getattr(resources, 'record', None) or {}
-        if record.get('pack_id') not in getattr(GAMES.get(game_id(resources)), 'JAVA_LOOK_ART', ()):
+        if feature_pack(resources) not in getattr(GAMES.get(game_id(resources)), 'JAVA_LOOK_ART', ()):
             return False
         from .desktop_brew_catch import library_has_java_look
         return library_has_java_look(getattr(resources, 'library', None))
@@ -2154,8 +2148,7 @@ class Desktop:
     def brew_08_switch(self):
         """shshd-runtime: whether this episode shows BREW's shared locations in '07's art (BREW_08_BACKGROUNDS), so the "'08
         Backgrounds" switch changes something."""
-        record = getattr(self.session.resources, 'record', None) or {}
-        return record.get('pack_id') in getattr(GAMES.get(game_id(self.session.resources)), 'BREW_08_BACKGROUNDS', ())
+        return feature_pack(self.session.resources) in getattr(GAMES.get(game_id(self.session.resources)), 'BREW_08_BACKGROUNDS', ())
 
     def smartphone_switch(self):
         """shshd-runtime: whether this episode has the smartphone's music (SMARTPHONE_MUSIC_PACKS: translated SHS '11
@@ -2182,7 +2175,7 @@ class Desktop:
         profile's TRANSLATED_MINIGAMES)."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
-        return has_translated_minigames(GAMES.get(game_id(resources)), record)
+        return has_translated_minigames(GAMES.get(game_id(resources)), record, getattr(resources, 'presentation', None))
 
     def set_hires_portraits(self, enabled):
         """shshd-runtime: the "Hi-Res Portraits" switch, from either Options page. The library reads the other set
@@ -2616,7 +2609,7 @@ class Desktop:
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
         game = GAMES.get(self.session.engine.game_key)
-        asset_id = getattr(game, 'TRANSLATED_FRAME_BACKDROP', {}).get(record.get('pack_id'))
+        asset_id = pack_setting(resources, 'TRANSLATED_FRAME_BACKDROP')
         exists = getattr(resources, 'exists', None)
         if asset_id is None or exists is None or not exists(asset_id):
             return None
@@ -2630,7 +2623,7 @@ class Desktop:
             # On a choice it follows the choice's own box (desktop_choice: its character's theme), not the last line's
             # speaker: the player's choices are blue after a girl's pink line (owner, 2026-11-09).
             theme = engine.numbers.get(engine.number_key((pending.details or {}).get('character_id', -1), 651), 0)
-        themed =getattr(game, 'TRANSLATED_THEME_BACKDROP', {}).get(record.get('pack_id'), {}).get(theme)
+        themed = (pack_setting(resources, 'TRANSLATED_THEME_BACKDROP', {}) or {}).get(theme)
         if themed is not None and exists(themed):
             asset_id = themed
         key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False))
@@ -2916,8 +2909,7 @@ class Desktop:
         capture: an episode's preview picture keeps the story's name as the title (owner, 2026-11-07)."""
         if self.capture or not details.get('subtitle'):
             return False
-        record = getattr(self.session.resources, 'record', None) or {}
-        return record.get('pack_id') in getattr(GAMES[game_id(self.session.resources)], 'TRANSLATED_DATE_FIRST_PACKS', ())
+        return free_setting(self.session.resources, 'TRANSLATED_DATE_FIRST_PACKS', 'date_first')
 
     def _title_renderer(self):
         """The chapter / week card: Cause of Death's own (SHS HD's at iPhone size), HD's with an HD bundle, else

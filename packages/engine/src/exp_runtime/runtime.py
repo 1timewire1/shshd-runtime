@@ -207,8 +207,8 @@ class Session:
 
     def _badge_sounds(self):
         """shshd-runtime: a translated pack's own relationship sounds (profile TRANSLATED_BADGE_SOUNDS), or None for its game's."""
-        record = getattr(self.resources, 'record', None) or {}
-        return getattr(GAMES[game_id(self.resources)], 'TRANSLATED_BADGE_SOUNDS', {}).get(record.get('pack_id'))
+        from .content import pack_setting
+        return pack_setting(self.resources, 'TRANSLATED_BADGE_SOUNDS')
 
     def _set_build(self):
         library = getattr(self.resources, 'library', None)
@@ -698,10 +698,9 @@ class Session:
                 self.engine.nr_arena_skip = self.skip_arena
                 self.engine.badge_sounds = self._badge_sounds()
                 self.engine.picker_layouts = self._picker_layouts()
-                self.engine.choose_articles = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
-                    GAMES[game_id(self.resources)], 'TRANSLATED_ARTICLE_PACKS', ())
-                self.engine.three_word_games = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
-                    GAMES[game_id(self.resources)], 'TRANSLATED_THREE_WORD_PACKS', ())
+                from .content import free_setting
+                self.engine.choose_articles = free_setting(self.resources, 'TRANSLATED_ARTICLE_PACKS', 'word_forms')
+                self.engine.three_word_games = free_setting(self.resources, 'TRANSLATED_THREE_WORD_PACKS', 'three_word_games')
                 self.engine.brew_menus = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
                     GAMES[game_id(self.resources)], 'TRANSLATED_BREW_MENU_PACKS', ())
                 self.engine.cutscenes_enabled = self.cutscenes
@@ -1027,7 +1026,13 @@ class Session:
         """shshd-runtime: a translated pack's own portrait picker layouts (the game profile's TRANSLATED_PICKER_LAYOUTS, by portrait
         count), which service 78 starts its picker in; every other episode keeps the native slots."""
         record = getattr(self.resources, 'record', None) or {}
-        return getattr(GAMES[game_id(self.resources)], 'TRANSLATED_PICKER_LAYOUTS', {}).get(record.get('pack_id'))
+        layouts = getattr(GAMES[game_id(self.resources)], 'TRANSLATED_PICKER_LAYOUTS', {}).get(record.get('pack_id'))
+        if layouts is None:
+            from .content import declared
+            if declared(self.resources, 'big_pickers'):
+                # An episode made in the Creator may offer up to ten photos (presentation `big_pickers`; owner, 2026-11-09).
+                return getattr(GAMES[game_id(self.resources)], 'CREATOR_PICKER_LAYOUTS', None)
+        return layouts
 
     def _place_picker(self):
         """A new portrait picker in its pack's own layout (_picker_layouts), if service 78 didn't already start it there."""

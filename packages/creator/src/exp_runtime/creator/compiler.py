@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import struct
 
-from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+from exp_runtime.exp import ContentError, ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.x360_services import X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
@@ -39,7 +39,7 @@ TEXT_BUFFER_WORDS = 512
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
 SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
-                            'shs11_memory', 'shs11_reflex',
+                            'shs11_memory', 'shs11_reflex', 'brew_catch',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
 HD_KINDS = frozenset(('faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result'))
@@ -53,6 +53,9 @@ TREE_EXITS = {1202: 0, 1203: 1, 1204: 1, 1205: 1, 1206: 1, 1207: 1, 1208: 1, 120
 TREE_AWAITING = range(1209, 1224)
 # `addBranchNode`'s conditions are `DTNode::autobranch` tests of Football Star's tracked state (exp_runtime.dt_state).
 TREE_CONDITIONS = range(0x4b, 0x69)
+# The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, SHS '11 31600):
+# their episodes take their game's own settings and names, so the Creator marks nothing of its own in them.
+TRANSLATION_PACKS = (31000, 31700)
 # shshd-runtime presentation (SCHEMA.md "Presentation extension"): the SHS global numbers (service 54) a dialogue line
 # sets for its second speaker (ID + 1) and their expression, a named line's bubble colour and the emoticon over its
 # speaker, cleared after the line. They are the numbers tools/translate uses for New Rules and the X360 prototype; the
@@ -91,7 +94,7 @@ def variable_names(project):
     names = {n.variable for n in project.nodes if n.kind in ('set', 'branch') and n.variable}
     for node in project.nodes:
         p = parameters(node)
-        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'relationship', 'score', 'picker'):
+        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'relationship', 'score', 'picker'):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
@@ -117,6 +120,26 @@ def placeholders(value, numeric):
         if (names or expressions.has_calls(tree)) and names <= numeric:
             spans.append((match, tree))
     return spans
+
+
+def catch_library_sizes(project):
+    """{picture: (width, height)} of the catch pictures in the project's library's BREW add-on, read once per library; {} with no
+    library (a catch node then gives its pictures' sizes itself)."""
+    if not project.library:
+        return {}
+    cached = _CATCH_SIZES.get(project.library)
+    if cached is None:
+        try:
+            from exp_runtime.content import ContentLibrary
+            with ContentLibrary(Path(project.library)) as library:
+                cached = minigames.brew_catch_sizes(library)
+        except (ImportError, ContentError, OSError):
+            cached = {}
+        _CATCH_SIZES[project.library] = cached
+    return cached
+
+
+_CATCH_SIZES = {}
 
 
 def validate_node(project, node, nodes, assets, characters):
@@ -172,7 +195,7 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
         raise ProjectError(f'{label}: choose a reusable character')
-    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'input', 'relationship',
+    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'input', 'relationship',
                      'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
     if node.kind == 'cutscene':
@@ -227,14 +250,21 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: enter the new name')
     if node.kind == 'picker':
         looks = p['characters']
-        if not 1 <= len(looks) <= 5 or any(not isinstance(value, str) or value not in characters for value in looks):
-            raise ProjectError(f'{label}: choose one to five reusable characters whose portraits are the looks')
+        most = 10 if project.options.get('big_pickers') else 5      # BREW's pickers of up to ten photos (owner, 2026-11-09)
+        if not 1 <= len(looks) <= most or any(not isinstance(value, str) or value not in characters for value in looks):
+            raise ProjectError(f'{label}: choose one to {"ten" if most == 10 else "five"} reusable characters whose portraits '
+                               'are the looks' + ('' if most == 10 else ' (up to ten with the ten-photo picker setting)'))
         if not p['result'].strip():
             raise ProjectError(f'{label}: enter a result variable')
     if node.kind in HD_KINDS:
         validate_hd_node(project, node, p, label, assets)
     if node.kind in SHS_ONLY_KINDS and project.game != 'shs':
         raise ProjectError(f'{label}: the CoD game has no {node.kind.replace("_", " ")} service')
+    from .addons import NODE_ADDONS
+    if (node.kind in NODE_ADDONS and not any(entry['id'] == NODE_ADDONS[node.kind] for entry in project.addons)
+            and not TRANSLATION_PACKS[0] <= project.pack_id < TRANSLATION_PACKS[1]):     # (a translator declares its own)
+        # Its game plays from that add-on's art, so the episode needs it to play (owner, 2026-11-09).
+        raise ProjectError(f'{label}: add the {NODE_ADDONS[node.kind]} add-on (as the primary or an extra)')
     if node.kind == 'open_url' and not p['url'].strip():
         raise ProjectError(f'{label}: enter the link to open')
     if node.kind == 'append_text' and len(node.text) > 400:
@@ -249,7 +279,7 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('home_result', 'away_result'):
             if p[key] and not p[key].isidentifier():
                 raise ProjectError(f'{label}: {key} must be a variable name')
-    if node.kind in ('word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex'):
+    if node.kind in ('word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch'):
         minigames.validate(node.kind, p)
     if node.kind == 'grid':
         for key in ('left_character', 'right_character'):
@@ -335,6 +365,24 @@ def presentation_record(project):
              if p['then_loop'] != -1}
     if loops:
         record['music_loops'] = loops
+    if project.native or project.game != 'shs' or TRANSLATION_PACKS[0] <= project.pack_id < TRANSLATION_PACKS[1]:
+        return record                   # an original episode, or a translation: its game's own tables
+    record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)
+    record.update({name: True for name, on in sorted(project.options.items()) if on})
+    if any(node.kind in ('minigames_available', 'brew_catch', 'shs11_memory', 'shs11_reflex', 'x360_slot', 'x360_leash',
+                         'x360_puzzle', 'x360_diss') for node in project.nodes):
+        record['minigames'] = True
+    from .model import primary_addon
+    primary = primary_addon(project)
+    if primary is not None:
+        record['addons'] = dict(primary=primary['id'], edition=primary.get('edition', ''))
+    # An extra add-on's pictures and sounds keep their numbers, aliased to it: the add-ons reuse numbers, and an episode reads a
+    # number from the first add-on it lists that has it, the primary.
+    first = project.addons[0]['id'] if project.addons else None
+    aliases = {str(asset.id): [asset.addon, asset.id] for asset in sorted(project.assets, key=lambda a: a.id)
+               if asset.addon and asset.addon != first}
+    if aliases:
+        record['aliases'] = aliases
     return record
 
 
@@ -766,6 +814,12 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.call(X360_PUZZLE); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'x360_diss':
                 asm.call(X360_DISS, p['tutorial']); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'brew_catch':
+                branches = [(n.operator, n.value) for n in project.nodes
+                            if n.kind == 'branch' and n.variable == p['result']]
+                minigames.emit_catch(asm, p, minigames.catch_sizes(p, catch_library_sizes(project)),
+                                     minigames.catch_cuts(p, branches))
+                asm.emit(0x21); store_variable(p['result'])
             elif kind in ('word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex'):
                 localized = deepcopy(p)
                 for field in ('good', 'bad', 'instructions'):
