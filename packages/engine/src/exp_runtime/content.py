@@ -746,6 +746,7 @@ class ContentLibrary:
         self._addon_archives = {}
         self._episode_requires = {}     # an episode's sha -> the addons it declares (episode_requires)
         self._episode_presentation = {}     # an episode's sha -> its presentation record (episode_presentation)
+        self._addon_indexes = {}            # an addon's id -> its file's index (addon_has)
         from .episode_catalog import EpisodeCatalog
         self.catalog = EpisodeCatalog.from_data(m.get('episode_catalog', []))
         if 'store' in m and (getattr(GAMES[self.game_id], 'STORE_FILENAME', None) is None
@@ -1000,6 +1001,15 @@ class ContentLibrary:
             self._hd_resource_cache[hd_id] = _zip_read(self.hd_ipa, self.hd_members[hd_id])
         return self._hd_resource_cache[hd_id]
 
+    def _content_path(self, record: dict, suffix: str) -> Path:
+        """shshd-runtime: an imported file's path, its name checked but not its bytes (`_content_file` hashes the whole file),
+        for reading a small part of it: an episode's presentation record, an addon's index or one resource. What it opens is
+        verified then, as ever."""
+        sha = record.get('sha256')
+        if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha) or record.get('file') != f'content/{sha}{suffix}':
+            raise ContentError('Invalid content path in library')
+        return self.directory / record['file']
+
     def _content_file(self, record: dict, suffix: str) -> Path:
         sha = record.get('sha256')
         if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha):
@@ -1040,6 +1050,34 @@ class ContentLibrary:
         if self._portrait_addon_map[0] != record['id']:
             self._portrait_addon_map = record['id'], json.loads(archive.read(addon[1]))
         return self._portrait_addon_map[1]
+
+    def addon_has(self, addon_id: str, resource_id: int) -> bool:
+        """shshd-runtime: whether the imported addon `addon_id` holds a resource, from its file's index alone: `addon` reads and
+        hashes the whole file first (Options' Title Screen Music asks about four addons)."""
+        from .exp import file_index
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            return False
+        if record['id'] in self._addon_archives:
+            return resource_id in self._addon_archives[record['id']].entries
+        try:
+            return resource_id in self._addon_indexes.setdefault(record['id'], file_index(self._content_path(record, '.exp')))
+        except (ContentError, OSError):
+            return False
+
+    def addon_resource(self, addon_id: str, resource_id: int) -> bytes | None:
+        """shshd-runtime: one resource of the imported addon `addon_id` (its index and that record only), or None."""
+        from .exp import read_file_resource
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            return None
+        if record['id'] in self._addon_archives:
+            archive = self._addon_archives[record['id']]
+            return archive.read(resource_id) if resource_id in archive.entries else None
+        try:
+            return read_file_resource(self._content_path(record, '.exp'), resource_id)
+        except (ContentError, OSError):
+            return None
 
     def addon(self, addon_id: str):
         """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None. An addon that
@@ -1088,8 +1126,10 @@ class ContentLibrary:
         if found is None:
             found = {}
             if 'file' in record:
-                try:
-                    found = presentation_record(ExpArchive(self._content_file(record, '.exp').read_bytes())) or {}
+                from .exp import read_file_resource
+                from .presentation import RESOURCE as PRESENTATION, presentation_from_bytes
+                try:        # (resource 3 alone: reading every episode whole froze a phone's Options for minutes)
+                    found = presentation_from_bytes(read_file_resource(self._content_path(record, '.exp'), PRESENTATION)) or {}
                 except (ContentError, OSError):
                     found = {}
             self._episode_presentation[sha] = found
@@ -1098,12 +1138,23 @@ class ContentLibrary:
     def feature_packs(self):
         """shshd-runtime: the packs whose add-on settings the library's episodes have (content.feature_pack): each
         translation's own, and each episode made in the Creator its primary add-on's."""
-        mapping = getattr(GAMES.get(getattr(self, 'game_id', None)), 'ADDON_FEATURE_PACKS', {})
-        packs = set()
-        for record in self.episodes:
-            primary = self.episode_presentation(record).get('addons')
-            packs.add(mapping.get(tuple(primary), record.get('pack_id')) if primary else record.get('pack_id'))
-        return packs
+        key = self.episodes_key()
+        if self._feature_packs[0] != key:
+            mapping = getattr(GAMES.get(getattr(self, 'game_id', None)), 'ADDON_FEATURE_PACKS', {})
+            packs = set()
+            for record in self.episodes:
+                primary = self.episode_presentation(record).get('addons')
+                packs.add(mapping.get(tuple(primary), record.get('pack_id')) if primary else record.get('pack_id'))
+            self._feature_packs = (key, frozenset(packs))
+        return set(self._feature_packs[1])
+
+    def episodes_key(self):
+        """shshd-runtime: what the library's episodes and addons are now, for answers kept until they change (Options asks
+        its questions every frame)."""
+        return (tuple(record.get('sha256') for record in self.episodes),
+                tuple((record.get('addon'), record.get('sha256')) for record in self.addons))
+
+    _feature_packs = (None, frozenset())
 
     def addon_users(self, addon: dict):
         """shshd-runtime: the episodes that need an addon record, or an addon it stands in for."""

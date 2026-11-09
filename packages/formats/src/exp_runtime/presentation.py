@@ -113,8 +113,12 @@ def presentation_record(archive):
     """The archive's normalized record, None without one. Raises ContentError for a malformed one."""
     if RESOURCE not in archive.entries:
         return None
-    data = archive.read(RESOURCE)
-    if not data.startswith(MAGIC):
+    return presentation_from_bytes(archive.read(RESOURCE))
+
+
+def presentation_from_bytes(data):
+    """Resource 3's normalized record from its bytes, None if they aren't one. Raises ContentError for a malformed one."""
+    if data is None or not data.startswith(MAGIC):
         return None
     try:
         return normalize(json.loads(data[len(MAGIC):]))

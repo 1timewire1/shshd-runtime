@@ -1,6 +1,8 @@
 """shshd-runtime: an episode made in the Creator takes its primary add-on's settings, declares the ones that need no add-on,
 reaches an extra add-on's pictures through aliases and keeps the Creator's own names table (CREATOR_ADDONS_PLAN.md; owner,
 2026-11-09)."""
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -127,7 +129,10 @@ class TitleMusicTests(unittest.TestCase):
         from exp_runtime.application import Application
         tunes = {'shsbrew': (26906, b'brew'), 'shs11': (26981, b'eleven'), 'shsx360': (26996, b'x360'), 'shsnr': (26988, b'nr')}
         held = {name: (dict(revision=1), Archive({tunes[name][0]: tunes[name][1]})) for name in addons}
-        app = SimpleNamespace(library=SimpleNamespace(game_id='shs', addon=held.get),
+        has = lambda name, resource: name in held and resource in held[name][1].entries          # noqa: E731
+        library = SimpleNamespace(game_id='shs', addon=held.get, addon_has=has,
+                                  addon_resource=lambda name, resource: held[name][1].read(resource) if has(name, resource) else None)
+        app = SimpleNamespace(library=library,
                               state=SimpleNamespace(title_music=choice, last_title_game=last, persist=lambda: None),
                               _attempt=lambda action: action())
         for name in ('title_music', 'title_music_offered', 'remember_title_game'):
@@ -165,3 +170,20 @@ class Mp3FromTests(unittest.TestCase):
         self.assertEqual(mp3_length_ms(mp3_from(data, 100)), 182)
         self.assertIs(mp3_from(data, 0), data)
         self.assertEqual(mp3_from(b'RIFF....WAVE', 500), b'RIFF....WAVE')
+
+
+class FileReadTests(unittest.TestCase):
+    """exp.read_file_resource / file_index: one record or the index of a file, without reading the rest (the g54's Options
+    froze reading every episode whole for its presentation record; owner, 2026-11-09)."""
+
+    def test_one_resource_and_the_index_match_the_whole_archive(self):
+        from exp_runtime.exp import ExpArchive, encode_exp, file_index, read_file_resource
+        data = encode_exp({1: b'meta', 3: b'SHSHD-PRESENTATION\0{}', 26000: bytes(range(256)) * 400})
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'episode.exp'
+            path.write_bytes(data)
+            whole = ExpArchive(data)
+            self.assertEqual(set(file_index(path)), set(whole.entries))
+            for resource in (1, 3, 26000):
+                self.assertEqual(read_file_resource(path, resource), whole.read(resource))
+            self.assertIsNone(read_file_resource(path, 5))

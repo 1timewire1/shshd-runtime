@@ -1158,7 +1158,13 @@ class Application:
         """Whether the "X360 Arena Skin" switch changes something: translated New Rules episodes (their arena) and the X360
         addon's arena skin (desktop_nr_arena_x360; owner, 2026-10-31) are both in the library."""
         from .desktop_nr_arena_x360 import library_has_skin
-        return self.hires_portraits_offered() and library_has_skin(self.library)
+        if not self.hires_portraits_offered():
+            return False
+        # Kept until the library's addons change: it reads the X360 addon's skin spec, and Options asks every frame.
+        key = (id(self.library), tuple((a.get('addon'), a.get('sha256')) for a in self.library.addons))
+        if getattr(self, '_arena_skin', (None,))[0] != key:
+            self._arena_skin = (key, library_has_skin(self.library))
+        return self._arena_skin[1]
 
     def apply_hires_portraits(self):
         """The "Hi-Res Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
@@ -1512,7 +1518,13 @@ class Application:
         return HdEpisodePicker, HdEpisodeList
 
     def picker_available(self):
-        return bool(self.library) and self.picker_classes()[0].available(self.library)
+        # Kept per library and its HD app: it parses the HD layout bank, and Options asks every frame (g54, 2026-11-09).
+        if not self.library:
+            return False
+        key = (id(self.library), getattr(self.library, 'hd_ipa', None) is not None)
+        if getattr(self, '_picker_available', (None,))[0] != key:
+            self._picker_available = (key, self.picker_classes()[0].available(self.library))
+        return self._picker_available[1]
 
     def ensure_picker(self, style='tile'):
         """The HD picker, as a tile grid, a scrollable text list grouped by category (`style='list'`), or the
@@ -1682,19 +1694,18 @@ class Application:
         if choice == 'auto':
             choice = getattr(self.state, 'last_title_game', 'default')
         entry = table.get(choice)
-        found = self.library.addon(entry[0]) if entry is not None and hasattr(self.library, 'addon') else None
-        if found is None or entry[1] not in found[1].entries:
+        data = self.library.addon_resource(entry[0], entry[1]) if entry is not None and hasattr(self.library, 'addon_resource') else None
+        if data is None:
             return None
         from .audio import mp3_from
-        return mp3_from(found[1].read(entry[1]), entry[2] if len(entry) > 2 else 0)
+        return mp3_from(data, entry[2] if len(entry) > 2 else 0)
 
     def title_music_offered(self):
         """Title Screen Music's choices here: Default, Auto, and each translated game whose addon the library holds."""
         table = getattr(GAMES.get(self.library.game_id), 'TITLE_MUSIC', {}) if self.library else {}
         offered = ['default', 'auto']
         for game, (addon, resource, *_) in table.items():
-            found = self.library.addon(addon) if hasattr(self.library, 'addon') else None
-            if found is not None and resource in found[1].entries:
+            if hasattr(self.library, 'addon_has') and self.library.addon_has(addon, resource):
                 offered.append(game)
         return offered
 
