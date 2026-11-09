@@ -98,10 +98,16 @@ class AppScreenTests(unittest.TestCase):
         options.menu.slide = None
         options.draw(layer)                                                 # every General row has its control
         general = [c for _, c in options.buttons]
-        self.assertIn(('pause_cycle', 'start_in'), general)
+        self.assertIn(('pause_open', 'choice:start_in'), general)
+        options.activate(('pause_open', 'choice:start_in'))
+        options.menu.slide = None
+        options.activate(('pause_cycle', 'start_in', 'cod'))                # a value from Start In's page...
+        self.assertEqual((AppSettings(Path(self.root) / 'settings.json').start_in, options.menu.state.screen),
+                         ('cod', 'options:general'))                        # ...set, and back on General
+        options.menu.slide = None
         for key in ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits'):     # only SHS offers them
             self.assertNotIn(('pause_toggle', key), general)
-        self.assertNotIn(('pause_cycle', 'title_language'), general)
+        self.assertNotIn(('pause_open', 'choice:title_language'), general)
         self.assertTrue(options.step_back())                                # up a page...
         self.assertEqual(options.menu.state.screen, 'options')
         self.assertFalse(options.step_back())                               # ...then out of Options

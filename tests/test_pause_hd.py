@@ -153,10 +153,9 @@ class HdPauseTests(unittest.TestCase):
         self.assertIn(('pause_open', 'options:data'), [c for _, c in self.commands()])
         state.screen = 'options:general'
         rows = self.commands()
-        self.assertEqual(rows[-2][1], ('pause_cycle', 'title_language'))                 # last row: its button
-        from exp_runtime.desktop_pause_hd import CONTROL_RIGHT, PANEL_W, PANEL_X
-        self.assertEqual((rows[-2][0].width, rows[-2][0].height), (104, 34))          # a little bigger than a switch
-        self.assertEqual(rows[-2][0].right, PANEL_X + PANEL_W - CONTROL_RIGHT)          # against the card's right
+        self.assertEqual(rows[-2][1], ('pause_open', 'choice:title_language'))         # last row: opens its page
+        from exp_runtime.desktop_pause_hd import PANEL_W, PANEL_X
+        self.assertEqual((rows[-2][0].x, rows[-2][0].width), (PANEL_X, PANEL_W))       # the whole row
         state.screen = 'options:data'                                       # its pages, those with an offered row
         self.assertEqual([c for _, c in self.commands()], [('pause_open', 'data:library'),
                                                            ('pause_open', 'data:episodes'), ('pause_back',)])
@@ -165,21 +164,28 @@ class HdPauseTests(unittest.TestCase):
         self.assertFalse(self.menu.back())
         self.assertEqual(state.screen, 'options:data')                      # back to Data Management
 
-    def test_start_in_cycles_in_general_and_unlock_warping_is_an_extras_action(self):
-        """General's Start In is a value button grown to fit its value; Extras' Unlock Warping is an action row,
+    def test_start_in_opens_a_page_of_its_choices_and_unlock_warping_is_an_extras_action(self):
+        """General's Start In and Episode Titles open a menu page of their values (owner, 2026-11-09), the current one
+        ticked, each row picking its value; back from it is the option's page. Extras' Unlock Warping is an action row,
         offered only while the host says the lock is on."""
-        from exp_runtime.desktop_pause_hd import CONTROL_RIGHT, PANEL_W, PANEL_X, START_IN_NAMES
+        from exp_runtime.desktop_pause_hd import START_IN_NAMES
         state = self.menu.state
         state.screen = 'options:general'
         self.settings.update(title_language='English', start_in=START_IN_NAMES['games'])
         rows = self.commands()
-        self.assertEqual([c for _, c in rows][-3:], [('pause_cycle', 'title_language'), ('pause_cycle', 'start_in'),
-                                                     ('pause_back',)])
-        narrow = rows[-2][0]
-        self.settings['start_in'] = START_IN_NAMES['shs']
-        wide = self.commands()[-2][0]
-        self.assertGreater(wide.width, narrow.width)
-        self.assertEqual((wide.right, wide.height), (PANEL_X + PANEL_W - CONTROL_RIGHT, 34))
+        self.assertEqual([c for _, c in rows][-3:], [('pause_open', 'choice:title_language'),
+                                                     ('pause_open', 'choice:start_in'), ('pause_back',)])
+        self.menu.open('choice:start_in')
+        self.menu.slide = None
+        self.assertEqual([c for _, c in self.commands()], [('pause_cycle', 'start_in', value) for value in START_IN_NAMES]
+                         + [('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.menu.slide = None
+        self.assertEqual(state.screen, 'options:general')
+        self.settings['title_language_names'] = {'en': 'English', 'fr': 'French'}       # the host's own names
+        state.screen = 'choice:title_language'
+        self.assertEqual([label for _, label, _ in self.menu.option_rows('choice:title_language', self.settings,
+                                                                         self.menu.strings())], ['English', 'French'])
         state.screen = 'options:sound'
         self.assertNotIn(('pause_toggle', 'skip_sound_prompt'), [c for _, c in self.commands()])   # in a story
         self.settings['skip_sound_prompt'] = False

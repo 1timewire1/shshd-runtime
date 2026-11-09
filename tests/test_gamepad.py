@@ -286,7 +286,7 @@ class ControllerScreenTests(unittest.TestCase):
         menu = HdPauseMenu.__new__(HdPauseMenu)
         self.assertEqual(menu.option_rows('controller', {}, []), [])
         self.assertEqual(menu.option_rows('controller', {'controller_confirm': 'Bottom'}, []),
-                         [('cycle', 'Confirm Button', 'controller_confirm')])
+                         [('choice', 'Confirm Button', 'controller_confirm')])
         pads = gamepad.Gamepads(Mock())
         previous = graphics.install_gamepads(pads)
         self.addCleanup(graphics.install_gamepads, previous)

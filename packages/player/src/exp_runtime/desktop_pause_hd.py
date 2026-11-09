@@ -130,6 +130,20 @@ CONFIRM_NAMES = {'south': 'Bottom', 'east': 'Right'}
 # highlighted cell.
 GRID_CONTROLS_LABEL = 'Word Grid Controls'
 GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
+# The episode title languages (languages.TITLE_LANGUAGES), by their own names; the main menu names them from the game's
+# strings instead (settings['title_language_names']).
+LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
+# An option that is one of a few values (owner, 2026-11-09): its row opens a menu page of them (screen 'choice:<key>', a
+# row each, the current one ticked) instead of a button that steps through them, and shows the current one under its name
+# in smaller letters, as the episode lists show a category or airdate under a title (desktop_episode_list_hd: 13 points
+# under 19, at alpha 150). Picking one sends ('pause_cycle', key, value), and the host slides back to the option's page.
+CHOICE_NAMES = {'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES, 'controller_confirm': CONFIRM_NAMES,
+                'grid_controls': GRID_CONTROLS_NAMES}
+CHOICE_LABELS = {'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
+                 'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL}
+CHOICE_PARENTS = {'title_language': 'options:general', 'start_in': 'options:general',
+                  'controller_confirm': 'options:controller', 'grid_controls': 'options:controller'}
+VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
 DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
@@ -352,7 +366,8 @@ class HdPauseMenu:
             return True
         leaving = state.screen
         host = self.text_pages.get(state.screen) or self.row_pages.get(state.screen)
-        state.screen = ('help' if state.screen in PAGES else host[2]
+        state.screen = (CHOICE_PARENTS[state.screen[7:]] if state.screen.startswith('choice:')
+                        else 'help' if state.screen in PAGES else host[2]
                         if host is not None else 'options:data' if state.screen in DATA_TITLES
                         else 'options' if state.screen.startswith('options:') else 'pause')
         if self.main_menu and state.screen == 'pause':
@@ -550,9 +565,11 @@ class HdPauseMenu:
     def row_color(self, index):
         return self.ROW_COLORS[index % 2]
 
-    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None, tint=None):
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None, tint=None,
+            value=None):
         """`badge`: (text, colour) of a tag before the label (SWITCH_BADGES), in the episode list's style. `tint`: (word,
-        colour) of a word in the label to colour (LABEL_TINTS)."""
+        colour) of a word in the label to colour (LABEL_TINTS). `value`: a line under the label in smaller letters (an
+        option's current choice, CHOICE_NAMES)."""
         color = color or self.LABEL_COLOR
         self.rows_body(layer, top, height, background, lit=lit)
         x = PANEL_X + 31
@@ -568,8 +585,17 @@ class HdPauseMenu:
                 current = trial
         lines.append(current)
         pitch = 26.6
+        centre = top + ROW / 2
+        if value is not None:
+            # The label and its value line, centred together as the episode lists' title and subtitle are.
+            label_height, value_height = font.get_height() / S, self.font(VALUE_PX).get_height() / S
+            label_top = top + (ROW - (label_height + VALUE_GAP + value_height)) / 2
+            centre = label_top + self.cap_offset(ROW_PX)
+            shown = self.font(VALUE_PX).render(value, True, color)
+            shown.set_alpha(VALUE_ALPHA)
+            layer.blit(shown, (round(x * S), round((label_top + label_height + VALUE_GAP) * S)))
         for index, line in enumerate(lines):
-            middle = top + ROW / 2 + (index - (len(lines) - 1) / 2) * pitch
+            middle = centre + (index - (len(lines) - 1) / 2) * pitch
             y = middle - self.cap_offset(ROW_PX)
             self.text(layer, line, x, y, ROW_PX, color)
             if tint is not None and tint[0] in line:
@@ -644,17 +670,19 @@ class HdPauseMenu:
                 buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
             bottom_rule = top + height - FOOT
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
-        elif state.screen.startswith('options:') or state.screen in DATA_TITLES or state.screen in self.row_pages:
+        elif (state.screen.startswith(('options:', 'choice:')) or state.screen in DATA_TITLES
+              or state.screen in self.row_pages):
             # Sound: the app's own Music / Sound switches and sliders. General: in a story, the side panels (a native
             # feature: the device shows them on rotation, so it has no switch or string of its own), then this
             # player's switches (exp-runtime's Options -> Cheats; no native strings, so the labels are this project's).
             category = (state.screen if state.screen in DATA_TITLES or state.screen in self.row_pages
-                        else state.screen.split(':', 1)[1])
+                        or state.screen.startswith('choice:') else state.screen.split(':', 1)[1])
             rows = self.option_rows(category, settings, strings)
             sliders = sum(1 for kind, _, _ in rows if kind == 'slider')
             height = HEADER + (len(rows) - sliders) * ROW + sliders * SLIDER_ROW + FOOT
             top = (FRAME[1] - height) / 2
             title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
+                     or CHOICE_LABELS.get(category[7:] if category.startswith('choice:') else None)
                      or dict(OPTION_CATEGORIES).get(category, strings[10]))
             body = self.panel(layer, top, top + height, title)
             y = body
@@ -666,6 +694,24 @@ class HdPauseMenu:
                     track = self.slider(layer, y, settings[key + '_volume'])
                     buttons.append((track, ('pause_slider', key, track)))
                     y += SLIDER_ROW
+                    continue
+                if kind == 'pick':
+                    # A choice page's row: `key` is (option, value); the option's current value is ticked.
+                    option, value = key
+                    command = ('pause_cycle', option, value)
+                    self.row(layer, y, label, background=self.row_color(index), lit=focus == command)
+                    if label == settings.get(option):
+                        self.check(layer, PANEL_X + PANEL_W - CONTROL_RIGHT - 6, y + ROW / 2)
+                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
+                    y += ROW
+                    continue
+                if kind == 'choice':
+                    command = ('pause_open', 'choice:' + key)
+                    self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
+                             badge=switch_badge(key), tint=legacy_tag(LABEL_TINTS.get(key)), value=settings[key])
+                    self.chevron(layer, PANEL_X + PANEL_W - CONTROL_RIGHT - 8, y + ROW / 2)
+                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
+                    y += ROW
                     continue
                 command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'),
                            key)
@@ -746,16 +792,16 @@ class HdPauseMenu:
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings
                     and not (key == 'device_vibration' and settings.get('controller_vibration'))]
             if 'title_language' in settings:
-                rows.append(('cycle', TITLE_LANGUAGE_LABEL, 'title_language'))
+                rows.append(('choice', TITLE_LANGUAGE_LABEL, 'title_language'))
             if 'start_in' in settings:
-                rows.append(('cycle', START_IN_LABEL, 'start_in'))
+                rows.append(('choice', START_IN_LABEL, 'start_in'))
             return rows
         if category == 'controller':
             if 'controller_confirm' not in settings:
                 return []
-            rows = [('cycle', CONFIRM_BUTTON_LABEL, 'controller_confirm')]
+            rows = [('choice', CONFIRM_BUTTON_LABEL, 'controller_confirm')]
             if 'grid_controls' in settings:
-                rows.append(('cycle', GRID_CONTROLS_LABEL, 'grid_controls'))
+                rows.append(('choice', GRID_CONTROLS_LABEL, 'grid_controls'))
             if 'device_vibration' in settings and settings.get('controller_vibration'):
                 rows.append(('switch', self.SWITCH_LABELS['device_vibration'], 'device_vibration'))
             return rows
@@ -777,7 +823,23 @@ class HdPauseMenu:
                      label, key) for key, label in rows if key in settings]
         if category in self.row_pages:
             return [(kind[0] if kind else 'action', label, key) for key, label, *kind in self.row_pages[category][1]]
+        if category.startswith('choice:'):
+            option = category[7:]
+            names = settings.get(option + '_names') or CHOICE_NAMES.get(option, {})
+            return [('pick', name, (option, value)) for value, name in names.items()] if option in settings else []
         return []
+
+    def check(self, layer, right, middle):
+        """The tick on a choice page's current row, ending `right`, centred on `middle`."""
+        S = self.scale
+        points = [(right - 26, middle), (right - 16, middle + 10), (right, middle - 12)]
+        pygame.draw.lines(layer, self.TITLE_COLOR, False, [(round(x * S), round(y * S)) for x, y in points], round(5 * S))
+
+    def chevron(self, layer, right, middle):
+        """The `>` on a row that opens a page of choices."""
+        S = self.scale
+        points = [(right - 10, middle - 12), (right, middle), (right - 10, middle + 12)]
+        pygame.draw.lines(layer, self.LABEL_COLOR, False, [(round(x * S), round(y * S)) for x, y in points], round(4 * S))
 
     def cycle_button(self, layer, box, label, *, pressed=False):
         """A footer-style button holding a value: caps and middle from pack 32 scaled to `box` (the caps keep their

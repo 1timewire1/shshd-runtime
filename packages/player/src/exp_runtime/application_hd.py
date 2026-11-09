@@ -360,6 +360,7 @@ class HdShell:
             settings['arena_skin'] = state.arena_skin               # ...with the X360 addon
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
+            settings['title_language_names'] = {language: self.language_name(language) for language in TITLE_LANGUAGES}
         # Data Management's rows (main menu only).
         if self.app.library.addons:
             settings['manage_addons'] = True
@@ -422,6 +423,21 @@ class HdShell:
                 self.app.ui_sound('MUSIC_SLIDER_SOUND', volume=value, when_idle=True)
             elif which != 'music':
                 self.app.ui_sound('SOUND_SLIDER_SOUND', when_idle=True)
+
+    def choose(self, key, value):
+        """A value picked on an option's choice page (desktop_pause_hd.CHOICE_NAMES)."""
+        state = self.app.state
+        if key == 'start_in':
+            self.app._attempt(lambda: self.app.settings.set_start_in(value))
+        elif key == 'title_language':
+            state.title_language = value
+            state.persist()
+            self.app.picker = None                      # the pickers' captions follow the language
+        elif key in ('controller_confirm', 'grid_controls'):
+            setattr(state, key, value)
+            self.app._attempt(state.persist)
+            if key == 'controller_confirm':
+                self.app.sync_controller()
 
     def toggle(self, which):
         if which.startswith('sync_'):
@@ -700,6 +716,9 @@ class HdShell:
                 self.pause_open = False
         elif kind == 'pause_toggle':
             self.toggle(command[1])
+        elif kind == 'pause_cycle' and len(command) > 2:
+            self.choose(command[1], command[2])
+            self.pause.back()                           # a choice page: back to its option's page
         elif kind == 'pause_cycle' and command[1] == 'title_language':
             state = self.app.state
             state.title_language = TITLE_LANGUAGES[(TITLE_LANGUAGES.index(state.title_language) + 1)

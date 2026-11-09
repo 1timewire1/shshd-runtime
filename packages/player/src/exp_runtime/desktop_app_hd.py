@@ -20,7 +20,7 @@ import pygame
 from .app_icon import game_icon_surface, icon_surface
 from .desktop_pause import ease_in_out
 from .desktop_pause_hd import (BACK, BLUE, BORDER, CYCLE_POINTS, FOOT, HEADER, LABEL_BLUE, PANEL_W, PANEL_X, ROW,
-                               ROW_BACKGROUND, SEPARATOR, HdPauseMenu)
+                               ROW_BACKGROUND, SEPARATOR, HdPauseMenu, LANGUAGE_NAMES)
 from .games import GAMES
 from .hd_scale import S
 
@@ -157,7 +157,6 @@ class AppCard(HdPauseMenu):
 # SHS HD app at hand.
 OPTION_STRINGS = {8: 'Pause', 9: 'Main Menu', 10: 'Options', 12: 'Game Music', 13: 'Music Volume', 14: 'Sound FX',
                   15: 'Sound FX Volume', 20: 'Resume', 120: 'Help & About'}
-LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 # The chooser's Library page rows that act on each game's library in turn (AppOptions' methods of these names).
 BOTH_GAMES_ACTIONS = ('library_info', 'storage', 'verify_library', 'rebuild_previews', 'rebuild_hd_art', 'back_up',
                       'reset_names', 'delete_saves')
@@ -290,6 +289,16 @@ class AppOptions:
                 if key == 'device_vibration' and not v[key]:
                     from . import graphics
                     graphics.vibrate()
+        elif kind == 'pause_cycle' and len(command) > 2:
+            # A value picked on an option's choice page (desktop_pause_hd.CHOICE_NAMES), then back to the option's page.
+            key, value = command[1], command[2]
+            if key == 'start_in':
+                app.settings.set_start_in(value)
+            else:
+                self.set(key, value)
+                if key == 'controller_confirm':
+                    app.sync_controller()
+            self.menu.back()
         elif kind == 'pause_cycle':
             key = command[1]
             if key == 'start_in':

@@ -869,8 +869,10 @@ CoD's colours (`cod/hd_art.positional_frames`).
     the app's own notice (menu 29, "Options Unlocked", string 272, zooming in) and then is gone. Finishing Football Season shows the same
     notice when the main menu next comes up, as `SHSEngine::setAppMode` does (flag +0x6490b).
   - **On the main menu only:**
-    - **Episode Titles** ends General. It is a button (SHS HD's orange footer button; CoD's blue) that steps
-      through the title languages. It is offered where some episode has a translated title, so not in CoD (none of
+    - **Episode Titles** ends General. Its row shows the current language under its name, in smaller letters as
+      the episode lists' airdates, and opens a page of the title languages, the current one ticked; picking one sets
+      it and slides back (owner, 2026-11-09: it was a button that stepped through them, as Start In, Confirm Button
+      and Word Grid Controls were, which now work the same way). It is offered where some episode has a translated title, so not in CoD (none of
       its 74 has one).
     - **Start In** follows it in General (owner, 2026-10-29): Last Played (the game an episode was last started
       in; the default, the game chooser until there is one), Choose a Game, Surviving High School or Cause of

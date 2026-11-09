@@ -643,6 +643,12 @@ class ShellActionTests(unittest.TestCase):
         shell.activate(('pause_cycle', 'title_language'))
         self.assertEqual((state.title_language, shell.app.picker), ('en', None))      # wraps; captions rebuild
         self.assertGreaterEqual(state.persisted, 1)
+        from exp_runtime.desktop_pause_hd import HdPauseMenu
+        shell.pause = HdPauseMenu(SimpleNamespace(library=None))
+        shell.pause.reset()
+        shell.pause.state.screen, shell.app.picker = 'choice:title_language', 'stale'      # its page (owner, 2026-11-09)
+        shell.activate(('pause_cycle', 'title_language', 'fr'))
+        self.assertEqual((state.title_language, shell.app.picker, shell.pause.state.screen), ('fr', None, 'options:general'))
         shell.activate(('pause_action', 'add_episodes'))
         self.assertEqual(shell.app.commands[-1], ('browse', 'episodes'))
 

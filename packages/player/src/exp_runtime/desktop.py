@@ -3121,6 +3121,13 @@ class Desktop:
             self.pause_hd.back()
             self._menu_sound()
             return
+        if kind == 'pause_cycle' and len(command) > 2 and command[1] in ('grid_controls', 'controller_confirm'):
+            # A value picked on the option's choice page (desktop_pause_hd.CHOICE_NAMES): as a step to it, then back.
+            if getattr(self, command[1]) != command[2]:
+                self.command(command[:2])
+            self.pause_hd.back()
+            self._menu_sound()
+            return
         if kind == 'pause_cycle' and command[1] == 'grid_controls':
             self.grid_controls = 'hold' if self.grid_controls == 'tap' else 'tap'
             if self.on_settings:
