@@ -137,12 +137,24 @@ LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'D
 # row each, the current one ticked) instead of a button that steps through them, and shows the current one under its name
 # in smaller letters, as the episode lists show a category or airdate under a title (desktop_episode_list_hd: 13 points
 # under 19, at alpha 150). Picking one sends ('pause_cycle', key, value), and the host slides back to the option's page.
+# Add-Ons' Title Screen Music (main menu only; owner, 2026-11-09): the tune the main menu plays, the game's own, a translated
+# game's from its addon, or Auto (the game last played). The host offers those whose addon it has (`title_music_names`).
+TITLE_MUSIC_LABEL = 'Title Screen Music'
+TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'nr': 'New Rules', 'x360': 'X360',
+                     'shs11': "'11"}
+# On the main menu, Add-Ons keeps Use Translated Mini-Games and Title Screen Music, and the other add-on switches go one page
+# further in, Per-Game Settings (owner, 2026-11-09); the pause menu lists them all on Add-Ons, as before.
+PER_GAME_LABEL = 'Per-Game Settings'
+PAGE_TITLES = {'per_game': PER_GAME_LABEL}
+PAGE_PARENTS = {'options:per_game': 'options:addons'}
 CHOICE_NAMES = {'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES, 'controller_confirm': CONFIRM_NAMES,
-                'grid_controls': GRID_CONTROLS_NAMES}
+                'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES}
 CHOICE_LABELS = {'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
-                 'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL}
+                 'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
+                 'title_music': TITLE_MUSIC_LABEL}
 CHOICE_PARENTS = {'title_language': 'options:general', 'start_in': 'options:general',
-                  'controller_confirm': 'options:controller', 'grid_controls': 'options:controller'}
+                  'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
+                  'title_music': 'options:addons'}
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -367,6 +379,7 @@ class HdPauseMenu:
         leaving = state.screen
         host = self.text_pages.get(state.screen) or self.row_pages.get(state.screen)
         state.screen = (CHOICE_PARENTS[state.screen[7:]] if state.screen.startswith('choice:')
+                        else PAGE_PARENTS[state.screen] if state.screen in PAGE_PARENTS
                         else 'help' if state.screen in PAGES else host[2]
                         if host is not None else 'options:data' if state.screen in DATA_TITLES
                         else 'options' if state.screen.startswith('options:') else 'pause')
@@ -683,6 +696,7 @@ class HdPauseMenu:
             top = (FRAME[1] - height) / 2
             title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
                      or CHOICE_LABELS.get(category[7:] if category.startswith('choice:') else None)
+                     or PAGE_TITLES.get(category)
                      or dict(OPTION_CATEGORIES).get(category, strings[10]))
             body = self.panel(layer, top, top + height, title)
             y = body
@@ -810,8 +824,18 @@ class HdPauseMenu:
             if 'unlock_warp' in settings:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows
+        if category == 'addons' and self.main_menu:
+            rows = [('switch', self.SWITCH_LABELS['arena_minigames'], 'arena_minigames')] if 'arena_minigames' in settings else []
+            if self.option_rows('per_game', settings, strings):
+                rows.append(('page', PER_GAME_LABEL, 'options:per_game'))
+            if 'title_music' in settings:
+                rows.append(('choice', TITLE_MUSIC_LABEL, 'title_music'))
+            return rows
         if category == 'addons':
             return [('switch', self.SWITCH_LABELS[key], key) for key in ADDON_KEYS if key in settings]
+        if category == 'per_game':
+            return [('switch', self.SWITCH_LABELS[key], key) for key in ADDON_KEYS
+                    if key in settings and key != 'arena_minigames']
         if category == 'data':
             pages = [('page', title, screen) for screen, title, rows in DATA_PAGES
                      if any(key in settings for key, _ in rows)]

@@ -208,6 +208,14 @@ PRESENTATION_RECORD = True
 # 2026-11-09, CREATOR_ADDONS_PLAN.md). (add-on, edition) -> pack. The settings that need no add-on it declares one by one.
 ADDON_FEATURE_PACKS = {('shsbrew', '08'): 31000, ('shsbrew', '07'): 31100, ('shs11', ''): 31600, ('shsnr', ''): 31300,
                        ('shsx360', ''): 31400}
+# shshd-runtime: Add-Ons' Title Screen Music (owner, 2026-11-09): each translated game's own title tune, which the main menu
+# plays once in place of MENU_MUSIC when chosen: game -> (its addon, the resource). BREW's '07 and '08 share one MIDI (track
+# 8006); New Rules' is its track 8 and '11's its track 1, the main menu's only full tune; the X360 prototype's is its
+# `music/main_menu`, which its addon carries from revision 15 (tools/translate x360.MENU_MUSIC).
+TITLE_MUSIC = {'brew': ('shsbrew', 26906), 'nr': ('shsnr', 26988), 'x360': ('shsx360', 26996), 'shs11': ('shs11', 26981)}
+# ...and which game an episode is, for Auto: its pack, or for an episode made in the Creator its primary add-on's
+# (content.feature_pack). Anything else is the smartphone's, 'default'.
+TITLE_MUSIC_PACKS = {31000: 'brew', 31100: 'brew', 31200: 'brew', 31300: 'nr', 31400: 'x360', 31600: 'shs11'}
 # The names table every episode made in the Creator shares (presentation `creator`; player.json `name_sets`), apart from the
 # smartphone stories' and each translation's (owner, 2026-11-09).
 CREATOR_NAME_SET = 'creator'

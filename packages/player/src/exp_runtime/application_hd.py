@@ -361,6 +361,11 @@ class HdShell:
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
             settings['title_language_names'] = {language: self.language_name(language) for language in TITLE_LANGUAGES}
+        offered = self.app.title_music_offered()
+        if len(offered) > 2:                            # (Default and Auto alone choose nothing)
+            from .desktop_pause_hd import TITLE_MUSIC_NAMES
+            settings['title_music'] = TITLE_MUSIC_NAMES[state.title_music]
+            settings['title_music_names'] = {key: TITLE_MUSIC_NAMES[key] for key in offered}
         # Data Management's rows (main menu only).
         if self.app.library.addons:
             settings['manage_addons'] = True
@@ -438,6 +443,10 @@ class HdShell:
             self.app._attempt(state.persist)
             if key == 'controller_confirm':
                 self.app.sync_controller()
+        elif key == 'title_music':
+            state.title_music = value
+            self.app._attempt(state.persist)
+            self.app.play_menu_music()                  # the new tune at once, from its start
 
     def toggle(self, which):
         if which.startswith('sync_'):

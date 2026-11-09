@@ -44,7 +44,8 @@ class SyncFlowTests(unittest.TestCase):
                        controller_confirm='south', grid_controls='hold', **{key: False for key in (
                            'sound', 'logging_disabled', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
                            'skip_upsell_intros', 'skip_ahead', 'undo', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
-                           'arena_minigames', 'arena_skin', 'skip_sound_prompt')}, music_volume=50, sound_volume=50, order='episode', title_language='en')
+                           'arena_minigames', 'arena_skin', 'skip_sound_prompt')}, music_volume=50, sound_volume=50, order='episode', title_language='en',
+                           title_music='default', last_title_game='default')
         provider = SendProvider(app, ['options', 'episodes'], ['shs'])
         self.assertEqual(provider.offer(['shs']), {'shs': ['a']})
         self.assertEqual(provider.player, {})                     # Names off, Saved Games off

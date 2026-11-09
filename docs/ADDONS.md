@@ -104,7 +104,8 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 14, about 53 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 15, about 54 MB.
+Revision 15 only adds the prototype's main menu tune for [Title Screen Music](#settings); the stories still ask for 14.
 
 | Resources | What |
 | --- | --- |
@@ -121,6 +122,7 @@ Required by the four [X360](X360.md) stories, and read optionally for New Rules'
 | 26796–26805 | Day of Diss's opening: its timeline, stills, card and whip |
 | 26900–26914 | Music, each track mixed with its ambience |
 | 26982–26995 | Sound effects and emoticons |
+| 26996 | The main menu's tune (`music/main_menu`, mixed as the tracks are; `x360.MENU_MUSIC`) |
 | 26999 | The frame backdrop |
 
 ```sh
@@ -234,6 +236,23 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
 | Smartphone Music | SHS11 | SHS '11 episodes |
 | Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
+| Java '08 Look | '08 | '08 BREW episodes, with an addon built with the Java demo |
+| '08 Backgrounds | '07 | '07 BREW episodes |
+
+On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
+**Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their
+primary add-on.
+
+**Title Screen Music** (SHS's main menu only, under Add-Ons) chooses the tune the main menu plays, once, as its own: Default (the
+game's own), Auto (that of the game last played, by its pack or a Creator episode's primary add-on), or a translated game's
+title tune from its addon, offered when the library holds that addon (`TITLE_MUSIC` in the SHS profile):
+
+| Choice | Addon | Resource | The game's |
+| --- | --- | --- | --- |
+| '07 / '08 | `shsbrew` | 26906 | Track 8006, the MIDI both games share |
+| New Rules | `shsnr` | 26988 | Track 8 |
+| X360 | `shsx360` (revision 15) | 26996 | `music/main_menu` |
+| '11 | `shs11` | 26981 | Track 1, the main menu's one full tune |
 
 ## Data Management
 

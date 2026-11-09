@@ -69,7 +69,8 @@ SHARED_PREFERENCES = dict(
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
     hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
-    order=('episode', 'title'), title_language=TITLE_LANGUAGES)
+    order=('episode', 'title'), title_language=TITLE_LANGUAGES, title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11'),
+    last_title_game=('default', 'brew', 'nr', 'x360', 'shs11'))
 
 
 def shared_preference(key, value):
@@ -271,6 +272,10 @@ class MenuState:
         self.grid_controls = 'hold'
         self.order = 'episode'
         self.title_language = 'en'
+        # Add-Ons' Title Screen Music (owner, 2026-11-09): the main menu's tune, the game's own ('default'), a translated game's
+        # from its addon (the profile's TITLE_MUSIC), or 'auto', the game of the episode last played (`last_title_game`)
+        self.title_music = 'default'
+        self.last_title_game = 'default'
 
     def title(self, record):
         return episode_title(record, self.title_language)

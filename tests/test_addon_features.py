@@ -118,3 +118,35 @@ class AliasTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TitleMusicTests(unittest.TestCase):
+    """Add-Ons' Title Screen Music (owner, 2026-11-09): the main menu's tune from a translated game's addon, or the game's own."""
+
+    def app(self, choice, last='default', addons=('shsbrew', 'shs11')):
+        from exp_runtime.application import Application
+        tunes = {'shsbrew': (26906, b'brew'), 'shs11': (26981, b'eleven'), 'shsx360': (26996, b'x360'), 'shsnr': (26988, b'nr')}
+        held = {name: (dict(revision=1), Archive({tunes[name][0]: tunes[name][1]})) for name in addons}
+        app = SimpleNamespace(library=SimpleNamespace(game_id='shs', addon=held.get),
+                              state=SimpleNamespace(title_music=choice, last_title_game=last, persist=lambda: None),
+                              _attempt=lambda action: action())
+        for name in ('title_music', 'title_music_offered', 'remember_title_game'):
+            setattr(app, name, getattr(Application, name).__get__(app))
+        return app
+
+    def test_the_chosen_games_tune_plays_and_default_or_a_missing_addon_keeps_the_games_own(self):
+        self.assertEqual(self.app('brew').title_music(), b'brew')
+        self.assertEqual(self.app('shs11').title_music(), b'eleven')
+        self.assertIsNone(self.app('default').title_music())
+        self.assertIsNone(self.app('x360').title_music())                   # its addon isn't here
+        self.assertEqual(self.app('auto', last='shs11').title_music(), b'eleven')
+        self.assertIsNone(self.app('auto', last='default').title_music())
+        self.assertEqual(self.app('default').title_music_offered(), ['default', 'auto', 'brew', 'shs11'])
+
+    def test_auto_follows_the_game_last_played(self):
+        app = self.app('auto')
+        for presentation, pack, expected in (({}, 31100, 'brew'), ({}, 31300, 'nr'), ({}, 5, 'default'),
+                                             ({'addons': ('shs11', '')}, 30000, 'shs11')):
+            with self.subTest(pack=pack):
+                app.remember_title_game(episode(pack, presentation))
+                self.assertEqual(app.state.last_title_game, expected)

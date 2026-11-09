@@ -22,6 +22,9 @@
 - **Test channel** (`SHSHD_TEST_CHANNEL`, 127.0.0.1 only; debuggable Android builds): drive the app by its state.
 - **Options' choice pages:** Episode Titles, Start In, Confirm Button and Word Grid Controls open a page of their
   values, and show the current one under their names.
+- **Title Screen Music** (main menu, Options -> Add-Ons): Default, Auto (the game last played), or the title tune of
+  '07 / '08, New Rules, X360 or '11 from its add-on, played once. The other add-on switches move to a Per-Game Settings
+  page on the main menu. The X360 add-on (revision 15) gains its main menu tune.
 - **HD choices** stop above the bottom bar and scroll the rest, with touch dragging, momentum, and arrows that show
   more options above or below.
 

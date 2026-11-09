@@ -45,7 +45,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 14
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 15   # 15: its main menu's music
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 1
@@ -113,6 +113,11 @@ MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
          'dbp': (26907, (('data/sound/music/dbp_bg_music.ogg', 127),)),
          'dbp_2': (26912, (('data/sound/music/dbp_bg_music2.ogg', 127),)),
          'dbp_3': (26913, (('data/sound/music/dbp_bg_music3.ogg', 127),))}
+# The prototype's main menu tune (sound.wxr `music/main_menu`, Volume 40), which no story plays: the addon carries it for the
+# player's Title Screen Music setting (shs profile TITLE_MUSIC; owner, 2026-11-09), mixed as the stories' tracks are. Its ID
+# is apart from theirs (other cues count up from MUSIC_OTHER).
+ADDON_MIXES = {'main_menu': (26996, (('data/sound/music/main_menu.ogg', 40),))}
+MENU_MUSIC = ADDON_MIXES['main_menu'][0]
 MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
 # The lot's crowd under Day of Diss's music: its loudness (RMS) against the loop's, 16 dB under (see MIXES).
 PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 10 ** (-16 / 20))
@@ -1237,7 +1242,7 @@ def mix_track(files, key):
                 music = music + np.resize(samples, music.shape)     # (repeats whole frames: both have two channels)
         return music
     if key not in _mix_cache:
-        layers = MIXES[key][1]
+        layers = (MIXES.get(key) or ADDON_MIXES[key])[1]
         music = layered(layers[:1])
         gain = min(MIX_PEAK / max(np.abs(music).max(), 1e-9), MIX_RMS / max(np.sqrt((music ** 2).mean()), 1e-9))
         pcm = (limited(layered(layers) * gain) * 32767).astype('<i2').tobytes()

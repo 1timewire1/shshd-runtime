@@ -502,6 +502,9 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
   picking one sets it and slides back (`desktop_pause_hd.CHOICE_NAMES`, screen `choice:<key>`). They were buttons that
   stepped through the values.
+- **Add-Ons on the main menu** (owner, 2026-11-09): Use Translated Mini-Games, a **Per-Game Settings** page holding the other
+  add-on switches (back from it returns to Add-Ons), and **Title Screen Music**, a choice page of the tunes the menu can play
+  ([ADDONS.md](ADDONS.md#settings)). Choosing one plays it at once, from its start. The pause menu keeps them all on Add-Ons.
   Native exits (`notifyMenuRemoved` -> `animateView` with the exit byte) are not
   decompiled, so the reverse slide is ours.
 - **Music switch.** In the main menu, off fades the menu's song over 1000 ms

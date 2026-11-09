@@ -1663,13 +1663,51 @@ class Application:
         if not (self.audio and self.library and self.state.music):
             return
         try:
-            asset = GAMES[self.library.game_id].MENU_MUSIC
-            self.menu_sound = pygame.mixer.Sound(file=BytesIO(self.library.read_asset(asset)))
+            data = self.title_music()
+            if data is None:
+                data = self.library.read_asset(GAMES[self.library.game_id].MENU_MUSIC)
+            self.menu_sound = pygame.mixer.Sound(file=BytesIO(data))
             self.menu_sound.set_volume(self.state.music_volume / 100)
             self.menu_sound.play()
         except (ContentError, pygame.error) as error:
             logging.debug('Menu music unavailable: %s', error)
             self.menu_sound = None
+
+    def title_music(self):
+        """The bytes of the title tune Add-Ons' Title Screen Music chose (the profile's TITLE_MUSIC, from its addon; Auto, the game
+        last played), or None for the game's own MENU_MUSIC: Default, or a game whose addon the library lacks. Played once, as
+        the game's own is."""
+        table = getattr(GAMES.get(self.library.game_id), 'TITLE_MUSIC', {}) if self.library else {}
+        choice = getattr(self.state, 'title_music', 'default')
+        if choice == 'auto':
+            choice = getattr(self.state, 'last_title_game', 'default')
+        entry = table.get(choice)
+        found = self.library.addon(entry[0]) if entry is not None and hasattr(self.library, 'addon') else None
+        if found is None or entry[1] not in found[1].entries:
+            return None
+        return found[1].read(entry[1])
+
+    def title_music_offered(self):
+        """Title Screen Music's choices here: Default, Auto, and each translated game whose addon the library holds."""
+        table = getattr(GAMES.get(self.library.game_id), 'TITLE_MUSIC', {}) if self.library else {}
+        offered = ['default', 'auto']
+        for game, (addon, resource) in table.items():
+            found = self.library.addon(addon) if hasattr(self.library, 'addon') else None
+            if found is not None and resource in found[1].entries:
+                offered.append(game)
+        return offered
+
+    def remember_title_game(self, resources):
+        """Title Screen Music's Auto: the game of the episode just started (the profile's TITLE_MUSIC_PACKS, by its pack, or by
+        its primary add-on's for an episode made in the Creator); the smartphone's, 'default', for any other."""
+        from .content import feature_pack
+        packs = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'TITLE_MUSIC_PACKS', None)
+        if packs is None or not hasattr(self.state, 'last_title_game'):
+            return
+        game = packs.get(feature_pack(resources), 'default')
+        if game != self.state.last_title_game:
+            self.state.last_title_game = game
+            self._attempt(self.state.persist)
 
     @staticmethod
     def _stop_sounds_but(*kept):
@@ -1995,6 +2033,7 @@ class Application:
             settings = getattr(self, 'settings', None)
             if settings is not None and self.selected_game in GAMES:
                 self._attempt(lambda: settings.set_last_game(self.selected_game))     # Start In's Last Played
+            self.remember_title_game(session.resources)                                # Title Screen Music's Auto
             self.game = Desktop(session, audio=self.audio, window=self.window, on_main_menu=self.return_to_menu,
                                 names=self.state.names_for(session.resources.record, session.resources),
                                 vibration_enabled=self.state.vibration,

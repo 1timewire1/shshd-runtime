@@ -39,6 +39,31 @@ class HdPauseTests(unittest.TestCase):
         _, buttons = self.menu.layout(self.settings, **kw)
         return buttons
 
+    def test_the_main_menus_add_ons_hold_per_game_settings_and_title_screen_music(self):
+        # Owner, 2026-11-09: on the main menu, Add-Ons keeps Use Translated Mini-Games and Title Screen Music and puts the
+        # other add-on switches one page further in; the pause menu lists them all on Add-Ons, as before.
+        self.settings.update(arena_minigames=True, java_look=False, hires_portraits=True, title_music='Auto',
+                             title_music_names={'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08"})
+        state = self.menu.state
+        state.screen = 'options:addons'
+        self.assertEqual([c for _, c in self.commands()], [('pause_toggle', 'arena_minigames'), ('pause_toggle', 'java_look'),
+                                                          ('pause_toggle', 'hires_portraits'), ('pause_back',)])
+        self.menu.main_menu = True
+        self.assertEqual([c for _, c in self.commands()], [('pause_toggle', 'arena_minigames'), ('pause_open', 'options:per_game'),
+                                                          ('pause_open', 'choice:title_music'), ('pause_back',)])
+        self.menu.open('options:per_game')
+        self.menu.slide = None
+        self.assertEqual([c for _, c in self.commands()], [('pause_toggle', 'java_look'), ('pause_toggle', 'hires_portraits'),
+                                                          ('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.assertEqual(state.screen, 'options:addons')                     # back to Add-Ons, not Options
+        self.menu.slide = None
+        state.screen = 'choice:title_music'
+        self.assertEqual([c for _, c in self.commands()], [('pause_cycle', 'title_music', key) for key in ('default', 'auto', 'brew')]
+                         + [('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.assertEqual(state.screen, 'options:addons')
+
     def test_pause_rows_are_88_high_and_the_card_is_centered(self):
         buttons = self.commands()
         self.assertEqual([c for _, c in buttons], [('resume',), ('pause_open', 'options'),
