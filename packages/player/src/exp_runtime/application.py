@@ -147,6 +147,28 @@ def size_text(size):
     return f'{size} bytes'
 
 
+def library_answer(method):
+    """An Application question about the library alone, kept until its episodes, addons or HD app change: Options asks a
+    dozen of them every frame, and each scanned the library (g54, 2026-11-09: about 12 ms a frame)."""
+    from functools import wraps
+    name = method.__name__
+
+    @wraps(method)
+    def answer(self):
+        library = getattr(self, 'library', None)
+        if not library:
+            return method(self)
+        key = (id(library), library.episodes_key() if hasattr(library, 'episodes_key') else None,
+               getattr(library, 'hd_ipa', None) is not None)
+        store = self.__dict__.get('_library_answers')
+        if store is None or store[0] != key:
+            store = self.__dict__['_library_answers'] = (key, {})
+        if name not in store[1]:
+            store[1][name] = method(self)
+        return store[1][name]
+    return answer
+
+
 class Application:
     shell = None            # the HD launch flow / main menu, when an HD bundle is imported
     menu_sound = None       # the main menu's music (a Sound, so a paused episode keeps its own stream)
@@ -1101,18 +1123,21 @@ class Application:
             return True
         return (self.updates.future is not None or self.updates.available is not None) and waited < UPDATE_WAIT
 
+    @library_answer
     def hires_portraits_offered(self):
         """Whether the library has an episode with a second, hi-res portrait set to choose (the game profile's
         HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
         packs = getattr(GAMES.get(self.library.game_id), 'HIRES_SWITCH_PACKS', ()) if self.library else ()
         return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
+    @library_answer
     def ms3_characters_offered(self):
         """Whether the library has an episode the "MS3 Characters" switch changes (MS3_CHARACTER_ART: translated X360
         episodes)."""
         packs = getattr(GAMES.get(self.library.game_id), 'MS3_CHARACTER_ART', ()) if self.library else ()
         return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
+    @library_answer
     def java_look_offered(self):
         """Whether the library has an episode the "Java '08 Look" switch changes (JAVA_LOOK_ART: translated BREW episodes) and
         the BREW addon carries that look (built with the Java '08 demo's jar)."""
@@ -1122,24 +1147,28 @@ class Application:
         from .desktop_brew_catch import library_has_java_look
         return library_has_java_look(self.library)
 
+    @library_answer
     def brew_08_backgrounds_offered(self):
         """Whether the library has an episode the "'08 Backgrounds" switch changes (BREW_08_BACKGROUNDS: '07-badged BREW
         episodes)."""
         packs = getattr(GAMES.get(self.library.game_id), 'BREW_08_BACKGROUNDS', ()) if self.library else ()
         return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
+    @library_answer
     def smartphone_music_offered(self):
         """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
         SHS '11 episodes)."""
         packs = getattr(GAMES.get(self.library.game_id), 'SMARTPHONE_MUSIC_PACKS', ()) if self.library else ()
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
 
+    @library_answer
     def portrait_addon_offered(self):
         """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
         change something."""
         addon = getattr(GAMES.get(self.library.game_id), 'PORTRAIT_ADDON', None) if self.library else None
         return addon is not None and self.library.addon(addon[0]) is not None
 
+    @library_answer
     def minigames_offered(self):
         """Whether the library has an episode the "Use Translated Mini-Games" switch changes (TRANSLATED_MINIGAMES)."""
         if not self.library:
@@ -1148,23 +1177,19 @@ class Application:
         return any(has_translated_minigames(profile, record, self.library.episode_presentation(record))
                    for record in self.library.episodes)
 
+    @library_answer
     def word_grid_skin_offered(self):
         """Whether the "Use Word Grid Skin" switch changes something: translated SHS '11 episodes (their minigames) and the
         HD bundle's word game art are both in the library."""
         return (self.smartphone_music_offered() and self.minigames_offered()
                 and all(self.library.hd_raw_resource(i) is not None for i in (512, 569, 571, 583)))
 
+    @library_answer
     def arena_skin_offered(self):
         """Whether the "X360 Arena Skin" switch changes something: translated New Rules episodes (their arena) and the X360
         addon's arena skin (desktop_nr_arena_x360; owner, 2026-10-31) are both in the library."""
         from .desktop_nr_arena_x360 import library_has_skin
-        if not self.hires_portraits_offered():
-            return False
-        # Kept until the library's addons change: it reads the X360 addon's skin spec, and Options asks every frame.
-        key = (id(self.library), tuple((a.get('addon'), a.get('sha256')) for a in self.library.addons))
-        if getattr(self, '_arena_skin', (None,))[0] != key:
-            self._arena_skin = (key, library_has_skin(self.library))
-        return self._arena_skin[1]
+        return self.hires_portraits_offered() and library_has_skin(self.library)
 
     def apply_hires_portraits(self):
         """The "Hi-Res Portraits" switch reaches the library; a paused episode loads its portraits afresh."""
@@ -1195,6 +1220,7 @@ class Application:
         if self.game:
             self.game.smartphone_music = self.state.smartphone_music
 
+    @library_answer
     def grids_as_memory_offered(self):
         """Whether the "Use '11's Memory for Word Grid" switch can draw its game: in SHS, with the HD word game's art or SHS '11's addon."""
         from .desktop_shs11_memory import memory_spec
@@ -1517,14 +1543,9 @@ class Application:
             return CodEpisodePicker, CodEpisodeList
         return HdEpisodePicker, HdEpisodeList
 
+    @library_answer
     def picker_available(self):
-        # Kept per library and its HD app: it parses the HD layout bank, and Options asks every frame (g54, 2026-11-09).
-        if not self.library:
-            return False
-        key = (id(self.library), getattr(self.library, 'hd_ipa', None) is not None)
-        if getattr(self, '_picker_available', (None,))[0] != key:
-            self._picker_available = (key, self.picker_classes()[0].available(self.library))
-        return self._picker_available[1]
+        return bool(self.library) and self.picker_classes()[0].available(self.library)
 
     def ensure_picker(self, style='tile'):
         """The HD picker, as a tile grid, a scrollable text list grouped by category (`style='list'`), or the
@@ -1700,6 +1721,7 @@ class Application:
         from .audio import mp3_from
         return mp3_from(data, entry[2] if len(entry) > 2 else 0)
 
+    @library_answer
     def title_music_offered(self):
         """Title Screen Music's choices here: Default, Auto, and each translated game whose addon the library holds."""
         table = getattr(GAMES.get(self.library.game_id), 'TITLE_MUSIC', {}) if self.library else {}

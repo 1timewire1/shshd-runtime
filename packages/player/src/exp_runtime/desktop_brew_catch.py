@@ -42,6 +42,13 @@ def catch_spec(resources):
 
 def library_has_java_look(library):
     """Whether `library` holds a BREW addon built with the Java '08 demo's look (for the "Java '08 Look" switch)."""
+    if hasattr(library, 'addon_resource'):
+        # The spec alone: `addon` reads and hashes the whole addon first (Options asks; g54, 2026-11-09).
+        try:
+            data = library.addon_resource(ADDON, SPEC)
+            return data is not None and 'java' in (json.loads(data).get('catch') or {})
+        except (ValueError, UnicodeError):
+            return False
     holder = type('Resources', (), {'library': library})()
     try:
         found = catch_spec(holder)

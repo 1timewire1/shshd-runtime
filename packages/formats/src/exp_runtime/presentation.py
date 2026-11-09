@@ -37,6 +37,10 @@ VERSION = 1
 EFFECTS = 6
 MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creator', 'addons', 'word_forms', 'date_first',
            'three_word_games', 'big_pickers', 'minigames', 'aliases')
+# The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
+# 31500, SHS '11 31600): their episodes take their game's settings from the profile's tables and declare none of the members
+# above for an episode made in the Creator.
+TRANSLATION_PACKS = range(31000, 31700)
 FLAGS = ('creator', 'word_forms', 'date_first', 'three_word_games', 'big_pickers', 'minigames')
 EDITIONS = ('', '07', '08')
 

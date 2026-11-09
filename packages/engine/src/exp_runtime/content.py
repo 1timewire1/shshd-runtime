@@ -1121,11 +1121,14 @@ class ContentLibrary:
     def episode_presentation(self, record: dict):
         """shshd-runtime: an episode's presentation record (resource 3, presentation.normalize), {} for none or a malformed
         one. Read from its file once, as episode_requires is."""
+        from .presentation import TRANSLATION_PACKS
         sha = record.get('sha256')
         found = self._episode_presentation.get(sha)
         if found is None:
             found = {}
-            if 'file' in record:
+            # A translation declares none of what the library asks about (its pack's tables have it), so only other
+            # imported files are read: the g54's 186 translations were most of the first Options visit.
+            if 'file' in record and record.get('pack_id') not in TRANSLATION_PACKS:
                 from .exp import read_file_resource
                 from .presentation import RESOURCE as PRESENTATION, presentation_from_bytes
                 try:        # (resource 3 alone: reading every episode whole froze a phone's Options for minutes)
@@ -1151,8 +1154,9 @@ class ContentLibrary:
     def episodes_key(self):
         """shshd-runtime: what the library's episodes and addons are now, for answers kept until they change (Options asks
         its questions every frame)."""
-        return (tuple(record.get('sha256') for record in self.episodes),
-                tuple((record.get('addon'), record.get('sha256')) for record in self.addons))
+        # Every change replaces the manifest and its lists (never edits them in place), so their identities and lengths say
+        # whether anything changed, without walking 470 records a question (g54: 5 ms a frame).
+        return id(self.manifest), id(self.episodes), len(self.episodes), id(self.addons), len(self.addons)
 
     _feature_packs = (None, frozenset())
 

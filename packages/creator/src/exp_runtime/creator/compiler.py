@@ -55,7 +55,7 @@ TREE_AWAITING = range(1209, 1224)
 TREE_CONDITIONS = range(0x4b, 0x69)
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, SHS '11 31600):
 # their episodes take their game's own settings and names, so the Creator marks nothing of its own in them.
-TRANSLATION_PACKS = (31000, 31700)
+from exp_runtime.presentation import TRANSLATION_PACKS  # noqa: E402
 # shshd-runtime presentation (SCHEMA.md "Presentation extension"): the SHS global numbers (service 54) a dialogue line
 # sets for its second speaker (ID + 1) and their expression, a named line's bubble colour and the emoticon over its
 # speaker, cleared after the line. They are the numbers tools/translate uses for New Rules and the X360 prototype; the
@@ -262,7 +262,7 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: the CoD game has no {node.kind.replace("_", " ")} service')
     from .addons import NODE_ADDONS
     if (node.kind in NODE_ADDONS and not any(entry['id'] == NODE_ADDONS[node.kind] for entry in project.addons)
-            and not TRANSLATION_PACKS[0] <= project.pack_id < TRANSLATION_PACKS[1]):     # (a translator declares its own)
+            and project.pack_id not in TRANSLATION_PACKS):     # (a translator declares its own)
         # Its game plays from that add-on's art, so the episode needs it to play (owner, 2026-11-09).
         raise ProjectError(f'{label}: add the {NODE_ADDONS[node.kind]} add-on (as the primary or an extra)')
     if node.kind == 'open_url' and not p['url'].strip():
@@ -365,7 +365,7 @@ def presentation_record(project):
              if p['then_loop'] != -1}
     if loops:
         record['music_loops'] = loops
-    if project.native or project.game != 'shs' or TRANSLATION_PACKS[0] <= project.pack_id < TRANSLATION_PACKS[1]:
+    if project.native or project.game != 'shs' or project.pack_id in TRANSLATION_PACKS:
         return record                   # an original episode, or a translation: its game's own tables
     record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)
     record.update({name: True for name, on in sorted(project.options.items()) if on})

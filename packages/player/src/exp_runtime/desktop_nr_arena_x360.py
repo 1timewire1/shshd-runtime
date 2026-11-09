@@ -81,10 +81,16 @@ def library_has_skin(library):
     if library is None or not hasattr(library, 'addon'):
         return False
     try:
-        found = library.addon(ADDON)
-        if found is None or SPEC not in found[1].entries:
-            return False
-        spec = json.loads(found[1].read(SPEC))
+        if hasattr(library, 'addon_resource'):
+            data = library.addon_resource(ADDON, SPEC)      # the spec alone, not the whole addon read and hashed
+            if data is None:
+                return False
+        else:
+            found = library.addon(ADDON)
+            if found is None or SPEC not in found[1].entries:
+                return False
+            data = found[1].read(SPEC)
+        spec = json.loads(data)
     except Exception:
         return False
     return spec.get('format') == FORMAT and spec.get('version') == VERSION and 'booth' in spec
