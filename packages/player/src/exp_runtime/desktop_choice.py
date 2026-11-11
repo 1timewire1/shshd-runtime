@@ -434,6 +434,25 @@ class ChoiceRenderer:
         def px(rect):
             return pygame.Rect(round(rect.x * k), round(rect.y * k), round(rect.width * k), round(rect.height * k))
 
+        # A settled menu (its labels flown on, no timer or quiz) that nothing changed since the last frame -- the same
+        # page, scroll, pressed / hovered / focused row and hints -- is last frame's: redrawing it was about 15 ms a
+        # frame on a phone (more at a narrow frame's 2.4 pixels a unit), most of a frame's budget.
+        game = session.engine.word_game if page.scored else None
+        rest = None
+        if (target is None and game is None and (page.timer_center is None or session.remaining_ms is None)
+                and all(self.label_home(row, None) >= 1 for row in page.rows)):
+            table = page.table
+            downs = tuple(pressed == ('choose', row.index) or focus == row.index or (
+                pointer is not None and pygame.Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
+                .clip(pygame.Rect(table.x, table.y, table.width, table.height)).collidepoint(pointer))
+                for row in page.rows)
+            hints = (tuple(hint.kind for hint in self.hints) if choice_hints and self.hint_key == self.cached_key
+                     else None)
+            rest = (id(page), scroll, downs, hints, id(self.wide), k)
+            if rest == self.__dict__.get('_rest_key') and self.__dict__.get('_rest_buttons') is not None:
+                return page, list(self._rest_buttons)
+        self._rest_key = self._rest_buttons = None
+
         self.canvas.set_clip(None)
         self.wide.fill((0, 0, 0, 0))
         # The circle timer and the running man are layers of the engine view, not of the menu's view: they do not take
@@ -528,6 +547,8 @@ class ChoiceRenderer:
         if target is not None:
             target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
             target.blit(pygame.transform.smoothscale(self.overlay, target.get_size()), (0, 0))
+        if rest is not None:
+            self._rest_key, self._rest_buttons = rest, list(buttons)
         return page, buttons
 
     def label_home(self, row, game):

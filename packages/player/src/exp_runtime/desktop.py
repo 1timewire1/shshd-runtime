@@ -1934,8 +1934,9 @@ class Desktop:
                     # HD: the menu view fades in and, after a pick, out (hd_choice.panel_alpha); the timer layers do not
                     # fade and are hidden when the fade-out starts.
                     self.panel_alpha = panel_alpha(self.choice_renderer.age_ms, closing['ms'] if closing else None)
-                    if closing is None or closing['ms'] < SELECT_MS:
-                        self.panel_overlay = self.choice_renderer.overlay
+                    if ((closing is None or closing['ms'] < SELECT_MS)
+                            and (getattr(page, 'timer_center', None) is not None or getattr(page, 'scored', False))):
+                        self.panel_overlay = self.choice_renderer.overlay     # (only a timer or a quiz draws on it)
                 if closing is not None:
                     buttons = [button for button in buttons if button[1] == ('menu',)]
                 self.hint_discount_ms += self.choice_renderer.take_hint_ms()

@@ -19,6 +19,7 @@ it's done, so real clocks (fades, timers) run as in play.
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...)
+    aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
     game shs|cod                pick a game, as the game picker does (`open` needs one picked)
     import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
     window yes|no|ok|LABEL|N    press a button of the menu's open window (`state` shows it as `window`), or the Nth
@@ -333,6 +334,15 @@ class Commands:
         elif self.app.game is not None and hasattr(self.app.game, key):
             setattr(self.app.game, key, wanted)
         return dict(ok=True, key=key, value=getattr(state, key))
+
+    def do_aspect(self, rest):
+        """General's Aspect Ratio (frame_shape.CHOICES, or `default`), as its choice page sets it."""
+        from .frame_shape import CHOICES
+        choice = rest.strip().lower()
+        if choice not in (*CHOICES, 'default'):
+            return dict(ok=False, error=f'aspect is one of {", ".join(CHOICES)} or default')
+        self.app.set_aspect_ratio(None if choice == 'default' else choice)
+        return dict(ok=True, aspect=self.app.settings.aspect(self.app.fixed_window))
 
     def do_game(self, rest):
         key = rest.strip().lower()
