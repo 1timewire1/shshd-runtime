@@ -291,3 +291,37 @@ class BackdropFitTests(unittest.TestCase):
             self.assertTrue(all(rows[y] == rows[y + 32] for y in range(lo, hi - 32)), (lo, hi))
         # The bottom of the picture is its own, as at 3:4.
         self.assertEqual(rows[-200:], self.fit._rows(image)[-200:])
+
+
+class WindowShapeTests(unittest.TestCase):
+    """2f: a computer's window takes a picked shape at its own height; Fit Screen leaves it to the person."""
+
+    def app(self, choice, size, fixed_window=False):
+        import os
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        import pygame
+        pygame.display.init()
+        self.addCleanup(pygame.display.quit)
+        from exp_runtime.application import Application
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        app = Application.__new__(Application)
+        app.settings = AppSettings(Path(temporary.name) / 'settings.json')
+        app.settings.set_aspect_ratio(choice)
+        app.fixed_window, app.game = fixed_window, None
+        app.window = pygame.display.set_mode(size, pygame.RESIZABLE)
+        return app
+
+    def test_a_picked_shape_reshapes_the_window_at_its_height(self):
+        for choice, width in (('9:16', 405), ('2:3', 480), ('3:4', 540)):
+            with self.subTest(choice):
+                app = self.app(choice, (540, 720))
+                app.shape_window()
+                self.assertEqual(app.window.get_size(), (width, 720))
+
+    def test_fit_screen_a_wide_window_and_a_phone_are_left_as_they_are(self):
+        for choice, size, fixed in (('fit', (500, 900), False), ('9:16', (960, 720), False), ('9:16', (1080, 2400), True)):
+            with self.subTest(choice=choice, size=size):
+                app = self.app(choice, size, fixed)
+                app.shape_window()
+                self.assertEqual(app.window.get_size(), size)

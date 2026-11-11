@@ -297,6 +297,7 @@ class AppOptions:
                 app.settings.set_start_in(value)
             elif key == 'aspect_ratio':
                 app.settings.set_aspect_ratio(value)
+                getattr(app, 'shape_window', lambda: None)()        # a picked shape reshapes the window
             else:
                 self.set(key, value)
                 if key == 'controller_confirm':
@@ -310,6 +311,7 @@ class AppOptions:
                 from .frame_shape import CHOICES
                 current = app.settings.aspect(app.fixed_window)
                 app.settings.set_aspect_ratio(CHOICES[(CHOICES.index(current) + 1) % len(CHOICES)])
+                getattr(app, 'shape_window', lambda: None)()
             elif key == 'title_language':
                 self.set(key, TITLE_LANGUAGES[(TITLE_LANGUAGES.index(v[key]) + 1) % len(TITLE_LANGUAGES)])
             elif key == 'controller_confirm':
@@ -364,6 +366,7 @@ class AppOptions:
         app.settings.set_preferences(preference_defaults())
         app.settings.set_start_in('auto')
         app.settings.set_aspect_ratio(None)
+        getattr(app, 'shape_window', lambda: None)()
         for key in FOLDERS:
             if getattr(app.settings, key, None) is not None:
                 app.settings.set_folder(key, None)

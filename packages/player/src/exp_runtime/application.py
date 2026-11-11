@@ -42,6 +42,7 @@ from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    shared_preference)
 from .runtime import SaveError, Session
 from .settings import AppSettings
+from . import frame_shape
 from .frame_shape import CHOICES as ASPECT_RATIOS
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
 from .pointer import ButtonPress
@@ -200,6 +201,7 @@ class Application:
         self.file_picker = file_picker
         self.url_opener = url_opener
         self.settings = AppSettings(settings_path)
+        self.shape_window()             # a picked shape opens the window at it (General's Aspect Ratio)
         # shshd-runtime: a script's way in (test_channel.py), only when SHSHD_TEST_CHANNEL names a port: debug builds only
         # on Android, where only `run-as` can set it.
         from .launcher import user_data_directory
@@ -1267,6 +1269,27 @@ class Application:
         self.settings.set_aspect_ratio(choice)
         if self.game is not None:
             self.game.aspect_ratio = self.settings.aspect(self.fixed_window)
+        self.shape_window()
+
+    def shape_window(self):
+        """A computer's window takes a picked shape (3:4, 2:3, 9:16) at its own height, so the frame fills it; Fit
+        Screen leaves the window as it is and the frame follows it (frame_shape). A window wider than 3:4 (the side
+        panels' 4:3, one turned landscape) or full screen is left too: the frame fits its height. A phone's window is
+        its screen."""
+        window = getattr(self, 'window', None)
+        if getattr(self, 'fixed_window', False) or window is None or not hasattr(self, 'settings'):
+            return
+        ratio = frame_shape.RATIOS.get(self.settings.aspect(False))
+        is_fullscreen = getattr(pygame.display, 'is_fullscreen', None)
+        if ratio is None or (is_fullscreen is not None and is_fullscreen()):
+            return
+        width, height = window.get_size()
+        wanted = max(1, round(height * ratio))
+        if width > round(height * frame_shape.RATIOS['3:4']) + 1 or abs(width - wanted) <= 1:
+            return
+        self.window = pygame.display.set_mode((wanted, height), pygame.RESIZABLE)
+        if getattr(self, 'game', None) is not None:
+            self.game.window = self.window
 
     def next_aspect_ratio(self):
         """The shape after the current one, for a button that steps through them."""
@@ -2234,6 +2257,7 @@ class Application:
         self.state.persist()
         if self.game.aspect_ratio != self.settings.aspect(self.fixed_window):
             self.settings.set_aspect_ratio(self.game.aspect_ratio)     # the pause menu's General: this device's own
+            self.shape_window()
 
     def unlock_warp_if_football_finished(self):
         """`SHSEngine::invokeEndOfGameMenu`: at the end of the episode with id 0 (Football Season) the tree's lock (+0x6490a) is cleared,
