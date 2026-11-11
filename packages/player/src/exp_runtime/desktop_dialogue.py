@@ -1255,7 +1255,7 @@ class DialogueRenderer:
     def draw(self, target, session):
         details = session.pending.details
         key = (id(session), session.scene, session.vm.steps_executed, details['page_start'],
-               getattr(session, 'dialogue_extra_rows', 0))
+               getattr(session, 'dialogue_extra_rows', 0), getattr(session, 'narration_offset', None))
         if key != self.cached_key:
             self.cached_page = session.dialogue_page()
             self.cached_key = key

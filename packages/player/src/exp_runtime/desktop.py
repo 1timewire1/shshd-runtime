@@ -1751,6 +1751,10 @@ class Desktop:
         width, tall = self.frame_units()
         self._edge_units = (width - 320) / 2
         self.session.dialogue_extra_rows = max(0, int((tall - FRAME_UNITS[1]) * self.EXTRA_ROWS_SHARE / self.ROW_UNITS))
+        # A narrator's bubble keeps HD's distance from the frame's edge (its 32-unit margin less this frame's) and is
+        # centred in a taller frame as the choice is (owner, 2026-11-11: it was cut at a phone's edge, and low).
+        self.session.narration_offset = (FRAME_UNITS[0] / 2 - 160 - self._edge_units,
+                                         (tall - FRAME_UNITS[1]) / 2)
         self.dialogue_renderer.lift = 0
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
                      getattr(self, 'cutscene_renderer', None)):
@@ -2014,6 +2018,9 @@ class Desktop:
                 self.dialogue_renderer.autoplay = self.autoplay
                 self.dialogue_renderer.draw(None, self.session)
                 self.story_layer = self.dialogue_renderer.wide
+                if action.details.get('presentation_mode') == 4:
+                    # A narrator's bubble is centred in a taller frame as the choice is (Session.narration_offset).
+                    self.story_lift = self.session.narration_offset[1]
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.dialogue_renderer.footer_text,
                                                                           self.dialogue_renderer.gear_pressed)
                 self.pending_background = self.dialogue_renderer.pending_background

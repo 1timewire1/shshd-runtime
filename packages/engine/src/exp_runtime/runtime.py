@@ -168,6 +168,9 @@ class Session:
     # partner is new. Not saved: a restore takes it from the restored line.
     _duet_line = None
     _extra_rows = 0
+    # shshd-runtime (General's Aspect Ratio): (right, up) in units, where a narrator's bubble moves in a frame of another
+    # shape than HD's (DialogueLayout.page); (0, 0) headless and at 3:4. Only where it is drawn: not saved.
+    narration_offset = (0, 0)
 
     @property
     def dialogue_extra_rows(self):
@@ -540,7 +543,7 @@ class Session:
                                                     duet=duet, partner_name=partner,
                                                     narration_theme=self.narration_theme(),
                                                     extra_rows=self.dialogue_extra_rows if extra_rows is None
-                                                    else extra_rows)
+                                                    else extra_rows, narration_offset=self.narration_offset)
 
     def narration_theme(self):
         """shshd-runtime: a translated pack's colour for a named line without a portrait (panel mode 3), or None. The

@@ -237,7 +237,7 @@ class DialogueLayout:
         return label.text
 
     def page(self, details, start=0, *, names: SpeakerNames | None = None, text_history=None, duet=None,
-             partner_name=None, narration_theme=None, extra_rows=0):
+             partner_name=None, narration_theme=None, extra_rows=0, narration_offset=(0, 0)):
         """`duet` (shshd-runtime, Session.dialogue_duet): a second speaker's portrait, `partner_name` its name. The
         line is then laid out with a portrait on each side, its name centered between them and its first lines clear
         of both rings. Two speakers of one color (both blue, both pink) take that color for the box, the name and
@@ -246,7 +246,10 @@ class DialogueLayout:
         (mode 3) drawn in that theme's box, name and text (1 blue, 2 pink, 3 gray) instead of its own. `extra_rows`
         (shshd-runtime, Session.dialogue_extra_rows: a frame taller than HD's 3:4, owner 2026-11-11): a speaker's
         bubble may hold that many rows more than HD's, so a long line takes fewer bubbles; the bubble then grows
-        upward (DialoguePage.lift) and its bottom stays where HD's is. A line HD fits in one bubble is unchanged."""
+        upward (DialoguePage.lift) and its bottom stays where HD's is. A line HD fits in one bubble is unchanged.
+        `narration_offset` (shshd-runtime, Session.narration_offset: the same frames), (right, up) in units: how far a
+        narrator's bubble moves so it stays in a narrower frame, as far from its edge as HD's from the iPad's (right; the
+        player lifts the whole layer, so the bubble can rise past the column's top). Only where it is drawn."""
         colors = None
         if narration_theme in (1, 2, 3) and duet is None and details['presentation_mode'] == 3:
             details = dict(details, theme=narration_theme)
@@ -331,8 +334,9 @@ class DialogueLayout:
                 body_style = replace(body_style, gap=HD_NARRATOR_GAP)
                 measured = layout_text(font, sizing_text, HD_NARRATOR_WRAP, body_style)
                 lines = max(1, len(measured.lines))
-                box = Rect(-6, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
-                origin = (0, HD_NARRATOR_TOP)
+                right = narration_offset[0]
+                box = Rect(-6 + right, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
+                origin = (right, HD_NARRATOR_TOP)
         else:
             hd_label = self.hd_label(details, between_rings=duet is not None)
             label = hd_label or preview_speaker(
