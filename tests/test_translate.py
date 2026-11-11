@@ -1764,7 +1764,7 @@ class BrewCalendarTests(unittest.TestCase):
         import playthrough as pt
         session = pt.session(data, addons=[ExpArchive(addon_path.read_bytes())])
         session.engine.random.state = 1
-        cards, badges, seen, nested, days, classes = [], [], Counter(), Counter(), [], []
+        cards, badges, seen, nested, days, classes, menus = [], [], Counter(), Counter(), [], [], set()
         session.advance()
         for _ in range(3000):
             while session.transitioning:
@@ -1790,6 +1790,7 @@ class BrewCalendarTests(unittest.TestCase):
                     session.answer(); session.tick(2000)
                 session.answer()
             elif action.name == 'choice':
+                menus.add((action.details.get('title'), action.details.get('text')))
                 if not session.choice_ready:
                     session.tick(250)
                 options = action.details.get('options') or ['']
@@ -1815,6 +1816,9 @@ class BrewCalendarTests(unittest.TestCase):
         # Owner, 2026-11-08: a class's plate (`Art` over `Art class.`) adds nothing, so the line is the narrator's.
         self.assertTrue(classes)
         self.assertEqual({speaker for speaker, _ in classes}, {''})
+        # Owner, 2026-11-11: a menu with a title of its own and nothing under it says `Make your choice!` over that title.
+        self.assertIn((brew.CHOICE_TITLE, 'Which class?'), menus)
+        self.assertFalse({title for title, _ in menus} & {'Which class?', 'Action?', 'Eavesdrop?', brew.YOU_TITLE})
         self.assertIn('3:00 PM - Free Time', [b.strip() for b in badges])     # (the weekly Free Time; classes follow the answers)
         # Stage 6b: a class's due events (37) run inside it at its next wait, through the nest runner, one level deep: the native
         # engine runs them one after another, each to its end, never one inside another (FUN_0000af08).

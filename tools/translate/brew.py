@@ -213,9 +213,13 @@ LOWERED_BODIES = {278: 11}
 CHOICE_PORTRAIT = 1
 CHOICE_TITLE = 'Make your choice!'      # for a quiz: the real player answers, as in New Rules' Train That Brain!
 # BREW's menus are mostly titled `You` (the scripts' own string: 967 menus in 120 stories), which the smartphone's are not: a menu with
-# that title says CHOICE_TITLE instead (owner, 2026-11-11). Menus with titles of their own (Fall '06's `Action?` and `Which class?`,
-# the M.A.S.H. packs' `Food you like`) keep them.
+# that title says CHOICE_TITLE instead (owner, 2026-11-11), and so do the M.A.S.H. packs' food menus, whose description already says
+# what their title did (`Pick your favorite food from the list.`). A menu with any other title of its own keeps it, unless it has no
+# description: then CHOICE_TITLE is its title and its own title the description (Fall '06's `Action?`, `Which class?`, `Eavesdrop?`
+# and `See tutorial?`; owner, 2026-11-11).
 YOU_TITLE = 'You'
+CHOICE_TITLED = (YOU_TITLE, 'Food you like', 'Food you hate')
+MENU_OWN_TITLE = 5                      # the menu words' flag: 1 while the pending menu shows a title of its own
 # The portrait choice's title (27): BREW's string 51 is `Pick Your Best Self Portrait`, wider than the HD picker's one line (412 of
 # 300 units in its title face; the native picker overlaps a second line), so this shorter one (275).
 PORTRAIT_TITLE = 'Pick a Self Portrait'
@@ -813,13 +817,16 @@ def set_word(s, address, value):
 
 
 def menu(rewriter, pc, argc, context):
-    """28: (title, `a|b|c`) the menu 74 shows; returns 1. A menu titled `You` says CHOICE_TITLE (YOU_TITLE)."""
+    """28: (title, `a|b|c`) the menu 74 shows; returns 1. A menu titled `You` (or a food menu: CHOICE_TITLED) says CHOICE_TITLE; any
+    other keeps its own title, flagged (MENU_OWN_TITLE) for 74, which moves it under CHOICE_TITLE when the menu has no description."""
     def build(s):
         set_word(s, context['menu'], lambda: s.arg(1))
+        set_word(s, context['menu'] + MENU_OWN_TITLE, lambda: s.push(1))
         for address in context.get('you_titles', ()):
             other = s.label()
             s.arg(1); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
             set_word(s, context['menu'], lambda: s.text(CHOICE_TITLE))
+            set_word(s, context['menu'] + MENU_OWN_TITLE, lambda: s.push(0))
             s.label(other)
         set_word(s, context['menu'] + 1, lambda: s.arg(2))
         set_word(s, context['menu'] + 2, lambda: s.push(-1))
@@ -844,6 +851,7 @@ def spinning_menu(rewriter, pc, argc, context):
     question, under it. Time running out takes wherever the cursor is, so here a random option. The spin itself isn't reproduced."""
     def build(s):
         set_word(s, context['menu'], lambda: s.text(TIMED_TITLE))
+        set_word(s, context['menu'] + MENU_OWN_TITLE, lambda: s.push(0))
         set_word(s, context['menu'] + 1, lambda: s.arg(2))
         set_word(s, context['menu'] + 2, lambda: s.push(-1))
         set_word(s, context['menu'] + 4, lambda: s.arg(1))
@@ -900,6 +908,14 @@ def wait(rewriter, pc, argc, context):
             s.jump(done)
             s.label(no_portraits)
         s.emit(0x40, context['menu'] + 1); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_menu)
+        # A title of its own with nothing under it (no question, no line before): CHOICE_TITLE, and the title as the description.
+        kept = s.label()
+        s.emit(0x40, context['menu'] + MENU_OWN_TITLE); s.jump_if_zero(kept)
+        s.emit(0x40, context['menu'] + 4); s.push(-1); s.emit(0x0a); s.jump_if_zero(kept)
+        s.emit(0x40, context['last_line']); s.push(-1); s.emit(0x0a); s.jump_if_zero(kept)
+        set_word(s, context['menu'] + 4, lambda: s.emit(0x40, context['menu']))
+        set_word(s, context['menu'], lambda: s.text(CHOICE_TITLE))
+        s.label(kept)
         if context['player']:
             resolve_look(s, lambda: s.push(PLAYER), context)
             s.emit(0x40, context['menu'])
@@ -3122,10 +3138,10 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
                 plate=rewriter.words([-1]), plate_scan=rewriter.words([0, 0]) if any(i.opcode == 0x1f and i.operand >> 8 == 15 for i in program.instructions) else None,
                 plate_name=rewriter.words([0] * NAME_WORDS) if any(i.opcode == 0x1f and i.operand >> 8 == 15 for i in program.instructions) else None,
                 plates=any(i.opcode == 0x1f and i.operand >> 8 == 15 for i in program.instructions), **named_words(program, rewriter, start),
-                last_line=rewriter.words([-1]), dots=rewriter.words([0, 0, 0, 0]), opener_now=rewriter.words([0]), dots_buffer=rewriter.words([0] * (OPENER_WORDS + 4)), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
+                last_line=rewriter.words([-1]), dots=rewriter.words([0, 0, 0, 0]), opener_now=rewriter.words([0]), dots_buffer=rewriter.words([0] * (OPENER_WORDS + 4)), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1, 0]),
                 name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
                 bracketed=thoughts, game_words=game_words, routine=start, long_lines=long_lines, pieces=rewriter.words([-1, 0, 0]),
-                you_titles=tuple(address for address, text in strings.items() if text == YOU_TITLE),
+                you_titles=tuple(address for address, text in strings.items() if text in CHOICE_TITLED),
                 captions=[(address, *badge[:1], rewriter.text(badge[1])) for address in helper_calls(program, [14, 72])
                           for badge in [caption_badge(strings[address])]],
                 title_formats=title_formats(program), date_captions=date_captions(program, rewriter), game_pages=game_pages(program, start) if start is not None else (),
