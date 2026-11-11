@@ -1062,6 +1062,50 @@ class BrewShimTests(unittest.TestCase):
         import brew
         self.brew = brew
 
+    def test_a_title_card_shows_the_owners_pick_for_its_location_or_story(self):
+        # CARD_BANK by the strip it opens on (location index, sky), else CARD_BY_TITLE; an add-on picture only once it has one
+        brew = self.brew
+        strip = lambda index, sky: brew.BACKGROUND_BASE + brew.SKY_MODES * index + sky
+        self.assertEqual(brew.title_card(strip(44, 0), 'Any', {}), 1030)
+        self.assertEqual(brew.title_card(strip(21, 1), 'Any', {}), 1133)
+        self.assertEqual(brew.title_card(strip(21, 2), 'Any', {}), strip(21, 2))          # no pick: the strip itself
+        self.assertEqual(brew.title_card(29012, 'Euro Trashed', {}), 1033)
+        self.assertEqual(brew.title_card(-1, brew.SEASON_TITLE, {}), 1108)
+        self.assertEqual(brew.title_card(-1, 'Any', {}), -1)
+        self.assertEqual(brew.title_card(29000, 'Theme Park', {}), 29000)
+        self.assertEqual(brew.title_card(29000, 'Theme Park', {'card_pictures': {'theme_park': 26980}}), 26980)
+        self.assertEqual(brew.CARD_PICTURES['theme_park'][0], 26980)
+
+    def test_a_date_card_shows_the_pick_for_the_scene_its_day_opens_on(self):
+        # Owner, 2026-11-11: an '07 story's date cards each show the pick for their day's first scene (day_pictures finds them)
+        brew = self.brew
+        strip = lambda index, sky: brew.BACKGROUND_BASE + brew.SKY_MODES * index + sky
+        self.assertEqual(brew.scene_card(strip(64, 0)), 1120)
+        self.assertEqual(brew.scene_card(29015), 1027)
+        self.assertIsNone(brew.scene_card(strip(21, 2)))
+        self.assertEqual(brew.title_card(29003, 'French Connection', {}), 1114)       # an own picture, by its number
+        def card(day):
+            def prologue(rewriter, pc, argc, context):
+                rewriter.prologue(lambda s: (brew.set_global(s, brew.DAY_KEY, lambda: s.push(day)),
+                                             brew.set_global(s, 77, lambda: brew.push_day_card(s, {2: 1058, 4: 1120}, 1030))))
+            return self.run_script(program((0x1f, 1 << 8 | 0), 0x33), {1: prologue})[1][0, 77]
+        self.assertEqual((card(4), card(2), card(3)), (1120, 1058, 1030))
+
+    def test_the_addon_takes_a_card_picture_only_from_the_episode_that_has_it(self):
+        # CARD_PICTURES by hash, from a folder searched through: the smartphone's copy of the episode holds a thumbnail there
+        import hashlib
+        import tempfile
+        from unittest.mock import patch
+        from exp_runtime.exp import encode_exp
+        brew, picture = self.brew, b'the HD theme park'
+        table = {'theme_park': (26980, hashlib.sha1(picture).hexdigest(), (('A.exp', 26231), ('B.exp', 26021)))}
+        with tempfile.TemporaryDirectory() as folder, patch.dict(brew.CARD_PICTURES, table, clear=True):
+            Path(folder, 'A.exp').write_bytes(encode_exp({1: b'meta', 26231: b'a thumbnail'}))
+            self.assertEqual(brew.card_pictures(folder), ({}, {}))
+            Path(folder, 'HD', 'Storm').mkdir(parents=True)
+            Path(folder, 'HD', 'Storm', 'B.exp').write_bytes(encode_exp({1: b'meta', 26021: picture}))
+            self.assertEqual(brew.card_pictures(folder), ({26980: picture}, {'theme_park': 26980}))
+
     def run_script(self, prog, handlers, looks=(), numbers=None, player=True):
         """The rewritten script against SHS's number services. Returns (other calls, numbers); R after a handled call is the host's."""
         rewriter = Rewriter(prog)

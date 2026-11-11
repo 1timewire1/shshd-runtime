@@ -1513,7 +1513,7 @@ class DesktopTests(unittest.TestCase):
             self.assertEqual(ui.pending_background.get_size(), (64, 64))
 
     def test_a_brew_card_shows_its_date_as_the_title_but_its_preview_keeps_the_story_name(self):
-        # Owner, 2026-11-07: in the BREW packs (TRANSLATED_DATE_FIRST_PACKS) the date matters most, so the card swaps its title and
+        # Owner, 2026-11-07: in BREW '07 (TRANSLATED_DATE_FIRST_PACKS) the date matters most, so the card swaps its title and
         # subtitle; a capture (the episode's preview picture) keeps the story's name as the title.
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
@@ -1527,8 +1527,9 @@ class DesktopTests(unittest.TestCase):
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
             card = dict(title='CS Idol', subtitle='Monday, March 1', asset_id=1)
-            # (Fall '06, 31200, keeps the title on top: its cards are week cards, `Week 1 of 13` over the dates.)
-            for pack_id, capture, subtitle, expected in ((31100, False, True, True), (31000, False, True, True), (31200, False, True, False),
+            # (Fall '06, 31200, keeps the title on top: its cards are week cards, `Week 1 of 13` over the dates. So does '08, 31000:
+            # one card per story, where the date matters less; owner, 2026-11-11.)
+            for pack_id, capture, subtitle, expected in ((31100, False, True, True), (31000, False, True, False), (31200, False, True, False),
                                                          (31100, True, True, False), (1, False, True, False),
                                                          (31100, False, False, False)):
                 resources.record = dict(resources.record, pack_id=pack_id)

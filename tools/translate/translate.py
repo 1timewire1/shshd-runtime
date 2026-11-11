@@ -109,6 +109,7 @@ def main(argv=None):
     br.add_argument('--base-07', type=Path, help="the '07 phone's module folder, with res_xlarge.pud")
     br.add_argument('--casts', type=Path, help='brew_casts.json from the BREW portrait catalogue (the looks)')
     br.add_argument('--java-08', type=Path, help="the Java '08 demo's jar: its look, for the addon's \"Java '08 Look\" switch")
+    br.add_argument('--shs-hd-episodes', type=Path, help="a folder of SHS HD episodes (searched through), for the title card pictures the addon carries (brew.CARD_PICTURES)")
     br.add_argument('--synth', choices=('java', 'sf2', 'none'), default='java', help='how the music is rendered')
     br.add_argument('--soundfont', type=Path, help='a General MIDI .sf2 bank for --synth sf2')
     br.add_argument('--story', type=Path, help='a Campaign story to translate instead of the addon')
@@ -252,7 +253,7 @@ def translate_brew(args, parser):
         else:
             render = lambda data: midi_render.mp3(midi_render.render_java(data))
     addon, spec = brew.build_addon(json.loads(args.casts.read_text(encoding='utf-8')), {'08': args.base_08, '07': args.base_07}, render,
-                                   args.java_08)
+                                   args.java_08, args.shs_hd_episodes)
     (args.out / f'{brew.ADDON_ID}.exp').write_bytes(addon)
     print(f"{brew.ADDON_ID}.exp: {len(addon):,} bytes, {len(spec['looks'])} looks, {len(spec['stories'])} stories")
     return 0

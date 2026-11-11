@@ -45,7 +45,7 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 import newrules  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 10   # 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 11   # 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
 # 4: Classic stories' own backgrounds; 5: '08's redraws of them; 6: the stories' own catch picture (OWN_CATCH_PICTURES); 7: that
 # picture as an event icon too (OWN_ICON_BASE), and King of the Road's Michael centred (CENTRE_OWN_BODY)
 ADDON_REQUIRED = 7                      # what a story needs: rev 8 only redraws the TV, so the stories built for 7 stay as they are
@@ -83,6 +83,30 @@ OWN_08_REDRAWS = {
     'a7d7ccea6341b383': 2008,       # parking lot (the night skyline has no '08 copy)
 }
 SKY_ONLY = 68                           # a scene with no location: its sky alone
+# The picture a title card (and a date or week card) shows instead of the add-on's strip it opens on (owner's picks, 2026-11-11,
+# from reference/screenshots/verify/title_cards/BREW_TITLE_CARDS.md): by the strip's (location index, sky), else by the story's
+# title (its own picture, or Fall '06, which opens on none). A shared-bank background (portrait-catalog/bank_backgrounds.md), which
+# SHS HD replaces with its HD copy, or a name in CARD_PICTURES: a picture the add-on carries (spec `card_pictures`), kept as the
+# story's own when the add-on was built without it.
+CARD_BANK = {
+    (44, 0): 1030, (4, 0): 1030, (52, 0): 1057, (12, 0): 1057, (62, 0): 1108, (22, 0): 1108, (40, 0): 1015, (0, 0): 1015,
+    (41, 0): 1129, (49, 0): 1024, (42, 0): 1018, (47, 0): 1050, (7, 0): 1050, (51, 0): 1111, (11, 0): 1111, (25, 0): 1054,
+    (16, 0): 1087, (36, 0): 1090, (30, 0): 1027, (8, 0): 1051, (21, 0): 1132,
+    (40, 1): 1016, (0, 1): 1016, (63, 1): 1036, (22, 1): 1109, (12, 1): 1058, (34, 1): 1079, (21, 1): 1133, (38, 1): 1136,
+    # The scenes '07's later days open on (owner, 2026-11-11, from reference/screenshots/verify/title_cards/day_card_scenes.png)
+    (45, 0): 1120, (64, 0): 1120, (50, 1): 1058, (52, 1): 1058, (53, 0): 1065, (58, 1): 1045, (62, 1): 1109, (67, 1): 1066,
+}
+# A Classic story's own pictures (OWN_BACKGROUND_BASE: one number per picture, whichever stories show it) that a day opens on
+CARD_OWN = {29003: 1114, 29004: 1115, 29015: 1027, 29024: 1084, 29027: 1060}
+CARD_BY_TITLE = {'Euro Trashed': 1033, 'Report Card': 1114, 'Study Buddy': 1084, "Fall '06 Football Season": 1108,
+                 'Theme Park': 'theme_park'}
+# A card picture from SHS HD's episodes (bg-hd 0146, portrait-catalog/hd_backgrounds.md: the HD theme park, 960 x 1440, which the
+# shared bank lacks): the add-on's resource, the picture's SHA-1, and the episode files and resources it is in (build_addon
+# `shs_hd_episodes`, a folder searched through for them; the first that holds the picture is used). The smartphone's copies of those
+# episodes hold other pictures there (A New Start's 26231 is a 125 x 125 thumbnail), hence the hash.
+CARD_PICTURES = {'theme_park': (26980, '6c33049b6a62b191627d119d53e72837c489c436',
+                                (('A_New_Start_Season_2.exp', 26231), ('MTX_The_Storm_Part_1.exp', 26021)))}
+CARD_PICTURES_REVISION = 11
 CATCH_BASE = 26300                      # the catch game's frame, ring, digits and captions, then its pictures
 EVENT_ICON_BASE = 26400                 # + a BREW picture's own ID (100-180): its small pictures, which the planner's events use as icons
 EVENT_ICONS = range(100, 181)
@@ -3176,6 +3200,89 @@ def opening_picture(story):
     return -1
 
 
+def title_card(card, title, spec):
+    """The picture a story's title card (and its week cards, and a date card whose day has no pick of its own) shows: the
+    owner's pick for the add-on strip it opens on (CARD_BANK) or for the story (CARD_BY_TITLE), or for the story's own picture
+    (CARD_OWN), else `card` itself."""
+    if BACKGROUND_BASE <= card < CATCH_BASE:
+        picked = CARD_BANK.get(divmod(card - BACKGROUND_BASE, SKY_MODES))
+    else:
+        picked = CARD_BY_TITLE.get(title, CARD_OWN.get(card))
+    if isinstance(picked, str):
+        picked = spec.get('card_pictures', {}).get(picked)
+    return card if picked is None else picked
+
+
+def scene_card(picture):
+    """The owner's pick for a scene a calendar day opens on (CARD_BANK, CARD_OWN), or None."""
+    if BACKGROUND_BASE <= picture < CATCH_BASE:
+        return CARD_BANK.get(divmod(picture - BACKGROUND_BASE, SKY_MODES))
+    return CARD_OWN.get(picture)
+
+
+def day_pictures(story, limit=30000):
+    """{calendar day: picture} for a calendar story's date cards (not its title card): the owner's pick for the scene each day
+    opens on, the background at the first line or menu after its card, found by playing the story (first build) through with
+    the answers in turn, as BREW days follow the calendar rather than the answers. A day whose scene has no pick is left out."""
+    import collections
+    import playthrough
+    session, picked, menus, day = playthrough.session(story), {}, collections.Counter(), None
+    session.engine.random.state = 1
+    session.advance()
+    for _ in range(limit):
+        while session.transitioning:
+            session.tick(session.engine.scene_transition.duration_ms)
+        action = session.pending
+        if action is None or action.name in ('episode_exit', 'finished'):
+            break
+        if action.name == 'presentation':
+            day = session.engine.numbers.get(session.engine.number_key(0, DAY_KEY), 0)
+            session.tick(4000)
+            if session.pending is not None and session.pending.name == 'presentation':
+                session.answer()
+            continue
+        if day is not None and action.name in ('dialogue', 'choice'):
+            pick = scene_card(session.engine.panel.background_id)
+            if pick is not None and day not in picked:
+                picked[day] = pick
+            day = None
+        if action.name == 'dialogue':
+            if not session.engine.dialogue_animation.complete:
+                session.answer(); session.tick(2000)
+            session.answer()
+        elif action.name == 'choice':
+            if not session.choice_ready:
+                session.tick(250)
+            options = tuple(action.details.get('options') or [''])
+            session.answer(menus[options] % len(options)); menus[options] += 1
+        elif action.name == 'brew_catch':
+            session._complete_minigame(result=session.engine.brew_catch.target)
+        elif action.name == 'word_game':
+            session.engine.word_game.score = 6; session._complete_minigame()
+        elif action.name == 'text_input':
+            session.answer('Matt')
+        elif action.name == 'character_picker':
+            session.answer(0); session.answer()
+        else:
+            session.tick(4000)
+            if session.pending is not None and session.pending.name == action.name:
+                session.answer()
+    picked.pop(0, None)                     # day 0 opens under the title card
+    return picked
+
+
+def push_day_card(s, days, card):
+    """Push today's date card picture: days[DAY_KEY], else `card`."""
+    end = s.label()
+    for day, picture in sorted(days.items()):
+        other = s.label()
+        get_global(s, DAY_KEY); s.push(day); s.emit(0x0a); s.jump_if_zero(other)
+        s.push(picture); s.jump(end)
+        s.label(other)
+    s.push(card)
+    s.label(end)
+
+
 def translate(archive_resources, name, spec, pack=PACK_CAMPAIGN, episode=0, suffix=TITLE_SUFFIX_08, calendar=None,
               title_extra='', title=None):
     """A story's SHS `.exp` bytes, from its resources by ID and the addon's spec. Twice over: its title card shows the first
@@ -3186,15 +3293,17 @@ def translate(archive_resources, name, spec, pack=PACK_CAMPAIGN, episode=0, suff
     _EVENT_LAYOUT['base'] = SEASON_EVENTS if calendar == 'season' else EVENT_BASE
     _SCENE_LAYOUT.update(location=SEASON_SCENE_LOCATION_KEY, sky=SEASON_SCENE_SKY_KEY) if calendar == 'season' else None
     try:
-        return _translate(archive_resources, name, spec, pack, episode, suffix,
-                          opening_picture(_translate(archive_resources, name, spec, pack, episode, suffix, -1, calendar,
-                                                     title_extra, title)), calendar, title_extra, title)
+        first = _translate(archive_resources, name, spec, pack, episode, suffix, -1, calendar, title_extra, title)
+        # A calendar story's date cards each show the pick for the scene their day opens on (owner, 2026-11-11)
+        days = day_pictures(first) if calendar is True else {}
+        return _translate(archive_resources, name, spec, pack, episode, suffix, opening_picture(first), calendar, title_extra,
+                          title, days)
     finally:
         _EVENT_LAYOUT['base'] = EVENT_BASE
         _SCENE_LAYOUT.update(location=SCENE_LOCATION_KEY, sky=SCENE_SKY_KEY)
 
 
-def _translate(archive_resources, name, spec, pack, episode, suffix, card, calendar, title_extra='', title=None):
+def _translate(archive_resources, name, spec, pack, episode, suffix, card, calendar, title_extra='', title=None, days=None):
     looks = spec['stories'].get(name)
     if looks is None:
         raise StoryError(f'the addon has no looks for {name}')
@@ -3204,7 +3313,9 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         if table.setdefault(look_hash(entries), bank) != bank:
             raise StoryError(f'{name}: two looks have the same hash')
     season = calendar == 'season'
-    title = (title or clean_title(title_of(archive_resources[1]))) + title_extra
+    title = title or clean_title(title_of(archive_resources[1]))
+    card = title_card(card, title, spec)
+    title += title_extra
     date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
     # The story script is 26000, or 25002 in a story without one (the M.A.S.H. packs, whose setup schedules 25002; Stage 4): a
@@ -3297,7 +3408,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
                 s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)),
                                      s.text(title), s.push(context['date_buffer']), s.push(card), s.push(0), s.call(8, 4)),
                 lambda: (s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0), s.emit(0x33)),
-                lambda: (s.text(title), s.push(context['date_buffer']), s.push(card), s.push(0), s.call(8, 4))))
+                lambda: (s.text(title), s.push(context['date_buffer']), push_day_card(s, days or {}, card), s.push(0),
+                         s.call(8, 4))))
         elif calendar:
             pass                                            # an event's own script: the driver already showed its card or badge
         else:
@@ -3307,7 +3419,9 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     if season:
         resources[DRIVER_SCRIPT] = season_driver(name, spec, table, title, card, own_missing)
         resources[NEST_SCRIPT] = season_script(spec, table, own_missing, nest_runner)
-    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REQUIRED)])
+    # A card on a picture the add-on carries (CARD_PICTURES, rev 11) needs that revision; the rest stay as they are
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, CARD_PICTURES_REVISION if card in {r for r, _, _ in CARD_PICTURES.values()}
+                                                         else ADDON_REQUIRED)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
@@ -3557,7 +3671,7 @@ def portrait_picture(face):
     return big.resize((big.width // 2, big.height // 2), Image.BOX)
 
 
-def build_addon(casts, games, render_music=None, java_jar=None):
+def build_addon(casts, games, render_music=None, java_jar=None, shs_hd_episodes=None):
     """The addon's resources and spec, from the portrait catalogue's casts (brew_casts.json) and the games' folders: `games`
     {'08': the '08 folder, '07: the VX9800 module folder}. Every look any story shows, every location at every sky, the music,
     the relationship icons and the frame's backdrop."""
@@ -3662,10 +3776,30 @@ def build_addon(casts, games, render_music=None, java_jar=None):
     resources.update(catch_resources)
     resources[FRAME_BACKDROP] = frame_backdrop(art08)
     resources[PINK_BACKDROP] = frame_backdrop(art08, PINK_PANEL_FRAME)
+    if shs_hd_episodes is not None:
+        card_resources, spec['card_pictures'] = card_pictures(shs_hd_episodes)
+        resources.update(card_resources)
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_CAMPAIGN, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
     return encode_exp(resources), spec
+
+
+def card_pictures(folder):
+    """CARD_PICTURES from a folder of SHS HD episodes, searched through: ({resource: picture}, {name: resource}). A picture
+    none of its episodes holds is left out (its cards keep the story's own picture); the bytes are the episode's own, unchanged."""
+    resources, names = {}, {}
+    for name, (resource, sha1, sources) in CARD_PICTURES.items():
+        for file_name, source in sources:
+            for path in sorted(Path(folder).rglob(file_name)):
+                archive = ExpArchive(path.read_bytes())
+                data = archive.read(source) if source in archive.entries else b''
+                if hashlib.sha1(data).hexdigest() == sha1:
+                    resources[resource], names[name] = data, resource
+                    break
+            if name in names:
+                break
+    return resources, names
 
 
 def strip_png(scene):

@@ -6,7 +6,7 @@
 
 - **The BREW games, SHS '07 and '08, translated** (`tools/translate/translate.py brew`; [BREW.md](docs/BREW.md)). 126
   stories under their own badges: the '08 Campaign (pack 31000), the Classic stories and M.A.S.H. packs as '07 (31100),
-  and Fall '06 Football Season (31200), with the `shsbrew` add-on (revision 10) holding their art and music. Each
+  and Fall '06 Football Season (31200), with the `shsbrew` add-on (revision 11) holding their art and music. Each
   matches the Tardy-Slip reference player on its tested answer paths.
   - **Calendar:** the Classic stories run on a calendar driver (days, date cards, time badges with BREW's icons at
     the smartphone's size), and Fall '06 on a season driver with week cards and events run inside others.
@@ -15,6 +15,7 @@
   - **Look and text:** BREW's frame, pink behind a pink box; grey boxes for things and animals; name plates; '07's
     art and a '08 Backgrounds switch; the Java '08 Look switch for '08; `a(n)` and plurals; BREW's menus.
   - **Runtime:** service 223 runs a script and comes back (save version 39); pickers of four, six and ten photos.
+  - **Title cards** show SHS pictures picked for the location and sky each story opens on (HD in SHS HD).
 - **Undo** (Options -> Extras -> Allow Undo, off by default): a save at every stop Skip Ahead makes; the pause menu's
   Undo loads the last, and again the one before. A mini-game under way restarts from its own save.
 - **Episode versions** (resource 5): a newer import replaces the library's older copies of the same episode, asking
