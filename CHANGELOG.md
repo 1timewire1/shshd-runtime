@@ -309,6 +309,10 @@
 
 ### Fixed
 
+- **Opening Options froze a phone for minutes** (Moto g54, 2026-11-09). Its add-on switches asked about every episode,
+  reading and hashing each whole file for one small record, and asked again every frame. They now read a file's index
+  or one record only, and keep their answers until the library changes; the Java '08 Look and X360 Arena Skin checks
+  read their add-on's spec alone. The first open went from minutes to 0.15 s, and Options runs at 16 ms a frame.
 - **Frame rate on phones, above all in the minigame arena.** A phone's clocks drop once frames miss their budget, so
   an untouched arena sat at 20 fps on a Moto g54 and only rose after a tap. Each frame now does less: the window's backdrop
   is painted only around the frame, an empty canvas is neither scaled nor drawn, the bottom bar's scale is kept, and
