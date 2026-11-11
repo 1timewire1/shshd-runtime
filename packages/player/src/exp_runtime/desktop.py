@@ -118,6 +118,14 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 OPAQUE_ENOUGH = 250
 
 
+def frame_wide(size):
+    """Whether a story layer of `size` pixels is frame-wide: the 320 x 480-unit column with HD's 32-unit margins either
+    side (384 x 480). Within a pixel of that shape: at a density like 2.4 pixels a unit (a frame narrower than HD's) the
+    margins round to whole pixels (77 for 76.8), and such a layer squeezed into the column warped every portrait."""
+    width, height = size
+    return abs(width * 480 - height * FRAME_UNITS[0]) <= 480
+
+
 def set_story_scale(renderer, scale):
     """A story renderer (DialogueRenderer, ChoiceRenderer, InputRenderer, MessageRenderer) drawing at `scale` pixels
     per layout unit from now on: its canvases made again at that density and everything it cached at the old one
@@ -329,6 +337,7 @@ class _Swapped:
 class Desktop:
     story_layer = None
     story_over_scene = False        # the story layer is HD's frame over the scene (the look picker)
+    story_lift = 0                  # units the story layer is drawn above its place (a picker centred in a tall frame)
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
@@ -1761,6 +1770,7 @@ class Desktop:
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
         self.story_over_scene = False
+        self.story_lift = 0
         self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
@@ -1842,6 +1852,10 @@ class Desktop:
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
                     self.story_over_scene = getattr(renderer, 'over_scene', False)
+                    if action.name == 'character_picker':
+                        # A taller frame centres the picker as HD's frame does (owner, 2026-11-11): its layer moves
+                        # up by half the height added (its taps follow, _picker_point).
+                        self.story_lift = (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) / 2
                 if action.name in ARENA_ACTIONS:
                     self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
@@ -2392,13 +2406,15 @@ class Desktop:
                 # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame.
                 area = self.picture_frame
                 self._draw_picture_band(backdrop, height)
-            elif layer.get_width() * 480 == layer.get_height() * FRAME_UNITS[0]:
+            elif frame_wide(layer.get_size()):
                 # A frame-wide layer (its column plus HD's 32-unit side margins), cut by a narrower frame's edges.
                 margin = round(32 * scale)
                 area = pygame.Rect(self.viewport.x - margin, self.viewport.y, self.viewport.width + 2 * margin,
                                    self.viewport.height)
             else:
                 area = self.viewport
+            if self.story_lift:
+                area = area.move(0, -round(self.story_lift * scale))
             with frame_log.section('present'):
                 # Already the area's size when the window is drawn at the story's own density (Android): no pass.
                 layer = layer if layer.get_size() == area.size else pygame.transform.smoothscale(layer, area.size)
@@ -3676,7 +3692,7 @@ class Desktop:
         if (action and action.name == 'character_picker' and not self.menu_open and not self.error
                 and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1):
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
-            y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
+            y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height + self.story_lift     # (centred)
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.picker_pointer_down = 0 <= x <= 320 and 0 <= y <= 480
             elif self.picker_pointer_down:

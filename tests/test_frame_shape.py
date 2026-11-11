@@ -224,6 +224,18 @@ class BackgroundShapeTests(unittest.TestCase):
         self.assertAlmostEqual(below_top, 245 - (320 * 16 / 9 - 512) / 2, delta=.5)
 
 
+class FrameWideLayerTests(unittest.TestCase):
+    def test_a_frame_wide_layer_is_known_at_any_density(self):
+        import os
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        from exp_runtime.desktop import frame_wide
+        for scale in (2, 2.4, 2.2, 3):
+            margin = round(32 * scale)
+            with self.subTest(scale):
+                self.assertTrue(frame_wide((round(320 * scale) + 2 * margin, round(480 * scale))))
+                self.assertFalse(frame_wide((round(320 * scale), round(480 * scale))))      # the column alone
+
+
 class BackdropFitTests(unittest.TestCase):
     """Step 2c: a translated pack's frame backdrop, lengthened so its bars stay round the strip."""
 
