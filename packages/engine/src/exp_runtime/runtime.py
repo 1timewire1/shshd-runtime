@@ -167,6 +167,25 @@ class Session:
     # shshd-runtime: (the dialogue motion, its two-speaker line's partner ID or -1), so the next line knows whether its
     # partner is new. Not saved: a restore takes it from the restored line.
     _duet_line = None
+    _extra_rows = 0
+
+    @property
+    def dialogue_extra_rows(self):
+        """shshd-runtime (General's Aspect Ratio): rows a speaker's bubble may hold past HD's own (DialogueLayout.page),
+        set by the player for a frame taller than 3:4; 0 headless and at 3:4. The display's, not the story's: a change
+        re-pages the line on screen from where it is, and a save keeps HD's own page (snapshot), so it loads anywhere."""
+        return self._extra_rows
+
+    @dialogue_extra_rows.setter
+    def dialogue_extra_rows(self, rows):
+        if rows == self._extra_rows:
+            return
+        self._extra_rows = rows
+        action = self.pending
+        if action is not None and action.name == 'dialogue' and 'page_end' in action.details:
+            page = self.dialogue_page()
+            if page is not None:
+                action.details['page_end'] = page.end
 
     # shshd-runtime: service 223 (script) runs that script and comes back (NESTED_SCRIPT_SERVICE): the scripts waiting for one
     # to end, innermost last, each (scene, its machine with the call pending). Saved (version 39).
@@ -507,8 +526,9 @@ class Session:
         setattr(self.engine, kind, None)
         return self.advance()
 
-    def dialogue_page(self):
-        """Layout is a session contract, shared by headless and desktop input."""
+    def dialogue_page(self, extra_rows=None):
+        """Layout is a session contract, shared by headless and desktop input. `extra_rows`: in place of the display's
+        own (dialogue_extra_rows)."""
         action = self.pending
         if not action or action.name != 'dialogue' or not hasattr(self.resources, 'dialogue_layout'):
             return None
@@ -518,7 +538,9 @@ class Session:
         return self.resources.dialogue_layout().page(action.details, action.details.get('page_start', 0),
                                                     names=self.engine.speaker_names, text_history=self.bitmap_history,
                                                     duet=duet, partner_name=partner,
-                                                    narration_theme=self.narration_theme())
+                                                    narration_theme=self.narration_theme(),
+                                                    extra_rows=self.dialogue_extra_rows if extra_rows is None
+                                                    else extra_rows)
 
     def narration_theme(self):
         """shshd-runtime: a translated pack's colour for a named line without a portrait (panel mode 3), or None. The
@@ -1362,9 +1384,20 @@ class Session:
                     vm=self.vm.snapshot(), engine=self._engine_state(),
                     nested=[dict(scene=scene, script_sha256=digest(vm.program.to_bytes()), vm=vm.snapshot())
                             for scene, vm in self.nest_stack],
-                    pending=dict(name=self.pending.name, details=deepcopy(self.pending.details))
+                    pending=dict(name=self.pending.name, details=self._saved_details())
                     if self.pending else None,
                     remaining_ms=self.remaining_ms, scene_loads=self.scene_loads)
+
+    def _saved_details(self):
+        """The pending action's details as a save keeps them. A dialogue page the display lengthened (extra rows) is
+        saved as HD's own page from the same start, which every build and shape checks and loads (the loading display
+        lengthens it again)."""
+        details = deepcopy(self.pending.details)
+        if self.pending.name == 'dialogue' and self._extra_rows and 'page_end' in details:
+            page = self.dialogue_page(extra_rows=0)
+            if page is not None:
+                details['page_end'] = page.end
+        return details
 
     def _link_tree(self, library_view: DTView, serial, embedded: dict | None, wanted: dict | None) -> None:
         """`SHSDTView loadGame:` -- the saved game names its current scene by serial and that scene is looked up in the tree the

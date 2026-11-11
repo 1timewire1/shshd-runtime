@@ -99,6 +99,7 @@ class HdCharacterPickerRenderer:
     top edge. Drawn 1:1 in points (2 px per layout unit), so HD art is never resampled here.
     """
     hd_layer = True
+    over_scene = True               # its frame is drawn over the scene, at the story's place (Desktop._present)
     edge_bar = 'bar'
     U = 2
     BUTTON_CENTER = (608, 737)

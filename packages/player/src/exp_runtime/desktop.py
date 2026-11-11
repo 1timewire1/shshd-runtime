@@ -118,6 +118,31 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 OPAQUE_ENOUGH = 250
 
 
+def set_story_scale(renderer, scale):
+    """A story renderer (DialogueRenderer, ChoiceRenderer, InputRenderer, MessageRenderer) drawing at `scale` pixels
+    per layout unit from now on: its canvases made again at that density and everything it cached at the old one
+    dropped. Nothing changes when it already draws at that scale (3:4 always: STORY_SCALE)."""
+    if renderer is None or getattr(renderer, 'scale', scale) == scale:
+        return
+    renderer.scale = scale
+    size = (round(320 * scale), round(480 * scale))
+    if hasattr(renderer, 'wide'):
+        renderer.margin = round(32 * scale)
+        renderer.wide = pygame.Surface((size[0] + 2 * renderer.margin, size[1]), pygame.SRCALPHA).convert_alpha()
+        renderer.canvas = renderer.wide.subsurface((renderer.margin, 0, *size))
+    else:
+        renderer.canvas = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
+    if hasattr(renderer, 'name_layer'):
+        renderer.name_layer = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
+    for name in ('cached_key', 'cached_page', 'hint_key'):
+        if hasattr(renderer, name):
+            setattr(renderer, name, None)
+    for kind in type(renderer).__mro__:
+        for value in vars(kind).values():
+            if hasattr(value, 'cache_clear'):
+                value.cache_clear()
+
+
 def window_margins(size, frame):
     """The parts of a window of `size` outside the rect `frame`."""
     width, height = size
@@ -303,6 +328,7 @@ class _Swapped:
 
 class Desktop:
     story_layer = None
+    story_over_scene = False        # the story layer is HD's frame over the scene (the look picker)
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
@@ -1702,7 +1728,26 @@ class Desktop:
         self.ui_sounds.play(library, asset, self.sound_volume if volume is None else volume,
                             stop_others=stop_others, when_idle=when_idle)
 
+    # A speaker's bubble may hold extra rows in a frame taller than HD's (owner, 2026-11-11): as many whole rows (HD's
+    # 26-unit line step) as fit in this share of the height the frame adds.
+    EXTRA_ROWS_SHARE = .5
+    ROW_UNITS = 26
+
+    def _sync_story_scale(self):
+        """The story's renderers draw the frame 768 pixels wide whatever its width in units (General's Aspect Ratio:
+        384 at 3:4 and 2:3, 2 pixels a unit; 320 from 9:16, 2.4), so on a phone, whose drawing surface is 768 pixels
+        wide, their layers need no resampling; `_edge_units` is the frame's margin each side of the column (32, 0)."""
+        width, tall = self.frame_units()
+        self._edge_units = (width - 320) / 2
+        self.session.dialogue_extra_rows = max(0, int((tall - FRAME_UNITS[1]) * self.EXTRA_ROWS_SHARE / self.ROW_UNITS))
+        self.dialogue_renderer.lift = 0
+        scale = STORY_SCALE * FRAME_UNITS[0] / width
+        self.dialogue_renderer.edge_units = self._edge_units        # its bar's margins (cached with its scale)
+        for renderer in (self.dialogue_renderer, self.choice_renderer, self.input_renderer, self.message_renderer):
+            set_story_scale(renderer, scale)
+
     def render(self):
+        self._sync_story_scale()
         self.buttons = []
         action = self.session.pending
         if self.session.engine.panel.background_id >= 0:
@@ -1715,6 +1760,7 @@ class Desktop:
             self.screen_token, self.scroll, self.choice_focus = token, 0, None
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
+        self.story_over_scene = False
         self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
@@ -1795,6 +1841,7 @@ class Desktop:
                                             self.session, **options)
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
+                    self.story_over_scene = getattr(renderer, 'over_scene', False)
                 if action.name in ARENA_ACTIONS:
                     self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
@@ -1809,6 +1856,9 @@ class Desktop:
                     # keyboard covered it; this player's gear stays in sight (on a desktop always), so an inert one read as
                     # broken. The pause menu stops text input, which hides the keyboard (_sync_text_input) until Resume.
                     buttons = [*buttons, ((-32, 422, 92, 58), ('menu',))]
+                # The gear's button is at the frame's left edge, 32 units outside the column in HD's frame.
+                buttons = [((rect[0] + 32 - self._edge_units, *rect[1:]) if command == ('menu',) and rect[0] == -32
+                            else rect, command) for rect, command in buttons]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 edge_bar = getattr(renderer, 'edge_bar', None)
@@ -1912,7 +1962,7 @@ class Desktop:
                     self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
                                                                           getattr(renderer, 'edge_bar', 'bar') == 'bar')
-                self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',))]
+                self.buttons = [(pygame.Rect(-round(self._edge_units * 1.5), 633, 150, 87), ('menu',))]
                 self.scroll = self.max_scroll = 0
                 self._present()
                 return
@@ -1939,7 +1989,7 @@ class Desktop:
                 self.pending_background_origin = self.dialogue_renderer.pending_background_origin
                 self.scroll = self.max_scroll = 0
                 # The gear is flush with the frame's left edge, 48 canvas pixels (32 units) outside the UI column.
-                self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',)),
+                self.buttons = [(pygame.Rect(-round(self._edge_units * 1.5), 633, 150, 87), ('menu',)),
                                 (pygame.Rect(0, 0, *SIZE), ('continue',))]
                 if pygame.time.get_ticks() < self.message_until:
                     self._text(self.message, 20, 701, 450, font=self.small, color=MUTED)
@@ -2285,11 +2335,13 @@ class Desktop:
         # pause menu, a notice) is centred (card_frame); the Faceplace alert's strip keeps to the top (alert_frame).
         # At 3:4 all four are the frame.
         units = self.frame_units()
-        self._frame_tall = units[1]
+        self._frame_width, self._frame_tall = units
+        edge = (units[0] - 320) / 2                 # the frame's margin each side of the column: 32 units, 0 from 9:16
         scale = min(width / units[0], height / units[1])
         frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
         frame.center = (width // 2, height // 2)
-        picture = pygame.Rect(0, 0, frame.width, max(1, round(FRAME_UNITS[1] * scale)))
+        # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there).
+        picture = pygame.Rect(0, 0, frame.width, max(1, round(units[0] * 4 / 3 * scale)))
         self._frames = (frame, picture.move(frame.x, frame.bottom - picture.height),
                         picture.move(frame.x, frame.centery - picture.height // 2), picture.move(frame.x, frame.y))
         target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
@@ -2308,7 +2360,7 @@ class Desktop:
         # The column also sits 5.5 units above the frame's bottom edge (box
         # top and bottom lines both measured 21.5 px lower than HD's at
         # 3.9 px per unit; the right border matched to a pixel).
-        self.viewport = pygame.Rect(frame.x + round(32 * scale),
+        self.viewport = pygame.Rect(frame.x + round(edge * scale),
                                     frame.bottom - target_size[1] - round(UI_BOTTOM_INSET * scale), *target_size)
         self.bg_viewport = frame
         bg_size = frame.size
@@ -2330,13 +2382,21 @@ class Desktop:
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
-            if layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
+            if layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
+                # HD's frame drawn over the scene (the look picker): at the story's scale with the column, its bottom
+                # the frame's, cut by a narrower frame's sides; the scene shows above it.
+                margin = round(32 * scale)
+                tall = round(FRAME_UNITS[1] * scale)
+                area = pygame.Rect(self.viewport.x - margin, frame.bottom - tall, self.viewport.width + 2 * margin, tall)
+            elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
                 # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame.
                 area = self.picture_frame
                 self._draw_picture_band(backdrop, height)
             elif layer.get_width() * 480 == layer.get_height() * FRAME_UNITS[0]:
-                # A frame-wide layer (its column plus HD's 32-unit side margins).
-                area = pygame.Rect(self.bg_viewport.x, self.viewport.y, self.bg_viewport.width, self.viewport.height)
+                # A frame-wide layer (its column plus HD's 32-unit side margins), cut by a narrower frame's edges.
+                margin = round(32 * scale)
+                area = pygame.Rect(self.viewport.x - margin, self.viewport.y, self.viewport.width + 2 * margin,
+                                   self.viewport.height)
             else:
                 area = self.viewport
             with frame_log.section('present'):
@@ -2344,7 +2404,10 @@ class Desktop:
                 layer = layer if layer.get_size() == area.size else pygame.transform.smoothscale(layer, area.size)
             if alpha is not None and alpha < 1:
                 layer = faded(layer, round(255 * alpha))
+            clip = self.window.get_clip()
+            self.window.set_clip(frame.clip(clip))
             self.window.blit(layer, area)
+            self.window.set_clip(clip)
             ui_layers.append((layer, area))
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
@@ -2572,6 +2635,7 @@ class Desktop:
                 and layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0])
 
     _background_cover = None        # what `_blit_art` last covered the whole frame with, opaquely
+    _edge_units = 32                # the frame's margin each side of the column (_sync_story_scale)
 
     def _draw_background_layer(self, target_size, viewport, covered=False):
         """Composited directly at window resolution, under the UI canvas.
@@ -2647,7 +2711,8 @@ class Desktop:
         if themed is not None and exists(themed):
             asset_id = themed
         tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
-        strip = None if tall == FRAME_UNITS[1] else self._backdrop_strip(tall)
+        strip = (None if (self.__dict__.get('_frame_width', FRAME_UNITS[0]), tall) == FRAME_UNITS
+                 else self._backdrop_strip(tall))
         key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False),
                strip and tuple(round(v, 1) for part in strip for v in part))
         if self._frame_backdrop_cache[0] != key:
@@ -2665,6 +2730,11 @@ class Desktop:
                 (top, bottom), (new_top, new_bottom) = strip
                 long = backdrop_fit.lengthen(image.convert_alpha(), (top * k, bottom * k), (new_top * k, new_bottom * k),
                                              round(tall * k))
+                # A frame narrower than HD's (from 9:16) shows the middle of it, cut at the sides as the strip is.
+                wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
+                cut = round((FRAME_UNITS[0] - wide) / 2 * k)
+                if cut > 0:
+                    long = long.subsurface((cut, 0, long.get_width() - 2 * cut, long.get_height()))
                 surfaces[asset_id] = pygame.transform.smoothscale(long, size)
         return surfaces[asset_id]
 
@@ -2673,11 +2743,12 @@ class Desktop:
     STRIP_AT_3_4 = (111.5, 271.5)
 
     def _backdrop_strip(self, tall):
-        """The strip's rows in frame units, ((top, bottom) in the 3:4 frame, (top, bottom) in this one): in a taller
-        frame a strip keeps its place above the column, so it is lower by the added height."""
-        added = tall - FRAME_UNITS[1]
-        now = self.__dict__.get('_strip_units') or (self.STRIP_AT_3_4[0] + added, self.STRIP_AT_3_4[1] + added)
-        return (now[0] - added, now[1] - added), now
+        """The strip's rows in frame units, ((top, bottom) in the 3:4 frame, (top, bottom) in this one): where this
+        frame's strip was drawn (`_strip_units`), else where `_shaped_placement` puts one (above the column, risen by
+        STRIP_RISE of the added height)."""
+        lift = tall - 480 - 32 - (tall - FRAME_UNITS[1]) * self.STRIP_RISE      # below HD's place
+        now = self.__dict__.get('_strip_units') or (self.STRIP_AT_3_4[0] + lift, self.STRIP_AT_3_4[1] + lift)
+        return self.STRIP_AT_3_4, now
 
     # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
     # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off
@@ -2757,26 +2828,27 @@ class Desktop:
         location layer's bounds as scaled and positioned on screen."""
         bw, bh = background.get_size()
         tw, th = target_size
-        # General's Aspect Ratio (frame_shape.py): the frame is 384 units wide and `tall` units high, 512 at 3:4, with
-        # every unit past 512 above the column.
+        # General's Aspect Ratio (frame_shape.py): the frame is `wide` x `tall` units, HD's 384 x 512 at 3:4.
+        wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
         tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
-        if self.pending_background_origin == 'cover':
-            # Cause of Death's chapter card: its iPhone screen shows the whole picture fitted to the 320x480 column;
-            # here it is scaled evenly until it covers the 3:4 frame, centred where the column's centre is (owner:
-            # no dead space, as SHS fills the frame -- without the stretch SHS HD's own card applies). In a taller
-            # frame the column's centre is as far from the frame's bottom.
-            centre = tall - FRAME_UNITS[1] + 26.5 + 240         # the column's centre, frame units from the top
-            k = min(bw / 384, bh / (2 * centre), bh / (2 * (tall - centre)))   # art pixels per frame unit
-            crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(tall * k))
-            sx, sy = tw / crop.width, th / crop.height
-            return (-crop.x * sx, -crop.y * sy, bw * sx, bh * sy)
+        if (wide, tall) != FRAME_UNITS and self.pending_background_origin is not None:
+            return self._shaped_placement(background, target_size, wide, tall)
         if self.pending_background_origin is None:
-            if tall == FRAME_UNITS[1]:
+            if (wide, tall) == FRAME_UNITS:
                 return (0., 0., float(tw), float(th))
-            # Stretched to the 3:4 frame as before; a taller frame takes the picture scaled evenly until it covers,
+            # Stretched to the 3:4 frame as before; another shape takes the picture scaled evenly until it covers,
             # centred (a 2:3 picture shows whole at 2:3).
             k = max(tw / bw, th / bh)
             return ((tw - bw * k) / 2, (th - bh * k) / 2, bw * k, bh * k)
+        if self.pending_background_origin == 'cover':
+            # Cause of Death's chapter card: its iPhone screen shows the whole picture fitted to the 320x480 column;
+            # here it is scaled evenly until it covers the 3:4 frame, centred where the column's centre is (owner:
+            # no dead space, as SHS fills the frame -- without the stretch SHS HD's own card applies).
+            centre = 26.5 + 240                                  # the column's centre, frame units from the top
+            k = min(bw / 384, bh / (2 * centre), bh / (2 * (512 - centre)))   # art pixels per frame unit
+            crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(512 * k))
+            sx, sy = tw / crop.width, th / crop.height
+            return (-crop.x * sx, -crop.y * sy, bw * sx, bh * sy)
         else:
             cx, cy = self.pending_background_origin
             # In HD's frame the art sits 48 units further right and 20.5
@@ -2790,41 +2862,83 @@ class Desktop:
             # 2026-10-14): the 480x720 art panned with the speaker so the frame is always covered. Its own iPhone
             # screen shows the art 1 px per point from the plain focal point (IMG_0483), which leaves the 3:4
             # frame's margins past the art's edge.
-            pans = cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod')
-            cy += HD_BG_SHIFT[1]
-            # A taller frame (General's Aspect Ratio) keeps the art where it was against the frame's bottom, so the
-            # extra height shows more of the scene above. A picture that covered the 3:4 frame (the 2:3 location art;
-            # not a New Rules or BREW strip, which keeps its band) slides down when the frame would reach past its top
-            # edge, and past its whole height (720 units: 9:16 is 683) it is enlarged to the frame's height, centred,
-            # its wider sides panned as HD pans them.
-            zoom, high = 1., bh / bg_scale
-            if tall != FRAME_UNITS[1] and cy + 32 - high / 2 <= 0 and cy + 32 + high / 2 >= FRAME_UNITS[1]:
-                if high >= tall:
-                    cy = min(max(cy + tall - FRAME_UNITS[1], tall - 32 - high / 2), high / 2 - 32)
-                else:
-                    zoom, cy = tall / high, tall / 2 - 32
-            elif tall != FRAME_UNITS[1]:
-                cy += tall - FRAME_UNITS[1]
-            if pans:
+            if self._location_pans(cy):
                 # HD pans the location layer by speaker (location_pan.py): its center is `x` points from
                 # the frame's left edge, i.e. x / 2 - 32 in this crop's UI units. The pan takes the art's width in
-                # HD points: 960 for a 480-pixel picture as for its 960-pixel HD twin (times the enlargement).
-                x = self.location_pan.x(self.session.engine.panel.location_align, bw / bg_scale * 2 * zoom,
+                # HD points: 960 for a 480-pixel picture as for its 960-pixel HD twin.
+                x = self.location_pan.x(self.session.engine.panel.location_align, bw / bg_scale * 2,
                                         pygame.time.get_ticks())
                 cx = x / 2 - 32
             else:
                 cx += HD_BG_SHIFT[0]
+            cy += HD_BG_SHIFT[1]
             # Frame coordinates (see _present): the frame's top-left is UI
             # (-32, -32) as far as this crop is concerned -- the 5.5-unit inset
             # of the UI column was measured against the same photos after the
             # background, so it moves the column, not the background. The image
             # is drawn 1 px per unit (HD: 2) centered on (cx, cy) in that
             # space, so crop exactly the frame's window out of it.
-            per = bg_scale / zoom                               # art pixels per frame unit
-            window = pygame.Rect(round(bw / 2 + (-32 - cx) * per), round(bh / 2 + (-32 - cy) * per),
-                                 round(384 * per), round(tall * per))
+            window = pygame.Rect(round(bw / 2 + (-32 - cx) * bg_scale), round(bh / 2 + (-32 - cy) * bg_scale),
+                                 round(384 * bg_scale), round(512 * bg_scale))
             sx, sy = tw / window.width, th / window.height
             return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
+
+    def _location_pans(self, cy):
+        """Whether the location layer pans by speaker (location_pan.py): a dialogue scene's picture (focal y 180)
+        with HD's art, and every Cause of Death scene."""
+        return cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod')
+
+    # How far a strip (New Rules, BREW) rises in a frame taller than HD's: by this share of the added height (the
+    # owner's pick B, 2026-11-11).
+    STRIP_RISE = .5
+
+    def _shaped_placement(self, background, target_size, wide, tall):
+        """`_background_placement` in a frame of another shape than HD's 3:4 (General's Aspect Ratio), `wide` x `tall`
+        units with the column at its bottom, centred: (x, y, width, height) in target pixels.
+
+        A location picture (480 units wide, 720 tall: one that covers HD's frame) is shown
+        - at 2:3 (384 wide) whole: scaled to the frame, nothing panned (owner, 2026-11-11);
+        - from 9:16 (the column's 320 wide) as SD SHS and Cause of Death show it on an iPhone's screen, one art unit a
+          unit about SD's own focal point, panned by speaker as HD pans; past its height (Fit Screen past 9:20)
+          enlarged to the frame's height;
+        - in between, at a scale between the two;
+        always covering the frame, sliding down or across rather than leave an edge. HD's focal shift (HD_BG_SHIFT,
+        measured in its frame) fades out towards SD's layout. A strip (New Rules, BREW) keeps its size and rises with
+        the frame (STRIP_RISE); its frame backdrop shows round it (_frame_backdrop). Cause of Death's chapter card
+        (`cover`) covers the frame about the column's centre."""
+        bw, bh = background.get_size()
+        tw, th = target_size
+        unit_x, unit_y = tw / wide, th / tall              # target pixels per frame unit
+        if self.pending_background_origin == 'cover':
+            centre = tall - FRAME_UNITS[1] + 26.5 + 240     # the column's centre, as far from the bottom as in HD's
+            k = max(wide / bw, centre * 2 / bh, (tall - centre) * 2 / bh)      # frame units per art pixel
+            return ((wide - bw * k) / 2 * unit_x, (centre - bh * k / 2) * unit_y, bw * k * unit_x, bh * k * unit_y)
+        cx, cy = self.pending_background_origin
+        bg_scale = bw / 480                                 # art pixels per art unit (the picture is 480 units wide)
+        high = bh / bg_scale
+        side = (wide - 320) / 2                             # the frame's margin each side of the column
+        top = tall - 480                                    # the column's top as the background counts it (HD: 32)
+        between = (FRAME_UNITS[0] - wide) / (FRAME_UNITS[0] - 320)      # 0 at HD's width, 1 at the column's
+        shift_x, shift_y = HD_BG_SHIFT[0] * (1 - between), HD_BG_SHIFT[1] * (1 - between)
+        pans = self._location_pans(cy)
+        picture = cy + HD_BG_SHIFT[1] + 32 - high / 2 <= 0 and cy + HD_BG_SHIFT[1] + 32 + high / 2 >= FRAME_UNITS[1]
+        if picture:
+            whole = max(wide / 480, tall / high)            # the picture fitted to the frame (2:3: exactly)
+            scale = max(whole + (1 - whole) * between, wide / 480, tall / high)
+            width, height = 480 * scale, high * scale
+            ay = min(max(top + cy + shift_y, tall - height / 2), height / 2)
+        else:
+            width, height = 480., high
+            # (HD's own offset from the column kept: the strip's place was chosen in HD's frame.)
+            ay = top + cy + HD_BG_SHIFT[1] - (tall - FRAME_UNITS[1]) * self.STRIP_RISE
+        if pans:
+            ax = self.location_pan.x(self.session.engine.panel.location_align, width * 2, pygame.time.get_ticks(),
+                                     wide * 2) / 2
+        else:
+            ax = side + cx + shift_x
+        if picture:
+            ax = min(max(ax, wide - width / 2), width / 2)
+        return ((ax - width / 2) * unit_x, (ay - height / 2) * unit_y, width * unit_x, height * unit_y)
 
     def _blit_art(self, background, placement, target_size, viewport, alpha, *, cache=True):
         """Draw `background` laid over `placement` (see _background_placement), clipped to the frame. Where the
@@ -2857,7 +2971,13 @@ class Desktop:
             scaled_bg = cached_surface
         else:
             source = background if crop is None else background.subsurface(crop)
-            scaled_bg = pygame.transform.smoothscale(source, area.size)
+            if bw >= 2 * bh and (self.__dict__.get('_frame_width', FRAME_UNITS[0]),
+                                 self.__dict__.get('_frame_tall', FRAME_UNITS[1])) != FRAME_UNITS:
+                # A strip (New Rules, BREW: pixel art the translators enlarged with nearest-neighbour) outside HD's
+                # frame: pixel-perfect, its pixels kept square-edged (owner, 2026-11-11).
+                scaled_bg = pygame.transform.scale(source, area.size)
+            else:
+                scaled_bg = pygame.transform.smoothscale(source, area.size)
             if min(pygame.image.tobytes(scaled_bg, 'RGBA')[3::4]) >= OPAQUE_ENOUGH:     # smoothscale leaves an opaque picture at 253 or 254
                 scaled_bg = scaled_bg.convert()
             if cache:
@@ -3785,9 +3905,10 @@ class Desktop:
     def _gear_hit(self, position):
         if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open or not self._hd_gear_shown():
             return False
-        frame = self.picture_frame              # the gear is at the frame's bottom whatever its height
-        unit = frame.width / FRAME_UNITS[0]
-        x, y = (position[0] - frame.x) / unit, (position[1] - frame.y) / unit
+        # The gear is at the frame's bottom left whatever its shape (General's Aspect Ratio), at the story's scale.
+        frame = self.bg_viewport
+        unit = frame.width / self.__dict__.get('_frame_width', FRAME_UNITS[0])
+        x, y = (position[0] - frame.x) / unit, (position[1] - frame.bottom) / unit + FRAME_UNITS[1]
         (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS
         return (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2
 

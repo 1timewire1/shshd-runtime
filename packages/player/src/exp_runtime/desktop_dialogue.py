@@ -1,4 +1,5 @@
 """Original dialogue artwork at native logical coordinates."""
+from dataclasses import replace
 from functools import lru_cache
 from io import BytesIO
 
@@ -584,12 +585,15 @@ class DialogueRenderer:
     # portrait sits too high above the box".
     _HD_PORTRAIT_VERTICAL_OFFSET = 5
 
-    def _housing(self, mode):
-        """Layout 17's housing node, kept: the layout bank's own cache compares whole banks, several times a frame."""
+    lift = 0        # this frame's bubble moved up for its extra rows (DialoguePage.lift; Desktop resets it each frame)
+
+    def _housing(self, mode, lifted=True):
+        """Layout 17's housing node, kept: the layout bank's own cache compares whole banks, several times a frame.
+        Moved up with the bubble when it holds extra rows (`lift`)."""
         found = self.__dict__.setdefault('_housings', {}).get(mode)
         if found is None:
             found = self._housings[mode] = self.resources.dialogue_layout().bank.rectangle(17, 0x30 if mode == 1 else 0x4e)
-        return found
+        return replace(found, y=found.y - self.lift) if lifted and self.lift else found
 
     def _portrait_rect(self, mode):
         """The housing rect for the portrait ring, the relationship icon and
@@ -705,6 +709,7 @@ class DialogueRenderer:
     # HD's bottom bar and gear anchor to the edges of its 384x512-unit frame,
     # 32 layout units wider on each side than the 320-unit UI column.
     EDGE_UNITS = 32
+    edge_units = EDGE_UNITS     # the frame's margin each side of the column: 32 in HD's frame, 0 once it is the column
 
     @lru_cache(maxsize=16)
     def bottom_bar_layer(self, text, gear_pressed=False, bar=True):
@@ -713,7 +718,7 @@ class DialogueRenderer:
         with the gear flush at the left; Android's 320-unit bar sits in the UI
         column, 32 units in. Cause of Death with the SHS HD art source takes
         HD's layout (its bar is SHS's), so the bar fills the 3:4 frame too."""
-        k, edge = self.scale, self.EDGE_UNITS
+        k, edge = self.scale, self.edge_units
         layer = pygame.Surface((round((320 + 2 * edge) * k), round(72 * k)), pygame.SRCALPHA).convert_alpha()
         pack = self.hd_bar()
         if pack is not None:
@@ -925,7 +930,7 @@ class DialogueRenderer:
         if mode not in slots:
             bank = self.resources.dialogue_layout().bank
             nodes = (54, 55, 56, 57) if mode == 1 else (0x54, 0x55, 0x56, 0x57)
-            center = self._housing(mode).center
+            center = self._housing(mode, lifted=False).center
             slots[mode] = [(bank.rectangle(17, node).center[0] - center[0], bank.rectangle(17, node).center[1] - center[1])
                            for node in nodes]
         return slots[mode]
@@ -1249,7 +1254,8 @@ class DialogueRenderer:
 
     def draw(self, target, session):
         details = session.pending.details
-        key = id(session), session.scene, session.vm.steps_executed, details['page_start']
+        key = (id(session), session.scene, session.vm.steps_executed, details['page_start'],
+               getattr(session, 'dialogue_extra_rows', 0))
         if key != self.cached_key:
             self.cached_page = session.dialogue_page()
             self.cached_key = key
@@ -1262,6 +1268,7 @@ class DialogueRenderer:
                                       scale=page.name_scale * k)
             self._name_area = self.name_layer.get_bounding_rect()
         page = self.cached_page
+        self.lift = getattr(page, 'lift', 0)
         if page is None:
             raise ContentError('Dialogue requires the imported APK layout and fonts')
         # shshd-runtime: a translated pack's two-speaker line (Session.dialogue_duet): the box the page chose (gray, or

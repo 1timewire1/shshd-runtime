@@ -11,17 +11,27 @@ from exp_runtime.settings import AppSettings
 
 
 class FrameShapeTests(unittest.TestCase):
-    def test_the_shapes_keep_the_frames_width_and_grow_taller(self):
-        for choice, height in (('3:4', 512), ('2:3', 576), ('9:16', 384 * 16 / 9)):
+    def test_3_4_and_2_3_keep_hds_width_and_9_16_is_the_column_wide(self):
+        # 3:4 is HD's own frame; 2:3 only grows taller; from 9:16 the frame is the 320-unit column, as on SD's iPhone
+        # screen (owner, 2026-11-11).
+        for choice, size in (('3:4', (384, 512)), ('2:3', (384, 576)), ('9:16', (320, 320 * 16 / 9))):
             with self.subTest(choice):
-                self.assertEqual(frame_shape.frame_units(choice, (100, 100)), (384, height))
+                self.assertEqual(frame_shape.frame_units(choice, (100, 100)), size)
+
+    def test_between_2_3_and_9_16_the_width_goes_from_one_to_the_other(self):
+        self.assertEqual(frame_shape.width_for(0.75), 384)
+        self.assertEqual(frame_shape.width_for(2 / 3), 384)
+        self.assertAlmostEqual(frame_shape.width_for((2 / 3 + 9 / 16) / 2), 352)        # halfway
+        self.assertTrue(352 < frame_shape.width_for(0.625) < 384)                       # a 10:16 tablet
+        self.assertEqual(frame_shape.width_for(9 / 16), 320)
+        self.assertEqual(frame_shape.width_for(9 / 20), 320)
 
     def test_fit_screen_takes_the_windows_shape_within_its_limits(self):
         phone = (1080, 2400)                                    # a g54: 9:20
-        self.assertAlmostEqual(frame_shape.frame_units('fit', phone, fixed_window=True)[1], 384 * 20 / 9)
-        self.assertEqual(frame_shape.frame_units('fit', (2400, 1080), fixed_window=True)[1], 512)   # wider: 3:4
-        self.assertEqual(frame_shape.frame_units('fit', (1080, 4000), fixed_window=True)[1], 384 * 21 / 9)  # narrowest
-        self.assertEqual(frame_shape.frame_units('fit', (960, 1440), fixed_window=True)[1], 576)    # a phone's 2:3
+        self.assertAlmostEqual(frame_shape.frame_units('fit', phone, fixed_window=True)[1], 320 * 20 / 9)
+        self.assertEqual(frame_shape.frame_units('fit', (2400, 1080), fixed_window=True), (384, 512))   # wider: 3:4
+        self.assertAlmostEqual(frame_shape.frame_units('fit', (1080, 4000), fixed_window=True)[1], 320 * 21 / 9)
+        self.assertEqual(frame_shape.frame_units('fit', (960, 1440), fixed_window=True), (384, 576))    # a phone's 2:3
         self.assertEqual(frame_shape.frame_units('fit', (0, 0)), (384, 512))
 
     def test_a_computer_shows_2_3_only_when_it_is_picked(self):
@@ -29,7 +39,7 @@ class FrameShapeTests(unittest.TestCase):
         for size in ((960, 1440), (1000, 1400), (960, 1280)):
             with self.subTest(size):
                 self.assertEqual(frame_shape.frame_units('fit', size)[1], 512)
-        self.assertAlmostEqual(frame_shape.frame_units('fit', (900, 1600))[1], 384 * 16 / 9)    # taller: follows
+        self.assertAlmostEqual(frame_shape.frame_units('fit', (900, 1600))[1], 320 * 16 / 9)    # taller: follows
         self.assertEqual(frame_shape.frame_units('2:3', (1000, 1440))[1], 576)
 
     def test_phones_default_to_fit_screen_and_computers_to_3_4(self):
@@ -129,7 +139,7 @@ class PauseMenuAspectTests(unittest.TestCase):
         self.assertEqual(ui.aspect_ratio, 'fit')
         ui.window = pygame.Surface((1080, 2400))
         ui.fixed_window = True
-        self.assertAlmostEqual(ui.frame_units()[1], 384 * 20 / 9)
+        self.assertAlmostEqual(ui.frame_units()[1], 320 * 20 / 9)
         from exp_runtime.desktop_pause_hd import ASPECT_NAMES
         self.assertEqual(list(ASPECT_NAMES), list(frame_shape.CHOICES))
 
@@ -139,7 +149,7 @@ if __name__ == '__main__':
 
 
 class BackgroundShapeTests(unittest.TestCase):
-    """Step 2c: a location's picture in a taller frame."""
+    """A location's picture in each shape (owner, 2026-11-11): HD's at 3:4, whole at 2:3, SD's iPhone view from 9:16."""
 
     def setUp(self):
         import os
@@ -147,62 +157,71 @@ class BackgroundShapeTests(unittest.TestCase):
         import pygame
         from exp_runtime.desktop import Desktop
         from exp_runtime.location_pan import LocationPan
-        self.pygame, self.place = pygame, Desktop._background_placement
-        self.LocationPan = LocationPan
+        self.pygame, self.LocationPan = pygame, LocationPan
 
-    def ui(self, tall, align=2, origin=(160, 180)):
-        renderer = SimpleNamespace(has_hd_bundle=lambda: True, game_id=lambda: 'shs')
-        ui = SimpleNamespace(pending_background_origin=origin, dialogue_renderer=renderer,
-                             location_pan=self.LocationPan(),
-                             session=SimpleNamespace(engine=SimpleNamespace(panel=SimpleNamespace(location_align=align))))
-        if tall is not None:
-            ui._frame_tall = tall
+        class Frame:
+            _background_placement = Desktop._background_placement
+            _shaped_placement = Desktop._shaped_placement
+            _location_pans = Desktop._location_pans
+            STRIP_RISE = Desktop.STRIP_RISE
+        self.Frame = Frame
+
+    def ui(self, units, align=2, origin=(160, 180), hd=True):
+        ui = self.Frame()
+        ui.pending_background_origin = origin
+        ui.dialogue_renderer = SimpleNamespace(has_hd_bundle=lambda: hd, game_id=lambda: 'shs')
+        ui.location_pan = self.LocationPan()
+        ui.session = SimpleNamespace(engine=SimpleNamespace(panel=SimpleNamespace(location_align=align)))
+        if units is not None:
+            ui._frame_width, ui._frame_tall = units
         return ui
 
-    def target(self, tall):
-        return 768, round(768 * tall / 384)
+    def place(self, choice, art=(960, 1440), **options):
+        units = frame_shape.frame_units(choice, (1080, 2400), fixed_window=True)
+        target = (768, round(768 * units[1] / units[0]))
+        return self.ui(units, **options)._background_placement(self.pygame.Surface(art), target), target
 
-    def test_3_4_is_as_before(self):
+    def test_3_4_is_hds(self):
         art = self.pygame.Surface((960, 1440))
-        self.assertEqual(self.place(self.ui(None), art, (768, 1024)), (-96, -337, 960, 1440))
-        self.assertEqual(self.place(self.ui(512.), art, (768, 1024)), (-96, -337, 960, 1440))
+        self.assertEqual(self.ui(None)._background_placement(art, (768, 1024)), (-96, -337, 960, 1440))
+        self.assertEqual(self.place('3:4')[0], (-96, -337, 960, 1440))
 
-    def test_the_extra_height_shows_more_of_the_scene_above(self):
-        art = self.pygame.Surface((960, 1440))
-        x, y, w, h = self.place(self.ui(576.), art, self.target(576))       # 2:3
-        self.assertEqual((w, h), (960, 1440))                                # not enlarged
-        self.assertEqual(y + h - 1152, 1440 - 337 - 1024)                   # the bottom where 3:4 has it
+    def test_2_3_shows_the_whole_picture(self):
+        for align in (1, 2, 3):
+            with self.subTest(align):
+                (x, y, w, h), target = self.place('2:3', align=align)
+                self.assertEqual((round(x), round(y), round(w), round(h)), (0, 0, *target))
 
-    def test_the_picture_slides_down_rather_than_leave_its_top(self):
-        art = self.pygame.Surface((960, 1440))
-        tall = 384 * 16 / 9
-        x, y, w, h = self.place(self.ui(tall), art, self.target(tall))      # 9:16
-        self.assertEqual((y, w, h), (0, 960, 1440))
-
-    def test_past_its_height_the_picture_is_enlarged_and_panned(self):
-        art = self.pygame.Surface((960, 1440))
-        tall = 384 * 20 / 9
-        tw, th = self.target(tall)
+    def test_9_16_shows_it_as_sd_does_one_art_unit_a_unit(self):
+        (x, y, w, h), (tw, th) = self.place('9:16')
+        unit = tw / 320
+        self.assertAlmostEqual(w / unit, 480)
+        self.assertAlmostEqual(h / unit, 720, delta=.5)
+        self.assertAlmostEqual(x, (tw - w) / 2)                             # centred speaker: centred
+        self.assertTrue(y <= 0 and y + h >= th)                             # covers the frame
         for align, edge in ((1, 'left'), (3, 'right')):
             with self.subTest(edge):
-                x, y, w, h = self.place(self.ui(tall, align), art, (tw, th))
-                self.assertAlmostEqual(y, 0, delta=1)
-                self.assertAlmostEqual(h, th, delta=2)
-                self.assertGreater(w, tw)
-                self.assertAlmostEqual(x if edge == 'left' else x + w - tw, 0, delta=2)
+                (x, y, w, h), _ = self.place('9:16', align=align)
+                self.assertAlmostEqual(x if edge == 'left' else x + w - tw, 0)
 
-    def test_a_strip_keeps_its_place_above_the_column(self):
-        strip = self.pygame.Surface((2160, 720))                            # New Rules: 3:1
-        renderer = SimpleNamespace(has_hd_bundle=lambda: False, game_id=lambda: 'shs')
-        below = []
-        for tall in (512., 384 * 16 / 9):
-            ui = self.ui(tall, origin=(240, 300))
-            ui.dialogue_renderer = renderer
-            tw, th = self.target(tall)
-            x, y, w, h = self.place(ui, strip, (tw, th))
-            self.assertAlmostEqual(h, 320, delta=1)                         # 160 units tall, not enlarged
-            below.append(th - (y + h))
-        self.assertAlmostEqual(below[0], below[1], delta=1)
+    def test_past_its_height_the_picture_is_enlarged_to_the_frame(self):
+        units = frame_shape.frame_units('fit', (900, 2400), fixed_window=True)      # past 9:21: 9:21
+        target = (768, round(768 * units[1] / units[0]))
+        x, y, w, h = self.ui(units)._background_placement(self.pygame.Surface((960, 1440)), target)
+        self.assertAlmostEqual(y, 0)
+        self.assertAlmostEqual(h, target[1], delta=1)
+        self.assertGreater(w, target[0])
+
+    def test_a_strip_keeps_its_size_and_rises_with_the_frame(self):
+        strip = (2160, 720)                                                 # New Rules: 3:1
+        (_, y34, _, h34), (_, th34) = self.place('3:4', art=strip, hd=False)
+        (_, y, _, h), (tw, th) = self.place('9:16', art=strip, hd=False)
+        unit = tw / 320
+        self.assertAlmostEqual(h / unit, 160, delta=.5)                     # one art unit a unit, as at 3:4
+        # The strip's bottom, units below the column's top: at 3:4 245; risen by half the height added past HD's frame.
+        below_top = (y + h) / unit - (th / unit - 485.5)
+        self.assertAlmostEqual((y34 + h34) / 2 - (512 - 485.5), 245, delta=.5)
+        self.assertAlmostEqual(below_top, 245 - (320 * 16 / 9 - 512) / 2, delta=.5)
 
 
 class BackdropFitTests(unittest.TestCase):
