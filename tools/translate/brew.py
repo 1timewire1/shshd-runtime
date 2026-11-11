@@ -212,6 +212,10 @@ MIRRORED_BODIES = (164,)
 LOWERED_BODIES = {278: 11}
 CHOICE_PORTRAIT = 1
 CHOICE_TITLE = 'Make your choice!'      # for a quiz: the real player answers, as in New Rules' Train That Brain!
+# BREW's menus are mostly titled `You` (the scripts' own string: 967 menus in 120 stories), which the smartphone's are not: a menu with
+# that title says CHOICE_TITLE instead (owner, 2026-11-11). Menus with titles of their own (Fall '06's `Action?` and `Which class?`,
+# the M.A.S.H. packs' `Food you like`) keep them.
+YOU_TITLE = 'You'
 # The portrait choice's title (27): BREW's string 51 is `Pick Your Best Self Portrait`, wider than the HD picker's one line (412 of
 # 300 units in its title face; the native picker overlaps a second line), so this shorter one (275).
 PORTRAIT_TITLE = 'Pick a Self Portrait'
@@ -809,9 +813,14 @@ def set_word(s, address, value):
 
 
 def menu(rewriter, pc, argc, context):
-    """28: (title, `a|b|c`) the menu 74 shows; returns 1."""
+    """28: (title, `a|b|c`) the menu 74 shows; returns 1. A menu titled `You` says CHOICE_TITLE (YOU_TITLE)."""
     def build(s):
         set_word(s, context['menu'], lambda: s.arg(1))
+        for address in context.get('you_titles', ()):
+            other = s.label()
+            s.arg(1); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
+            set_word(s, context['menu'], lambda: s.text(CHOICE_TITLE))
+            s.label(other)
         set_word(s, context['menu'] + 1, lambda: s.arg(2))
         set_word(s, context['menu'] + 2, lambda: s.push(-1))
         set_word(s, context['menu'] + 4, lambda: s.push(-1))
@@ -3116,6 +3125,7 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
                 last_line=rewriter.words([-1]), dots=rewriter.words([0, 0, 0, 0]), opener_now=rewriter.words([0]), dots_buffer=rewriter.words([0] * (OPENER_WORDS + 4)), narration=rewriter.words([-1]), menu=rewriter.words([-1, -1, -1, 0, -1]),
                 name_buffer=rewriter.words([0] * NAME_WORDS), hash_temp=rewriter.words([0]), line_twin=rewriter.words([-1]), player=player,
                 bracketed=thoughts, game_words=game_words, routine=start, long_lines=long_lines, pieces=rewriter.words([-1, 0, 0]),
+                you_titles=tuple(address for address, text in strings.items() if text == YOU_TITLE),
                 captions=[(address, *badge[:1], rewriter.text(badge[1])) for address in helper_calls(program, [14, 72])
                           for badge in [caption_badge(strings[address])]],
                 title_formats=title_formats(program), date_captions=date_captions(program, rewriter), game_pages=game_pages(program, start) if start is not None else (),

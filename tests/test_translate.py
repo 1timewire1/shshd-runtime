@@ -1861,6 +1861,51 @@ class BrewCalendarTests(unittest.TestCase):
         story = brew.decode_program(ExpArchive(data).read(brew.STORY_SCRIPT))
         self.assertIn(brew.EVENTS_KEY, [i.operand for i in story.instructions if i.opcode == 0x1a])
 
+    def test_a_menu_titled_you_says_make_your_choice(self):
+        # Owner, 2026-11-11: BREW's `You` (967 menus in 120 stories) is the smartphone's `Make your choice!`.
+        import brew
+        import playthrough as pt
+        from collections import Counter
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+        _, data = brew.build_classic(CLASSIC_07 / 'detention.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        session = pt.session(data, addons=[ExpArchive(addon_path.read_bytes())])
+        session.engine.random.state = 1
+        titles = Counter()
+        session.advance()
+        for _ in range(3000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished'):
+                break
+            if action.name == 'choice':
+                titles[action.details.get('title')] += 1
+                if not session.choice_ready:
+                    session.tick(250)
+                session.answer(0)
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            elif action.name == 'word_game':
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+            elif action.name == 'brew_catch':
+                session._complete_minigame(result=session.engine.brew_catch.target)
+            else:
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+        self.assertTrue(titles[brew.CHOICE_TITLE])
+        self.assertNotIn(brew.YOU_TITLE, titles)
+
 
 class CasingEvidenceTests(unittest.TestCase):
     def test_translations_in_a_library_are_never_read_as_smartphone_text(self):
