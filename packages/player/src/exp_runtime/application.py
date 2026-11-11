@@ -1408,6 +1408,7 @@ class Application:
             library.ensure_builtin_episodes()
             process_key = (library.game_id, library.kind)
             state = MenuState(library, process=self.processes.get(process_key), shared=self.settings)
+            state.cutscenes = True                  # this player draws them (desktop_cutscene)
             renderer = MenuRenderer(library)
             if self.game:
                 self.state.checkpoint(self.game.session)

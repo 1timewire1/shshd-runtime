@@ -99,6 +99,9 @@ class MenuState:
     `shared` holds the preferences both games share (an object with a `preferences` dict and
     `set_preferences(values)`: the player's AppSettings): they override player.json's copies, and saving writes both.
     """
+    # shshd-runtime: whether the player using this state draws storyboard cutscenes (desktop_cutscene; Session.cutscenes). A
+    # headless state doesn't, so a story asking takes its other way.
+    cutscenes = False
     def __init__(self, library, *, process=None, shared=None):
         self.library = library
         self.shared = shared
@@ -376,6 +379,13 @@ class MenuState:
         # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in
         # Hector's Guide) must reach the table, not lose to the last playthrough's value when the window shares it.
         session.share_names(self.names_for(resources.record, resources))
+        # The player's answers to what a story may ask before its first screen (service 70's queries), set before the intro
+        # skips below run the opening: they did, with these unset, and Day of Diss on the g54 (Skip Upsell Intros on) took
+        # its no-cutscene branch for good (owner, 2026-11-11). The player sets them again as it takes the session.
+        session.cutscenes = self.cutscenes
+        session.nr_arena = self.arena_minigames
+        session.grids_as_memory = self.grids_as_memory
+        session.skip_arena = self.skip_minigames
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)
