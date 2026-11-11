@@ -214,6 +214,9 @@ class Story:
     extra_text: dict = field(default_factory=dict)
     # Its practice rounds and battle (Builder.diss_comment, diss_round, speed_diss).
     diss_rounds: bool = False
+    # A title card before its first event, where the prototype has none: (its background, SCENES; the subtitle), under the
+    # story's title (owner, 2026-11-11, from reference/screenshots/verify/title_cards/X360_BACKGROUNDS.png).
+    title_card: tuple = ()
 
 
 # The New Rules looks King of Diss gives these characters (nr_looks.json; its $josh's first look).
@@ -236,7 +239,7 @@ DATING_BETH = Story('Dating Beth', 3, ['episode1/event1'], [
     {'zachs_room': 5, 'beths_room': 4, 'beths_house_out': 23, 'dogpound': 23}, player='zach',
     renders={'zach': 'zack'}, voices={'250 140 200': 'beth'},      # Beth's pink; Zack's dad (uncoloured) has no model
     level_music={'zachs_room': 'freedom', 'beths_room': 'freedom', 'beths_house_out': 'freedom_suburban',
-                 'dogpound': 'freedom_dog_pound'})
+                 'dogpound': 'freedom_dog_pound'}, title_card=('dogpound', 'Dogged Pursuit'))
 # What MS4's Diss Practice does as it ends (minigames/dissbattlepractice/game.lua, DBP:EndGame), here as an event would.
 # The script names a level's line whatever the score, so a failed second round would repeat "level 2": each is said on
 # passing, and a fail has New Rules' own line, without its "try again later" (owner, 2026-11-01). Three slots make
@@ -295,6 +298,7 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
     {location: 23 for location in ('school_hallway_a', 'school_front', 'math_classroom', 'ryan_house_out', 'school_hallway_b',
                                    'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
     player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
+    title_card=('front_afternoon', 'King of Diss'),
     script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=13,
     # Andy is fully modelled and nobody's in the prototype (its `andy` template wears Moondog): he's Spike (owner, 2026-11-02).
     renders={'spike': 'andy'},
@@ -1357,7 +1361,8 @@ def scene_backgrounds(folder, story):
         if path.suffix.lower() not in ('.jpg', '.png'):
             continue
         location = next((loc for loc in story.locations if path.stem == loc or path.stem.startswith(loc + '_')), None)
-        if path.stem in story.event_scenes.values() if story.event_scenes else location is not None:
+        if story.title_card and path.stem == story.title_card[0] or (
+                path.stem in story.event_scenes.values() if story.event_scenes else location is not None):
             out[path.stem] = Image.open(path).convert('RGB')
     return out
 
@@ -1444,6 +1449,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     for cast in story.cast:
         builder.add('relationship', character=cast.id, params={'operation': 'add', 'value': 0, 'romantic': False,
                                                                 'hide': True, 'result': f'badge_{cast.id}'})
+    if story.title_card and story.title_card[0] in builder.scene_backgrounds:
+        scene, subtitle = story.title_card
+        builder.add('title', text=story.title, params={'subtitle': subtitle, 'background': builder.scene_backgrounds[scene],
+                                                       'flag': 0})
     for name in story.events:
         builder.run_event(name)
         if name == story.puzzle_after:

@@ -405,6 +405,11 @@ class NewRulesShimTests(unittest.TestCase):
         episode = nr.Episode(9, 'Test', {25001: source})
         self.assertEqual(nr.used_scenes(episode, {(25001, pc)}), set())         # a listed card needs no strip
 
+    def test_the_built_in_stories_without_a_card_get_the_owners(self):
+        # Owner, 2026-11-11: Dancing Queen takes the smartphone Homecoming Queen's card with its own name; King of Diss, bank 1090
+        self.assertEqual(self.nr.ADDED_TITLE_CARDS, {101: ('Dancing Queen', 'Meet the new girl...', 1108),
+                                                     1: ('King of Diss', '', 1090)})
+
     def test_no_transition_falls_just_before_a_game(self):
         # SHS 16 shows its transition when the next panel ends: one queued just before a panel that a game follows
         # would fall between them, so that engine-mode-11 call is dropped.

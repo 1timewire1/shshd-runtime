@@ -58,6 +58,14 @@ class LuaSubsetTests(unittest.TestCase):
 
 @unittest.skipUnless(HAS_PIL, 'x360.py draws backgrounds with Pillow')
 class X360StoryTests(unittest.TestCase):
+    def test_the_stories_without_a_card_get_the_owners(self):
+        # Owner, 2026-11-11: the story's title over one of its backgrounds, with a subtitle; Day of Diss and Puzzle Test have none
+        import x360
+        self.assertEqual(x360.DATING_BETH.title_card, ('dogpound', 'Dogged Pursuit'))
+        self.assertEqual(x360.MONDAY_PLANNER.title_card, ('front_afternoon', 'King of Diss'))
+        self.assertEqual((x360.DAY_OF_DISS.title_card, x360.PUZZLE_TEST.title_card), ((), ()))
+        self.assertTrue(all(story.title_card[0] in x360.SCENES for story in (x360.DATING_BETH, x360.MONDAY_PLANNER)))
+
     EVENTS = '''<Tongas project="t">
     <object key="_a" type="EVENTCONFIGMASTER" name="t/one" version="1"><properties key="_a">
     <p k="_a" n="LocationName">lot</p><p k="_a" n="Script" l="lua"><![CDATA[

@@ -65,6 +65,7 @@ stay exactly as they were.
 - **The compact dialogue stream** (service 48) is static data, so each stream becomes straight-line KiWi in an appended block.
 - **The service map** in brief: 40–43 → 13/76, 11–14 → 1–4, 15–18 → 54/55/46/47, 20–23 → 50–53, 32 → 70, 34 → 10, 35 → 11, 49 → 17.
 - **Text** gets its capitals back from a dictionary learned from the 45 stories paired with smartphone twins (`casing.py`).
+- **Title cards** show the SHS picture picked for each (`TITLE_CARD_BACKGROUNDS`). The two built-in stories with no opening card get one before their first line (`ADDED_TITLE_CARDS`; owner, 2026-11-11): Dancing Queen takes the smartphone Homecoming Queen's, `Meet the new girl...` over 1108, under its own name, and King of Diss has its name alone over 1090. King of Diss Lite opens on its own `Chapter 1` card.
 - **Art is rendered up front,** so the runtime needs no new formats:
   - **Portraits:** five expressions per look, from the paper dolls, with a second set from the X1i jar's redrawn art at +1000
     (`TRANSLATED_PORTRAIT_ART`, the Hi-Res Portraits switch).

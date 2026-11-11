@@ -77,6 +77,11 @@ TITLE_CARD_BACKGROUNDS = {
     (100, 25001, 1528): 1057, (100, 25001, 1909): 1108, (100, 25001, 2077): 1108, (100, 25001, 2260): 1090,
     (100, 25001, 3072): 1090, (101, 25102, 162): 1108,
 }
+# The built-in stories with no title card of their own get one before their first line (owner, 2026-11-11), by download id:
+# (title, subtitle, SHS picture). Dancing Queen takes the smartphone Homecoming Queen's card (pack 5 episode 10: `Meet the
+# new girl...` over 1108) with its own name; King of Diss, bank 1090 (portrait-catalog/bank_backgrounds.md row 0077) and no
+# subtitle. (King of Diss Lite opens on its own `Chapter 1` card.)
+ADDED_TITLE_CARDS = {101: ('Dancing Queen', 'Meet the new girl...', 1108), 1: ('King of Diss', '', 1090)}
 # On the library title only; the story's own title card is unchanged. The importer recognises the tag (shs profile
 # LEGACY_GAMES), drops it from the title, files the episode under New Rules and badges it "NR".
 TITLE_SUFFIX = ' (SHSNR)'
@@ -475,9 +480,12 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
             for name, _ in arena_additions(rewriter, program, arena_pcs, music is not None):
                 report.arena_additions[name] = report.arena_additions.get(name, 0) + 1
         if rid - episode.script_offset == 25001:
+            card = ADDED_TITLE_CARDS.get(episode.download_id)
             rewriter.prologue(lambda s: (s.push(NARRATOR), s.call(75, 1), set_player(s, players.get('start', primary)),
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
-                                         s.push(NARRATOR), s.push(-1), s.call(72, 2)))
+                                         s.push(NARRATOR), s.push(-1), s.call(72, 2),
+                                         *((s.text(card[0]), s.text(card[1]), s.push(card[2]), s.push(0), s.call(8, 4))
+                                           if card else ())))
         elif 'start' in players:
             rewriter.prologue(lambda s: set_player(s, players['start']))
         resources[rid - episode.script_offset] = rewriter.finish().to_bytes()
