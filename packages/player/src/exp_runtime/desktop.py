@@ -1626,7 +1626,7 @@ class Desktop:
         if ms >= LOADING_CLOSE_MS or self.capture:
             self.loading_handover = None
             return
-        area = self.bg_viewport
+        area = getattr(self, 'picture_frame', self.bg_viewport)
         scale = 1 - ease_in_out(ms / LOADING_CLOSE_MS)
         height = max(1, round(area.height * scale))
         band = pygame.transform.smoothscale(handover['layer'], (area.width, height))
@@ -1646,9 +1646,10 @@ class Desktop:
         if ms >= ARENA_HANDOVER_MS or self.capture:
             self.arena_handover = None
             return
-        if handover['scaled'] is None or handover['scaled'].get_size() != self.bg_viewport.size:
-            handover['scaled'] = pygame.transform.smoothscale(handover['layer'], self.bg_viewport.size)
-        self.window.blit(faded(handover['scaled'], round(255 * (1 - ms / ARENA_HANDOVER_MS))), self.bg_viewport)
+        area = getattr(self, 'picture_frame', self.bg_viewport)
+        if handover['scaled'] is None or handover['scaled'].get_size() != area.size:
+            handover['scaled'] = pygame.transform.smoothscale(handover['layer'], area.size)
+        self.window.blit(faded(handover['scaled'], round(255 * (1 - ms / ARENA_HANDOVER_MS))), area)
 
     def _draw_transition(self):
         """The session's queued transition over the frame (fade_transition.FadeTransition; Android's has no layers)."""
@@ -2278,9 +2279,18 @@ class Desktop:
         # run to its edges. Measured from HD photos: the UI is ~3.9 px per
         # unit at 1500x2000 (this build used to fit it to the window height at
         # 4.17), with the bar's 24-unit strip exactly 24 units tall.
-        scale = min(width / FRAME_UNITS[0], height / FRAME_UNITS[1])
-        frame = pygame.Rect(0, 0, max(1, round(FRAME_UNITS[0] * scale)), max(1, round(FRAME_UNITS[1] * scale)))
+        # General's Aspect Ratio (frame_shape.py) keeps the frame's width and makes it taller: the column stays at the
+        # bottom, the extra height above it. A screen drawn as a whole 3:4 picture (a minigame, the arena) sits at the
+        # bottom too (picture_frame), so its own bar and gear are where the story's are; a card over the scene (the
+        # pause menu, a notice) is centred (card_frame); the Faceplace alert's strip keeps to the top (alert_frame).
+        # At 3:4 all four are the frame.
+        units = self.frame_units()
+        scale = min(width / units[0], height / units[1])
+        frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
         frame.center = (width // 2, height // 2)
+        picture = pygame.Rect(0, 0, frame.width, max(1, round(FRAME_UNITS[1] * scale)))
+        self._frames = (frame, picture.move(frame.x, frame.bottom - picture.height),
+                        picture.move(frame.x, frame.centery - picture.height // 2), picture.move(frame.x, frame.y))
         target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
         with frame_log.section('present'):
             # A screen with its own layer leaves the canvas empty: no pass, and nothing to blit.
@@ -2313,14 +2323,16 @@ class Desktop:
         under = getattr(self, 'under_layer', None)
         if under is not None:
             # A screen under the choice that covers the whole frame (New Rules' arena under its menu).
-            self.window.blit(pygame.transform.smoothscale(under, self.bg_viewport.size), self.bg_viewport)
+            self.window.blit(pygame.transform.smoothscale(under, self.picture_frame.size), self.picture_frame)
+            self._draw_picture_band(backdrop, height)
         ui_layers = []
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
             if layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
-                # The whole 384x512-unit frame (HD's football).
-                area = self.bg_viewport
+                # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame.
+                area = self.picture_frame
+                self._draw_picture_band(backdrop, height)
             elif layer.get_width() * 480 == layer.get_height() * FRAME_UNITS[0]:
                 # A frame-wide layer (its column plus HD's 32-unit side margins).
                 area = pygame.Rect(self.bg_viewport.x, self.viewport.y, self.bg_viewport.width, self.viewport.height)
@@ -2349,9 +2361,9 @@ class Desktop:
         self._panel_handover(ui_layers)
         if hd_alert is not None:
             # HD's alert is a strip of the frame, cut by the frame's own edge.
-            self.window.blit(pygame.transform.smoothscale(hd_alert, frame.size), frame)
+            self.window.blit(pygame.transform.smoothscale(hd_alert, self.alert_frame.size), self.alert_frame)
         if hd_badge is not None:
-            self.window.blit(pygame.transform.smoothscale(hd_badge, frame.size), frame)
+            self.window.blit(pygame.transform.smoothscale(hd_badge, self.picture_frame.size), self.picture_frame)
         if hd_pause:
             self._draw_hd_pause(frame)
         if self.notice_stack is not None and self.notice_stack.stack:
@@ -2934,9 +2946,32 @@ class Desktop:
             self._tinted = key, self.pause_hd.sepia(self.window.subsurface(area).copy())
         self.window.blit(self._tinted[1], area)
 
+    def _frame_part(self, index):
+        """One of _present's 3:4 places in the frame, while it's the frame they were made for; else the frame itself
+        (the same at 3:4)."""
+        frames = self.__dict__.get('_frames')
+        return frames[index] if frames is not None and frames[0] is self.bg_viewport else self.bg_viewport
+
+    picture_frame = property(lambda self: self._frame_part(1), doc="A whole 3:4 picture: at the frame's bottom.")
+    card_frame = property(lambda self: self._frame_part(2), doc='A card over the scene: centred in the frame.')
+    alert_frame = property(lambda self: self._frame_part(3), doc="The Faceplace alert's strip: at the frame's top.")
+
+    def _draw_picture_band(self, backdrop, height):
+        """Above a 3:4 picture in a taller frame (picture_frame), the window's backdrop, as beside the frame."""
+        band = pygame.Rect(self.bg_viewport.x, self.bg_viewport.y, self.bg_viewport.width,
+                           self.picture_frame.y - self.bg_viewport.y).clip(self.window.get_rect())
+        if band.height <= 0:
+            return
+        if backdrop is not None:
+            self.window.blit(backdrop, band, band)
+        else:
+            self.window.fill((8, 12, 20), band)
+
     def _draw_hd_pause(self, frame):
-        """HD's pause menu: the frame dimmed sepia with UIKit panels over it (desktop_pause_hd.py)."""
+        """HD's pause menu: the frame dimmed sepia with UIKit panels over it (desktop_pause_hd.py), its 3:4 card centred
+        in a taller frame (card_frame)."""
         area = frame.clip(self.window.get_rect())
+        frame = getattr(self, 'card_frame', frame)
         if area.width <= 0 or area.height <= 0:
             return
         if not self.pause_closing:           # Resume takes the tint away at once; only the card zooms out
@@ -3026,12 +3061,13 @@ class Desktop:
         layer = pygame.Surface((HD_FRAME[0] * HD_S, HD_FRAME[1] * HD_S), pygame.SRCALPHA)
         self.notice_windows.draw(layer, current, pressed=self.notice_pressed or self.notice_focus)
         scale = pause_scale(self.notice_ms)
-        size = tuple(max(1, round(length * scale)) for length in area.size)
+        card = getattr(self, 'card_frame', area)        # the window's 3:4 picture, centred in a taller frame
+        size = tuple(max(1, round(length * scale)) for length in card.size)
         self.window.blit(pygame.transform.smoothscale(layer, size),
-                         pygame.Rect((0, 0), size).move(area.centerx - size[0] // 2, area.centery - size[1] // 2))
+                         pygame.Rect((0, 0), size).move(card.centerx - size[0] // 2, card.centery - size[1] // 2))
 
     def _pause_point(self, position):
-        frame = self.bg_viewport
+        frame = self.card_frame
         return ((position[0] - frame.x) * 768 / frame.width, (position[1] - frame.y) * 1024 / frame.height)
 
     def _set_volume(self, which, value):
@@ -3482,7 +3518,7 @@ class Desktop:
         asking = self.host_prompt is not None and self.host_prompt['action'] is action
         if (action and action.name in ARENA_ACTIONS and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            frame = self.bg_viewport
+            frame = self.picture_frame
             command = self._arena_tap(action, (event.pos[0] - frame.x) * 768 / frame.width,
                                       (event.pos[1] - frame.y) * 1024 / frame.height)
             if command is not None:
@@ -3490,7 +3526,7 @@ class Desktop:
             return True
         if (action and action.name in ('x360_slot', 'x360_diss', 'brew_catch') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            frame = self.bg_viewport
+            frame = self.picture_frame
             x = (event.pos[0] - frame.x) * 768 / frame.width
             y = (event.pos[1] - frame.y) * 1024 / frame.height
             if 0 <= x < 150 and 880 <= y <= 1024:
@@ -3500,7 +3536,7 @@ class Desktop:
             return True
         if (action and action.name in ('shs11_memory', 'shs11_reflex') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            frame = self.bg_viewport
+            frame = self.picture_frame
             x = (event.pos[0] - frame.x) * 768 / frame.width
             y = (event.pos[1] - frame.y) * 1024 / frame.height
             if 0 <= x < 150 and 880 <= y <= 1024:
@@ -3525,7 +3561,7 @@ class Desktop:
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             if self._football().__class__ is HdFootballRenderer:
-                frame = self.bg_viewport
+                frame = self.picture_frame
                 x = (event.pos[0] - frame.x) * 768 / frame.width
                 y = (event.pos[1] - frame.y) * 1024 / frame.height
                 if 0 <= x < 150 and 880 <= y <= 1024:
@@ -3543,7 +3579,7 @@ class Desktop:
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             hd = self._word_grid().__class__ is HdWordRenderer
             if hd:
-                frame = self.bg_viewport
+                frame = self.picture_frame
                 x = (event.pos[0] - frame.x) * 768 / frame.width
                 y = (event.pos[1] - frame.y) * 1024 / frame.height
                 (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS     # (in points, twice the units)
@@ -3696,7 +3732,7 @@ class Desktop:
     def _gear_hit(self, position):
         if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open or not self._hd_gear_shown():
             return False
-        frame = self.bg_viewport
+        frame = self.picture_frame              # the gear is at the frame's bottom whatever its height
         unit = frame.width / FRAME_UNITS[0]
         x, y = (position[0] - frame.x) / unit, (position[1] - frame.y) / unit
         (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS
@@ -3884,7 +3920,7 @@ class Desktop:
         look where the "Use X360 Arena Skin" switch is on and the X360 addon is imported, else New Rules' own."""
         renderer = (self.x360_arena_renderer if self.arena_skin and self.x360_arena_switch()
                     else self.nr_arena_renderer)
-        viewport = getattr(self, 'bg_viewport', None)
+        viewport = getattr(self, 'picture_frame', None)
         if viewport is not None:
             renderer.target_height = viewport.height
         return renderer
@@ -4034,7 +4070,7 @@ class Desktop:
 
     def _leash_pointer(self, event):
         """The leash game's mouse and touch: a press is OK, or the gear; holding it and dragging back and forth shakes."""
-        frame = self.bg_viewport
+        frame = self.picture_frame
         x = (event.pos[0] - frame.x) * 768 / frame.width
         y = (event.pos[1] - frame.y) * 1024 / frame.height
         if event.type == pygame.MOUSEBUTTONUP:
@@ -4107,7 +4143,7 @@ class Desktop:
     def _puzzle_pointer(self, event):
         """The jewel puzzle's mouse and touch: a press on a jewel holds it and a drag takes its row or column along; off
         the board a press is OK, or the gear; a mouse over the board with its button up points the cursor."""
-        frame = self.bg_viewport
+        frame = self.picture_frame
         x = (event.pos[0] - frame.x) * 768 / frame.width
         y = (event.pos[1] - frame.y) * 1024 / frame.height
         game = self.session.engine.x360_puzzle
@@ -4426,6 +4462,7 @@ class Desktop:
     def snapshot(self, size=(432, 580)):
         """The game's frame as a saved-game screenshot for the episode picker (the pause menu left out)."""
         opened, self.menu_open = self.menu_open, False
+        shape, self.aspect_ratio = self.aspect_ratio, '3:4'
         # A live (non-capture) Desktop's own render() ends with pygame.display.flip(), presenting straight to the
         # real screen -- fine for its normal per-frame use, but this method also runs mid-transition (the
         # end-of-episode card's sepia source, a resume tile's screenshot) purely to read pixels back off `window`,
@@ -4439,6 +4476,7 @@ class Desktop:
         finally:
             self.menu_open = opened
             self.capture = was_capture
+            self.aspect_ratio = shape
         frame = self.bg_viewport.clip(self.window.get_rect())
         return pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
 
