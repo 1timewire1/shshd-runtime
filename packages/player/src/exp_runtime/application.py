@@ -42,6 +42,7 @@ from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    shared_preference)
 from .runtime import SaveError, Session
 from .settings import AppSettings
+from .frame_shape import CHOICES as ASPECT_RATIOS
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
 from .pointer import ButtonPress
 from .staged_import import (ARCHIVE_SUFFIXES, discover as discover_staged_import, import_bulk, import_staged,
@@ -433,6 +434,7 @@ class Application:
             setattr(self.state, key, value)
         self.state.persist()
         self.settings.set_start_in('auto')
+        self.set_aspect_ratio(None)
         for key in ('backup_folder', 'export_folder'):
             if getattr(self.settings, key, None) is not None:
                 self.settings.set_folder(key, None)
@@ -1259,6 +1261,18 @@ class Application:
         if self.game:
             self.game.set_ch_portraits(self.state.ch_portraits)
 
+    def set_aspect_ratio(self, choice):
+        """General's Aspect Ratio (frame_shape.CHOICES, or None for this device's default), kept in settings.json and
+        given to the open game at once."""
+        self.settings.set_aspect_ratio(choice)
+        if self.game is not None:
+            self.game.aspect_ratio = self.settings.aspect(self.fixed_window)
+
+    def next_aspect_ratio(self):
+        """The shape after the current one, for a button that steps through them."""
+        current = self.settings.aspect(self.fixed_window)
+        return ASPECT_RATIOS[(ASPECT_RATIOS.index(current) + 1) % len(ASPECT_RATIOS)]
+
     def set_update_check(self, enabled):
         """The launch update check on or off (settings.json), from the SD Options or the HD General page."""
         self.settings.set_update_check(enabled)
@@ -2082,6 +2096,8 @@ class Application:
         self.game.device_vibration_enabled = self.state.device_vibration
         self.game.url_opener = self.url_opener
         self.game.fixed_window = self.fixed_window
+        if getattr(self, 'settings', None) is not None:         # (an Application a test built without __init__)
+            self.game.aspect_ratio = self.settings.aspect(self.fixed_window)
         self.game.music_volume, self.game.sound_volume = self.state.music_volume / 100, self.state.sound_volume / 100
         self.game.choice_hints = self.state.choice_hints
         self.game.skip_minigames = self.state.skip_minigames
@@ -2216,6 +2232,8 @@ class Application:
         self.state.music_volume = round(self.game.music_volume * 100)
         self.state.sound_volume = round(self.game.sound_volume * 100)
         self.state.persist()
+        if self.game.aspect_ratio != self.settings.aspect(self.fixed_window):
+            self.settings.set_aspect_ratio(self.game.aspect_ratio)     # the pause menu's General: this device's own
 
     def unlock_warp_if_football_finished(self):
         """`SHSEngine::invokeEndOfGameMenu`: at the end of the episode with id 0 (Football Season) the tree's lock (+0x6490a) is cleared,

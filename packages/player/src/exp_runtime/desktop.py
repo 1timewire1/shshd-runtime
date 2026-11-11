@@ -47,7 +47,8 @@ from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
+from .desktop_pause_hd import ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
+from . import frame_shape
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import has_links, play_option
@@ -313,6 +314,8 @@ class Desktop:
     url_opener = None
     # The host's window is its screen (a mobile host's): the side panels never widen it; landscape gives them room.
     fixed_window = False
+    # General's Aspect Ratio (frame_shape.CHOICES), as the app gives it: the frame's shape (frame_units).
+    aspect_ratio = '3:4'
     # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
     choice_focus = None
     # The same for the Android pause menu's rows (HD's pause menu keeps its own, `pause_hd.state.focus`).
@@ -2961,6 +2964,7 @@ class Desktop:
         # No Skip Ad / Upsell Intros here: they only act as an episode starts, so the main menu's Options alone lists
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
+                    aspect_ratio=ASPECT_NAMES[self.aspect_ratio],
                     **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
                     **(dict(controller_confirm=CONFIRM_NAMES[self.controller_confirm],
                             grid_controls=GRID_CONTROLS_NAMES[self.grid_controls],
@@ -2983,6 +2987,10 @@ class Desktop:
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
+
+    def frame_units(self):
+        """The frame's size in layout units for General's Aspect Ratio in this window (frame_shape.frame_units)."""
+        return frame_shape.frame_units(self.aspect_ratio, self.window.get_size(), self.fixed_window)
 
     def x360_arena_switch(self):
         """shshd-runtime: whether the "Use X360 Arena Skin" switch is offered: in a translated New Rules episode (hires_switch)
@@ -3111,6 +3119,17 @@ class Desktop:
             return
         if kind == 'pause_back':
             self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'aspect_ratio':
+            # General's Aspect Ratio: a shape picked on its choice page (or the next one), kept by the app (on_settings).
+            choices = frame_shape.CHOICES
+            self.aspect_ratio = (command[2] if len(command) > 2 else
+                                 choices[(choices.index(self.aspect_ratio) + 1) % len(choices)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
             self._menu_sound()
             return
         if kind == 'pause_cycle' and len(command) > 2 and command[1] in ('grid_controls', 'controller_confirm'):

@@ -216,7 +216,7 @@ class AppOptions:
     def settings(self):
         """What the pages offer, as HdShell.settings has it for the main menu (less a library's own rows)."""
         from . import graphics
-        from .desktop_pause_hd import CONFIRM_NAMES, GRID_CONTROLS_NAMES, START_IN_NAMES
+        from .desktop_pause_hd import ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, START_IN_NAMES
         v, app = self.values(), self.app
         settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'choice_hints', 'skip_minigames',
                                             'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
@@ -229,7 +229,8 @@ class AppOptions:
         settings.update(music_volume=v['music_volume'] / 100, sound_volume=v['sound_volume'] / 100,
                         title_language=LANGUAGE_NAMES.get(v['title_language'], v['title_language']),
                         check_updates=app.settings.check_for_updates,
-                        start_in=START_IN_NAMES[app.settings.start_in], reset_settings=True)
+                        start_in=START_IN_NAMES[app.settings.start_in], reset_settings=True,
+                        aspect_ratio=ASPECT_NAMES[app.settings.aspect(app.fixed_window)])
         if graphics.supports_vibration():
             settings['device_vibration'] = v['device_vibration']
         if graphics.controller_connected():
@@ -294,6 +295,8 @@ class AppOptions:
             key, value = command[1], command[2]
             if key == 'start_in':
                 app.settings.set_start_in(value)
+            elif key == 'aspect_ratio':
+                app.settings.set_aspect_ratio(value)
             else:
                 self.set(key, value)
                 if key == 'controller_confirm':
@@ -303,6 +306,10 @@ class AppOptions:
             key = command[1]
             if key == 'start_in':
                 app.settings.set_start_in(START_IN[(START_IN.index(app.settings.start_in) + 1) % len(START_IN)])
+            elif key == 'aspect_ratio':
+                from .frame_shape import CHOICES
+                current = app.settings.aspect(app.fixed_window)
+                app.settings.set_aspect_ratio(CHOICES[(CHOICES.index(current) + 1) % len(CHOICES)])
             elif key == 'title_language':
                 self.set(key, TITLE_LANGUAGES[(TITLE_LANGUAGES.index(v[key]) + 1) % len(TITLE_LANGUAGES)])
             elif key == 'controller_confirm':
@@ -356,6 +363,7 @@ class AppOptions:
         app = self.app
         app.settings.set_preferences(preference_defaults())
         app.settings.set_start_in('auto')
+        app.settings.set_aspect_ratio(None)
         for key in FOLDERS:
             if getattr(app.settings, key, None) is not None:
                 app.settings.set_folder(key, None)

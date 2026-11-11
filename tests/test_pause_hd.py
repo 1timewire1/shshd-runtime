@@ -189,6 +189,16 @@ class HdPauseTests(unittest.TestCase):
         self.assertFalse(self.menu.back())
         self.assertEqual(state.screen, 'options:data')                      # back to Data Management
 
+    def test_aspect_ratio_is_generals_first_choice_and_opens_a_page_of_the_shapes(self):
+        from exp_runtime.desktop_pause_hd import ASPECT_LABEL, ASPECT_NAMES
+        self.settings.update(aspect_ratio=ASPECT_NAMES['fit'], title_language='English')
+        rows = self.menu.option_rows('general', self.settings, self.menu.strings())
+        choices = [(label, key) for kind, label, key in rows if kind == 'choice']
+        self.assertEqual(choices[0], (ASPECT_LABEL, 'aspect_ratio'))
+        picks = self.menu.option_rows('choice:aspect_ratio', self.settings, self.menu.strings())
+        self.assertEqual([(label, key) for _, label, key in picks],
+                         [(name, ('aspect_ratio', value)) for value, name in ASPECT_NAMES.items()])
+
     def test_start_in_opens_a_page_of_its_choices_and_unlock_warping_is_an_extras_action(self):
         """General's Start In and Episode Titles open a menu page of their values (owner, 2026-11-09), the current one
         ticked, each row picking its value; back from it is the option's page. Extras' Unlock Warping is an action row,

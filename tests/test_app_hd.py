@@ -13,7 +13,7 @@ import pygame
 def app(root, **values):
     defaults = dict(screen='games', pressed=None, busy=False, message='', update_prompt=None, file_picker=None,
                     selected_game='shs', game_title='SHSHD Runtime', can_quit=True, job_kind=None, progress_text='',
-                    focus=None, focus_index=0, transition_direction=1,
+                    focus=None, focus_index=0, transition_direction=1, fixed_window=False,
                     library_path=lambda key: Path(root) / key)
     defaults.update(values)
     return SimpleNamespace(**defaults)
@@ -79,7 +79,7 @@ class AppScreenTests(unittest.TestCase):
         from exp_runtime.menu import preference_defaults
         from exp_runtime.settings import AppSettings
         settings = AppSettings(Path(self.root) / 'settings.json')
-        host = SimpleNamespace(settings=settings, file_picker=Mock(), back=Mock(), _click_sound=Mock(),
+        host = SimpleNamespace(settings=settings, file_picker=Mock(), back=Mock(), _click_sound=Mock(), fixed_window=False,
                                sync_controller=Mock(), choose_folder=Mock(), games_with_libraries=lambda: [],
                                set_update_check=lambda on: settings.set_update_check(on))
         options = AppOptions(host)
@@ -105,6 +105,12 @@ class AppScreenTests(unittest.TestCase):
         self.assertEqual((AppSettings(Path(self.root) / 'settings.json').start_in, options.menu.state.screen),
                          ('cod', 'options:general'))                        # ...set, and back on General
         options.menu.slide = None
+        self.assertIn(('pause_open', 'choice:aspect_ratio'), general)          # Aspect Ratio: this computer's own
+        options.activate(('pause_open', 'choice:aspect_ratio'))
+        options.menu.slide = None
+        options.activate(('pause_cycle', 'aspect_ratio', '9:16'))
+        options.menu.slide = None
+        self.assertEqual(AppSettings(Path(self.root) / 'settings.json').aspect_ratio, '9:16')
         for key in ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits'):     # only SHS offers them
             self.assertNotIn(('pause_toggle', key), general)
         self.assertNotIn(('pause_open', 'choice:title_language'), general)
@@ -117,7 +123,7 @@ class AppScreenTests(unittest.TestCase):
         actions[1]()
         stored = AppSettings(Path(self.root) / 'settings.json')
         self.assertEqual({key: stored.preferences[key] for key in preference_defaults()}, preference_defaults())
-        self.assertEqual((stored.start_in, options.ask[0]), ('auto', 'Settings Reset'))
+        self.assertEqual((stored.start_in, stored.aspect_ratio, options.ask[0]), ('auto', None, 'Settings Reset'))
 
     def test_the_file_browser_lists_the_folder_and_each_kind_its_buttons(self):
         folder = Path(self.root) / 'files'
@@ -154,7 +160,7 @@ class AppScreenTests(unittest.TestCase):
             (root / game / 'library.json').write_text('{}')
             (root / game / 'saves').mkdir()
         (root / 'cod' / 'notes.txt').write_text('mine')                     # the player's own: it stays
-        host = SimpleNamespace(settings=AppSettings(root / 'settings.json'), file_picker=Mock(),
+        host = SimpleNamespace(settings=AppSettings(root / 'settings.json'), file_picker=Mock(), fixed_window=False,
                                library_path=lambda key: root / key,
                                games_with_libraries=lambda: [k for k in ('shs', 'cod')
                                                              if (root / k / 'library.json').is_file()])

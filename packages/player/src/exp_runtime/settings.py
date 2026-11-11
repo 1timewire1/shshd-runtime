@@ -1,8 +1,9 @@
 """App-wide preferences, independent of either game's imported library.
 
 Besides the update check: the preferences both games share (menu.SHARED_PREFERENCES: the switches and volumes of
-Options, owner 2026-10-29), which game the app opens in (`start_in`, General's Start In) and the game an episode was
-last started in (`last_game`, what Start In's Last Played opens).
+Options, owner 2026-10-29), which game the app opens in (`start_in`, General's Start In), the game an episode was
+last started in (`last_game`, what Start In's Last Played opens) and the display's shape (`aspect_ratio`, General's Aspect
+Ratio: this device's, so never synced or backed up; None for its default, frame_shape.default).
 """
 import json
 import logging
@@ -10,6 +11,7 @@ import os
 from pathlib import Path
 import tempfile
 
+from .frame_shape import CHOICES as ASPECT_RATIOS, default as default_aspect
 from .launcher import user_data_directory
 
 # General's Start In: the game an episode was last played in (the default: the game chooser until there is one; owner,
@@ -27,6 +29,7 @@ class AppSettings:
         self.preferences = {}           # shared game preferences (MenuState checks each value as it reads it)
         self.start_in = 'auto'
         self.last_game = None
+        self.aspect_ratio = None
         self.backup_folder = self.export_folder = None
         try:
             data = json.loads(self.path.read_text(encoding='utf-8'))
@@ -50,6 +53,8 @@ class AppSettings:
             self.start_in = data['start_in']
         if isinstance(data.get('last_game'), str) and data['last_game'] in START_IN[2:]:
             self.last_game = data['last_game']
+        if data.get('aspect_ratio') in ASPECT_RATIOS:
+            self.aspect_ratio = data['aspect_ratio']
         for key in FOLDERS:
             if isinstance(data.get(key), str) and data[key]:
                 setattr(self, key, data[key])
@@ -69,6 +74,17 @@ class AppSettings:
         if choice not in START_IN:
             raise ValueError('Unknown start-up choice')
         self._write(start_in=choice)
+
+    def set_aspect_ratio(self, choice):
+        """General's Aspect Ratio (frame_shape.CHOICES), or None for this device's default."""
+        if choice is not None and choice not in ASPECT_RATIOS:
+            raise ValueError('Unknown aspect ratio')
+        if choice != self.aspect_ratio:
+            self._write(aspect_ratio=choice)
+
+    def aspect(self, fixed_window):
+        """The shape in use: the one chosen, else the device's default (Fit Screen on a phone, 3:4 on a computer)."""
+        return self.aspect_ratio or default_aspect(fixed_window)
 
     def set_last_game(self, game):
         if game not in START_IN[2:]:
@@ -90,7 +106,7 @@ class AppSettings:
 
     def _write(self, **changes):
         values = dict(check_for_updates=self.check_for_updates, preferences=self.preferences,
-                      start_in=self.start_in, last_game=self.last_game,
+                      start_in=self.start_in, last_game=self.last_game, aspect_ratio=self.aspect_ratio,
                       **{key: getattr(self, key) for key in FOLDERS})
         values.update(changes)
         self.path.parent.mkdir(parents=True, exist_ok=True)

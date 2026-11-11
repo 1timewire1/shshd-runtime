@@ -116,6 +116,10 @@ TITLE_LANGUAGE_LABEL = 'Episode Titles'
 START_IN_LABEL = 'Start In'
 START_IN_NAMES = {'auto': 'Last Played', 'games': 'Choose a Game', 'shs': 'Surviving High School',
                   'cod': 'Cause of Death'}
+# General's Aspect Ratio (owner, 2026-11-11; frame_shape.py): the frame's shape, this device's own (settings.AppSettings),
+# offered by every Options page that has General, the pause menu's too.
+ASPECT_LABEL = 'Aspect Ratio'
+ASPECT_NAMES = {'3:4': '3:4 (HD)', '2:3': '2:3 (Whole Picture)', '9:16': '9:16', 'fit': 'Fit Screen'}
 # Extras' Unlock Warping (owner, 2026-10-29): SHS's story-tree lock (`SHSEngine +0x6490a`, cleared by finishing
 # Football Season) undone at once, with the app's own notice (menu 29); offered only while warping is locked.
 UNLOCK_WARP_LABEL = 'Unlock Warping'
@@ -147,12 +151,13 @@ TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 
 PER_GAME_LABEL = 'Per-Game Settings'
 PAGE_TITLES = {'per_game': PER_GAME_LABEL}
 PAGE_PARENTS = {'options:per_game': 'options:addons'}
-CHOICE_NAMES = {'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES, 'controller_confirm': CONFIRM_NAMES,
+CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
+                'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES}
-CHOICE_LABELS = {'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
+CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
                  'title_music': TITLE_MUSIC_LABEL}
-CHOICE_PARENTS = {'title_language': 'options:general', 'start_in': 'options:general',
+CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'title_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
                   'title_music': 'options:addons'}
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
@@ -805,6 +810,8 @@ class HdPauseMenu:
             # General's Vibration is the Controller page's when only a controller vibrates (settings['controller_vibration'])
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings
                     and not (key == 'device_vibration' and settings.get('controller_vibration'))]
+            if 'aspect_ratio' in settings:
+                rows.append(('choice', ASPECT_LABEL, 'aspect_ratio'))
             if 'title_language' in settings:
                 rows.append(('choice', TITLE_LANGUAGE_LABEL, 'title_language'))
             if 'start_in' in settings:

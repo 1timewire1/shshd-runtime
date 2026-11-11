@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
@@ -386,6 +386,7 @@ class HdShell:
                 settings[key] = self.app.folder_label(key)
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
+        settings['aspect_ratio'] = ASPECT_NAMES[self.app.settings.aspect(self.app.fixed_window)]
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
         if graphics.controller_connected():
             settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
@@ -434,6 +435,8 @@ class HdShell:
         state = self.app.state
         if key == 'start_in':
             self.app._attempt(lambda: self.app.settings.set_start_in(value))
+        elif key == 'aspect_ratio':
+            self.app._attempt(lambda: self.app.set_aspect_ratio(value))
         elif key == 'title_language':
             state.title_language = value
             state.persist()
@@ -745,6 +748,8 @@ class HdShell:
             self.app._attempt(state.persist)
         elif kind == 'pause_cycle' and command[1] in ('backup_folder', 'export_folder'):
             self.app.choose_folder(command[1])
+        elif kind == 'pause_cycle' and command[1] == 'aspect_ratio':
+            self.app._attempt(lambda: self.app.set_aspect_ratio(self.app.next_aspect_ratio()))
         elif kind == 'pause_cycle' and command[1] == 'start_in':
             choices = START_IN
             self.app._attempt(lambda: self.app.settings.set_start_in(

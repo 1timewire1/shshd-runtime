@@ -146,6 +146,7 @@ class UnlockWarpingTests(unittest.TestCase):
     def test_a_storys_extras_does_not_offer_it(self):
         from exp_runtime.desktop import Desktop
         self.assertNotIn('unlock_warp', Desktop._pause_settings(SimpleNamespace(
+            aspect_ratio='3:4',
             grids_as_memory=False, memory_grid_switch=lambda: False, skip_ahead=False, undo=False, _undo_ready=lambda: False,
             vibration_enabled=False, music_enabled=True, sound_enabled=True, music_volume=1, sound_volume=1,
             panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
