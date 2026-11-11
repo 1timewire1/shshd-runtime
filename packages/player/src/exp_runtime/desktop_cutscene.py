@@ -1,6 +1,11 @@
-"""shshd-runtime: draws a storyboard cutscene (cutscene.py) on the 3:4 frame: its shot's window, then its overlays over that. It only
+"""shshd-runtime: draws a storyboard cutscene (cutscene.py) on the frame: its shot's window, then its overlays over that. It only
 reads the clock. A window at the frame's own size is a blit; anything else is scaled each frame, with an overlay cut to what shows first,
-as a stamp can start several times the frame's size."""
+as a stamp can start several times the frame's size.
+
+General's Aspect Ratio: the canvas is `size`'s width and the frame's shape, no taller than the spec serves (version 1: 3:4;
+version 2: its `tallest`); the desktop shows a shorter canvas at the frame's width, centred, with the backdrop above and below. A
+version 2 shot is cropped about its window's centre ('crop') or zoomed by height about its anchor ('height'), and an overlay may follow
+a shot's picture (cutscene_spec._check_version_2)."""
 import io
 import math
 
@@ -9,6 +14,8 @@ from .cutscene import moved, read_spec
 
 
 class CutsceneRenderer:
+    frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
+
     def __init__(self, resources):
         self.resources = resources
         self.canvas = None
@@ -20,11 +27,23 @@ class CutsceneRenderer:
     def spec(self, spec_id):
         if self._spec_id != spec_id:
             self._spec_id, self._spec = spec_id, read_spec(self.resources.read_asset(spec_id))
-            self.canvas = pygame.Surface(tuple(self._spec['size'])).convert()
+            self.canvas = None
             self._images, self._scaled = {}, {}
             for item in self._spec['shots'] + self._spec.get('overlays', []):       # so that none stalls a frame later on
                 self._image(item['image'])
+        size = self.canvas_size()
+        if self.canvas is None or self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
         return self._spec
+
+    def canvas_size(self):
+        """`size`'s width; as tall as the frame's shape, within what the spec serves (3:4 at least, its tallest at most)."""
+        spec = self._spec
+        width, height = spec['size']
+        tallest = spec.get('tallest', spec['size']) if spec['version'] >= 2 else spec['size']
+        frame_width, frame_height = self.frame_units
+        shape = max(frame_width / frame_height, tallest[0] / tallest[1])
+        return width, max(height, min(tallest[1], round(width / shape)))
 
     def _image(self, resource):
         found = self._images.get(resource)
@@ -33,9 +52,23 @@ class CutsceneRenderer:
             found = self._images[resource] = surface.convert_alpha() if surface.get_masks()[3] else surface.convert()
         return found
 
+    def window(self, shot, ms, size=None):
+        """The shot's window at `ms` for a canvas of `size` (this one's): version 1's as stored; version 2's cropped about
+        its centre to the canvas's shape ('crop') or narrowed about its anchor, its height kept ('height')."""
+        x, y, w, h = moved(shot, ms)
+        if self._spec['version'] < 2:
+            return x, y, w, h
+        width, height = size or self.canvas.get_size()
+        if shot.get('fit', 'crop') == 'height':
+            anchor = shot['anchor'][0]
+            narrow = h * width / height
+            return anchor - (anchor - x) * narrow / w, y, narrow, h
+        short = w * height / width
+        return x, y + (h - short) / 2, w, short
+
     def _shot(self, shot, ms):
         image = self._image(shot['image'])
-        x, y, w, h = moved(shot, ms)
+        x, y, w, h = self.window(shot, ms)
         width, height = self.canvas.get_size()
         if (round(w), round(h)) == (width, height):
             self.canvas.blit(image, (-round(x), -round(y)))
@@ -43,9 +76,26 @@ class CutsceneRenderer:
         box = pygame.Rect(round(x), round(y), round(w), round(h)).clip(image.get_rect())
         self.canvas.blit(pygame.transform.smoothscale(image.subsurface(box), (width, height)), (0, 0))
 
+    def _placed(self, overlay, ms):
+        """The overlay's (cx, cy, w, h) on this canvas. Its spec places it on the 3:4 frame (`size`): a taller canvas keeps
+        it as far from the middle, or (version 2's `follow`) on the same place in that shot's picture."""
+        cx, cy, w, h = moved(overlay, ms)
+        size = tuple(self._spec['size'])
+        width, height = self.canvas.get_size()
+        if (width, height) == size:
+            return cx, cy, w, h
+        follow = overlay.get('follow')
+        if follow is None:
+            return cx, cy + (height - size[1]) / 2, w, h
+        shot = self._spec['shots'][follow]
+        x0, y0, w0, h0 = self.window(shot, ms, size)                # where the picture is at 3:4
+        x1, y1, w1, h1 = self.window(shot, ms)                      # and on this canvas
+        px, py = x0 + cx * w0 / size[0], y0 + cy * h0 / size[1]
+        return (px - x1) * width / w1, (py - y1) * height / h1, w, h
+
     def _overlay(self, overlay, ms):
         image = self._image(overlay['image'])
-        cx, cy, w, h = moved(overlay, ms)
+        cx, cy, w, h = self._placed(overlay, ms)
         key = overlay['image'], round(w), round(h)
         settled = self._scaled.get(key)
         if settled is None and ms >= overlay['end']:

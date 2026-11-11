@@ -287,3 +287,61 @@ class PlayerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Version2Tests(unittest.TestCase):
+    """Spec version 2: taller frames (General's Aspect Ratio; reference/handoff_x360_storyboard_ratios_answers.md)."""
+
+    def spec2(self, **more):
+        return {**dict(format='shshd-cutscene', version=2, size=[36, 48], tallest=[36, 64], hold=3000, skip=2000,
+                       shots=[dict(image=RED, start=0, end=0, **{'from': [0, 0, 36, 64], 'to': [0, 0, 36, 64]}),
+                              dict(image=BLUE, start=1000, end=1000, fit='height', anchor=[28, 24],
+                                   **{'from': [10, 0, 36, 48], 'to': [10, 0, 36, 48]})],
+                       overlays=[dict(image=STAMP, start=1000, end=1000, follow=1,
+                                      **{'from': [18, 24, 4, 4], 'to': [18, 24, 4, 4]}),
+                                 dict(image=STAMP, start=1000, end=1000, **{'from': [18, 10, 4, 4], 'to': [18, 10, 4, 4]})],
+                       sounds=[]), **more}
+
+    def renderer(self, frame_units):
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        import pygame
+        pygame.init()
+        self.addCleanup(pygame.quit)
+        pygame.display.set_mode((10, 10))
+        from exp_runtime.desktop_cutscene import CutsceneRenderer
+        renderer = CutsceneRenderer(None)
+        renderer._spec = read_spec(json.dumps(self.spec2()).encode('utf-8'))
+        renderer.frame_units = frame_units
+        renderer.canvas = pygame.Surface(renderer.canvas_size())
+        return renderer
+
+    def test_version_1_is_still_read_and_version_2_is_checked(self):
+        self.assertEqual(read_spec(encoded())['version'], 1)
+        self.assertEqual(read_spec(json.dumps(self.spec2()).encode('utf-8'))['version'], 2)
+        for bad in (dict(tallest=None), dict(tallest=[30, 64]), dict(tallest=[36, 40])):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                read_spec(json.dumps(self.spec2(**bad)).encode('utf-8'))
+        spec = self.spec2()
+        spec['shots'][1].pop('anchor')
+        with self.assertRaises(ValueError):
+            read_spec(json.dumps(spec).encode('utf-8'))
+
+    def test_the_canvas_is_the_frames_shape_within_what_the_spec_serves(self):
+        self.assertEqual(self.renderer((384, 512)).canvas_size(), (36, 48))           # 3:4
+        self.assertEqual(self.renderer((320, 320 * 16 / 9)).canvas_size(), (36, 64))  # 9:16
+        self.assertEqual(self.renderer((320, 320 * 20 / 9)).canvas_size(), (36, 64))  # past it: 9:16, centred
+        self.assertEqual(self.renderer((384, 576)).canvas_size(), (36, 54))           # 2:3
+
+    def test_a_tall_window_is_cropped_about_its_centre_and_a_painting_zoomed_about_its_anchor(self):
+        at_3_4, at_9_16 = self.renderer((384, 512)), self.renderer((320, 320 * 16 / 9))
+        crop, height = at_3_4._spec['shots']
+        self.assertEqual(at_3_4.window(crop, 0), (0, 8, 36, 48))
+        self.assertEqual(at_9_16.window(crop, 0), (0, 0, 36, 64))
+        self.assertEqual(at_3_4.window(height, 1000), (10, 0, 36, 48))
+        self.assertEqual(at_9_16.window(height, 1000), (14.5, 0, 27, 48))
+
+    def test_an_overlay_follows_its_picture_and_keeps_its_size(self):
+        at_9_16 = self.renderer((320, 320 * 16 / 9))
+        follow, plain = at_9_16._spec['overlays']
+        self.assertEqual(at_9_16._placed(follow, 1000), (18, 32, 4, 4))   # the anchor's place: (28, 24) in the picture
+        self.assertEqual(at_9_16._placed(plain, 1000), (18, 18, 4, 4))    # as far from the middle as at 3:4

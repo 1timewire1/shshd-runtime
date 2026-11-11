@@ -339,6 +339,7 @@ class Desktop:
     story_over_scene = False        # the story layer is HD's frame over the scene (the look picker)
     story_lift = 0                  # units the story layer is drawn above its place (a picker centred in a tall frame)
     story_fills_frame = False       # the story layer is the whole frame, of its shape (a title card)
+    story_centred = False           # the story layer is a picture at the frame's width, centred (a storyboard)
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
@@ -1751,7 +1752,8 @@ class Desktop:
         self._edge_units = (width - 320) / 2
         self.session.dialogue_extra_rows = max(0, int((tall - FRAME_UNITS[1]) * self.EXTRA_ROWS_SHARE / self.ROW_UNITS))
         self.dialogue_renderer.lift = 0
-        for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None)):
+        for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
+                     getattr(self, 'cutscene_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -1775,6 +1777,7 @@ class Desktop:
         self.story_layer = None
         self.story_over_scene = False
         self.story_fills_frame = False
+        self.story_centred = False
         self.story_lift = 0
         self.under_layer = None
         self.edge_layer = None
@@ -1958,6 +1961,7 @@ class Desktop:
                 engine = self.session.engine
                 self.cutscene_renderer.draw(self.session)
                 self.story_layer = self.cutscene_renderer.canvas
+                self.story_centred = True           # no taller than its spec serves: centred, backdrop round it
                 self.panel_alpha = None
                 self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
                 self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
@@ -2408,7 +2412,14 @@ class Desktop:
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
-            if self.story_fills_frame:
+            if self.story_centred:
+                # A picture as wide as the frame and no taller (a storyboard: desktop_cutscene), centred; past the shape
+                # its spec serves the backdrop shows above and below it.
+                tall = round(frame.width * layer.get_height() / layer.get_width())
+                area = frame if abs(tall - frame.height) <= 1 else pygame.Rect(
+                    frame.x, frame.centery - tall // 2, frame.width, tall)
+                self._draw_bands(area, backdrop)
+            elif self.story_fills_frame:
                 # A card drawn over the whole frame in its own shape (desktop_title: HD's 768 x 1024 at 3:4).
                 area = frame
             elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
@@ -3160,6 +3171,24 @@ class Desktop:
     picture_frame = property(lambda self: self._frame_part(1), doc="A whole 3:4 picture: at the frame's bottom.")
     card_frame = property(lambda self: self._frame_part(2), doc='A card over the scene: centred in the frame.')
     alert_frame = property(lambda self: self._frame_part(3), doc="The Faceplace alert's strip: at the frame's top.")
+
+    def _draw_bands(self, area, backdrop):
+        """The frame above and below `area` (a picture narrower in shape than the frame): the episode's frame backdrop
+        where it has one (TRANSLATED_FRAME_BACKDROP), else the window's backdrop, as beside the frame."""
+        frame = self.bg_viewport
+        bands = [pygame.Rect(frame.x, frame.y, frame.width, area.y - frame.y),
+                 pygame.Rect(frame.x, area.bottom, frame.width, frame.bottom - area.bottom)]
+        bands = [band.clip(self.window.get_rect()) for band in bands if band.height > 0]
+        if not bands:
+            return
+        own = self._frame_backdrop(frame.size)
+        for band in bands:
+            if own is not None:
+                self.window.blit(own, band, band.move(-frame.x, -frame.y))
+            elif backdrop is not None:
+                self.window.blit(backdrop, band, band)
+            else:
+                self.window.fill((8, 12, 20), band)
 
     def _draw_picture_band(self, backdrop, height):
         """Above a 3:4 picture in a taller frame (picture_frame), the window's backdrop, as beside the frame."""

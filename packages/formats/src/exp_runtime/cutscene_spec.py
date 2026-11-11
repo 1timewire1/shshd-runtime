@@ -5,7 +5,9 @@ import json
 
 CUTSCENE = 218
 CUTSCENE_QUERY = 202
-FORMAT, VERSION = 'shshd-cutscene', 1
+FORMAT, VERSION = 'shshd-cutscene', 1       # what the creator writes
+VERSIONS = (1, 2)                           # what the player reads (2: taller frames, General's Aspect Ratio)
+FITS = ('crop', 'height')
 
 
 def _is_int(value):
@@ -23,7 +25,7 @@ def read_spec(data):
         spec = json.loads(data)
     except (ValueError, UnicodeDecodeError) as error:
         raise ValueError(f'Not a cutscene: {error}') from error
-    if not isinstance(spec, dict) or spec.get('format') != FORMAT or spec.get('version') != VERSION:
+    if not isinstance(spec, dict) or spec.get('format') != FORMAT or spec.get('version') not in VERSIONS:
         raise ValueError('Not a cutscene')
     size, hold, skip = spec.get('size'), spec.get('hold'), spec.get('skip')
     shots, overlays, sounds = spec.get('shots'), spec.get('overlays', []), spec.get('sounds', [])
@@ -42,4 +44,30 @@ def read_spec(data):
     if (not all(isinstance(s, dict) and _is_int(s.get('at')) and _is_int(s.get('sound')) for s in sounds)
             or any(a['at'] > b['at'] for a, b in zip(sounds, sounds[1:]))):
         raise ValueError('Invalid cutscene sounds')
+    if spec['version'] >= 2:
+        _check_version_2(spec)
     return spec
+
+
+def _check_version_2(spec):
+    """Version 2 (General's Aspect Ratio; reference/handoff_x360_storyboard_ratios_answers.md): `size` is still the 3:4
+    frame (overlays are in its pixels), `tallest` [w, h] the tallest frame the stills serve, as wide as `size` (9:16:
+    768 x 1366). A shot's `fit`: 'crop' (the default), its windows at `tallest`'s shape, cropped about their centre to
+    the frame's; 'height', its windows at `size`'s shape (a painting no taller than 3:4), the frame's height kept and the
+    sides narrowed about its `anchor` [x, y] (picture pixels), so a taller frame zooms in on the anchor. An overlay may
+    `follow` a shot (its index): its centre stays on the same place in that shot's picture, its size in frame pixels."""
+    size, tallest = spec['size'], spec.get('tallest')
+    if (not isinstance(tallest, list) or len(tallest) != 2 or not all(_is_int(v) and v > 0 for v in tallest)
+            or tallest[0] != size[0] or tallest[1] < size[1]):
+        raise ValueError('A version 2 cutscene names its tallest frame, as wide as its size')
+    shots = spec['shots']
+    for shot in shots:
+        fit = shot.get('fit', 'crop')
+        anchor = shot.get('anchor')
+        if fit not in FITS or (fit == 'height' and not (
+                isinstance(anchor, list) and len(anchor) == 2 and all(type(v) in (int, float) for v in anchor))):
+            raise ValueError('Invalid cutscene fit')
+    for overlay in spec.get('overlays', []):
+        follow = overlay.get('follow')
+        if follow is not None and not (_is_int(follow) and 0 <= follow < len(shots)):
+            raise ValueError('Invalid cutscene overlay follow')
