@@ -136,3 +136,111 @@ class PauseMenuAspectTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BackgroundShapeTests(unittest.TestCase):
+    """Step 2c: a location's picture in a taller frame."""
+
+    def setUp(self):
+        import os
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        import pygame
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.location_pan import LocationPan
+        self.pygame, self.place = pygame, Desktop._background_placement
+        self.LocationPan = LocationPan
+
+    def ui(self, tall, align=2, origin=(160, 180)):
+        renderer = SimpleNamespace(has_hd_bundle=lambda: True, game_id=lambda: 'shs')
+        ui = SimpleNamespace(pending_background_origin=origin, dialogue_renderer=renderer,
+                             location_pan=self.LocationPan(),
+                             session=SimpleNamespace(engine=SimpleNamespace(panel=SimpleNamespace(location_align=align))))
+        if tall is not None:
+            ui._frame_tall = tall
+        return ui
+
+    def target(self, tall):
+        return 768, round(768 * tall / 384)
+
+    def test_3_4_is_as_before(self):
+        art = self.pygame.Surface((960, 1440))
+        self.assertEqual(self.place(self.ui(None), art, (768, 1024)), (-96, -337, 960, 1440))
+        self.assertEqual(self.place(self.ui(512.), art, (768, 1024)), (-96, -337, 960, 1440))
+
+    def test_the_extra_height_shows_more_of_the_scene_above(self):
+        art = self.pygame.Surface((960, 1440))
+        x, y, w, h = self.place(self.ui(576.), art, self.target(576))       # 2:3
+        self.assertEqual((w, h), (960, 1440))                                # not enlarged
+        self.assertEqual(y + h - 1152, 1440 - 337 - 1024)                   # the bottom where 3:4 has it
+
+    def test_the_picture_slides_down_rather_than_leave_its_top(self):
+        art = self.pygame.Surface((960, 1440))
+        tall = 384 * 16 / 9
+        x, y, w, h = self.place(self.ui(tall), art, self.target(tall))      # 9:16
+        self.assertEqual((y, w, h), (0, 960, 1440))
+
+    def test_past_its_height_the_picture_is_enlarged_and_panned(self):
+        art = self.pygame.Surface((960, 1440))
+        tall = 384 * 20 / 9
+        tw, th = self.target(tall)
+        for align, edge in ((1, 'left'), (3, 'right')):
+            with self.subTest(edge):
+                x, y, w, h = self.place(self.ui(tall, align), art, (tw, th))
+                self.assertAlmostEqual(y, 0, delta=1)
+                self.assertAlmostEqual(h, th, delta=2)
+                self.assertGreater(w, tw)
+                self.assertAlmostEqual(x if edge == 'left' else x + w - tw, 0, delta=2)
+
+    def test_a_strip_keeps_its_place_above_the_column(self):
+        strip = self.pygame.Surface((2160, 720))                            # New Rules: 3:1
+        renderer = SimpleNamespace(has_hd_bundle=lambda: False, game_id=lambda: 'shs')
+        below = []
+        for tall in (512., 384 * 16 / 9):
+            ui = self.ui(tall, origin=(240, 300))
+            ui.dialogue_renderer = renderer
+            tw, th = self.target(tall)
+            x, y, w, h = self.place(ui, strip, (tw, th))
+            self.assertAlmostEqual(h, 320, delta=1)                         # 160 units tall, not enlarged
+            below.append(th - (y + h))
+        self.assertAlmostEqual(below[0], below[1], delta=1)
+
+
+class BackdropFitTests(unittest.TestCase):
+    """Step 2c: a translated pack's frame backdrop, lengthened so its bars stay round the strip."""
+
+    def setUp(self):
+        import os
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        import pygame
+        from exp_runtime import backdrop_fit
+        self.pygame, self.fit = pygame, backdrop_fit
+
+    def checks(self, width=384, height=512, square=16, bars=((92, 112), (272, 292))):
+        """A checkerboard from the top with two yellow bars round the strip (rows 112-272), as the translators build
+        them, one pixel per frame unit."""
+        image = self.pygame.Surface((width, height), self.pygame.SRCALPHA)
+        for y in range(0, height, square):
+            for x in range(0, width, square):
+                light = ((x // square) + (y // square)) % 2
+                image.fill((160, 168, 220, 255) if light else (140, 150, 210, 255), (x, y, square, square))
+        for top, bottom in bars:
+            image.fill((230, 230, 0, 255), (0, top, width, bottom - top))
+        return image
+
+    def test_the_repeat_is_the_patterns_not_a_squares_rows(self):
+        rows = self.fit._rows(self.checks())
+        self.assertEqual(self.fit.repeat(rows, 300, 500), 32)
+        self.assertEqual(self.fit.repeat(rows, 2, 14), 1)             # inside one square's rows: plain
+
+    def test_the_bars_follow_the_strip_and_the_pattern_runs_on(self):
+        image = self.checks()
+        long = self.fit.lengthen(image, (112, 272), (112 + 171, 272 + 171), 683)
+        self.assertEqual(long.get_size(), (384, 683))
+        yellow = [y for y in range(683) if long.get_at((5, y))[:3] == (230, 230, 0)]
+        self.assertEqual((yellow[0], yellow[-1]), (92 + 171, 291 + 171))    # both bars, moved with the strip
+        # Above the upper bar and below the lower one, every row is the row a whole repeat away: no seams.
+        rows = self.fit._rows(long)
+        for lo, hi in ((0, 92 + 171), (292 + 171, 683)):
+            self.assertTrue(all(rows[y] == rows[y + 32] for y in range(lo, hi - 32)), (lo, hi))
+        # The bottom of the picture is its own, as at 3:4.
+        self.assertEqual(rows[-200:], self.fit._rows(image)[-200:])

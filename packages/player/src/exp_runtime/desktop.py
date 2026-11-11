@@ -48,7 +48,7 @@ from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step
-from . import frame_shape
+from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import has_links, play_option
@@ -2285,6 +2285,7 @@ class Desktop:
         # pause menu, a notice) is centred (card_frame); the Faceplace alert's strip keeps to the top (alert_frame).
         # At 3:4 all four are the frame.
         units = self.frame_units()
+        self._frame_tall = units[1]
         scale = min(width / units[0], height / units[1])
         frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
         frame.center = (width // 2, height // 2)
@@ -2603,6 +2604,10 @@ class Desktop:
         if not covered and not hidden:
             self.window.fill((0, 0, 0), viewport)
             # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
+            if placement is not None and background.get_width() >= 2 * background.get_height():
+                # A location strip: where it is in the frame, as frame units from the top (the backdrop's bars hug it).
+                unit = target_size[1] / self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+                self._strip_units = (placement[1] / unit, (placement[1] + placement[3]) / unit)
             frame_backdrop = self._frame_backdrop(viewport.size)
             if frame_backdrop is not None:
                 self.window.blit(frame_backdrop, viewport)
@@ -2641,14 +2646,38 @@ class Desktop:
         themed = (pack_setting(resources, 'TRANSLATED_THEME_BACKDROP', {}) or {}).get(theme)
         if themed is not None and exists(themed):
             asset_id = themed
-        key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False))
+        tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+        strip = None if tall == FRAME_UNITS[1] else self._backdrop_strip(tall)
+        key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False),
+               strip and tuple(round(v, 1) for part in strip for v in part))
         if self._frame_backdrop_cache[0] != key:
             self._frame_backdrop_cache = (key, {})      # (the surfaces of this episode at this size: one per colour)
         surfaces = self._frame_backdrop_cache[1]
         if asset_id not in surfaces:
             image = self._image(asset_id)
-            surfaces[asset_id] = None if image is None else pygame.transform.smoothscale(image, size)
+            if image is None:
+                surfaces[asset_id] = None
+            elif strip is None:
+                surfaces[asset_id] = pygame.transform.smoothscale(image, size)      # the 3:4 frame, as always
+            else:
+                # Taller (General's Aspect Ratio): lengthened so its bars stay round the strip (backdrop_fit.py).
+                k = image.get_width() / FRAME_UNITS[0]                          # source pixels per frame unit
+                (top, bottom), (new_top, new_bottom) = strip
+                long = backdrop_fit.lengthen(image.convert_alpha(), (top * k, bottom * k), (new_top * k, new_bottom * k),
+                                             round(tall * k))
+                surfaces[asset_id] = pygame.transform.smoothscale(long, size)
         return surfaces[asset_id]
+
+    # Where a location strip sits in the 3:4 frame, in frame units from its top (DialogueRenderer.background_origin's
+    # y 180 less HD_BG_SHIFT's 20.5, 32 in, half the strip's 160 units either side): the backdrops' bars hug it.
+    STRIP_AT_3_4 = (111.5, 271.5)
+
+    def _backdrop_strip(self, tall):
+        """The strip's rows in frame units, ((top, bottom) in the 3:4 frame, (top, bottom) in this one): in a taller
+        frame a strip keeps its place above the column, so it is lower by the added height."""
+        added = tall - FRAME_UNITS[1]
+        now = self.__dict__.get('_strip_units') or (self.STRIP_AT_3_4[0] + added, self.STRIP_AT_3_4[1] + added)
+        return (now[0] - added, now[1] - added), now
 
     # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
     # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off
@@ -2728,17 +2757,26 @@ class Desktop:
         location layer's bounds as scaled and positioned on screen."""
         bw, bh = background.get_size()
         tw, th = target_size
+        # General's Aspect Ratio (frame_shape.py): the frame is 384 units wide and `tall` units high, 512 at 3:4, with
+        # every unit past 512 above the column.
+        tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
         if self.pending_background_origin == 'cover':
             # Cause of Death's chapter card: its iPhone screen shows the whole picture fitted to the 320x480 column;
             # here it is scaled evenly until it covers the 3:4 frame, centred where the column's centre is (owner:
-            # no dead space, as SHS fills the frame -- without the stretch SHS HD's own card applies).
-            centre = 26.5 + 240                                  # the column's centre, frame units from the top
-            k = min(bw / 384, bh / (2 * centre), bh / (2 * (512 - centre)))   # art pixels per frame unit
-            crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(512 * k))
+            # no dead space, as SHS fills the frame -- without the stretch SHS HD's own card applies). In a taller
+            # frame the column's centre is as far from the frame's bottom.
+            centre = tall - FRAME_UNITS[1] + 26.5 + 240         # the column's centre, frame units from the top
+            k = min(bw / 384, bh / (2 * centre), bh / (2 * (tall - centre)))   # art pixels per frame unit
+            crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(tall * k))
             sx, sy = tw / crop.width, th / crop.height
             return (-crop.x * sx, -crop.y * sy, bw * sx, bh * sy)
         if self.pending_background_origin is None:
-            return (0., 0., float(tw), float(th))
+            if tall == FRAME_UNITS[1]:
+                return (0., 0., float(tw), float(th))
+            # Stretched to the 3:4 frame as before; a taller frame takes the picture scaled evenly until it covers,
+            # centred (a 2:3 picture shows whole at 2:3).
+            k = max(tw / bw, th / bh)
+            return ((tw - bw * k) / 2, (th - bh * k) / 2, bw * k, bh * k)
         else:
             cx, cy = self.pending_background_origin
             # In HD's frame the art sits 48 units further right and 20.5
@@ -2752,24 +2790,39 @@ class Desktop:
             # 2026-10-14): the 480x720 art panned with the speaker so the frame is always covered. Its own iPhone
             # screen shows the art 1 px per point from the plain focal point (IMG_0483), which leaves the 3:4
             # frame's margins past the art's edge.
-            if cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'):
+            pans = cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod')
+            cy += HD_BG_SHIFT[1]
+            # A taller frame (General's Aspect Ratio) keeps the art where it was against the frame's bottom, so the
+            # extra height shows more of the scene above. A picture that covered the 3:4 frame (the 2:3 location art;
+            # not a New Rules or BREW strip, which keeps its band) slides down when the frame would reach past its top
+            # edge, and past its whole height (720 units: 9:16 is 683) it is enlarged to the frame's height, centred,
+            # its wider sides panned as HD pans them.
+            zoom, high = 1., bh / bg_scale
+            if tall != FRAME_UNITS[1] and cy + 32 - high / 2 <= 0 and cy + 32 + high / 2 >= FRAME_UNITS[1]:
+                if high >= tall:
+                    cy = min(max(cy + tall - FRAME_UNITS[1], tall - 32 - high / 2), high / 2 - 32)
+                else:
+                    zoom, cy = tall / high, tall / 2 - 32
+            elif tall != FRAME_UNITS[1]:
+                cy += tall - FRAME_UNITS[1]
+            if pans:
                 # HD pans the location layer by speaker (location_pan.py): its center is `x` points from
                 # the frame's left edge, i.e. x / 2 - 32 in this crop's UI units. The pan takes the art's width in
-                # HD points: 960 for a 480-pixel picture as for its 960-pixel HD twin.
-                x = self.location_pan.x(self.session.engine.panel.location_align, bw / bg_scale * 2,
+                # HD points: 960 for a 480-pixel picture as for its 960-pixel HD twin (times the enlargement).
+                x = self.location_pan.x(self.session.engine.panel.location_align, bw / bg_scale * 2 * zoom,
                                         pygame.time.get_ticks())
                 cx = x / 2 - 32
             else:
                 cx += HD_BG_SHIFT[0]
-            cy += HD_BG_SHIFT[1]
             # Frame coordinates (see _present): the frame's top-left is UI
             # (-32, -32) as far as this crop is concerned -- the 5.5-unit inset
             # of the UI column was measured against the same photos after the
             # background, so it moves the column, not the background. The image
             # is drawn 1 px per unit (HD: 2) centered on (cx, cy) in that
             # space, so crop exactly the frame's window out of it.
-            window = pygame.Rect(round(bw / 2 + (-32 - cx) * bg_scale), round(bh / 2 + (-32 - cy) * bg_scale),
-                                 round(384 * bg_scale), round(512 * bg_scale))
+            per = bg_scale / zoom                               # art pixels per frame unit
+            window = pygame.Rect(round(bw / 2 + (-32 - cx) * per), round(bh / 2 + (-32 - cy) * per),
+                                 round(384 * per), round(tall * per))
             sx, sy = tw / window.width, th / window.height
             return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
 
