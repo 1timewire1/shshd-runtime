@@ -16,6 +16,8 @@
     art and a '08 Backgrounds switch; the Java '08 Look switch for '08; `a(n)` and plurals; BREW's menus.
   - **Runtime:** service 223 runs a script and comes back (save version 39); pickers of four, six and ten photos.
   - **Title cards** show SHS pictures picked for the location and sky each story opens on (HD in SHS HD).
+- **Title cards for the translated stories that opened without one:** New Rules' Dancing Queen (the smartphone
+  Homecoming Queen's card under its own name) and King of Diss, and X360's Dating Beth and Monday Planner.
 - **Undo** (Options -> Extras -> Allow Undo, off by default): a save at every stop Skip Ahead makes; the pause menu's
   Undo loads the last, and again the one before. A mini-game under way restarts from its own save.
 - **Episode versions** (resource 5): a newer import replaces the library's older copies of the same episode, asking
