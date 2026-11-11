@@ -236,6 +236,22 @@ class FrameWideLayerTests(unittest.TestCase):
                 self.assertFalse(frame_wide((round(320 * scale), round(480 * scale))))      # the column alone
 
 
+class TitleCardShapeTests(unittest.TestCase):
+    def test_a_card_is_the_frames_shape_with_its_subtitle_kept_from_the_bottom(self):
+        from exp_runtime.desktop_title import CodTitleRenderer, HdTitleRenderer
+        card = object.__new__(HdTitleRenderer)
+        self.assertEqual((card.canvas_size(), card.subtitle_region()), ((768, 1024), HdTitleRenderer.SUBTITLE_REGION))
+        card.frame_units = frame_shape.frame_units('fit', (1080, 2400), fixed_window=True)       # a 9:20 phone
+        self.assertEqual(card.canvas_size(), (768, round(768 * 20 / 9)))
+        self.assertEqual(card.subtitle_region()[1], 544 + card.canvas_size()[1] - 1024)
+        cod = object.__new__(CodTitleRenderer)
+        self.assertEqual((cod.SCALE, cod.ORIGIN), (2, (64, 53)))                      # HD's frame: as before
+        cod.frame_units = (320, 320 * 20 / 9)
+        self.assertEqual(cod.SCALE, 2.4)                                               # the column the frame's width
+        self.assertAlmostEqual(cod.ORIGIN[0], 0)
+        self.assertAlmostEqual(cod.ORIGIN[1], cod.canvas_size()[1] - 485.5 * 2.4)
+
+
 class BackdropFitTests(unittest.TestCase):
     """Step 2c: a translated pack's frame backdrop, lengthened so its bars stay round the strip."""
 

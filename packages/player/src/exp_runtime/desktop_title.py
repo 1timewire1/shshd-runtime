@@ -100,9 +100,23 @@ class HdTitleRenderer:
     has it), measured: the title's ink starts at y 160.
     """
     hd_layer = True
+    fills_frame = True              # its canvas is the whole frame, whatever its shape (Desktop._present)
     edge_bar = 'bar'
     FRAME = (768, 1024)
     TITLE_REGION, SUBTITLE_REGION = (20, 68 + 80, 738, 400), (20, 544, 714, 360)
+    # General's Aspect Ratio: the frame's shape in layout units (Desktop sets it each frame). The card is drawn 768
+    # points across whatever that is, as tall as the shape makes it: its black layer covers the whole frame, the title
+    # keeps its place from the top and the subtitle its place from the bottom. HD's own 768 x 1024 at 3:4.
+    frame_units = (384, 512)
+
+    def canvas_size(self):
+        width, tall = self.frame_units
+        return self.FRAME[0], max(1, round(self.FRAME[0] * tall / width))
+
+    def subtitle_region(self):
+        """SUBTITLE_REGION, as far from the canvas's bottom as from HD's frame's."""
+        x, y, width, height = self.SUBTITLE_REGION
+        return x, y + self.canvas_size()[1] - self.FRAME[1], width, height
     WIPE_S, BLACK_HOLD_S, BLACK_END_S, SUBTITLE_FROM_S, SUBTITLE_TO_S = 2., 1.8, 3., 1., 2.
 
     def __init__(self, resources, art):
@@ -144,10 +158,12 @@ class HdTitleRenderer:
 
     def wipe_clip(self, left, visible):
         """The title's reveal clip on the canvas: `visible` points of its region from `left`."""
-        return pygame.Rect(left, 0, visible, self.FRAME[1])
+        return pygame.Rect(left, 0, visible, self.canvas_size()[1])
 
     def draw(self, target, session):
         details, motion = session.pending.details, session.engine.title_screen
+        if self.canvas.get_size() != self.canvas_size():
+            self.canvas = pygame.Surface(self.canvas_size(), pygame.SRCALPHA).convert_alpha()
         canvas = self.canvas
         self.pending_background = self.art.image(details['asset_id'])
         seconds = motion.elapsed_ms / 1000
@@ -169,7 +185,7 @@ class HdTitleRenderer:
             canvas.set_clip(None)
         fade = max(0., min(1., (seconds - self.SUBTITLE_FROM_S) / (self.SUBTITLE_TO_S - self.SUBTITLE_FROM_S)))
         if fade:
-            self.region_text(subtitle_font, details['subtitle'], self.SUBTITLE_REGION, 0x1f, alpha=fade)
+            self.region_text(subtitle_font, details['subtitle'], self.subtitle_region(), 0x1f, alpha=fade)
         self.footer_text = self.footer()
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',)), (pygame.Rect(0, 0, 320, 480), ('continue',))]
 
@@ -198,8 +214,22 @@ class CodTitleRenderer(HdTitleRenderer):
     size."""
     FRAME = (768, 1024)
     COD_FRAME = (320, 480)
-    ORIGIN, SCALE = (64, 53), 2            # the CoD column in the HD frame, frame points per CoD point
     BANNER = 30
+
+    @property
+    def SCALE(self):
+        """Canvas points per CoD point (a column unit): 2 in HD's frame, 2.4 in one the column's width."""
+        return self.FRAME[0] / self.frame_units[0]
+
+    @property
+    def ORIGIN(self):
+        """The CoD column's top-left on the canvas: (64, 53) in HD's frame; in another shape, centred, 5.5 units above
+        the frame's bottom as the story's column is."""
+        k = self.SCALE
+        return (self.frame_units[0] - 320) / 2 * k, self.canvas_size()[1] - (480 + 5.5) * k
+
+    def subtitle_region(self):
+        return self.SUBTITLE_REGION         # in CoD points, placed from the column (ORIGIN)
 
     def __init__(self, resources, art, title_renderer):
         super().__init__(resources, art)
@@ -247,7 +277,7 @@ class CodTitleRenderer(HdTitleRenderer):
 
     def wipe_clip(self, left, visible):
         x, _ = self.ORIGIN
-        return pygame.Rect(x + left * self.SCALE, 0, visible * self.SCALE, self.FRAME[1])
+        return pygame.Rect(x + left * self.SCALE, 0, visible * self.SCALE, self.canvas_size()[1])
 
     def region_text(self, font, text, region, flags, alpha=1., clip=None):
         """HdTitleRenderer.region_text in CoD points, each glyph placed on the HD frame (see the class docstring)."""
@@ -272,6 +302,10 @@ class CodTitleRenderer(HdTitleRenderer):
                 if hd is not None:
                     gx, gy, gw = hd
                     piece = twin.sheet.subsurface((gx, gy, gw, twin.font.height))
+                    if scale != 2:
+                        # (SHS HD's glyphs are 2 points a CoD point: another frame's scale resamples them.)
+                        gw, height = round(gw * scale / 2), round(twin.font.height * scale / 2)
+                        piece = pygame.transform.smoothscale(piece, (max(1, gw), max(1, height)))
                     shift = (gw - glyph[2] * scale) / 2           # SHS HD's cell is a little wider: centre it
                 else:
                     gx, gy, gw = glyph

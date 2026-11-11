@@ -338,6 +338,7 @@ class Desktop:
     story_layer = None
     story_over_scene = False        # the story layer is HD's frame over the scene (the look picker)
     story_lift = 0                  # units the story layer is drawn above its place (a picker centred in a tall frame)
+    story_fills_frame = False       # the story layer is the whole frame, of its shape (a title card)
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
@@ -1750,6 +1751,9 @@ class Desktop:
         self._edge_units = (width - 320) / 2
         self.session.dialogue_extra_rows = max(0, int((tall - FRAME_UNITS[1]) * self.EXTRA_ROWS_SHARE / self.ROW_UNITS))
         self.dialogue_renderer.lift = 0
+        for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None)):
+            if card is not None:
+                card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
         self.dialogue_renderer.edge_units = self._edge_units        # its bar's margins (cached with its scale)
         for renderer in (self.dialogue_renderer, self.choice_renderer, self.input_renderer, self.message_renderer):
@@ -1770,6 +1774,7 @@ class Desktop:
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
         self.story_over_scene = False
+        self.story_fills_frame = False
         self.story_lift = 0
         self.under_layer = None
         self.edge_layer = None
@@ -1852,6 +1857,7 @@ class Desktop:
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
                     self.story_over_scene = getattr(renderer, 'over_scene', False)
+                    self.story_fills_frame = getattr(renderer, 'fills_frame', False)
                     if action.name == 'character_picker':
                         # A taller frame centres the picker as HD's frame does (owner, 2026-11-11): its layer moves
                         # up by half the height added (its taps follow, _picker_point).
@@ -2402,7 +2408,10 @@ class Desktop:
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
-            if layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
+            if self.story_fills_frame:
+                # A card drawn over the whole frame in its own shape (desktop_title: HD's 768 x 1024 at 3:4).
+                area = frame
+            elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
                 # HD's frame drawn over the scene (the look picker): at the story's scale with the column, its bottom
                 # the frame's, cut by a narrower frame's sides; the scene shows above it.
                 margin = round(32 * scale)
@@ -3908,6 +3917,12 @@ class Desktop:
                     if self._button_hit(rect, command, x, y):
                         self.command(command)
                         break
+            elif getattr(self, 'bg_viewport', None) is not None and self.bg_viewport.collidepoint(event.pos):
+                # Outside the column but in the frame (HD's margins; a taller frame's height above the column): a
+                # screen that continues on a tap anywhere in the column does here too, as HD's whole view does.
+                whole = pygame.Rect(0, 0, *SIZE)
+                if any(command == ('continue',) and rect.contains(whole) for rect, command in self.buttons):
+                    self.command(('continue',))
         self._sync_text_input()
         return True
 
