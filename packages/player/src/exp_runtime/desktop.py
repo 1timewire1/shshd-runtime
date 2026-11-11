@@ -1899,12 +1899,15 @@ class Desktop:
                     self.choice_renderer.age_ms, ask['instant'] = 60_000, False      # a prompt's next page: shown at once
                 self.max_scroll = page.max_scroll * 1.5
                 self.scroll = min(self.scroll, self.max_scroll)
+                # A taller frame centres the choice as HD's frame does (owner, 2026-11-11): its layer, its rows' taps
+                # and its timer move up by half the height added; the gear stays at the bottom.
+                lift = (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) / 2
                 pointer = None
                 if hasattr(self, 'viewport') and self.press.origin is None and not self.menu_open:
                     x, y = pygame.mouse.get_pos()
                     if self.viewport.collidepoint(x, y):
                         pointer = ((x - self.viewport.x) * 320 / self.viewport.width,
-                                   (y - self.viewport.y) * 480 / self.viewport.height)
+                                   (y - self.viewport.y) * 480 / self.viewport.height + lift)
                 closing = self.choice_closing if self.choice_closing and self.choice_closing['action'] is action else None
                 if closing is None and self.choice_held is not None and self.choice_held['action'] is action:
                     closing = dict(index=self.choice_held['index'], ms=SELECT_MS + TRANSITION_MS)     # faded out
@@ -1928,10 +1931,13 @@ class Desktop:
                     buttons = [button for button in buttons if button[1] == ('menu',)]
                 self.hint_discount_ms += self.choice_renderer.take_hint_ms()
                 self.story_layer = self.choice_renderer.wide
+                self.story_lift = lift
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.choice_renderer.footer_text,
                                                                           self.dialogue_renderer.gear_pressed)
                 self.pending_background = self.choice_renderer.pending_background
                 self.pending_background_origin = self.choice_renderer.pending_background_origin
+                buttons = [(rect if command == ('menu',) else (rect[0], rect[1] - lift, rect[2], rect[3]), command)
+                           for rect, command in buttons]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 if pygame.time.get_ticks() < self.message_until:
@@ -2437,7 +2443,8 @@ class Desktop:
             self.window.blit(scaled, self.viewport)
             ui_layers.append((scaled, self.viewport))
         if overlay is not None:
-            self.window.blit(pygame.transform.smoothscale(overlay, target_size), self.viewport)
+            self.window.blit(pygame.transform.smoothscale(overlay, target_size),
+                             self.viewport.move(0, -round(self.story_lift * scale)))
         self._panel_handover(ui_layers)
         if hd_alert is not None:
             # HD's alert is a strip of the frame, cut by the frame's own edge.
