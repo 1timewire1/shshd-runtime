@@ -1794,7 +1794,7 @@ class Desktop:
                                         (tall - FRAME_UNITS[1]) / 2)
         # A phone's status bar over the frame's top (Android draws an app under it): what hangs from the frame's top (a
         # game's HUD, the Faceplace alert) keeps below it.
-        window_w, window_h = self.window.get_size()
+        window_w, window_h = self.usable_size()     # (the frame keeps above a phone's navigation bar)
         scale = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else 1.
         self._top_pad = max(0., self.top_inset * window_h - (window_h - tall * scale) / 2) / scale
         for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
@@ -2455,10 +2455,11 @@ class Desktop:
         units = self.frame_units()
         self._frame_width, self._frame_tall = units
         edge = (units[0] - 320) / 2                 # the frame's margin each side of the column: 32 units, 0 from 9:16
-        scale = min(width / units[0], height / units[1])
+        usable = self.usable_size()[1]               # (above a phone's navigation bar: nav_height)
+        scale = min(width / units[0], usable / units[1])
         self._present_scale = scale
         frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
-        frame.center = (width // 2, height // 2)
+        frame.center = (width // 2, usable // 2)
         # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there).
         picture = pygame.Rect(0, 0, frame.width, max(1, round(units[0] * 4 / 3 * scale)))
         self._frames = (frame, picture.move(frame.x, frame.bottom - picture.height),
@@ -2491,6 +2492,10 @@ class Desktop:
                     self.window.blit(backdrop, area, area)
                 else:
                     self.window.fill((8, 12, 20), area)
+            nav = self.nav_height()
+            if nav:
+                # Under a phone's navigation bar, below the frame: the bar's own dark, as Android apps leave it.
+                self.window.fill((20, 20, 24), pygame.Rect(0, height - nav, width, nav))
             self._draw_background_layer(bg_size, self.bg_viewport, self._frame_covered(alpha))
         under = getattr(self, 'under_layer', None)
         if under is not None:
@@ -3488,8 +3493,19 @@ class Desktop:
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
     def frame_units(self):
-        """The frame's size in layout units for General's Aspect Ratio in this window (frame_shape.frame_units)."""
-        return frame_shape.frame_units(self.aspect_ratio, self.window.get_size(), self.fixed_window)
+        """The frame's size in layout units for General's Aspect Ratio in this window (frame_shape.frame_units), above a
+        phone's navigation bar (usable_size)."""
+        return frame_shape.frame_units(self.aspect_ratio, self.usable_size(), self.fixed_window)
+
+    def nav_height(self):
+        """Pixels at the window's bottom a phone's navigation or gesture bar covers (Host.bottom_inset; none on a
+        computer): the frame keeps above them, so the gear and the bar's words aren't under it (owner, 2026-11-12)."""
+        return round(self.bottom_inset * self.window.get_height())
+
+    def usable_size(self):
+        """The window less its navigation bar: what the frame is fitted to."""
+        width, height = self.window.get_size()
+        return width, max(1, height - self.nav_height())
 
     def x360_arena_switch(self):
         """shshd-runtime: whether the "Use X360 Arena Skin" switch is offered: in a translated New Rules episode (hires_switch)
