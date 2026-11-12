@@ -2474,11 +2474,25 @@ class Desktop:
             self.window.blit(pygame.transform.smoothscale(overlay, target_size),
                              self.viewport.move(0, -round(self.story_lift * scale)))
         self._panel_handover(ui_layers)
+        hd_frame = (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self._frame_tall) == FRAME_UNITS
         if hd_alert is not None:
-            # HD's alert is a strip of the frame, cut by the frame's own edge.
-            self.window.blit(pygame.transform.smoothscale(hd_alert, self.alert_frame.size), self.alert_frame)
+            # HD's alert is a strip of the frame, cut by the frame's own edge: in another shape, at the story's scale,
+            # against the frame's right edge and top as on HD's.
+            if hd_frame:
+                self.window.blit(pygame.transform.smoothscale(hd_alert, self.alert_frame.size), self.alert_frame)
+            else:
+                width = round(FRAME_UNITS[0] * scale)
+                self._blit_part(hd_alert, pygame.Rect(frame.right - width, frame.y, width,
+                                                      round(FRAME_UNITS[1] * scale)), frame)
         if hd_badge is not None:
-            self.window.blit(pygame.transform.smoothscale(hd_badge, self.picture_frame.size), self.picture_frame)
+            # The scene label's tab at HD's (15, 50) units: in another shape, at the story's scale, as far from the
+            # frame's left edge, and centred in a taller frame as the narration it sits over is.
+            if hd_frame:
+                self.window.blit(pygame.transform.smoothscale(hd_badge, self.picture_frame.size), self.picture_frame)
+            else:
+                lift = round((self._frame_tall - FRAME_UNITS[1]) / 2 * scale)
+                self._blit_part(hd_badge, pygame.Rect(frame.x, frame.y + lift, round(FRAME_UNITS[0] * scale),
+                                                      round(FRAME_UNITS[1] * scale)), frame)
         if hd_pause:
             self._draw_hd_pause(frame)
         if self.notice_stack is not None and self.notice_stack.stack:
@@ -3179,6 +3193,20 @@ class Desktop:
     picture_frame = property(lambda self: self._frame_part(1), doc="A whole 3:4 picture: at the frame's bottom.")
     card_frame = property(lambda self: self._frame_part(2), doc='A card over the scene: centred in the frame.')
     alert_frame = property(lambda self: self._frame_part(3), doc="The Faceplace alert's strip: at the frame's top.")
+
+    def _blit_part(self, layer, area, clip):
+        """`layer` laid over `area` (resampled to it), within `clip`: only the part with something drawn on it is
+        resampled (an HD overlay's frame-sized layer holds one small card)."""
+        bounds = layer.get_bounding_rect()
+        if bounds.width <= 0 or bounds.height <= 0:
+            return
+        kx, ky = area.width / layer.get_width(), area.height / layer.get_height()
+        dest = pygame.Rect(area.x + round(bounds.x * kx), area.y + round(bounds.y * ky),
+                           max(1, round(bounds.width * kx)), max(1, round(bounds.height * ky)))
+        before = self.window.get_clip()
+        self.window.set_clip(clip.clip(before))
+        self.window.blit(pygame.transform.smoothscale(layer.subsurface(bounds), dest.size), dest)
+        self.window.set_clip(before)
 
     def _draw_bands(self, area, backdrop):
         """The frame above and below `area` (a picture narrower in shape than the frame): the episode's frame backdrop
