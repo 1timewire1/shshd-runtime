@@ -41,6 +41,16 @@ OPENING_ART = 'data/art/hud/characters_presentation/josh/'
 OPENING_SUBTITLE = "King of Diss '08"   # (guilabel hud/characters_presentation/josh/subtitle)
 OPENING_WHIP = 14510                    # the card and its whip, in the music
 OPENING_CLIMB_WINDOW = 978              # of josh_tall's 1440 wide: the width that lines his face up with the card's
+# Spec version 2 (taller frames, 2026-11-12): the sweeps serve frames up to 9:21, Fit Screen's narrowest. Their stills
+# (<name>_tall.jpg, reference tools x360_opening_booth.py --fov) are shot from the same places and aims at a field of view
+# whose tangent is 1.75x the level's 45 degrees, so today's picture is each one's middle; the flat clear colour Xenia shows
+# past the sky band's open top is filled with the band's own top blue. The climb and the card fill a taller frame by height,
+# zooming about an anchor: on his shoes at the climb's start (this far into its window), and on his face at its end, where
+# the card's anchor lands so his eyes and headphone still meet the card's.
+OPENING_TALLEST = 768, 1792
+OPENING_SHOES = 460
+OPENING_CARD_ANCHOR = 93
+OPENING_SUBTITLE_MARGIN = 16
 NOTES_BASE = 26790                      # Diss Practice's notes (the Monday Planner; desktop_x360_diss), past the later renders
 NOTE_KINDS = ('note', 'bad', 'swap', 'double')
 DANCE_BASE, DANCE_ATLAS_WIDTH = 26794, 2048     # Josh's dance behind that deck, one atlas; MS3's the next
@@ -408,7 +418,9 @@ def opening(files, pcm_wav, folder):
     """{resource ID: bytes} of Day of Diss's opening, a storyboard cutscene (exp_runtime.cutscene; owner, 2026-11-02). `folder`
     (Additional Resources/x360-opening; reference tools x360_opening_booth*.py) holds a still per camera move, 2560 x 1440, and
     josh_tall, 1440 x 2560: Josh from the place of the camera the card is painted over, on its side, hair to shoes. All are stored at
-    the frame's scale, so a window is a blit. The pans follow the prototype's, the cuts are timed to the music by the owner (2026-11-02), and the whip is where the
+    the frame's scale, so a window is a blit at 3:4. Spec version 2: the sweeps' windows are 9:21 (OPENING_TALLEST) on the tall
+    stills, which the player crops about their centre to the frame's shape; the climb and the card fit a taller frame by height
+    about their anchors, and the overlays follow the card. The pans follow the prototype's, the cuts are timed to the music by the owner (2026-11-02), and the whip is where the
     prototype's fires against it, measured from a slowed capture (music 14.51 s, 0.3 s before its drop). The card then holds, as the
     episode's title card."""
     from pathlib import Path
@@ -431,9 +443,14 @@ def opening(files, pcm_wav, folder):
         return image
 
     resources = {}
-    sweep = size[1] / 1440
+    tallest = OPENING_TALLEST
     for name, target in (('sweep_first', first), ('sweep_lot', lot), ('sweep_low', low)):
-        travel = still(name, sweep, target).width - size[0]
+        height = Image.open(folder / f'{name}_tall.jpg').height
+        image = still(f'{name}_tall', tallest[1] / height, target)
+    # Today's 3:4 picture is the stills' middle, at the same scale: its window travels as before, the 9:21 window about it.
+    view = image.width * size[1] / tallest[1]
+    left = (image.width - view) / 2
+    travel = view - size[0]
     tall = still('josh_tall', size[0] / OPENING_CLIMB_WINDOW, climb)
     # The card: the art keeps the shape the X360 stretches its square texture to, with the window on Josh.
     art = Image.open(io.BytesIO(files[OPENING_ART + 'background.jpg'])).convert('RGB').resize((1772, size[1]), Image.LANCZOS)
@@ -450,30 +467,42 @@ def opening(files, pcm_wav, folder):
         line.alpha_composite(page.crop((g[0], g[1], g[0] + g[2], g[1] + g[3])), (x + g[4], g[5]))
         x += g[6]
     line = line.resize((round(line.width * 1.25), round(line.height * 1.25)), Image.LANCZOS)
+    # A clear margin either side: where a tall frame keeps the card's overlays on screen, the text stops short of the edge.
+    # Its centre and its slide's start stay where they were, so 3:4 draws exactly as before.
+    text_width = line.width
+    padded = Image.new('RGBA', (text_width + 2 * OPENING_SUBTITLE_MARGIN, line.height), (0, 0, 0, 0))
+    padded.alpha_composite(line, (OPENING_SUBTITLE_MARGIN, 0))
+    line = padded
     resources[subtitle_id] = _png(line)
     resources[whip_id] = pcm_wav(files['data/sound/fx/whip.wav'])
     whole = [0, 0, *size]
+    start_of, end_of = [round(left), 0, *tallest], [round(left + travel), 0, *tallest]
     # The climb ends where his eyes and green headphone land on the card's, read off both pictures.
     k = size[0] / OPENING_CLIMB_WINDOW
-    shots = [dict(image=first, start=0, end=3300, **{'from': [travel, 0, *size], 'to': whole}),
-             dict(image=lot, start=3300, end=7000, **{'from': whole, 'to': [travel, 0, *size]}),
-             dict(image=low, start=7000, end=10680, **{'from': whole, 'to': [travel, 0, *size]}),
-             dict(image=climb, start=10680, end=OPENING_WHIP, ease='out',
-                  **{'from': [tall.width - size[0], tall.height - size[1], *size], 'to': [round(221 * k), round(145 * k), *size]}),
-             dict(image=back_id, start=OPENING_WHIP, end=OPENING_WHIP, **{'from': whole, 'to': whole})]
+    climb_from, climb_to = [tall.width - size[0], tall.height - size[1], *size], [round(221 * k), round(145 * k), *size]
+    shots = [dict(image=first, start=0, end=3300, **{'from': end_of, 'to': start_of}),
+             dict(image=lot, start=3300, end=7000, **{'from': start_of, 'to': end_of}),
+             dict(image=low, start=7000, end=10680, **{'from': start_of, 'to': end_of}),
+             dict(image=climb, start=10680, end=OPENING_WHIP, ease='out', fit='height',
+                  anchor=[climb_from[0] + OPENING_SHOES, 0], anchor_to=[climb_to[0] + OPENING_CARD_ANCHOR, 0],
+                  **{'from': climb_from, 'to': climb_to}),
+             dict(image=back_id, start=OPENING_WHIP, end=OPENING_WHIP, fit='height', anchor=[OPENING_CARD_ANCHOR, 0],
+                  **{'from': whole, 'to': whole})]
+    card = len(shots) - 1
     middle = 300, 690                   # the name's centre, clear of his face
     name_w, name_h = 614, 346
     w, h = 768, 820
     overlays = [
         # The X360's hud/characters_presentation/josh: the stains shrink in over 0.2 s; 0.1 s on, the name does and the subtitle
         # slides in. Its places against each other are the X360's, at this scale.
-        dict(image=stains_id, start=OPENING_WHIP, end=OPENING_WHIP + 200,
+        dict(image=stains_id, start=OPENING_WHIP, end=OPENING_WHIP + 200, follow=card,
              **{'from': [middle[0] - 72, middle[1] + 78, w * 4, round(h / 1.9 * 4.9)], 'to': [middle[0] - 72, middle[1] + 78, w, h]}),
-        dict(image=name_id, start=OPENING_WHIP + 100, end=OPENING_WHIP + 300,
+        dict(image=name_id, start=OPENING_WHIP + 100, end=OPENING_WHIP + 300, follow=card,
              **{'from': [*middle, round(name_w * 1.75), round(name_h * 1.75)], 'to': [*middle, name_w, name_h]}),
-        dict(image=subtitle_id, start=OPENING_WHIP + 100, end=OPENING_WHIP + 300,
-             **{'from': [-line.width / 2, 818, line.width, line.height], 'to': [middle[0] + 110, 818, line.width, line.height]})]
-    resources[spec_id] = json.dumps(dict(format='shshd-cutscene', version=1, size=list(size), music=26900, hold=OPENING_WHIP + 300,
+        dict(image=subtitle_id, start=OPENING_WHIP + 100, end=OPENING_WHIP + 300, follow=card,
+             **{'from': [-text_width / 2, 818, line.width, line.height], 'to': [middle[0] + 110, 818, line.width, line.height]})]
+    resources[spec_id] = json.dumps(dict(format='shshd-cutscene', version=2, size=list(size), tallest=list(tallest), music=26900,
+                                         hold=OPENING_WHIP + 300,
                                          skip=OPENING_WHIP, shots=shots, overlays=overlays,
                                          sounds=[dict(at=OPENING_WHIP, sound=whip_id)])).encode('utf-8')
     return resources

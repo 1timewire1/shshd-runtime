@@ -45,7 +45,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 15   # 15: its main menu's music
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 16   # 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 1
@@ -224,7 +224,7 @@ DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
     Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
     Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016')],
     {'parking_lot': 23, 'diss_battle': 23}, player='josh', own_music=True, level_music={'diss_battle': 'diss_battle'},
-    script_music={'jumparound': 'jumparound'}, pair_ambience=True, opening=26796, addon_revision=14)
+    script_music={'jumparound': 'jumparound'}, pair_ambience=True, opening=26796, addon_revision=16)
 # The test's hero is the zach model, called Josh in its text, so he wears Josh's render (owner, 2026-10-27: MS3's
 # Josh stood in with Zack's model, and the test was never updated); Moondog's look is Dancing Queen's.
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [

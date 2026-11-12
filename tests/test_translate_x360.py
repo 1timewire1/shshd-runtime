@@ -1010,9 +1010,10 @@ QuitGame()
         import x360
         for story in (x360.DAY_OF_DISS, x360.PUZZLE_TEST, x360.DATING_BETH):
             self.assertFalse(story.diss_rounds or story.script_edits or story.event_scenes)
-        # Revision 15 only adds the main menu's tune (MENU_MUSIC), which no story plays; every other revision a story needs.
-        self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 14)
-        self.assertEqual(x360.ADDON_REVISION, 15)
+        # Revision 15 only adds the main menu's tune (MENU_MUSIC), which no story plays; 16, Day of Diss's opening for taller
+        # frames, is what it needs now.
+        self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 16)
+        self.assertEqual(x360.ADDON_REVISION, 16)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
 
@@ -1179,7 +1180,7 @@ class OpeningTests(unittest.TestCase):
             image.save(buffer, kind)
             return buffer.getvalue()
         for name in ('sweep_first', 'sweep_lot', 'sweep_low'):
-            Image.new('RGB', (2560, 1440), (10, 20, 30)).save(Path(folder) / f'{name}.jpg')
+            Image.new('RGB', (2992, 1683), (10, 20, 30)).save(Path(folder) / f'{name}_tall.jpg')
         Image.new('RGB', (1440, 2560), (40, 50, 60)).save(Path(folder) / 'josh_tall.jpg')
         base = 'data/art/hud/characters_presentation/josh/'
         files = {base + 'background.jpg': bytes_of(Image.new('RGB', (1024, 1024)), 'JPEG')}
@@ -1217,15 +1218,27 @@ class OpeningTests(unittest.TestCase):
         # The cuts, timed to the music by the owner.
         self.assertEqual([shot['start'] for shot in spec['shots']], [0, 3300, 7000, 10680, 14510])
         self.assertEqual([shot['end'] for shot in spec['shots'][:3]], [3300, 7000, 10680])
+        # Version 2: the sweeps' windows are 9:21 on stills as tall, today's 3:4 window in their middle; the climb and the card
+        # fill a taller frame by height about their anchors, and the overlays follow the card.
+        self.assertEqual((spec['version'], spec['size'], spec['tallest']), (2, [768, 1024], [768, 1792]))
         for shot in spec['shots']:
             size = Image.open(io.BytesIO(out[shot['image']])).size
+            window = [768, 1792] if shot.get('fit', 'crop') == 'crop' else [768, 1024]
             for box in (shot['from'], shot['to']):
-                self.assertEqual(box[2:], [768, 1024])              # a blit
-                self.assertTrue(0 <= box[0] <= size[0] - 768 and 0 <= box[1] <= size[1] - 1024, (shot, size))
+                self.assertEqual(box[2:], window)
+                self.assertTrue(0 <= box[0] <= size[0] - window[0] and 0 <= box[1] <= size[1] - window[1], (shot, size))
+        sweeps = spec['shots'][:3]
+        self.assertTrue(all(Image.open(io.BytesIO(out[s['image']])).height == 1792 for s in sweeps))
+        self.assertEqual(sweeps[0]['from'][0] - sweeps[0]['to'][0], round(2992 * 1792 / 1683 / 1.75) - 768)
+        climb, card = spec['shots'][3:]
+        self.assertEqual((climb['fit'], card['fit']), ('height', 'height'))
+        self.assertEqual(climb['anchor'][0] - climb['from'][0], art.OPENING_SHOES)
+        self.assertEqual(climb['anchor_to'][0] - climb['to'][0], card['anchor'][0])       # his face meets the card's
+        self.assertEqual([o['follow'] for o in spec['overlays']], [4, 4, 4])
 
     def test_day_of_diss_needs_the_addon_that_holds_its_opening(self):
         import x360
-        self.assertEqual(x360.DAY_OF_DISS.addon_revision, 14)
+        self.assertEqual(x360.DAY_OF_DISS.addon_revision, 16)       # its opening's spec version 2
         self.assertLessEqual(x360.MONDAY_PLANNER.addon_revision, x360.ADDON_REVISION)
 
 

@@ -104,8 +104,8 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 15, about 54 MB.
-Revision 15 only adds the prototype's main menu tune for [Title Screen Music](#settings); the stories still ask for 14.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 16, about 55 MB.
+Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settings). Revision 16 rebuilds Day of Diss's opening for taller frames (storyboard spec version 2; [X360.md](X360.md#day-of-disss-opening)), which Day of Diss now asks for; the other stories ask for what they did.
 
 | Resources | What |
 | --- | --- |
@@ -251,7 +251,7 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | --- | --- | --- | --- |
 | '07 / '08 | `shsbrew` | 26906 | Track 8006, the MIDI both games share |
 | New Rules | `shsnr` | 26988 | Track 8 |
-| X360 | `shsx360` (revision 15) | 26996 | `music/main_menu` |
+| X360 | `shsx360` (revision 16) | 26996 | `music/main_menu` |
 | '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
 
 ## Data Management
