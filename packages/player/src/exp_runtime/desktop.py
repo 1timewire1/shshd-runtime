@@ -2486,9 +2486,12 @@ class Desktop:
                 # the frame's, cut by a narrower frame's sides; the scene shows above it.
                 area = self._scene_card(0)
             elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
-                # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame.
+                # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame. A game drawn over
+                # the scene (see-through: the BREW catch game, '11's and the X360's games) leaves the scene above it
+                # as the background layer drew it, not the window's backdrop (owner, 2026-11-12).
                 area = self.picture_frame
-                self._draw_picture_band(backdrop, height)
+                if not (layer.get_masks()[3] and self.pending_background is not None and self.story_band is None):
+                    self._draw_picture_band(backdrop, height)
             elif frame_wide(layer.get_size()):
                 # A frame-wide layer (its column plus HD's 32-unit side margins), cut by a narrower frame's edges.
                 margin = round(32 * scale)
