@@ -2514,11 +2514,11 @@ class Desktop:
             layer = self.story_layer
             if self.story_centred:
                 # A picture as wide as the frame and no taller (a storyboard: desktop_cutscene), centred; past the shape
-                # its spec serves the backdrop shows above and below it.
+                # its spec serves, black above and below it.
                 tall = round(frame.width * layer.get_height() / layer.get_width())
                 area = frame if abs(tall - frame.height) <= 1 else pygame.Rect(
                     frame.x, frame.centery - tall // 2, frame.width, tall)
-                self._draw_bands(area, backdrop)
+                self._draw_bands(area)
             elif self.story_fills_frame:
                 # A card drawn over the whole frame in its own shape (desktop_title: HD's 768 x 1024 at 3:4).
                 area = frame
@@ -3404,23 +3404,17 @@ class Desktop:
         return pygame.Rect(self.viewport.x - margin, frame.bottom - tall - round(lift * scale),
                            self.viewport.width + 2 * margin, tall)
 
-    def _draw_bands(self, area, backdrop):
-        """The frame above and below `area` (a picture narrower in shape than the frame): the episode's frame backdrop
-        where it has one (TRANSLATED_FRAME_BACKDROP), else the window's backdrop, as beside the frame."""
+    def _draw_bands(self, area):
+        """The frame above and below `area` (a storyboard narrower in shape than the frame): black. Not the episode's
+        frame backdrop, which is a pack's location-strip art (New Rules' under the X360's storyboards: owner,
+        2026-11-12, once those were rendered tall enough that no phone needs bands)."""
         frame = self.bg_viewport
         bands = [pygame.Rect(frame.x, frame.y, frame.width, area.y - frame.y),
                  pygame.Rect(frame.x, area.bottom, frame.width, frame.bottom - area.bottom)]
-        bands = [band.clip(self.window.get_rect()) for band in bands if band.height > 0]
-        if not bands:
-            return
-        own = self._frame_backdrop(frame.size)
         for band in bands:
-            if own is not None:
-                self.window.blit(own, band, band.move(-frame.x, -frame.y))
-            elif backdrop is not None:
-                self.window.blit(backdrop, band, band)
-            else:
-                self.window.fill((8, 12, 20), band)
+            band = band.clip(self.window.get_rect())
+            if band.height > 0:
+                self.window.fill((0, 0, 0), band)
 
     def _draw_picture_band(self, backdrop, height):
         """Above a 3:4 picture in a taller frame (picture_frame), the window's backdrop, as beside the frame; or the
