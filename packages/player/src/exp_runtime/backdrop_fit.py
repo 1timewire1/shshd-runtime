@@ -84,3 +84,40 @@ def lengthen(image, strip, wanted, height):
              + _grow(below, bottom, min(len(below), clear), max(0, height - new_bottom), 'bottom', row_at))
     parts = (parts + parts[-1:] * height)[:height]
     return pygame.image.frombytes(b''.join(parts), (image.get_width(), height), 'RGBA')
+
+
+_extended = {}
+
+
+def extend(image, height):
+    """`image` (a backdrop with no bars: the arena's frame picture) made `height` rows tall: whole repeats of its pattern
+    inserted at its middle, then resampled to exactly `height`, so nothing of its own shaded top or bottom is cut and
+    the repeat never breaks. The same picture and height give the same surface (kept), so a game drawing the bottom of
+    it and the player drawing the rest above match."""
+    key = (id(image), image.get_size(), height)
+    found = _extended.get(key)
+    if found is not None:
+        return found
+    rows = _rows(image)
+    count = len(rows)
+    needed = height - count
+    if needed <= 0:
+        return image
+    middle = count // 2
+    period = None
+    for lo, hi in ((middle + count // 12, count - count // 6), (count // 6, middle - count // 12)):
+        period = repeat(rows, lo, hi) if hi - lo >= 4 else None
+        if period is not None:
+            break
+    if period is None:
+        grown = rows[:middle] + [rows[middle]] * needed + rows[middle:]
+    else:
+        whole = -(-needed // period) * period
+        grown = rows[:middle] + [rows[lo + (middle + t - lo) % period] for t in range(whole)] + rows[middle:]
+    surface = pygame.image.frombytes(b''.join(grown), (image.get_width(), len(grown)), 'RGBA')
+    if len(grown) != height:
+        surface = pygame.transform.smoothscale(surface, (image.get_width(), height))
+    if len(_extended) > 8:
+        _extended.clear()
+    found = _extended[key] = surface
+    return found

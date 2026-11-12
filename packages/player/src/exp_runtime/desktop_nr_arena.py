@@ -309,6 +309,8 @@ class Skin:
 
 
 class NRArenaRenderer:
+    frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
+
     def __init__(self, resources):
         self.resources = resources
         self.native = pygame.Surface(NATIVE).convert()
@@ -507,9 +509,17 @@ class NRArenaRenderer:
                 pygame.transform.scale(surface, size, self.canvas)
             return []
         # The frame's picture is drawn over the whole 3:4 frame as the dialogue screens draw it; the arena's pixel art
-        # goes over it, scaled whole as above.
-        if self._frame_scaled is None or self._frame_scaled[0] != size:
-            self._frame_scaled = (size, pygame.transform.smoothscale(skin.frame, size))
+        # goes over it, scaled whole as above. In a taller frame the picture runs on above the arena (the player's
+        # band): the arena takes the bottom of the same lengthened picture (backdrop_fit.extend), so the picture's
+        # shaded top shows once, at the frame's top, not again over the arena's bar (owner, 2026-11-11).
+        if self._frame_scaled is None or self._frame_scaled[0] != (size, self.frame_units):
+            picture = skin.frame
+            wide, tall = self.frame_units
+            if (wide, tall) != (384, 512):
+                from .backdrop_fit import extend
+                long = extend(picture, round(picture.get_height() * tall / (wide * 4 / 3)))
+                picture = long.subsurface((0, long.get_height() - picture.get_height(), *picture.get_size()))
+            self._frame_scaled = ((size, self.frame_units), pygame.transform.smoothscale(picture, size))
         self.canvas.blit(self._frame_scaled[1], (0, 0))
         if self._layer_scaled is None or self._layer_scaled.get_size() != size:
             self._layer_scaled = pygame.Surface(size, pygame.SRCALPHA, surface)

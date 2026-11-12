@@ -1761,7 +1761,8 @@ class Desktop:
                                          (tall - FRAME_UNITS[1]) / 2)
         self.dialogue_renderer.lift = 0
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
-                     getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None)):
+                     getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
+                     getattr(self, 'nr_arena_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -3258,12 +3259,11 @@ class Desktop:
             key = (id(picture), self.bg_viewport.size, self.picture_frame.height)
             cached = self.__dict__.get('_band_cache')
             if cached is None or cached[0] != key:
-                height_px, width_px = picture.get_height(), picture.get_width()
-                long = round(height_px * self.bg_viewport.height / self.picture_frame.height)
-                added = long - height_px
-                middle = height_px / 2
-                lengthened = backdrop_fit.lengthen(picture.convert_alpha(), (middle, middle),
-                                                   (middle + added, middle + added), long)
+                # backdrop_fit.extend's picture of the frame's shape: the game draws its bottom (band_picture's
+                # game, with the same height), this its top.
+                wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
+                long = round(picture.get_height() * self._frame_tall / (wide * 4 / 3))
+                lengthened = backdrop_fit.extend(picture, long)
                 cached = self._band_cache = (key, pygame.transform.smoothscale(lengthened, self.bg_viewport.size))
             self.window.blit(cached[1], band, band.move(-self.bg_viewport.x, -self.bg_viewport.y))
             return
