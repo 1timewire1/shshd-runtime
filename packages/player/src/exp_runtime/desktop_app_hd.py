@@ -924,17 +924,23 @@ class AppScreens:
 
     # -- the frame --------------------------------------------------------------------------------------------
 
-    @lru_cache(maxsize=1)
-    def backdrop(self):
+    # shshd-runtime (General's Aspect Ratio, owner 2026-11-12): the screens are drawn at the menu frame's height
+    # (Application.menu_frame): the gradient fills it, HD's 768 x 1024 composition (the kiwi above its card) is centred
+    # in it, `dy` points down, and the tall cards (the file browser, Options' text pages) run its height, showing more.
+    height = FRAME[1]
+    dy = 0
+
+    @lru_cache(maxsize=2)
+    def backdrop(self, height=FRAME[1]):
         """The dark gradient with the kiwi at the top: it stays put under every page (a tall card covers it)."""
-        size = (FRAME[0] * S, FRAME[1] * S)
+        size = (FRAME[0] * S, round(height * S))
         surface = pygame.Surface(size)
         top, bottom = BACKDROP
         for y in range(size[1]):
             f = y / (size[1] - 1)
             surface.fill(tuple(round(a + (b - a) * f) for a, b in zip(top, bottom)), (0, y, size[0], 1))
         icon = icon_surface(KIWI * S)
-        surface.blit(icon, ((size[0] - icon.get_width()) // 2, KIWI_Y * S))
+        surface.blit(icon, ((size[0] - icon.get_width()) // 2, round((KIWI_Y + (height - FRAME[1]) / 2) * S)))
         return surface
 
     def draw(self, app):
@@ -942,11 +948,20 @@ class AppScreens:
         self.card.pressed = app.pressed
         self.buttons = []
         screen = app.screen
+        self.height = app.menu_frame()[1] if hasattr(app, 'menu_frame') else FRAME[1]
+        self.dy = (self.height - FRAME[1]) / 2
+        if self.options is not None:
+            self.options.menu.frame_height = self.height
         if screen == 'options' and (self.last is None or self.last[0] != 'options'):
             self.options.enter()                        # Options opens on its list (or the page asked for)
         # The pages are drawn on a clear layer over a backdrop that stays put (owner, 2026-10-30): the gradient with the
         # kiwi, which only a card over it hides; a library's browser has its game's main menu there instead.
-        canvas = (self.game_backdrop(app) if screen == 'browser' else None) or self.backdrop().copy()
+        canvas = (self.game_backdrop(app) if screen == 'browser' else None) or self.backdrop(self.height).copy()
+        if canvas.get_height() < round(self.height * S):
+            # (A game's main menu still drawn at 3:4 behind the browser: centred on the gradient.)
+            whole = self.backdrop(self.height).copy()
+            whole.blit(canvas, (0, round(self.dy * S)))
+            canvas = whole
         layer = pygame.Surface(canvas.get_size(), pygame.SRCALPHA)
         getattr(self, 'draw_' + screen)(app, layer)
         now = time.monotonic() * 1000
@@ -996,7 +1011,7 @@ class AppScreens:
         """A card of `height` body points under `title`, below the kiwi; returns (body top, card bottom)."""
         foot = FOOT if back else SHORT_FOOT
         total = self.header(title) + height + foot
-        top = max(KIWI_Y + KIWI + 20, (FRAME[1] + KIWI_Y + KIWI - total) / 2)
+        top = self.dy + max(KIWI_Y + KIWI + 20, (FRAME[1] + KIWI_Y + KIWI - total) / 2)
         body, bottom = self.card_frame(layer, top, title, height, foot)
         if back:
             self.buttons.append((self.card.back_button(layer, bottom), ('back',)))
@@ -1150,7 +1165,7 @@ class AppScreens:
                   'library': 'Open Library', 'bulk': 'Bulk Import', 'backups': 'Backups Folder',
                   'exports': 'Exports Folder'}
         folder_kind = app.browser_kind in ('backups', 'exports')
-        top, bottom = TALL
+        top, bottom = TALL[0], TALL[1] + self.height - FRAME[1]
         body = card.panel(layer, top, bottom, titles.get(app.browser_kind, 'Files'))
         inner = PANEL_X + BORDER, PANEL_W - 2 * BORDER
         pressed = app.pressed
@@ -1254,7 +1269,7 @@ class AppScreens:
         card = self.card
         height = 30 + self.text_height(text, 28) + (16 + self.text_height(note, 22) if note else 0) + (60 if spinner else 0) + 20
         foot = FOOT if labels else SHORT_FOOT
-        top = max(WINDOW_TOP, (FRAME[1] - (self.header(title) + height + foot)) / 2)
+        top = max(WINDOW_TOP + self.dy, (self.height - (self.header(title) + height + foot)) / 2)
         body, bottom = self.card_frame(layer, top, title, height, foot)
         y = self.text(layer, text, body + 30, points=28, color=BLUE, center=True)
         if note:

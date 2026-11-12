@@ -325,3 +325,16 @@ class WindowShapeTests(unittest.TestCase):
                 app = self.app(choice, size, fixed)
                 app.shape_window()
                 self.assertEqual(app.window.get_size(), size)
+
+
+class MenuFrameTests(unittest.TestCase):
+    """3 (menus, stage 1): a menu's frame is 768 points across and the frame's shape, never shorter than HD's 1024."""
+
+    app = WindowShapeTests.app
+
+    def test_heights(self):
+        for choice, size, fixed, height in (('3:4', (768, 1707), True, 1024), ('2:3', (768, 1707), True, 1152),
+                                            ('9:16', (768, 1707), True, 1365), ('fit', (1080, 2400), True, 1707),
+                                            ('fit', (1200, 900), False, 1024), ('fit', (700, 1000), False, 1024)):
+            with self.subTest(choice=choice, size=size):
+                self.assertEqual(self.app(choice, size, fixed).menu_frame(), (768, height))

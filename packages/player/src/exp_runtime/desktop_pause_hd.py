@@ -651,9 +651,15 @@ class HdPauseMenu:
         both.blit(layer, (round(direction * (layer.get_width() - shift)), 0))
         return both, []
 
+    # shshd-runtime (General's Aspect Ratio): the frame's height in points the pages are laid out in. HD's 1024 for the
+    # pause menu over a story (its card is centred in a taller frame: Desktop.card_frame); the app's own Options
+    # (desktop_app_hd) set the menu frame's (Application.menu_frame), so a page is centred in it and a text page's card
+    # runs taller, showing more lines.
+    frame_height = FRAME[1]
+
     def screen_layout(self, settings, host_rows=(), *, message=''):
         """The current screen alone, at rest: `layout`'s (layer, buttons)."""
-        layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
+        layer = pygame.Surface((FRAME[0] * S, round(self.frame_height * S)), pygame.SRCALPHA).convert_alpha()
         strings, state, buttons = self.strings(), self.state, []
         bottom_rule = None
         focus = state.focus
@@ -667,7 +673,7 @@ class HdPauseMenu:
                 entries.insert(1, (SKIP_AHEAD_LABEL, ('skip_ahead',)))
             entries += list(host_rows)
             height = HEADER + ROW * len(entries) + FOOT
-            top = (FRAME[1] - height) / 2
+            top = (self.frame_height - height) / 2
             body = self.panel(layer, top, top + height, strings[8])
             for i, (label, command) in enumerate(entries):
                 y = body + i * ROW
@@ -679,7 +685,7 @@ class HdPauseMenu:
             categories = [(category, label) for category, label in OPTION_CATEGORIES
                           if self.option_rows(category, settings, strings)]
             height = HEADER + ROW * len(categories) + FOOT
-            top = (FRAME[1] - height) / 2
+            top = (self.frame_height - height) / 2
             body = self.panel(layer, top, top + height, strings[10])
             for i, (category, label) in enumerate(categories):
                 y = body + i * ROW
@@ -698,7 +704,7 @@ class HdPauseMenu:
             rows = self.option_rows(category, settings, strings)
             sliders = sum(1 for kind, _, _ in rows if kind == 'slider')
             height = HEADER + (len(rows) - sliders) * ROW + sliders * SLIDER_ROW + FOOT
-            top = (FRAME[1] - height) / 2
+            top = (self.frame_height - height) / 2
             title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
                      or CHOICE_LABELS.get(category[7:] if category.startswith('choice:') else None)
                      or PAGE_TITLES.get(category)
@@ -755,7 +761,7 @@ class HdPauseMenu:
         elif state.screen == 'help':
             order = MAIN_HELP_ORDER if self.main_menu else HELP_ORDER
             height = HEADER + ROW * len(order) + FOOT
-            top = (FRAME[1] - height) / 2
+            top = (self.frame_height - height) / 2
             body = self.panel(layer, top, top + height, strings[120])
             for i, page in enumerate(order):
                 y = body + i * ROW
@@ -769,7 +775,7 @@ class HdPauseMenu:
         if bottom_rule is not None:
             self.rect(layer, self.SEPARATOR_COLOR, (PANEL_X + BORDER, bottom_rule, PANEL_W - 2 * BORDER, 1))
         if message:
-            self.text(layer, message, 384, FRAME[1] - 90, 22, (255, 255, 255), center=True)
+            self.text(layer, message, 384, self.frame_height - 90, 22, (255, 255, 255), center=True)
         self.buttons = buttons
         return layer, buttons
 
@@ -890,7 +896,7 @@ class HdPauseMenu:
     def text_page(self, layer, buttons):
         state = self.state
         title, body = self.text_lines(state.screen)
-        top, bottom = TALL
+        top, bottom = TALL[0], TALL[1] + self.frame_height - FRAME[1]
         # Two-line titles get a taller header, as photographed (152 points).
         header = HEADER + 40 if len(self.title_lines(title)) > 1 else HEADER
         self.panel(layer, top, bottom, title, header=header)

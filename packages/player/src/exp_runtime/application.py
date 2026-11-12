@@ -1883,12 +1883,24 @@ class Application:
         with frame_log.section('flip'):
             pygame.display.flip()
 
+    def menu_frame(self):
+        """shshd-runtime (General's Aspect Ratio): a menu's frame in points, 768 across and the frame's shape for the
+        aspect ratio in this window (frame_shape.ratio), never shorter than HD's 1024. A screen drawn at this size
+        fills the frame; one still drawn at 768 x 1024 is shown centred in it, as before (present_frame)."""
+        shape = frame_shape.ratio(self.settings.aspect(self.fixed_window), self.window.get_size(), self.fixed_window)
+        return PICKER_FRAME[0], max(PICKER_FRAME[1], round(PICKER_FRAME[0] / shape))
+
+    frame_points = PICKER_FRAME     # the last canvas presented, in points (picker_point maps taps into it)
+
     def present_frame(self, canvas, *, side_art=True):
-        """Show a 768 x 1024 point canvas, fitted to the window (with the collage HD shows beside its frame: not
-        beside an app screen, whose shell, if one is left, is a let-go library's)."""
+        """Show a canvas 768 points across (HD's 768 x 1024, or a taller one: menu_frame), fitted to the window (with
+        the collage HD shows beside its frame: not beside an app screen, whose shell, if one is left, is a let-go
+        library's)."""
         width, height = self.window.get_size()
-        factor = min(width / PICKER_FRAME[0], height / PICKER_FRAME[1])
-        size = max(1, round(PICKER_FRAME[0] * factor)), max(1, round(PICKER_FRAME[1] * factor))
+        points = (PICKER_FRAME[0], round(PICKER_FRAME[0] * canvas.get_height() / canvas.get_width()))
+        self.frame_points = points
+        factor = min(width / points[0], height / points[1])
+        size = max(1, round(points[0] * factor)), max(1, round(points[1] * factor))
         self.viewport = pygame.Rect((width - size[0]) // 2, (height - size[1]) // 2, *size)
         self.buttons = []
         with frame_log.section('backdrop'):
@@ -2974,8 +2986,9 @@ class Application:
         return True
 
     def picker_point(self, position):
-        return ((position[0] - self.viewport.x) * PICKER_FRAME[0] / self.viewport.width,
-                (position[1] - self.viewport.y) * PICKER_FRAME[1] / self.viewport.height)
+        points = self.frame_points
+        return ((position[0] - self.viewport.x) * points[0] / self.viewport.width,
+                (position[1] - self.viewport.y) * points[1] / self.viewport.height)
 
     def picker_event(self, event):
         picker = self.ensure_picker(self.picker_style)
