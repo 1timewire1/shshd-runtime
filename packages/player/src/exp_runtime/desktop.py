@@ -1870,6 +1870,11 @@ class Desktop:
             buttons = renderer.draw(self.canvas, view) or [((-32, 422, 92, 58), ('menu',))]     # (the gear: the pause menu)
             if getattr(renderer, 'hd_layer', False):
                 self.story_layer = renderer.canvas
+                if not self._hd_frame_shape():
+                    # Over the scene, centred in a taller frame, as service 91's own band is (owner, 2026-11-12: it sat
+                    # low before a BREW catch game's skip prompt).
+                    self.story_over_scene = True
+                    self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
             self.pending_background = getattr(renderer, 'pending_background', None)
             self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
             self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command) for rect, command in buttons]
