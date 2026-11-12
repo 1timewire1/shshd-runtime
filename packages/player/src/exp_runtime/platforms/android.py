@@ -105,8 +105,7 @@ class Host:
         from android import activity
         from jnius import autoclass
         from ..application import Application
-        from .. import desktop_choice, desktop_dialogue, desktop_word_hd, momentum
-        desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out
+        from .. import desktop_dialogue, desktop_word_hd, momentum
         desktop_dialogue.REUSE_AT_REST = True       # a line waiting for its reader isn't redrawn: `_at_rest`
         desktop_word_hd.QUICK_DRAWING = True        # the word game's haze and turning cubes: `haze_layer`, `turn_ms`
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (owner's report)

@@ -69,6 +69,11 @@ class KiwiVM:
     above the library's data (`0x7FF5 - 256`), which `stack_capacity=256` reproduces.
     """
 
+    # shshd-runtime: called every STEP_HOOK_EVERY instructions when set. Only Choice Hints' previews set it (on their own
+    # copies, run on a worker thread), so they can step aside for the thread drawing the frames; a story never has one.
+    step_hook = None
+    STEP_HOOK_EVERY = 1024
+
     def __init__(self, program: KiwiProgram, *, stack_capacity: int = 0x400, linked: KiwiProgram | None = None):
         if program.previous_flag:
             raise VMError('a linked KiWi segment runs only beside a primary script')
@@ -315,7 +320,10 @@ class KiwiVM:
             raise ValueError('max_steps must be positive')
         if self.pending is not None:
             return self.pending
+        hook, every = self.step_hook, self.STEP_HOOK_EVERY - 1
         for _ in range(max_steps):
+            if hook is not None and not self.steps_executed & every:
+                hook()
             instruction = self.instruction_at(self.pc)
             op = instruction.opcode
             arg = instruction.operand

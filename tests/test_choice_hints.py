@@ -300,8 +300,9 @@ class ChoiceHintTests(unittest.TestCase):
 
 class BackgroundHintTests(unittest.TestCase):
     def test_a_mobile_hosts_hints_follow_the_choice_from_a_copy(self):
-        """Under BACKGROUND_HINTS (the Android host's) the choice is drawn at once with every hint unknown, and the
-        preview runs on a worker over a copy of the session made as the choice came up, never the live one."""
+        """Under BACKGROUND_HINTS (every host's now) the choice is drawn at once with every hint unknown, and the
+        preview runs on a worker over a copy of the session made as the choice came up, never the live one, stepping
+        aside for the frames (its `pause`)."""
         import time
         from types import SimpleNamespace
         from unittest.mock import patch
@@ -311,13 +312,16 @@ class BackgroundHintTests(unittest.TestCase):
         live = SimpleNamespace(resources=object(), vm=SimpleNamespace(program=object()), numbers=[1])
         seen = []
 
-        def preview(session):
+        def preview(session, *, pause=None):
             seen.append(session)
+            self.assertTrue(callable(pause))
             return ('gain', 'loss')
 
         with patch.object(desktop_choice, 'BACKGROUND_HINTS', True),                 patch.object(desktop_choice, 'preview_choices', preview):
             renderer._update_hints(live)
             self.assertEqual(renderer.hints, ())                        # drawn now, hints unknown
+            self.assertIsNone(renderer.hint_job)                        # (the worker waits out the choice's first frame)
+            renderer._update_hints(live)
             renderer.hint_job[1].result(timeout=5)
             renderer._update_hints(live)
         self.assertEqual((renderer.hints, renderer.hint_key, renderer.hint_ms), (('gain', 'loss'), 'page', 0))

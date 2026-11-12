@@ -60,8 +60,11 @@ def observe_effects(session, preview, action, effects):
 
 
 def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
-                    max_decisions=4, max_branches=192):
+                    max_decisions=4, max_branches=192, pause=None):
     """Compare native outcomes on bounded, isolated runtime copies.
+
+    shshd-runtime: `pause`, if given, is called before each copy and every KiwiVM.STEP_HOOK_EVERY instructions of the
+    copies' scripts: a preview on a worker thread steps aside there for the thread drawing the frames.
 
     Immediate feedback takes precedence. For deferred feedback, compare the
     same later answers across every initial option. An option dominates another
@@ -87,8 +90,11 @@ def preview_choices(session, *, max_steps=6000, max_panels=48, max_options=16,
         branches += 1
         if branches > max_branches:
             return None
+        if pause is not None:
+            pause()
         preview = deepcopy(source, {id(source.resources): source.resources,
                                     id(source.vm.program): source.vm.program})
+        preview.vm.step_hook = pause
         # shshd-runtime: HD's Decision Tree saves tree_<serial> games as the script adds nodes; a preview must never
         # write those (or the shared tree file) from a branch the player did not take.
         preview.ephemeral = True

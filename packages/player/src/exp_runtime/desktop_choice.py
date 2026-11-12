@@ -10,10 +10,25 @@ from .content import ContentError
 from .desktop_dialogue import DialogueRenderer
 from .choice_hints import preview_choices
 
-# A mobile host's choice: work the hints out on a worker, from a copy of the session made as the choice comes up, so
-# the choice shows at once and its hints follow (the preview took ~450 ms of a phone's frame). Desktop keeps them
-# worked out before the choice is drawn.
-BACKGROUND_HINTS = False
+# Work the hints out on a worker, from a copy of the session made as the choice comes up, so the choice shows at once
+# and its hints follow (the preview took ~450 ms of a phone's frame, and up to 0.8 s of a PC's: owner, 2026-11-12, every
+# platform now). The worker steps aside for the frames (_stepping_aside): the interpreter lock it held otherwise kept
+# the frame thread waiting as long as the preview ran, a freeze all the same.
+BACKGROUND_HINTS = True
+HINT_SLICE_S, HINT_REST_S = .002, .002      # the worker's turns: so long at work, then so long asleep
+
+
+def _stepping_aside():
+    """The preview's `pause` (choice_hints.preview_choices): after HINT_SLICE_S of work, sleep HINT_REST_S, which lets
+    the frame thread take the interpreter lock."""
+    import time
+    since = [time.perf_counter()]
+
+    def pause():
+        if time.perf_counter() - since[0] >= HINT_SLICE_S:
+            time.sleep(HINT_REST_S)
+            since[0] = time.perf_counter()
+    return pause
 _HINT_WORKER = None
 
 
@@ -721,12 +736,16 @@ class ChoiceRenderer:
         if self.hint_key == self.cached_key:
             return
         if BACKGROUND_HINTS:
+            if self.__dict__.get('hint_held') != self.cached_key:
+                # The choice's own first frame is its heaviest: the worker starts on the next one, not against it.
+                self.hint_held = self.cached_key
+                return
             if self.hint_job is None or self.hint_job[0] != self.cached_key:
                 from copy import deepcopy
                 real = getattr(session, 'real_session', session)     # (Disable Choice Timer's stand-in)
                 copy = deepcopy(real, {id(real.resources): real.resources, id(real.vm.program): real.vm.program})
                 copy.ephemeral = True
-                self.hint_job = (self.cached_key, _hint_worker().submit(preview_choices, copy))
+                self.hint_job = (self.cached_key, _hint_worker().submit(preview_choices, copy, pause=_stepping_aside()))
             elif self.hint_job[1].done():
                 try:
                     self.hints = self.hint_job[1].result()
