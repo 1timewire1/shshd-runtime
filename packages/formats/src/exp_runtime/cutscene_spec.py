@@ -49,13 +49,19 @@ def read_spec(data):
     return spec
 
 
+def _is_point(value):
+    return isinstance(value, list) and len(value) == 2 and all(type(v) in (int, float) for v in value)
+
+
 def _check_version_2(spec):
     """Version 2 (General's Aspect Ratio; reference/handoff_x360_storyboard_ratios_answers.md): `size` is still the 3:4
     frame (overlays are in its pixels), `tallest` [w, h] the tallest frame the stills serve, as wide as `size` (9:16:
     768 x 1366). A shot's `fit`: 'crop' (the default), its windows at `tallest`'s shape, cropped about their centre to
     the frame's; 'height', its windows at `size`'s shape (a painting no taller than 3:4), the frame's height kept and the
-    sides narrowed about its `anchor` [x, y] (picture pixels), so a taller frame zooms in on the anchor. An overlay may
-    `follow` a shot (its index): its centre stays on the same place in that shot's picture, its size in frame pixels."""
+    sides narrowed about its `anchor` [x, y] (picture pixels), so a taller frame zooms in on the anchor; with
+    `anchor_to` [x, y] the anchor travels there as the window travels to `to` (its pace and easing: a pan from shoes to
+    face, reference/handoff_x360_storyboard_v2_reply.md). An overlay may `follow` a shot (its index): its centre stays on
+    the same place in that shot's picture, its size in frame pixels, kept on the canvas (desktop_cutscene._placed)."""
     size, tallest = spec['size'], spec.get('tallest')
     if (not isinstance(tallest, list) or len(tallest) != 2 or not all(_is_int(v) and v > 0 for v in tallest)
             or tallest[0] != size[0] or tallest[1] < size[1]):
@@ -63,10 +69,10 @@ def _check_version_2(spec):
     shots = spec['shots']
     for shot in shots:
         fit = shot.get('fit', 'crop')
-        anchor = shot.get('anchor')
-        if fit not in FITS or (fit == 'height' and not (
-                isinstance(anchor, list) and len(anchor) == 2 and all(type(v) in (int, float) for v in anchor))):
+        if fit not in FITS or (fit == 'height' and not _is_point(shot.get('anchor'))):
             raise ValueError('Invalid cutscene fit')
+        if 'anchor_to' in shot and not (fit == 'height' and _is_point(shot['anchor_to'])):
+            raise ValueError('Invalid cutscene anchor_to')
     for overlay in spec.get('overlays', []):
         follow = overlay.get('follow')
         if follow is not None and not (_is_int(follow) and 0 <= follow < len(shots)):

@@ -345,3 +345,25 @@ class Version2Tests(unittest.TestCase):
         follow, plain = at_9_16._spec['overlays']
         self.assertEqual(at_9_16._placed(follow, 1000), (18, 32, 4, 4))   # the anchor's place: (28, 24) in the picture
         self.assertEqual(at_9_16._placed(plain, 1000), (18, 18, 4, 4))    # as far from the middle as at 3:4
+
+    def test_an_anchor_travels_to_anchor_to_with_its_window(self):
+        for bad in (dict(fit='crop', anchor_to=[1, 2]), dict(fit='height', anchor=[28, 24], anchor_to=[1]),
+                    dict(fit='height', anchor=[28, 24], anchor_to='left')):
+            spec = self.spec2()
+            spec['shots'][1].update(bad)
+            with self.subTest(bad), self.assertRaises(ValueError):
+                read_spec(json.dumps(spec).encode('utf-8'))
+        at_3_4, at_9_16 = self.renderer((384, 512)), self.renderer((320, 320 * 16 / 9))
+        climb = dict(image=BLUE, start=0, end=1000, fit='height', anchor=[28, 24], anchor_to=[10, 24],
+                     **{'from': [10, 0, 36, 48], 'to': [0, 0, 36, 48]})
+        self.assertEqual(at_3_4.window(climb, 500), (5, 0, 36, 48))              # 3:4: the window as stored
+        self.assertEqual(at_9_16.window(climb, 0), (14.5, 0, 27, 48))            # about the shoes (28)...
+        self.assertEqual(at_9_16.window(climb, 500), (8.5, 0, 27, 48))           # ...halfway (19)...
+        self.assertEqual(at_9_16.window(climb, 1000), (2.5, 0, 27, 48))          # ...about the face (10)
+
+    def test_a_following_overlay_keeps_on_the_canvas_unless_it_starts_off_it(self):
+        at_9_16 = self.renderer((320, 320 * 16 / 9))
+        near = dict(image=STAMP, start=1000, end=1000, follow=1, **{'from': [32, 24, 4, 4], 'to': [32, 24, 4, 4]})
+        outside = dict(near, **{'from': [40, 24, 4, 4], 'to': [40, 24, 4, 4]})
+        self.assertEqual(at_9_16._placed(near, 1000), (34, 32, 4, 4))       # would be 36.7: its right edge at the canvas's
+        self.assertEqual(at_9_16._placed(outside, 1000), (40, 32, 4, 4))    # 47.3: no further out than at 3:4

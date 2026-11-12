@@ -13,6 +13,13 @@ from . import graphics as pygame
 from .cutscene import moved, read_spec
 
 
+def _kept(centre, half, low, high):
+    """A centre moved so its box (`half` either side) lies within [low, high]; one larger than that is centred in it."""
+    if 2 * half >= high - low:
+        return (low + high) / 2
+    return min(max(centre, low + half), high - half)
+
+
 class CutsceneRenderer:
     frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
 
@@ -54,13 +61,16 @@ class CutsceneRenderer:
 
     def window(self, shot, ms, size=None):
         """The shot's window at `ms` for a canvas of `size` (this one's): version 1's as stored; version 2's cropped about
-        its centre to the canvas's shape ('crop') or narrowed about its anchor, its height kept ('height')."""
+        its centre to the canvas's shape ('crop') or narrowed about its anchor, its height kept ('height'). An anchor with
+        `anchor_to` travels there at the window's own pace and easing."""
         x, y, w, h = moved(shot, ms)
         if self._spec['version'] < 2:
             return x, y, w, h
         width, height = size or self.canvas.get_size()
         if shot.get('fit', 'crop') == 'height':
             anchor = shot['anchor'][0]
+            if 'anchor_to' in shot:
+                anchor = moved(dict(shot, **{'from': shot['anchor'], 'to': shot['anchor_to']}), ms)[0]
             narrow = h * width / height
             return anchor - (anchor - x) * narrow / w, y, narrow, h
         short = w * height / width
@@ -78,20 +88,28 @@ class CutsceneRenderer:
 
     def _placed(self, overlay, ms):
         """The overlay's (cx, cy, w, h) on this canvas. Its spec places it on the 3:4 frame (`size`): a taller canvas keeps
-        it as far from the middle, or (version 2's `follow`) on the same place in that shot's picture."""
+        it as far from the middle, or (version 2's `follow`) on the same place in that shot's picture.
+
+        A following overlay keeps on the canvas: as its picture zooms, its centre moves out while its size stays, so
+        near an edge it would run off (the card's subtitle at 20:9: reference/handoff_x360_storyboard_v2_reply.md). It
+        goes no further past an edge than it is at 3:4, so one that slides in from outside still does."""
         cx, cy, w, h = moved(overlay, ms)
         size = tuple(self._spec['size'])
         width, height = self.canvas.get_size()
         if (width, height) == size:
             return cx, cy, w, h
         follow = overlay.get('follow')
+        lower = (height - size[1]) / 2
         if follow is None:
-            return cx, cy + (height - size[1]) / 2, w, h
+            return cx, cy + lower, w, h
         shot = self._spec['shots'][follow]
         x0, y0, w0, h0 = self.window(shot, ms, size)                # where the picture is at 3:4
         x1, y1, w1, h1 = self.window(shot, ms)                      # and on this canvas
         px, py = x0 + cx * w0 / size[0], y0 + cy * h0 / size[1]
-        return (px - x1) * width / w1, (py - y1) * height / h1, w, h
+        fx, fy = (px - x1) * width / w1, (py - y1) * height / h1
+        fx = _kept(fx, w / 2, min(0., cx - w / 2), max(float(width), cx + w / 2))
+        fy = _kept(fy, h / 2, min(0., cy + lower - h / 2), max(float(height), cy + lower + h / 2))
+        return fx, fy, w, h
 
     def _overlay(self, overlay, ms):
         image = self._image(overlay['image'])
