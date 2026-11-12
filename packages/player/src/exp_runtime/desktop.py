@@ -118,6 +118,19 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 OPAQUE_ENOUGH = 250
 
 
+def opaque_enough(surface):
+    """Whether every pixel of `surface` is at least OPAQUE_ENOUGH opaque. A mask's count, in C: reading the alpha
+    bytes back into Python took about 40 ms for a 1080 x 2400 picture on a PC (several times that on a phone), on
+    every new location and every frame of a location pan."""
+    if not surface.get_masks()[3]:
+        return True
+    mask = getattr(pygame, 'mask', None)
+    if mask is None:
+        return min(pygame.image.tobytes(surface, 'RGBA')[3::4]) >= OPAQUE_ENOUGH
+    width, height = surface.get_size()
+    return mask.from_surface(surface, OPAQUE_ENOUGH - 1).count() == width * height
+
+
 def frame_wide(size):
     """Whether a story layer of `size` pixels is frame-wide: the 320 x 480-unit column with HD's 32-unit margins either
     side (384 x 480). Within a pixel of that shape: at a density like 2.4 pixels a unit (a frame narrower than HD's) the
@@ -1665,6 +1678,8 @@ class Desktop:
             self.loading_handover = None
             return
         area = getattr(self, 'picture_frame', self.bg_viewport)
+        if not self._hd_frame_shape():
+            area = self._scene_card((self._frame_tall - FRAME_UNITS[1]) / 2)      # where the band was (render)
         scale = 1 - ease_in_out(ms / LOADING_CLOSE_MS)
         height = max(1, round(area.height * scale))
         band = pygame.transform.smoothscale(handover['layer'], (area.width, height))
@@ -1888,6 +1903,12 @@ class Desktop:
                         # A taller frame centres the picker as HD's frame does (owner, 2026-11-11): its layer moves
                         # up by half the height added (its taps follow, _picker_point).
                         self.story_lift = (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) / 2
+                    elif action.name in ('loading', 'download_poll') and not self._hd_frame_shape():
+                        # HD's loading band is a layer over the scene (the frame's own background): in a frame of another
+                        # shape it goes over the scene centred, as the picker does, not as a 3:4 picture with the window's
+                        # backdrop above it (owner, 2026-11-11: the scene was cut to 3:4 before a minigame).
+                        self.story_over_scene = True
+                        self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
                 if action.name in ARENA_ACTIONS:
                     self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
@@ -2393,6 +2414,7 @@ class Desktop:
         self._frame_width, self._frame_tall = units
         edge = (units[0] - 320) / 2                 # the frame's margin each side of the column: 32 units, 0 from 9:16
         scale = min(width / units[0], height / units[1])
+        self._present_scale = scale
         frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
         frame.center = (width // 2, height // 2)
         # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there).
@@ -2454,9 +2476,7 @@ class Desktop:
             elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
                 # HD's frame drawn over the scene (the look picker): at the story's scale with the column, its bottom
                 # the frame's, cut by a narrower frame's sides; the scene shows above it.
-                margin = round(32 * scale)
-                tall = round(FRAME_UNITS[1] * scale)
-                area = pygame.Rect(self.viewport.x - margin, frame.bottom - tall, self.viewport.width + 2 * margin, tall)
+                area = self._scene_card(0)
             elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
                 # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame.
                 area = self.picture_frame
@@ -2508,7 +2528,7 @@ class Desktop:
                 zoom = 1 + (self.ALERT_ZOOM - 1) * max(0., min(1., narrow))
                 width = round(FRAME_UNITS[0] * scale * zoom)
                 self._blit_part(hd_alert, pygame.Rect(frame.right - width, frame.y + round(self._top_pad * scale), width,
-                                                      round(FRAME_UNITS[1] * scale * zoom)), frame)
+                                                      round(FRAME_UNITS[1] * scale * zoom)), frame, self.ALERT_REGION)
         if hd_badge is not None:
             # The scene label's tab at HD's (15, 50) units: in another shape, at the story's scale, as far from the
             # frame's left edge, and centred in a taller frame as the narration it sits over is.
@@ -2517,7 +2537,7 @@ class Desktop:
             else:
                 lift = round((self._frame_tall - FRAME_UNITS[1]) / 2 * scale)
                 self._blit_part(hd_badge, pygame.Rect(frame.x, frame.y + lift, round(FRAME_UNITS[0] * scale),
-                                                      round(FRAME_UNITS[1] * scale)), frame)
+                                                      round(FRAME_UNITS[1] * scale)), frame, self.BADGE_REGION)
         if hd_pause:
             self._draw_hd_pause(frame)
         if self.notice_stack is not None and self.notice_stack.stack:
@@ -2720,8 +2740,11 @@ class Desktop:
         """Whether this frame's story layer hides all of the frame (the arena's): nothing under it needs drawing. Not with
         any alpha channel, which a `convert()`ed canvas has on a Mac and can hold at 0 (graphics.opaque)."""
         layer = self.story_layer
-        return (layer is not None and self.pending_background is None and (alpha is None or alpha >= 1)
-                and not layer.get_masks()[3]
+        if layer is None or not (alpha is None or alpha >= 1) or layer.get_masks()[3]:
+            return False
+        if self.story_fills_frame:
+            return True             # an opaque canvas of the frame's own shape (a game in a taller frame) hides it all
+        return (self.pending_background is None
                 and layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0])
 
     _background_cover = None        # what `_blit_art` last covered the whole frame with, opaquely
@@ -3055,24 +3078,31 @@ class Desktop:
             area = pygame.Rect(viewport.x + round(left), viewport.y + round(top),
                                round(right - left), round(bottom - top))
         key = (id(background), None if crop is None else tuple(crop), area.size)
+        shaped = (self.__dict__.get('_frame_width', FRAME_UNITS[0]),
+                  self.__dict__.get('_frame_tall', FRAME_UNITS[1])) != FRAME_UNITS
+        whole = self._whole_art(background, placement, area, left - x, top - y) if shaped and crop is not None else None
+        if whole is not None:
+            scaled_bg = whole
+            key = None
         # Between two frames of the same scene only the location pan and the implicit animations above change this
         # layer -- each settles after 0.25s -- so a frame whose key matches the last one reuses that scaled surface
         # instead of smoothscaling the same pixels again. Alpha is set fresh every time regardless (never left over
         # from a cache hit): a mid-transition frame's lowered alpha must not stick to a later, fully-opaque one
         # reusing the same cached surface.
         cached_key, cached_surface = self._background_layer_cache or (None, None)
-        if cache and key == cached_key:
+        if whole is not None:
+            pass
+        elif cache and key == cached_key:
             scaled_bg = cached_surface
         else:
             source = background if crop is None else background.subsurface(crop)
-            if bw >= 2 * bh and (self.__dict__.get('_frame_width', FRAME_UNITS[0]),
-                                 self.__dict__.get('_frame_tall', FRAME_UNITS[1])) != FRAME_UNITS:
+            if bw >= 2 * bh and shaped:
                 # A strip (New Rules, BREW: pixel art the translators enlarged with nearest-neighbour) outside HD's
                 # frame: pixel-perfect, its pixels kept square-edged (owner, 2026-11-11).
                 scaled_bg = pygame.transform.scale(source, area.size)
             else:
                 scaled_bg = pygame.transform.smoothscale(source, area.size)
-            if min(pygame.image.tobytes(scaled_bg, 'RGBA')[3::4]) >= OPAQUE_ENOUGH:     # smoothscale leaves an opaque picture at 253 or 254
+            if opaque_enough(scaled_bg):     # smoothscale leaves an opaque picture at 253 or 254
                 scaled_bg = scaled_bg.convert()
             if cache:
                 self._background_layer_cache = (key, scaled_bg)
@@ -3085,6 +3115,39 @@ class Desktop:
             if cache and area == viewport:
                 self._background_cover = (id(background), tuple(placement), tuple(viewport))
         self.window.blit(scaled_bg, area)
+
+    WHOLE_ART_LIMIT = 3     # a whole picture is scaled for _whole_art only up to this many times the frame's pixels
+
+    def _whole_art(self, background, placement, area, dx, dy):
+        """shshd-runtime (a frame of another shape than HD's): the part of `background` laid over `placement` that
+        `area` shows (`dx`, `dy` target pixels into the picture), cut from the whole picture scaled once (two kept:
+        a crossfade's old and new). A location pan then moves a window over it each frame instead of scaling a new
+        crop: at 1080 x 2400 that was 13 ms a frame on a PC and the most of a line change on a phone. None when the
+        picture would be too large to keep (WHOLE_ART_LIMIT) or rounds smaller than `area` (_blit_art crops then).
+        HD's own 3:4 frame never comes here, so it stays as it was."""
+        size = round(placement[2]), round(placement[3])
+        if (size[0] < area.width or size[1] < area.height
+                or size[0] * size[1] > self.WHOLE_ART_LIMIT * area.width * area.height):
+            return None
+        bw, bh = background.get_size()
+        key = id(background), size
+        wholes = self.__dict__.setdefault('_whole_arts', OrderedDict())
+        scaled = wholes.get(key)
+        if scaled is None or scaled[0] is not background:
+            if bw >= 2 * bh:
+                image = pygame.transform.scale(background, size)        # a strip: pixel-perfect (see _blit_art)
+            else:
+                image = pygame.transform.smoothscale(background, size)
+            if opaque_enough(image):
+                image = image.convert()
+            scaled = wholes[key] = background, image
+            while len(wholes) > 2:
+                wholes.popitem(last=False)
+        wholes.move_to_end(key)
+        image = scaled[1]
+        x = min(max(0, round(dx)), size[0] - area.width)
+        y = min(max(0, round(dy)), size[1] - area.height)
+        return image.subsurface((x, y, *area.size))
 
     def _draw_scene_badge(self, badge, *, previous_glyph=-1):
         layer = self.dialogue_renderer.frame(204 if badge.blue else 236, 13).copy()
@@ -3223,10 +3286,17 @@ class Desktop:
     card_frame = property(lambda self: self._frame_part(2), doc='A card over the scene: centred in the frame.')
     alert_frame = property(lambda self: self._frame_part(3), doc="The Faceplace alert's strip: at the frame's top.")
 
-    def _blit_part(self, layer, area, clip):
-        """`layer` laid over `area` (resampled to it), within `clip`: only the part with something drawn on it is
-        resampled (an HD overlay's frame-sized layer holds one small card)."""
-        bounds = layer.get_bounding_rect()
+    # Where the HD overlays' cards can be, in HD's frame points (768 x 1024): the Faceplace alert's strip at the right
+    # (desktop_faceplace_alert STRIP_LEFT on, a card some lines tall from CARD_TOP) and the scene label's band
+    # (desktop_badge_hd: its tab, TAB_TOP down and 120 tall, sliding in from the left to REST_X).
+    ALERT_REGION = (560, 0, 208, 720)
+    BADGE_REGION = (0, 90, 410, 140)
+
+    def _blit_part(self, layer, area, clip, region):
+        """`layer` laid over `area` (resampled to it), within `clip`: only `region` (HD frame points: where the overlay's
+        card can be) is resampled, not the whole frame-sized layer, which on a phone cost a frame's budget."""
+        k = layer.get_width() / 768
+        bounds = pygame.Rect(*(round(v * k) for v in region)).clip(layer.get_rect())
         if bounds.width <= 0 or bounds.height <= 0:
             return
         kx, ky = area.width / layer.get_width(), area.height / layer.get_height()
@@ -3236,6 +3306,20 @@ class Desktop:
         self.window.set_clip(clip.clip(before))
         self.window.blit(pygame.transform.smoothscale(layer.subsurface(bounds), dest.size), dest)
         self.window.set_clip(before)
+
+    def _hd_frame_shape(self):
+        """Whether the frame is HD's own 3:4 (General's Aspect Ratio's 3:4)."""
+        return (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self.__dict__.get('_frame_tall', FRAME_UNITS[1])) == FRAME_UNITS
+
+    def _scene_card(self, lift):
+        """Where HD's frame drawn over the scene goes (the look picker, the loading band): at the story's scale with the
+        column, its bottom the frame's less `lift` units, cut by a narrower frame's sides."""
+        frame = self.bg_viewport
+        scale = self.__dict__.get('_present_scale') or frame.width / self.__dict__.get('_frame_width', FRAME_UNITS[0])
+        margin = round(32 * scale)
+        tall = round(FRAME_UNITS[1] * scale)
+        return pygame.Rect(self.viewport.x - margin, frame.bottom - tall - round(lift * scale),
+                           self.viewport.width + 2 * margin, tall)
 
     def _draw_bands(self, area, backdrop):
         """The frame above and below `area` (a picture narrower in shape than the frame): the episode's frame backdrop

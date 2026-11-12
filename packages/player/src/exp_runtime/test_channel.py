@@ -23,6 +23,7 @@ it's done, so real clocks (fades, timers) run as in play.
     game shs|cod                pick a game, as the game picker does (`open` needs one picked)
     import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
     window yes|no|ok|LABEL|N    press a button of the menu's open window (`state` shows it as `window`), or the Nth
+    reopen TITLE                as `open`, continuing the story from its autosave
     open TITLE                  start the episode whose title contains TITLE (or whose id starts with TITLE), from the
                                 beginning; of several copies, the newest import
     run-until KIND [SECONDS]    advance lines until KIND shows (choice, brew_catch, word_game, text_input, prompt,
@@ -352,7 +353,12 @@ class Commands:
             self.app.choose_game(key)
         return self._settled(0.5)
 
-    def do_open(self, rest):
+    def do_reopen(self, rest):
+        """`open`, but continuing the story from its autosave, as the menu's Continue does."""
+        result = yield from self.do_open(rest, resume=True)
+        return result
+
+    def do_open(self, rest, resume=False):
         library, state = self.app.library, self.app.state
         if library is None or state is None:
             return dict(ok=False, error='no library is open')
@@ -365,16 +371,16 @@ class Commands:
         # Several copies (an episode imported again after a rebuild keeps both): the newest import, the library's
         # last; an id prefix picks another. The reply says which, and how many matched.
         record = found[-1]
-        result = yield from self._open(record['id'])
+        result = yield from self._open(record['id'], resume)
         return dict(result, opened=record['id'][:12], copies=len(found))
 
-    def _open(self, record_id):
+    def _open(self, record_id, resume=False):
         """A job: wait for the app to be free (first boot builds previews), start the episode, wait for its first screen."""
         end = time.perf_counter() + 600
         while self.app.busy and time.perf_counter() < end:
             yield
         self.app.state.selected = self.app.selected = record_id
-        self.app.enter_episode(resume=False)
+        self.app.enter_episode(resume=resume)
         result = yield from self._until(lambda: self.game is not None and self.game.session.pending is not None, 60)
         return result
 

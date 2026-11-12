@@ -240,8 +240,12 @@ class VectorFont(BitmapFont):
         bottom = max(mask[2] + mask[0].height for mask, _ in layers)
         surface = pygame.Surface((right - left, bottom - top), pygame.SRCALPHA)
         for (mask, x, y), color in layers:
-            piece = pygame.image.frombytes(bytes(b for v in mask.tobytes() for b in (*color[:3], v)), mask.size,
-                                           'RGBA')
+            alpha = mask.tobytes()
+            pixels = bytearray(4 * len(alpha))              # (slices, not a per-pixel generator: the same bytes, in C)
+            for channel in range(3):
+                pixels[channel::4] = bytes((color[channel],)) * len(alpha)
+            pixels[3::4] = alpha
+            piece = pygame.image.frombytes(bytes(pixels), mask.size, 'RGBA')
             surface.blit(piece, (x - left, y - top))
         return surface, left, top
 

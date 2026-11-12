@@ -290,11 +290,25 @@ class HdWordRenderer:
                                                               round(image.get_height() * HAZE_SCALE / HAZE_TURNED_AT)))
         return self._haze
 
-    def turned_haze(self, game):
+    def turned_haze(self, game, size=FRAME):
+        """The haze turned, the middle of it in the shape of `size` (HD's frame; a taller canvas's), at a quarter."""
         turned = pygame.transform.rotate(self.haze(), -HAZE_SPIN * game.visual_ms / 1000)
-        part = pygame.Rect(0, 0, FRAME[0] // HAZE_TURNED_AT, FRAME[1] // HAZE_TURNED_AT)
+        part = pygame.Rect(0, 0, size[0] // HAZE_TURNED_AT, size[1] // HAZE_TURNED_AT).clip(
+            pygame.Rect(0, 0, *turned.get_size()))
         part.center = turned.get_rect().center
         return turned.subsurface(part)
+
+    def tall_haze(self, game, size):
+        """`haze_layer` for a canvas taller than HD's frame: the turned haze in its shape, enlarged once to it (on a phone
+        in `haze_layer`'s two cheap steps, at most every HAZE_QUICK_MS)."""
+        if not QUICK_DRAWING:
+            return pygame.transform.smoothscale(self.turned_haze(game, size), size)
+        shown = self.__dict__.get('_tall_haze_shown')
+        if (shown is None or shown[0] is not game or shown[3] != size
+                or not 0 <= game.visual_ms - shown[1] < HAZE_QUICK_MS):
+            half = pygame.transform.smoothscale(self.turned_haze(game, size), (size[0] // 2, size[1] // 2))
+            shown = self._tall_haze_shown = game, game.visual_ms, pygame.transform.scale(half, size), size
+        return shown[2]
 
     def tall_scene(self, game, background_id):
         """`draw_scene` over a canvas taller than HD's frame: the scene's picture scaled evenly to cover it, centred,
@@ -302,7 +316,8 @@ class HdWordRenderer:
         canvas = self.canvas
         width, height = canvas.get_size()
         image = self.background(background_id)
-        canvas.fill((0, 0, 0))
+        if image is None or image.get_flags() & pygame.SRCALPHA:
+            canvas.fill((0, 0, 0))              # (an opaque picture covers the canvas: it's scaled evenly to cover it)
         if image is not None:
             key = (id(image), (width, height))
             cached = self.__dict__.get('_tall_background')
@@ -312,11 +327,7 @@ class HdWordRenderer:
                 cached = self._tall_background = (key, pygame.transform.smoothscale(image, size))
             picture = cached[1]
             canvas.blit(picture, ((width - picture.get_width()) // 2, (height - picture.get_height()) // 2))
-        haze = self.haze_layer(game)
-        stretched = self.__dict__.get('_tall_haze')
-        if stretched is None or stretched[0] is not haze or stretched[1].get_size() != (width, height):
-            stretched = self._tall_haze = (haze, pygame.transform.scale(haze, (width, height)))
-        canvas.blit(stretched[1], (0, 0))
+        canvas.blit(self.tall_haze(game, (width, height)), (0, 0))
         if game.phase == -2:
             return
         atlas = self.atlas(ATLAS)

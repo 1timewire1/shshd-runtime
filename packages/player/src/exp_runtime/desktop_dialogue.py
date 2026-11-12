@@ -1260,13 +1260,16 @@ class DialogueRenderer:
             self.cached_page = session.dialogue_page()
             self.cached_key = key
             self.name_layer.fill((0, 0, 0, 0))
+            self._name_area = pygame.Rect(0, 0, 0, 0)
             if self.cached_page is not None:
                 page = self.cached_page
                 k = self.scale
-                self.text.draw_layout(self.name_layer, page.name_font, page.name,
-                                      page.name_origin[0] * k, page.name_origin[1] * k,
-                                      scale=page.name_scale * k)
-            self._name_area = self.name_layer.get_bounding_rect()
+                # The area the glyphs were drawn over (transparent margins included: they blend to nothing).
+                self._name_area = self.text.draw_layout(self.name_layer, page.name_font, page.name,
+                                                        page.name_origin[0] * k, page.name_origin[1] * k,
+                                                        scale=page.name_scale * k)
+                if self._name_area is None:
+                    self._name_area = self.name_layer.get_bounding_rect()
         page = self.cached_page
         if page is not None and page.portrait is not None:
             # The portrait housing follows the bubble it belongs to; a narrator's line (no portrait) leaves it where the
@@ -1298,6 +1301,7 @@ class DialogueRenderer:
         self.pending_background_origin = self.background_origin(background, session.engine)
         at_rest = self._at_rest(target, session, motion, key, theme, duet)
         if at_rest is not None and at_rest == self._rest_drawn:
+            self.text.warm()                        # shshd-runtime: a still frame: the next lines' glyphs, ahead
             return page                             # the layer already holds this very picture
         self._rest_drawn = None
         self.wide.fill((0, 0, 0, 0))
