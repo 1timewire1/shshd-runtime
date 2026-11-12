@@ -46,7 +46,10 @@ DUET_NAME_MARGIN = 2                    # a two-speaker title's room either side
 # line has fits at 57% or more between 80% rings.
 DUET_TITLE_LINES = 2
 # shshd-runtime: the room a bubble keeps above it in the column when it moves up (DialogueLayout.page `dialogue_offset`).
-DIALOGUE_TOP_ROOM = 8
+# Its border art sits outside the box (desktop_dialogue's `box`: a 10-unit strip above it, its line near the outer edge),
+# so the room is that strip and 2 units more; 8 cut a narrator bubble's top line at the layer's top (owner, 2026-11-12,
+# the g54 at 20:9).
+DIALOGUE_TOP_ROOM = 12
 
 
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
