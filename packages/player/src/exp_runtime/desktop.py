@@ -1801,6 +1801,8 @@ class Desktop:
         self._sync_story_scale()
         self.buttons = []
         action = self.session.pending
+        if action is not None and action.name == 'dialogue':
+            self._prime_games()
         if self.session.engine.panel.background_id >= 0:
             self.last_background_id = self.session.engine.panel.background_id
         self._sync_text_input()
@@ -4443,19 +4445,55 @@ class Desktop:
             return self.shs11_hd
         return self.shs11_memory_renderer if action.name == 'shs11_memory' else self.shs11_reflex_renderer
 
-    def _warm_shs11_sounds(self, game):
-        """Decode a game's sounds as it opens, so that the first of each isn't decoded in the frame it plays in."""
-        if game is self._shs11_warmed or not self.sound_enabled:
+    PRIMED_PACK = 31600             # SHS '11's translated stories (ADDON_FEATURE_PACKS)
+
+    def _prime_games(self):
+        """shshd-runtime: in an SHS '11 story, the art its games draw with, loaded a step a frame while a line sits still
+        (the dialogue's layer unchanged), so a game's first frame has little left to load (owner, 2026-11-12: a hitch
+        as one opened; the Word Grid skin's fonts and haze took a PC 100 ms in that frame). Whichever look the games
+        will wear; a step that fails ends it, and the game loads what it needs as before."""
+        resources = self.session.resources
+        if (getattr(resources, 'record', None) or {}).get('pack_id') != self.PRIMED_PACK:
             return
-        self._shs11_warmed = game
-        hd_sounds = getattr(game, 'grid', False) or self.session.shs11_hd_sounds
-        for asset in {a for assets in GRID_SOUNDS.values() for a in assets} if hd_sounds else SHS11_GAME_SOUNDS:
+        if not getattr(self.dialogue_renderer, 'still', False):
+            return
+        key = (id(resources), self.word_grid_skin)
+        priming = self.__dict__.get('_priming')
+        if priming is None or priming[0] != key:
+            renderers = [self.shs11_memory_renderer]
+            if self.shs11_hd is not None and self.word_grid_skin:
+                renderers.insert(0, self.shs11_hd)
+            background = self.session.engine.panel.background_id
+            steps = (step for renderer in renderers for step in renderer.prime_steps(background))
+            priming = self._priming = (key, steps)
+        try:
+            next(priming[1])()
+        except StopIteration:
+            self._priming = (key, iter(()))
+        except Exception as error:      # noqa: BLE001 -- only a head start: the game loads it itself if this can't
+            logging.warning('Preparing the minigames stopped: %s', error)
+            self._priming = (key, iter(()))
+
+    def _warm_shs11_sounds(self, game):
+        """Decode a game's sounds as it opens, so that the first of each isn't decoded in the frame it plays in: one a
+        frame (all in its first frame was a hitch on a phone as a game opened, owner 2026-11-12); its opening plays
+        none, and any played sooner is decoded then, as it would be anyway."""
+        if not self.sound_enabled:
+            return
+        if game is not self._shs11_warmed:
+            self._shs11_warmed = game
+            hd_sounds = getattr(game, 'grid', False) or self.session.shs11_hd_sounds
+            self._shs11_to_warm = list(dict.fromkeys(
+                [a for assets in GRID_SOUNDS.values() for a in assets] if hd_sounds else SHS11_GAME_SOUNDS))
+        if self._shs11_to_warm:
+            asset = self._shs11_to_warm.pop(0)
             try:
                 self._sound(asset, lambda name=asset: self.session.resources.read_asset(name))
             except (ContentError, pygame.error) as error:
                 logging.warning('Sound %s cannot be played: %s', asset, error)
 
     _shs11_warmed = None
+    _shs11_to_warm = ()
 
     def _shs11_game(self, action):
         """(The SHS '11 game in play, its renderer)."""

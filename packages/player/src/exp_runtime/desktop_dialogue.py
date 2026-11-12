@@ -1242,13 +1242,16 @@ class DialogueRenderer:
                                round((box.y + box.height) * k) + round((height - tab.get_height()) / 2)))
 
     _rest_drawn = None
+    still = False                   # this frame's line has nothing moving on it (_at_rest)
 
     def _at_rest(self, target, session, motion, key, theme, duet):
         """What identifies this frame's dialogue layer if nothing on the line is moving any more, else None. A line waiting
         for its reader is most of a story, and on a phone redrawing it unchanged was over half of each frame."""
-        if (not REUSE_AT_REST or target is not None or not motion.at_rest or session.engine.notice_ms
-                or (hasattr(session, 'portrait_effect') and session.portrait_effect() is not None)
-                or (not self.autoplay and self.has_hd_bundle() and self.continue_progress(session) < 1)):   # the pill's own clock
+        # shshd-runtime: `still` says so whether or not the layer is kept (Desktop._prime_games works in still frames).
+        self.still = not (target is not None or not motion.at_rest or session.engine.notice_ms
+                          or (hasattr(session, 'portrait_effect') and session.portrait_effect() is not None)
+                          or (not self.autoplay and self.has_hd_bundle() and self.continue_progress(session) < 1))  # the pill's own clock
+        if not REUSE_AT_REST or not self.still:
             return None
         return key, id(motion), theme, None if duet is None else duet.character_id, id(self.wide), self.autoplay
 

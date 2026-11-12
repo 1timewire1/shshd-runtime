@@ -89,6 +89,22 @@ class Shs11MemoryRenderer:
                                                                's11.png').convert_alpha()
         return found
 
+    def prime_steps(self, background_id=None):
+        """shshd-runtime: the pictures and pieces the game's first frame would load, a step at a time, for the player to
+        take while a line sits still (Desktop._prime_games)."""
+        spec = self._spec()[0]
+        pictures = [spec[part]['picture'] for part in ('clock', 'score', 'grid', 'numbers')]
+        pictures += list(spec['tiles']['pictures']) + list(spec['floats'])
+        pictures += [font['picture'] for font in spec['fonts'].values()]
+        for picture in dict.fromkeys(pictures):
+            yield lambda picture=picture: self.image(picture)
+        for part in ('clock', 'score', 'numbers'):
+            for frame in spec[part]['frames']:
+                yield lambda part=part, frame=frame: self.piece(spec[part]['picture'], frame)
+        for picture in spec['tiles']['pictures']:
+            for frame in spec['tiles']['frames']:
+                yield lambda picture=picture, frame=frame: self.piece(picture, frame)
+
     def piece(self, resource, frame, scale=ART):
         """A frame of a sprite, scaled: frame = source x, y, w, h, and its place in its box."""
         key = (resource, tuple(frame[:4]), scale)

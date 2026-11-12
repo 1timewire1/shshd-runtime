@@ -282,6 +282,16 @@ class HdWordRenderer:
                                                          round(image.get_height() * BACKGROUND_SCALE_Y)))
         return image
 
+    def prime_steps(self, background_id=None):
+        """shshd-runtime: what a game's first frame would load, a step at a time, for the player to take while a line
+        sits still (Desktop._prime_games): the fonts, the atlas, the haze and the scene's picture."""
+        for name in FONT_IDS:
+            yield lambda name=name: self.font(name)
+        yield lambda: self.atlas(ATLAS)
+        yield self.haze
+        if background_id is not None:
+            yield lambda: self.background(background_id)
+
     def haze(self):
         """The haze at the size it turns at, made once."""
         if self._haze is None:
