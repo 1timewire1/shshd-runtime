@@ -58,6 +58,10 @@ def library_has_java_look(library):
 
 
 class BrewCatchRenderer:
+    # shshd-runtime (General's Aspect Ratio): the game's own screen, the canvas's top this many pixels; in a taller frame the
+    # player centres it (Desktop.render: story_lift), the bottom bar and gear staying at the frame's bottom.
+    SCREEN_HEIGHT = 320 * SCALE
+
     def __init__(self, resources):
         self.resources = resources
         self.canvas = None

@@ -2030,6 +2030,14 @@ class Desktop:
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
+                screen = getattr(renderer, 'SCREEN_HEIGHT', None)
+                if screen is not None and not self._hd_frame_shape():
+                    # A game in a frame of its own at the canvas's top (the BREW catch game, both looks): in a taller
+                    # frame that screen is centred, the bottom bar and gear staying at the frame's bottom (owner,
+                    # 2026-11-12). Never lower than HD's place (2:3 lifts it a little, 3:4 not at all).
+                    picture = self.__dict__.get('_frame_width', FRAME_UNITS[0]) * 4 / 3      # the 3:4 picture, units
+                    tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+                    self.story_lift = max(0., (tall - picture * (2 - screen / renderer.canvas.get_height())) / 2)
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
                 self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(
@@ -3929,7 +3937,9 @@ class Desktop:
             y = (event.pos[1] - frame.y) * 1024 / frame.height
             if 0 <= x < 150 and 880 <= y <= 1024:
                 self.command(('menu',))
-            elif 0 <= x <= 768 and 0 <= y <= 1024:
+            elif (0 <= x <= 768 and 0 <= y <= 1024) or (action.name == 'brew_catch'
+                                                         and self.bg_viewport.collidepoint(event.pos)):
+                # (The catch game's screen is centred in a taller frame, above the picture: a tap anywhere counts.)
                 self._attempt(lambda: self.session.answer(None))
             return True
         if (action and action.name in ('shs11_memory', 'shs11_reflex') and not self.menu_open and not self.error and not asking
