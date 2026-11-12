@@ -26,6 +26,31 @@ NAMES = {OFF: 'off', BULB: 'bulb', CROSS: 'cross', QUESTION: 'question'}
 
 
 class X360SlotRenderer:
+    # shshd-runtime (General's Aspect Ratio, owner 2026-11-12): in a frame taller than HD's the canvas goes on below
+    # HD's 768 x 1024, as far as the frame's bottom once that 3:4 is centred (`canvas_size`), and the player sets it
+    # against the frame's bottom (Desktop: story_below). What's drawn keeps its places; what rises in from below (the
+    # slots' panel) comes up from the frame's edge. The gear is the player's, at the frame's bottom. Leash and the
+    # puzzle draw the same way (their renderers are this one's); Diss Practice waits on its backgrounds (its own class).
+    frame_units = (384, 512)
+
+    @property
+    def extended_below(self):
+        return self.canvas_size() != FRAME
+
+    def canvas_size(self):
+        wide, tall = self.frame_units
+        whole = round(FRAME[0] * tall / wide)
+        if whole <= FRAME[1]:
+            return FRAME
+        return FRAME[0], whole - (whole - FRAME[1]) // 2
+
+    def fresh_canvas(self):
+        """The canvas at this frame's size (canvas_size), cleared by the caller."""
+        size = self.canvas_size()
+        if self.canvas is None or self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size, pygame.SRCALPHA)
+        return self.canvas
+
     hd_layer = True
 
     def __init__(self, resources):
@@ -76,9 +101,7 @@ class X360SlotRenderer:
     def draw(self, session):
         game = session.engine.x360_slot
         spec = self._spec()[0]['slot']
-        if self.canvas is None:
-            self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
-        surface = self.canvas
+        surface = self.fresh_canvas()
         surface.fill((0, 0, 0, 0))
         rise = 0
         if game.phase == OPENING:

@@ -1787,7 +1787,9 @@ class Desktop:
                      getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
                      getattr(self, 'nr_arena_renderer', None), getattr(self, 'football_hd', None),
                      getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
-                     getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None)):
+                     getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
+                     getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
+                     getattr(self, 'x360_puzzle_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -1813,6 +1815,7 @@ class Desktop:
         self.story_over_scene = False
         self.story_band = None
         self.story_fills_frame = False
+        self.story_below = False
         self.story_centred = False
         self.story_lift = 0
         self.under_layer = None
@@ -2031,6 +2034,7 @@ class Desktop:
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
+                self.story_below = getattr(renderer, 'extended_below', False)           # (the X360's: desktop_x360_slot)
                 screen = getattr(renderer, 'SCREEN_HEIGHT', None)
                 if screen is not None and not self._hd_frame_shape():
                     # A game in a frame of its own at the canvas's top (the BREW catch game, both looks): in a taller
@@ -2482,6 +2486,10 @@ class Desktop:
             elif self.story_fills_frame:
                 # A card drawn over the whole frame in its own shape (desktop_title: HD's 768 x 1024 at 3:4).
                 area = frame
+            elif self.story_below:
+                # A game's canvas going on below HD's 3:4 to the frame's bottom, that 3:4 centred (desktop_x360_slot).
+                tall = round(layer.get_height() * frame.width / layer.get_width())
+                area = pygame.Rect(frame.x, frame.bottom - tall, frame.width, tall)
             elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
                 # HD's frame drawn over the scene (the look picker): at the story's scale with the column, its bottom
                 # the frame's, cut by a narrower frame's sides; the scene shows above it.
@@ -3942,14 +3950,12 @@ class Desktop:
             return True
         if (action and action.name in ('x360_slot', 'x360_diss', 'brew_catch') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            frame = self.picture_frame
-            x = (event.pos[0] - frame.x) * 768 / frame.width
-            y = (event.pos[1] - frame.y) * 1024 / frame.height
-            if 0 <= x < 150 and 880 <= y <= 1024:
+            x, y, height = self._game_point(event.pos, self.x360_slot_renderer if action.name == 'x360_slot' else None)
+            if 0 <= x < 150 and height - 144 <= y <= height:
                 self.command(('menu',))
-            elif (0 <= x <= 768 and 0 <= y <= 1024) or (action.name == 'brew_catch'
-                                                         and self.bg_viewport.collidepoint(event.pos)):
-                # (The catch game's screen is centred in a taller frame, above the picture: a tap anywhere counts.)
+            elif (0 <= x <= 768 and 0 <= y <= height) or (action.name in ('brew_catch', 'x360_slot')
+                                                           and self.bg_viewport.collidepoint(event.pos)):
+                # (The catch game's screen and the slots are centred in a taller frame: a tap anywhere counts.)
                 self._attempt(lambda: self.session.answer(None))
             return True
         if (action and action.name in ('shs11_memory', 'shs11_reflex') and not self.menu_open and not self.error and not asking
@@ -4508,15 +4514,13 @@ class Desktop:
 
     def _leash_pointer(self, event):
         """The leash game's mouse and touch: a press is OK, or the gear; holding it and dragging back and forth shakes."""
-        frame = self.picture_frame
-        x = (event.pos[0] - frame.x) * 768 / frame.width
-        y = (event.pos[1] - frame.y) * 1024 / frame.height
+        x, y, height = self._game_point(event.pos, self.x360_leash_renderer)
         if event.type == pygame.MOUSEBUTTONUP:
             self.leash_anchor = None
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if 0 <= x < 150 and 880 <= y <= 1024:
+            if 0 <= x < 150 and height - 144 <= y <= height:
                 self.command(('menu',))
-            elif 0 <= x <= 768 and 0 <= y <= 1024:
+            elif (0 <= x <= 768 and 0 <= y <= height) or self.bg_viewport.collidepoint(event.pos):
                 self.leash_anchor = (x, y)
                 self._attempt(lambda: self.session.answer(None))
         elif self.leash_anchor is not None:
@@ -4524,6 +4528,18 @@ class Desktop:
             if direction is not None:
                 self.leash_anchor = (x, y)
                 self.session.engine.x360_leash.shake(direction)
+
+    def _game_point(self, pos, renderer):
+        """(x, y, height): window point `pos` in a minigame canvas's pixels, and the canvas's height. HD's 768 x 1024 at
+        the frame's bottom (picture_frame), or a canvas going on below it to the frame's bottom (`renderer`'s
+        extended_below: the X360's in a taller frame), whose top is that 3:4's, centred."""
+        if renderer is not None and getattr(renderer, 'extended_below', False):
+            frame = self.bg_viewport
+            height = renderer.canvas_size()[1]
+            k = frame.width / 768
+            return (pos[0] - frame.x) / k, (pos[1] - frame.bottom) / k + height, height
+        frame = self.picture_frame
+        return (pos[0] - frame.x) * 768 / frame.width, (pos[1] - frame.y) * 1024 / frame.height, 1024
 
     def _puzzle_ready(self):
         action = self.session.pending
@@ -4581,18 +4597,16 @@ class Desktop:
     def _puzzle_pointer(self, event):
         """The jewel puzzle's mouse and touch: a press on a jewel holds it and a drag takes its row or column along; off
         the board a press is OK, or the gear; a mouse over the board with its button up points the cursor."""
-        frame = self.picture_frame
-        x = (event.pos[0] - frame.x) * 768 / frame.width
-        y = (event.pos[1] - frame.y) * 1024 / frame.height
+        x, y, height = self._game_point(event.pos, self.x360_puzzle_renderer)
         game = self.session.engine.x360_puzzle
         if event.type == pygame.MOUSEBUTTONUP:
             game.let_go()
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if 0 <= x < 150 and 880 <= y <= 1024:
+            if 0 <= x < 150 and height - 144 <= y <= height:
                 self.command(('menu',))
             elif on_board(x, y) and game.phase == 'running':
                 game.grab(*cell_at(x, y))
-            elif 0 <= x <= 768 and 0 <= y <= 1024:
+            elif (0 <= x <= 768 and 0 <= y <= height) or self.bg_viewport.collidepoint(event.pos):
                 self._attempt(lambda: self.session.answer(None))
                 if game.button:                                 # (not a hold of its own: nothing to let go of)
                     game.release()

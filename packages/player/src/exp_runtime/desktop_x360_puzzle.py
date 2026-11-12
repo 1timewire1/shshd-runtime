@@ -97,9 +97,7 @@ class X360PuzzleRenderer(X360SlotRenderer):
         game = session.engine.x360_puzzle
         specs = self._spec()[0]
         spec = specs['puzzle']
-        if self.canvas is None:
-            self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
-        surface = self.canvas
+        surface = self.fresh_canvas()
         surface.fill((0, 0, 0, 0))
         if game.phase in (OPENING, READY):
             self._warm(spec)

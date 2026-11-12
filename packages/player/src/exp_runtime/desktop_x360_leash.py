@@ -68,9 +68,7 @@ class X360LeashRenderer(X360SlotRenderer):
         game = session.engine.x360_leash
         specs = self._spec()[0]
         spec, words = specs['leash'], specs['slot']
-        if self.canvas is None:
-            self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
-        surface = self.canvas
+        surface = self.fresh_canvas()
         surface.fill((0, 0, 0, 0))
         self._bar(surface, specs, spec, game)
         name = 'updown' if game.wanted else 'leftright'
