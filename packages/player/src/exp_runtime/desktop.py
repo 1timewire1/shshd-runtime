@@ -1755,15 +1755,23 @@ class Desktop:
         width, tall = self.frame_units()
         self._edge_units = (width - 320) / 2
         self.session.dialogue_extra_rows = max(0, int((tall - FRAME_UNITS[1]) * self.EXTRA_ROWS_SHARE / self.ROW_UNITS))
-        # A narrator's bubble keeps HD's distance from the frame's edge (its 32-unit margin less this frame's) and is
-        # centred in a taller frame as the choice is (owner, 2026-11-11: it was cut at a phone's edge, and low).
-        self.session.narration_offset = (FRAME_UNITS[0] / 2 - 160 - self._edge_units,
-                                         (tall - FRAME_UNITS[1]) / 2)
-        self.dialogue_renderer.lift = 0
+        # A narrator's bubble keeps HD's distance from the frame's edge (its 32-unit margin less this frame's), and every
+        # bubble sits nearer the middle of a taller frame, as the choice does (owner, 2026-11-11: narration was cut at a
+        # phone's edge, and the bubbles read low).
+        self.session.dialogue_offset = (FRAME_UNITS[0] / 2 - 160 - self._edge_units,
+                                        (tall - FRAME_UNITS[1]) / 2)
+        # A phone's status bar over the frame's top (Android draws an app under it): what hangs from the frame's top (a
+        # game's HUD, the Faceplace alert) keeps below it.
+        window_w, window_h = self.window.get_size()
+        scale = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else 1.
+        self._top_pad = max(0., self.top_inset * window_h - (window_h - tall * scale) / 2) / scale
+        for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
+            if game is not None:
+                game.top_pad = round(self._top_pad * 768 / width)       # (in its canvas's points)
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
                      getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
                      getattr(self, 'nr_arena_renderer', None), getattr(self, 'football_hd', None),
-                     getattr(self, 'word_hd', None)):
+                     getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -2000,6 +2008,7 @@ class Desktop:
                     self._warm_shs11_sounds(getattr(engine, action.name))
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
+                self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
                 self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(
@@ -2029,9 +2038,6 @@ class Desktop:
                 self.dialogue_renderer.autoplay = self.autoplay
                 self.dialogue_renderer.draw(None, self.session)
                 self.story_layer = self.dialogue_renderer.wide
-                if action.details.get('presentation_mode') == 4:
-                    # A narrator's bubble is centred in a taller frame as the choice is (Session.narration_offset).
-                    self.story_lift = self.session.narration_offset[1]
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.dialogue_renderer.footer_text,
                                                                           self.dialogue_renderer.gear_pressed)
                 self.pending_background = self.dialogue_renderer.pending_background
@@ -2501,7 +2507,7 @@ class Desktop:
                 narrow = (FRAME_UNITS[0] - self.__dict__.get('_frame_width', FRAME_UNITS[0])) / (FRAME_UNITS[0] - 320)
                 zoom = 1 + (self.ALERT_ZOOM - 1) * max(0., min(1., narrow))
                 width = round(FRAME_UNITS[0] * scale * zoom)
-                self._blit_part(hd_alert, pygame.Rect(frame.right - width, frame.y, width,
+                self._blit_part(hd_alert, pygame.Rect(frame.right - width, frame.y + round(self._top_pad * scale), width,
                                                       round(FRAME_UNITS[1] * scale * zoom)), frame)
         if hd_badge is not None:
             # The scene label's tab at HD's (15, 50) units: in another shape, at the story's scale, as far from the
@@ -2720,6 +2726,8 @@ class Desktop:
 
     _background_cover = None        # what `_blit_art` last covered the whole frame with, opaquely
     _edge_units = 32                # the frame's margin each side of the column (_sync_story_scale)
+    top_inset = 0.                  # the share of the window's height a phone's status bar covers (platforms/android.py)
+    _top_pad = 0.                   # units of the frame's top under it (_sync_story_scale)
 
     def _draw_background_layer(self, target_size, viewport, covered=False):
         """Composited directly at window resolution, under the UI canvas.
@@ -3842,13 +3850,17 @@ class Desktop:
             return True
         if (action and action.name in ('shs11_memory', 'shs11_reflex') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            frame = self.picture_frame
-            x = (event.pos[0] - frame.x) * 768 / frame.width
-            y = (event.pos[1] - frame.y) * 1024 / frame.height
-            if 0 <= x < 150 and 880 <= y <= 1024:
+            game, renderer = self._shs11_game(action)
+            # A canvas of the frame's own shape (the Word Grid skin's, fills_frame) over the frame, the game `dy` lower.
+            tall = getattr(renderer, 'fills_frame', False)
+            frame = self.bg_viewport if tall else self.picture_frame
+            width, height = renderer.canvas_size() if tall else (768, 1024)
+            x = (event.pos[0] - frame.x) * width / frame.width
+            y = (event.pos[1] - frame.y) * height / frame.height
+            if 0 <= x < 150 and height - 144 <= y <= height:
                 self.command(('menu',))
-            elif 0 <= x <= 768 and 0 <= y <= 1024:
-                game, renderer = self._shs11_game(action)
+            elif 0 <= x <= width and 0 <= y <= height:
+                y -= getattr(renderer, 'dy', 0) if tall else 0
                 cell = None if game.phase != PLAY else renderer.cell_at(x, y)
                 renderer.cursor_shown = False
                 if game.phase != PLAY or cell is not None:

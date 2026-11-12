@@ -99,6 +99,7 @@ class HdFootballRenderer:
     # than HD's. HD's 768 x 1024 at 3:4, where nothing moves.
     frame_units = (384, 512)
     dy = 0              # the play area's offset from HD's place
+    top_pad = 0         # points of the canvas's top under a phone's status bar (Desktop): the HUD keeps below them
     down = 0            # the bottom's offset from HD's (the canvas's height past 1024)
 
     @property
@@ -583,7 +584,15 @@ class HdFootballRenderer:
         self.targets(game)
         self.effects(game)
         self.touchdown_stars(game)
-        self.hud(game)
+        if self.top_pad:
+            whole, self.canvas = self.canvas, self.canvas.subsurface(
+                (0, self.top_pad, FRAME[0], self.canvas.get_height() - self.top_pad))
+            try:
+                self.hud(game)
+            finally:
+                self.canvas = whole
+        else:
+            self.hud(game)
         self.notification(game)
         if game.phase in (20, 21, 22, 23, 25):
             self.instructions(game)

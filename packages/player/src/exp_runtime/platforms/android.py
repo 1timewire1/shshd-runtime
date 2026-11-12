@@ -291,6 +291,20 @@ class Host:
             self.panels_view = None
             self.orientation.release(self.activity)
 
+    def top_inset(self):
+        """The share of the window's height the status bar (and a camera cutout) covers at its top: Android 15 draws an
+        app under them (edge to edge), so the player keeps what hangs from the frame's top below it (Desktop.top_inset)."""
+        try:
+            view = self.activity.getWindow().getDecorView()
+            insets = view.getRootWindowInsets()
+            height = view.getHeight()
+            if insets is None or height <= 0:
+                return 0.
+            return max(0., insets.getSystemWindowInsetTop() / height)
+        except Exception as error:          # (pyjnius raises its own JavaException)
+            logging.info('No window insets: %s', error)
+            return 0.
+
     def find_vibrator(self, autoclass):
         """The phone's vibrator, or None: none fitted, or the APK was built without the VIBRATE permission (an
         older build): General's Vibration is then not offered."""
@@ -454,8 +468,10 @@ class Host:
         # SDL's own resize callback reads the real surface size again.
         self.sdl_activity.onNativeResize()
         self.app.window = window
+        self.app.top_inset = self.top_inset()
         if self.app.game is not None:
             self.app.game.window = window
+            self.app.game.top_inset = self.app.top_inset
         if self.panels_view is not None:
             self.orientation.afterWindow(self.activity)     # SDL's own request replaced the panels' (FULL_USER)
 

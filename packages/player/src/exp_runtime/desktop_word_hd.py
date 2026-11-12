@@ -201,6 +201,7 @@ class HdWordRenderer:
     # points lower. HD's 768 x 1024 at 3:4, where nothing moves.
     frame_units = (384, 512)
     dy = 0
+    top_pad = 0         # points of the canvas's top under a phone's status bar (Desktop): the status keeps below them
 
     @property
     def fills_frame(self):
@@ -886,7 +887,11 @@ class HdWordRenderer:
         whole = self.canvas
         self.dy = (size[1] - FRAME[1]) // 2
         self.tall_scene(game, session.pending.details['background_id'])
-        self.status(game, fx.shown)
+        self.canvas = whole.subsurface((0, self.top_pad, FRAME[0], size[1] - self.top_pad))
+        try:
+            self.status(game, fx.shown)
+        finally:
+            self.canvas = whole
         self.canvas = whole.subsurface((0, self.dy, *FRAME))
         try:
             self.portraits(session, game)

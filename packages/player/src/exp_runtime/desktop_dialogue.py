@@ -1255,7 +1255,7 @@ class DialogueRenderer:
     def draw(self, target, session):
         details = session.pending.details
         key = (id(session), session.scene, session.vm.steps_executed, details['page_start'],
-               getattr(session, 'dialogue_extra_rows', 0), getattr(session, 'narration_offset', None))
+               getattr(session, 'dialogue_extra_rows', 0), getattr(session, 'dialogue_offset', None))
         if key != self.cached_key:
             self.cached_page = session.dialogue_page()
             self.cached_key = key
@@ -1268,7 +1268,10 @@ class DialogueRenderer:
                                       scale=page.name_scale * k)
             self._name_area = self.name_layer.get_bounding_rect()
         page = self.cached_page
-        self.lift = getattr(page, 'lift', 0)
+        if page is not None and page.portrait is not None:
+            # The portrait housing follows the bubble it belongs to; a narrator's line (no portrait) leaves it where the
+            # last speaker's was, so that portrait leaves from where it stood rather than jumping with the next bubble.
+            self.lift = page.lift
         if page is None:
             raise ContentError('Dialogue requires the imported APK layout and fonts')
         # shshd-runtime: a translated pack's two-speaker line (Session.dialogue_duet): the box the page chose (gray, or

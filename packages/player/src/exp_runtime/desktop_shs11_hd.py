@@ -312,9 +312,40 @@ class Shs11HdRenderer(HdWordRenderer):
                 self.warm_icons(game)
         spec = None if not reflex and game.grid else self._spec()[0]
         texts = GRID_TEXT if spec is None else spec['text']
-        self.backdrop(game, session.pending.details.get('background_id', session.engine.panel.background_id))
+        background = session.pending.details.get('background_id', session.engine.panel.background_id)
+        size = self.canvas_size()
+        if size == FRAME:
+            if self.canvas.get_size() != FRAME:
+                self.canvas = pygame.Surface(FRAME).convert()
+            self.dy = 0
+            self.backdrop(game, background)
+            self.play(session, game, reflex, spec, texts)
+            return
+        # A taller frame, as the word game's (desktop_word_hd.HdWordRenderer.draw): the scene over all of it, the time and
+        # score at its top (below a phone's status bar), the game in HD's 3:4 centred.
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+        whole = self.canvas
+        self.dy = (size[1] - FRAME[1]) // 2
+        self.tall_scene(game, background)
+        self.canvas = whole.subsurface((0, self.top_pad, FRAME[0], size[1] - self.top_pad))
+        try:
+            self.hud(game)
+        finally:
+            self.canvas = whole
+        self.canvas = whole.subsurface((0, self.dy, *FRAME))
+        try:
+            self.play(session, game, reflex, spec, texts, hud=False)
+        finally:
+            self.canvas = whole
+        opaque(self.canvas)
+
+    def play(self, session, game, reflex, spec, texts, hud=True):
+        """Everything over the scene: the portraits, the time and score (`hud`), the board and what goes over it."""
+        name = session.pending.name
         self.portraits(session, game)
-        self.hud(game)
+        if hud:
+            self.hud(game)
         if reflex and game.row and game.phase != GOAL:
             self.draw_gauge(game)
         self.board_cells(game, reflex)

@@ -45,6 +45,8 @@ DUET_NAME_MARGIN = 2                    # a two-speaker title's room either side
 # Its most lines: smaller until it wraps to two (owner: three-line names do not look good). Every name a two-speaker
 # line has fits at 57% or more between 80% rings.
 DUET_TITLE_LINES = 2
+# shshd-runtime: the room a bubble keeps above it in the column when it moves up (DialogueLayout.page `dialogue_offset`).
+DIALOGUE_TOP_ROOM = 8
 
 
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
@@ -237,7 +239,7 @@ class DialogueLayout:
         return label.text
 
     def page(self, details, start=0, *, names: SpeakerNames | None = None, text_history=None, duet=None,
-             partner_name=None, narration_theme=None, extra_rows=0, narration_offset=(0, 0)):
+             partner_name=None, narration_theme=None, extra_rows=0, dialogue_offset=(0, 0)):
         """`duet` (shshd-runtime, Session.dialogue_duet): a second speaker's portrait, `partner_name` its name. The
         line is then laid out with a portrait on each side, its name centered between them and its first lines clear
         of both rings. Two speakers of one color (both blue, both pink) take that color for the box, the name and
@@ -247,9 +249,11 @@ class DialogueLayout:
         (shshd-runtime, Session.dialogue_extra_rows: a frame taller than HD's 3:4, owner 2026-11-11): a speaker's
         bubble may hold that many rows more than HD's, so a long line takes fewer bubbles; the bubble then grows
         upward (DialoguePage.lift) and its bottom stays where HD's is. A line HD fits in one bubble is unchanged.
-        `narration_offset` (shshd-runtime, Session.narration_offset: the same frames), (right, up) in units: how far a
-        narrator's bubble moves so it stays in a narrower frame, as far from its edge as HD's from the iPad's (right; the
-        player lifts the whole layer, so the bubble can rise past the column's top). Only where it is drawn."""
+        `dialogue_offset` (shshd-runtime, Session.dialogue_offset: the same frames), (right, up) in units: a narrator's
+        bubble moves right so it stays in a narrower frame as far from its edge as HD's from the iPad's; every bubble
+        (speaker or narrator) moves up by `up`, so in a taller frame it sits nearer the middle as the choice does (owner,
+        2026-11-11), as far as the room above it in the column allows (DIALOGUE_TOP_ROOM). Only where it is drawn: the
+        page's text is the same."""
         colors = None
         if narration_theme in (1, 2, 3) and duet is None and details['presentation_mode'] == 3:
             details = dict(details, theme=narration_theme)
@@ -334,7 +338,7 @@ class DialogueLayout:
                 body_style = replace(body_style, gap=HD_NARRATOR_GAP)
                 measured = layout_text(font, sizing_text, HD_NARRATOR_WRAP, body_style)
                 lines = max(1, len(measured.lines))
-                right = narration_offset[0]
+                right = dialogue_offset[0]
                 box = Rect(-6 + right, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
                 origin = (right, HD_NARRATOR_TOP)
         else:
@@ -499,6 +503,11 @@ class DialogueLayout:
                 name_origin = (middle - (ink[0] + ink[1]) / 2 * name_scale, name_origin[1])
                 if colors is not None:
                     name = _speaker_colors(name, partner_name or '', *colors)
+        up = dialogue_offset[1]
+        if up:
+            # Centred in a taller frame, as far as the bubble's top (its box, its title, its portrait) has room.
+            tops = [box.y] + [r.y for r in (portrait, name_bounds) if r is not None]
+            lift += max(0., min(up, min(tops) - lift - DIALOGUE_TOP_ROOM))
         if lift:
             box = replace(box, y=box.y - lift)
             drawn_origin = (drawn_origin[0], drawn_origin[1] - lift)
