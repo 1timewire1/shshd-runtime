@@ -1903,6 +1903,18 @@ class Application:
         top = (window_h - height * factor) / 2
         return max(0, round((self.top_inset * window_h - top) / factor))
 
+    bottom_inset = 0.               # ...and its navigation or gesture bar, at the bottom
+
+    def menu_bottom_pad(self, height):
+        """Points at the bottom of a menu frame `height` points tall that a phone's navigation or gesture bar covers (as
+        menu_top_pad): the tile picker's buttons keep above them. The other menus have nothing that low."""
+        width, window_h = self.window.get_size()
+        if window_h <= 0 or width <= 0:
+            return 0
+        factor = min(width / PICKER_FRAME[0], window_h / height)
+        below = (window_h - height * factor) / 2
+        return max(0, round((self.bottom_inset * window_h - below) / factor))
+
     def present_frame(self, canvas, *, side_art=True):
         """Show a canvas 768 points across (HD's 768 x 1024, or a taller one: menu_frame), fitted to the window (with
         the collage HD shows beside its frame: not beside an app screen, whose shell, if one is left, is a let-go
@@ -2753,6 +2765,7 @@ class Application:
             picker.height = self.menu_frame()[1]        # (General's Aspect Ratio: more rows in a taller frame)
             if self.picker_style == 'tile':
                 picker.top_pad = self.menu_top_pad(picker.height)
+                picker.bottom_pad = self.menu_bottom_pad(picker.height)
         picker.saved = self.saved
         pending = picker.alert
         if self.message:

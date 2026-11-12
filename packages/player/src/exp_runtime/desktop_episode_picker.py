@@ -106,14 +106,17 @@ class HdEpisodePicker(HdUi):
     grows = True
     height = FRAME[1]
     top_pad = 0             # points at the top the rows start below (a phone's status bar over a taller frame's top)
+    bottom_pad = 0          # ...and at the bottom the buttons keep above (its navigation or gesture bar: owner, 2026-11-12)
 
     @property
     def extra(self):
         return self.height - FRAME[1]
 
+    BAR_GAP = 8             # points kept besides between the buttons and that bar (as the story's gear has)
+
     @property
     def button_y(self):
-        return BUTTON_Y + self.extra
+        return BUTTON_Y + self.extra - (self.bottom_pad + self.BAR_GAP if self.bottom_pad else 0)
 
     @property
     def card_top_left(self):
