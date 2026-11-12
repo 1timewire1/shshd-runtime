@@ -93,6 +93,24 @@ class HdFootballRenderer:
         self.star_key = self.star_start = None
 
     # -- assets ---------------------------------------------------------
+    # General's Aspect Ratio (owner, 2026-11-11: the native games fit the screen). In a frame of another shape the canvas
+    # is 768 points across and the frame's shape: the field scrolls over all of it, the HUD keeps to the top, the bar
+    # and the coach to the bottom, and the play area (slots, banners, countdown, help) is centred, `dy` points lower
+    # than HD's. HD's 768 x 1024 at 3:4, where nothing moves.
+    frame_units = (384, 512)
+    dy = 0              # the play area's offset from HD's place
+    down = 0            # the bottom's offset from HD's (the canvas's height past 1024)
+
+    @property
+    def fills_frame(self):
+        return self.frame_units != (384, 512)
+
+    def canvas_size(self):
+        wide, tall = self.frame_units
+        if (wide, tall) == (384, 512):
+            return FRAME
+        return FRAME[0], max(FRAME[1], round(FRAME[0] * tall / wide))
+
     def raw(self, resource_id):
         try:
             return self.resources.library.hd_raw_resource(resource_id)
@@ -179,23 +197,28 @@ class HdFootballRenderer:
         position = game.camera_position
         y0 = wrap_positive(position * -90, 1024)
         x0 = (y0 * -0.40613848) % 768
-        for i in range(4):
+        dy = self.dy
+        # (A taller canvas: the same picture `dy` lower, its rows and lines running on above and below.)
+        more = 0 if not dy else -(-dy // 512) + 1
+        for i in range(-more, 4 + more):
             for j in range(4):
-                self.canvas.blit(turf, (j * 512 - 1024 + x0, i * 512 + y0))
-        start = int(position) - 6
-        for yard in range(start, start + 15):
+                self.canvas.blit(turf, (j * 512 - 1024 + x0, i * 512 + y0 + dy))
+        extra = 0 if not dy else -(-dy // 90) + 1
+        start = int(position) - 6 - extra
+        for yard in range(start, start + 15 + 2 * extra):
             if yard % 5 or not 0 <= yard <= 100:
                 continue
             y = (yard - position) * 90 + 512
             ref = LINE_TABLE[yard // 10] if yard % 10 == 0 else FIVE_YARD_LINE
-            field.draw(self.canvas, ref, int(y * -0.4354067 + 140), int(y - 56), origin=True)
+            field.draw(self.canvas, ref, int(y * -0.4354067 + 140), int(y - 56) + dy, origin=True)
         haze = self.haze()
         ms = game.visual_ms
         hx = int(math.fmod(int(ms * -0.02), 640))   # C's remainder keeps the sign
         hy = int(ms * 0.05) % 960
+        rows = range(2) if not dy else range(-(-dy // 960) - 1, 2 + -(-dy // 960))
         for column in range(3):
-            for row in range(2):
-                self.canvas.blit(haze, (hx + column * 640, hy - row * 960))
+            for row in rows:
+                self.canvas.blit(haze, (hx + column * 640, hy - row * 960 + dy))
 
     @lru_cache(maxsize=1)
     def haze(self):
@@ -272,6 +295,7 @@ class HdFootballRenderer:
         for target, (x, y) in zip(game.targets, SLOTS):
             if not target.visible:
                 continue
+            y += self.dy
             scale = target.scale
             if target.phase == 2:
                 self.emitter(x, y, scale)
@@ -320,7 +344,7 @@ class HdFootballRenderer:
         selected_to_base = {v: k for k, v in SELECTED_FRAMES.items()}
         for effect in game.effects:
             remaining = effect.remaining_ms
-            x, y = SLOTS_BY_COLUMN[effect.x][0], effect.y * 2
+            x, y = SLOTS_BY_COLUMN[effect.x][0], effect.y * 2 + self.dy
             if effect.selected:
                 base = android_to_hd[selected_to_base[effect.frame]]
                 ref = SELECTED[base]
@@ -371,8 +395,8 @@ class HdFootballRenderer:
             if t <= 0:
                 continue
             alpha = 1 + star['fade'] * t
-            y = 503 + star['vy'] * t + .5 * .0001 * t * t
-            if alpha <= 0 or y >= 1024:
+            y = 503 + self.dy + star['vy'] * t + .5 * .0001 * t * t
+            if alpha <= 0 or y >= 1024 + self.dy:
                 continue
             main.draw(self.canvas, self.STAR, star['x'] + star['vx'] * t, y, alpha=alpha,
                       angle=star['angle'] + star['spin'] * t, pivot=(31, 31))
@@ -413,9 +437,9 @@ class HdFootballRenderer:
             alphas[min(game.message_lines, 3) - 1] = r
             scale, angle = r, (1 - r) * 180
         # Decoded: the band is placed by its top-left at (x, 512); text is centered on y 551.
-        main.draw(self.canvas, NOTIFY_BAND, band_x, 512)
+        main.draw(self.canvas, NOTIFY_BAND, band_x, 512 + self.dy)
         if shine is not None:
-            main.draw(self.canvas, SHINE, shine, 512)
+            main.draw(self.canvas, SHINE, shine, 512 + self.dy)
         texts = game.message_ids or [None]
         for index, alpha in enumerate(alphas):
             if alpha > 0 and scale > 0 and index < len(texts):
@@ -429,7 +453,7 @@ class HdFootballRenderer:
         lines = font.wrap(text, 748)
         height = font.text_height(lines)
         width = max(font.width(line) for line in lines)
-        top = 551
+        top = 551 + self.dy
         if height <= font.height:
             top -= font.height // 4
         top -= height // 2
@@ -473,7 +497,7 @@ class HdFootballRenderer:
             else:
                 scale, alpha, angle = 1., 1., 0.
             ref, (w, h) = GO, field.size(GO)
-        field.draw(self.canvas, ref, (768 - w) // 2, (1024 - h) // 2, alpha=alpha, sx=scale, sy=scale,
+        field.draw(self.canvas, ref, (768 - w) // 2, (1024 - h) // 2 + self.dy, alpha=alpha, sx=scale, sy=scale,
                    angle=angle, pivot=(w // 2, h // 2))
 
     PANEL_ORIGIN = (78, 300)
@@ -498,12 +522,12 @@ class HdFootballRenderer:
                 group = pygame.transform.smoothscale(group, size)
             group = faded(group, round(255 * min(1., alpha)))
             x = ox + (1 - scale) * 690
-            y = oy + (1 - scale) * 684
+            y = oy + self.dy + (1 - scale) * 684
             self.canvas.blit(group, (round(x + self.HELP_MARGIN[0] * scale), round(y + self.HELP_MARGIN[1] * scale)))
         image = coach if motion.coach_alpha >= 1 else coach.copy()
         if motion.coach_alpha < 1:
             image = faded(image, round(255 * motion.coach_alpha))
-        self.canvas.blit(image, (motion.coach_x, 977 - coach.get_height()))
+        self.canvas.blit(image, (motion.coach_x, 977 + self.down - coach.get_height()))     # (on the bar)
 
     # The panel group is drawn on a surface whose (0, 0) is this far up-left of its origin.
     HELP_MARGIN = (0, -22)
@@ -532,10 +556,10 @@ class HdFootballRenderer:
 
     def bar(self, game):
         main = self.atlas(MAIN)
-        main.draw(self.canvas, BAR, 0, 976, origin=True)
+        main.draw(self.canvas, BAR, 0, 976 + self.down, origin=True)
         footer = footer_id(game)
         if footer is not None:
-            self.text('footer', self.strings()[footer], 441, 984, center=True)
+            self.text('footer', self.strings()[footer], 441, 984 + self.down, center=True)
 
     # -- input ------------------------------------------------------------
     @staticmethod
@@ -549,6 +573,11 @@ class HdFootballRenderer:
     # -- frame ----------------------------------------------------------
     def draw(self, target, session):
         game = session.engine.football
+        size = self.canvas_size()
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+        self.down = size[1] - FRAME[1]
+        self.dy = self.down // 2
         self.canvas.fill((0, 0, 0))
         self.field(game)
         self.targets(game)

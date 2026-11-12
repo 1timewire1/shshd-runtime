@@ -195,6 +195,23 @@ class HdWordRenderer:
         self._haze = None
         self._haze_shown = None
 
+    # General's Aspect Ratio (owner, 2026-11-11: the native games fit the screen). In a frame of another shape the canvas
+    # is 768 points across and the frame's shape: the scene, the haze and the clouds round its edges cover all of it, the
+    # status bar keeps to the top, and the game (board, question, words, portraits, banners) is HD's 3:4 centred, `dy`
+    # points lower. HD's 768 x 1024 at 3:4, where nothing moves.
+    frame_units = (384, 512)
+    dy = 0
+
+    @property
+    def fills_frame(self):
+        return self.frame_units != (384, 512)
+
+    def canvas_size(self):
+        wide, tall = self.frame_units
+        if (wide, tall) == (384, 512):
+            return FRAME
+        return FRAME[0], max(FRAME[1], round(FRAME[0] * tall / wide))
+
     # -- assets ---------------------------------------------------------
     def raw(self, resource_id):
         try:
@@ -277,6 +294,49 @@ class HdWordRenderer:
         part = pygame.Rect(0, 0, FRAME[0] // HAZE_TURNED_AT, FRAME[1] // HAZE_TURNED_AT)
         part.center = turned.get_rect().center
         return turned.subsurface(part)
+
+    def tall_scene(self, game, background_id):
+        """`draw_scene` over a canvas taller than HD's frame: the scene's picture scaled evenly to cover it, centred,
+        the haze stretched over it, and the clouds along its four edges."""
+        canvas = self.canvas
+        width, height = canvas.get_size()
+        image = self.background(background_id)
+        canvas.fill((0, 0, 0))
+        if image is not None:
+            key = (id(image), (width, height))
+            cached = self.__dict__.get('_tall_background')
+            if cached is None or cached[0] != key:
+                k = max(width / image.get_width(), height / image.get_height())
+                size = (round(image.get_width() * k), round(image.get_height() * k))
+                cached = self._tall_background = (key, pygame.transform.smoothscale(image, size))
+            picture = cached[1]
+            canvas.blit(picture, ((width - picture.get_width()) // 2, (height - picture.get_height()) // 2))
+        haze = self.haze_layer(game)
+        stretched = self.__dict__.get('_tall_haze')
+        if stretched is None or stretched[0] is not haze or stretched[1].get_size() != (width, height):
+            stretched = self._tall_haze = (haze, pygame.transform.scale(haze, (width, height)))
+        canvas.blit(stretched[1], (0, 0))
+        if game.phase == -2:
+            return
+        atlas = self.atlas(ATLAS)
+        entry = game.phase_ms / 1500 if game.phase == -1 else 0.
+        travel = int(game.visual_ms / 1000 * CLOUD_SPEED)
+        x = travel % 280 - 280
+        while x < 1048:
+            atlas.draw(canvas, CLOUD_BOTTOM, x, int(entry * 51 + 973) + height - FRAME[1])
+            x += 280
+        x = -(travel % 256)
+        while x < 1024:
+            atlas.draw(canvas, CLOUD_TOP, x, int(entry * -51))
+            x += 256
+        y = travel % 289 - 289
+        while y < height:
+            atlas.draw(canvas, CLOUD_LEFT, int(entry * -41), y)
+            y += 289
+        y = -(travel % 289)
+        while y < height:
+            atlas.draw(canvas, CLOUD_RIGHT, int(entry * 47 + 721), y)
+            y += 289
 
     def haze_layer(self, game):
         """The haze turned and enlarged to the frame. On a phone that was most of a frame's budget, and past the budget its clocks
@@ -805,13 +865,37 @@ class HdWordRenderer:
     def draw(self, target, session):
         game = session.engine.word_grid
         fx = self.effects(game)
-        self.backdrop(game, session.pending.details['background_id'])
-        self.portraits(session, game)
+        size = self.canvas_size()
+        if size == FRAME:
+            if self.canvas.get_size() != FRAME:
+                self.canvas = pygame.Surface(FRAME).convert()
+            self.dy = 0
+            self.backdrop(game, session.pending.details['background_id'])
+            self.portraits(session, game)
+            self.status(game, fx.shown)
+            self.board(game)
+            self.prompts(game)
+            self.draw_effects(fx)
+            self.banner(game)
+            self.tutorial(game)
+            opaque(self.canvas)     # alpha 0 from `convert()` on macOS (desktop_football_hd.HdFootballRenderer.draw)
+            return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
+        # A taller frame: the scene over the whole canvas, the status bar at its top, the game in HD's 3:4 centred.
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+        whole = self.canvas
+        self.dy = (size[1] - FRAME[1]) // 2
+        self.tall_scene(game, session.pending.details['background_id'])
         self.status(game, fx.shown)
-        self.board(game)
-        self.prompts(game)
-        self.draw_effects(fx)
-        self.banner(game)
-        self.tutorial(game)
-        opaque(self.canvas)     # alpha 0 from `convert()` on macOS (desktop_football_hd.HdFootballRenderer.draw)
+        self.canvas = whole.subsurface((0, self.dy, *FRAME))
+        try:
+            self.portraits(session, game)
+            self.board(game)
+            self.prompts(game)
+            self.draw_effects(fx)
+            self.banner(game)
+            self.tutorial(game)
+        finally:
+            self.canvas = whole
+        opaque(self.canvas)
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

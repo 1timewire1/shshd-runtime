@@ -1762,7 +1762,8 @@ class Desktop:
         self.dialogue_renderer.lift = 0
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
                      getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
-                     getattr(self, 'nr_arena_renderer', None)):
+                     getattr(self, 'nr_arena_renderer', None), getattr(self, 'football_hd', None),
+                     getattr(self, 'word_hd', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -3866,13 +3867,17 @@ class Desktop:
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             if self._football().__class__ is HdFootballRenderer:
-                frame = self.picture_frame
-                x = (event.pos[0] - frame.x) * 768 / frame.width
-                y = (event.pos[1] - frame.y) * 1024 / frame.height
-                if 0 <= x < 150 and 880 <= y <= 1024:
+                hd = self.football_hd
+                # Its canvas (HD's 768 x 1024, or the frame's shape: desktop_football_hd) over the frame; the gear at
+                # its bottom, the plays `dy` below HD's place.
+                frame = self.bg_viewport if hd.fills_frame else self.picture_frame
+                width, height = hd.canvas_size()
+                x = (event.pos[0] - frame.x) * width / frame.width
+                y = (event.pos[1] - frame.y) * height / frame.height
+                if 0 <= x < 150 and height - 144 <= y <= height:
                     self.command(('menu',))
-                elif 0 <= x <= 768 and 0 <= y <= 1024:
-                    self._attempt(lambda: self.session.answer(self.football_hd.hit((x, y))))
+                elif 0 <= x <= width and 0 <= y <= height:
+                    self._attempt(lambda: self.session.answer(hd.hit((x, y - hd.dy))))
                 return True
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
@@ -3884,11 +3889,16 @@ class Desktop:
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             hd = self._word_grid().__class__ is HdWordRenderer
             if hd:
-                frame = self.picture_frame
-                x = (event.pos[0] - frame.x) * 768 / frame.width
-                y = (event.pos[1] - frame.y) * 1024 / frame.height
+                word = self.word_hd
+                # Its canvas (HD's 768 x 1024, or the frame's shape: desktop_word_hd) over the frame; the gear at its
+                # bottom, the board `dy` below HD's place.
+                frame = self.bg_viewport if word.fills_frame else self.picture_frame
+                width, height = word.canvas_size()
+                x = (event.pos[0] - frame.x) * width / frame.width
+                y = (event.pos[1] - frame.y) * height / frame.height
                 (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS     # (in points, twice the units)
-                gear = (x - 2 * cx) ** 2 + (y - 2 * cy) ** 2 <= (2 * radius) ** 2
+                gear = (x - 2 * cx) ** 2 + (y - (height - FRAME_UNITS[1] * 2) - 2 * cy) ** 2 <= (2 * radius) ** 2
+                y -= word.dy
             else:
                 x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
                 y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
