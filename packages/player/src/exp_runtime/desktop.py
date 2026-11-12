@@ -4395,6 +4395,7 @@ class Desktop:
             if not dragged:
                 url = next((url for rect, url in panels.wall_targets if rect.collidepoint(event.pos)), None)
                 if url:
+                    self._close_panels_now()        # (over the screen they'd hide the window and take its taps)
                     if self.notice_stack is not None:
                         self.wall_link = url
                         self.notice_stack.queue(self.exit_menu)
@@ -5178,6 +5179,16 @@ class Desktop:
         if self.panels_overlay:
             self.panels_overlay = False
             self._panels_whoosh()                      # (the music comes back once they're up: _panels_hold_music)
+
+    def _close_panels_now(self):
+        """The panels over the screen gone at once, without the slide or its whoosh: a linked Faceplace post asks
+        "Exit Game?" first, and that window must be in front with nothing over it (owner, 2026-11-12: the panels stayed
+        up, the window behind them, and its No did nothing once they were closed)."""
+        if self.panels_overlay or self.overlay_progress > 0:
+            self.panels_overlay = False
+            self.overlay_progress = 0.0
+            self.wall_drag = None
+            self._sync_music()
 
     def _panels_hold_music(self):
         """The story's music waits while the panels cover the screen and until they've slid away (owner, 2026-11-12):
