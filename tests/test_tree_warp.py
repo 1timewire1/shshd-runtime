@@ -221,6 +221,20 @@ class ZoomTests(unittest.TestCase):
         self.assertAlmostEqual(tree_y * ratio - panels.tree_scroll, 200 - BAR - margin)
         self.assertFalse(panels.tree_follow)
 
+    def test_notches_between_two_frames_all_count_and_keep_the_pointer_still(self):
+        """A fast wheel (or a pinch's several finger moves) sends more than one step before the next frame: each builds
+        on the last, not on the size last drawn (all but the last were lost, while the scroll moved for every one)."""
+        panels = self.panels()
+        point = (100, 400)
+        px, py = panels._tree_view_point(point)
+        before = ((panels.tree_scroll_x + px) / 50.0, (panels.tree_scroll + py) / 50.0)
+        panels.zoom_tree(-1, point)
+        panels.zoom_tree(-1, point)                                            # no draw between them
+        self.assertAlmostEqual(panels.tree_sz, 50.0 / panels.ZOOM_STEP ** 2)
+        size = panels.tree_sz
+        self.assertAlmostEqual((panels.tree_scroll_x + px) / size, before[0])
+        self.assertAlmostEqual((panels.tree_scroll + py) / size, before[1])
+
     def test_zoom_is_limited_and_the_middle_button_fits_the_tree_again(self):
         panels = self.panels()
         panels.zoom_tree(200, (0, 0))
@@ -368,7 +382,7 @@ class DesktopWarpTests(unittest.TestCase):
             painted.append(s)
             panels.tree_targets.append((pygame.Rect(0, 60, 30, 30), ('node', session.engine.dt_view.current)))
 
-        with patch.object(session.engine.dt_view, 'enabled', True),                 patch.object(panels, '_tree', lambda *a: None), patch.object(panels, 'backdrop', backdrop), \
+        with patch.object(session.engine.dt_view, 'enabled', True),                 patch.object(panels, '_tree', lambda *a, **k: None), patch.object(panels, 'backdrop', backdrop), \
                 patch.object(panels, 'divider', lambda *a, **k: None), patch.object(panels, 'centered', lambda *a: None), \
                 patch.object(panels, 'string', lambda key, text: text), \
                 patch.object(panels, 'frame', lambda index, size: pygame.Surface(size)):

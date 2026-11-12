@@ -32,9 +32,12 @@ What the binary states:
 Measured from the app's screenshots rather than read: the default `sz` (52.7; the static starts at 50), and the first row's top
 below the title bar (48.5 points).
 """
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from functools import lru_cache
 import logging
+from math import ceil, floor
+from time import perf_counter
 
 import pygame
 
@@ -63,6 +66,19 @@ DIVIDER, FAST_FORWARD, REWIND, WALL_HEADER, DARK_BAR = 0, 1, 3, 72, 56
 STR_REWIND, STR_FAST_FORWARD, STR_NO_WALL, STR_NO_TREE = 269, 270, 267, 268
 
 TREE_TOP = BAR + 48.5   # the first row's top: below the title bar, plus the margin measured from the app's screenshots
+# The tree's labels are drawn once per font, text, colour and scale (SidePanels.tree_label) and then only moved: their size
+# goes in whole points, so a pinch or a scroll finds them drawn. Laid out at this line height, moved down for the real one.
+LABEL_STEP = 1.0
+TREE_LABELS = 600       # labels kept drawn
+# A pinch on the tree (Android's two fingers: SidePanels.pinch_tree) where painting it in full takes over PINCH_CRISP_MS
+# (a phone; a PC paints every frame in full): the full painting is made with PINCH_MARGIN of the view more each way, and
+# the frames between show it scaled and moved to where the fingers have the tree, as a UIScrollView zooms its content
+# view by a transform while the fingers move. It is painted in full again once the fingers rest PINCH_REST_S, lift, or
+# take it past PINCH_RATIO of the size it was painted at or past its margin.
+PINCH_CRISP_MS = 8.0
+PINCH_MARGIN = 0.25
+PINCH_REST_S = 0.15
+PINCH_RATIO = 1.5
 NA_COLOR = (191, 191, 191)
 RULE = (224, 224, 224)
 
@@ -115,10 +131,15 @@ class TreePainter:
     def __init__(self, panels, panel, s, cam_x, cam_y, frames, sz, clip):
         self.panels, self.panel, self.s, self.frames, self.sz = panels, panel, s, frames, sz
         self.shift = (-cam_x, TREE_TOP - cam_y)
-        left, top, width, height = clip
-        self.clip = pygame.Rect(round(left * s), round(top * s), round(width * s), round(height * s))
+        self.clip = self.clip_rect(clip, s)
         self.area = pygame.Rect(self.clip)
         panel.set_clip(self.clip)
+
+    @staticmethod
+    def clip_rect(clip, s):
+        """A (left, top, width, height) in points as the pixels painted."""
+        left, top, width, height = clip
+        return pygame.Rect(round(left * s), round(top * s), round(width * s), round(height * s))
 
     def point(self, x, y):
         return (x + self.shift[0]) * self.s, (y + self.shift[1]) * self.s
@@ -217,11 +238,14 @@ class TreePainter:
         for index, line in enumerate(lines):
             if not line:
                 continue
-            layout = self.panels.text.layout(name, line, 2 ** 31, TextStyle(step, 0, color))
-            x = left if width is None else left + (width - layout.width) / 2
+            label_width, image, (dx, dy) = self.panels.tree_label(name, line, color, self.s)
+            x = left if width is None else left + (width - label_width) / 2
             px, py = self.point(x, top + index * step)
-            if self.area.collidepoint(round(px), round(py)) or self.area.collidepoint(round(px + layout.width * self.s), round(py)):
-                self.panels.text.draw_layout(self.panel, name, layout, px, py, scale=self.s)
+            if image is not None and (self.area.collidepoint(round(px), round(py))
+                                      or self.area.collidepoint(round(px + label_width * self.s), round(py))):
+                # The label laid out at line height LABEL_STEP sits (step - LABEL_STEP) lower at `step` (layout_text
+                # puts a line's glyphs that far below its top).
+                self.panel.blit(image, (floor(px + .5) + dx, floor(py + (step - LABEL_STEP) * self.s + .5) + dy))
 
 
 @dataclass
@@ -395,16 +419,35 @@ class SidePanels:
         # As the wall: painted again only when something on it changed (the tree, its scroll or zoom, size or place).
         # Every scene's icon and title repainted each frame made a whole new panel for the iPad to draw every frame.
         key = self._tree_key(dt, size, origin, enabled)
-        if self._tree_painted is not None and self._tree_painted[0] == key:
-            window.blit(self._tree_painted[1], origin)
-            self.tree_targets = list(self._tree_painted[2])
+        painted, now = self._tree_painted, perf_counter()
+        changed = painted is None or painted[0] != key
+        if changed:
+            self._tree_changed_at = now
+        # A pinch's quick frame (see PINCH_CRISP_MS) stands while the fingers move; once they rest or lift, the tree
+        # is painted again in full.
+        elif painted[3] or (self.tree_pinching and now - self._tree_changed_at < PINCH_REST_S):
+            window.blit(painted[1], origin)
+            self.tree_targets = list(painted[2])
             return
-        panel = pygame.Surface(size).convert()
+        # The last painting's surface, painted over whole (a new panel-sized surface and its convert were a millisecond
+        # or more of every repaint, every frame of a pinch).
+        panel = painted[1] if painted is not None else None
+        if panel is None or panel.get_size() != size:
+            panel = pygame.Surface(size).convert()
+        quick = self.tree_pinching and enabled and dt.root is not None and self._tree_paint_ms > PINCH_CRISP_MS
+        if not quick:
+            self._pinch_base = None
+        elif changed and painted is not None and painted[1] is panel and self._pinch_frame(panel, dt, s):
+            window.blit(panel, origin)
+            self.tree_targets = []      # (the fingers' own mouse events are held back until they lift)
+            self._tree_painted = (self._tree_key(dt, size, origin, enabled), panel, [], False)
+            return
+        began = perf_counter()
         self.tree_targets = []
         self.backdrop(panel, 'left', enabled, s, divider=False)
         if enabled:
             if dt.root is not None:
-                self._tree(panel, dt, s)
+                self._tree(panel, dt, s, with_margin=quick)
             content_w = shape_w - self._tree_divider()
             content = round(content_w * s)
             # Rewind needs a scene before the current one, Fast Forward one after it that is on the story followed; a bar
@@ -438,10 +481,63 @@ class SidePanels:
             if self._tree_divider():
                 self.divider(panel, 'left', s)
         window.blit(panel, origin)
+        if not quick:               # (what a full painting costs here, for the next pinch: see PINCH_CRISP_MS)
+            self._tree_paint_ms = (perf_counter() - began) * 1000
         # Keyed after painting: _tree settles the scroll (following the current scene, clamping to the tree).
-        self._tree_painted = (self._tree_key(dt, size, origin, enabled), panel, list(self.tree_targets))
+        self._tree_painted = (self._tree_key(dt, size, origin, enabled), panel, list(self.tree_targets), True)
 
-    _tree_painted = None        # (key, the painted panel, its touch targets): the tree as last painted
+    _tree_painted = None        # (key, the painted panel, its touch targets, painted in full): the tree as last painted
+    tree_pinching = False       # two fingers are pinching the tree (Android's Host): see PINCH_CRISP_MS
+    _tree_changed_at = 0.0      # when the tree's key last changed (perf_counter)
+    _tree_paint_ms = 0.0        # what the last full painting outside a pinch took
+    _pinch_base = None          # (_pinch_token, painting, size, its shift in points, the root's (xneg, xpos, ypos)): _tree
+    _pinch_surface = None       # the surface that painting is made on, kept for the next one
+
+    def _pinch_token(self, dt, s):
+        """What a pinch's full painting stands for besides the size and scroll: the tree and the panel's shape."""
+        return id(dt), dt.version, id(dt.root), id(dt.current), dt.last_was_result, s, self.tree_shape
+
+    def _pinch_view(self, panel, s):
+        """The panel pixels between the two bars and left of the divider: all a quick pinch frame paints over."""
+        width = round((self.tree_shape[0] - self._tree_divider()) * s)
+        if self._tree_divider():
+            width = min(width, panel.get_width() - max(1, round(DIVIDER_WIDTH * s)))
+        top = max(round(BAR * s), round((BAR - 1) * s) + max(1, round(s)))     # (under the bar's black line)
+        bottom = round((self.tree_shape[1] - BAR) * s)
+        return pygame.Rect(0, top, width, max(0, bottom - top))
+
+    def _pinch_frame(self, panel, dt, s):
+        """A quick frame of a pinch: the last full painting (`_pinch_base`, made with a margin round the view) scaled to
+        the size the fingers ask for and moved to where they have the tree, over the view only (the bars stay as last
+        painted). False when it can't stand in: scaled past PINCH_RATIO, or not covering the view any more."""
+        base = self._pinch_base
+        if base is None or base[0] != self._pinch_token(dt, s):
+            return False
+        _token, painting, base_sz, (base_x, base_y), (xneg, xpos, ypos) = base
+        sz = min(SZ_RANGE[1], max(SZ_RANGE[0], self.tree_sz or DT_DEFAULT_SZ))
+        ratio = sz / base_sz
+        if not 1 / PINCH_RATIO <= ratio <= PINCH_RATIO:
+            return False
+        # The scroll's limits as _tree sets them, from the painting's tree scaled to this size (the layout scales with
+        # its size; the full painting at the end puts the exact ones back).
+        width, height = self.tree_shape[0] - self._tree_divider(), self.tree_shape[1] - 2 * BAR
+        margin = self.TREE_MARGIN
+        scroll = min(max(0.0, ypos * ratio + 2 * margin - height), max(0.0, self.tree_scroll))
+        scroll_x = min(xpos * ratio - width / 2, max(-xneg * ratio - width / 2, self.tree_scroll_x))
+        # A tree point at panel pixel ((x + shift) * s) now was at ((x / ratio + base shift) * s) in the painting.
+        off_x, off_y = (-scroll_x - ratio * base_x) * s, (TREE_TOP - scroll - ratio * base_y) * s
+        view = self._pinch_view(panel, s)
+        # The part of the painting that lands on the view, on whole pixels (within a pixel of the exact place and scale:
+        # a frame that is gone at the next), scaled straight into the view: no new surface, no second blit.
+        source = pygame.Rect(round((view.left - off_x) / ratio), round((view.top - off_y) / ratio), 0, 0)
+        source.width = round((view.right - off_x) / ratio) - source.x
+        source.height = round((view.bottom - off_y) / ratio) - source.y
+        if (source.width <= 0 or source.height <= 0 or not view.width or not view.height
+                or not painting.get_rect().contains(source)):
+            return False
+        pygame.transform.scale(painting.subsurface(source), view.size, panel.subsurface(view))
+        self.tree_scroll, self.tree_scroll_x, self.tree_sz_now = scroll, scroll_x, sz
+        return True
 
     def _tree_key(self, dt, size, origin, enabled):
         """What the tree panel's pixels depend on (the layout's own key, _layout_for, covers the tree itself)."""
@@ -469,20 +565,52 @@ class SidePanels:
         self.tree_scroll_x += across
         self.tree_follow = False
 
+    def _zoom_size(self):
+        """The size the tree is zoomed to now: the one asked for since the last draw, else the one drawn. Several wheel
+        notches or finger moves can come between two frames; each must build on the one before, or all but the last
+        were lost while the scroll still moved for each (the zoom lagged and slid away from the pointer)."""
+        return self.tree_sz if self.tree_sz is not None else self.tree_sz_now
+
+    def _tree_view_point(self, position):
+        """A window point in the tree view's points: (x from the panel's left, y from the tree's top margin)."""
+        s, (ox, oy) = self.tree_scale or 1.0, self._origin
+        return (position[0] - ox) / s, (position[1] - oy) / s - BAR - self.TREE_MARGIN
+
     def zoom_tree(self, notches, position):
         """Zoom about a window point (the pointer), keeping the scene under it where it is."""
         if self.tree_rect is None:
             return
-        s, (ox, oy) = self.tree_scale or 1.0, self._origin
-        old = self.tree_sz_now
+        old = self._zoom_size()
         new = min(self.ZOOM_RANGE[1], max(self.ZOOM_RANGE[0], old * self.ZOOM_STEP ** notches))
         if new == old:
             return
         ratio = new / old
-        px, py = (position[0] - ox) / s, (position[1] - oy) / s - BAR - self.TREE_MARGIN
+        px, py = self._tree_view_point(position)
         self.tree_scroll = (self.tree_scroll + py) * ratio - py
         self.tree_scroll_x = (self.tree_scroll_x + px) * ratio - px
         self.tree_sz, self.tree_follow = new, False
+
+    def pinch_anchor(self, position):
+        """The start of a pinch at a window point: (the size then, the tree point under it in icon sizes). The tree's
+        places scale with the size (dt_layout lays everything out in multiples of sz), so a point measured in sizes
+        stays the same scene point at any zoom."""
+        size = self._zoom_size()
+        px, py = self._tree_view_point(position)
+        return size, (self.tree_scroll_x + px) / size, (self.tree_scroll + py) / size
+
+    def pinch_tree(self, anchor, factor, position):
+        """Two fingers: the size at the pinch's start times how far apart they are now over then, with the point that
+        was between them at the start under the point between them now (UIScrollView's pinch: zoom and carry along).
+        Worked out from the start each time rather than step by step, so nothing piles up between frames and the
+        point stays under the fingers however the moves come; only the tree's own edges (the clamp in _tree) and the
+        zoom limits stop it."""
+        if self.tree_rect is None:
+            return
+        start, ax, ay = anchor
+        size = min(self.ZOOM_RANGE[1], max(self.ZOOM_RANGE[0], start * factor))
+        px, py = self._tree_view_point(position)
+        self.tree_scroll_x, self.tree_scroll = ax * size - px, ay * size - py
+        self.tree_sz, self.tree_follow = size, False
 
     def reset_tree_zoom(self):
         self.tree_sz, self.tree_follow = None, True
@@ -493,6 +621,33 @@ class SidePanels:
         return self._metrics_cache
 
     _metrics_cache = None
+    _tree_labels = None
+
+    def tree_label(self, name, text, color, s):
+        """(width in points, its picture or None, (dx, dy) pixels from the label's origin to the picture): one line of
+        a tree label as draw_layout draws it at an origin on whole pixels and line height LABEL_STEP, kept for the
+        next frame. Repainting the tree laid out and drew each label glyph by glyph every time; while a pinch changes
+        the size every frame that was most of the frame."""
+        if self._tree_labels is None:
+            self._tree_labels = OrderedDict()
+        key = (name, text, color, s)
+        label = self._tree_labels.get(key)
+        if label is None:
+            layout = self.text.layout(name, text, 2 ** 31, TextStyle(LABEL_STEP, 0, color))
+            # Room all round for the glyphs' ink, which may reach above the line's top or left of its start.
+            pad = ceil((getattr(self.text.font(name), 'line_height', 0) + LABEL_STEP) * s) + 4
+            sheet = pygame.Surface((ceil(layout.width * s) + 2 * pad, 2 * pad), pygame.SRCALPHA)
+            drawn = self.text.draw_layout(sheet, name, layout, pad, pad, scale=s)
+            if drawn is None or not drawn.width or not drawn.height:
+                label = (layout.width, None, (0, 0))
+            else:
+                label = (layout.width, sheet.subsurface(drawn).copy(), (drawn.x - pad, drawn.y - pad))
+            self._tree_labels[key] = label
+            if len(self._tree_labels) > TREE_LABELS:
+                self._tree_labels.popitem(last=False)
+        else:
+            self._tree_labels.move_to_end(key)
+        return label
 
     def _layout_for(self, dt, sz):
         key = (id(dt), dt.version, sz, id(dt.current), dt.last_was_result)
@@ -500,7 +655,10 @@ class SidePanels:
             self._layout = (key, Layout(dt.root, sz, self._metrics(), dt.current, dt.last_was_result))
         return self._layout[1]
 
-    def _tree(self, panel, dt, s):
+    def _tree(self, panel, dt, s, with_margin=False):
+        """Paint the tree onto the panel and note its scenes' touch areas. `with_margin`: a pinch's full painting, made
+        on a surface of its own reaching PINCH_MARGIN of the view further each way (`_pinch_base`, which the pinch's
+        quick frames scale and move) and copied onto the panel from there."""
         frames = self.node_frames()
         sz = min(SZ_RANGE[1], max(SZ_RANGE[0], self.tree_sz or DT_DEFAULT_SZ))
         self.tree_sz_now = sz
@@ -516,8 +674,28 @@ class SidePanels:
         self.tree_scroll = min(max(0.0, root.ypos + 2 * margin - height), max(0.0, self.tree_scroll))
         self.tree_scroll_x = min(root.xpos - width / 2, max(-root.xneg - width / 2, self.tree_scroll_x))
         cam_x, cam_y = self.tree_scroll_x, self.tree_scroll
-        painter = TreePainter(self, panel, s, cam_x, cam_y, frames, sz, (0, BAR, width, height))
-        painter.paint(layout.draw_ops())
+        if with_margin:
+            view = TreePainter.clip_rect((0, BAR, width, height), s)
+            mx, my = round(view.width * PINCH_MARGIN), round(view.height * PINCH_MARGIN)
+            area = (view.width + 2 * mx, view.height + 2 * my)
+            surface = self._pinch_surface
+            if surface is None or surface.get_size() != area:
+                surface = self._pinch_surface = pygame.Surface(area).convert()
+            surface.fill((255, 255, 255))
+            # Panel pixel p is painting pixel p - (view's corner - margin): the same tree, `margin` further each way.
+            base_x, base_y = cam_x + (view.x - mx) / s, cam_y + (view.y - my) / s
+            TreePainter(self, surface, s, base_x, base_y, frames, sz, (0, 0, area[0] / s, area[1] / s)).paint(
+                layout.draw_ops())
+            panel.set_clip(view)
+            try:
+                panel.blit(surface, (view.x - mx, view.y - my))
+            finally:
+                panel.set_clip(None)
+            self._pinch_base = (self._pinch_token(dt, s), surface, sz, (-base_x, TREE_TOP - base_y),
+                                (root.xneg, root.xpos, root.ypos))
+        else:
+            painter = TreePainter(self, panel, s, cam_x, cam_y, frames, sz, (0, BAR, width, height))
+            painter.paint(layout.draw_ops())
         # The touch areas of the scenes on show.
         for node in layout.nodes():
             image = node.image_id()

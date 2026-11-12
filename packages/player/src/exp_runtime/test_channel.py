@@ -15,6 +15,9 @@ it's done, so real clocks (fades, timers) run as in play.
     answer N                    pick choice or prompt row N (0 first)
     type TEXT                   type into name entry, then confirm it
     key NAME                    a key press: return, escape, up, down, left, right, space, n, u, ... (the menus' keys)
+    pinch FACTOR [MS] [MOVES]   two fingers on the open story tree part to FACTOR times as far apart over MS
+                                (default 800) and lift, MOVES moves a frame (default 3); replies with the tree's size
+                                before and after
     back                        Android's Back (Escape)
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
@@ -293,6 +296,54 @@ class Commands:
 
     def do_key(self, rest):
         return self._then_key(rest.strip())
+
+    def do_pinch(self, rest):
+        """`pinch FACTOR [MS] [MOVES]`: two fingers on the open story tree, a quarter of its width apart about its middle,
+        part to FACTOR times that over MS (default 800) and lift, moving MOVES times a frame (default 3: a touch screen
+        reports more often than a phone draws). They go through Android's own pinch (Host.finger); on a desktop, which
+        has no pinch of its own, through a stand-in of it."""
+        parts = rest.split()
+        factor = float(parts[0]) if parts else 2.0
+        ms = float(parts[1]) if len(parts) > 1 else 800.0
+        moves = max(1, int(parts[2])) if len(parts) > 2 else 3
+        panels = getattr(self.game, 'side_panels', None)
+        if panels is None or panels.tree_rect is None:
+            return dict(ok=False, error='the story tree is not showing (key tab opens the panels)')
+        finger = getattr(self.app, 'finger_input', None)
+        if finger is None:
+            from .platforms.android import Host
+            host = Host.__new__(Host)
+            host.app = self.app
+            finger = host.finger
+        return self._pinch(finger, panels, factor, ms, moves)
+
+    def _pinch(self, finger, panels, factor, ms, moves):
+        from types import SimpleNamespace
+        width, height = self.app.window.get_size()
+        cx, cy = panels.tree_rect.center
+        half = panels.tree_rect.width / 8
+
+        def touch(kind, finger_id, x):
+            finger(SimpleNamespace(type=kind, finger_id=finger_id, x=x / width, y=cy / height, dx=0, dy=0, touch_id=0),
+                   check_sdl=False)
+        touch(pygame.FINGERDOWN, 9001, cx - half)
+        touch(pygame.FINGERDOWN, 9002, cx + half)
+        before, began, last, done = panels._zoom_size(), time.perf_counter(), half, False
+        while not done:
+            yield
+            progress = min(1.0, (time.perf_counter() - began) * 1000 / ms)
+            done = progress >= 1.0
+            target = half * (1 + (factor - 1) * progress)
+            for step in range(1, moves + 1):
+                at = last + (target - last) * step / moves
+                touch(pygame.FINGERMOTION, 9001, cx - at)
+                touch(pygame.FINGERMOTION, 9002, cx + at)
+            last = target
+        yield
+        touch(pygame.FINGERUP, 9001, cx - last)
+        touch(pygame.FINGERUP, 9002, cx + last)
+        result = yield from self._settled(0.3)
+        return dict(result, tree_size=[round(before, 2), round(panels._zoom_size(), 2)])
 
     def do_back(self, _):
         return self._then_key('escape')

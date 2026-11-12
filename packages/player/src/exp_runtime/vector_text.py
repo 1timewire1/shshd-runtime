@@ -557,7 +557,12 @@ def load_font_sized(library, name: str, logical_size: float):
             role = {'ArialRoundedMTBold': 'arial-rounded', 'ArialMT': 'arial',
                     'TrebuchetMS_Bold': 'trebuchet-bold', 'TrebuchetMS_Italic': 'trebuchet-italic'}[parsed[0]]
             path = system_font_path(role, library) if library.hd_raw_resource(568) is not None else None
-            base = BitmapFont.parse(library.read_ui_asset(f'fonts/{name}.fnt'))
+            # The descriptor is the same at every size: read once (about 20 ms on a PC each time, and the story tree
+            # asks for a new size every few steps of a pinch).
+            bases = library.__dict__.setdefault('_text_font_bases', {}) if hasattr(library, '__dict__') else {}
+            base = bases.get(name)
+            if base is None:
+                base = bases[name] = BitmapFont.parse(library.read_ui_asset(f'fonts/{name}.fnt'))
             cache[key] = None if path is None else vector_font(base, FaceSource(path=path, label=role), logical_size)
         except (ContentError, FontError, pygame.error, OSError):
             cache[key] = None

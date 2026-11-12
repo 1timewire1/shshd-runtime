@@ -211,41 +211,81 @@ class SidePanelTests(unittest.TestCase):
 
 
 class PinchTests(unittest.TestCase):
-    def test_two_fingers_zoom_the_story_tree_about_their_middle(self):
-        """The owner's request: pinch zooms the tree panel as desktop's wheel does (zoom_tree), about the point between
-        the fingers, and that point carries the tree along (UIScrollView's pinch); the first finger's mouse events
-        stop meanwhile, so a pinch is never a tap or a drag."""
-        import math
+    def pinch_host(self, size=30.0):
+        """A host over a game whose story tree panel is SidePanels' own (its zoom arithmetic, no drawing): 1000 px
+        square window, the panel at scale 0.5, last drawn at `size`."""
         import pygame
+        from exp_runtime.desktop_side_panels import SidePanels
         host = Host.__new__(Host)
-        zooms, scrolls = [], []
-        panels = SimpleNamespace(ZOOM_STEP=1.15, tree_rect=pygame.Rect(0, 0, 400, 1000), tree_scale=0.5,
-                                 zoom_tree=lambda notches, point: zooms.append((notches, point)),
-                                 scroll_tree=lambda down, across: scrolls.append((down, across)))
-        fling = Mock()
-        game = SimpleNamespace(side_panels=panels, tree_drag=['down'], tree_fling=fling)
+        panels = object.__new__(SidePanels)
+        panels.tree_rect, panels._origin, panels.tree_scale = pygame.Rect(0, 0, 400, 1000), (0, 0), 0.5
+        panels.tree_sz_now, panels.tree_scroll, panels.tree_scroll_x = size, 300.0, 40.0
+        game = SimpleNamespace(side_panels=panels, tree_drag=['down'], tree_fling=Mock())
         handled = []
         host.app = SimpleNamespace(screen='game', game=game, window=SimpleNamespace(get_size=lambda: (1000, 1000)),
                                    handle_event=handled.append, active=True)
+        return host, panels, game, handled
 
-        def touch(kind, finger, x, y):
-            return pygame.event.Event(kind, finger_id=finger, x=x, y=y, dx=0, dy=0, touch_id=0)
+    @staticmethod
+    def touch(kind, finger, x, y):
+        import pygame
+        return pygame.event.Event(kind, finger_id=finger, x=x, y=y, dx=0, dy=0, touch_id=0)
 
+    @staticmethod
+    def under(panels, point):
+        """The tree point (in icon sizes) under a window point, as the panel stands."""
+        px, py = panels._tree_view_point(point)
+        size = panels._zoom_size()
+        return (panels.tree_scroll_x + px) / size, (panels.tree_scroll + py) / size
+
+    def test_two_fingers_zoom_the_story_tree_and_keep_the_point_between_them_there(self):
+        """The owner's request: pinch zooms the tree panel about the point between the fingers, and that point carries
+        the tree along (UIScrollView's pinch); the first finger's mouse events stop meanwhile, so a pinch is never a tap
+        or a drag. Owner, 2026-11-12 (g54): it felt rough. Each move built on the size last *drawn*, so of several
+        moves between two frames all but the last were lost while the scroll still moved for each: the size lagged
+        the fingers and the tree slid out from under them. Now every move is worked out from the pinch's start."""
+        import pygame
+        host, panels, game, handled = self.pinch_host()
+        touch = self.touch
         host.event(touch(pygame.FINGERDOWN, 1, .1, .5))
-        host.event(touch(pygame.FINGERDOWN, 2, .3, .5))
+        host.event(touch(pygame.FINGERDOWN, 2, .3, .5))                 # 200 px apart, about (200, 500)
         self.assertIsNone(game.tree_drag)
-        fling.stop.assert_called_once_with()                            # a gliding tree stops under the fingers
+        game.tree_fling.stop.assert_called_once_with()                  # a gliding tree stops under the fingers
+        self.assertTrue(panels.tree_pinching)
+        anchor = self.under(panels, (200, 500))
         host.event(pygame.event.Event(pygame.MOUSEMOTION, pos=(100, 500), rel=(0, 0), buttons=(1, 0, 0)))
         self.assertEqual(handled, [])                                   # swallowed while pinching
-        host.event(touch(pygame.FINGERMOTION, 2, .35, .5))              # 200 -> 250 px apart
-        notches, point = zooms[0]
-        self.assertAlmostEqual(notches, math.log(250 / 200) / math.log(1.15))
-        self.assertEqual(point, (225.0, 500.0))
-        self.assertEqual(scrolls, [(-0.0, -50.0)])                      # the middle moved 25 px right at scale 0.5
-        host.event(touch(pygame.FINGERUP, 1, .1, .5))
-        host.event(touch(pygame.FINGERUP, 2, .35, .5))
+        # Three moves with no frame drawn between them (tree_sz_now stays 30).
+        for finger, x, span, centre in ((2, .35, 250, (225, 500)), (1, .05, 300, (200, 500)), (2, .40, 350, (225, 500))):
+            host.event(touch(pygame.FINGERMOTION, finger, x, .5))
+            self.assertAlmostEqual(panels.tree_sz, 30.0 * span / 200)
+            for got, want in zip(self.under(panels, centre), anchor):
+                self.assertAlmostEqual(got, want)
+        host.event(touch(pygame.FINGERUP, 1, .05, .5))
+        self.assertFalse(panels.tree_pinching)                          # (one finger: the tree is painted in full)
+        host.event(touch(pygame.FINGERUP, 2, .40, .5))
         host.event(pygame.event.Event(pygame.MOUSEMOTION, pos=(100, 500), rel=(0, 0), buttons=(0, 0, 0)))
         self.assertEqual(len(handled), 1)                               # back to ordinary input
+
+    def test_a_finger_put_down_again_carries_the_pinch_on_from_there(self):
+        """2 -> 1 -> 2 fingers: the pinch picks up where it was, about the new pair's middle, with no jump."""
+        import pygame
+        host, panels, _game, handled = self.pinch_host()
+        touch = self.touch
+        host.event(touch(pygame.FINGERDOWN, 1, .1, .5))
+        host.event(touch(pygame.FINGERDOWN, 2, .3, .5))
+        host.event(touch(pygame.FINGERMOTION, 2, .5, .5))               # twice as far apart: size 60 (the limit)
+        self.assertAlmostEqual(panels.tree_sz, 60.0)
+        host.event(touch(pygame.FINGERUP, 2, .5, .5))
+        before = (panels.tree_sz, panels.tree_scroll, panels.tree_scroll_x)
+        host.event(touch(pygame.FINGERDOWN, 3, .1, .9))                 # elsewhere: nothing moves yet
+        self.assertEqual((panels.tree_sz, panels.tree_scroll, panels.tree_scroll_x), before)
+        anchor = self.under(panels, (100, 700))
+        host.event(touch(pygame.FINGERMOTION, 3, .1, .7))               # 400 -> 200 px apart, about (100, 600)
+        self.assertAlmostEqual(panels.tree_sz, 30.0)
+        for got, want in zip(self.under(panels, (100, 600)), anchor):
+            self.assertAlmostEqual(got, want)
+        self.assertEqual(handled, [])
 
     def test_a_lost_finger_up_never_counts_as_touching(self):
         """A FINGERUP the one-input-per-frame rule used to drop left a finger behind, and the next two-finger pinch

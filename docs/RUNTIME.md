@@ -407,7 +407,8 @@ confirmation or notice, which `state` shows as `window`), `open TITLE` (or an
 id prefix; of several imported copies, the newest), `run-until KIND [SECONDS]` (lines advance until that screen, or the
 first stop it can't pass, a skip prompt included), `wait`, `timing on|off` (fps, median, p90, worst frame, and each
 frame of 100 ms or more with the command running and what showed after it), `profile on|off [WORD]` (cProfile on the
-app's thread; the costliest calls, only those naming WORD if given) and `shot NAME`. Actions wait for a fade or
+app's thread; the costliest calls, only those naming WORD if given), `pinch FACTOR [MS] [MOVES]` (two scripted
+fingers on the open story tree, through Android's own pinch, or a stand-in of it on a desktop) and `shot NAME`. Actions wait for a fade or
 transition before and after, as a player would; `answer` refuses a row a player couldn't pick rather than hand it to
 the game.
 

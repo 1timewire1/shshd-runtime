@@ -160,6 +160,7 @@ class Host:
                                settings_path=self.root / 'settings.json', url_opener=self.open_url,
                                can_quit=False)
         self.app.fixed_window = True    # the window is the screen: the side panels never widen it
+        self.app.finger_input = self.finger     # (the test channel's scripted pinch: test_channel.py `pinch`)
         activity.bind(on_activity_result=self.on_result)
 
     def font_directories(self):
@@ -403,12 +404,16 @@ class Host:
 
     fingers = None                      # {finger id: (x, y)} in the drawing surface's pixels, while touching
     pinching = False                    # two fingers have been down since the screen was last untouched
-    pinch = None                        # (span, centre) at the last step of a pinch on the story tree, else None
+    pinch_tree = False                  # ... and the gesture began on the story tree (it then follows them anywhere)
+    pinch = None                        # (span, anchor) where two fingers began pinching the tree, else None
 
-    def finger(self, event):
+    def finger(self, event, check_sdl=True):
         """Two fingers on the story tree panel zoom it and carry it along, as UIScrollView's pinch does (HD's tree
-        is one): the zoom is about the point between them (SidePanels.zoom_tree, desktop's wheel) and that point
-        drags the tree. SDL turns only the first finger into mouse events; those stop for the whole gesture."""
+        is one): the size follows how far apart they are, and the scene point that was between them stays between
+        them (SidePanels.pinch_tree, worked out from where the two began, so no move between two frames is lost).
+        A finger lifted and put down again carries on from there. SDL turns only the first finger into mouse
+        events; those stop for the whole gesture. `check_sdl` False: a scripted pinch (the test channel's), whose
+        fingers SDL's own list doesn't have."""
         import math
         import pygame
         fingers = self.fingers if self.fingers is not None else {}
@@ -417,7 +422,7 @@ class Host:
             fingers.pop(event.finger_id, None)
         else:
             fingers[event.finger_id] = (event.x * width, event.y * height)
-        if len(fingers) > 1:
+        if len(fingers) > 1 and check_sdl:
             # A finger lifted whose FINGERUP never arrived must not count: SDL's own list says who is touching.
             try:
                 from pygame._sdl2 import touch
@@ -427,34 +432,36 @@ class Host:
             except (ImportError, pygame.error, KeyError, TypeError):
                 pass
         self.fingers = fingers
-        if not fingers:
-            self.pinching, self.pinch = False, None
-            return
+        game = self.app.game if self.app.screen == 'game' else None
+        panels = getattr(game, 'side_panels', None)
         if len(fingers) != 2:
             self.pinch = None
+            if not fingers:
+                self.pinching = self.pinch_tree = False
+            if panels is not None:
+                panels.tree_pinching = False    # (the tree is painted in full again: SidePanels.draw_tree)
             return
         (ax, ay), (bx, by) = fingers.values()
         span, centre = math.hypot(bx - ax, by - ay), ((ax + bx) / 2, (ay + by) / 2)
-        game = self.app.game if self.app.screen == 'game' else None
-        panels = getattr(game, 'side_panels', None)
         if not self.pinching:
             self.pinching = True
             if game is not None:
                 game.tree_drag = None   # the first finger's drag ends once the second lands
                 game.tree_fling.stop()
             # The gesture belongs to the tree if it starts there; it then follows the fingers anywhere.
-            if panels is not None and panels.tree_rect is not None and panels.tree_rect.collidepoint(centre):
-                self.pinch = (span, centre)
+            self.pinch_tree = (panels is not None and panels.tree_rect is not None
+                               and panels.tree_rect.collidepoint(centre))
+            if self.pinch_tree:
                 logging.info('Pinch on the story tree at %s', centre)
+        if not self.pinch_tree or panels is None or panels.tree_rect is None:
             return
-        if self.pinch is None or panels is None or panels.tree_rect is None:
+        if self.pinch is None:
+            if span > 0:                # (two fingers on one spot: wait for them to part)
+                self.pinch = (span, panels.pinch_anchor(centre))
+                panels.tree_pinching = True
             return
-        (last_span, (cx, cy)) = self.pinch
-        if span > 0 and last_span > 0:
-            panels.zoom_tree(math.log(span / last_span) / math.log(panels.ZOOM_STEP), centre)
-        s = panels.tree_scale or 1.0
-        panels.scroll_tree(-(centre[1] - cy) / s, -(centre[0] - cx) / s)
-        self.pinch = (span, centre)
+        start_span, anchor = self.pinch
+        panels.pinch_tree(anchor, span / start_span, centre)
 
     def resize(self):
         """The first frame, or the screen turned (or a split screen changed it): a new drawing surface for the window

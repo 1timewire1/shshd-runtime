@@ -181,6 +181,80 @@ class SidePanelTests(unittest.TestCase):
         self.assertEqual(panels.tree_sz_now, 10.0)
         self.assertGreater(len([1 for _rect, target in panels.tree_targets if target[0] == 'node']), 12)
 
+    def test_a_slow_tree_pinch_shows_its_last_full_painting_scaled_until_the_fingers_rest_or_lift(self):
+        """Owner, 2026-11-12 (g54): the tree's pinch felt rough. Where a full painting is slow (PINCH_CRISP_MS), the
+        frames of a pinch scale and move the last one (painted with a margin round the view) to where the fingers
+        have the tree; it is painted in full again when they rest, lift, or take it too far."""
+        from unittest.mock import patch
+        module, pygame = self.module, self.pygame
+        session = self.session(tree=True)
+        for depth in range(60):
+            session.engine.dt_view.add_result(0, '')
+            session.engine.dt_view.add_node(1206, f'Node {depth}', 0)
+        panels = self.renderer
+        self.draw(session)
+        self.assertTrue(panels._tree_painted[3])
+        rewind = self.window.get_at((100, 30))
+        centre = panels.tree_rect.center
+        with patch.object(module, 'PINCH_CRISP_MS', -1.0):
+            panels.tree_pinching = True
+            anchor = panels.pinch_anchor(centre)
+            panels.pinch_tree(anchor, 0.95, centre)
+            self.draw(session)                              # the pinch's first frame: painted in full, with a margin
+            self.assertTrue(panels._tree_painted[3])
+            self.assertIsNotNone(panels._pinch_base)
+            margin = panels._pinch_base[1].get_size()
+            panels.pinch_tree(anchor, 0.8, centre)
+            self.draw(session)                              # the next: that painting scaled, no touch targets
+            self.assertFalse(panels._tree_painted[3])
+            self.assertEqual(panels.tree_targets, [])
+            self.assertAlmostEqual(panels.tree_sz_now, 52.7 * 0.8)
+            self.assertEqual(self.window.get_at((100, 30)), rewind)       # the bars stay as painted
+            quick, base = self.window.copy(), panels._pinch_base
+            panels.tree_pinching = False
+            panels._tree_painted = None
+            self.draw(session)                              # the same state painted in full, for comparison
+            panels.tree_pinching, panels._pinch_base = True, base
+            view = panels._pinch_view(panels._tree_painted[1], panels.tree_scale).move(panels.tree_rect.topleft)
+            differ = sum(1 for x in range(view.left, view.right, 7) for y in range(view.top, view.bottom, 7)
+                         if max(abs(a - b) for a, b in zip(quick.get_at((x, y))[:3], self.window.get_at((x, y))[:3])) > 40)
+            self.assertLess(differ, 0.02 * (view.width // 7) * (view.height // 7))
+            self.assertEqual(panels._pinch_base[1].get_size(), margin)
+            panels.pinch_tree(anchor, 0.75, centre)
+            self.draw(session)
+            self.assertFalse(panels._tree_painted[3])
+            panels._tree_changed_at -= module.PINCH_REST_S  # the fingers rest: painted in full again
+            self.draw(session)
+            self.assertTrue(panels._tree_painted[3])
+            panels.pinch_tree(anchor, 0.3, centre)          # far past the painted size: in full
+            self.draw(session)
+            self.assertTrue(panels._tree_painted[3])
+            panels.pinch_tree(anchor, 0.32, centre)
+            self.draw(session)
+            self.assertFalse(panels._tree_painted[3])
+            panels.tree_pinching = False                    # they lift: in full, with its touch targets
+            self.draw(session)
+        self.assertTrue(panels._tree_painted[3])
+        self.assertIsNone(panels._pinch_base)
+        self.assertIn(session.engine.dt_view.current,
+                      [target[1] for _rect, target in panels.tree_targets if target[0] == 'node'])
+
+    def test_tree_labels_are_drawn_once_and_reused(self):
+        pygame = self.pygame
+        drawn = []
+
+        def draw_layout(surface, name, layout, x, y, scale=1):
+            drawn.append(name)
+            surface.fill((0, 0, 0, 255), pygame.Rect(round(x), round(y) - 3, 5, 4))
+            return pygame.Rect(round(x), round(y) - 3, 5, 4)
+
+        self.renderer.text.draw_layout = draw_layout
+        first = self.renderer.tree_label('F', 'Meet Beth', (0, 0, 0), 2.0)
+        self.assertEqual(self.renderer.tree_label('F', 'Meet Beth', (0, 0, 0), 2.0), first)
+        self.assertEqual(len(drawn), 1)
+        self.assertEqual(first[1].get_size(), (5, 4))
+        self.assertEqual(first[2], (0, -3))                 # where the ink is from the label's origin
+
     def wall_session(self, posts):
         session = self.session(wall=False)
         session.engine.faceplace.enabled = True
