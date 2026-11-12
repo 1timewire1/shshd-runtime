@@ -2481,9 +2481,13 @@ class Desktop:
             if hd_frame:
                 self.window.blit(pygame.transform.smoothscale(hd_alert, self.alert_frame.size), self.alert_frame)
             else:
-                width = round(FRAME_UNITS[0] * scale)
+                # HD's card is small on a phone: enlarged towards ALERT_ZOOM as the frame narrows to the column's
+                # width (owner, 2026-11-11), about its top-right corner.
+                narrow = (FRAME_UNITS[0] - self.__dict__.get('_frame_width', FRAME_UNITS[0])) / (FRAME_UNITS[0] - 320)
+                zoom = 1 + (self.ALERT_ZOOM - 1) * max(0., min(1., narrow))
+                width = round(FRAME_UNITS[0] * scale * zoom)
                 self._blit_part(hd_alert, pygame.Rect(frame.right - width, frame.y, width,
-                                                      round(FRAME_UNITS[1] * scale)), frame)
+                                                      round(FRAME_UNITS[1] * scale * zoom)), frame)
         if hd_badge is not None:
             # The scene label's tab at HD's (15, 50) units: in another shape, at the story's scale, as far from the
             # frame's left edge, and centred in a taller frame as the narration it sits over is.
@@ -2956,6 +2960,8 @@ class Desktop:
     # How far a strip (New Rules, BREW) rises in a frame taller than HD's: by this share of the added height (the
     # owner's pick B, 2026-11-11).
     STRIP_RISE = .5
+    # How much larger the Faceplace alert is drawn in a frame the column's width (a phone) than at HD's scale.
+    ALERT_ZOOM = 1.5
 
     def _shaped_placement(self, background, target_size, wide, tall):
         """`_background_placement` in a frame of another shape than HD's 3:4 (General's Aspect Ratio), `wide` x `tall`
