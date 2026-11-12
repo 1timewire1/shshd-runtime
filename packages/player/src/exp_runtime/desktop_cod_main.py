@@ -68,6 +68,69 @@ def title_layer(library):
 
 
 
+# shshd-runtime (General's Aspect Ratio, owner 2026-11-12: mock-up E2, revised). At 2:3 the painting is shown whole at
+# the frame's width, the buttons where the device has them (its Play/Resume at CoD point 346), as the iPhone app shows
+# it (owner's iPad photo); taller, the painting grows towards the widest the logo allows, most of the added height is
+# its sky continued above it (its top tenth stretched, its edge faded in) and a quarter black below, the brick wall
+# fading into it; the buttons rise a tenth of that height above the bottom, as SHS HD's (HdUi.buttons_raise).
+FULL_HEIGHT = 1152                                  # 2:3: the 320 x 480 painting whole at the frame's width
+DEVICE_SHIFT = PLAY_TOP[0] * FRAME[0] / 320 - PLAY_TOP[1]       # 77.4: the buttons' move down at 2:3, as on the device
+BUTTONS_RAISE = 0.1                                 # of the height past 2:3 (SHS HD's share)
+BLACK_SHARE = 0.25                                  # of the height past 2:3 that is black below the painting
+GROW_MAX, GROW_AT = 0.98 / 0.93, 1707               # the logo is 93% of the painting's width; fully grown at 20:9
+SKY_BAND, SKY_FADE = 0.10, 60                       # the painting's top share stretched up, its edge's fade (points)
+FADE_SHARE, FADE_PER_BLACK = 0.28, 1.5              # the wall's fade to black: at most this share of the painting
+
+
+def buttons_shift(height):
+    """Points the buttons move down in a frame `height` points tall: to the device's place at 2:3, then with the frame
+    less a tenth of what it adds."""
+    if height <= FRAME[1]:
+        return 0.
+    if height <= FULL_HEIGHT:
+        return (height - FRAME[1]) * DEVICE_SHIFT / (FULL_HEIGHT - FRAME[1])
+    return DEVICE_SHIFT + (height - FULL_HEIGHT) * (1 - BUTTONS_RAISE)
+
+
+def painting(library):
+    image = ImagePack.parse(read_ui(library, TITLE_ART)).images[0]
+    return pygame.image.frombytes(image.pixels, (image.width, image.height), image.mode).convert_alpha()
+
+
+@lru_cache(maxsize=2)
+def title_backdrop(library, height):
+    """The title painting in a frame `height` points tall at 2x (title_layer at HD's 1024)."""
+    if height <= FRAME[1]:
+        return title_layer(library)
+    art = painting(library)
+    beyond = max(0, height - FULL_HEIGHT)
+    k = FRAME[0] / art.get_width() * (1 + (GROW_MAX - 1) * min(1., beyond / (GROW_AT - FULL_HEIGHT)))
+    size = (round(art.get_width() * k * S), round(art.get_height() * k * S))
+    picture = pygame.transform.smoothscale(art, size)
+    top = (PLAY_TOP[1] + buttons_shift(height) - PLAY_TOP[0] * k - beyond * BLACK_SHARE) * S
+    left = (FRAME[0] * S - size[0]) / 2
+    layer = pygame.Surface((FRAME[0] * S, round(height * S))).convert()
+    layer.fill((0, 0, 0))
+    if top > 0:
+        band = picture.subsurface((0, 0, size[0], max(1, round(size[1] * SKY_BAND))))
+        layer.blit(pygame.transform.smoothscale(band, (size[0], round(band.get_height() + top))), (round(left), 0))
+        picture = picture.copy()
+        fade = round(SKY_FADE * S)
+        for y in range(fade):           # the painting's top edge faded into the sky above it
+            picture.fill((255, 255, 255, round(255 * y / fade)), (0, y, size[0], 1), special_flags=pygame.BLEND_RGBA_MULT)
+    layer.blit(picture, (round(left), round(top)))
+    bottom = top + size[1]
+    black = layer.get_height() - bottom
+    if black > 1:
+        length = min(size[1] * FADE_SHARE, black * FADE_PER_BLACK)
+        shade = pygame.Surface((layer.get_width(), round(length) + 1), pygame.SRCALPHA)
+        for y in range(shade.get_height()):
+            shade.fill((0, 0, 0, round(255 * (y / max(1, shade.get_height() - 1)) ** 1.2)), (0, y, shade.get_width(), 1))
+        layer.blit(shade, (0, round(bottom - length)))
+        layer.fill((0, 0, 0), (0, round(bottom), layer.get_width(), layer.get_height()))
+    return layer
+
+
 @lru_cache(maxsize=2)
 def hd_collage(library):
     """SHS HD's main-menu collage (resource 10) from the art source, or None."""
@@ -142,7 +205,6 @@ class CodButtonLayouts:
 
 
 class CodMainMenu(HdMainMenu):
-    grows = False                       # (3:4 until Cause of Death's own menus are done: General's Aspect Ratio)
     INFO_FRAMES = (14, 15)              # CoD's own at rest / pressed (through INFO_SWAP), unchanged
     LABELS = LABELS
 
@@ -162,6 +224,15 @@ class CodMainMenu(HdMainMenu):
     def main_layers(self):
         # One layer, frame-sized; HdMainMenu blits the first layer centred.
         return [(title_layer(self.library), (384, 512))]
+
+    def main_layout(self, height=FRAME[1]):
+        """The painting in a frame `height` points tall (title_backdrop), one frame-sized layer."""
+        return [(title_backdrop(self.library, height), (384, height / 2))]
+
+    @property
+    def extra(self):
+        """Points the buttons move down: to the device's place at 2:3, then on (buttons_shift)."""
+        return buttons_shift(self.height)
 
     def draw_photo(self, layer):
         pass
@@ -193,6 +264,8 @@ class CodMainMenu(HdMainMenu):
 
 class CodBootScreen(HdUi):
     """The launch screen: CoD's EA logo (`Default@2x.png`) fitted to the frame on its grey. There is no EA flash."""
+    grows = True
+    height = FRAME[1]               # the menu frame's (the shell sets it): the grey fills it, the logo centred
 
     def __init__(self, library):
         super().__init__(library)
@@ -209,10 +282,13 @@ class CodBootScreen(HdUi):
         return None
 
     def draw_loading(self, phase):
+        size = (FRAME[0] * S, round(self.height * S))
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
         self.canvas.fill((105, 105, 105))         # Default@2x.png's own grey
         image = self.launch_image()
         if image is not None:
-            self.canvas.blit(image, (0, 0))
+            self.canvas.blit(image, (0, round((self.height - FRAME[1]) / 2 * S)))
         return self.canvas
 
     def draw_flash(self, seconds):

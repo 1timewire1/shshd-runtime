@@ -30,7 +30,7 @@ from io import BytesIO
 
 import pygame
 
-from .desktop_cod_main import title_layer
+from .desktop_cod_main import title_backdrop
 from .desktop_cod_menu import CodButtons
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import BOTTOM_MASK, TOP_MASK, HdEpisodePicker
@@ -66,7 +66,6 @@ def recolor_border(image, color):
 
 
 class CodPickerStyle(CodButtons):
-    grows = False                       # (3:4 until Cause of Death's own menus are done: General's Aspect Ratio)
     TEXT_COLOR = (0, 0, 0)
     FOCUS_TEXT_COLOR = BORDER                           # the keyboard's choice in the popup: CoD's window blue
     NEW_GAME, CONTINUE, RESTORE = 19, 26, 194
@@ -107,8 +106,8 @@ class CodPickerStyle(CodButtons):
     def card_image(self):
         return recolor_border(self.bundle_image('popupBackground.png'), BORDER)
 
-    def main_backdrop(self):
-        return title_layer(self.library)
+    def main_backdrop(self, height=1024):
+        return title_backdrop(self.library, height)
 
 
 class CodEpisodePicker(CodPickerStyle, HdEpisodePicker):
