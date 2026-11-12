@@ -1806,7 +1806,7 @@ class Desktop:
                      getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
                      getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
                      getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
-                     getattr(self, 'x360_puzzle_renderer', None)):
+                     getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -1837,6 +1837,7 @@ class Desktop:
         self.story_below = False
         self.story_centred = False
         self.story_lift = 0
+        self.scene_zoom = 1.
         self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
@@ -2064,6 +2065,7 @@ class Desktop:
                 self.story_layer = renderer.canvas
                 self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
                 self.story_below = getattr(renderer, 'extended_below', False)           # (the X360's: desktop_x360_slot)
+                self.scene_zoom = getattr(renderer, 'scene_zoom', 1.)                   # (Diss Practice's scene)
                 screen = getattr(renderer, 'SCREEN_HEIGHT', None)
                 if screen is not None and not self._hd_frame_shape():
                     # A game in a frame of its own at the canvas's top (the BREW catch game, both looks): in a taller
@@ -3017,6 +3019,16 @@ class Desktop:
         # General's Aspect Ratio (frame_shape.py): the frame is `wide` x `tall` units, HD's 384 x 512 at 3:4.
         wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
         tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+        zoom = self.__dict__.get('scene_zoom', 1.)
+        if zoom > 1 and (wide, tall) != FRAME_UNITS and self.pending_background_origin not in (None, 'cover'):
+            # A scene drawn as at 3:4 and scaled to the frame's height about its left edge (Diss Practice: its
+            # renderer's scene_zoom, Josh scaled with it): where 3:4 puts the picture in a frame this wide, times J.
+            self._frame_width, self._frame_tall = FRAME_UNITS
+            try:
+                x, y, w, h = self._background_placement(background, (tw, th / zoom))
+            finally:
+                self._frame_width, self._frame_tall = wide, tall
+            return x * zoom, y * zoom, w * zoom, h * zoom
         if (wide, tall) != FRAME_UNITS and self.pending_background_origin is not None:
             return self._shaped_placement(background, target_size, wide, tall)
         if self.pending_background_origin is None:
@@ -4015,7 +4027,8 @@ class Desktop:
             return True
         if (action and action.name in ('x360_slot', 'x360_diss', 'brew_catch') and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            x, y, height = self._game_point(event.pos, self.x360_slot_renderer if action.name == 'x360_slot' else None)
+            x, y, height = self._game_point(event.pos, {'x360_slot': self.x360_slot_renderer,
+                                                        'x360_diss': self.x360_diss_renderer}.get(action.name))
             if 0 <= x < 150 and height - 144 <= y <= height:
                 self.command(('menu',))
             elif (0 <= x <= 768 and 0 <= y <= height) or (action.name in ('brew_catch', 'x360_slot')

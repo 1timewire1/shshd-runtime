@@ -11,6 +11,7 @@ import math
 from . import graphics as pygame
 from .desktop_nr_arena_x360 import BMFont, addon_skin
 from .desktop_x360_deck import FX, SCORE_BOX, X360Deck
+from .desktop_x360_slot import X360SlotRenderer
 from .x360_diss import (BAD, BLANK, COUNTDOWN, COUNTDOWN_MS, COUNTDOWN_STEPS_MS, CLOSING_MS, DOUBLE, ENDED, ELEMENTS, FIRE,
                         NOTE, REMIX, RUNNING, SPIN_DOWN, TUTORIAL, TUTORIAL_MS, arm_angle)
 from .x360_games import CLOSING, OPENING, OPENING_MS, READY
@@ -38,6 +39,20 @@ DANCE_WAIT_MS = 2000                    # the first practice's Wait(2), before J
 
 class X360DissRenderer(X360Deck):
     hd_layer = True
+    # shshd-runtime (General's Aspect Ratio, owner 2026-11-12, reference/handoff_x360_storyboard_v2_ready.md): in a
+    # taller frame the canvas goes on below HD's 3:4 to the frame's bottom, that 3:4 centred, as the slots' does; the deck
+    # and cards keep their places and the deck rises from the frame's edge. The scene, the background and Josh on it, is
+    # drawn as at 3:4 and scaled by `scene_zoom` (J) about the frame's left edge, so it fills the frame's height and
+    # Josh keeps his share of the screen (Desktop._background_placement scales the background).
+    frame_units = (384, 512)
+    extended_below = X360SlotRenderer.extended_below
+    canvas_size = X360SlotRenderer.canvas_size
+
+    @property
+    def scene_zoom(self):
+        """J: the frame's height over its width, x 3/4 (1 at 3:4 and wider)."""
+        wide, tall = self.frame_units
+        return max(1., tall * 3 / (wide * 4))
 
     def __init__(self, resources):
         self.resources = resources
@@ -97,18 +112,22 @@ class X360DissRenderer(X360Deck):
     # -- drawing -----------------------------------------------------------------------------------------------
     def draw(self, session):
         game = self.game = session.engine.x360_diss
-        if self.canvas is None:
-            self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
-        surface = self.canvas
-        surface.fill((0, 0, 0, 0))
+        # The canvas covers the whole frame when the scene is scaled (Josh may reach above the 3:4's top); the deck and
+        # cards are drawn in its lower part, canvas_size's, whose top is the centred 3:4's (taps count from there).
+        width, height = self.canvas_size()
+        whole = round(FRAME[0] * self.scene_zoom * 4 / 3) if self.scene_zoom != 1 else height
+        if self.canvas is None or self.canvas.get_size() != (width, whole):
+            self.canvas = pygame.Surface((width, whole), pygame.SRCALPHA)
+        self.canvas.fill((0, 0, 0, 0))
+        surface = self.canvas if whole == height else self.canvas.subsurface((0, whole - height, width, height))
         now = game.now_ms
-        self._josh(surface, game, session.engine.panel.background_id)
+        self._josh(self.canvas, game, session.engine.panel.background_id)
         if game.phase == TUTORIAL or (game.phase == OPENING and game.tutorial):
             self._tutorial(surface, game)
             return
         rise = 0
-        if game.phase == OPENING:
-            rise = RISE * (max(0, game.phase_ms) / OPENING_MS) ** 2
+        if game.phase == OPENING:           # (from the frame's edge: the canvas below the 3:4 too)
+            rise = (RISE + surface.get_height() - FRAME[1]) * (max(0, game.phase_ms) / OPENING_MS) ** 2
         parts = self.x360()[0]['booth']['parts']
         self._deck_piece(surface, self.image(parts['body']['id']), parts['body']['box'], 1, rise)
         self._deck_piece(surface, self.image(parts['record']['id']), parts['record']['box'], 1, rise)
@@ -163,14 +182,22 @@ class X360DissRenderer(X360Deck):
             cell = frames[(ms % dance['period_ms']) * len(frames) // dance['period_ms']]
         x, y, _, _ = self._to_native(cell['box'])
         place = dance.get('places', {}).get(str(background))
-        if place is None:
+        zoom = self.scene_zoom
+        if place is None and zoom == 1:
             image = self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect']))
         else:
-            left, top, width, height = self._to_native(dance['stand']['box'])
-            feet_x, feet_y = left + width / 2, top + height
-            to_x, to_y = place.get('feet', (feet_x, feet_y))
-            x, y = to_x + (x - feet_x) * place['scale'], to_y + (y - feet_y) * place['scale']
-            image = self._josh_scaled(dance, cell, place['scale'])
+            scale = 1
+            if place is not None:
+                left, top, width, height = self._to_native(dance['stand']['box'])
+                feet_x, feet_y = left + width / 2, top + height
+                to_x, to_y = place.get('feet', (feet_x, feet_y))
+                x, y = to_x + (x - feet_x) * place['scale'], to_y + (y - feet_y) * place['scale']
+                scale = place['scale']
+            image = self._josh_scaled(dance, cell, scale * zoom)
+        if zoom != 1:
+            # The 3:4 scene scaled by J about the frame's top-left (this canvas is the whole frame then).
+            surface.blit(image, (round(x * self.k * zoom), round(y * self.k * zoom)))
+            return
         surface.blit(image, (round(x * self.k), round(y * self.k)))
 
     def _josh_scaled(self, dance, cell, scale):
