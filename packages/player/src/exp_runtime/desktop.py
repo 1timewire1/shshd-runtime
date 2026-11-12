@@ -337,6 +337,7 @@ class _Swapped:
 class Desktop:
     story_layer = None
     story_over_scene = False        # the story layer is HD's frame over the scene (the look picker)
+    story_band = None               # a 3:4 game's own background, lengthened into the band above it (band_picture)
     story_lift = 0                  # units the story layer is drawn above its place (a picker centred in a tall frame)
     story_fills_frame = False       # the story layer is the whole frame, of its shape (a title card)
     story_centred = False           # the story layer is a picture at the frame's width, centred (a storyboard)
@@ -1684,6 +1685,9 @@ class Desktop:
             self.arena_handover = None
             return
         area = getattr(self, 'picture_frame', self.bg_viewport)
+        width, height = handover['layer'].get_size()
+        if abs(height * 3 - width * 4) > 8:
+            area = self.bg_viewport             # a canvas of the frame's own shape (the X360 skin's: fills_frame)
         if handover['scaled'] is None or handover['scaled'].get_size() != area.size:
             handover['scaled'] = pygame.transform.smoothscale(handover['layer'], area.size)
         self.window.blit(faded(handover['scaled'], round(255 * (1 - ms / ARENA_HANDOVER_MS))), area)
@@ -1757,7 +1761,7 @@ class Desktop:
                                          (tall - FRAME_UNITS[1]) / 2)
         self.dialogue_renderer.lift = 0
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
-                     getattr(self, 'cutscene_renderer', None)):
+                     getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -1779,7 +1783,9 @@ class Desktop:
             self.screen_token, self.scroll, self.choice_focus = token, 0, None
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
+        self.under_fills_frame = False
         self.story_over_scene = False
+        self.story_band = None
         self.story_fills_frame = False
         self.story_centred = False
         self.story_lift = 0
@@ -1796,6 +1802,8 @@ class Desktop:
                 renderer = self._arena_renderer()
                 renderer.draw(None, self.session, overlay=False)
                 self.under_layer = renderer.canvas
+                self.story_band = getattr(renderer, 'band_picture', lambda: None)()
+                self.under_fills_frame = getattr(renderer, 'fills_frame', False)
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Panel rendering stopped: %s', error)
@@ -1864,6 +1872,7 @@ class Desktop:
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
                     self.story_over_scene = getattr(renderer, 'over_scene', False)
+                    self.story_band = getattr(renderer, 'band_picture', lambda: None)()
                     self.story_fills_frame = getattr(renderer, 'fills_frame', False)
                     if action.name == 'character_picker':
                         # A taller frame centres the picker as HD's frame does (owner, 2026-11-11): its layer moves
@@ -2413,9 +2422,13 @@ class Desktop:
             self._draw_background_layer(bg_size, self.bg_viewport, self._frame_covered(alpha))
         under = getattr(self, 'under_layer', None)
         if under is not None:
-            # A screen under the choice that covers the whole frame (New Rules' arena under its menu).
-            self.window.blit(pygame.transform.smoothscale(under, self.picture_frame.size), self.picture_frame)
-            self._draw_picture_band(backdrop, height)
+            # A screen under the choice that covers the whole frame (New Rules' arena under its menu): a 3:4 picture at
+            # the frame's bottom, or one of the frame's own shape over all of it (the X360 skin's: fills_frame).
+            if self.__dict__.get('under_fills_frame'):
+                self.window.blit(pygame.transform.smoothscale(under, frame.size), frame)
+            else:
+                self.window.blit(pygame.transform.smoothscale(under, self.picture_frame.size), self.picture_frame)
+                self._draw_picture_band(backdrop, height)
         ui_layers = []
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
@@ -3233,10 +3246,26 @@ class Desktop:
                 self.window.fill((8, 12, 20), band)
 
     def _draw_picture_band(self, backdrop, height):
-        """Above a 3:4 picture in a taller frame (picture_frame), the window's backdrop, as beside the frame."""
+        """Above a 3:4 picture in a taller frame (picture_frame), the window's backdrop, as beside the frame; or the
+        game's own background (`story_band`, its renderer's band_picture: owner, 2026-11-11) lengthened upward with
+        whole repeats of its pattern (backdrop_fit), its part under the game as the game draws it."""
         band = pygame.Rect(self.bg_viewport.x, self.bg_viewport.y, self.bg_viewport.width,
                            self.picture_frame.y - self.bg_viewport.y).clip(self.window.get_rect())
         if band.height <= 0:
+            return
+        picture = self.story_band
+        if picture is not None:
+            key = (id(picture), self.bg_viewport.size, self.picture_frame.height)
+            cached = self.__dict__.get('_band_cache')
+            if cached is None or cached[0] != key:
+                height_px, width_px = picture.get_height(), picture.get_width()
+                long = round(height_px * self.bg_viewport.height / self.picture_frame.height)
+                added = long - height_px
+                middle = height_px / 2
+                lengthened = backdrop_fit.lengthen(picture.convert_alpha(), (middle, middle),
+                                                   (middle + added, middle + added), long)
+                cached = self._band_cache = (key, pygame.transform.smoothscale(lengthened, self.bg_viewport.size))
+            self.window.blit(cached[1], band, band.move(-self.bg_viewport.x, -self.bg_viewport.y))
             return
         if backdrop is not None:
             self.window.blit(backdrop, band, band)

@@ -15,6 +15,7 @@ import math
 import pygame
 
 from . import hd_scale
+from .content import ContentError
 
 SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177}
 FRAME_PICTURE = 26178                   # the dialogue screens' frame without its bars (addon revision 3), if present
@@ -321,6 +322,14 @@ class NRArenaRenderer:
         self.menu_focus = None            # (the action, the focused option) on New Rules' menu
         self._skin = None
         self.targets = []                 # (native rect, command) for clicks, from the last frame
+
+    def band_picture(self):
+        """What a taller frame shows above the arena (Desktop._draw_picture_band, owner 2026-11-11): the frame's
+        picture it stands on (New Rules' backdrop without the bars), lengthened; None without one (an older addon)."""
+        try:
+            return self.skin().frame
+        except (ContentError, KeyError, ValueError, pygame.error):
+            return None
 
     # -- assets -----------------------------------------------------------------------------------------------------
     def skin(self):

@@ -182,6 +182,16 @@ def plain_runs(text):
 
 
 class X360ArenaRenderer(X360Deck, NRArenaRenderer):
+    frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
+
+    @property
+    def fills_frame(self):
+        """Its canvas is the whole frame in another shape than HD's (draw), so Desktop lays it over the frame."""
+        return self.frame_units != (384, 512)
+
+    def band_picture(self):
+        return None                     # its canvas covers the frame itself (fills_frame)
+
     """The arena in the X360 look. `available()` is False without the X360 addon's skin, and Desktop then keeps
     New Rules' look."""
 
@@ -408,9 +418,17 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         height = max(4, round(max(FRAME[1], self.target_height) / 4) * 4)
         size = (height * 3 // 4, height)
         self.k = height / NATIVE[1]
-        if self.canvas.get_size() != size:
-            self.canvas = pygame.Surface(size).convert()
-        surface = self.canvas
+        # A frame of another shape (General's Aspect Ratio): the canvas is the frame's shape, the title's backdrop
+        # over all of it, and the game's 3:4 at its bottom as before, so its gear and taps stay where they were
+        # (owner, 2026-11-11). Desktop places a canvas that fills_frame over the whole frame.
+        wide, tall = self.frame_units
+        whole_size = size if (wide, tall) == (384, 512) else (size[0], max(size[1], round(size[0] * tall / wide)))
+        if self.canvas.get_size() != whole_size:
+            self.canvas = pygame.Surface(whole_size).convert()
+        whole = self.canvas
+        surface = whole if whole_size == size else whole.subsurface((0, whole_size[1] - size[1], *size))
+        if whole is not surface:
+            whole.fill((0, 0, 0))
         self.targets = []
         skin = self.skin()
         if skin.frame is not None:
@@ -423,7 +441,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         if arena is None:
             return []                       # the panel closed: the bare frame, which fades out over the next screen
         ms = (ENTRANCE_MS - arena.exit_ms) if arena.leaving else arena.entrance_ms if arena.entering else ENTRANCE_MS
-        self._backdrop(surface, min(1, ms / 600) if moving else 1, now)
+        self._backdrop(whole, min(1, ms / 600) if moving else 1, now)
         drop = 0 if ms >= 800 else (1 - ms / 800) ** 2          # the HUD drops in over the first 800 ms
         rise = 0 if ms >= 1600 else 1 if ms <= 400 else (1 - (ms - 400) / 1200) ** 2   # the deck rises 400-1600 ms
         self._paint_x360(surface, arena, session, now, drop * -200, rise * 420, moving)
