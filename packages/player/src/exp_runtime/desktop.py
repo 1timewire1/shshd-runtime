@@ -1152,6 +1152,7 @@ class Desktop:
             self.text_input_started = enabled
         if enabled and hasattr(self, 'viewport'):
             x, y, w, h = INPUT_RECT
+            y -= self._input_lift()                     # (the box is drawn higher in a taller frame)
             pygame.key.set_text_input_rect(pygame.Rect(
                 self.viewport.x + x * self.viewport.width / 320,
                 self.viewport.y + y * self.viewport.height / 480,
@@ -1939,6 +1940,8 @@ class Desktop:
                         # low). The gear and the bar's hint stay at the frame's bottom.
                         self.story_over_scene = True
                         self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
+                    elif action.name == 'text_input':
+                        self.story_lift = self._input_lift()
                 if action.name in ARENA_ACTIONS:
                     self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
@@ -1956,8 +1959,8 @@ class Desktop:
                 # The gear's button is at the frame's left edge, 32 units outside the column in HD's frame.
                 buttons = [((rect[0] + 32 - self._edge_units, *rect[1:]) if command == ('menu',) and rect[0] == -32
                             else rect, command) for rect, command in buttons]
-                if self.story_lift and action.name in ('message_panel', 'survey_confirmation'):
-                    # (A centred notice's buttons go up with it; the gear stays.)
+                if self.story_lift and action.name in ('message_panel', 'survey_confirmation', 'text_input'):
+                    # (A centred notice's buttons go up with it, as the name entry's field does; the gear stays.)
                     buttons = [(rect if command == ('menu',) else (rect[0], rect[1] - self.story_lift, *rect[2:]), command)
                                for rect, command in buttons]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
@@ -3393,6 +3396,17 @@ class Desktop:
     def _hd_frame_shape(self):
         """Whether the frame is HD's own 3:4 (General's Aspect Ratio's 3:4)."""
         return (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self.__dict__.get('_frame_tall', FRAME_UNITS[1])) == FRAME_UNITS
+
+    INPUT_LIFT_SHARE = .75
+
+    def _input_lift(self):
+        """Units the name entry is drawn above its place in a taller frame: three quarters of the height the frame adds,
+        so the box sits in the frame's upper half, clear of a phone's keyboard below it (owner, 2026-11-12: at 20:9 it
+        sat two thirds down, in both games), and still below the Faceplace alert and the side panels' button at the top
+        right (all of it put the box under them). Its gear and bar stay at the frame's bottom."""
+        if self._hd_frame_shape():
+            return 0
+        return (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) * self.INPUT_LIFT_SHARE
 
     def _scene_card(self, lift):
         """Where HD's frame drawn over the scene goes (the look picker, the loading band): at the story's scale with the
