@@ -25,6 +25,21 @@ class Shs11ReflexRenderer(Shs11MemoryRenderer):
             raise ValueError("SHS '11's addon has no Reflex art: import its latest build")
         return spec
 
+    def prime_steps(self, background_id=None):
+        """shshd-runtime: Reflex's own pictures and pieces, a step at a time (Desktop._prime_games): its icon sheet, gauge
+        bar and markers. The grid, clock and score are Memory's, primed by its renderer: the two share their cache
+        (Desktop), so a game's first frame finds either already loaded (owner, 2026-11-12: a hitch as one opened)."""
+        spec = self._spec()[0].get('reflex')
+        if not spec:
+            return
+        icons = spec['icons']
+        yield lambda: self.image(icons['picture'])
+        for frame in icons['frames']:
+            yield lambda frame=frame: self.piece(icons['picture'], frame)
+        yield lambda: self.image(spec['bar']['picture'])
+        for picture in spec['marker']['pictures']:
+            yield lambda picture=picture: self.image(picture)
+
     def icon(self, surface, frame_number, centre):
         """A frame of the icon sheet, in its box, with the box's middle at `centre`."""
         spec = self._reflex()['icons']

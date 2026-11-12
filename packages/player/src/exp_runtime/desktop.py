@@ -625,6 +625,9 @@ class Desktop:
         self.x360_slot_renderer = X360SlotRenderer(session.resources)
         self.shs11_memory_renderer = Shs11MemoryRenderer(session.resources)
         self.shs11_reflex_renderer = Shs11ReflexRenderer(session.resources)
+        # (One cache for both: Reflex draws Memory's grid, clock and score, and what _prime_games loads serves either.)
+        self.shs11_reflex_renderer._images = self.shs11_memory_renderer._images
+        self.shs11_reflex_renderer._glyphs = self.shs11_memory_renderer._glyphs
         self.brew_catch_renderer = BrewCatchRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
@@ -4540,7 +4543,7 @@ class Desktop:
         key = (id(resources), self.word_grid_skin)
         priming = self.__dict__.get('_priming')
         if priming is None or priming[0] != key:
-            renderers = [self.shs11_memory_renderer]
+            renderers = [self.shs11_memory_renderer, self.shs11_reflex_renderer]
             if self.shs11_hd is not None and self.word_grid_skin:
                 renderers.insert(0, self.shs11_hd)
             background = self.session.engine.panel.background_id
