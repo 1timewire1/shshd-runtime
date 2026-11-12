@@ -228,6 +228,13 @@ class CodTitleRenderer(HdTitleRenderer):
         k = self.SCALE
         return (self.frame_units[0] - 320) / 2 * k, self.canvas_size()[1] - (480 + 5.5) * k
 
+    @property
+    def TITLE_ORIGIN(self):
+        """Where the title's CoD points start: the column's top-left as far from the frame's top as in HD's frame
+        (26.5 units: (64, 53) there, ORIGIN's own place), so in a taller frame the title stays at the top, as SHS HD's
+        does, and only the subtitle keeps to the bottom (owner, 2026-11-12: both sat at the bottom)."""
+        return self.ORIGIN[0], (512 - 480 - 5.5) * self.SCALE
+
     def subtitle_region(self):
         return self.SUBTITLE_REGION         # in CoD points, placed from the column (ORIGIN)
 
@@ -280,21 +287,23 @@ class CodTitleRenderer(HdTitleRenderer):
         return pygame.Rect(x + left * self.SCALE, 0, visible * self.SCALE, self.canvas_size()[1])
 
     def region_text(self, font, text, region, flags, alpha=1., clip=None):
-        """HdTitleRenderer.region_text in CoD points, each glyph placed on the HD frame (see the class docstring)."""
+        """HdTitleRenderer.region_text in CoD points, each glyph placed on the HD frame (see the class docstring). The
+        title (top-aligned, flags 0x15) is placed from TITLE_ORIGIN, the subtitle (bottom-aligned) from ORIGIN."""
         x, y, width, height = region
+        origin = self.ORIGIN if flags & 0xc == 0xc else self.TITLE_ORIGIN
         lines = font.wrap(text, width) if flags & 0x10 else text.split('\n')
         block = font.text_height(lines)
         top = y + ((height - block) if flags & 0xc == 0xc else (height - block) // 2 if flags & 0xc == 8 else 0)
         for index, line in enumerate(lines):
             w = font.width(line)
             left = x + ((width - w) if flags & 3 == 3 else (width - w) // 2 if flags & 3 == 2 else 0)
-            self.draw_line(font, line, left, top + index * (font.height + font.font.line_gap), alpha)
+            self.draw_line(font, line, left, top + index * (font.height + font.font.line_gap), alpha, origin)
         return lines
 
-    def draw_line(self, font, text, x, y, alpha):
+    def draw_line(self, font, text, x, y, alpha, origin=None):
         twins, scale = self.hd_glyphs(), self.SCALE
         twin = next((twins[i] for i, own in enumerate(self.fonts()) if own is font and i < len(twins)), None)
-        ox, oy = self.ORIGIN
+        ox, oy = origin or self.ORIGIN
         for char in text:
             glyph = font.font.glyph(char)
             if glyph is not None and char != ' ':
