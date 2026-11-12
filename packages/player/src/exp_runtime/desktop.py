@@ -1913,6 +1913,12 @@ class Desktop:
                         # backdrop above it (owner, 2026-11-11: the scene was cut to 3:4 before a minigame).
                         self.story_over_scene = True
                         self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
+                    elif action.name in ('message_panel', 'survey_confirmation') and not self._hd_frame_shape():
+                        # A notice (an objective list, a minigame's instructions) is a card over the scene too: centred
+                        # in a taller frame, as the loading band is, its buttons with it (owner, 2026-11-12: they sat
+                        # low). The gear and the bar's hint stay at the frame's bottom.
+                        self.story_over_scene = True
+                        self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
                 if action.name in ARENA_ACTIONS:
                     self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
@@ -1930,6 +1936,10 @@ class Desktop:
                 # The gear's button is at the frame's left edge, 32 units outside the column in HD's frame.
                 buttons = [((rect[0] + 32 - self._edge_units, *rect[1:]) if command == ('menu',) and rect[0] == -32
                             else rect, command) for rect, command in buttons]
+                if self.story_lift and action.name in ('message_panel', 'survey_confirmation'):
+                    # (A centred notice's buttons go up with it; the gear stays.)
+                    buttons = [(rect if command == ('menu',) else (rect[0], rect[1] - self.story_lift, *rect[2:]), command)
+                               for rect, command in buttons]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 edge_bar = getattr(renderer, 'edge_bar', None)
