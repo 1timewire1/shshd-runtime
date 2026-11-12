@@ -2143,6 +2143,7 @@ class Application:
         self.game.url_opener = self.url_opener
         self.game.fixed_window = self.fixed_window
         self.game.top_inset = getattr(self, 'top_inset', 0.)     # a phone's status bar over the frame's top (Host)
+        self.game.bottom_inset = getattr(self, 'bottom_inset', 0.)   # ...and its navigation / gesture bar at the bottom
         if getattr(self, 'settings', None) is not None:         # (an Application a test built without __init__)
             self.game.aspect_ratio = self.settings.aspect(self.fixed_window)
         self.game.music_volume, self.game.sound_volume = self.state.music_volume / 100, self.state.sound_volume / 100

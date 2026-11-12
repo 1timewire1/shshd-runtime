@@ -925,7 +925,8 @@ class Desktop:
         self._x360_tutorial_music(stream, now)
         self._end_x360_music(stream, engine, now)
         stream.update(now, enabled=enabled, menu_open=self.menu_open,
-                      paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
+                      paused=not self.active or engine.music_paused or self._panels_hold_music(),
+                      held_back=self.pause_song is not None)
         self._sync_pause_song(now)
 
     def _sync_pause_song(self, now):
@@ -2807,6 +2808,8 @@ class Desktop:
     _background_cover = None        # what `_blit_art` last covered the whole frame with, opaquely
     _edge_units = 32                # the frame's margin each side of the column (_sync_story_scale)
     top_inset = 0.                  # the share of the window's height a phone's status bar covers (platforms/android.py)
+    bottom_inset = 0.               # ...and its navigation or gesture bar, at the bottom
+    STRIP_PAD = 8                   # panel points kept under the close strip besides (owner, 2026-11-12: to be safe)
     _top_pad = 0.                   # units of the frame's top under it (_sync_story_scale)
 
     def _draw_background_layer(self, target_size, viewport, covered=False):
@@ -5144,12 +5147,28 @@ class Desktop:
         self.panels_overlay = True
         self.side_panels.tree_follow = True
         self.session.engine.faceplace_toast = None      # (its post is on the wall now)
-        self._menu_sound()
+        self._sync_music()                              # (its music waits, as under the pause menu)
+        self._panels_whoosh()
 
     def close_panels_overlay(self):
         """The close strip, Tab or Escape (or a warp): the panels slide back up and the story goes on."""
         if self.panels_overlay:
             self.panels_overlay = False
+            self._panels_whoosh()                      # (the music comes back once they're up: _panels_hold_music)
+
+    def _panels_hold_music(self):
+        """The story's music waits while the panels cover the screen and until they've slid away (owner, 2026-11-12):
+        paused where it is, as when the app loses focus, not stored and played again from its place as the pause menu
+        does. That replay seeks in the cue, which on a phone held the audio a second, so the closing whoosh came late,
+        and done as they began to close it held that frame too, so they jumped shut."""
+        return self.panels_overlay or self.overlay_progress > 0
+
+    def _panels_whoosh(self):
+        """The panels over the screen opening or closing: the whoosh HD's tree zoom tab plays on every toggle (8017,
+        `toggleDTZ`; owner, 2026-11-12), else the menus' click."""
+        if hasattr(GAMES[game_id(self.session.resources)], 'TREE_ZOOM_SOUND'):
+            self._ui_sound('TREE_ZOOM_SOUND')
+        else:
             self._menu_sound()
 
     def _panels_ready(self):
@@ -5208,7 +5227,9 @@ class Desktop:
         frame = getattr(self, 'bg_viewport', None)
         top = round(self.top_inset * height) if frame is None or frame.y <= 0 else 0
         strip = round(BAR * 1.25 * s)
-        return s, top, height - top - strip, strip
+        below = round(self.bottom_inset * height + self.STRIP_PAD * s)
+        self._overlay_below = below
+        return s, top, height - top - strip - below, strip
 
     def _draw_panels_overlay(self):
         """The panels over the whole screen, sliding down from its top as they open: the tree in the left half and the
@@ -5237,8 +5258,10 @@ class Desktop:
             panels.draw_wall(window, self.session, 1.0, rect)
         else:
             panels.wall_rect = None
-        band = pygame.Rect(0, height - round(eased * strip), width, strip)
-        window.fill((24, 24, 28), band)                 # (the bar's art is see-through: nothing under it shows)
+        below = self.__dict__.get('_overlay_below', 0)
+        band = pygame.Rect(0, height - round(eased * (strip + below)), width, strip)
+        # (the bar's art is see-through: nothing under it shows; its colour runs on under it, below the padding)
+        window.fill((24, 24, 28), pygame.Rect(0, band.y, width, height - band.y))
         window.blit(panels.frame(DARK_BAR, band.size), band.topleft)
         label = pygame.Surface(band.size, pygame.SRCALPHA)
         panels.centered(label, 'ArialRoundedMTBold14', 16, 'Close', width / s / 2, 13 * 1.25, 200, (255, 255, 255), s)
