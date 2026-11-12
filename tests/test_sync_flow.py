@@ -42,7 +42,7 @@ class SyncFlowTests(unittest.TestCase):
     def test_a_sender_offers_imported_episodes_and_sends_only_the_options_and_names_switched_on(self):
         app = app_with(self.root, autoplay=True, music=True, vibration=True, device_vibration=False,
                        controller_confirm='south', grid_controls='hold', **{key: False for key in (
-                           'sound', 'logging_disabled', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
+                           'sound', 'logging_disabled', 'side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
                            'skip_upsell_intros', 'skip_ahead', 'undo', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
                            'arena_minigames', 'arena_skin', 'skip_sound_prompt')}, music_volume=50, sound_volume=50, order='episode', title_language='en',
                            title_music='default', last_title_game='default')

@@ -911,44 +911,54 @@ class DesktopTests(unittest.TestCase):
             ui = Desktop(Session(resources), audio=False)
             self.assertEqual((ui.panels_open, ui.panels_progress), (False, 0.0))
             width, height = ui.window.get_size()
-            self.assertAlmostEqual(width / height, 3 / 4, places=2)
-            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
-            self.assertTrue(ui.panels_open)
-            # Real device confirmed: the window widens to its new 4:3 shape
-            # as soon as the panels start opening, not only once the slide
-            # animation finishes (see desktop_panels.py's module docstring).
+            engine = ui.session.engine
+            engine.dt_view.enabled = engine.faceplace.enabled = True          # (Football Star's services 101 and 114)
+            ui.panels_room = lambda: True                                     # (a window wide enough beside the game)
             ui.tick(16)
-            width, height = ui.window.get_size()
-            self.assertAlmostEqual(width / height, 4 / 3, places=2)
+            self.assertTrue(ui.panels_open)                                   # open on their own (owner, 2026-11-12)
             ui.tick(1000)
             self.assertEqual(ui.panels_progress, 1.0)
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
-            self.assertFalse(ui.panels_open)
-            # Closing keeps the window's size (owner's choice), during and after the slide-out.
-            ui.tick(16)
-            self.assertEqual(ui.window.get_size(), (width, height))
+            self.assertFalse(ui.panels_open)                                  # closed for this episode
             ui.tick(1000)
             self.assertEqual(ui.panels_progress, 0.0)
-            self.assertEqual(ui.window.get_size(), (width, height))
-            # A window already 4:3 or wider has room for both panels at full height: opening leaves it alone.
-            ui.window = pygame.display.set_mode((1200, 600), pygame.RESIZABLE)
-            ui.toggle_panels()
-            ui.tick(16)
-            self.assertEqual(ui.window.get_size(), (1200, 600))
-            ui.toggle_panels()
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
             ui.tick(1000)
-            # A narrower one is widened to 4:3 at its own height.
-            ui.window = pygame.display.set_mode((600, 600), pygame.RESIZABLE)
-            ui.toggle_panels()
+            self.assertEqual((ui.panels_open, ui.panels_progress), (True, 1.0))
+            self.assertEqual(ui.window.get_size(), (width, height))          # the window is never widened for them
+            # The setting off: no panels in any episode.
+            ui.side_panels_enabled = False
             ui.tick(16)
-            self.assertEqual(ui.window.get_size(), (800, 600))
-            ui.toggle_panels()
+            self.assertFalse(ui.panels_open)
+            ui.side_panels_enabled, ui.panels_dismissed = True, False
+            # An episode that uses neither panel: none.
+            engine.dt_view.enabled = engine.faceplace.enabled = False
+            ui.tick(16)
+            self.assertFalse(ui.panels_open)
+            # Without room: Tab opens them over the whole screen (HD's panel art stood in), the story waits, Tab closes.
+            engine.dt_view.enabled = True
+            ui.panels_room = lambda: False
+            ui.side_panels.available = lambda: True
+            ui.tick(16)
+            self.assertFalse(ui.panels_open)
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            self.assertTrue(ui.panels_overlay)
             ui.tick(1000)
-            # The Options screen's Side Panels switch toggles them too.
-            ui.command(('pause_toggle', 'side_panels'))
+            self.assertEqual(ui.overlay_progress, 1.0)
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            self.assertFalse(ui.panels_overlay)
+            ui.tick(1000)
+            self.assertEqual(ui.overlay_progress, 0.0)
+            # The Options screen's Side Panels switch is the saved setting (player.json): off, nothing; on, as before.
+            ui.panels_room = lambda: True
+            ui.tick(16)
             self.assertTrue(ui.panels_open)
             ui.command(('pause_toggle', 'side_panels'))
-            self.assertFalse(ui.panels_open)
+            self.assertEqual((ui.side_panels_enabled, ui.panels_open), (False, False))
+            ui.command(('pause_toggle', 'side_panels'))
+            self.assertEqual((ui.side_panels_enabled, ui.panels_open), (True, True))
+            ui.command(('pause_toggle', 'side_panels'))
+            ui.tick(1000)
             # Tab is swallowed by the pause menu instead of toggling panels.
             ui.command(('menu',))
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
@@ -1027,8 +1037,12 @@ class DesktopTests(unittest.TestCase):
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
             ui.session.engine.faceplace_toast = FaceplaceToast(FaceplaceMessage('message', text='hi'))
+            # Without room beside the game: opening them over the screen (Tab, the button or the alert's tap) takes it.
+            ui.session.engine.faceplace.enabled = True
+            ui.panels_room = lambda: False
+            ui.side_panels.available = lambda: True
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
-            self.assertTrue(ui.panels_open)
+            self.assertTrue(ui.panels_overlay)
             self.assertIsNone(ui.session.engine.faceplace_toast)
 
     def test_panel_margins_start_at_the_wider_background_edge_not_the_narrower_viewport(self):
@@ -1051,7 +1065,9 @@ class DesktopTests(unittest.TestCase):
             resources = Resources(branching_program())
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
-            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            ui.window = pygame.display.set_mode((1365, 1024), pygame.RESIZABLE)     # room beside the 3:4 frame
+            ui.session.engine.dt_view.enabled = ui.session.engine.faceplace.enabled = True
+            ui.render()
             ui.tick(1000)
             ui.render()
             self.assertLess(ui.bg_viewport.x, ui.viewport.x)

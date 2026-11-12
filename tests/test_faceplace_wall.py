@@ -27,7 +27,8 @@ def _build_wall_ui(testcase):
     session = Session(dialogue_story(testcase.temporary.name))
     session.advance()
     testcase.ui = Desktop(session, audio=False)
-    testcase.ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+    testcase.ui.panels_room = lambda: True      # beside the game (render() can't place the frame without app art)
+    testcase.ui.session.engine.dt_view.enabled = testcase.ui.session.engine.faceplace.enabled = True   # (as Football Star's 101 / 114)
     testcase.ui.tick(1000)
     panels = testcase.ui.side_panels
     # Where the drawn wall would be, and the link it would leave (the art comes from the imported app).

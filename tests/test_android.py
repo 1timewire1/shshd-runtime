@@ -147,9 +147,25 @@ class FontTests(unittest.TestCase):
 
 
 class SidePanelTests(unittest.TestCase):
-    def test_side_panels_turn_the_app_to_landscape_and_go_off_in_portrait(self):
-        """The owner's rule: panels turned on in portrait ask once for landscape, without locking rotation; turned back
-        to portrait (or never turned), they switch off and rotation is the user's again."""
+    def test_side_panels_no_longer_turn_the_app(self):
+        """Owner, 2026-11-12: the panels open beside the game where there's room (landscape) and over the whole screen
+        behind a button where there isn't, so the app is never turned for them; a turn still held is let go."""
+        host = Host.__new__(Host)
+        host.activity, host.panels_view = 'activity', None
+        host.orientation = Mock()
+        game = SimpleNamespace(panels_open=True)
+        host.app = SimpleNamespace(game=game, screen='game', window=SimpleNamespace(get_size=lambda: (1080, 2400)))
+        host.panels_orientation(16)
+        host.orientation.requestLandscape.assert_not_called()
+        host.orientation.release.assert_not_called()
+        host.panels_view = [game, 'asked', 0]
+        host.panels_orientation(16)
+        host.orientation.release.assert_called_once_with('activity')
+        self.assertIsNone(host.panels_view)
+
+    def _retired_side_panels_turn_the_app_to_landscape_and_go_off_in_portrait(self):
+        """(Retired 2026-11-12, kept for the record.) The owner's earlier rule: panels turned on in portrait ask once
+        for landscape, without locking rotation; turned back to portrait (or never turned), they switch off."""
         from exp_runtime.desktop import Desktop
         from exp_runtime.platforms.android import PANELS_PORTRAIT_MS, PANELS_ROTATE_MS
         Desktop._widen_for_panels(SimpleNamespace(fixed_window=True))      # the window is the screen's

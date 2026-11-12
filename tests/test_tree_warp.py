@@ -307,7 +307,8 @@ class DesktopWarpTests(unittest.TestCase):
             answer_screen(session)
         self.ui = Desktop(session, audio=False)
         self.ui.warp_unlocked = True
-        self.ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+        self.ui.panels_room = lambda: True      # beside the game (render() can't place the frame without app art)
+        self.ui.session.engine.dt_view.enabled = self.ui.session.engine.faceplace.enabled = True   # (as Football Star's 101 / 114)
         self.ui.tick(1000)
         # The panels' art comes from the imported app, so the touch areas the drawn tree would leave are stood in.
         rect = self.pygame.Rect

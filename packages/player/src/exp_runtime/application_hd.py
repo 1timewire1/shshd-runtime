@@ -335,6 +335,7 @@ class HdShell:
                         autoplay=state.autoplay, disable_choice_timer=state.disable_choice_timer)
         if graphics.supports_vibration():
             settings['device_vibration'] = state.device_vibration   # General's Vibration: a device that has one
+        settings['side_panels'] = state.side_panels     # (saved since 2026-11-12: Desktop.panels_wanted)
         if self.backdrop_available():
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():

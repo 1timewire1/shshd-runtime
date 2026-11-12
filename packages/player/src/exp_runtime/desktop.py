@@ -421,6 +421,22 @@ class Desktop:
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
+    # shshd-runtime (owner, 2026-11-12): the Side Panels setting (player.json `side_panels`, on by default), and the
+    # panels closed for this episode with Tab or the switch while there's room beside the game (panels_wanted).
+    side_panels_enabled = True
+    panels_dismissed = False
+    # ...and without room beside the game, the panels over the whole screen, half each, behind the corner button (the
+    # story waits while they're up): open or closed, and how far they've slid down.
+    panels_overlay = False
+    overlay_progress = 0.0
+    OVERLAY_MS = 300
+    # The corner button: resource 18's frame (the two faces), on a card this many of the alert's points square, where
+    # the Faceplace alert's card sits (its left 569, top 86: desktop_faceplace_alert), so a new post covers it.
+    PANELS_BUTTON_ICON, PANELS_BUTTON_SIZE, PANELS_BUTTON_AT = 5, 112, (646, 86)
+    ALERT_TAP = (560, 76, 208, 140)         # the alert's card, in its points: a tap there opens the panels too
+    # Where the corner button shows: the story's own screens, not a minigame's (whose score or clock sits there).
+    PANELS_BUTTON_ACTIONS = ('dialogue', 'choice', 'message_panel', 'survey_confirmation', 'presentation', 'vm_pause',
+                             'text_input', 'character_picker', 'cutscene')
     # Milliseconds spent computing Choice hints (choice_hints.preview_choices runs inside render()). That time shows
     # up in the next frame's elapsed; tick() leaves it off the story clock so a slow preview never shortens a timed
     # choice's countdown.
@@ -2548,19 +2564,19 @@ class Desktop:
                              self.viewport.move(0, -round(self.story_lift * scale)))
         self._panel_handover(ui_layers)
         hd_frame = (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self._frame_tall) == FRAME_UNITS
+        alert_area = self._alert_area(frame, scale, hd_frame)
+        self._panels_button_rect = None
+        if self._panels_button_shown():
+            self._draw_panels_button(alert_area)
+        self._alert_tap_rect = None
         if hd_alert is not None:
             # HD's alert is a strip of the frame, cut by the frame's own edge: in another shape, at the story's scale,
             # against the frame's right edge and top as on HD's.
             if hd_frame:
                 self.window.blit(pygame.transform.smoothscale(hd_alert, self.alert_frame.size), self.alert_frame)
             else:
-                # HD's card is small on a phone: enlarged towards ALERT_ZOOM as the frame narrows to the column's
-                # width (owner, 2026-11-11), about its top-right corner.
-                narrow = (FRAME_UNITS[0] - self.__dict__.get('_frame_width', FRAME_UNITS[0])) / (FRAME_UNITS[0] - 320)
-                zoom = 1 + (self.ALERT_ZOOM - 1) * max(0., min(1., narrow))
-                width = round(FRAME_UNITS[0] * scale * zoom)
-                self._blit_part(hd_alert, pygame.Rect(frame.right - width, frame.y + round(self._top_pad * scale), width,
-                                                      round(FRAME_UNITS[1] * scale * zoom)), frame, self.ALERT_REGION)
+                self._blit_part(hd_alert, alert_area, frame, self.ALERT_REGION)
+            self._alert_tap_rect = self._alert_points(alert_area, self.ALERT_TAP)
         if hd_badge is not None:
             # The scene label's tab at HD's (15, 50) units: in another shape, at the story's scale, as far from the
             # frame's left edge, and centred in a taller frame as the narration it sits over is.
@@ -2599,7 +2615,16 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Tree zoom rendering stopped: %s', error)
+        elif self.overlay_progress > 0 and not self.error:
+            try:
+                with frame_log.section('panels'):
+                    self._draw_panels_overlay()
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Side panel rendering stopped: %s', error)
         elif (self.panels_open or self.panels_progress > 0) and not self.error:
+            from .desktop_side_panels import PANEL as SIDE_PANEL
+            self.side_panels.tree_shape = self.side_panels.wall_shape = SIDE_PANEL     # (beside the game: HD's column)
             left_margin = pygame.Rect(0, 0, self.bg_viewport.x, height)
             right_margin = pygame.Rect(self.bg_viewport.right, 0, width - self.bg_viewport.right, height)
             try:
@@ -3442,7 +3467,7 @@ class Desktop:
                             controller_vibration=pygame.vibration_source() == 'controller')
                        if pygame.controller_connected() else {}),
                     music_volume=self.music_volume,
-                    sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
+                    sound_volume=self.sound_volume, side_panels=getattr(self, 'side_panels_enabled', True), choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ahead=self.skip_ahead,
                     **({'skip_ahead_row': True} if self.skip_ahead and can_skip(self.session) else {}),
                     undo=self.undo, **({'undo_row': True} if self._undo_ready() else {}),
@@ -3637,7 +3662,12 @@ class Desktop:
                 self.pause_song_page = self.pause_hd.state.screen
                 self._sync_music()
             elif command[1] == 'side_panels':
-                self.toggle_panels()
+                # The saved setting (player.json): off, no panels and no button in any episode.
+                self.side_panels_enabled = not self.side_panels_enabled
+                self.panels_dismissed = False
+                self.panels_open = self.panels_wanted()
+                if self.on_settings is not None:
+                    self.on_settings()
                 self._menu_sound()
                 return
             elif command[1] == 'choice_hints':
@@ -3863,6 +3893,8 @@ class Desktop:
         self._sync_text_input()
         if event.type == pygame.QUIT:
             return False
+        if (self.panels_overlay or self.overlay_progress > 0) and self._overlay_event(event):
+            return True                 # the panels over the screen take everything (Escape closes them)
         if self.notice_stack is not None and self.notice_stack.stack:
             # A native notice/confirm window (the wall's "Exit Game?" confirmation, or the Decision Tree's
             # "Locked" notice) is modal: it takes every event ahead of everything else below, including the
@@ -3905,13 +3937,15 @@ class Desktop:
         action = self.session.pending
         if action and action.name == 'text_input' and (not self.active or self.error):
             return True
-        if self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error:
+        if self._overlay_event(event):
+            return True
+        if self._panels_ready() and not self.menu_open and not self.error:
             if self._tree_pointer(event):
                 return True
-        if self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error:
+        if self._panels_ready() and not self.menu_open and not self.error:
             if self._wall_pointer(event):
                 return True
-        if (self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error
+        if (self._panels_ready() and not self.menu_open and not self.error
                 and event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self._tree_click(event.pos)):
             return True
         pointer = (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
@@ -4939,6 +4973,7 @@ class Desktop:
         """`SHSDTView warpToNode:animatedScroll:`: load the scene's saved game and fade the game back in from black; the
         side panels stay open and the tree scrolls to the scene."""
         self.tree_zoom.close()          # `warpToNode:` -> `closeDTZ`
+        self.panels_overlay = False     # (owner, 2026-11-12: a warp closes the panels over the screen; the story goes on)
         try:
             restored = self.session.warp(node)
         except (SaveError, VMError, OSError, ValueError) as error:
@@ -5036,7 +5071,7 @@ class Desktop:
         # A native notice (the "Locked" notice, the wall link's "Exit Game?") holds the game like the pause menu does:
         # it is modal, and the scene behind it is dimmed sepia, so typing and clocks wait for its button (owner's report).
         notice_open = self.notice_stack is not None and bool(self.notice_stack.stack)
-        if (self.active and not self.error and not self.menu_open and not notice_open
+        if (self.active and not self.error and not self.menu_open and not notice_open and not self.panels_overlay
                 and not (self.fade and self.fade['phase'] == 'out')):
             pending, remaining = self.session.pending, self.session.remaining_ms
             game = self.session.engine.word_game
@@ -5070,6 +5105,14 @@ class Desktop:
                                                      or self.host_prompt is not None):
                 self.choice_renderer.age_ms += elapsed_ms     # the HD panel's fade-in and its labels' fly-on
             self._tick_autoplay(elapsed_ms)
+        self.panels_open = self.panels_wanted()
+        if self.panels_overlay and not self._overlay_allowed():
+            self.panels_overlay = False         # (room beside the game now, or the setting off)
+        goal = 1.0 if self.panels_overlay else 0.0
+        if self.overlay_progress != goal:
+            move = elapsed_ms / self.OVERLAY_MS
+            self.overlay_progress = (min(goal, self.overlay_progress + move) if self.overlay_progress < goal
+                                     else max(goal, self.overlay_progress - move))
         target = 1.0 if self.panels_open else 0.0
         step = elapsed_ms / 250  # Not a recovered native duration; a reasonable slide speed.
         if self.panels_progress < target:
@@ -5081,15 +5124,190 @@ class Desktop:
         # content slides into the newly-available margin over `progress`.
         # Closing leaves the window as it is (owner's choice): the game stays
         # centred in whatever shape the player has.
-        should_be_wide = self.panels_open or self.panels_progress > 0
-        if should_be_wide != self._panels_wide:
-            if should_be_wide:
-                self._widen_for_panels()
-            self._panels_wide = should_be_wide
+        # (The window is no longer widened for them: they open where there is room. Owner, 2026-11-12.)
+
+    # A panel is HD's 224 x 768 points at the window's height beside the frame (desktop_side_panels.PANEL); a pixel's
+    # rounding short of that still counts (a 4:3 window's margins are 298 for 298.7).
+    PANELS_ROOM_SLACK = 2
+
+    def _overlay_allowed(self):
+        """The panels may open over the whole screen: the setting on, the episode using one, HD's panel art, and no
+        room for them beside the game."""
+        return (self.side_panels_enabled and any(self.panels_used()) and not self.panels_room()
+                and self.side_panels.available())
+
+    def open_panels_overlay(self):
+        """The corner button, a tap on the Faceplace alert, or Tab: the panels slide down over the whole screen, and the
+        story waits under them (owner, 2026-11-12)."""
+        if not self._overlay_allowed():
+            return
+        self.panels_overlay = True
+        self.side_panels.tree_follow = True
+        self.session.engine.faceplace_toast = None      # (its post is on the wall now)
+        self._menu_sound()
+
+    def close_panels_overlay(self):
+        """The close strip, Tab or Escape (or a warp): the panels slide back up and the story goes on."""
+        if self.panels_overlay:
+            self.panels_overlay = False
+            self._menu_sound()
+
+    def _panels_ready(self):
+        """The panels take input: beside the game or over the screen, settled."""
+        return ((self.panels_open and self.panels_progress >= 1)
+                or (self.panels_overlay and self.overlay_progress >= 1))
+
+    def _panels_button_shown(self):
+        action = self.session.pending
+        return (self._overlay_allowed() and not self.panels_overlay and self.overlay_progress <= 0
+                and not self.menu_open and not self.error and not self.capture
+                and action is not None and action.name in self.PANELS_BUTTON_ACTIONS)
+
+    def _alert_area(self, frame, scale, hd_frame):
+        """Where the Faceplace alert's 768 x 1024-point layer lies on the window (its card at its top right)."""
+        if hd_frame:
+            return self.alert_frame
+        # HD's card is small on a phone: enlarged towards ALERT_ZOOM as the frame narrows to the column's width (owner,
+        # 2026-11-11), about its top-right corner.
+        narrow = (FRAME_UNITS[0] - self.__dict__.get('_frame_width', FRAME_UNITS[0])) / (FRAME_UNITS[0] - 320)
+        zoom = 1 + (self.ALERT_ZOOM - 1) * max(0., min(1., narrow))
+        width = round(FRAME_UNITS[0] * scale * zoom)
+        return pygame.Rect(frame.right - width, frame.y + round(self._top_pad * scale), width,
+                           round(FRAME_UNITS[1] * scale * zoom))
+
+    @staticmethod
+    def _alert_points(area, rect):
+        """`rect` in the alert layer's points, on the window."""
+        kx, ky = area.width / 768, area.height / 1024
+        x, y, w, h = rect
+        return pygame.Rect(area.x + round(x * kx), area.y + round(y * ky), round(w * kx), round(h * ky))
+
+    def _draw_panels_button(self, area):
+        """The corner button: the story tree's two-faces icon on a white card, where the alert's card sits."""
+        x, y = self.PANELS_BUTTON_AT
+        rect = self._alert_points(area, (x, y, self.PANELS_BUTTON_SIZE, self.PANELS_BUTTON_SIZE))
+        frames = self.side_panels.node_frames()
+        if not frames or rect.width < 4:
+            return
+        radius = max(2, rect.width // 6)
+        pygame.draw.rect(self.window, (255, 255, 255), rect, border_radius=radius)
+        pygame.draw.rect(self.window, (41, 104, 221), rect, max(2, rect.width // 28), border_radius=radius)
+        icon = frames[self.PANELS_BUTTON_ICON][0]
+        side = round(rect.width * 0.8)
+        fit = min(side / icon.get_width(), side / icon.get_height())
+        icon = pygame.transform.smoothscale(icon, (max(1, round(icon.get_width() * fit)), max(1, round(icon.get_height() * fit))))
+        self.window.blit(icon, icon.get_rect(center=rect.center))
+        self._panels_button_rect = rect
+
+    def _overlay_geometry(self):
+        """(scale, top, body height, strip height): the panels over the whole window at HD's panel scale for half its
+        width, below a phone's status bar, above the close strip."""
+        from .desktop_side_panels import BAR
+        width, height = self.window.get_size()
+        s = width / 2 / 224
+        frame = getattr(self, 'bg_viewport', None)
+        top = round(self.top_inset * height) if frame is None or frame.y <= 0 else 0
+        strip = round(BAR * 1.25 * s)
+        return s, top, height - top - strip, strip
+
+    def _draw_panels_overlay(self):
+        """The panels over the whole screen, sliding down from its top as they open: the tree in the left half and the
+        wall in the right (one alone across the screen), each laid out at HD's scale in its half's taller shape, and the
+        close strip across the bottom, rising into place (owner, 2026-11-12)."""
+        from .desktop_side_panels import DARK_BAR
+        panels, window = self.side_panels, self.window
+        width, height = window.get_size()
+        s, top, body, strip = self._overlay_geometry()
+        eased = ease_in_out(self.overlay_progress)
+        drop = round((1 - eased) * (top + body))
+        tree, wall = self.panels_used()
+        half = width // 2
+        if top:
+            window.fill((0, 0, 0), pygame.Rect(0, -drop, width, top))
+        if tree:
+            rect = pygame.Rect(0, top - drop, half if wall else width, body)
+            panels.tree_shape = (rect.width / s, body / s)
+            panels.draw_tree(window, self.session, 1.0, rect)
+        else:
+            panels.tree_rect = None
+        if wall:
+            span = round(224 * s)
+            rect = pygame.Rect(half if tree else (width - span) // 2, top - drop, width - half if tree else span, body)
+            panels.wall_shape = (224, body / s)
+            panels.draw_wall(window, self.session, 1.0, rect)
+        else:
+            panels.wall_rect = None
+        band = pygame.Rect(0, height - round(eased * strip), width, strip)
+        window.fill((24, 24, 28), band)                 # (the bar's art is see-through: nothing under it shows)
+        window.blit(panels.frame(DARK_BAR, band.size), band.topleft)
+        label = pygame.Surface(band.size, pygame.SRCALPHA)
+        panels.centered(label, 'ArialRoundedMTBold14', 16, 'Close', width / s / 2, 13 * 1.25, 200, (255, 255, 255), s)
+        window.blit(label, band.topleft)
+        self._overlay_strip = band
+
+    def _overlay_event(self, event):
+        """Input for the corner button, the alert's tap and the panels over the screen; True when it was theirs."""
+        down = event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+        up = event.type == pygame.MOUSEBUTTONUP and event.button == 1
+        if self.panels_overlay or self.overlay_progress > 0:
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_TAB):
+                self.close_panels_overlay()
+                return True
+            strip = self.__dict__.get('_overlay_strip')
+            if up and strip is not None and strip.collidepoint(event.pos):
+                self.close_panels_overlay()
+                return True
+            if self.overlay_progress >= 1 and not self.error and event.type in (
+                    pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+                if self._tree_pointer(event) or self._wall_pointer(event):
+                    return True
+                if up and self._tree_click(event.pos):
+                    return True
+            # Nothing under the panels takes input while they cover the screen (the story waits).
+            return event.type != pygame.KEYUP
+        if self.menu_open or self.error or not (down or up):
+            return False
+        for rect in (self.__dict__.get('_panels_button_rect'),
+                     self.__dict__.get('_alert_tap_rect') if self._overlay_allowed() else None):
+            if rect is not None and rect.collidepoint(event.pos):
+                if up:
+                    self.open_panels_overlay()
+                return True
+        return False
+
+    def panels_used(self):
+        """(tree, wall): the panels this episode turns on (services 101 and 114: only Football Star, so far)."""
+        engine = self.session.engine
+        return bool(engine.dt_view.enabled), bool(engine.faceplace.enabled)
+
+    def panels_room(self):
+        """Whether the panels this episode uses fit beside the frame at the window's height (a wide window, a phone or
+        tablet in landscape)."""
+        frame = getattr(self, 'bg_viewport', None)
+        if frame is None:
+            return False
+        width, height = self.window.get_size()
+        need = 224 * height / 768 - self.PANELS_ROOM_SLACK
+        tree, wall = self.panels_used()
+        return (not tree or frame.x >= need) and (not wall or width - frame.right >= need)
+
+    def panels_wanted(self):
+        """The side panels are open beside the game: the setting on, the episode using one or both, room for them, and
+        not closed for this episode (owner, 2026-11-12). Without room they wait behind the corner button."""
+        return (self.side_panels_enabled and not self.panels_dismissed and any(self.panels_used())
+                and self.panels_room())
 
     def toggle_panels(self):
-        """Open or close the story tree and Faceplace panels (Tab, or the Side Panels switch in Options)."""
-        self.panels_open = not self.panels_open
+        """Tab: where the panels have room beside the game, close them for this episode or open them again; where they
+        don't, open or close them over the whole screen."""
+        if not self.panels_room():
+            if self.panels_overlay:
+                self.close_panels_overlay()
+            elif self._overlay_allowed():
+                self.open_panels_overlay()
+            return
+        self.panels_dismissed = not self.panels_dismissed
+        self.panels_open = self.panels_wanted()
         self.side_panels.tree_follow = True
         if self.panels_open:
             # Real device confirmed: opening the side panels dismisses a

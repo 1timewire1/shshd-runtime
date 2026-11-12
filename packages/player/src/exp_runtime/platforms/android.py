@@ -268,12 +268,13 @@ class Host:
         (a screen PANELS_TALL times taller than wide) turns the app to landscape (OrientationBridge), without locking
         it there. Turned back to portrait afterwards, or not turned within PANELS_ROTATE_MS, the panels switch off;
         rotation is the user's again once they are. Portrait counts once it has lasted PANELS_PORTRAIT_MS."""
+        # Retired (owner, 2026-11-12): the panels open on their own where there's room beside the game (landscape), and
+        # behind the corner button where there isn't (desktop.Desktop.panels_wanted); the app no longer turns for them.
+        if self.panels_view is not None:
+            self.panels_view = None
+            self.orientation.release(self.activity)
+        return
         game = self.app.game if self.app.screen == 'game' else None
-        if game is None or not game.panels_open:
-            if self.panels_view is not None:
-                self.panels_view = None
-                self.orientation.release(self.activity)
-            return
         width, height = self.app.window.get_size()
         state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
         if height <= width * PANELS_TALL:

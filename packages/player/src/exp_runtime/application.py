@@ -2154,6 +2154,7 @@ class Application:
         self.game.controller_confirm = self.state.controller_confirm
         self.game.grid_controls = self.state.grid_controls
         self.game.hd_backdrop = self.state.hd_backdrop
+        self.game.side_panels_enabled = self.state.side_panels
         self.game.hires_portraits = self.state.hires_portraits
         self.game.ms3_characters = self.state.ms3_characters
         self.game.java_look = self.state.java_look
@@ -2264,6 +2265,7 @@ class Application:
         self.state.autoplay = self.game.autoplay
         self.state.disable_choice_timer = self.game.disable_choice_timer
         self.state.hd_backdrop = self.game.hd_backdrop
+        self.state.side_panels = getattr(self.game, 'side_panels_enabled', getattr(self.state, 'side_panels', True))
         self.state.hires_portraits = self.game.hires_portraits
         self.state.ms3_characters = self.game.ms3_characters
         self.state.java_look = self.game.java_look

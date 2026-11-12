@@ -67,7 +67,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES, title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11'),
     last_title_game=('default', 'brew', 'nr', 'x360', 'shs11'))
@@ -150,6 +150,8 @@ class MenuState:
                     self.vibration = data['vibration']
                 if type(data.get('device_vibration')) is bool:
                     self.device_vibration = data['device_vibration']
+                if type(data.get('side_panels')) is bool:
+                    self.side_panels = data['side_panels']
                 if type(data.get('hd_backdrop')) is bool:
                     self.hd_backdrop = data['hd_backdrop']
                 if type(data.get('hires_portraits')) is bool:
@@ -245,6 +247,9 @@ class MenuState:
         self.skip_upsell_intros = False     # pass the store plugs some SHS episodes open with (upsell_intro.py)
         self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
         self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
+        # shshd-runtime: the story tree and Faceplace wall in an episode that uses them (owner, 2026-11-12: on by default;
+        # desktop.Desktop.panels_wanted): beside the game where there's room, else behind a button
+        self.side_panels = True
         self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
         self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
         self.smartphone_music = True   # translated SHS '11 episodes: the smartphone's music, else none
@@ -344,7 +349,7 @@ class MenuState:
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
+                    side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
                     ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,

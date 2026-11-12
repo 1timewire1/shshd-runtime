@@ -218,7 +218,7 @@ class AppOptions:
         from . import graphics
         from .desktop_pause_hd import ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, START_IN_NAMES
         v, app = self.values(), self.app
-        settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'choice_hints', 'skip_minigames',
+        settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'side_panels', 'choice_hints', 'skip_minigames',
                                             'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                             'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds',
                                             'smartphone_music', 'word_grid_skin',

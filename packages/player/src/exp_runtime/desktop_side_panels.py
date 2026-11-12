@@ -535,10 +535,14 @@ class SidePanels:
 
     _wall_painted = None        # (key, the painted panel, its link targets): the wall as last painted
 
+    # The wall's shape in points: the side column (PANEL), or a taller one over the whole screen (Desktop's panels over
+    # the screen, owner 2026-11-12): as wide, its posts running further down.
+    wall_shape = PANEL
+
     def draw_wall(self, window, session, progress, rect):
         engine = session.engine
-        s = rect.height / PANEL[1]
-        size = (round(PANEL[0] * s), rect.height)
+        s = rect.height / self.wall_shape[1]
+        size = (round(self.wall_shape[0] * s), rect.height)
         origin = (rect.x + round(rect.width * (1 - progress)), rect.y)
         wall = engine.faceplace
         enabled = wall.enabled
@@ -698,7 +702,7 @@ class SidePanels:
         _, inline = self.alert.emoticon_font()
         _, name_font = self.alert.fonts()
         rows, content = self._wall_layout(engine, wall)
-        view = PANEL[1] - BAR
+        view = self.wall_shape[1] - BAR
         # `incomingMessage` scrolls the view back to the top; a continuation leaves it where it is.
         arrival = (id(wall), sum(1 for m in wall.messages if m.kind == 'message'))
         if self._wall_arrival is not None and self._wall_arrival != arrival:
@@ -712,7 +716,7 @@ class SidePanels:
             offset = 0.0
             for row in rows:
                 y = BAR + int(offset) - self.wall_scroll
-                if y >= PANEL[1]:
+                if y >= self.wall_shape[1]:
                     break
                 if y + self._row_view_height(row) > BAR:
                     self._paint_row(panel, clip, row, y, s, origin, name_font, inline)
@@ -792,16 +796,25 @@ class SidePanels:
     def _link(self, url, x, top, height, s, origin):
         """The touch area of a linked message (`SHSFSMessageContentView touchIsIn:y:`: from the text's left edge to the
         panel's right, over the message's height), clipped to the scroll view."""
-        band, bottom = max(BAR, top), min(PANEL[1], top + height)
+        band, bottom = max(BAR, top), min(self.wall_shape[1], top + height)
         if bottom <= band:
             return
         self.wall_targets.append((pygame.Rect(round(origin[0] + (x - 3) * s), round(origin[1] + band * s),
                                               round((PANEL[0] - x + 3) * s), max(1, round((bottom - band) * s))), url))
 
     def draw(self, window, session, progress, left, right):
+        """The panels the episode uses (owner, 2026-11-12: one it doesn't use is never shown, its side left as the
+        window's backdrop: no "not supported" placeholder)."""
+        engine = session.engine
         try:
-            self.draw_tree(window, session, progress, left)
-            self.draw_wall(window, session, progress, right)
+            if engine.dt_view.enabled:
+                self.draw_tree(window, session, progress, left)
+            else:
+                self.tree_rect = None
+            if engine.faceplace.enabled:
+                self.draw_wall(window, session, progress, right)
+            else:
+                self.wall_rect = None
         except (ContentError, pygame.error, ValueError, OSError) as error:
             logging.error('Side panel rendering stopped: %s', error)
             raise

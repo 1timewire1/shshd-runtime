@@ -99,14 +99,13 @@ class SidePanelTests(unittest.TestCase):
         self.window.fill((0, 0, 0))
         self.renderer.draw(self.window, session, progress, pygame.Rect(0, 0, 583, 2000), pygame.Rect(2084, 0, 583, 2000))
 
-    def test_without_content_each_panel_is_the_faded_collage_slice_with_its_divider(self):
+    def test_a_panel_the_episode_does_not_use_is_not_drawn(self):
+        # Owner, 2026-11-12: no "... is not supported in this episode" placeholder; its side is left as it was.
         self.draw(self.session())
-        # Black under a half-alpha white collage: mid gray (127/128).
-        self.assertIn(self.window.get_at((100, 800))[0], (127, 128))
-        self.assertIn(self.window.get_at((2300, 800))[0], (127, 128))
-        # The divider sits at the game-facing edge of each: 11.5 points, dark.
-        self.assertEqual(self.window.get_at((580, 800))[:3], (60, 60, 60))
-        self.assertEqual(self.window.get_at((2086, 800))[:3], (60, 60, 60))
+        self.assertEqual(self.window.get_at((100, 800))[:3], (0, 0, 0))
+        self.assertEqual(self.window.get_at((2300, 800))[:3], (0, 0, 0))
+        self.assertIsNone(self.renderer.tree_rect)
+        self.assertIsNone(self.renderer.wall_rect)
 
     def test_with_content_the_panels_are_white_with_their_bars_and_headers(self):
         self.draw(self.session(tree=True, wall=True))
@@ -147,9 +146,10 @@ class SidePanelTests(unittest.TestCase):
         # The tree file is library-wide (it persists across playthroughs); `script_enable` is per episode.
         session = self.session(tree=True, wall=True)
         session.engine.dt_view.enabled = session.engine.faceplace.enabled = False
+        self.renderer.tree_targets = []
         self.draw(session)
-        self.assertIn(self.window.get_at((100, 800))[0], (127, 128))
-        self.assertIn(self.window.get_at((2300, 800))[0], (127, 128))
+        self.assertEqual(self.window.get_at((100, 800))[:3], (0, 0, 0))         # not drawn at all
+        self.assertEqual(self.window.get_at((2300, 800))[:3], (0, 0, 0))
         self.assertEqual([target for _rect, target in self.renderer.tree_targets], [])
 
     def test_a_script_enabled_panel_is_white_even_while_empty(self):
