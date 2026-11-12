@@ -118,17 +118,17 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 OPAQUE_ENOUGH = 250
 
 
-def opaque_enough(surface):
-    """Whether every pixel of `surface` is at least OPAQUE_ENOUGH opaque. A mask's count, in C: reading the alpha
-    bytes back into Python took about 40 ms for a 1080 x 2400 picture on a PC (several times that on a phone), on
-    every new location and every frame of a location pan."""
+def opaque_enough(surface, least=OPAQUE_ENOUGH):
+    """Whether every pixel of `surface` is at least `least` opaque (255: wholly). A mask's count, in C: reading the
+    alpha bytes back into Python took about 40 ms for a 1080 x 2400 picture on a PC (several times that on a phone),
+    on every new location and every frame of a location pan."""
     if not surface.get_masks()[3]:
         return True
     mask = getattr(pygame, 'mask', None)
     if mask is None:
-        return min(pygame.image.tobytes(surface, 'RGBA')[3::4]) >= OPAQUE_ENOUGH
+        return min(pygame.image.tobytes(surface, 'RGBA')[3::4]) >= least
     width, height = surface.get_size()
-    return mask.from_surface(surface, OPAQUE_ENOUGH - 1).count() == width * height
+    return mask.from_surface(surface, least - 1).count() == width * height
 
 
 def frame_wide(size):
@@ -2862,6 +2862,12 @@ class Desktop:
                 if cut > 0:
                     long = long.subsurface((cut, 0, long.get_width() - 2 * cut, long.get_height()))
                 surfaces[asset_id] = pygame.transform.smoothscale(long, size)
+            # An opaque backdrop is drawn as one, without blending: in a taller frame it shows round the strip every
+            # frame, and a frame-sized alpha blit cost about 20 ms on a PC (the BREW catch game, 2026-11-12). HD's own
+            # frame only when wholly opaque, so its pixels stay as they were.
+            found = surfaces[asset_id]
+            if found is not None and opaque_enough(found, OPAQUE_ENOUGH if strip is not None else 255):
+                surfaces[asset_id] = found.convert()
         return surfaces[asset_id]
 
     # Where a location strip sits in the 3:4 frame, in frame units from its top (DialogueRenderer.background_origin's
