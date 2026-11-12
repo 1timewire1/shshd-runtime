@@ -1847,7 +1847,7 @@ class Application:
         record = self.game.session.resources.record
         self.end_record = record['id']
         try:
-            frame = self.game.snapshot(PICKER_FRAME)
+            frame = self.game.snapshot(PICKER_FRAME, shaped=True)
         except (pygame.error, ValueError):
             return None
         return HdPauseMenu.sepia(frame), record.get('builtin') == 'football-star'
@@ -1891,6 +1891,17 @@ class Application:
         return PICKER_FRAME[0], max(PICKER_FRAME[1], round(PICKER_FRAME[0] / shape))
 
     frame_points = PICKER_FRAME     # the last canvas presented, in points (picker_point maps taps into it)
+    top_inset = 0.                  # the share of the window's height a phone's status bar covers (platforms/android.py)
+
+    def menu_top_pad(self, height):
+        """Points at the top of a menu frame `height` points tall that a phone's status bar covers (none where the
+        frame starts below it, and on a computer)."""
+        width, window_h = self.window.get_size()
+        if window_h <= 0 or width <= 0:
+            return 0
+        factor = min(width / PICKER_FRAME[0], window_h / height)
+        top = (window_h - height * factor) / 2
+        return max(0, round((self.top_inset * window_h - top) / factor))
 
     def present_frame(self, canvas, *, side_art=True):
         """Show a canvas 768 points across (HD's 768 x 1024, or a taller one: menu_frame), fitted to the window (with
@@ -2735,6 +2746,10 @@ class Application:
 
     def render_picker(self):
         picker = self.ensure_picker(self.picker_style)
+        if getattr(picker, 'grows', False):
+            picker.height = self.menu_frame()[1]        # (General's Aspect Ratio: more rows in a taller frame)
+            if self.picker_style == 'tile':
+                picker.top_pad = self.menu_top_pad(picker.height)
         picker.saved = self.saved
         pending = picker.alert
         if self.message:

@@ -59,11 +59,14 @@ PANEL_ALPHA = 248
 TITLE_HEIGHT = 76
 TITLE_POINTS = 34
 
-HEADER_HEIGHT = 46
-ROW_HEIGHT = 72
-TITLE_SIZE = 19
-SUBTITLE_SIZE = 13
+# Sized as the other menus' rows read (owner, 2026-11-12: the text was smaller than every other menu's; it was 46 /
+# 72 points with a 19 / 13 point title and subtitle, and 16 / 14 in a group's strip).
+HEADER_HEIGHT = 54
+ROW_HEIGHT = 86
+TITLE_SIZE = 25
+SUBTITLE_SIZE = 17
 SUBTITLE_GAP = 4
+HEADER_TEXT, COUNT_TEXT = 20, 18
 BLUE_HEADER = (41, 104, 221)
 ORANGE_HEADER = (213, 138, 58)
 ROW_WHITE = (255, 255, 255)
@@ -128,7 +131,7 @@ class HdEpisodeList(HdEpisodePicker):
     def card_layout(self):
         """(top, header, bottom) of the menu card, in frame points."""
         from .desktop_pause_hd import HEADER, TALL
-        top, bottom = TALL
+        top, bottom = TALL[0], TALL[1] + self.extra
         header = HEADER + 40 if len(self.card.title_lines(self.title_text())) > 1 else HEADER
         return top, header, bottom
 
@@ -140,7 +143,8 @@ class HdEpisodeList(HdEpisodePicker):
             return pygame.Rect(PANEL_X + BORDER, top + header + 1, PANEL_W - 2 * BORDER, bottom - FOOT - top - header - 1)
         divider_y = PANEL_TOP + TITLE_HEIGHT
         return pygame.Rect(PANEL_MARGIN_X + PANEL_BORDER, divider_y + 2,
-                           FRAME[0] - 2 * PANEL_MARGIN_X - 2 * PANEL_BORDER, PANEL_BOTTOM - divider_y - 2 - PANEL_RADIUS)
+                           FRAME[0] - 2 * PANEL_MARGIN_X - 2 * PANEL_BORDER,
+                           PANEL_BOTTOM + self.extra - divider_y - 2 - PANEL_RADIUS)
 
     # ------------------------------------------------------------ layout
 
@@ -323,11 +327,11 @@ class HdEpisodeList(HdEpisodePicker):
         points = ([(cx - 5, cy - 3), (cx + 5, cy - 3), (cx, cy + 4)] if row.key in self.expanded
                   else [(cx - 4, cy - 5), (cx - 4, cy + 5), (cx + 5, cy)])
         pygame.draw.polygon(layer, (255, 255, 255), [(round(px * S), round(py * S)) for px, py in points])
-        self.text(layer, row.title.upper(), 16, rect.x, rect.y + (rect.height - 20) / 2, color=(255, 255, 255),
-                 width=rect.width, outline=False)
+        self.text(layer, row.title.upper(), HEADER_TEXT, rect.x, rect.y + (rect.height - HEADER_TEXT - 4) / 2,
+                  color=(255, 255, 255), width=rect.width, outline=False)
         count = str(len(self.row_episodes(row)))
-        width = self.measure(count, 14)
-        self.text(layer, count, 14, rect.right - 16 - width, rect.y + (rect.height - 18) / 2,
+        width = self.measure(count, COUNT_TEXT)
+        self.text(layer, count, COUNT_TEXT, rect.right - 16 - width, rect.y + (rect.height - COUNT_TEXT - 4) / 2,
                   color=(255, 255, 255), outline=False)
         self.hits.append((rect, ('toggle', row.key)))
 
@@ -399,7 +403,7 @@ class HdEpisodeList(HdEpisodePicker):
             for rule in (top + header, bottom - FOOT):
                 self.card.rect(layer, self.card.SEPARATOR_COLOR, (PANEL_X + BORDER, rule, PANEL_W - 2 * BORDER, 1))
         else:
-            panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM - PANEL_TOP)
+            panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM + self.extra - PANEL_TOP)
             self.draw_panel(layer, panel)
             self.text(layer, title, TITLE_POINTS, panel.x, panel.y + (TITLE_HEIGHT - TITLE_POINTS - 6) / 2,
                      color=self.TITLE_COLOR, width=panel.width, outline=False)
@@ -431,8 +435,8 @@ class HdEpisodeList(HdEpisodePicker):
             restore = pygame.Rect(0, 0, *BUTTON_SIZE)
             restore.bottomright = (PANEL_X + PANEL_W - 14, bottom - 13)
         else:
-            back = pygame.Rect(BACK_X, BUTTON_Y, *BUTTON_SIZE)
-            restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], BUTTON_Y, *BUTTON_SIZE)
+            back = pygame.Rect(BACK_X, self.button_y, *BUTTON_SIZE)
+            restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], self.button_y, *BUTTON_SIZE)
             self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('back',))
         if self.choosing is not None:
             self.draw_choice_footer(layer, back, restore)

@@ -4959,10 +4959,14 @@ class Desktop:
         self.fade = dict(kind=6, phase='in', since=now, frozen=None)
         self.warp_lockout = now + 1000
 
-    def snapshot(self, size=(432, 580)):
-        """The game's frame as a saved-game screenshot for the episode picker (the pause menu left out)."""
+    def snapshot(self, size=(432, 580), *, shaped=False):
+        """The game's frame as a saved-game screenshot for the episode picker (the pause menu left out); 3:4, or with
+        `shaped` the frame's own shape (General's Aspect Ratio: the end-of-episode menu's backdrop), `size` then giving
+        only its width."""
         opened, self.menu_open = self.menu_open, False
-        shape, self.aspect_ratio = self.aspect_ratio, '3:4'
+        shape = self.aspect_ratio
+        if not shaped:
+            self.aspect_ratio = '3:4'
         # A live (non-capture) Desktop's own render() ends with pygame.display.flip(), presenting straight to the
         # real screen -- fine for its normal per-frame use, but this method also runs mid-transition (the
         # end-of-episode card's sepia source, a resume tile's screenshot) purely to read pixels back off `window`,
@@ -4978,6 +4982,8 @@ class Desktop:
             self.capture = was_capture
             self.aspect_ratio = shape
         frame = self.bg_viewport.clip(self.window.get_rect())
+        if shaped:
+            size = (size[0], max(1, round(frame.height * size[0] / max(1, frame.width))))
         return pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
 
     def _coast_panels(self):

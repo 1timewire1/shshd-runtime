@@ -147,7 +147,7 @@ class HdShell:
         self.main.start(intro=intro)
 
     def zoom_out(self, box):
-        self.leaving = (pygame.transform.smoothscale(box, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+        self.leaving = (pygame.transform.smoothscale(box, (FRAME[0] * S, FRAME[1] * S)), 0.0)   # (HD's 3:4 card: centred)
         self.replay_launch()
 
     def replay_launch(self):
@@ -158,7 +158,7 @@ class HdShell:
     def show_end_menu(self, backdrop, football):
         """The menu shown when an episode ends, over `backdrop` (the last frame, already sepia, as a 768 x 1024 surface)."""
         self.stage = 'end'
-        self.end_backdrop = pygame.transform.smoothscale(backdrop, (FRAME[0] * S, FRAME[1] * S))
+        self.end_backdrop = self.frame_wide(backdrop)
         self.stack.clear()
         self.stack.queue(self.END_MENU if football else self.MISS_MENU)
         self.window_ms = 0                                  # it pops up (zooms in) like the other windows
@@ -194,8 +194,7 @@ class HdShell:
         self.pressed = self.drag = self.focus = None
         self.main.start(intro=False)
         self.stage, self.episode_age, self.episode_then = 'episode', 0.0, then
-        self.leaving = None if picture is None else (
-            pygame.transform.smoothscale(picture, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+        self.leaving = None if picture is None else (self.frame_wide(picture), 0.0)
 
     def tick_episode(self, seconds):
         self.episode_age += seconds
@@ -243,14 +242,16 @@ class HdShell:
             return None
         width = FRAME[0] * S
         height = round(panel.get_height() * width / panel.get_width())
-        layer = pygame.Surface((width, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
+        tall = self.main.height if getattr(self.main, 'grows', False) else FRAME[1]
+        layer = pygame.Surface((width, round(tall * S)), pygame.SRCALPHA).convert_alpha()
         layer.blit(pygame.transform.smoothscale(panel, (width, height)), (0, (layer.get_height() - height) // 2))
         return layer
 
     def draw_episode_loading(self):
         canvas = self.episode_canvas
-        if canvas is None:
-            canvas = self.episode_canvas = pygame.Surface((FRAME[0] * S, FRAME[1] * S)).convert()
+        size = (FRAME[0] * S, round((self.main.height if getattr(self.main, 'grows', False) else FRAME[1]) * S))
+        if canvas is None or canvas.get_size() != size:
+            canvas = self.episode_canvas = pygame.Surface(size).convert()
         canvas.fill((0, 0, 0))
         # The art fades out from the start; the overlay stays over it throughout.
         fade = max(0.0, min(1.0, 1 - self.episode_age / EPISODE_FADE))
@@ -261,7 +262,7 @@ class HdShell:
             canvas.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)
         band = self.loading_band(23 + int(self.episode_age / RUNNER_FRAME) % 5)
         if band is not None:
-            canvas.blit(band, (0, 0))
+            canvas.blit(band, (0, (canvas.get_height() - band.get_height()) // 2))
         self.draw_leaving(canvas)
         return canvas
 
@@ -499,9 +500,27 @@ class HdShell:
 
     # ------------------------------------------------------------ rendering
 
+    def sync_height(self):
+        """shshd-runtime (General's Aspect Ratio): the menu frame's height (Application.menu_frame) for the screens drawn
+        at it (`grows`: SHS HD's main menu and boot screens; Cause of Death's stay 3:4 for now), and for the main menu's
+        Options and Help pages over them (their text pages run its height)."""
+        height = self.app.menu_frame()[1] if hasattr(self.app, 'menu_frame') else FRAME[1]
+        for part in (getattr(self, 'main', None), getattr(self, 'boot', None)):
+            if getattr(part, 'grows', False):
+                part.height = height
+        if hasattr(self, 'pause'):
+            self.pause.frame_height = height if getattr(getattr(self, 'main', None), 'grows', False) else FRAME[1]
+
+    @staticmethod
+    def frame_wide(picture):
+        """`picture` at the frame's width in pixels, its own shape kept (a 3:4 one, or a taller frame's)."""
+        width = FRAME[0] * S
+        return pygame.transform.smoothscale(picture, (width, round(picture.get_height() * width / picture.get_width())))
+
     def render(self, *, overlay=True, buttons=True):
         """The current screen as a 2x canvas (without the open window when `overlay` is off, and without the main
         menu's buttons when `buttons` is off)."""
+        self.sync_height()
         if self.stage == 'episode':
             return self.draw_episode_loading()
         if self.stage in ('loading', 'sound'):
@@ -512,7 +531,9 @@ class HdShell:
             self.draw_fade(canvas)
             return canvas
         elif self.stage == 'end':
-            canvas = self.boot.canvas
+            canvas = self.__dict__.get('end_canvas')
+            if canvas is None or canvas.get_size() != self.end_backdrop.get_size():
+                canvas = self.end_canvas = pygame.Surface(self.end_backdrop.get_size()).convert()
             canvas.blit(self.end_backdrop, (0, 0))
         else:
             shown = self.pressed or self.focus

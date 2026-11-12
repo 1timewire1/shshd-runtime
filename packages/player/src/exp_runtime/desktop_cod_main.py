@@ -142,6 +142,7 @@ class CodButtonLayouts:
 
 
 class CodMainMenu(HdMainMenu):
+    grows = False                       # (3:4 until Cause of Death's own menus are done: General's Aspect Ratio)
     INFO_FRAMES = (14, 15)              # CoD's own at rest / pressed (through INFO_SWAP), unchanged
     LABELS = LABELS
 

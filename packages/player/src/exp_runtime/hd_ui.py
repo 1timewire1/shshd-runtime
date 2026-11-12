@@ -88,10 +88,41 @@ class HdUi:
         return [(layer(6, 1.25), (384, 512)), (layer(9, 1.0), (384, 512)),
                 (layer(8, 1.25, 6), (384, 212)), (layer(7, 1.25), (384, 218))]
 
-    @lru_cache(maxsize=1)
-    def main_backdrop(self):
-        surface = pygame.Surface((FRAME[0] * S, FRAME[1] * S)).convert()
-        for image, (cx, cy) in self.main_layers():
+    # shshd-runtime (General's Aspect Ratio, owner 2026-11-12: mock-up B2): in a frame taller than HD's the ribbon and
+    # title keep their place at the top and the buttons theirs at the bottom (desktop_main_hd), so the photo, centred
+    # between them, is centred in the frame, and it grows (to PHOTO_GROW_MAX) to fill more of the space; the wood is
+    # scaled to cover the frame.
+    PHOTO_GROW, PHOTO_GROW_MAX = 0.8, 1.45
+    BUTTONS_RAISE = 0.1             # of the added height: the buttons sit that much above HD's distance from the bottom
+
+    @staticmethod
+    def buttons_raise(height):
+        """Points the main menu's buttons (and info button) sit above HD's distance from the bottom in a frame `height`
+        points tall (owner, 2026-11-12: not so close to the bottom)."""
+        return round(max(0, height - FRAME[1]) * HdUi.BUTTONS_RAISE)
+
+    @lru_cache(maxsize=2)
+    def main_layout(self, height=FRAME[1]):
+        """main_layers placed in a frame `height` points tall: (surface, center in points) for the wood, photo, ribbon
+        and title. HD's own at 1024."""
+        layers = self.main_layers()
+        if height <= FRAME[1]:
+            return layers
+        (wood, _), (photo, _), ribbon, title = layers
+        cover = max(1.0, FRAME[0] * S / wood.get_width(), height * S / wood.get_height())
+        if cover > 1:
+            wood = self.scaled(wood, cover)
+        grow = max(1.0, min(self.PHOTO_GROW_MAX, height / FRAME[1] * self.PHOTO_GROW))
+        if grow > 1:
+            photo = self.scaled(photo, grow)
+        middle = (384, height / 2)
+        between = (384, (height - self.buttons_raise(height)) / 2)     # between the title and the raised buttons
+        return [(wood, middle), (photo, between), ribbon, title]
+
+    @lru_cache(maxsize=2)
+    def main_backdrop(self, height=FRAME[1]):
+        surface = pygame.Surface((FRAME[0] * S, round(height * S))).convert()
+        for image, (cx, cy) in self.main_layout(height):
             surface.blit(image, image.get_rect(center=(round(cx * S), round(cy * S))))
         return surface
 

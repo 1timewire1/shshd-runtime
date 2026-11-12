@@ -66,6 +66,7 @@ def recolor_border(image, color):
 
 
 class CodPickerStyle(CodButtons):
+    grows = False                       # (3:4 until Cause of Death's own menus are done: General's Aspect Ratio)
     TEXT_COLOR = (0, 0, 0)
     FOCUS_TEXT_COLOR = BORDER                           # the keyboard's choice in the popup: CoD's window blue
     NEW_GAME, CONTINUE, RESTORE = 19, 26, 194
