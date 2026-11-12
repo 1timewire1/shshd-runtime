@@ -1786,7 +1786,8 @@ class Desktop:
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
                      getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
                      getattr(self, 'nr_arena_renderer', None), getattr(self, 'football_hd', None),
-                     getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
+                     getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
+                     getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width

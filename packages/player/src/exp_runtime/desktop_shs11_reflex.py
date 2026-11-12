@@ -80,12 +80,9 @@ class Shs11ReflexRenderer(Shs11MemoryRenderer):
         self.icon(surface, game.row[RIGHT_PICTURE],
                   (x + round((spec['width'] - box[0] / 2) * ART), y + round(box[1] * ART / 2) - drop))
 
-    def draw(self, session):
+    def draw_game(self, session, surface):
         game = session.engine.shs11_reflex
         text = self._reflex()['text']
-        if self.canvas is None:
-            self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
-        surface = self.canvas
         surface.fill((0, 0, 0, 0))
         self.draw_clock(surface, game)
         self.draw_score(surface, game)

@@ -46,6 +46,23 @@ def memory_spec(resources):
 
 
 class Shs11MemoryRenderer:
+    # shshd-runtime (General's Aspect Ratio, owner 2026-11-12): in a frame of another shape the canvas is 768 points
+    # across and the frame's shape, see-through over the scene; N73's screen (rings, box, grid) is drawn whole in its
+    # middle, `dy` points down. The scene shows round it (its desk under the grid runs on to the frame's bottom, where
+    # the gear stays). HD's 768 x 1024 at 3:4, where nothing moves.
+    frame_units = (384, 512)
+    dy = 0
+
+    @property
+    def fills_frame(self):
+        return self.frame_units != (384, 512)
+
+    def canvas_size(self):
+        wide, tall = self.frame_units
+        if (wide, tall) == (384, 512):
+            return FRAME
+        return FRAME[0], max(FRAME[1], round(FRAME[0] * tall / wide))
+
     hd_layer = True
     grid_y = GRID_Y
 
@@ -271,11 +288,21 @@ class Shs11MemoryRenderer:
         return None
 
     def draw(self, session):
+        """The game on the canvas: HD's frame at 3:4, else the frame's shape with the game in its middle (frame_units)."""
+        size = self.canvas_size()
+        if self.canvas is None or self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size, pygame.SRCALPHA)
+        if size == FRAME:
+            self.dy = 0
+            self.draw_game(session, self.canvas)
+            return
+        self.dy = (size[1] - FRAME[1]) // 2
+        self.canvas.fill((0, 0, 0, 0))
+        self.draw_game(session, self.canvas.subsurface((0, self.dy, *FRAME)))
+
+    def draw_game(self, session, surface):
         game = session.engine.shs11_memory
         text = GRID_TEXT if game.grid else self._spec()[0]['text']
-        if self.canvas is None:
-            self.canvas = pygame.Surface(FRAME, pygame.SRCALPHA)
-        surface = self.canvas
         surface.fill((0, 0, 0, 0))
         self.draw_clock(surface, game)
         self.draw_score(surface, game)
