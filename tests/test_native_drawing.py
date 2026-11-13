@@ -166,7 +166,7 @@ class NativeDrawingTests(unittest.TestCase):
         self.assertEqual(len(window._ops), 3)
         window.blit(d.Surface((10, 10), d.SRCALPHA), (0, 0))   # see-through: kept on top, nothing dropped
         window.fill((0, 0, 0), (0, 0, 768, 500))                # half: the window is not covered by it alone
-        self.assertEqual(len(window._ops), 5)
+        self.assertEqual(len(window._ops), 4)                   # (the see-through blit under it goes)
         pixels = d.raster(window.snapshot())
         self.assertEqual(pixels.getpixel((5, 600)), (30, 40, 50, 255))
         self.assertEqual(pixels.getpixel((400, 600)), (200, 10, 10, 255))
@@ -243,6 +243,29 @@ class NativeDrawingTests(unittest.TestCase):
         canvas.blit(d.Transform.scale(image, (320, 480)), (0, 0))
         encoder.encode(canvas)
         self.assertLessEqual(len(encoder.previous), 3)
+
+    def test_a_canvas_redrawn_in_parts_keeps_only_whats_on_it(self):
+        """The BREW catch game keeps one canvas and each frame puts back its header (a see-through fill, then the
+        frame's picture there) and its field (an opaque fill), then draws the sprites: what each fill covers goes, so
+        the canvas holds a frame's worth of ops, not every frame's (2,800 after a few seconds, each drawn by the host
+        every frame)."""
+        backdrop = d.Surface.from_pixels(Image.new('RGBA', (60, 80), (10, 20, 30, 255)))
+        sprite = d.Surface.from_pixels(Image.new('RGBA', (4, 4), (250, 200, 0, 255)))
+        canvas = backdrop.copy()
+        header, field = d.Rect(0, 0, 60, 20), d.Rect(5, 20, 50, 50)
+        for frame in range(200):
+            canvas.fill((0, 0, 0, 0), header)
+            canvas.blit(backdrop, header, header)
+            canvas.fill((40, 90, 40), field)
+            canvas.blit(sprite, (6 + frame % 40, 30))
+            canvas.blit(sprite, (10, 2))                               # the header's score
+        self.assertLess(len(canvas._ops), 12)
+        pixels = d.raster(canvas.snapshot())
+        self.assertEqual(pixels.getpixel((6 + 199 % 40, 30)), (250, 200, 0, 255))     # this frame's sprite
+        self.assertEqual(pixels.getpixel((6 + 198 % 40, 30)), (40, 90, 40, 255))      # not last frame's
+        self.assertEqual(pixels.getpixel((10, 2)), (250, 200, 0, 255))
+        self.assertEqual(pixels.getpixel((30, 10)), (10, 20, 30, 255))
+        self.assertEqual(pixels.getpixel((2, 75)), (10, 20, 30, 255))                  # outside both parts
 
     def test_an_animations_frames_are_sent_once_and_old_pictures_go_past_the_budget(self):
         """The X360 puzzle's gems cycle through their frames: a picture a frame stops showing stays on the host, so

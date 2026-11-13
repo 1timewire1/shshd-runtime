@@ -264,12 +264,46 @@ class Surface:
                 self._ops = [dict(kind='blit', source=self._node, at=(0, 0), alpha=255,
                                   clip=(0, 0, *self._size))]
         self._node = None
+        if cover is not None and len(self._ops) > 1:
+            self._drop_inside(Rect(cover))
         self._ops.append(dict(op, clip=tuple(self._clip)))
         if cover is not None:
             self._cover.append((len(self._ops) - 1, Rect(cover)))
             self._drop_hidden()
 
     COVER_LIMIT = 16
+
+    def _drop_inside(self, cover):
+        """Forget the ops drawn wholly inside `cover`, which the op about to be recorded paints over. A surface kept
+        and redrawn in parts each frame (the BREW catch game's canvas: its header and field put back, then this frame's
+        sprites) otherwise kept every frame's sprites under the parts, 2,800 ops after a few seconds, drawn again by
+        the host each frame."""
+        kept, moved = [], {}
+        for index, op in enumerate(self._ops):
+            bounds = self._op_bounds(op)
+            if bounds is not None and cover.contains(bounds):
+                continue
+            moved[index] = len(kept)
+            kept.append(op)
+        if len(kept) == len(self._ops):
+            return
+        self._ops = kept
+        self._cover = [(moved[index], rect) for index, rect in self._cover if index in moved]
+
+    @staticmethod
+    def _op_bounds(op):
+        """The area an op can change, within its clip, or None when not worked out (it is never dropped)."""
+        kind = op.get('kind')
+        if kind in ('fill', 'rect', 'ellipse'):
+            bounds = Rect(op['rect'])
+        elif kind == 'blit' and 'source' in op:
+            bounds = Rect(*op['at'], *op['source'].size)
+        elif kind == 'circle':
+            (x, y), radius = op['center'], op['radius']
+            bounds = Rect(x - radius, y - radius, 2 * radius + 1, 2 * radius + 1)
+        else:
+            return None
+        return bounds.clip(Rect(op['clip'])) if op.get('clip') else bounds
 
     def _drop_hidden(self):
         """Forget the ops that later opaque ones paint over entirely. One opaque fill or blit of the whole surface
@@ -358,8 +392,8 @@ class Surface:
             if region == self.get_rect():
                 self._ops, self._node = [], None
                 self.opaque = rgba(color)[3] == 255
-            self._append(dict(kind='fill', color=rgba(color), rect=tuple(region)),
-                         cover=region if rgba(color)[3] == 255 else None)
+            # Any fill without a blend replaces what is under it, see-through or not (pygame's): a cover.
+            self._append(dict(kind='fill', color=rgba(color), rect=tuple(region)), cover=region)
         return region
 
     def blit(self, source, destination, area=None, special_flags=0):
