@@ -244,6 +244,20 @@ class NativeDrawingTests(unittest.TestCase):
         encoder.encode(canvas)
         self.assertLessEqual(len(encoder.previous), 3)
 
+    def test_a_piece_of_a_faded_surface_is_drawn_faded(self):
+        """SDL draws `area` of a surface with that surface's whole-surface alpha: the dialogue's name plate, hidden
+        (alpha 0) while the speaker changes, showed the next name at once on iOS."""
+        plate = d.Surface.from_pixels(Image.new('RGBA', (20, 10), (200, 50, 50, 255)))
+        canvas = d.Surface((30, 20))
+        canvas.fill((0, 0, 255))
+        plate.set_alpha(0)
+        canvas.blit(plate, (5, 5), (0, 0, 10, 10))
+        self.assertEqual(d.raster(canvas.snapshot()).getpixel((8, 8)), (0, 0, 255, 255))
+        plate.set_alpha(128)
+        canvas.blit(plate, (5, 5), (0, 0, 10, 10))
+        red, _, blue, _ = d.raster(canvas.snapshot()).getpixel((8, 8))
+        self.assertTrue(90 <= red <= 110 and blue < 200)        # half of it, over the blue
+
     def test_how_see_through_a_surface_is_comes_from_what_it_is_made_of(self):
         """desktop.opaque_enough asked this of the story's background each frame of a location change or pan: a stretch
         or a piece of a picture is told without drawing it; anything else is drawn once."""

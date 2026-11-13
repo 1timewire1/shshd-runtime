@@ -409,7 +409,11 @@ class Surface:
 
     def blit(self, source, destination, area=None, special_flags=0):
         if area is not None:
+            # (A piece drawn with the surface's own whole-surface alpha, as SDL's: the dialogue's name plate, faded
+            # out while the speaker changes, showed the next name at once through a piece that forgot it.)
+            alpha = source._alpha
             source = source.subsurface(area)
+            source._alpha = alpha
         x, y = tuple(destination)[:2]
         at = int(x), int(y)
         bounds = Rect(*at, *source.get_size()).clip(self._clip)
