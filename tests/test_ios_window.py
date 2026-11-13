@@ -70,6 +70,13 @@ class IosWindowTests(unittest.TestCase):
         self.assertEqual((host.app.game.top_inset, host.app.game.bottom_inset), (0., .25))
         host.app.game = None
 
+    def test_swifts_view_report_goes_to_the_runtime_log(self):
+        """The black screen after a launch (2026-11-13): Swift's report of its view and layers is logged as sent."""
+        host = self.host()
+        with self.assertLogs(level='WARNING') as logged:
+            host.request(dict(operation='frame', elapsed=16, view_report=dict(app_state=1, root=dict(sublayers=3))))
+        self.assertTrue(any('iOS view: {"app_state": 1, "root": {"sublayers": 3}}' in line for line in logged.output))
+
     def test_the_hd_menus_draw_at_the_screens_resolution(self):
         """The window is the view's pixel size (Swift's first frame sends it): the HD menus' layers are 2x where the
         frame is shown well over its 768 x 1024 points (a Retina iPad, either way up; a phone), 1x where it is not."""

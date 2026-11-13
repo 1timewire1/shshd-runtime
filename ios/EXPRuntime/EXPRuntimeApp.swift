@@ -56,6 +56,41 @@ final class GameCanvasView: UIView, UIKeyInput {
         frameLayer.frame = viewport
         fitComposed()
         CATransaction.commit()
+        if firstShown == nil { firstShown = CACurrentMediaTime() }
+    }
+    private(set) var firstShown: CFTimeInterval?     // (diagnostics: when a composited frame was first put up)
+    /// The composited root put back on the frame layer and fitted again (the app became active: a launch through
+    /// the developer tunnel showed nothing until the app went to the background and back, 2026-11-13).
+    func refreshComposed() {
+        guard let root = composedRoot else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if root.superlayer !== frameLayer { frameLayer.addSublayer(root) }
+        frameLayer.frame = viewport
+        fitComposed()
+        CATransaction.commit()
+        setNeedsLayout()
+    }
+    /// What is on screen, for the runtime log (the black screen after a launch, 2026-11-13).
+    func layerReport() -> [String: Any] {
+        func rect(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map { Double($0) } }
+        var report: [String: Any] = [
+            "bounds": rect(bounds), "scale": Double(contentScaleFactor), "hidden": isHidden, "alpha": Double(alpha),
+            "window": window != nil, "frame_layer": rect(frameLayer.frame),
+            "frame_layer_parent": frameLayer.superlayer === layer, "frame_layer_sublayers": frameLayer.sublayers?.count ?? 0,
+            "frame_layer_contents": frameLayer.contents != nil, "shown_size": shownSize.map { [Double($0.width), Double($0.height)] as Any } ?? NSNull(),
+            "image": image != nil]
+        if let root = composedRoot {
+            report["root"] = ["bounds": rect(root.bounds), "position": [Double(root.position.x), Double(root.position.y)],
+                              "scale": [Double(root.transform.m11), Double(root.transform.m22)],
+                              "sublayers": root.sublayers?.count ?? 0, "on_frame_layer": root.superlayer === frameLayer,
+                              "hidden": root.isHidden, "opacity": Double(root.opacity)] as [String: Any]
+        }
+        if let window = window {
+            report["window_bounds"] = rect(window.bounds)
+            report["scene_state"] = window.windowScene.map { $0.activationState.rawValue as Any } ?? NSNull()
+        }
+        return report
     }
     private func fitComposed() {
         guard let root = composedRoot, let size = shownSize, size.width > 0, size.height > 0 else { return }
@@ -539,6 +574,13 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var working = false
     private var started = false             // the first request has gone (with the canvas's size)
     private var running = true
+    // The view report in the runtime log (ios.Host: the black screen after a launch, 2026-11-13): often for the first
+    // ten seconds, then every five, and at once after the app's activation changes.
+    private let launchedAt = CACurrentMediaTime()
+    private var frameCount = 0
+    private var firstFrameAt: CFTimeInterval?
+    private var lastReport: CFTimeInterval = 0
+    private var reportNext = true
     private var activityGeneration = 0
     private var failed = false
     private var lastFrame = CACurrentMediaTime()
@@ -615,6 +657,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     }
 
     @objc private func suspend() {
+        reportNext = true
         running = false
         activityGeneration += 1
         events.removeAll()
@@ -629,6 +672,8 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     @objc private func resume() {
+        reportNext = true
+        canvas.refreshComposed()
         activityGeneration += 1
         running = true
         lastFrame = CACurrentMediaTime()
@@ -661,6 +706,22 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                                       "vibration_available": NativeVibration.available]) { _, value in value }
         body["timing"] = ["engine_ms": engineMs, "render_ms": renderMs]
         body["now"] = now * 1000         // the touches' clock (their `time`), for momentum.py
+        frameCount += 1
+        if firstFrameAt == nil { firstFrameAt = now }
+        let sinceLaunch = now - launchedAt
+        if reportNext || (sinceLaunch < 10 && frameCount % 15 == 1) || now - lastReport >= 5 {
+            reportNext = false
+            lastReport = now
+            var report = canvas.layerReport()
+            report["since_launch"] = sinceLaunch
+            report["frames"] = frameCount
+            report["app_state"] = UIApplication.shared.applicationState.rawValue
+            report["running"] = running
+            report["rendering"] = rendering
+            report["first_frame"] = firstFrameAt.map { ($0 - launchedAt) as Any } ?? NSNull()
+            report["first_shown"] = canvas.firstShown.map { ($0 - launchedAt) as Any } ?? NSNull()
+            body["view_report"] = report
+        }
         // The window's own safe area (the hosted view ignores it, so its own insets are zero).
         let tall = canvas.bounds.height, safe = view.window?.safeAreaInsets ?? .zero
         if tall > 0 {

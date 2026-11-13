@@ -366,6 +366,10 @@ class Host:
             self.resize(message['size'])
         if isinstance(message.get('insets'), dict):
             self.set_insets(message['insets'])
+        if isinstance(message.get('view_report'), dict):
+            # Swift's view and layers as they are (the black screen after a launch, 2026-11-13): a few at launch, one
+            # every five seconds, one at each activation change.
+            logging.warning('iOS view: %s', json.dumps(message['view_report'], sort_keys=True))
         if 'vibration_available' in message:
             self.backend.vibration_available = message['vibration_available'] is True
         if 'audio_playing' in message:
@@ -411,7 +415,6 @@ class Host:
                 self.staging.extend(paths)
         elif operation == 'message':
             self._end_copying()
-            import logging
             logging.warning('iOS host: %s', message['text'])
             self.app.message = message['text']
         elif operation == 'update_result':
@@ -509,7 +512,9 @@ def request(payload, directory):
             parent = Path(directory) / 'Verification'
             parent.mkdir(parents=True, exist_ok=True)
             root = Path(tempfile.mkdtemp(prefix='libraries-', dir=parent))
+        began = time.perf_counter()
         _host = Host(directory, library_root=root, check_updates=not _verifying, view_size=message.get('size'))
+        logging.warning('iOS host ready in %.2f s', time.perf_counter() - began)
     started = time.perf_counter()
     try:
         result = _host.request(message)
