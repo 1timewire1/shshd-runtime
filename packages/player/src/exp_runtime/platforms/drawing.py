@@ -430,12 +430,46 @@ class Surface:
             return
         if flags not in BLENDS:
             raise DrawingError(f'Unsupported {what} blend')
-        pixels = raster(self.snapshot())
-        box = (region.x, region.y, region.right, region.bottom)
         piece = source.crop((region.x - at[0], region.y - at[1], region.right - at[0], region.bottom - at[1]))
-        pixels.paste(blend(pixels.crop(box), piece, flags), box)
-        self._ops, self._node = [], Node(self._size, pixels=pixels)
-        self.opaque = pixels.getextrema()[3] == (255, 255)
+        under = self._region(region)
+        if under is None:                       # (ops a region can't be cut from: the whole surface, as before)
+            pixels = raster(self.snapshot())
+            box = (region.x, region.y, region.right, region.bottom)
+            pixels.paste(blend(pixels.crop(box), piece, flags), box)
+            self._ops, self._node = [], Node(self._size, pixels=pixels)
+            self.opaque = pixels.getextrema()[3] == (255, 255)
+            return
+        # The region alone, put back blended (cleared, then its pixels drawn): the X360 puzzle's sparks and sheen, added
+        # into its whole canvas a few times a frame, made the canvas a new full-size picture each time (290 ms a frame
+        # on the iPad and a 557 KB PNG).
+        blended = blend(under, piece, flags)
+        opaque = self.opaque
+        self.fill((0, 0, 0, 0), region)
+        self.blit(Surface.from_pixels(blended), region.topleft)
+        self.opaque = opaque and blended.getextrema()[3] == (255, 255)
+
+    # Ops drawn relative to the whole surface (a stretch to its size, a turn about its middle, a colour matrix over
+    # it, projections): a region can't be cut out of them by moving them.
+    _WHOLE = frozenset({'scale', 'rotate', 'flip', 'color_matrix', 'textured_quad', 'depth_quad', 'textured_rows'})
+
+    def _region(self, region):
+        """The pixels of `region` of this surface (RGBA), drawn from only the ops that reach it, or None when an op
+        can't be moved."""
+        node = self.snapshot()
+        if node.pixels is not None:
+            return node.pixels.crop((region.x, region.y, region.right, region.bottom)).convert('RGBA')
+        ops = []
+        for op in node.ops:
+            if op.get('kind') in self._WHOLE:
+                return None
+            bounds = self._op_bounds(op)
+            if bounds is not None and bounds.clip(region).width * bounds.clip(region).height == 0:
+                continue
+            moved = _translated(op, -region.x, -region.y)
+            moved['clip'] = tuple(Rect(op.get('clip') or (0, 0, *self._size)).move(-region.x, -region.y)
+                                  .clip(Rect(0, 0, *region.size)))
+            ops.append(moved)
+        return raster(Node(region.size, tuple(ops))).convert('RGBA')
 
     # pygame's queries master's screens ask (2026-11-12): what a surface is and a pixel's colour.
     def get_flags(self):
@@ -730,14 +764,28 @@ class Transform:
         return cls._rotate(surface, angle, scale, True)
 
 
+RASTER_KEPT_PIXELS = 300_000        # a drawn node this small keeps its raster (it never changes)
+
+
 def raster(node):
     """Realize a small asset mask for the shared portrait/tint algorithms.
 
     Whole frames are drawn by the native host, not encoded as Python bitmaps.
-    This also provides a reference image for protocol tests.
+    This also provides a reference image for protocol tests. A small node keeps what it drew: a region blended into
+    the X360 puzzle's canvas drew each jewel's scaled sprite again (874 resizes in a few seconds on the iPad).
     """
     if node.pixels is not None:
         return node.pixels.copy()
+    kept = node.__dict__.get('_raster')
+    if kept is not None:
+        return kept.copy()
+    image = _raster_ops(node)
+    if node.size[0] * node.size[1] <= RASTER_KEPT_PIXELS:
+        node._raster = image.copy()
+    return image
+
+
+def _raster_ops(node):
     image = Image.new('RGBA', node.size)
     depth = None
     for op in node.ops:

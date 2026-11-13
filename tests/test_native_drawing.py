@@ -244,6 +244,37 @@ class NativeDrawingTests(unittest.TestCase):
         encoder.encode(canvas)
         self.assertLessEqual(len(encoder.previous), 3)
 
+    def test_an_additive_effect_blends_its_region_only_and_matches_the_whole(self):
+        """The X360 puzzle adds sparks and a sheen into a see-through canvas (the host's add would turn its clear
+        pixels black): the blend is worked out for the effect's region alone and put back as ops, not by drawing the
+        whole canvas into a new picture each time, and comes out the same."""
+        def scene(canvas):
+            canvas.fill((0, 0, 0, 0))
+            canvas.fill((40, 60, 200), (10, 10, 60, 40))
+            jewel = d.Surface.from_pixels(Image.new('RGBA', (8, 8), (200, 30, 30, 200)))
+            for x in range(10, 70, 9):
+                canvas.blit(jewel, (x, 20))
+            canvas.set_clip((0, 0, 50, 64))
+            canvas.blit(jewel, (44, 40))
+            canvas.set_clip(None)
+        spark = d.Surface((10, 10))
+        d.Draw.circle(spark, (90, 80, 70), (5, 5), 4)
+        sheen = d.Surface((12, 64))
+        sheen.fill((30, 30, 30))
+        canvas = d.Surface((80, 64), d.SRCALPHA)
+        scene(canvas)
+        whole = d.raster(canvas.snapshot()).convert('RGBA')
+        canvas.blit(spark, (14, 16), special_flags=d.BLEND_RGB_ADD)
+        canvas.blit(spark, (60, 40), special_flags=d.BLEND_RGB_ADD)       # over clear pixels: they stay clear
+        canvas.blit(sheen, (30, 0), special_flags=d.BLEND_RGB_ADD)
+        self.assertIsNone(canvas._node)                                  # still ops, not one new picture
+        for picture, at in ((spark, (14, 16)), (spark, (60, 40)), (sheen, (30, 0))):
+            box = (*at, at[0] + picture.get_width(), at[1] + picture.get_height())
+            whole.paste(d.blend(whole.crop(box), d.raster(picture.snapshot()).convert('RGBA'), d.BLEND_RGB_ADD), box)
+        def visible(image):         # (SDL's add colours clear pixels it leaves clear: unseen, so not compared)
+            return [pixel if pixel[3] else (0, 0, 0, 0) for pixel in image.getdata()]
+        self.assertEqual(visible(d.raster(canvas.snapshot()).convert('RGBA')), visible(whole))
+
     def test_a_canvas_redrawn_in_parts_keeps_only_whats_on_it(self):
         """The BREW catch game keeps one canvas and each frame puts back its header (a see-through fill, then the
         frame's picture there) and its field (an opaque fill), then draws the sprites: what each fill covers goes, so
