@@ -966,7 +966,7 @@ class DesktopTests(unittest.TestCase):
 
     def test_the_panels_over_a_tablets_screen_are_no_bigger_than_a_point_a_point(self):
         # Owner, 2026-11-13 (iPad mini, portrait): half the screen a panel drew everything 1.7 times HD's size. With the
-        # host's pixels a point known, the panels keep HD's size: the wall at its own width, the tree in the rest.
+        # host's pixels a point known, the panels keep HD's size, still half the screen each (the wall's posts run on).
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
         from exp_runtime.desktop import Desktop
@@ -996,8 +996,9 @@ class DesktopTests(unittest.TestCase):
                     patch.object(ui.side_panels, 'frame', lambda index, size, flip=False: pygame.Surface(size)), \
                     patch.object(ui.side_panels, 'centered', lambda *args: None):
                 ui._draw_panels_overlay()
-            self.assertEqual((drawn['wall'].x, drawn['wall'].width), (1536 - 448, 448))
-            self.assertEqual((drawn['tree'].x, drawn['tree'].width), (0, 1536 - 448))
+            self.assertEqual((drawn['wall'].x, drawn['wall'].width), (768, 768))
+            self.assertEqual((drawn['tree'].x, drawn['tree'].width), (0, 768))
+            self.assertEqual(ui.side_panels.wall_shape[0], 384)
 
     def test_arrow_keys_highlight_the_pause_menus_rows_and_enter_taps_them(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'

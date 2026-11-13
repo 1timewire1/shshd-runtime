@@ -740,8 +740,7 @@ class SidePanels:
         self.backdrop(panel, 'right', enabled, s, divider=False)
         if enabled:
             self._wall(panel, engine, wall, s, origin)
-            width = round((PANEL[0] - DIVIDER_WIDTH) * s)
-            panel.blit(self.frame(WALL_HEADER, (width, round(BAR * s))), (round(DIVIDER_WIDTH * s), 0))
+            panel.blit(self._wall_header(s), (round(DIVIDER_WIDTH * s), 0))
             self.divider(panel, 'right', s)
         else:
             self.not_supported(panel, self.string(STR_NO_WALL, 'The faceplace feature is not supported in this episode'),
@@ -752,6 +751,23 @@ class SidePanels:
         # while the scroll indicator fades: the next paint after it would keep its last faint frame.
         key = key[:4] + (self.wall_scroll,)
         self._wall_painted = None if indicator else (key, panel, list(self.wall_targets))
+
+    def _wall_header(self, s):
+        """The wall's title bar: HD's art at its own width, centred and its end columns run on to a wider wall's edges
+        (the panels over a tablet's screen, half each: owner, 2026-11-13), so the logo is never stretched."""
+        height = round(BAR * s)
+        natural = self.frame(WALL_HEADER, (round((PANEL[0] - DIVIDER_WIDTH) * s), height))
+        width = round((self.wall_shape[0] - DIVIDER_WIDTH) * s)
+        if width <= natural.get_width():
+            return natural if width == natural.get_width() else self.frame(WALL_HEADER, (width, height))
+        bar = pygame.Surface((width, height), pygame.SRCALPHA)
+        left = (width - natural.get_width()) // 2
+        right = width - left - natural.get_width()
+        edge = natural.get_width() - 1
+        bar.blit(pygame.transform.scale(natural.subsurface((0, 0, 1, height)), (left, height)), (0, 0))
+        bar.blit(pygame.transform.scale(natural.subsurface((edge, 0, 1, height)), (right, height)), (left + edge + 1, 0))
+        bar.blit(natural, (left, 0))
+        return bar
 
     # -- the message wall (`SHSFSView`: a scroll view, newest message on top) -----------------------------------------
 
@@ -778,7 +794,7 @@ class SidePanels:
     def _wall_layout(self, engine, wall):
         """(rows, content height): every row laid out once per change of the wall (`measureMessageHeight`); the content is
         the sum of the rows' advances (`measureAllMessagesFull`)."""
-        key = self._wall_state(engine, wall)
+        key = self._wall_state(engine, wall) + (self.wall_shape[0],)
         if self._wall_key != key:
             self._wall_posts, self._wall_key = self._build_wall(engine, wall), key
         rows = self._wall_posts
@@ -821,7 +837,7 @@ class SidePanels:
         for message in reversed(wall.messages):
             key = self.alert.key(engine, message)
             face = message.from_id >= 0                 # `isFaceMessage`: from >= 0 (its continuations: an even expression)
-            width = MESSAGE_FACE_WIDTH if face else MESSAGE_PLAIN_WIDTH
+            width = (MESSAGE_FACE_WIDTH if face else MESSAGE_PLAIN_WIDTH) + self.wall_shape[0] - PANEL[0]
             url = message.url if message.kind != 'message' else ''
             text = key.text or (message.url if message.kind != 'message' else '')
             indent, name = 0, None
@@ -945,7 +961,7 @@ class SidePanels:
                                                             round((y + MESSAGE_FACE_CENTER[1]) * s + gy * factor)))
             if row.last:                                        # `fillRect(11, y + advance - 4 + 2, width - 2, 1)`, 0xe0e0e0
                 line = y + int(row.advance - RULE_RISE)
-                panel.fill(RULE, pygame.Rect(round(RULE_X * s), round(line * s), round((PANEL[0] - 2) * s),
+                panel.fill(RULE, pygame.Rect(round(RULE_X * s), round(line * s), round((self.wall_shape[0] - 2) * s),
                                              max(1, round(s))).clip(band))
         finally:
             panel.set_clip(clip)
@@ -978,7 +994,8 @@ class SidePanels:
         if bottom <= band:
             return
         self.wall_targets.append((pygame.Rect(round(origin[0] + (x - 3) * s), round(origin[1] + band * s),
-                                              round((PANEL[0] - x + 3) * s), max(1, round((bottom - band) * s))), url))
+                                              round((self.wall_shape[0] - x + 3) * s), max(1, round((bottom - band) * s))),
+                                  url))
 
     def draw(self, window, session, progress, left, right):
         """The panels the episode uses (owner, 2026-11-12: one it doesn't use is never shown, its side left as the

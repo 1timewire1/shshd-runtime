@@ -5317,9 +5317,10 @@ class Desktop:
         return s, top, height - top - strip - below, strip
 
     def _draw_panels_overlay(self):
-        """The panels over the whole screen, sliding down from its top as they open: the wall on the right at its own
-        width and the tree in the rest (halves on a phone; one alone across the screen), each laid out at HD's scale in
-        its taller shape, and the close strip across the bottom, rising into place (owner, 2026-11-12)."""
+        """The panels over the whole screen, sliding down from its top as they open: the tree in the left half and the
+        wall in the right (one alone across the screen), each laid out at HD's scale in its half's taller shape (on a
+        tablet wider than HD's panel: owner, 2026-11-13), and the close strip across the bottom, rising into place
+        (owner, 2026-11-12)."""
         from .desktop_side_panels import DARK_BAR
         panels, window = self.side_panels, self.window
         width, height = window.get_size()
@@ -5327,8 +5328,7 @@ class Desktop:
         eased = ease_in_out(self.overlay_progress)
         drop = round((1 - eased) * (top + body))
         tree, wall = self.panels_used()
-        # The wall at its own width on the right, the tree in the rest (half each where a panel fills its half).
-        half = width - round(224 * s) if tree and wall else width // 2
+        half = width // 2
         if top:
             window.fill((0, 0, 0), pygame.Rect(0, -drop, width, top))
         if tree:
@@ -5340,7 +5340,7 @@ class Desktop:
         if wall:
             span = round(224 * s)
             rect = pygame.Rect(half if tree else (width - span) // 2, top - drop, width - half if tree else span, body)
-            panels.wall_shape = (224, body / s)
+            panels.wall_shape = (max(224, rect.width / s), body / s)   # (wider than HD's 224 on a tablet: posts run on)
             panels.draw_wall(window, self.session, 1.0, rect)
         else:
             panels.wall_rect = None
