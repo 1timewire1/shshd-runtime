@@ -17,6 +17,10 @@ os.environ.setdefault('SDL_HINT_RENDER_SCALE_QUALITY', '1')
 # pixels, then shrunk every frame, for a frame shown about 768 pixels across (the sound prompt took 50 ms a frame).
 os.environ.setdefault('SHSHD_HD_SCALE', '1')
 
+# With the test channel's hidden key set, modules copied to the data folder's dev-modules load first (test_channel.py).
+from exp_runtime.launcher import install_dev_modules
+install_dev_modules()
+
 from exp_runtime.platforms.android import main
 
 if __name__ == '__main__':

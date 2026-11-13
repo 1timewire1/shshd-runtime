@@ -206,7 +206,7 @@ class Application:
         # on Android, where only `run-as` can set it.
         from .launcher import user_data_directory
         from . import test_channel
-        self.test_channel = test_channel.from_environment(user_data_directory() / 'test-shots')
+        self.test_channel = test_channel.from_environment(user_data_directory() / 'test-shots', self.settings.test_channel)
         self.updates = UpdateCheck(update_fetcher)
         self.check_updates = check_updates  # Diagnostics can remain entirely offline.
         self.update_prompt = None
@@ -3161,6 +3161,7 @@ class Application:
                         self.tick(elapsed)
                     if self.test_channel is not None:
                         self.test_channel.poll(self)
+                        running = not self.quit_requested       # (the channel's `quit`)
                 if frame_log.LOG is not None:
                     frame_log.LOG.frame(elapsed, *self._frame_log_place())
         finally:
@@ -3191,6 +3192,8 @@ def main(argv=None):
     parser.add_argument('--no-audio', action='store_true')
     parser.add_argument('--smoke-test', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    from .launcher import install_dev_modules
+    install_dev_modules()           # (the test channel's dev-modules: only with its hidden settings key set)
     if args.smoke_test:
         from .app_info import runtime_version
         from .rar import library

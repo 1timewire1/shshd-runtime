@@ -1,9 +1,13 @@
 """A test channel (shshd-runtime; owner, 2026-11-06): drive the running app from a script, by state rather than by screen taps.
 
-Off unless the environment variable SHSHD_TEST_CHANNEL names a port. On Android that variable comes from the app's
-`p4a_env_vars.txt`, which only `run-as` can write, and `run-as` works only on a debuggable build: a release build can
-never open it. It listens on 127.0.0.1 only; from a PC, `adb forward tcp:PORT tcp:PORT` reaches it over the cable
-(tools/test_channel.py is the client).
+Off unless the environment variable SHSHD_TEST_CHANNEL names a port, or the hidden `test_channel` key of the app's
+settings.json does (AppSettings.test_channel). On Android the variable comes from the app's `p4a_env_vars.txt`, which
+only `run-as` can write, and `run-as` works only on a debuggable build. On iOS an app gets no environment from its
+launch, so the settings key switches it on: the file is in the app's Documents, which a computer writes over the cable
+(File Sharing). It listens on 127.0.0.1 only; from a PC, `adb forward tcp:PORT tcp:PORT` (Android) or usbmux's
+forwarding (iOS: pymobiledevice3) reaches it over the cable (tools/test_channel.py is the client, `--adb` / `--ios`).
+With the channel switched on, the app also loads modules from its data folder's `dev-modules` first
+(launcher.install_dev_modules): a changed module tried without a new build.
 
 One command a line, one JSON reply a line. Commands run on the app's own thread, between frames, as input would, so
 nothing here races the game. A command that takes time (`run-until`, `wait`) is stepped once a frame and replies when
@@ -37,8 +41,20 @@ it's done, so real clocks (fades, timers) run as in play.
     profile on|off              profile the app's thread (cProfile) between the two; `off` replies with the costliest
                                 calls by their own time and by their total (`profile off WORD`: only those whose
                                 file or function name contains WORD)
-    shot NAME                   save the window as NAME.png in the app's data folder; replies with its path
+    shot NAME [inline]          save the window as NAME.png in the app's data folder; replies with its path, and with
+                                `inline` its PNG too (base64 `png`), for a device whose files a computer can't read
+    log [N]                     the app's last N log lines (default 50), kept since the channel opened
+    tap X Y                     a tap at window pixel X, Y (as a shot shows it): press and release a frame apart
+    drag X1 Y1 X2 Y2 [MS]       press at X1, Y1, move to X2, Y2 over MS (default 300), release
+    files [PATH]                what's in the app's data folder (or a folder in it): name, size, whether a folder
+    get PATH                    a file in the app's data folder (base64 `data`)
+    put PATH BASE64             write a file in the app's data folder (dev-modules/exp_runtime/NAME.py: a module the
+                                app loads first, from its next start)
+    quit                        close the app, as its window's close does
 """
+import base64
+import collections
+import io
 import json
 import logging
 import os
@@ -62,9 +78,14 @@ SLOW_MS = 100
 TEXT_KEYS = ('text', 'title', 'prompt', 'speaker', 'options')
 
 
-def from_environment(directory):
-    """The channel the environment asks for (SHSHD_TEST_CHANNEL=port), or None. `directory` is where shots go."""
-    value = os.environ.get('SHSHD_TEST_CHANNEL', '')
+LOG_LINES = 1000
+MAX_FILE_BYTES = 256 * 1024 * 1024
+
+
+def from_environment(directory, port=None):
+    """The channel the environment asks for (SHSHD_TEST_CHANNEL=port), else the hidden settings key's `port`, or None.
+    `directory` is where shots go."""
+    value = os.environ.get('SHSHD_TEST_CHANNEL', '') or ('' if port is None else str(port))
     if not value.isdigit():
         return None
     try:
@@ -72,6 +93,20 @@ def from_environment(directory):
     except OSError as error:
         logging.warning('Test channel could not start: %s', error)
         return None
+
+
+class _LogLines(logging.Handler):
+    """The app's log lines into a deque (the channel's `log`), never raising into the code that logged."""
+
+    def __init__(self, lines):
+        super().__init__()
+        self.lines = lines
+
+    def emit(self, record):
+        try:
+            self.lines.append(f'{record.levelname} {record.name}: {record.getMessage()}')
+        except Exception:               # noqa: BLE001 -- a test aid must not break logging
+            pass
 
 
 class TestChannel:
@@ -84,6 +119,8 @@ class TestChannel:
         self.command = None             # the latest command, for `slow`
         self.profiler = None            # a cProfile.Profile while `profile on`
         self.last = time.perf_counter()
+        self.log = collections.deque(maxlen=LOG_LINES)     # the app's log lines since the channel opened (`log`)
+        logging.getLogger().addHandler(_LogLines(self.log))
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind(('127.0.0.1', port))
@@ -185,7 +222,10 @@ class Commands:
     # -- reading ------------------------------------------------------------------------------------------------------
 
     def do_ping(self, _):
-        return dict(ok=True, screen=self.app.screen)
+        import sys
+        from .launcher import DEV_MODULES
+        dev = next((path for path in sys.path if Path(path).name == DEV_MODULES), None)
+        return dict(ok=True, screen=self.app.screen, dev_modules=dev)
 
     def do_state(self, _=''):
         app, game = self.app, self.game
@@ -551,11 +591,101 @@ class Commands:
         return dict(ok=True, own=top(2), total=top(3))
 
     def do_shot(self, rest):
-        name = ''.join(c for c in (rest or 'shot') if c.isalnum() or c in '-_') or 'shot'
+        words = rest.split()
+        inline = 'inline' in words[1:]
+        name = ''.join(c for c in (words[0] if words else 'shot') if c.isalnum() or c in '-_') or 'shot'
         path = self.channel.directory / f'{name}.png'
         path.parent.mkdir(parents=True, exist_ok=True)
-        pygame.image.save(pygame.display.get_surface(), str(path))
-        return dict(ok=True, path=str(path))
+        window = self._window_picture()
+        pygame.image.save(window, str(path))
+        out = dict(ok=True, path=str(path), size=list(window.get_size()))
+        if inline:
+            out['png'] = base64.b64encode(path.read_bytes()).decode('ascii')
+        return out
+
+    def _window_picture(self):
+        """The window as a surface: the host's own picture of it where it draws natively (iOS: `snapshot`), else the
+        display surface."""
+        snapshot = getattr(self.app, 'host_snapshot', None)
+        picture = snapshot() if snapshot is not None else None
+        return picture if picture is not None else pygame.display.get_surface()
+
+    def do_log(self, rest):
+        count = int(rest) if rest.strip().isdigit() else 50
+        return dict(ok=True, lines=list(self.channel.log)[-count:])
+
+    # -- pointer ------------------------------------------------------------------------------------------------------
+
+    def _pointer(self, kind, pos, **extra):
+        self.app.handle_event(pygame.event.Event(kind, pos=(round(pos[0]), round(pos[1])), **extra))
+
+    def do_tap(self, rest):
+        x, y = (float(v) for v in rest.split()[:2])
+        self._pointer(pygame.MOUSEBUTTONDOWN, (x, y), button=1)
+        yield
+        self._pointer(pygame.MOUSEBUTTONUP, (x, y), button=1)
+        result = yield from self._settled(0.3)
+        return result
+
+    def do_drag(self, rest):
+        values = [float(v) for v in rest.split()]
+        (x1, y1, x2, y2), ms = values[:4], (values[4] if len(values) > 4 else 300.)
+        self._pointer(pygame.MOUSEBUTTONDOWN, (x1, y1), button=1)
+        began = time.perf_counter()
+        last = (x1, y1)
+        while True:
+            yield
+            k = min(1., (time.perf_counter() - began) * 1000 / max(1., ms))
+            here = (x1 + (x2 - x1) * k, y1 + (y2 - y1) * k)
+            self._pointer(pygame.MOUSEMOTION, here, rel=(round(here[0] - last[0]), round(here[1] - last[1])),
+                          buttons=(1, 0, 0))
+            last = here
+            if k >= 1:
+                break
+        self._pointer(pygame.MOUSEBUTTONUP, (x2, y2), button=1)
+        result = yield from self._settled(0.3)
+        return result
+
+    # -- the app's data folder ----------------------------------------------------------------------------------------
+
+    def _data_path(self, rest):
+        """A path within the app's data folder (no way out of it)."""
+        from .launcher import user_data_directory
+        base = user_data_directory().resolve()
+        path = (base / rest.strip().lstrip('/\\')).resolve() if rest.strip() else base
+        if path != base and base not in path.parents:
+            raise ValueError('outside the app\'s data folder')
+        return path
+
+    def do_files(self, rest):
+        path = self._data_path(rest)
+        if not path.is_dir():
+            return dict(ok=False, error=f'not a folder: {rest}')
+        entries = [dict(name=entry.name, folder=entry.is_dir(), size=None if entry.is_dir() else entry.stat().st_size)
+                   for entry in sorted(path.iterdir(), key=lambda entry: entry.name.lower())]
+        return dict(ok=True, path=str(path), entries=entries)
+
+    def do_get(self, rest):
+        path = self._data_path(rest)
+        if not path.is_file():
+            return dict(ok=False, error=f'no file: {rest}')
+        if path.stat().st_size > MAX_FILE_BYTES:
+            return dict(ok=False, error='too large')
+        return dict(ok=True, path=str(path), data=base64.b64encode(path.read_bytes()).decode('ascii'))
+
+    def do_put(self, rest):
+        name, _, data = rest.partition(' ')
+        path = self._data_path(name)
+        payload = base64.b64decode(data.strip(), validate=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        part = path.with_name(path.name + '.part')
+        part.write_bytes(payload)
+        part.replace(path)
+        return dict(ok=True, path=str(path), size=len(payload))
+
+    def do_quit(self, _):
+        self.app.quit_requested = True
+        return dict(ok=True)
 
     # -- helpers ------------------------------------------------------------------------------------------------------
 

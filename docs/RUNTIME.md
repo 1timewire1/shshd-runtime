@@ -408,14 +408,22 @@ id prefix; of several imported copies, the newest), `run-until KIND [SECONDS]` (
 first stop it can't pass, a skip prompt included), `wait`, `timing on|off` (fps, median, p90, worst frame, and each
 frame of 100 ms or more with the command running and what showed after it), `profile on|off [WORD]` (cProfile on the
 app's thread; the costliest calls, only those naming WORD if given), `pinch FACTOR [MS] [MOVES]` (two scripted
-fingers on the open story tree, through Android's own pinch, or a stand-in of it on a desktop) and `shot NAME`. Actions wait for a fade or
+fingers on the open story tree, through Android's own pinch, or a stand-in of it on a desktop), `shot NAME [inline]` (with
+`inline`, the PNG in the reply), `log [N]` (the app's last log lines), `tap X Y` and `drag X1 Y1 X2 Y2 [MS]` (pointer
+events in window pixels, delivered inside the app), `files [PATH]`, `get PATH` and `put PATH BASE64` (the app's data
+folder only) and `quit`. Actions wait for a fade or
 transition before and after, as a player would; `answer` refuses a row a player couldn't pick rather than hand it to
 the game.
 
 `tools/test_channel.py` is the client. On Android, `--adb SERIAL --enable` writes the variable into the app's
 `p4a_env_vars.txt` with `run-as`, so only a debuggable build can have it (a release build never listens); an update
-resets that file. `--adb` forwards the port over USB, `--pull NAME OUT` fetches a shot. Without the variable nothing
-listens.
+resets that file. `--adb` forwards the port over USB. An iOS app gets no environment from its launch, so the channel
+also opens for a hidden `test_channel` port in the app's settings.json (kept by the app's own writes): `--ios --enable`
+sets it through the app's Documents (File Sharing, with pymobiledevice3), and `--ios` forwards the port over usbmux.
+`--shot NAME OUT`, `--put LOCAL REMOTE` and `--get REMOTE OUT` move pictures and files through the channel itself.
+With the channel switched on by the settings key, the data folder's `dev-modules` (as `exp_runtime/NAME.py`) goes first
+on the module path from the next start (`launcher.install_dev_modules`): a module `put` there is tried on a device
+without a new build, and `ping` names the folder while it's in use. Without the variable or the key nothing listens.
 
 ## Resource and execution boundaries
 

@@ -31,6 +31,10 @@ class AppSettings:
         self.last_game = None
         self.aspect_ratio = None
         self.backup_folder = self.export_folder = None
+        # Hidden (no menu row; owner, 2026-11-12): the test channel's port (test_channel.py). On iOS, where an app gets
+        # no environment from its launch, this is how the channel is switched on: the file is in the app's Documents,
+        # which only a computer with the device on its cable can write.
+        self.test_channel = None
         try:
             data = json.loads(self.path.read_text(encoding='utf-8'))
             if (not isinstance(data, dict) or data.get('version') != 1
@@ -58,6 +62,8 @@ class AppSettings:
         for key in FOLDERS:
             if isinstance(data.get(key), str) and data[key]:
                 setattr(self, key, data[key])
+        if type(data.get('test_channel')) is int and 1024 <= data['test_channel'] <= 65535:
+            self.test_channel = data['test_channel']
 
     def set_update_check(self, enabled):
         if type(enabled) is not bool:
@@ -108,6 +114,8 @@ class AppSettings:
         values = dict(check_for_updates=self.check_for_updates, preferences=self.preferences,
                       start_in=self.start_in, last_game=self.last_game, aspect_ratio=self.aspect_ratio,
                       **{key: getattr(self, key) for key in FOLDERS})
+        if self.test_channel is not None:
+            values['test_channel'] = self.test_channel      # (hidden: kept as it was)
         values.update(changes)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = None
