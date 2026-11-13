@@ -161,6 +161,34 @@ class DrawingTests(unittest.TestCase):
         glyph.fill((100, 0, 250, 0), special_flags=BLEND_RGBA_ADD)
         self.assertEqual(pixel(glyph, (0, 0)), (110, 20, 255, 40))
 
+    def test_pygames_surface_queries(self):
+        """What master's screens ask of a surface (the iPad's hang after an import, 2026-11-12: a preview's
+        get_buffer, then the story layer's get_masks): its alpha, a pixel, a pixel set, whether it is blank."""
+        plain, alpha = Surface((4, 4)), Surface((4, 4), SRCALPHA)
+        self.assertEqual((plain.get_masks()[3], plain.get_flags() & SRCALPHA), (0, 0))
+        self.assertEqual((alpha.get_masks()[3], alpha.get_flags() & SRCALPHA), (0xff000000, SRCALPHA))
+        self.assertEqual(alpha.subsurface((1, 1, 2, 2)).get_masks()[3], 0xff000000)
+        self.assertTrue(alpha.blank())
+        self.assertFalse(plain.blank())                       # an opaque surface starts black
+        alpha.set_at((2, 1), (9, 8, 7))
+        self.assertFalse(alpha.blank())
+        colour = alpha.get_at((2, 1))
+        self.assertEqual((tuple(colour), colour.a, colour[3]), ((9, 8, 7, 255), 255, 255))
+        self.assertEqual(alpha.get_at((0, 0)).a, 0)
+        alpha.set_alpha(100)
+        self.assertEqual(alpha.get_alpha(), 100)
+        from exp_runtime import graphics
+        self.assertIs(graphics.faded(alpha, 50), alpha)      # the host's whole-surface alpha, as before
+        self.assertEqual(alpha.get_alpha(), 50)
+        import wave
+        stream = BytesIO()
+        with wave.open(stream, 'wb') as writer:
+            writer.setnchannels(1), writer.setsampwidth(2), writer.setframerate(8000)
+            writer.writeframes(bytes(8000))                   # half a second
+        sound = drawing.Mixer().Sound(file=BytesIO(stream.getvalue()))
+        self.assertAlmostEqual(sound.get_length(), 0.5, places=2)
+        self.assertAlmostEqual(drawing.Mixer().Sound(file=BytesIO(bytes(32000))).get_length(), 2.0)
+
     def test_image_save_writes_the_named_format(self):
         surface = Surface((3, 2))
         surface.fill((10, 200, 30))

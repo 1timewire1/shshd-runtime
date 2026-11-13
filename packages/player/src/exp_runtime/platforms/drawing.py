@@ -148,6 +148,14 @@ BLENDS = (BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_
           BLEND_PREMULTIPLIED)
 
 
+class Color(tuple):
+    """pygame's Color as get_at answers it: an RGBA tuple with its channels by name."""
+    def __new__(cls, r, g, b, a=255):
+        return super().__new__(cls, (r, g, b, a))
+
+    r, g, b, a = (property(lambda self, i=i: self[i]) for i in range(4))
+
+
 def rgba(color):
     return tuple(color) if len(color) == 4 else (*color, 255)
 
@@ -212,6 +220,8 @@ class Node:
 
 
 class Surface:
+    native = True               # graphics.faded/opaque: the host blends whole-surface alpha over per-pixel alpha
+
     def __init__(self, size, flags=0):
         self._size = tuple(map(int, size))
         if len(self._size) != 2 or min(self._size) < 0:
@@ -220,6 +230,7 @@ class Surface:
         self._clip = Rect(0, 0, *self._size)
         self._ops = []
         self._node = None
+        self._srcalpha = bool(flags & SRCALPHA)
         self.opaque = not bool(flags & SRCALPHA)
         self.fill((0, 0, 0, 255 if self.opaque else 0))
 
@@ -386,6 +397,38 @@ class Surface:
         self._ops, self._node = [], Node(self._size, pixels=pixels)
         self.opaque = pixels.getextrema()[3] == (255, 255)
 
+    # pygame's queries master's screens ask (2026-11-12): what a surface is and a pixel's colour.
+    def get_flags(self):
+        return SRCALPHA if self._has_alpha() else 0
+
+    def get_masks(self):
+        return 0xff0000, 0xff00, 0xff, 0xff000000 if self._has_alpha() else 0
+
+    def get_alpha(self):
+        return self._alpha
+
+    def _has_alpha(self):
+        return self.__dict__.get('_srcalpha', True)
+
+    def get_at(self, position):
+        """A pixel's colour, read from the surface drawn in Python once for as long as it stays the same (the X360
+        arena's flourish scans read a column of them)."""
+        node = self.snapshot()
+        pixels = node.pixels if node.pixels is not None else node.__dict__.get('_raster')
+        if pixels is None:
+            pixels = node._raster = raster(node).convert('RGBA')
+        return Color(*pixels.getpixel(tuple(map(int, position))))
+
+    def set_at(self, position, color):
+        x, y = map(int, position)
+        self.fill(color if len(color) == 4 else (*color, 255), Rect(x, y, 1, 1))
+
+    def blank(self):
+        """Nothing drawn since it was cleared: only fills of transparent black (Desktop._canvas_empty, which reads a
+        pygame surface's pixel buffer for the same answer; this one keeps no pixels)."""
+        return self._node is None and all(op.get('kind') == 'fill' and tuple(op['color'])[3] == 0 and not op.get('blend')
+                                          for op in self._ops)
+
     def get_bounding_rect(self, min_alpha=1):
         """pygame's: the smallest rectangle holding every pixel whose alpha is at least `min_alpha` (the HD screens
         place text by its ink)."""
@@ -438,6 +481,9 @@ class SurfaceView(Surface):
         self._parent, self._offset, self._size = parent, (rect.x, rect.y), rect.size
         self._alpha = 255
         self._clip = Rect(0, 0, *self._size)
+
+    def _has_alpha(self):
+        return self._parent._has_alpha()
 
     @property
     def opaque(self):
@@ -772,7 +818,7 @@ class ImageAPI:
         return kept[1].copy()
 
     @staticmethod
-    def load(source):
+    def load(source, namehint=''):
         try:
             with Image.open(source) as image:
                 return Surface.from_pixels(image.convert('RGBA'))
@@ -1041,6 +1087,24 @@ class EffectSound:
     def get_num_channels(self):
         return sum(1 for channel in self.channels if channel.get_busy())
 
+    length = 0.0
+
+    def get_length(self):
+        return self.length
+
+
+def _sound_length(raw):
+    """Seconds of a sound, for desktop's cache of short effects (which keeps sounds under 5 s): a WAV's own, or the
+    bytes at 128 kbit/s for the compressed ones (only the threshold reads it)."""
+    if raw[:4] == b'RIFF' and raw[8:12] == b'WAVE':
+        import wave
+        try:
+            with wave.open(BytesIO(raw)) as reader:
+                return reader.getnframes() / float(reader.getframerate() or 1)
+        except (wave.Error, EOFError):
+            pass
+    return len(raw) / 16000.0
+
 
 class Mixer:
     def __init__(self):
@@ -1065,7 +1129,10 @@ class Mixer:
         self.effects = []
 
     def Sound(self, *, file):
-        return EffectSound(self, base64.b64encode(file.read()).decode('ascii'))
+        raw = file.read()
+        sound = EffectSound(self, base64.b64encode(raw).decode('ascii'))
+        sound.length = _sound_length(raw)
+        return sound
 
     def effect(self, sound):
         self.sound_serial += 1

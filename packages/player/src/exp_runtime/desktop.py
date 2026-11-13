@@ -2281,7 +2281,10 @@ class Desktop:
 
     def _canvas_empty(self):
         """Whether the canvas is still as render() cleared it. All zero bytes, so a compare: get_bounding_rect costs as
-        much as the scale it would save."""
+        much as the scale it would save. iOS's drawing backend keeps no pixels: its surface says so itself (blank)."""
+        blank = getattr(self.canvas, 'blank', None)
+        if blank is not None:
+            return blank()
         buffer = self.canvas.get_buffer()
         if len(self._blank_canvas) != buffer.length:
             self._blank_canvas = bytes(buffer.length)

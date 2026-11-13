@@ -139,9 +139,10 @@ def faded(surface, alpha):
     changed, so a cached surface stays as it was."""
     if alpha is not None and alpha >= 255:
         alpha = None
+    # The native backend's surfaces take a whole-surface alpha over their own as the host draws it (the old route).
     # Per-pixel alpha is the pixel format's own alpha channel (pygame-ce also reports SRCALPHA in get_flags once a
     # plain surface has had a whole-surface alpha, so that flag cannot tell them apart).
-    get_masks = getattr(surface, 'get_masks', None)
+    get_masks = None if getattr(surface, 'native', False) else getattr(surface, 'get_masks', None)
     per_pixel = get_masks is not None and bool(get_masks()[3])
     if alpha is None and per_pixel:
         return surface              # (set_alpha(None) would also switch off its per-pixel blending)
@@ -164,7 +165,7 @@ def opaque(surface):
     has one (macOS) gives `convert()`ed canvases one, and a canvas built there can carry alpha 0 where its colour is
     right; anything later composed on it shows that alpha. Surfaces without per-pixel alpha (and the native
     backend's) are left as they are."""
-    get_masks = getattr(surface, 'get_masks', None)
+    get_masks = None if getattr(surface, 'native', False) else getattr(surface, 'get_masks', None)
     if get_masks is not None and get_masks()[3]:
         surface.fill((0, 0, 0, 255), special_flags=__getattr__('BLEND_RGBA_MAX'))
     return surface
