@@ -89,11 +89,15 @@ def prepare(sdk, *, offline=False):
     return download(lock['pillow'][sdk], offline=offline)
 
 
+LOGO = ROOT / 'build/ios/kiwi-logo.png'      # the app's own logo: the kiwi, transparent round it (icons)
+
+
 def icons():
     """Render only the authored SVG logo, never a player's artwork."""
     directory = ROOT / 'build/ios/Assets.xcassets/AppIcon.appiconset'
     source = ROOT / 'packages/player/src/exp_runtime/assets/kiwi.svg'
-    if (directory / 'Contents.json').is_file() and (directory / 'kiwi.png').is_file() and (directory / 'kiwi.png').stat().st_mtime > source.stat().st_mtime:
+    if (all((path).is_file() and path.stat().st_mtime > source.stat().st_mtime
+            for path in (directory / 'kiwi.png', LOGO)) and (directory / 'Contents.json').is_file()):
         return
     os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
     import pygame
@@ -103,6 +107,9 @@ def icons():
     logo = pygame.image.load_sized_svg(str(source), (1024, 1024))
     surface.blit(logo, (0, 0))
     pygame.image.save(surface, str(directory / 'kiwi.png'))
+    # The logo the app draws (the chooser's kiwi): transparent round it. The app icon above must be opaque, as iOS's
+    # are; bundled as the logo, its light square showed round the kiwi on the HD app screens (owner, 2026-11-12).
+    pygame.image.save(logo, str(LOGO))
     (directory / 'Contents.json').write_text(json.dumps(dict(
         images=[dict(filename='kiwi.png', idiom='universal', platform='ios', size='1024x1024')],
         info=dict(author='exp-runtime', version=1))))
@@ -168,7 +175,7 @@ def stage(bundle, sdk):
     _frameworks(bundle, bundle / 'app_packages')
     shutil.copy2(ROOT / 'LICENSE', bundle / 'LICENSE')
     shutil.copy2(ROOT / 'ios/dependencies.json', bundle / 'runtime-dependencies.json')
-    shutil.copy2(ROOT / 'build/ios/Assets.xcassets/AppIcon.appiconset/kiwi.png', bundle / 'kiwi.png')
+    shutil.copy2(LOGO, bundle / 'kiwi.png')
     # Strip upstream ad-hoc signatures for the unsigned device artifact. The
     # simulator instead needs all nested binaries to be ad-hoc signed locally.
     for framework in sorted((bundle / 'Frameworks').glob('*.framework')):
