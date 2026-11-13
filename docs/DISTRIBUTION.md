@@ -14,8 +14,7 @@ System-font fallback and current limits are in [IPA.md](IPA.md) and [COD.md](COD
 pull requests, version tags beginning with `v`, and manual **Run workflow**
 requests. It installs locked dependencies with uv and Python 3.14, runs the
 tests without game content, builds the player, audits its bundle
-and tests the extracted desktop downloads. On the `ios-port` branch and manual
-runs it also calls the reusable
+and tests the extracted desktop downloads. It also calls the reusable
 [iOS workflow](../.github/workflows/ios-builds.yml), which verifies the shared
 engine and native presentation in a simulator before packaging the unsigned
 device app. Third-party actions are pinned to verified commit hashes.
@@ -51,11 +50,9 @@ four desktop builds and the Python packaging checks pass, the release job
 requires all four desktop downloads and their checksum files, verifies the
 checksums, and publishes the desktop archives and wheels with their checksums
 on **Releases**. In this fork the iOS job still runs on every push, but the
-release neither waits for nor includes it. The fork's iOS build does not work
-yet: the simulator app builds, then fails on launch because the HD screens
-import pygame, which the iOS app does not embed (see
-[IOS_APP.md](IOS_APP.md)). Its `macos-26` runner can also queue for a long
-time. Ordinary pushes and pull requests
+release neither waits for nor includes it yet: the port works (see
+[IOS_APP.md](IOS_APP.md)), but its `macos-26` runner can queue for a long
+time, and its IPA stays an Actions artifact for now. Ordinary pushes and pull requests
 never create releases. Their jobs have read-only repository permissions; only
 the version-tag release job has `contents: write`, using GitHub's built-in
 token. No personal token or signing secrets are required.

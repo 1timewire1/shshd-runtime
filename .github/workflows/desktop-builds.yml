@@ -87,10 +87,8 @@ jobs:
 
   ios:
     name: iOS
-    # The port doesn't run yet (docs/IOS_APP.md): only on its own branch or by hand, so that a failed run means something.
-    if: >-
-      github.ref_name == 'ios-port' || github.head_ref == 'ios-port' ||
-      (github.event_name == 'workflow_dispatch' && inputs.release_run_id == '')
+    # Beside the desktop builds since the iOS catch-up (docs/IOS_APP.md); not part of a release yet.
+    if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     uses: ./.github/workflows/ios-builds.yml
 
   build:
@@ -201,8 +199,7 @@ jobs:
   release-source:
     name: Select tested release artifacts
     # This fork: releases carry the desktop downloads and wheels only. The iOS job still runs, but neither waits for
-    # nor requires it (its macos-26 runner can queue for a long time, and the fork's iOS build is not yet verified);
-    # its IPA stays an Actions artifact until it is.
+    # nor requires it (its macos-26 runner can queue for a long time); its IPA stays an Actions artifact for now.
     if: >-
       ${{ always() && !cancelled() && (
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&

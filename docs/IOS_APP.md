@@ -1,30 +1,11 @@
 # iOS app
 
-> **Status in SHSHD Runtime: not working yet, set aside after v1.0.0.** The iOS app below is upstream
-> exp-runtime's. This fork's SHS HD and Cause of Death screens have only ever run on desktop, and its iOS
-> build fails in our tested setup (GitHub Actions, `macos-26` runners; there is no local Mac). Releases
-> carry the desktop downloads only. What we hit:
->
-> - **The simulator check stops with "No module named 'pygame'".** The iOS app deliberately embeds no
->   pygame: drawing goes through `exp_runtime.graphics`, whose iOS backend (`platforms/drawing.py` and the
->   Swift host) implements the subset of pygame upstream's screens use. The fork's 24 HD and CoD player
->   modules (the HD UI, menus, episode grid and lists, pause menu, football and word game, side panels,
->   vector text) import pygame directly. The tests and the simulator build pass; the app fails on launch
->   (Actions run 38761529245, `ios-simulator-diagnostics`).
-> - **Switching those imports is not enough.** The HD code uses pygame features the iOS backend lacks:
->   - TrueType fonts loaded from `.ttf` files (`vector_text`, the library's `fonts/` folder);
->   - the `BLEND_RGBA_MULT` / `MIN` / `MAX` masks;
->   - `PixelArray` (CoD's recoloured popup card);
->   - `draw.ellipse`, `draw.lines`, `draw.aalines`;
->   - `font.match_font`;
->   - `image.save` (the episode screenshots).
->
->   Each needs a backend and Swift counterpart, checked in the simulator.
-> - **Slow feedback.** Each attempt is a push and a CI run, and the `macos-26` runner can queue for 10 minutes
->   or more.
->
-> The iOS job still runs on every push and fails at that step. It no longer gates or joins a release
-> (`docs/DISTRIBUTION.md`). Porting the HD screens to the iOS backend is planned after the first release.
+> **Status in SHSHD Runtime: working (caught up for v1.1.0, 2026-11-13).** The fork's SHS HD and Cause of
+> Death screens run on iOS through `exp_runtime.graphics`'s iOS backend (`platforms/drawing.py` and the Swift
+> host), with frames composited on the GPU. It was tested on an iPad mini 5 (a 50-minute soak through 15
+> episodes of every kind: 54-60 fps, memory steady) and in the simulator, with iPhone shapes checked through
+> the safe-area insets. The catch-up is described in `reference/IOS_CATCHUP_PLAN.md`. Builds produce an
+> unsigned IPA that users sign themselves; releases don't carry it yet.
 
 Introduced in **v0.4.0**. The v0.3.0 release supports importing
 original IPA assets on desktop; it does not include this iPhone/iPad app.
@@ -64,18 +45,15 @@ provisioning profile.
 
 The [Builds workflow](../.github/workflows/desktop-builds.yml) calls the reusable
 [iOS workflow](../.github/workflows/ios-builds.yml) alongside the desktop builds,
-on the `ios-port` branch and manual runs only until the port runs (a job that
-always fails would hide real failures). The iOS job runs host tests, builds and verifies the simulator app, and packages
+on every build. The iOS job runs host tests, builds and verifies the simulator app, and packages
 an unsigned device build on an arm64 macOS runner. Its `ios-arm64-unsigned`
 artifact contains only the IPA and checksum; `ios-simulator-verification`
 contains the verification report. The standalone **iOS builds** workflow can
 also be run manually for development artifacts.
 
-For version tags, the release job waits for all desktop builds and iOS
-verification, checks all five player downloads, four creator downloads and
-seven wheels with their checksums, and attaches the IPA and checksum directly
-to the GitHub Release alongside the desktop downloads and wheels.
-Simulator reports remain Actions artifacts. Users handle signing and installation.
+Upstream's release job also waits for iOS verification and attaches the IPA
+and checksum to the GitHub Release. This fork's release doesn't yet: the IPA
+and the simulator reports remain Actions artifacts (`docs/DISTRIBUTION.md`). Users handle signing and installation.
 For a release made before this workflow change, see
 [adding the missing IPA](DISTRIBUTION.md#adding-an-ipa-to-an-existing-release).
 
