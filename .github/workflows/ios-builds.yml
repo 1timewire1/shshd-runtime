@@ -3,6 +3,14 @@ name: iOS builds
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      intel:
+        # When GitHub's Apple Silicon runners are short (they have queued past their 15 minutes for hours), an Intel
+        # Mac builds the same arm64 device app. Its simulator can't run the arm64 simulator build, so the simulator
+        # self-test is skipped; the device app is checked on the iPad instead (shshd-runtime, 2026-11-13).
+        description: Build on an Intel Mac (no simulator check)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,7 +22,7 @@ concurrency:
 jobs:
   build:
     name: Unsigned iPhone app
-    runs-on: macos-26
+    runs-on: ${{ inputs.intel && 'macos-15-intel' || 'macos-26' }}
     timeout-minutes: 30
     env:
       PYTHONDONTWRITEBYTECODE: '1'
@@ -27,6 +35,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
+      - name: Select the newest Xcode (Intel)
+        if: ${{ inputs.intel }}
+        run: |
+          ls -d /Applications/Xcode*.app
+          newest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest"
+          xcodebuild -version
 
       - name: Install uv and select Python
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -48,7 +64,9 @@ jobs:
 
       - name: Prepare iOS dependencies
         run: |
-          uv run --locked --extra desktop python tools/build_ios.py --prepare --sdk iphonesimulator
+          if [ "${{ inputs.intel }}" != "true" ]; then
+            uv run --locked --extra desktop python tools/build_ios.py --prepare --sdk iphonesimulator
+          fi
           uv run --locked --extra desktop python tools/build_ios.py --prepare --sdk iphoneos
 
       # Cache both SDKs before tests or simulator boot can fail.
@@ -63,13 +81,15 @@ jobs:
         run: uv run --locked --extra desktop python -m unittest discover -s tests
 
       - name: Build simulator app
+        if: ${{ !inputs.intel }}
         run: uv run --locked --extra desktop python tools/build_ios.py --sdk iphonesimulator
 
       - name: Verify shared engine and native presentation on iOS
+        if: ${{ !inputs.intel }}
         run: uv run --locked --extra desktop python tools/test_ios.py --boot-timeout 600 --install-timeout 300
 
       - name: Upload simulator failure diagnostics
-        if: failure()
+        if: ${{ failure() && !inputs.intel }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ios-simulator-diagnostics
@@ -95,6 +115,7 @@ jobs:
           retention-days: 30
 
       - name: Upload simulator verification report
+        if: ${{ !inputs.intel }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ios-simulator-verification
