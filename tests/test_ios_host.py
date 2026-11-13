@@ -67,7 +67,9 @@ class IOSPrototypeTests(unittest.TestCase):
             if 'ops' not in node:
                 return False
             for index, op in enumerate(node['ops']):
-                if op.get('blend') or op['kind'] not in ('fill', 'blit', 'scale'):
+                if op.get('blend') or op['kind'] not in ('fill', 'blit', 'scale', 'rect'):
+                    return False
+                if op['kind'] == 'rect' and op['color'][3] != 255:
                     return False
                 if op['kind'] == 'fill' and op['color'][3] != 255 and not (op['color'][3] == 0 and index == 0):
                     return False
@@ -85,6 +87,7 @@ class IOSPrototypeTests(unittest.TestCase):
         self.assertTrue(any(composable(n) and any(nodes.get(o.get('source'), {}).get('ops') for o in n['ops'])
                             for n in sources))                                                            # nesting
         self.assertTrue(any('ops' in n and not composable(n) for n in sources))                          # CPU
+        self.assertEqual({op.get('width', 0) > 0 for op in ops if op['kind'] == 'rect'}, {True, False})   # boxes
         self.assertGreater(len(fixture['samples']), 20)
 
     def test_the_bundles_python_is_compiled_ahead_for_the_embedded_version(self):

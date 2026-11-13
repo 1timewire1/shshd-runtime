@@ -307,11 +307,16 @@ def composite_fixture():
     board.fill((30, 160, 90))
     board.blit(Surface.from_pixels(Image.new('RGBA', (6, 6), (230, 220, 40, 255))), (0, 0))
     target.blit(Transform.smoothscale(board, (24, 24)), (60, 30))
+    # Opaque boxes, filled and outlined (the window's edges, the menus' cards): a layer's colour and border.
+    from exp_runtime.platforms.drawing import Draw
+    Draw.rect(target, (240, 120, 30), (88, 4, 6, 10))
+    Draw.rect(target, (20, 200, 240), (86, 40, 10, 12), 2)
     expected = raster(target.snapshot()).convert('RGBA')
     points = [(0, 0), (5, 5), (13, 13), (14, 14), (20, 4), (20, 6), (23, 9), (28, 4), (35, 15), (36, 16),
               (40, 4), (45, 9), (50, 4), (55, 9), (60, 4), (61, 5), (63, 7), (59, 3), (64, 4),
               (9, 25), (11, 27), (11, 29), (20, 40), (34, 54), (4, 20), (3, 19),
-              (63, 33), (66, 36), (79, 47), (76, 50), (83, 53), (59, 29), (84, 54)]       # the stretch's flat parts
+              (63, 33), (66, 36), (79, 47), (76, 50), (83, 53), (59, 29), (84, 54),       # the stretch's flat parts
+              (90, 8), (91, 12), (87, 8), (86, 46), (87, 46), (90, 41), (90, 46)]          # the boxes
     return dict(frame=FrameEncoder().encode(target), samples=[dict(at=p, rgba=expected.getpixel(p)) for p in points])
 
 

@@ -280,11 +280,14 @@ class Surface:
         """Forget the ops drawn wholly inside `cover`, which the op about to be recorded paints over. A surface kept
         and redrawn in parts each frame (the BREW catch game's canvas: its header and field put back, then this frame's
         sprites) otherwise kept every frame's sprites under the parts, 2,800 ops after a few seconds, drawn again by
-        the host each frame."""
+        the host each frame. (Plain numbers, not Rects: the choice screen's hundreds of glyph blits made Rects of this
+        cost a frame 30 ms on the iPad.)"""
+        left, top, right, bottom = cover.x, cover.y, cover.x + cover.width, cover.y + cover.height
         kept, moved = [], {}
+        bounds = self._op_bounds
         for index, op in enumerate(self._ops):
-            bounds = self._op_bounds(op)
-            if bounds is not None and cover.contains(bounds):
+            box = bounds(op)
+            if box is not None and left <= box[0] and top <= box[1] and box[2] <= right and box[3] <= bottom:
                 continue
             moved[index] = len(kept)
             kept.append(op)
@@ -295,18 +298,23 @@ class Surface:
 
     @staticmethod
     def _op_bounds(op):
-        """The area an op can change, within its clip, or None when not worked out (it is never dropped)."""
+        """The box (left, top, right, bottom) an op can change, within its clip, or None when not worked out (it is
+        never dropped)."""
         kind = op.get('kind')
         if kind in ('fill', 'rect', 'ellipse'):
-            bounds = Rect(op['rect'])
+            x, y, w, h = op['rect']
         elif kind == 'blit' and 'source' in op:
-            bounds = Rect(*op['at'], *op['source'].size)
+            (x, y), (w, h) = op['at'], op['source'].size
         elif kind == 'circle':
-            (x, y), radius = op['center'], op['radius']
-            bounds = Rect(x - radius, y - radius, 2 * radius + 1, 2 * radius + 1)
+            (cx, cy), radius = op['center'], op['radius']
+            x, y, w, h = cx - radius, cy - radius, 2 * radius + 1, 2 * radius + 1
         else:
             return None
-        return bounds.clip(Rect(op['clip'])) if op.get('clip') else bounds
+        clip = op.get('clip')
+        if clip:
+            cx, cy, cw, ch = clip
+            return max(x, cx), max(y, cy), min(x + w, cx + cw), min(y + h, cy + ch)
+        return x, y, x + w, y + h
 
     def _drop_hidden(self):
         """Forget the ops that later opaque ones paint over entirely. One opaque fill or blit of the whole surface
@@ -462,8 +470,9 @@ class Surface:
         for op in node.ops:
             if op.get('kind') in self._WHOLE:
                 return None
-            bounds = self._op_bounds(op)
-            if bounds is not None and bounds.clip(region).width * bounds.clip(region).height == 0:
+            box = self._op_bounds(op)
+            if box is not None and (box[2] <= region.x or box[0] >= region.right or box[3] <= region.y
+                                    or box[1] >= region.bottom or box[2] <= box[0] or box[3] <= box[1]):
                 continue
             moved = _translated(op, -region.x, -region.y)
             moved['clip'] = tuple(Rect(op.get('clip') or (0, 0, *self._size)).move(-region.x, -region.y)
@@ -596,9 +605,18 @@ class SurfaceView(Surface):
         if node.pixels is not None:
             box = (x, y, x + w, y + h)
             if box not in node.crops:
-                node.crops[box] = Node(self._size, pixels=node.pixels.crop(box))
+                # A small piece is a picture of its own (a font sheet's glyphs, read every frame: one node each). A big
+                # one is the whole picture placed and clipped: a background panned or zoomed is a new piece of its
+                # art each frame, and as pictures each was a new 1.1 MB PNG (Football Star's openings on the iPad).
+                node.crops[box] = (Node(self._size, pixels=node.pixels.crop(box)) if w * h <= self.PICTURE_PIECE else
+                                   Node(self._size, (dict(kind='blit', source=node, at=(-x, -y), alpha=255,
+                                                          clip=(0, 0, w, h)),)))
+                if len(node.crops) > 256:
+                    del node.crops[next(iter(node.crops))]
             return node.crops[box]
         return Node(self._size, (dict(kind='blit', source=node, at=(-x, -y), alpha=255, clip=(0, 0, w, h)),))
+
+    PICTURE_PIECE = 65_536          # pixels: a subsurface of a picture this small is a picture itself
 
     def copy(self):
         result = Surface.from_node(self.snapshot())

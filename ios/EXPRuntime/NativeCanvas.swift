@@ -467,6 +467,19 @@ final class NativeCanvas {
             case "scale":
                 let frame = CGRect(x: 0, y: 0, width: size[0], height: size[1])
                 parts.append(ComposedPart(content: try stretch(op), frame: frame, alpha: 1, clip: cutting(clip, frame)))
+            case "rect":
+                // An opaque box, filled or outlined, rounded or not (the window's frame edges, the menus' cards): a
+                // layer's own colour, border and corners. See-through ones replace what is under them (copy): drawn.
+                let values = try numbers(op["color"]).map { $0 / 255 }
+                guard values.count == 4, values[3] == 1, let color = CGColor(colorSpace: space, components: values) else {
+                    return nil
+                }
+                let frame = try rect(op["rect"])
+                let width = CGFloat((op["width"] as? NSNumber)?.doubleValue ?? 0)
+                let radius = CGFloat((op["radius"] as? NSNumber)?.doubleValue ?? 0)
+                guard frame.width > 0, frame.height > 0 else { continue }
+                parts.append(ComposedPart(content: .box(color, width: width, radius: radius), frame: frame, alpha: 1,
+                                          clip: cutting(clip, frame)))
             default:
                 return nil
             }
@@ -515,6 +528,7 @@ struct ComposedPart {
         case stretched(CGImage, smooth: Bool)         // a picture scaled to `frame`
         case scaled(ComposedNode, smooth: Bool)       // a composited node's layers scaled to `frame`
         case color(CGColor)                           // an opaque fill
+        case box(CGColor, width: CGFloat, radius: CGFloat)   // an opaque rect: filled (width 0) or outlined
     }
     let content: Content
     let frame: CGRect                                 // in the parent node's pixels
@@ -590,6 +604,19 @@ final class LayerCompositor {
                 case .color(let color):
                     piece = take(Key(id: node.id, use: use, part: index))
                     piece.backgroundColor = color
+                case .box(let color, let width, let radius):
+                    piece = take(Key(id: node.id, use: use, part: index))
+                    // CoreGraphics strokes the box inset by half the width, so its outer corner is that much rounder.
+                    if width > 0 {
+                        piece.backgroundColor = nil
+                        piece.borderColor = color
+                        piece.borderWidth = width
+                        piece.cornerRadius = radius > 0 ? radius + width / 2 : 0
+                    } else {
+                        piece.backgroundColor = color
+                        piece.borderWidth = 0
+                        piece.cornerRadius = radius
+                    }
                 }
                 if piece.opacity != part.alpha { piece.opacity = part.alpha }
                 func fit(_ frame: CGRect) {
