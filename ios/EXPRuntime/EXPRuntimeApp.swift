@@ -3,12 +3,26 @@ import UniformTypeIdentifiers
 import AVFAudio
 import AudioToolbox
 
+/// Whether the status bar shows: not in landscape, where the side panels' headers reach the screen's top (the iPad's
+/// clock sat over "Rewind", 2026-11-13); an iPhone hides it there anyway.
+final class StatusBar: ObservableObject {
+    static let shared = StatusBar()
+    @Published var hidden = false
+}
+
 @main
 struct EXPRuntimeApp: App {
     var body: some Scene {
+        WindowGroup { RootView() }
+    }
+}
+
+struct RootView: View {
+    @ObservedObject private var statusBar = StatusBar.shared
+    var body: some View {
         // Every safe area ignored: the game view runs under the status bar and home indicator (its runtime keeps clear
         // of them, RuntimeController.frame's `insets`) and the keyboard is drawn over it.
-        WindowGroup { RuntimeView().background(Color.black.ignoresSafeArea()).ignoresSafeArea() }
+        RuntimeView().background(Color.black.ignoresSafeArea()).ignoresSafeArea().statusBarHidden(statusBar.hidden)
     }
 }
 
@@ -627,6 +641,10 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let landscape = view.bounds.width > view.bounds.height
+        if StatusBar.shared.hidden != landscape {
+            DispatchQueue.main.async { StatusBar.shared.hidden = landscape }
+        }
         let safe = view.window?.safeAreaInsets ?? .zero
         if leadingEdge.constant != safe.left { leadingEdge.constant = safe.left }
         if trailingEdge.constant != -safe.right { trailingEdge.constant = -safe.right }
