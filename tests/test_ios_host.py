@@ -79,6 +79,8 @@ class IOSPrototypeTests(unittest.TestCase):
         self.assertTrue(any(op['kind'] == 'blit' and tuple(op['clip']) != (0, 0, *root['size']) for op in ops))
         sources = [nodes[op['source']] for op in ops if 'source' in op and op['source'] in nodes]
         self.assertTrue(any('ops' in n and [o['kind'] for o in n['ops']] == ['scale'] for n in sources))     # a stretch
+        self.assertTrue(any('ops' in n and [o['kind'] for o in n['ops']] == ['scale'] and n['ops'][0].get('smooth')
+                            and composable(nodes[n['ops'][0]['source']]) for n in sources))     # a group's, smoothly
         self.assertTrue(any(composable(n) and any(nodes.get(o.get('source'), {}).get('ops') for o in n['ops'])
                             for n in sources))                                                            # nesting
         self.assertTrue(any('ops' in n and not composable(n) for n in sources))                          # CPU

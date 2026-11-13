@@ -409,6 +409,20 @@ final class NativeCanvas {
         return result
     }
 
+    /// A `scale` op's source stretched: a composited node's own layers, scaled by Core Animation (the New Rules arena's
+    /// 1956 x 2608 canvas, stretched to the window each frame, was drawn into a picture first: 70 ms a frame), or a
+    /// picture's.
+    private func stretch(_ op: [String: Any]) throws -> ComposedPart.Content {
+        guard let id = op["source"] as? Int else { throw CanvasError(message: "Missing drawing source") }
+        let smooth = (op["smooth"] as? Bool) == true
+        // Nearest-neighbour stretches (pixel art: the arena's native 489 x 652 layer) stay pictures: a transformed
+        // group's pictures would each be sampled with their own (linear) filter, and those sources are small.
+        guard smooth else { return .stretched(try image(op), smooth: false) }
+        let source = try composedNode(id)
+        if let picture = source.picture { return .stretched(picture, smooth: true) }
+        return .scaled(source, smooth: true)
+    }
+
     /// A clip that cuts something off `frame`, or nil (every op carries one, mostly its whole surface).
     private func cutting(_ clip: CGRect?, _ frame: CGRect) -> CGRect? {
         guard let clip = clip, !clip.contains(frame) else { return nil }
@@ -442,20 +456,17 @@ final class NativeCanvas {
                 let alpha = Float((op["alpha"] as? NSNumber)?.doubleValue ?? 255) / 255
                 let origin = CGPoint(x: at[0], y: at[1])
                 if let scaled = scaling(op) {
-                    let picture = try image(scaled.source)
                     let frame = CGRect(origin: origin, size: scaled.size)
-                    parts.append(ComposedPart(content: .stretched(picture, smooth: (scaled.source["smooth"] as? Bool) == true),
-                                              frame: frame, alpha: alpha, clip: cutting(clip, frame)))
+                    parts.append(ComposedPart(content: try stretch(scaled.source), frame: frame, alpha: alpha,
+                                              clip: cutting(clip, frame)))
                 } else {
                     let child = try composedNode(op["source"] as! Int)
                     let frame = CGRect(origin: origin, size: child.size)
                     parts.append(ComposedPart(content: .node(child), frame: frame, alpha: alpha, clip: cutting(clip, frame)))
                 }
             case "scale":
-                let picture = try image(op)
                 let frame = CGRect(x: 0, y: 0, width: size[0], height: size[1])
-                parts.append(ComposedPart(content: .stretched(picture, smooth: (op["smooth"] as? Bool) == true),
-                                          frame: frame, alpha: 1, clip: cutting(clip, frame)))
+                parts.append(ComposedPart(content: try stretch(op), frame: frame, alpha: 1, clip: cutting(clip, frame)))
             default:
                 return nil
             }
@@ -502,6 +513,7 @@ struct ComposedPart {
     enum Content {
         case node(ComposedNode)                       // a blit of another node, at its own size
         case stretched(CGImage, smooth: Bool)         // a picture scaled to `frame`
+        case scaled(ComposedNode, smooth: Bool)       // a composited node's layers scaled to `frame`
         case color(CGColor)                           // an opaque fill
     }
     let content: Content
@@ -563,9 +575,13 @@ final class LayerCompositor {
             var children: [CALayer] = []
             for (index, part) in node.parts.enumerated() {
                 let piece: CALayer
+                var natural: CGSize?            // a scaled node's own size: its layer is stretched by a transform
                 switch part.content {
                 case .node(let child):
                     piece = build(child)
+                case .scaled(let child, _):
+                    piece = build(child)
+                    natural = child.size
                 case .stretched(let picture, let smooth):
                     piece = take(Key(id: node.id, use: use, part: index))
                     if (piece.contents as AnyObject?) !== picture { piece.contents = picture }
@@ -576,15 +592,25 @@ final class LayerCompositor {
                     piece.backgroundColor = color
                 }
                 if piece.opacity != part.alpha { piece.opacity = part.alpha }
+                func fit(_ frame: CGRect) {
+                    var transform = CATransform3DIdentity
+                    if let natural = natural, natural.width > 0, natural.height > 0 {
+                        place(piece, CGRect(origin: frame.origin, size: natural))
+                        transform = CATransform3DMakeScale(frame.width / natural.width, frame.height / natural.height, 1)
+                    } else {
+                        place(piece, frame)
+                    }
+                    if !CATransform3DEqualToTransform(piece.transform, transform) { piece.transform = transform }
+                }
                 if let clip = part.clip {
                     let wrapper = take(Key(id: node.id, use: use, part: 1_000_000 + index))
                     if !wrapper.masksToBounds { wrapper.masksToBounds = true }
                     place(wrapper, clip)
-                    place(piece, part.frame.offsetBy(dx: -clip.minX, dy: -clip.minY))
+                    fit(part.frame.offsetBy(dx: -clip.minX, dy: -clip.minY))
                     if !(wrapper.sublayers ?? []).elementsEqual([piece], by: ===) { wrapper.sublayers = [piece] }
                     children.append(wrapper)
                 } else {
-                    place(piece, part.frame)
+                    fit(part.frame)
                     children.append(piece)
                 }
             }

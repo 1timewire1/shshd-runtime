@@ -45,10 +45,14 @@ final class GameCanvasView: UIView, UIKeyInput {
         shownSize = frame.root.size
         if image != nil { image = nil }
         if composedRoot !== root {
-            composedRoot?.removeFromSuperlayer()
+            // The last root only while it is still the frame's: this frame may have taken it in as a piece (a frame
+            // drawn over the one before), and removing it then would cut it out of the new tree.
+            if let previous = composedRoot, previous.superlayer === frameLayer { previous.removeFromSuperlayer() }
             frameLayer.addSublayer(root)
             composedRoot = root
         }
+        // Nothing but this frame's root under the frame layer (a former root left there by a frame that skipped it).
+        for stale in frameLayer.sublayers ?? [] where stale !== root { stale.removeFromSuperlayer() }
         frameLayer.frame = viewport
         fitComposed()
         CATransaction.commit()
