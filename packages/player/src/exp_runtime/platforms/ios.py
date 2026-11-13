@@ -496,7 +496,12 @@ def request(payload, directory):
             root = Path(tempfile.mkdtemp(prefix='libraries-', dir=parent))
         _host = Host(directory, library_root=root, check_updates=not _verifying, view_size=message.get('size'))
     started = time.perf_counter()
-    result = _host.request(message)
+    try:
+        result = _host.request(message)
+    except Exception:
+        # Swift stops the runtime with the message in an alert; the log keeps the traceback for a report.
+        logging.exception('iOS request failed')
+        raise
     if message.get('operation', 'frame') == 'frame':
         _host.frame_stats.add(message, result, (time.perf_counter() - started) * 1000, _host.app.screen,
                               _host.app.window.get_size() if _host.app.window is not None else None)

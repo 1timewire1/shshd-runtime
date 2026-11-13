@@ -133,10 +133,30 @@ class TestChannelTests(unittest.TestCase):
                                                 encoding='utf-8')
             before = list(sys.path)
             self.addCleanup(lambda: sys.path.__setitem__(slice(None), before))
+            broken = data / 'dev-modules' / 'exp_runtime' / 'broken_mod.py'
+            broken.write_text("text = '" + chr(10) + "'" + chr(10), encoding='utf-8')     # an unterminated string
             self.assertTrue(launcher.install_dev_modules())
             self.assertEqual(sys.path[0], str(data / 'dev-modules'))
+            self.assertFalse(broken.exists())                       # set aside, so the app's own module loads
+            self.assertTrue(broken.with_name('broken_mod.py.broken').exists())
+            self.assertTrue((data / 'dev-modules' / 'exp_runtime' / 'probe_mod.py').exists())
         logging.getLogger('probe').warning('a line for the log')
         self.assertIn('WARNING probe: a line for the log', commands.do_log('5')['lines'])
+
+    def test_a_silent_app_thread_has_its_stacks_written(self):
+        shots = Path(self.temporary.name) / 'test-shots'
+        shots.mkdir()
+        with mock.patch.object(self.module, 'HANG_S', 0.3):
+            channel = self.module.TestChannel(free_port(), shots)
+            self.addCleanup(channel.server.close)
+            channel.last -= 10                                      # no poll for a while
+            for _ in range(50):
+                if (shots / 'hang-stacks.txt').exists():
+                    break
+                time.sleep(0.05)
+        text = (shots / 'hang-stacks.txt').read_text(encoding='utf-8')
+        self.assertIn('--- MainThread', text)
+        self.assertIn('test_a_silent_app_thread_has_its_stacks_written', text)
 
     def test_it_listens_on_this_machine_only(self):
         port = free_port()

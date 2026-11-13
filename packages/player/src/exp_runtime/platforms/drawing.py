@@ -222,7 +222,9 @@ class Node:
 class Surface:
     native = True               # graphics.faded/opaque: the host blends whole-surface alpha over per-pixel alpha
 
-    def __init__(self, size, flags=0):
+    def __init__(self, size, flags=0, depth=None, masks=None):
+        # (`depth` / `masks`: pygame's pixel format, an int or a surface to match, as the New Rules arena's scaled
+        # layer passes one; this backend's pixels are always RGBA, so only SRCALPHA says anything.)
         self._size = tuple(map(int, size))
         if len(self._size) != 2 or min(self._size) < 0:
             raise DrawingError('Invalid surface dimensions')

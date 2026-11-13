@@ -4,6 +4,7 @@ This fork (shshd-runtime) keeps its data under its own name, `APP_NAME`, never t
 older "SHS Runtime"), and does not look in the original's folders: the two are distinct apps that never open, write
 or remember each other's libraries, saves or settings (owner, 2026-10-14)."""
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -43,6 +44,17 @@ def install_dev_modules():
         return False
     if type(settings.get('test_channel') if isinstance(settings, dict) else None) is not int or not folder.is_dir():
         return False
+    # A copy that doesn't compile would stop the app before its window draws (on the iPad: a black screen and no
+    # channel to fix it with, 2026-11-12): it is set aside as NAME.py.broken, and the app's own module loads.
+    for path in folder.rglob('*.py'):
+        try:
+            compile(path.read_bytes(), str(path), 'exec')
+        except (SyntaxError, ValueError, OSError) as error:
+            logging.warning('dev-modules: %s set aside: %s', path.name, error)
+            try:
+                path.replace(path.with_name(path.name + '.broken'))
+            except OSError:
+                pass
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
     # A regular package already loaded (exp_runtime.platforms, when its iOS host calls this) finds its modules only on its

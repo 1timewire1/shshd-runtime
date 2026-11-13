@@ -85,6 +85,7 @@ def _keys():
 
 KEYS = _keys()
 REPLY_TIMEOUT_S = 300
+HANG_S = 15                     # the app's thread silent this long: its stacks are written (_watch)
 SLOW_MS = 100
 TEXT_KEYS = ('text', 'title', 'prompt', 'speaker', 'options')
 
@@ -120,6 +121,25 @@ class _LogLines(logging.Handler):
             pass
 
 
+def _log_host_errors():
+    """iOS: a request that raises stops the runtime in Swift ("Runtime stopped"), with nothing in the app's log; with
+    the channel on, its traceback is logged first (the bridge reads `request` from the module at each call)."""
+    import sys
+    module = sys.modules.get('exp_runtime.platforms.ios')
+    request = getattr(module, 'request', None)
+    if request is None or getattr(request, 'logs_errors', False):
+        return
+
+    def logged(payload, directory):
+        try:
+            return request(payload, directory)
+        except Exception:
+            logging.exception('iOS request failed')
+            raise
+    logged.logs_errors = True
+    module.request = logged
+
+
 class TestChannel:
     def __init__(self, port, directory):
         self.directory = directory
@@ -137,7 +157,31 @@ class TestChannel:
         self.server.bind(('127.0.0.1', port))
         self.server.listen(2)
         threading.Thread(target=self._serve, daemon=True, name='test-channel').start()
+        threading.Thread(target=self._watch, daemon=True, name='test-channel-watchdog').start()
+        _log_host_errors()
         logging.info('Test channel listening on 127.0.0.1:%s', port)
+
+    def _watch(self):
+        """A hang's Python stacks: when the app's thread stops polling for HANG_S, every thread's stack goes to the log
+        and to hang-stacks.txt in the channel's folder, once a stall (the iPad's arena entrance stopped the app, its
+        window black, with nothing in the log, 2026-11-12)."""
+        import sys
+        import traceback
+        dumped = None
+        while True:
+            time.sleep(HANG_S / 3)
+            last = self.last
+            if time.perf_counter() - last < HANG_S or dumped == last:
+                continue
+            dumped = last
+            names = {thread.ident: thread.name for thread in threading.enumerate()}
+            text = '\n'.join(f'--- {names.get(ident, ident)}\n' + ''.join(traceback.format_stack(frame))
+                             for ident, frame in sys._current_frames().items())
+            try:
+                Path(self.directory, 'hang-stacks.txt').write_text(text, encoding='utf-8')
+            except OSError:
+                pass
+            logging.warning('App thread silent for %.0f s; stacks:\n%s', time.perf_counter() - last, text)
 
     # -- the network side (its own thread): lines in, replies out ------------------------------------------------------
 
