@@ -1868,8 +1868,7 @@ class Application:
 
     def app_options_open(self):
         """Whether the chooser's Options (desktop_app_hd.AppOptions) are on the screen."""
-        return (self.screen == 'options' and self.library is None and self.app_screens is not None
-                and not pygame.native())
+        return self.screen == 'options' and self.library is None and self.app_screens is not None
     buttons_in_frame = False        # `buttons` are in frame points (an HD app screen's), not the SD screens' 320 x 480
 
     def render_app(self):
@@ -2812,7 +2811,7 @@ class Application:
     def render(self):
         self._sync_menu_music()
         self._fade_menu_music()
-        if self.app_screens is not None and not (AppScreens.handles(self) and not pygame.native()):
+        if self.app_screens is not None and not AppScreens.handles(self):
             self.app_screens.last = None                # drawn elsewhere: an app screen comes back afresh
         if self.screen == 'game':
             if self.game.session.episode_ended:
@@ -2826,7 +2825,7 @@ class Application:
         if self.screen == 'main' and self.shell is not None:
             self.render_shell()
             return
-        if AppScreens.handles(self) and not pygame.native():
+        if AppScreens.handles(self):
             self.render_app()
             return
         self.buttons_in_frame = False

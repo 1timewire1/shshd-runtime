@@ -13,14 +13,18 @@ import tempfile
 import time
 from types import SimpleNamespace
 
-from ..launcher import APP_NAME
-from .drawing import Backend, FrameEncoder
+from ..launcher import APP_NAME, install_dev_modules
+
+# With the test channel's hidden settings key, the data folder's dev-modules load first (test_channel.py): before the
+# drawing backend, so it can be one of them (this module itself is the only one that can't).
+install_dev_modules()
+
+from .drawing import Backend, FrameEncoder  # noqa: E402 -- after dev-modules
 
 _host = None
 _verifying = False
 LOG_NAME = 'shshd-runtime.log'
 LOG_LIMIT = 2 * 1024 * 1024
-# How long side panels turned on in portrait wait for the iPad to turn to landscape before they switch off.
 
 
 def install_log(directory):
@@ -85,10 +89,6 @@ class Host:
         # 1024 point frame is shown at well over its size; 1x where it is not (the self-test's small window). At 1x
         # the owner's iPad looked soft: SHS HD drew it all at the screen's resolution.
         os.environ.setdefault('SHSHD_HD_SCALE', '2' if hd_scale_for(view_size) == 2 else '1')
-        # With the test channel's hidden settings key, the data folder's dev-modules load first (test_channel.py): a
-        # changed module tried on the device without a new build.
-        from ..launcher import install_dev_modules
-        install_dev_modules()
         # Import after installing the backend: pygame is not bundled on iOS.
         from ..application import Application
         from .. import momentum
@@ -298,7 +298,8 @@ class Host:
         covered = app.busy or app.message or app.update_prompt is not None
         for control in placed:
             if control['space'] == 'frame':
-                if app.screen != 'main' or covered or getattr(app, 'viewport', None) is None:
+                # (the main menu's Options, and the app's own on the chooser: desktop_app_hd.AppScreens)
+                if app.screen not in ('main', 'options') or covered or getattr(app, 'viewport', None) is None:
                     continue
                 v, k = app.viewport, app.viewport.width / HD_FRAME[0]
                 control = dict(control, middle=v.y + control['middle'] * k, scale=control['scale'] * k,
@@ -415,6 +416,8 @@ class Host:
             # Touch times (Swift's clock) to pygame's: this frame's ticks are Swift's `now`.
             self.clock_offset = self.backend.ticks - float(message['now'])
         self.handle_events(message.get('events', ()))
+        for event in self.backend.take_posted():    # (events the app posted itself: the test channel's keys)
+            self.app.handle_event(event)
         self.app.tick(elapsed)
         if self.app.test_channel is not None:        # (test_channel.py: the hidden settings key)
             self.app.test_channel.poll(self.app)

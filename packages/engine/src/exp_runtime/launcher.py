@@ -43,7 +43,15 @@ def install_dev_modules():
         return False
     if type(settings.get('test_channel') if isinstance(settings, dict) else None) is not int or not folder.is_dir():
         return False
-    sys.path.insert(0, str(folder))
+    if str(folder) not in sys.path:
+        sys.path.insert(0, str(folder))
+    # A regular package already loaded (exp_runtime.platforms, when its iOS host calls this) finds its modules only on its
+    # own __path__: dev-modules' copy of the package's folder goes first there too.
+    for name, module in list(sys.modules.items()):
+        if name.startswith('exp_runtime.') and isinstance(getattr(module, '__path__', None), list):
+            overlay = folder.joinpath(*name.split('.'))
+            if overlay.is_dir() and str(overlay) not in module.__path__:
+                module.__path__.insert(0, str(overlay))
     return True
 
 

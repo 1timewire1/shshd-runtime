@@ -121,7 +121,7 @@ class IosWindowTests(unittest.TestCase):
         replies, done = [], threading.Event()
 
         def client():
-            with socket.create_connection(('127.0.0.1', port), timeout=20) as connection, \
+            with socket.create_connection(('127.0.0.1', port), timeout=120) as connection, \
                     connection.makefile('rw', encoding='utf-8', newline='\n') as stream:
                 for line in ('ping', 'shot probe inline', 'tap 5 5'):
                     stream.write(line + '\n')
@@ -130,7 +130,7 @@ class IosWindowTests(unittest.TestCase):
             done.set()
         threading.Thread(target=client, daemon=True).start()
         frames = []
-        end = time.time() + 20
+        end = time.time() + 120            # (the shot draws the HD app screen in Python, as the device does)
         while not done.is_set() and time.time() < end:
             frames.append(host.request(dict(operation='frame', elapsed=16, size=[768, 1024], events=[])))
             time.sleep(0.002)

@@ -1084,9 +1084,16 @@ class Backend:
         self.display = SimpleNamespace(init=lambda: None, set_mode=self._window, flip=lambda: None,
                                        set_icon=lambda icon: None, set_caption=lambda caption: None,
                                        get_surface=lambda: self.window)
-        # Events made by the app itself (the test channel's taps and drags), as the host's own are (ios.Host._event).
+        # Events made by the app itself (the test channel's taps, drags and keys), as the host's own are
+        # (ios.Host._event); a posted one is handled at the next frame (ios.Host.request, take_posted).
+        self.posted = []
         self.event = SimpleNamespace(Event=lambda kind, attributes=None, **more: SimpleNamespace(
-            type=kind, **(attributes or {}), **more))
+            type=kind, **(attributes or {}), **more), post=self.posted.append)
+
+    def take_posted(self):
+        posted = list(self.posted)
+        self.posted.clear()             # (the same list: `event.post` is its append)
+        return posted
 
     def _keyboard(self, enabled):
         self.keyboard = enabled

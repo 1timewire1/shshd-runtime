@@ -981,6 +981,12 @@ class AppScreens:
                 self.buttons = []                       # nothing takes a tap while it slides
         if self.slide is None:
             canvas.blit(layer, (0, 0))
+            if screen == 'options' and self.options is not None and not (app.busy or app.message
+                                                                           or app.update_prompt is not None):
+                # The switches and sliders as the host's own (iOS's UISwitches and UISliders), in the frame's points:
+                # the page is drawn on the frame's own canvas, so its points are the frame's.
+                from .desktop_pause_hd import place_controls
+                place_controls(self.options.menu, (FRAME[0] / 2, FRAME[1] / 2), 1.0, space='frame')
         if app.busy or app.message or app.update_prompt is not None:
             self.buttons = []
             self.draw_card(app, canvas)

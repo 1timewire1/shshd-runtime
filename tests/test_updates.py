@@ -364,7 +364,9 @@ class NativeUpdateTests(unittest.TestCase):
             self.assertEqual([cmd for _, cmd in host.app.buttons], [('update_no',)])
             generation = shown['generation']
             rect = host.app.buttons[0][0]
-            point = [int(v * 1.5) for v in rect.center]
+            # (an HD app screen's button, in frame points, as on every host now: mapped through the frame's viewport)
+            v, points = host.app.viewport, host.app.frame_points
+            point = [round(v.x + rect.centerx * v.width / points[0]), round(v.y + rect.centery * v.height / points[1])]
             stale = [dict(kind=kind, point=point, generation=generation - 1) for kind in ('down', 'up')]
             self.assertIsNone(host.request(dict(operation='frame', events=stale))['open_url'])
             self.assertIsNotNone(host.app.update_prompt)
