@@ -21,7 +21,6 @@ _verifying = False
 LOG_NAME = 'shshd-runtime.log'
 LOG_LIMIT = 2 * 1024 * 1024
 # How long side panels turned on in portrait wait for the iPad to turn to landscape before they switch off.
-PANELS_ROTATE_MS = 3000
 
 
 def install_log(directory):
@@ -86,10 +85,13 @@ class Host:
         # 1024 point frame is shown at well over its size; 1x where it is not (the self-test's small window). At 1x
         # the owner's iPad looked soft: SHS HD drew it all at the screen's resolution.
         os.environ.setdefault('SHSHD_HD_SCALE', '2' if hd_scale_for(view_size) == 2 else '1')
+        # With the test channel's hidden settings key, the data folder's dev-modules load first (test_channel.py): a
+        # changed module tried on the device without a new build.
+        from ..launcher import install_dev_modules
+        install_dev_modules()
         # Import after installing the backend: pygame is not bundled on iOS.
         from ..application import Application
-        from .. import desktop_choice, momentum
-        desktop_choice.BACKGROUND_HINTS = True      # the choice shows at once, its hints when worked out (as Android)
+        from .. import momentum
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (as Android)
         graphics.native_controls = []               # the options' switches and sliders are UIKit's (controls)
         self.directory = Path(directory)
@@ -109,7 +111,6 @@ class Host:
         self.view_size = None           # the view's pixel size, as Swift last sent it
         self.clock_offset = None        # pygame's ticks less Swift's clock (touch times), from the last frame
         self.pinch_at = None            # the pinch's last midpoint while it zooms the story tree, else None
-        self.panels_view = None         # [game, 'asked' | 'landscape', ms asked] while a game's side panels are open
         self.app.fixed_window = True    # the window is the view: the side panels never widen it (landscape holds them)
         self.app.render()
         self.input_stamp = self._input_stamp()
@@ -175,30 +176,6 @@ class Host:
         self.app.window = window
         if self.app.game is not None:
             self.app.game.window = window
-
-    def panels_orientation(self, elapsed):
-        """The side panels want landscape (the iPad's 4:3 holds them beside the game): turning them on in portrait
-        asks Swift to turn the app ('landscape'), which holds landscape until the iPad itself is turned, then follows
-        the device again. Turned back to portrait afterwards, or not turned within PANELS_ROTATE_MS, the panels switch
-        off, and 'release' hands rotation back (a hold the iPad was never turned for ends there too)."""
-        game = self.app.game if self.app.screen == 'game' else None
-        if game is None or not game.panels_open or self.view_size is None:
-            released, self.panels_view = self.panels_view is not None, None
-            return 'release' if released else None
-        width, height = self.view_size
-        state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
-        if width > height:
-            self.panels_view = [game, 'landscape', 0]
-            return None
-        if state is None:
-            self.panels_view = [game, 'asked', 0]
-            return 'landscape'
-        state[2] += elapsed
-        if state[1] == 'landscape' or state[2] >= PANELS_ROTATE_MS:
-            game.toggle_panels()
-            self.panels_view = None
-            return 'release'
-        return None
 
     def _end_copying(self):
         """The copy of picked files is over (import_copying): the app is free again for the import itself."""
@@ -439,7 +416,8 @@ class Host:
             self.clock_offset = self.backend.ticks - float(message['now'])
         self.handle_events(message.get('events', ()))
         self.app.tick(elapsed)
-        orientation = self.panels_orientation(elapsed)
+        if self.app.test_channel is not None:        # (test_channel.py: the hidden settings key)
+            self.app.test_channel.poll(self.app)
         if not self.app.busy and self.staging:
             # Swift copied imports into a disposable, app-owned directory.
             # Never remove a selected original or a library being played.
@@ -487,7 +465,6 @@ class Host:
                 and str(verification.get('verification_check', '')).endswith('stat-increase sound')):
             verification['verify_effect_audio'] = game.sound_players[-1][1].channel
         return dict(verification, status='ok', frame=frame, audio=audio, keyboard=self.backend.keyboard, picker=picker, open_url=url,
-                    orientation=orientation,
                     vibrations=vibrations,
                     update_request=update_request,
                     generation=self.generation,

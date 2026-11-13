@@ -1057,6 +1057,12 @@ class Backend:
     K_LEFT, K_RIGHT, K_KP_ENTER = range(262, 265)
     K_i = 105
     KMOD_SHIFT = 3
+    # Events and keys the shared code names though this host never sends them (a keyboard's letters, the keypad, key
+    # releases, fingers: desktop and Android input): defined so the code loads and compares, distinct from the rest.
+    KEYUP, FINGERDOWN, FINGERUP, FINGERMOTION = range(13, 17)
+    locals().update({f'K_{d}': 48 + d for d in range(10)})        # (as K_1, K_5, K_9 above)
+    locals().update({f'K_{chr(c)}': c for c in range(ord('a'), ord('z') + 1)})
+    locals().update({f'K_KP{d}': 1000 + d for d in range(10)})
 
     def __init__(self, bridge, icon_path):
         self.bridge = bridge
@@ -1076,7 +1082,11 @@ class Backend:
                                    stop_text_input=lambda: self._keyboard(False), set_text_input_rect=lambda rect: None,
                                    get_mods=lambda: 0)
         self.display = SimpleNamespace(init=lambda: None, set_mode=self._window, flip=lambda: None,
-                                       set_icon=lambda icon: None, set_caption=lambda caption: None)
+                                       set_icon=lambda icon: None, set_caption=lambda caption: None,
+                                       get_surface=lambda: self.window)
+        # Events made by the app itself (the test channel's taps and drags), as the host's own are (ios.Host._event).
+        self.event = SimpleNamespace(Event=lambda kind, attributes=None, **more: SimpleNamespace(
+            type=kind, **(attributes or {}), **more))
 
     def _keyboard(self, enabled):
         self.keyboard = enabled

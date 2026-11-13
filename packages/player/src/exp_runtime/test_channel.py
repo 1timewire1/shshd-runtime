@@ -67,12 +67,23 @@ import time
 
 from . import graphics as pygame
 
-KEYS = {name: getattr(pygame, 'K_' + name) for name in
-        ('RETURN', 'ESCAPE', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'SPACE', 'BACKSPACE', 'TAB')}
-KEYS.update({name.lower(): code for name, code in KEYS.items()})
-KEYS.update({chr(c): getattr(pygame, 'K_' + chr(c)) for c in range(ord('a'), ord('z') + 1)})
-KEYS.update({str(d): getattr(pygame, f'K_{d}') for d in range(10)})
-KEYS.update({'enter': pygame.K_RETURN, 'back': pygame.K_ESCAPE, 'f5': pygame.K_F5, 'f9': pygame.K_F9})
+def _keys():
+    """`key`'s names: the keys this platform's drawing backend knows (iOS's knows the few its host sends and the menus
+    read, not every letter)."""
+    wanted = {name.lower(): 'K_' + name for name in
+              ('RETURN', 'ESCAPE', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'SPACE', 'BACKSPACE', 'TAB')}
+    wanted.update({chr(c): 'K_' + chr(c) for c in range(ord('a'), ord('z') + 1)})
+    wanted.update({str(d): f'K_{d}' for d in range(10)})
+    wanted.update({'enter': 'K_RETURN', 'back': 'K_ESCAPE', 'f5': 'K_F5', 'f9': 'K_F9'})
+    keys = {}
+    for name, constant in wanted.items():
+        code = getattr(pygame, constant, None)
+        if code is not None:
+            keys[name] = keys[name.upper()] = code
+    return keys
+
+
+KEYS = _keys()
 REPLY_TIMEOUT_S = 300
 SLOW_MS = 100
 TEXT_KEYS = ('text', 'title', 'prompt', 'speaker', 'options')

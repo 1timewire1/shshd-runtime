@@ -97,36 +97,49 @@ class IosWindowTests(unittest.TestCase):
         self.assertEqual(move.pos, (100, 200))
         self.assertEqual((wheel.x, wheel.y), (0, 1.5))
 
-    def test_side_panels_turn_the_ipad_to_landscape_and_go_off_in_portrait(self):
-        """The owner's rule: side panels turned on in portrait ask once for landscape, without locking rotation;
-        turned back to portrait (or never turned), they switch off. The window is the view's, never widened."""
+    def test_the_ipad_is_never_turned_and_the_test_channel_runs_through_the_host(self):
+        """The side panels no longer turn the iPad (retired, owner 2026-11-12: they open beside the game where there's
+        room, else behind the corner button), and the window is the view's, never widened. The hidden settings key opens
+        the test channel; the host polls it each frame, and its shots and taps go through the native backend."""
+        import base64
+        import io
+        import json
+        import socket
+        import threading
+        import time
+        from PIL import Image
         from exp_runtime.desktop import Desktop
-        from exp_runtime.platforms.ios import PANELS_ROTATE_MS
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            port = probe.getsockname()[1]
+        (self.root / 'settings.json').write_text(json.dumps(dict(version=1, check_for_updates=False, test_channel=port)))
         host = self.host()
         self.assertTrue(host.app.fixed_window)
         Desktop._widen_for_panels(SimpleNamespace(fixed_window=True))      # no window change at all
-        game = SimpleNamespace(panels_open=True)
-        game.toggle_panels = lambda: setattr(game, 'panels_open', not game.panels_open)
-        host.app.game, host.app.screen = game, 'game'
-        self.addCleanup(setattr, host.app, 'game', None)
-        host.view_size = (1536, 2048)
-        self.assertEqual(host.panels_orientation(16), 'landscape')
-        self.assertIsNone(host.panels_orientation(16))                       # asked once
-        host.view_size = (2048, 1536)
-        self.assertIsNone(host.panels_orientation(16))
-        self.assertTrue(game.panels_open)
-        host.view_size = (1536, 2048)
-        self.assertEqual(host.panels_orientation(16), 'release')
-        self.assertFalse(game.panels_open)                                   # turned back: off
-        self.assertIsNone(host.panels_orientation(16))                       # released once
-        game.panels_open = True
-        self.assertEqual(host.panels_orientation(16), 'landscape')
-        self.assertEqual(host.panels_orientation(PANELS_ROTATE_MS), 'release')
-        self.assertFalse(game.panels_open)                                   # never turned: off
-        game.panels_open = True
-        self.assertEqual(host.panels_orientation(16), 'landscape')
-        game.panels_open = False                                             # switched off from the menu
-        self.assertEqual(host.panels_orientation(16), 'release')
+        self.assertIsNotNone(host.app.test_channel)
+        self.addCleanup(host.app.test_channel.server.close)
+        replies, done = [], threading.Event()
+
+        def client():
+            with socket.create_connection(('127.0.0.1', port), timeout=20) as connection, \
+                    connection.makefile('rw', encoding='utf-8', newline='\n') as stream:
+                for line in ('ping', 'shot probe inline', 'tap 5 5'):
+                    stream.write(line + '\n')
+                    stream.flush()
+                    replies.append(json.loads(stream.readline()))
+            done.set()
+        threading.Thread(target=client, daemon=True).start()
+        frames = []
+        end = time.time() + 20
+        while not done.is_set() and time.time() < end:
+            frames.append(host.request(dict(operation='frame', elapsed=16, size=[768, 1024], events=[])))
+            time.sleep(0.002)
+        self.assertTrue(done.is_set())
+        self.assertTrue(all('orientation' not in frame for frame in frames if isinstance(frame, dict)))
+        self.assertTrue(replies[0]['ok'])
+        picture = Image.open(io.BytesIO(base64.b64decode(replies[1]['png'])))
+        self.assertEqual(picture.size, (768, 1024))
+        self.assertTrue(replies[2]['ok'])
 
     def test_a_flick_read_in_one_frame_keeps_its_touches_times(self):
         """UIKit's touch times reach momentum.py on the game's clock: a slow frame can hold a whole flick, and read
