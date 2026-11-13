@@ -410,6 +410,14 @@ prompt text and copied character IDs to `FUN_000d2238`. That function initialize
 the five inline index slots at panel `+0x70`. Supported count is 1–5. Unreadable
 words and invalid counts fail explicitly, retaining the pending VM call.
 
+shshd-runtime: a translated pack may give its own layout for a count
+(`TRANSLATED_PICKER_LAYOUTS` in the SHS profile; the session hands them to the
+engine as `picker_layouts`, which is not saved). With one, service 78 takes that
+count up to 10 (the BREW M.A.S.H. packs' ten photos), and a slot may carry its
+own unselected scale as a third number (`(x, y, scale)`, the native 0.6
+otherwise), which sets its size, its swap target and its hit radius. Every other
+episode keeps the native 1–5.
+
 `FUN_000d1d78` swaps `order[0]` with the touched slot and swaps its portrait
 widget pointer. `FUN_000d1b48` returns the first **index**, not a character ID.
 `FUN_000d2008` selects on touch release; touching the central portrait does

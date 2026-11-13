@@ -1,4 +1,5 @@
 """Original dialogue artwork at native logical coordinates."""
+from dataclasses import replace
 from functools import lru_cache
 from io import BytesIO
 
@@ -8,6 +9,8 @@ from . import graphics as pygame
 from .content import ContentError
 from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE
 from .dialogue_animation import BOX_TRAVEL_MS
+
+REUSE_AT_REST = False                       # a phone keeps a settled line's layer (platforms/android.py): `_at_rest`
 from .dialogue_notice import NOTICE_FONT, NOTICE_STYLE, NoticeMotion, hd_letter_state, notice_lifetime
 from .fonts import TextStyle
 from .games import GAMES
@@ -36,6 +39,7 @@ def _decoded_size(data: bytes) -> tuple[int, int]:
 ANDROID_MASK_SIZE = (128, 150)
 # shshd-runtime: where a translated speaker's emoticon (draw_portrait_effect) is anchored, as fractions of the portrait
 # housing's width (toward the box) and height (up) from its center: the ring's upper corner on the box's side.
+BADGE_UNITS = 24 / 41                   # SHS '11's icon height, 41 art pixels, to the 24 units of SHS's (translated_badge)
 EFFECT_ANCHOR = (0.30, 0.30)
 
 
@@ -47,6 +51,7 @@ class DialogueRenderer:
     gear_pressed = False    # set by Desktop while the pause gear is held
     def __init__(self, resources, text_renderer, image_loader, scale=1):
         self.resources = resources
+        self._badges = {}
         self.text = text_renderer
         self.image = image_loader
         # Pixels per logical (320x480) unit. Every position and size in this
@@ -118,7 +123,6 @@ class DialogueRenderer:
         frame = ImagePack.parse(data).images[0]
         return pygame.image.frombytes(frame.pixels, (frame.width, frame.height), frame.mode).convert_alpha()
 
-    @lru_cache(maxsize=64)
     @lru_cache(maxsize=8)
     def note_image(self, frame, tint=None):
         """Pack 155's song note (dialogue.NOTE_FRAMES); `tint` recolors it, keeping its alpha (the gold fonts' note)."""
@@ -130,6 +134,7 @@ class DialogueRenderer:
         image.fill(tuple(tint[:3]) + (255,), special_flags=pygame.BLEND_RGBA_MIN)
         return image
 
+    @lru_cache(maxsize=64)
     def frame_native(self, asset_id, index):
         """The frame at whatever density read_asset() actually returned --
         including a real HD substitute (content.HD_ASSET_MAP), which for
@@ -410,6 +415,8 @@ class DialogueRenderer:
         except (AttributeError, ContentError, ValueError):
             return 255
 
+    _box_pieces = None, ()
+
     def box(self, target, rect, theme, *, alpha=255, scale=1):
         """FUN_00081920 places the eight border pieces outside the center.
 
@@ -419,9 +426,16 @@ class DialogueRenderer:
         """
         pack = {1: 204, 2: 220, 3: 252}.get(theme, 236)
         x, y, width, height = (round(v * scale) for v in (rect.x, rect.y, rect.width, rect.height))
+        # The same box as the last one (its pieces are copied, faded and stretched to fit): just place them again.
+        key = pack, x, y, width, height, alpha, scale
+        if self._box_pieces[0] == key:
+            for image, position in self._box_pieces[1]:
+                target.blit(image, position)
+            return
+        pieces = self._box_pieces = key, []
         center = self.frame_scaled(126, 0, scale).copy()
         center = faded(center, alpha)
-        target.blit(pygame.transform.scale(center, (width, height)), (x, y))
+        pieces[1].append((pygame.transform.scale(center, (width, height)), (x, y)))
         # HD's border art already carries its 242/255 translucency; only the (opaque) center takes the
         # bubble's alpha, so edges and middle show the scene equally (message-panel photos IMG_0240-0242).
         piece_alpha = 255 if self.hd_chrome() else alpha
@@ -433,7 +447,9 @@ class DialogueRenderer:
             size = (width if column == 1 else w, height if row == 1 else h)
             position = (x - w if column == 0 else x + width if column == 2 else x,
                         y - h if row == 0 else y + height if row == 2 else y)
-            target.blit(pygame.transform.scale(image, size) if size != (w, h) else image, position)
+            pieces[1].append((pygame.transform.scale(image, size) if size != (w, h) else image, position))
+        for image, position in pieces[1]:
+            target.blit(image, position)
 
     # The bottom border strip is 10 logical px tall; its colored line sits
     # ~8.25 logical px into it (padding baked into the art), measured by
@@ -569,13 +585,23 @@ class DialogueRenderer:
     # portrait sits too high above the box".
     _HD_PORTRAIT_VERTICAL_OFFSET = 5
 
+    lift = 0        # this frame's bubble moved up for its extra rows (DialoguePage.lift; Desktop resets it each frame)
+
+    def _housing(self, mode, lifted=True):
+        """Layout 17's housing node, kept: the layout bank's own cache compares whole banks, several times a frame.
+        Moved up with the bubble when it holds extra rows (`lift`)."""
+        found = self.__dict__.setdefault('_housings', {}).get(mode)
+        if found is None:
+            found = self._housings[mode] = self.resources.dialogue_layout().bank.rectangle(17, 0x30 if mode == 1 else 0x4e)
+        return replace(found, y=found.y - self.lift) if lifted and self.lift else found
+
     def _portrait_rect(self, mode):
         """The housing rect for the portrait ring, the relationship icon and
         the notice label alike -- all three are positioned relative to this
         same native rect, so the HD vertical correction lives here once
         instead of being repeated at each call site.
         """
-        rect = self.resources.dialogue_layout().bank.rectangle(17, 0x30 if mode == 1 else 0x4e)
+        rect = self._housing(mode)
         return Rect(rect.x, rect.y + self._HD_PORTRAIT_VERTICAL_OFFSET, rect.width, rect.height)
 
     # HD's common-frame pack (155) draws the bottom bar and the settings gear
@@ -683,6 +709,7 @@ class DialogueRenderer:
     # HD's bottom bar and gear anchor to the edges of its 384x512-unit frame,
     # 32 layout units wider on each side than the 320-unit UI column.
     EDGE_UNITS = 32
+    edge_units = EDGE_UNITS     # the frame's margin each side of the column: 32 in HD's frame, 0 once it is the column
 
     @lru_cache(maxsize=16)
     def bottom_bar_layer(self, text, gear_pressed=False, bar=True):
@@ -691,7 +718,7 @@ class DialogueRenderer:
         with the gear flush at the left; Android's 320-unit bar sits in the UI
         column, 32 units in. Cause of Death with the SHS HD art source takes
         HD's layout (its bar is SHS's), so the bar fills the 3:4 frame too."""
-        k, edge = self.scale, self.EDGE_UNITS
+        k, edge = self.scale, self.edge_units
         layer = pygame.Surface((round((320 + 2 * edge) * k), round(72 * k)), pygame.SRCALPHA).convert_alpha()
         pack = self.hd_bar()
         if pack is not None:
@@ -853,7 +880,11 @@ class DialogueRenderer:
 
     def indicator_image(self, asset_id, k):
         """A relationship icon at canvas density: chrome_image() for the APK (and its HD supplement), or the
-        iPhone IPA's own UI image (ui_image), which is already at its logical size."""
+        iPhone IPA's own UI image (ui_image), which is already at its logical size. A translated pack can have its own
+        (profile TRANSLATED_BADGE_ART)."""
+        own = self.translated_badge(asset_id, k)
+        if own is not None:
+            return own
         library = getattr(self.resources, 'library', self.resources)
         if getattr(library, 'kind', 'apk') != 'ipa':
             return self.chrome_image(asset_id, k)
@@ -862,6 +893,32 @@ class DialogueRenderer:
             return icon
         return pygame.transform.smoothscale(icon, (round(icon.get_width() * k), round(icon.get_height() * k)))
 
+    def drop_translated_badges(self):
+        """Forget the translated relationship icons drawn so far (a look switch has changed which pictures they are)."""
+        self._badges.clear()
+
+    def translated_badge(self, asset_id, k):
+        """This pack's own picture for a relationship icon, at the size SHS's would be, or None. The pictures all have the
+        same margin, so one scale keeps a whole icon and its break in proportion."""
+        from .content import pack_setting
+        art = (pack_setting(self.resources, 'TRANSLATED_BADGE_ART', {}) or {}).get(asset_id) if self.resources is not None else None
+        if art is None:
+            return None
+        key = (art, k)
+        found = self._badges.get(key, False)
+        if found is False:
+            try:
+                image = self.image(art)
+            except (ContentError, pygame.error, OSError, ValueError):
+                image = None
+            found = None
+            if image is not None:
+                units = pack_setting(self.resources, 'TRANSLATED_BADGE_UNITS', BADGE_UNITS)
+                scale = units * k
+                found = pygame.transform.smoothscale(image, (round(image.get_width() * scale), round(image.get_height() * scale)))
+            self._badges[key] = found
+        return found
+
     def relationship_slots(self, mode):
         """Where the relationship icons rest, as offsets from the portrait housing's center in layout units.
 
@@ -869,11 +926,14 @@ class DialogueRenderer:
         sit around the left (mode 1) housing (node 0x30), 0x54-0x57 around the right (mode 2) one (node 0x4e) --
         confirmed by rendering Kelly's own portrait (mode 1) in Battle of the Schools: Girl, whose relationship
         badge clipped off the left edge of the screen while using the mode-2 nodes unconditionally."""
-        bank = self.resources.dialogue_layout().bank
-        nodes = (54, 55, 56, 57) if mode == 1 else (0x54, 0x55, 0x56, 0x57)
-        center = bank.rectangle(17, 0x30 if mode == 1 else 0x4e).center
-        return [(bank.rectangle(17, node).center[0] - center[0], bank.rectangle(17, node).center[1] - center[1])
-                for node in nodes]
+        slots = self.__dict__.setdefault('_relationship_slots', {})
+        if mode not in slots:
+            bank = self.resources.dialogue_layout().bank
+            nodes = (54, 55, 56, 57) if mode == 1 else (0x54, 0x55, 0x56, 0x57)
+            center = self._housing(mode, lifted=False).center
+            slots[mode] = [(bank.rectangle(17, node).center[0] - center[0], bank.rectangle(17, node).center[1] - center[1])
+                           for node in nodes]
+        return slots[mode]
 
     def draw_portrait_effect(self, session, motion):
         """shshd-runtime: a translated pack's emoticon over the speaker (Session.portrait_effect, emoticon_effects),
@@ -914,8 +974,7 @@ class DialogueRenderer:
         # against a real-device screenshot of this exact dialogue line
         # (reference/football_star_beth_greeting_hd.webp) where the icon
         # sits above the text, not overlapping it.
-        rect = self.resources.dialogue_layout().bank.rectangle(
-            17, 0x30 if motion.portrait.mode == 1 else 0x4e)
+        rect = self._housing(motion.portrait.mode)
         if self.hd_chrome():
             # HD's status layers are sublayers of the SHSPortraitLayer, placed by setStatusIconAnimated (00054a30)
             # at layout 17 nodes 0x36-0x39 / 0x54-0x57 less the housing's own origin (50, 503) / (462, 503) points:
@@ -1182,20 +1241,43 @@ class DialogueRenderer:
         self.canvas.blit(tab, (round((box.x + box.width) * k) - width,
                                round((box.y + box.height) * k) + round((height - tab.get_height()) / 2)))
 
+    _rest_drawn = None
+    still = False                   # this frame's line has nothing moving on it (_at_rest)
+
+    def _at_rest(self, target, session, motion, key, theme, duet):
+        """What identifies this frame's dialogue layer if nothing on the line is moving any more, else None. A line waiting
+        for its reader is most of a story, and on a phone redrawing it unchanged was over half of each frame."""
+        # shshd-runtime: `still` says so whether or not the layer is kept (Desktop._prime_games works in still frames).
+        self.still = not (target is not None or not motion.at_rest or session.engine.notice_ms
+                          or (hasattr(session, 'portrait_effect') and session.portrait_effect() is not None)
+                          or (not self.autoplay and self.has_hd_bundle() and self.continue_progress(session) < 1))  # the pill's own clock
+        if not REUSE_AT_REST or not self.still:
+            return None
+        return key, id(motion), theme, None if duet is None else duet.character_id, id(self.wide), self.autoplay
+
     def draw(self, target, session):
         details = session.pending.details
-        key = id(session), session.scene, session.vm.steps_executed, details['page_start']
+        key = (id(session), session.scene, session.vm.steps_executed, details['page_start'],
+               getattr(session, 'dialogue_extra_rows', 0), getattr(session, 'dialogue_offset', None))
         if key != self.cached_key:
             self.cached_page = session.dialogue_page()
             self.cached_key = key
             self.name_layer.fill((0, 0, 0, 0))
+            self._name_area = pygame.Rect(0, 0, 0, 0)
             if self.cached_page is not None:
                 page = self.cached_page
                 k = self.scale
-                self.text.draw_layout(self.name_layer, page.name_font, page.name,
-                                      page.name_origin[0] * k, page.name_origin[1] * k,
-                                      scale=page.name_scale * k)
+                # The area the glyphs were drawn over (transparent margins included: they blend to nothing).
+                self._name_area = self.text.draw_layout(self.name_layer, page.name_font, page.name,
+                                                        page.name_origin[0] * k, page.name_origin[1] * k,
+                                                        scale=page.name_scale * k)
+                if self._name_area is None:
+                    self._name_area = self.name_layer.get_bounding_rect()
         page = self.cached_page
+        if page is not None and page.portrait is not None:
+            # The portrait housing follows the bubble it belongs to; a narrator's line (no portrait) leaves it where the
+            # last speaker's was, so that portrait leaves from where it stood rather than jumping with the next bubble.
+            self.lift = page.lift
         if page is None:
             raise ContentError('Dialogue requires the imported APK layout and fonts')
         # shshd-runtime: a translated pack's two-speaker line (Session.dialogue_duet): the box the page chose (gray, or
@@ -1217,10 +1299,15 @@ class DialogueRenderer:
             if (partner is not None and (motion.previous is not None or not motion.changed)
                     and (duet is None or duet.character_id != partner.character_id)):
                 leaving = partner
-        self.wide.fill((0, 0, 0, 0))
         background = self.image(session.engine.panel.background_id)
         self.pending_background = background
         self.pending_background_origin = self.background_origin(background, session.engine)
+        at_rest = self._at_rest(target, session, motion, key, theme, duet)
+        if at_rest is not None and at_rest == self._rest_drawn:
+            self.text.warm()                        # shshd-runtime: a still frame: the next lines' glyphs, ahead
+            return page                             # the layer already holds this very picture
+        self._rest_drawn = None
+        self.wide.fill((0, 0, 0, 0))
         # FUN_000a92f4: unscaled image centered at GL (160,300), then panned
         # (background.BackgroundPan). The real
         # pixel content used to draw here is now composited separately by
@@ -1286,7 +1373,7 @@ class DialogueRenderer:
         self.text.draw_layout(self.canvas, page.body_font, page.body,
                               page.body_origin[0] * k, page.body_origin[1] * k,
                               scale=k, source_end=motion.revealed, inline=notes, inline_density=2)
-        self.canvas.blit(faded(self.name_layer, motion.name_alpha), (0, 0))
+        self.canvas.blit(faded(self.name_layer, motion.name_alpha), self._name_area.topleft, self._name_area)
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the
         # speaker name -- everything except the portrait itself, which
@@ -1312,4 +1399,5 @@ class DialogueRenderer:
         self.footer_text = self.footer_hint(36, 'Touch the screen to continue')
         if target is not None:
             target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
+        self._rest_drawn = at_rest
         return page

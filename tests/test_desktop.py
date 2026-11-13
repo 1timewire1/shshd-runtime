@@ -12,6 +12,146 @@ from test_vm import program as vm_program
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class FramePresentationTests(unittest.TestCase):
+    def setUp(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        import pygame
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.pygame = pygame
+
+    def faded_ui(self, name, game):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.capture = False
+        ui.session = SimpleNamespace(engine=SimpleNamespace(
+            football=game if name == 'football' else None, word_grid=game if name == 'word_grid' else None,
+            panel=SimpleNamespace(background_id=7)))
+        ui.dialogue_renderer = SimpleNamespace(image=lambda asset: 'the scene', background_origin=lambda image, engine: (1, 2))
+        return ui, SimpleNamespace(name=name), SimpleNamespace(canvas=self.pygame.Surface((8, 8)))
+
+    def test_hds_minigames_fade_in_and_out_over_the_scene_not_black(self):
+        for name, exit_phase in (('football', 26), ('word_grid', 7)):
+            with self.subTest(name):
+                game = SimpleNamespace(phase=0, phase_ms=0)
+                ui, action, renderer = self.faded_ui(name, game)
+
+                def alpha_at(now):
+                    ui.panel_alpha = ui.pending_background = ui.pending_background_origin = None
+                    with patch('pygame.time.get_ticks', return_value=now):
+                        ui._fade_minigame(action, renderer)
+                    return ui.panel_alpha
+
+                self.assertEqual(alpha_at(1000), 0)                 # in: 0.8 s from when it first shows
+                self.assertEqual(ui.pending_background, 'the scene')
+                self.assertEqual(ui.pending_background_origin, (1, 2))
+                self.assertAlmostEqual(alpha_at(1400), .5, delta=.01)
+                self.assertIsNone(alpha_at(1800))                   # settled: no fade, and no picture drawn under it
+                self.assertIsNone(ui.pending_background)
+                self.assertIsNone(alpha_at(9000))
+                game.phase = exit_phase
+                game.phase_ms = 960
+                self.assertIsNone(alpha_at(9100))                   # out: 0.8 s of the exit's 960 ms
+                game.phase_ms = 560
+                self.assertAlmostEqual(alpha_at(9200), .5, delta=.01)
+                self.assertEqual(ui.pending_background, 'the scene')
+                game.phase_ms = 100
+                self.assertEqual(alpha_at(9300), 0)                 # the last 160 ms: only the scene
+
+    def test_a_fade_leaves_no_alpha_on_a_plain_canvas(self):
+        from exp_runtime.graphics import faded
+        ui, action, renderer = self.faded_ui('football', SimpleNamespace(phase=0, phase_ms=0))
+        faded(renderer.canvas, 100)
+        with patch('pygame.time.get_ticks', return_value=1000):
+            ui._fade_minigame(action, renderer)
+        self.assertIsNone(renderer.canvas.get_alpha())      # not even 255, which still blends
+
+    def band_renderer(self):
+        from exp_runtime.desktop_loading import HdLoadingRenderer
+        band = HdLoadingRenderer.__new__(HdLoadingRenderer)
+        band.canvas = self.pygame.Surface((80, 100), self.pygame.SRCALPHA)
+        band.canvas.fill((200, 0, 0, 255))
+        return band
+
+    def test_the_band_waits_then_opens_about_the_frames_centre(self):
+        band = self.band_renderer()
+        band.entrance(300)                                      # the 0.4 s delay: nothing yet
+        self.assertEqual(band.canvas.get_bounding_rect().height, 0)
+        band = self.band_renderer()
+        band.entrance(600)                                      # half way: half its height, centred
+        shown = band.canvas.get_bounding_rect()
+        self.assertEqual((shown.top, shown.bottom), (25, 75))
+        band = self.band_renderer()
+        band.entrance(800)
+        self.assertEqual(band.canvas.get_bounding_rect().height, 100)
+
+    def test_the_band_closes_over_what_follows_it(self):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.capture = False
+        ui.window = self.pygame.Surface((80, 100))
+        ui.bg_viewport = self.pygame.Rect(0, 0, 80, 100)
+        ui.session = SimpleNamespace(pending=SimpleNamespace(name='loading'))
+        ui.loading_handover = dict(layer=self.band_renderer().canvas, since=None)
+        ui._draw_loading_handover()                             # still loading: not yet
+        self.assertEqual(ui.window.get_at((40, 50))[:3], (0, 0, 0))
+        ui.session.pending = SimpleNamespace(name='football')
+        with patch('pygame.time.get_ticks', return_value=1000):
+            ui._draw_loading_handover()
+        self.assertEqual(ui.window.get_at((40, 2))[:3], (200, 0, 0))
+        ui.window.fill((0, 0, 0))
+        with patch('pygame.time.get_ticks', return_value=1200):
+            ui._draw_loading_handover()
+        self.assertEqual(ui.window.get_at((40, 50))[:3], (200, 0, 0))
+        self.assertEqual(ui.window.get_at((40, 10))[:3], (0, 0, 0))
+        with patch('pygame.time.get_ticks', return_value=1400):
+            ui._draw_loading_handover()
+        self.assertIsNone(ui.loading_handover)
+
+    def test_the_margins_are_what_is_left_of_the_window_around_the_frame(self):
+        from exp_runtime.desktop import window_margins
+        Rect = self.pygame.Rect
+        self.assertEqual(window_margins((768, 1707), Rect(0, 341, 768, 1024)),
+                         [Rect(0, 0, 768, 341), Rect(0, 1365, 768, 342)])
+        self.assertEqual(window_margins((1600, 1024), Rect(416, 0, 768, 1024)),
+                         [Rect(0, 0, 416, 1024), Rect(1184, 0, 416, 1024)])
+        self.assertEqual(window_margins((768, 1024), Rect(0, 0, 768, 1024)), [])
+
+    def test_only_a_canvas_as_it_was_cleared_counts_as_empty(self):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.canvas = self.pygame.Surface((32, 48), self.pygame.SRCALPHA)
+        self.assertTrue(ui._canvas_empty())
+        ui.canvas.set_at((31, 47), (0, 0, 0, 1))        # the last pixel, barely
+        self.assertFalse(ui._canvas_empty())
+        ui.canvas.fill((0, 0, 0, 0))
+        self.assertTrue(ui._canvas_empty())
+        ui.canvas = self.pygame.Surface((64, 96), self.pygame.SRCALPHA)
+        self.assertTrue(ui._canvas_empty())             # a new size is compared at its own
+
+    def test_only_an_opaque_whole_frame_layer_hides_the_frame(self):
+        from exp_runtime.desktop import Desktop
+        ui = Desktop.__new__(Desktop)
+        ui.pending_background = None
+        ui.story_layer = self.pygame.Surface((768, 1024))
+        self.assertTrue(ui._frame_covered(None))
+        self.assertTrue(ui._frame_covered(1))
+        self.assertFalse(ui._frame_covered(.5))         # fading: the frame shows through
+        ui.pending_background = object()
+        self.assertFalse(ui._frame_covered(None))       # its crossfade state is kept up
+        ui.pending_background = None
+        ui.story_layer = self.pygame.Surface((768, 1024), self.pygame.SRCALPHA)
+        self.assertFalse(ui._frame_covered(None))
+        # A Mac's display gives `convert()`ed canvases an alpha channel without the flag.
+        ui.story_layer = self.pygame.Surface((768, 1024), 0, 32, (0xFF0000, 0xFF00, 0xFF, 0xFF000000))
+        ui.story_layer.set_alpha(None)
+        self.assertFalse(ui._frame_covered(None))
+        ui.story_layer = self.pygame.Surface((768, 1152))
+        self.assertFalse(ui._frame_covered(None))       # the story's column, not the frame
+        ui.story_layer = None
+        self.assertFalse(ui._frame_covered(None))
+
+
 class DesktopTests(unittest.TestCase):
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_dialogue_motion_renders_between_states_and_pauses_without_advancing_vm(self):
@@ -771,44 +911,54 @@ class DesktopTests(unittest.TestCase):
             ui = Desktop(Session(resources), audio=False)
             self.assertEqual((ui.panels_open, ui.panels_progress), (False, 0.0))
             width, height = ui.window.get_size()
-            self.assertAlmostEqual(width / height, 3 / 4, places=2)
-            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
-            self.assertTrue(ui.panels_open)
-            # Real device confirmed: the window widens to its new 4:3 shape
-            # as soon as the panels start opening, not only once the slide
-            # animation finishes (see desktop_panels.py's module docstring).
+            engine = ui.session.engine
+            engine.dt_view.enabled = engine.faceplace.enabled = True          # (Football Star's services 101 and 114)
+            ui.panels_room = lambda: True                                     # (a window wide enough beside the game)
             ui.tick(16)
-            width, height = ui.window.get_size()
-            self.assertAlmostEqual(width / height, 4 / 3, places=2)
+            self.assertTrue(ui.panels_open)                                   # open on their own (owner, 2026-11-12)
             ui.tick(1000)
             self.assertEqual(ui.panels_progress, 1.0)
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
-            self.assertFalse(ui.panels_open)
-            # Closing keeps the window's size (owner's choice), during and after the slide-out.
-            ui.tick(16)
-            self.assertEqual(ui.window.get_size(), (width, height))
+            self.assertFalse(ui.panels_open)                                  # closed for this episode
             ui.tick(1000)
             self.assertEqual(ui.panels_progress, 0.0)
-            self.assertEqual(ui.window.get_size(), (width, height))
-            # A window already 4:3 or wider has room for both panels at full height: opening leaves it alone.
-            ui.window = pygame.display.set_mode((1200, 600), pygame.RESIZABLE)
-            ui.toggle_panels()
-            ui.tick(16)
-            self.assertEqual(ui.window.get_size(), (1200, 600))
-            ui.toggle_panels()
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
             ui.tick(1000)
-            # A narrower one is widened to 4:3 at its own height.
-            ui.window = pygame.display.set_mode((600, 600), pygame.RESIZABLE)
-            ui.toggle_panels()
+            self.assertEqual((ui.panels_open, ui.panels_progress), (True, 1.0))
+            self.assertEqual(ui.window.get_size(), (width, height))          # the window is never widened for them
+            # The setting off: no panels in any episode.
+            ui.side_panels_enabled = False
             ui.tick(16)
-            self.assertEqual(ui.window.get_size(), (800, 600))
-            ui.toggle_panels()
+            self.assertFalse(ui.panels_open)
+            ui.side_panels_enabled, ui.panels_dismissed = True, False
+            # An episode that uses neither panel: none.
+            engine.dt_view.enabled = engine.faceplace.enabled = False
+            ui.tick(16)
+            self.assertFalse(ui.panels_open)
+            # Without room: Tab opens them over the whole screen (HD's panel art stood in), the story waits, Tab closes.
+            engine.dt_view.enabled = True
+            ui.panels_room = lambda: False
+            ui.side_panels.available = lambda: True
+            ui.tick(16)
+            self.assertFalse(ui.panels_open)
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            self.assertTrue(ui.panels_overlay)
             ui.tick(1000)
-            # The Options screen's Side Panels switch toggles them too.
-            ui.command(('pause_toggle', 'side_panels'))
+            self.assertEqual(ui.overlay_progress, 1.0)
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            self.assertFalse(ui.panels_overlay)
+            ui.tick(1000)
+            self.assertEqual(ui.overlay_progress, 0.0)
+            # The Options screen's Side Panels switch is the saved setting (player.json): off, nothing; on, as before.
+            ui.panels_room = lambda: True
+            ui.tick(16)
             self.assertTrue(ui.panels_open)
             ui.command(('pause_toggle', 'side_panels'))
-            self.assertFalse(ui.panels_open)
+            self.assertEqual((ui.side_panels_enabled, ui.panels_open), (False, False))
+            ui.command(('pause_toggle', 'side_panels'))
+            self.assertEqual((ui.side_panels_enabled, ui.panels_open), (True, True))
+            ui.command(('pause_toggle', 'side_panels'))
+            ui.tick(1000)
             # Tab is swallowed by the pause menu instead of toggling panels.
             ui.command(('menu',))
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
@@ -887,8 +1037,12 @@ class DesktopTests(unittest.TestCase):
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
             ui.session.engine.faceplace_toast = FaceplaceToast(FaceplaceMessage('message', text='hi'))
+            # Without room beside the game: opening them over the screen (Tab, the button or the alert's tap) takes it.
+            ui.session.engine.faceplace.enabled = True
+            ui.panels_room = lambda: False
+            ui.side_panels.available = lambda: True
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
-            self.assertTrue(ui.panels_open)
+            self.assertTrue(ui.panels_overlay)
             self.assertIsNone(ui.session.engine.faceplace_toast)
 
     def test_panel_margins_start_at_the_wider_background_edge_not_the_narrower_viewport(self):
@@ -911,7 +1065,9 @@ class DesktopTests(unittest.TestCase):
             resources = Resources(branching_program())
             resources.library.directory = Path(temporary)
             ui = Desktop(Session(resources), audio=False)
-            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            ui.window = pygame.display.set_mode((1365, 1024), pygame.RESIZABLE)     # room beside the 3:4 frame
+            ui.session.engine.dt_view.enabled = ui.session.engine.faceplace.enabled = True
+            ui.render()
             ui.tick(1000)
             ui.render()
             self.assertLess(ui.bg_viewport.x, ui.viewport.x)
@@ -990,7 +1146,7 @@ class DesktopTests(unittest.TestCase):
         import pygame
 
         self.addCleanup(pygame.quit)
-        pack_id = 31300                                 # New Rules (the X360 translations, 31400, work the same)
+        pack_id = 31300                                 # New Rules
         self.assertIn(pack_id, TRANSLATED_PORTRAIT_ART)
         with tempfile.TemporaryDirectory() as temporary:
             resources = Resources(branching_program())
@@ -1013,6 +1169,150 @@ class DesktopTests(unittest.TestCase):
             self.assertTrue(all(clear.called for clear in cleared))
             ui.command(('pause_toggle', 'hires_portraits'))
             self.assertEqual((ui.hires_portraits, resources.library.hires_portraits), (True, True))
+
+    def test_the_smartphone_music_switch_shows_in_translated_11_episodes_and_leaves_its_effects_alone(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from unittest.mock import MagicMock
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import SMARTPHONE_MUSIC_LABEL, switch_badge
+        from exp_runtime.menu import preference_defaults
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        resources = Resources(branching_program())
+        ui = Desktop(Session(resources), audio=False)
+        self.assertNotIn('smartphone_music', ui._pause_settings())              # an ordinary episode
+        resources.record = dict(resources.record, pack_id=31600, episode_id=1)
+        self.assertIs(ui._pause_settings()['smartphone_music'], True)
+        heard = []
+        ui._sound = lambda key, read: (heard.append(key), MagicMock())[1]
+        ui._play_sounds([26982, 8008])
+        saved = []
+        ui.on_settings = lambda: saved.append(ui.smartphone_music)
+        ui.command(('pause_toggle', 'smartphone_music'))
+        self.assertEqual(saved, [False])
+        ui._play_sounds([26982, 8008])
+        self.assertEqual(heard, [26982, 8008] * 2)                              # '11's own, on and off
+        self.assertIs(preference_defaults()['smartphone_music'], True)
+        self.assertEqual(SMARTPHONE_MUSIC_LABEL, 'Smartphone Music')
+        self.assertEqual(switch_badge('smartphone_music')[0], "'11")
+
+    def test_a_translated_11_episodes_music_is_heard_only_with_the_switch_on(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from unittest.mock import MagicMock
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        resources = Resources(branching_program())
+        resources.record = dict(resources.record, pack_id=31600, episode_id=1)
+        ui = Desktop(Session(resources), audio=False)
+        ui.audio, ui.music_stream = True, MagicMock(volume=ui.music_volume)
+        engine = ui.session.engine
+        engine.music_id, engine.music_serial = 8201, engine.music_serial + 1
+        ui._sync_music()
+        self.assertEqual(ui.music_stream.play.call_count, 1)                    # on (the default)
+        ui.smartphone_music = False
+        ui._sync_music()
+        ui.music_stream.disable.assert_called_once()                            # off: as the Music switch goes off
+        self.assertIs(ui.music_stream.update.call_args.kwargs['enabled'], False)
+        engine.music_id, engine.music_serial = 8217, engine.music_serial + 1
+        ui._sync_music()
+        self.assertEqual(ui.music_stream.play.call_count, 1)                    # and a new request goes unheard
+        ui.smartphone_music = True
+        engine.music_id, engine.music_serial = 8201, engine.music_serial + 1
+        ui._sync_music()
+        self.assertEqual(ui.music_stream.play.call_count, 2)
+
+    def test_the_ms3_characters_switch_shows_in_x360_episodes_and_swaps_at_once(self):
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import MS3_CHARACTERS_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            resources.library.ms3_characters = False
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('ms3_characters', ui._pause_settings())            # an ordinary episode
+            resources.record = dict(resources.record, pack_id=31300)
+            self.assertNotIn('ms3_characters', ui._pause_settings())            # New Rules
+            for episode in (1, 2, 3, 4):                                        # all four X360 episodes
+                resources.record = dict(resources.record, pack_id=31400, episode_id=episode)
+                self.assertIs(ui._pause_settings()['ms3_characters'], False)
+            saved = []
+            ui.on_settings = lambda: saved.append(ui.ms3_characters)
+            ui.images[26200] = None
+            ui.command(('pause_toggle', 'ms3_characters'))
+            self.assertEqual((ui.ms3_characters, resources.library.ms3_characters, saved), (True, True, [True]))
+            self.assertEqual(len(ui.images), 0)
+        self.assertEqual(MS3_CHARACTERS_LABEL, 'MS3 Characters')
+        self.assertIsNotNone(switch_badge('ms3_characters'))
+
+    def test_the_java_look_switch_shows_in_brew_episodes_and_swaps_at_once(self):
+        # Hot swappable, as the portrait switches are (owner, 2026-11-06): every picture the look changes is drawn afresh,
+        # the frame's backdrop for both box colours and a time badge on screen too.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from unittest import mock
+        from exp_runtime import desktop_brew_catch
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import JAVA_LOOK_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(desktop_brew_catch, 'library_has_java_look', lambda library: True):
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            resources.library.java_look = False
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('java_look', ui._pause_settings())                 # an ordinary episode
+            for pack in (31100, 31200):                                         # '07's stories never had it (owner)
+                resources.record = dict(resources.record, pack_id=pack)
+                self.assertNotIn('java_look', ui._pause_settings())
+            resources.record = dict(resources.record, pack_id=31000)            # the '08 Campaign
+            self.assertIs(ui._pause_settings()['java_look'], False)
+            saved = []
+            ui.on_settings = lambda: saved.append(ui.java_look)
+            ui.images[26999] = None
+            ui._frame_backdrop_cache = ('key', {26991: None, 26999: None})
+            ui.badge_hd._tab_cache = ('badge', None)
+            ui.command(('pause_toggle', 'java_look'))
+            self.assertEqual((ui.java_look, resources.library.java_look, saved), (True, True, [True]))
+            self.assertEqual((len(ui.images), ui._frame_backdrop_cache, ui.badge_hd._tab_cache), (0, (None, {}), None))
+        self.assertEqual(JAVA_LOOK_LABEL, "Java '08 Look")
+        self.assertIsNotNone(switch_badge('java_look'))
+
+    def test_the_x360_episodes_offer_the_minigames_switch_where_they_have_minigames_and_never_hi_res(self):
+        # The Hi-Res switch is New Rules' (owner, 2026-11-01); Use Translated Mini-Games goes where there's something to
+        # switch: every New Rules episode, and the X360's but Day of Diss.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_pause_hd import ARENA_MINIGAMES_LABEL, switch_badge
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            self.assertNotIn('arena_minigames', ui._pause_settings())            # an ordinary episode
+            for pack, episode, hires, minigames in ((31300, 7, True, True), (31400, 1, False, False),
+                                                    (31400, 2, False, True), (31400, 3, False, True)):
+                with self.subTest(pack=pack, episode=episode):
+                    resources.record = dict(resources.record, pack_id=pack, episode_id=episode)
+                    settings = ui._pause_settings()
+                    self.assertEqual('hires_portraits' in settings, hires)
+                    self.assertEqual('arena_minigames' in settings, minigames)
+                    self.assertEqual('arena_skin' in settings and pack == 31400, False)  # the arena's look is New Rules'
+        self.assertEqual(ARENA_MINIGAMES_LABEL, 'Use Translated Mini-Games')
+        self.assertIsNone(switch_badge('arena_minigames'))                       # no one game's tag
 
     def test_a_translated_episode_shows_its_own_backdrop_where_the_art_leaves_the_frame_black(self):
         # Translated New Rules episodes (pack 31300) carry New Rules' UI backdrop (shs/profile.py
@@ -1228,6 +1528,36 @@ class DesktopTests(unittest.TestCase):
             self.assertIsNotNone(ui.pending_background)
             self.assertEqual(ui.pending_background.get_size(), (64, 64))
 
+    def test_a_brew_card_shows_its_date_as_the_title_but_its_preview_keeps_the_story_name(self):
+        # Owner, 2026-11-07: in BREW '07 (TRANSLATED_DATE_FIRST_PACKS) the date matters most, so the card swaps its title and
+        # subtitle; a capture (the episode's preview picture) keeps the story's name as the title.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from types import SimpleNamespace
+        from exp_runtime.desktop import Desktop, _DateFirstCard
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            card = dict(title='CS Idol', subtitle='Monday, March 1', asset_id=1)
+            # (Fall '06, 31200, keeps the title on top: its cards are week cards, `Week 1 of 13` over the dates. So does '08, 31000:
+            # one card per story, where the date matters less; owner, 2026-11-11.)
+            for pack_id, capture, subtitle, expected in ((31100, False, True, True), (31000, False, True, False), (31200, False, True, False),
+                                                         (31100, True, True, False), (1, False, True, False),
+                                                         (31100, False, False, False)):
+                resources.record = dict(resources.record, pack_id=pack_id)
+                ui.capture = capture
+                self.assertEqual(ui._date_first(dict(card, subtitle=card['subtitle'] if subtitle else '')), expected,
+                                 (pack_id, capture, subtitle))
+            ui.session.pending = SimpleNamespace(name='presentation', details=card, request=None)
+            seen = _DateFirstCard(ui.session)
+            self.assertEqual((seen.pending.details['title'], seen.pending.details['subtitle']), ('Monday, March 1', 'CS Idol'))
+            self.assertEqual((seen.pending.name, seen.engine), ('presentation', ui.session.engine))
+            self.assertEqual(card['title'], 'CS Idol')              # the session's own card is untouched
+
     def test_a_translated_episodes_end_card_keeps_its_frame_backdrop_under_the_last_scene(self):
         # The end-of-episode card's sepia backdrop (Desktop.snapshot) stretches an ordinary episode's last scene over
         # the frame; a translated pack's 3:1 strip stays where the episode showed it, over its TRANSLATED_FRAME_BACKDROP
@@ -1308,7 +1638,7 @@ class DesktopTests(unittest.TestCase):
         self.assertIs(renderer2.chrome_image(3010), same_size)
         self.assertIsNone(renderer.chrome_image(-1))
 
-    def test_hd_gear_touch_area_covers_the_icon_including_the_side_margin(self):
+    def test_hd_gear_touch_area_is_the_icon_including_the_side_margin(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'
         from exp_runtime.desktop import Desktop
@@ -1324,17 +1654,19 @@ class DesktopTests(unittest.TestCase):
             ui.dialogue_renderer.hd_chrome = lambda: True
             ui.buttons.append((pygame.Rect(0, 0, 1, 1), ('menu',)))    # the screen offers the gear
             frame, unit = ui.bg_viewport, ui.bg_viewport.width / 384
-            # The gear's left third lies in the 32-unit margin outside the UI column; its top is above the
-            # old touch rectangle. The frame's corner outside the icon's box does nothing.
-            for x, y in ((0, 445), (33, 447), (33, 505), (66, 477)):
+            # The gear's left third lies in the 32-unit margin outside the UI column. Its touch area is the visible gear
+            # (centre (23.5, 486.5), radius 30), not the frame's box or the screens' column rect (-32, 422, 92, 58),
+            # which reached far onto the bar (owner, 2026-11-07).
+            menu = (pygame.Rect(-48, 633, 138, 87), ('menu',))           # the column rect, in canvas pixels
+            for x, y in ((23.5, 486.5), (1, 486), (23.5, 460), (23.5, 511), (50, 486), (42, 505)):
                 ui.menu_open = False
-                ui.buttons = [(pygame.Rect(0, 0, 1, 1), ('menu',))]
+                ui.buttons = [menu]
                 for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):     # held, then released to open
                     ui.handle_event(pygame.event.Event(kind, button=1, pos=(frame.x + x * unit, frame.y + y * unit)))
                 self.assertTrue(ui.menu_open, (x, y))
             ui.menu_open = False
-            for x, y in ((75, 477), (33, 435)):
-                ui.buttons = [(pygame.Rect(0, 0, 1, 1), ('menu',))]
+            for x, y in ((66, 477), (75, 477), (33, 447), (0, 445), (60, 455)):
+                ui.buttons = [menu]
                 for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
                     ui.handle_event(pygame.event.Event(kind, button=1, pos=(frame.x + x * unit, frame.y + y * unit)))
                 self.assertFalse(ui.menu_open, (x, y))
@@ -1614,3 +1946,129 @@ class DesktopTests(unittest.TestCase):
         ui.tick(1000)
         ui.tick(1000)
         self.assertEqual([c.args[0] for c in ui.session.tick.call_args_list[1:]], [0, 100])
+
+
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class ChoiceDragTests(unittest.TestCase):
+    """A choice whose rows don't all fit scrolls under a dragging finger (owner, 2026-11-08: on the g54 the scroll bar showed
+    but touch couldn't move it); a drag picks nothing, and a tap still picks."""
+
+    def test_a_drag_scrolls_the_rows_and_picks_nothing_but_a_tap_still_picks(self):
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.momentum import Fling
+        from exp_runtime.pointer import ButtonPress
+        view = SimpleNamespace(max_scroll=90.0, scroll=0.0, menu_open=False, press=ButtonPress(), choice_drag=None,
+                               CHOICE_DRAG_START=Desktop.CHOICE_DRAG_START, choice_fling=Fling())
+        drag = lambda phase, y: Desktop._choice_drag(view, phase, y)
+        row = ('choose', 6)
+        self.assertFalse(drag('down', 300)); view.press.update('down', row)
+        self.assertFalse(drag('move', 298))                     # (under the threshold: still a press)
+        self.assertEqual(view.press.pressed, row)
+        self.assertTrue(drag('move', 260))                      # 40 units up: the rows follow the finger
+        self.assertEqual((view.scroll, view.press.pressed), (60.0, None))
+        self.assertTrue(drag('move', 100))                      # no further than the last row
+        self.assertEqual(view.scroll, 90.0)
+        self.assertTrue(drag('up', 100))                        # handled: nothing picked
+        self.assertIsNone(view.choice_drag)
+        self.assertFalse(drag('down', 200)); view.press.update('down', row)
+        self.assertFalse(drag('up', 201))                       # a tap goes on to the press, which picks the row
+        self.assertEqual(view.press.update('up', row), row)
+        view.max_scroll = 0
+        self.assertFalse(drag('down', 200)); self.assertFalse(drag('move', 100))    # a choice that fits never scrolls
+
+    def test_a_flick_glides_on_to_the_last_row_and_a_touch_catches_it(self):
+        # Owner, 2026-11-09: momentum (touch hosts), as native's table view decelerates.
+        from exp_runtime import momentum
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.pointer import ButtonPress
+        view = SimpleNamespace(max_scroll=300.0, scroll=0.0, menu_open=False, press=ButtonPress(), choice_drag=None,
+                               CHOICE_DRAG_START=Desktop.CHOICE_DRAG_START, choice_fling=momentum.Fling())
+        drag = lambda phase, y: Desktop._choice_drag(view, phase, y)
+        coast = lambda: Desktop._coast_choice(view)
+        with patch.object(momentum, 'ENABLED', True):
+            for ms, y in ((0, 300), (16, 290), (32, 280), (48, 270)):
+                momentum.EVENT_TIME = 1000 + ms
+                drag('down' if ms == 0 else 'move', y)
+            self.addCleanup(setattr, momentum, 'EVENT_TIME', None)
+            self.assertTrue(drag('up', 270))
+            after_drag = view.scroll
+            momentum.EVENT_TIME = 1100; coast()
+            self.assertGreater(view.scroll, after_drag)                 # gliding on in the flick's direction
+            momentum.EVENT_TIME = 1150
+            self.assertTrue(drag('down', 200))                          # a touch catches it: no row is pressed
+            held = view.scroll
+            momentum.EVENT_TIME = 1300; coast()
+            self.assertEqual(view.scroll, held)
+            self.assertTrue(drag('up', 200))
+            for ms, y in ((0, 300), (16, 200), (32, 100)):                # a hard flick stops at the last row
+                momentum.EVENT_TIME = 2000 + ms
+                drag('down' if ms == 0 else 'move', y)
+            drag('up', 100)
+            for ms in range(100, 3000, 100):
+                momentum.EVENT_TIME = 2000 + ms; coast()
+            self.assertEqual(view.scroll, 300.0)
+            self.assertFalse(view.choice_fling.moving)
+
+
+class PromptPageTests(unittest.TestCase):
+    """A skip prompt with more outcomes than its panel shows at once goes in pages of five, each with Next Page and Play
+    (owner, 2026-11-07: M.A.S.H.'s catch games go fifteen ways)."""
+
+    def test_fifteen_outcomes_go_in_three_pages_and_each_pick_keeps_its_place(self):
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+        self.addCleanup(pygame.quit)
+        ui = Desktop(Session(Resources(branching_program())), audio=False)
+        action, picked = ui.session.pending, []
+        options = tuple(f'Outcome {n}' for n in range(15)) + ('Play',)
+        ui._open_prompt(action, 'Skip this mini-game?', 'Fifteen ways.', options, picked.append)
+
+        def page():
+            prompt = ui.host_prompt
+            return prompt['session'].pending.details['text'], prompt['options']
+        text, shown = page()
+        self.assertEqual(text, 'Fifteen ways. Page 1 of 3.')
+        self.assertEqual(shown, ('Outcome 0', 'Outcome 1', 'Outcome 2', 'Outcome 3', 'Outcome 4', 'Next Page', 'Play'))
+        self.assertGreater(ui.host_prompt['session'].pending.details['panel_limit'], 964)    # room for seven rows
+        self.assertEqual(ui.host_prompt['next_row'], 5)                 # (a tap on it turns the page at once)
+        self.assertFalse(ui.host_prompt.get('instant'))                 # the first page opens as any prompt does
+        ui.host_prompt['resolve'](5)                                    # Next Page
+        self.assertEqual(page()[1][:2], ('Outcome 5', 'Outcome 6'))
+        self.assertTrue(ui.host_prompt['instant'])                      # no fade-in or fly-on for a turned page
+        ui.host_prompt['resolve'](1)                                    # the second on page 2
+        self.assertEqual(picked, [6])
+        for _ in range(2):
+            ui.host_prompt['resolve'](5)
+        self.assertEqual(page()[0], 'Fifteen ways. Page 1 of 3.')       # the last page's Next Page goes back to the first
+        ui.host_prompt['resolve'](6)                                    # Play: the index after every outcome
+        self.assertEqual(picked, [6, 15])
+        # Seven rows or fewer stay one page.
+        ui._open_prompt(action, 'Skip this mini-game?', 'Six ways.', tuple(f'O{n}' for n in range(6)) + ('Play',), picked.append)
+        self.assertEqual(page(), ('Six ways.', ('O0', 'O1', 'O2', 'O3', 'O4', 'O5', 'Play')))
+
+    def test_a_slow_outcome_search_shows_the_loading_band_until_it_is_done(self):
+        # The outcomes are worked out on a worker; one taking longer than PROMPT_QUICK_S stands in with the loading band
+        # (owner, 2026-11-07: M.A.S.H. 3 and 4's took 2 s on the g54). Undo's restart waits for the real one.
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import threading
+        from exp_runtime.desktop import Desktop, PROMPT_SEARCHING
+        import pygame
+        self.addCleanup(pygame.quit)
+        ui = Desktop(Session(Resources(branching_program())), audio=False)
+        action, gate = ui.session.pending, threading.Event()
+
+        def slow(session):
+            gate.wait(5)
+            return [(0, 44), (45, None)]
+        self.assertIs(ui._search_outcomes(action, slow), PROMPT_SEARCHING)
+        stand_in = ui._loading_prompt(action)
+        self.assertTrue(stand_in['loading'])
+        self.assertEqual(stand_in['options'], ())
+        ui.render()                                                     # drawn as the band, not a choice
+        self.assertIs(ui._search_outcomes(action, slow), PROMPT_SEARCHING)
+        gate.set()
+        self.assertEqual(ui._search_outcomes(action, slow, wait=True), [(0, 44), (45, None)])
+        self.assertIsNone(ui.prompt_job)
+        quick = ui._search_outcomes(action, lambda session: [(0, None)])   # a quick one: no band
+        self.assertEqual(quick, [(0, None)])

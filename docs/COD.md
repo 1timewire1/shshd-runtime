@@ -615,6 +615,12 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
   same shape, shows its bar under the first narration. Not explained yet: the runtime shows the room from the
   narration.
 
+## Claire Hart portraits and backdrop (this fork)
+
+Many of CoD's portraits are Claire Hart Classic's, downscaled about 4.17 times. The optional `chslim` addon holds the
+sharper originals and the green backdrop, with the map from CoD's pictures to them. With it imported, Options › Add-Ons
+offers CH-tagged HD Portraits in CoD and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
+
 ## HD backgrounds from SHS HD (this fork)
 
 Many CoD locations are SHS HD backgrounds at half size. The owner reviewed every CoD/SHS HD pair (the catalogue
@@ -855,18 +861,102 @@ CoD's colours (`cod/hd_art.positional_frames`).
   - **General:** Side Panels (in a story, SHS only), Autoplay Dialogue, Skip Ad Intros and Skip Upsell Intros (SHS
     only, main menu only: they act as an episode starts; CoD's store plugs are not mapped yet), SHS HD Backdrop (both
     games, where a collage exists) and Check for Updates (main menu).
-  - **Sound:** Game Music and Sound FX, with their sliders.
-  - **Extras** (owner, 2026-10-21): the play aids, Disable Choice Timer, Choice Hints (CoD: Choice & Answer Hints)
-    and Ask to Skip Mini-Games (CoD's word quizzes too).
+  - **Sound:** Game Music and Sound FX, with their sliders. On the main menu, **Skip Sound Prompt** last (owner,
+    2026-10-29): the launch goes on without "Play with sound?", Music and Sound as they are set.
+  - **Extras** (owner, 2026-10-21): the play aids, Disable Choice Timer, Choice Hints (CoD: Choice & Answer Hints),
+    Ask to Skip Mini-Games (CoD's word quizzes too), Allow Skip Ahead and Allow Undo (docs/MAIN_MENU.md). On the main menu, SHS adds **Unlock Warping** while its
+    story tree is still locked (owner, 2026-10-29): an action row that clears the lock Football Season clears, shows
+    the app's own notice (menu 29, "Options Unlocked", string 272, zooming in) and then is gone. Finishing Football Season shows the same
+    notice when the main menu next comes up, as `SHSEngine::setAppMode` does (flag +0x6490b).
   - **On the main menu only:**
-    - **Episode Titles** ends General. It is a button (SHS HD's orange footer button; CoD's blue) that steps
-      through the title languages. It is offered where some episode has a translated title, so not in CoD (none of
+    - **Episode Titles** ends General. Its row shows the current language under its name, in smaller letters as
+      the episode lists' airdates, and opens a page of the title languages, the current one ticked; picking one sets
+      it and slides back (owner, 2026-11-09: it was a button that stepped through them, as Start In, Confirm Button
+      and Word Grid Controls were, which now work the same way). It is offered where some episode has a translated title, so not in CoD (none of
       its 74 has one).
-    - **Data Management:** Add Episodes, Open Another Library.
-  - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
-    79 x 27 switch, and the Episode Titles button at 104 x 34 with an 18-point label.
+    - **Start In** follows it in General (owner, 2026-10-29): Last Played (the game an episode was last started
+      in; the default, the game chooser until there is one), Choose a Game, Surviving High School or Cause of
+      Death. The app opens there when it is not told a game
+      or library; a game without a library opens the chooser instead.
+    - **Data Management** (owner, 2026-10-29) lists three pages, then Reset Settings:
+      - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
+        Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library, Delete Library.
+        Delete Library asks twice, then deletes the library's own parts (`application.LIBRARY_PARTS`, never
+        anything else in its folder) and goes to the game chooser.
+      - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
+      - **Progress:** Back Up Progress, Restore Progress, Reset Names, Delete All Saves.
+      - **Add-Ons** (with any in the library; [ADDONS.md](ADDONS.md#data-management)).
 
-  Every switch is stored in each game's own `player.json`, not shared between games (yet).
+      **Back Up Progress** writes a progress bundle (`progress_bundle.py`) to `Downloads/SHSHD Runtime Backups`. The
+      bundle is a zip of the library's saved games, Decision Trees, name tables and warp lock, with a manifest.
+      Options are not in it: both games share them, in `settings.json`. Every save and tree is named by its
+      episode's content id, the SHA-256 of the episode's file, which is the same in any library imported from that
+      file. So a bundle restores into any library of the same game. Progress for an episode the library lacks waits
+      there until the episode is added.
+
+      **Restore Progress** lists that game's eight newest backups. Choosing one asks first, backs up the current
+      progress (a "before restore" backup, which is also how a restore is undone), and then replaces the progress
+      with the backup's. The bundle is checked whole before anything changes: its game, and every file's path. A
+      swap that fails puts the library's own progress back.
+
+      **Sync Devices** (owner, 2026-10-30) sends a game's progress to another device on the same network
+      (`lan_sync.py` moves the files, `sync_flow.py` is the app's side). In a game it sends that game. From the game
+      chooser's Options it sends both games, or the one chosen on the send page's **Games** row.
+      - **Send to Another Device:** switches for Saved Games & Trees, Names, Options and Episodes & Add-Ons, plus Back Up
+        Receiver First. Then **Find Receiver** lists the receivers heard on the network.
+      - **Receive from Another Device:** a page showing this device's name and address while it waits.
+      - **Pairing:** once connected, each device asks its person "Send to X?" / "Receive from X?" with the same
+        four-digit code on both screens. A no on either side ends both at once.
+      - **What goes:** for each sent game the receiver has a library of (open or not), the episodes it lacks and a
+        progress bundle. The receiver merges the bundle: each
+        episode in it replaces that episode's saves and tree there, and every other episode's progress stays. The
+        sender's names win, and the receiver's other names stay. Options are applied, except those that stay per
+        device (`DEVICE_OPTIONS`: the vibration switches and the controller settings).
+      - **Back Up Receiver First:** what would be replaced goes first into the receiver's backups folder, as a
+        "before sync" backup that holds the options too. Restore Progress puts options back when a backup has them.
+      - **A missing game:** a sent game the receiver has no library of is named after the sync, with the size of the
+        sender's library of it, and both people are asked again. Yes sends that whole library (its
+        `LIBRARY_PARTS`), installed where the game's library belongs; no keeps what was already synced.
+      - **Result:** both devices show the result, or the short reason it failed.
+
+      Discovery is a UDP beacon from the receiver (port 47915), and the transfer runs over TCP (port 47914, or any
+      free port). Each side lists only receivers of its own protocol, so a device on an older build is not listed, and
+      one reached by its address says to update.
+
+      **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
+      2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add
+      Episodes uses, starting in that folder. **Use This Folder** chooses the folder there, and **Default** goes back
+      to the default folder. The choice is kept
+      in `settings.json` (`backup_folder`, `export_folder`), and Reset Settings clears it. When a folder is chosen,
+      Restore Progress looks in it and in the default folder. A phone has no chooser for them: Android's default
+      folders are in the app's external files folder (`Application.USER_FOLDER_ROOT`).
+
+      Delete Episodes, Export Episodes and Reset Decision Tree each open the Episodes On Demand list in place of
+      the card (`EpisodeChoice`). The list shows only the episodes the action fits, each with a tick box. Its
+      footer counts the ticked ones, and the action's button acts on them. On a keyboard or controller, Enter ticks
+      the highlighted row, and moving down past the last row reaches the button.
+      - **Delete** offers the imported episodes, but never a built-in one or the one being played. It takes their
+        saves, previews and trees, while HD art already built from them stays in the twin store.
+      - **Export** copies each episode's EXP file under its own name to
+        `Downloads/SHSHD Runtime Episodes/<game>` (or the chosen Exports Folder), adding a number to the name rather than overwriting a
+        different file.
+      - **Reset Decision Tree** offers the episodes that have a tree.
+
+      Back, or a finished action, returns to the Episodes page.
+
+      Each row that changes something asks first, in a window of this player's own drawn like HD's "Delete Saved
+      Game?", and reports with an OK notice. Verify Library and the two Rebuild rows run as background jobs under
+      the busy card. Verify checks every file against the checksum the library recorded. A damaged episode's file
+      is removed, since it cannot play. A built-in episode is written again from the game's app, and any other
+      comes back when Add Episodes is given its file again. Rebuild HD Art is offered where there is HD art to
+      build: an SHS library with HD episodes, or Cause of Death.
+  - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
+    79 x 27 switch, and the value buttons at 104 x 34 with an 18-point label, wider where the value needs it.
+
+  Options are shared by both games (owner, 2026-10-29): the switches, the sliders and the Episode Titles language
+  live in the app's `settings.json` (`preferences`, `menu.SHARED_PREFERENCES`) as well as each game's
+  `player.json`, and the shared copy wins. The first launch takes them from the game saved most recently. Game data
+  stays per library: the selected episode, the name tables, the warp lock and the HD art mode.
 - **Left out.** Play My Music: it opens the device's music library, which a desktop doesn't have.
 
 **Help & About.** The pages use SHS HD's page layout (a long title, such as "Episodes On Demand", takes two lines,

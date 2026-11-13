@@ -72,7 +72,8 @@ class HdMenuWindows(HdUi):
     def text_for(self, string_id, variables=None):
         if string_id == NO_STRING:
             return ''
-        text = self.strings()[string_id]
+        # A window of this player's own carries its text itself (menu_engine.MenuEngineData.add_window).
+        text = string_id if isinstance(string_id, str) else self.strings()[string_id]
         for key, value in (variables or {}).items():
             text = text.replace(f'~{key}~', value)
         return text
@@ -155,6 +156,8 @@ class HdMenuWindows(HdUi):
         """Draw the window. Fills `self.hits` and, for info pages, `body_rect`."""
         g = self.layout(menu_id, variables)
         top, total, left = g['top'], g['total'], CARD_LEFT
+        # shshd-runtime (General's Aspect Ratio): centred in the layer it's drawn on (a taller menu frame's, or HD's).
+        top = (layer.get_height() / S - total) / 2
         self.hits, self.body_rect = [], None
         self.draw_card(layer, top, total)
         clip = pygame.Rect((left + 6) * S, round((top + 6) * S), (CARD_W - 12) * S, round((total - 12) * S))

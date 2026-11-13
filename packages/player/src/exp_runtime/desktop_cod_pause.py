@@ -84,6 +84,8 @@ class CodPauseMenu(HdPauseMenu):
         """A page's (title, body): this player's CoD text where it has one (help_text_overrides.COD_HELP_TEXT_OVERRIDES),
         else CoD's own. CoD's version token is ~259~."""
         from .help_text_overrides import COD_HELP_TEXT_OVERRIDES
+        if page in self.text_pages:                     # one the host wrote (show_text)
+            return self.text_pages[page][:2]
         override = COD_HELP_TEXT_OVERRIDES.get(page)
         if override is not None:
             title, body = override

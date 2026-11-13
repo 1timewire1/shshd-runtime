@@ -11,8 +11,8 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              text_branch='Text answer condition', title='Title card', message='Message',
              notice='Dialogue notification', emphasis='Emphasize dialogue', scene_label='Scene label',
              pan='Background pan', transition='Screen transition', close_dialogue='Close dialogue',
-             random='Random variable', word_game='Timed word choices', football='Football (SHS)',
-             grid='Word / picture grid (SHS)', scene='Scene link',
+             random='Random variable', minigames_available='Real minigames?', cutscene_available='Cutscenes?', cutscene='Storyboard cutscene', x360_slot='X360 slot machine', x360_leash='X360 leash game', x360_puzzle='X360 jewel puzzle', x360_diss='X360 Diss Practice', word_game='Timed word choices', football='Football (SHS)',
+             grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", brew_catch='Catch game (BREW)', scene='Scene link',
              flag='Property flag', speakers='Player / narrator', set_text='Set text', text_default='Text default',
              expression_default='Default expression', character_art='Character art', character_name='Rename character',
              picker='Choose a look', vibrate='Vibrate',
@@ -40,6 +40,7 @@ DEFAULTS = {
     'scene_label': {'icon': -1}, 'pan': {'automatic': True, 'alignment': 2},
     'transition': {'selector': 0}, 'close_dialogue': {},
     'random': {'bound': 2, 'result': 'roll'},
+    'minigames_available': {'result': 'real_minigames'}, 'cutscene_available': {'result': 'real_cutscene'}, 'cutscene': {'spec': 0}, 'x360_slot': {'result': 'slot_points'}, 'x360_leash': {'result': 'leash_won'}, 'x360_puzzle': {'result': 'puzzle_score'}, 'x360_diss': {'result': 'diss_score', 'tutorial': 0},
     'word_game': {'good': ['Clear', 'Calm'], 'bad': ['Late', 'Lost', 'Loud'],
                   'duration_ms': 10000, 'refresh_ms': 1000, 'result': 'word_score'},
     'football': {'first_seconds': 30, 'second_seconds': 30,
@@ -59,6 +60,23 @@ DEFAULTS = {
                            'alphabet': 'CAT', 'highlight': True, 'advance_after_one': True,
                            'minimum_starts': 1, 'id': 1001}],
              'symbols': [], 'tutorials': [], 'result': 'grid_passed'},
+    # shshd-runtime: SHS '11's games (ENGINE_ABI.md 5.4). A round's fields are the words of its table there.
+    'shs11_memory': {'seconds': 60, 'target': 200,
+                     'rounds': [{'cue': 'A word for a small, mischievous helper.', 'word': 'ELF', 'bonus': 20, 'points': 10,
+                                 'letter_ms': 200, 'limit_ms': 2000},
+                                {'cue': 'A pet that purrs.', 'word': 'CAT', 'bonus': 20, 'points': 10,
+                                 'letter_ms': 200, 'limit_ms': 2000}],
+                     'result': 'memory_result'},
+    'shs11_reflex': {'seconds': 60, 'target': 200,
+                     'rounds': [{'least_right': 5, 'gauge': 10, 'bonus': 20, 'points': 5, 'right': 13, 'wrong': 3, 'skull': 8,
+                                 'one_bar': 25, 'two_bars': 40, 'three_bars': 20, 'skulls': 15,
+                                 'flash_ms': 300, 'hold_ms': 2100}],
+                     'result': 'reflex_result'},
+    # shshd-runtime: the BREW games' catch game (ENGINE_ABI.md 5.5), with the settings most of the '08 Campaign's open with: items
+    # and the player are BREW picture numbers, which the shsbrew add-on draws (sizes: {picture: [width, height]}, read from it).
+    'brew_catch': {'kind': 'angled', 'target': 45, 'interval_ms': 520, 'speed': 330, 'spread': 50, 'chance': 65, 'angle': 40,
+                   'player': 109, 'items': [{'value': 3, 'picture': 149, 'count': 25}, {'value': -3, 'picture': 156, 'count': 15}],
+                   'sizes': {}, 'result': 'catch_score'},
     'scene': {},
     'flag': {'owner': 0, 'key': 400, 'bit': 0, 'value': True},
     'speakers': {'player': '', 'narrator': ''},
@@ -71,7 +89,7 @@ DEFAULTS = {
     'open_url': {'url': ''}, 'survey': {'poll_id': 1001, 'answers': ['rating'], 'results': []},
     'end': {}, 'native': {},
 }
-INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'picker'))
+INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'picker'))
 
 
 def parameters(node):
@@ -97,9 +115,9 @@ def text_fields(project):
         for field in ('good', 'bad', 'instructions'):
             for i, value in enumerate(p.get(field, [])):
                 result[f'node.{node.id}.param.{field}.{i}'] = value
-        for field in ('problems', 'tutorials'):
+        for field in ('problems', 'tutorials', 'rounds'):
             for i, record in enumerate(p.get(field, [])):
-                for key in ('title', 'body', 'heading', 'prompt', 'alphabet', 'fixed_board'):
+                for key in ('title', 'body', 'heading', 'prompt', 'alphabet', 'fixed_board', 'cue', 'word'):
                     if key in record:
                         result[f'node.{node.id}.param.{field}.{i}.{key}'] = record[key]
                 for j, word in enumerate(record.get('words', [])):

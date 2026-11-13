@@ -18,8 +18,9 @@ import math
 import random
 
 from . import graphics as pygame
+from PIL import Image
 
-from .graphics import faded
+from .graphics import faded, opaque
 from .shs.grid_layout import clamp, ease
 from .desktop_football_hd import HdStrings
 from .hd_gl import GLAtlas, ImageFont, draw_quad, to_pil
@@ -43,6 +44,11 @@ POPUP_BODY, POPUP_FOOT, POPUP_HEAD = 47, 48, 49
 BACKGROUND_ORIGIN = (-64, -220)      # fitted against four photos (the image is a touch squashed)
 BACKGROUND_SCALE_Y = .9875
 HAZE_SCALE, HAZE_SPIN = 2 * 2.844, -20.
+QUICK_DRAWING = False               # a phone's cheaper haze and turning cubes (platforms/android.py): `haze_layer`, `turn_ms`
+TURN_STEP_DEGREES = 12              # a real grid's cube, turning 180 in 700 ms, changes pose about 21 times a second then
+TURN_STEP_MS = 33                   # a turning cube's pose lasts this long then
+HAZE_QUICK_MS = 25                  # how often it turns then: every second frame at 60 fps, every frame below 40
+HAZE_TURNED_AT = 4                  # the haze is soft, so it turns at a quarter of its size and is then enlarged (a 1456 px turn every frame is slow)
 CLOUD_SPEED = 15
 
 # The cube: 450 wide, 100 deep, cells 522 apart; the camera (`setup3DTransform`,
@@ -169,6 +175,16 @@ class EffectState:
                 self.shards.remove(shard)
 
 
+def turn_ms(elapsed_ms, cell):
+    """How far on to draw a cube `elapsed_ms` into a turn. On a phone, in steps: each new pose of a cube is drawn from scratch, and a
+    pick in Reflex starts up to eight at once. Steps make poses repeat, so they are found ready more often; and the odd cells are half
+    a step off the even ones, so those eight don't all want a new pose in the same frame. The first step moves at once."""
+    if not QUICK_DRAWING:
+        return elapsed_ms
+    offset = (cell % 2) * TURN_STEP_MS // 2
+    return ((elapsed_ms + offset) // TURN_STEP_MS + 1) * TURN_STEP_MS - offset
+
+
 class HdWordRenderer:
     def __init__(self, resources, art):
         self.resources, self.art = resources, art
@@ -176,6 +192,26 @@ class HdWordRenderer:
         self.edge_bar = 'gear'
         self.hd_layer = True
         self._effects = None
+        self._haze = None
+        self._haze_shown = None
+
+    # General's Aspect Ratio (owner, 2026-11-11: the native games fit the screen). In a frame of another shape the canvas
+    # is 768 points across and the frame's shape: the scene, the haze and the clouds round its edges cover all of it, the
+    # status bar keeps to the top, and the game (board, question, words, portraits, banners) is HD's 3:4 centred, `dy`
+    # points lower. HD's 768 x 1024 at 3:4, where nothing moves.
+    frame_units = (384, 512)
+    dy = 0
+    top_pad = 0         # points of the canvas's top under a phone's status bar (Desktop): the status keeps below them
+
+    @property
+    def fills_frame(self):
+        return self.frame_units != (384, 512)
+
+    def canvas_size(self):
+        wide, tall = self.frame_units
+        if (wide, tall) == (384, 512):
+            return FRAME
+        return FRAME[0], max(FRAME[1], round(FRAME[0] * tall / wide))
 
     # -- assets ---------------------------------------------------------
     def raw(self, resource_id):
@@ -237,23 +273,117 @@ class HdWordRenderer:
     @lru_cache(maxsize=4)
     def background(self, background_id):
         image = self.art.image(background_id)
+        if image is not None:
+            alpha = pygame.image.tobytes(image, 'RGBA')[3::4]
+            if alpha.count(255) == len(alpha):      # an opaque picture needs no black behind it, and scaling keeps it opaque
+                image = image.convert()
         if image is not None and BACKGROUND_SCALE_Y != 1:
             image = pygame.transform.smoothscale(image, (image.get_width(),
                                                          round(image.get_height() * BACKGROUND_SCALE_Y)))
         return image
 
-    def backdrop(self, game, background_id):
+    def prime_steps(self, background_id=None):
+        """shshd-runtime: what a game's first frame would load, a step at a time, for the player to take while a line
+        sits still (Desktop._prime_games): the fonts, the atlas, the haze and the scene's picture."""
+        for name in FONT_IDS:
+            yield lambda name=name: self.font(name)
+        yield lambda: self.atlas(ATLAS)
+        yield self.haze
+        if background_id is not None:
+            yield lambda: self.background(background_id)
+
+    def haze(self):
+        """The haze at the size it turns at, made once."""
+        if self._haze is None:
+            image = self.atlas(ATLAS).image(HAZE)
+            self._haze = pygame.transform.smoothscale(image, (round(image.get_width() * HAZE_SCALE / HAZE_TURNED_AT),
+                                                              round(image.get_height() * HAZE_SCALE / HAZE_TURNED_AT)))
+        return self._haze
+
+    def turned_haze(self, game, size=FRAME):
+        """The haze turned, the middle of it in the shape of `size` (HD's frame; a taller canvas's), at a quarter."""
+        turned = pygame.transform.rotate(self.haze(), -HAZE_SPIN * game.visual_ms / 1000)
+        part = pygame.Rect(0, 0, size[0] // HAZE_TURNED_AT, size[1] // HAZE_TURNED_AT).clip(
+            pygame.Rect(0, 0, *turned.get_size()))
+        part.center = turned.get_rect().center
+        return turned.subsurface(part)
+
+    def tall_haze(self, game, size):
+        """`haze_layer` for a canvas taller than HD's frame: the turned haze in its shape, enlarged once to it (on a phone
+        in `haze_layer`'s two cheap steps, at most every HAZE_QUICK_MS)."""
+        if not QUICK_DRAWING:
+            return pygame.transform.smoothscale(self.turned_haze(game, size), size)
+        shown = self.__dict__.get('_tall_haze_shown')
+        if (shown is None or shown[0] is not game or shown[3] != size
+                or not 0 <= game.visual_ms - shown[1] < HAZE_QUICK_MS):
+            half = pygame.transform.smoothscale(self.turned_haze(game, size), (size[0] // 2, size[1] // 2))
+            shown = self._tall_haze_shown = game, game.visual_ms, pygame.transform.scale(half, size), size
+        return shown[2]
+
+    def tall_scene(self, game, background_id):
+        """`draw_scene` over a canvas taller than HD's frame: the scene's picture scaled evenly to cover it, centred,
+        the haze stretched over it, and the clouds along its four edges."""
         canvas = self.canvas
-        canvas.fill((0, 0, 0))
+        width, height = canvas.get_size()
         image = self.background(background_id)
+        if image is None or image.get_flags() & pygame.SRCALPHA:
+            canvas.fill((0, 0, 0))              # (an opaque picture covers the canvas: it's scaled evenly to cover it)
+        if image is not None:
+            key = (id(image), (width, height))
+            cached = self.__dict__.get('_tall_background')
+            if cached is None or cached[0] != key:
+                k = max(width / image.get_width(), height / image.get_height())
+                size = (round(image.get_width() * k), round(image.get_height() * k))
+                cached = self._tall_background = (key, pygame.transform.smoothscale(image, size))
+            picture = cached[1]
+            canvas.blit(picture, ((width - picture.get_width()) // 2, (height - picture.get_height()) // 2))
+        canvas.blit(self.tall_haze(game, (width, height)), (0, 0))
+        if game.phase == -2:
+            return
+        atlas = self.atlas(ATLAS)
+        entry = game.phase_ms / 1500 if game.phase == -1 else 0.
+        travel = int(game.visual_ms / 1000 * CLOUD_SPEED)
+        x = travel % 280 - 280
+        while x < 1048:
+            atlas.draw(canvas, CLOUD_BOTTOM, x, int(entry * 51 + 973) + height - FRAME[1])
+            x += 280
+        x = -(travel % 256)
+        while x < 1024:
+            atlas.draw(canvas, CLOUD_TOP, x, int(entry * -51))
+            x += 256
+        y = travel % 289 - 289
+        while y < height:
+            atlas.draw(canvas, CLOUD_LEFT, int(entry * -41), y)
+            y += 289
+        y = -(travel % 289)
+        while y < height:
+            atlas.draw(canvas, CLOUD_RIGHT, int(entry * 47 + 721), y)
+            y += 289
+
+    def haze_layer(self, game):
+        """The haze turned and enlarged to the frame. On a phone that was most of a frame's budget, and past the budget its clocks
+        settle at half speed, so there it enlarges in two steps, the second without smoothing (it is soft, and this is 2 px), and
+        turns at most 30 times a second. Time, not frames: at a low frame rate it still turns every frame."""
+        if not QUICK_DRAWING:
+            return pygame.transform.smoothscale(self.turned_haze(game), FRAME)
+        shown = self._haze_shown
+        if shown is None or shown[0] is not game or not 0 <= game.visual_ms - shown[1] < HAZE_QUICK_MS:
+            half = pygame.transform.smoothscale(self.turned_haze(game), (FRAME[0] // 2, FRAME[1] // 2))
+            shown = self._haze_shown = game, game.visual_ms, pygame.transform.scale(half, FRAME)
+        return shown[2]
+
+    def backdrop(self, game, background_id):
+        self.draw_scene(self.canvas, game, background_id, self.haze_layer(game))
+
+    def draw_scene(self, canvas, game, background_id, haze):
+        image = self.background(background_id)
+        if (image is None or image.get_flags() & pygame.SRCALPHA
+                or not image.get_rect(topleft=BACKGROUND_ORIGIN).contains(canvas.get_rect())):
+            canvas.fill((0, 0, 0))
         if image is not None:
             canvas.blit(image, BACKGROUND_ORIGIN)
         atlas = self.atlas(ATLAS)
-        # The haze is soft, so it is turned at half size and enlarged (a 1456 px turn every frame is slow).
-        half = pygame.Surface((384, 512), pygame.SRCALPHA).convert_alpha()
-        atlas.draw(half, HAZE, 192 - 128, 256 - 128, sx=HAZE_SCALE / 2, angle=HAZE_SPIN * game.visual_ms / 1000,
-                   pivot=(128, 128))
-        canvas.blit(pygame.transform.smoothscale(half, FRAME), (0, 0))
+        canvas.blit(haze, (0, 0))
         if game.phase == -2:
             return
         entry = game.phase_ms / 1500 if game.phase == -1 else 0.
@@ -471,6 +601,7 @@ class HdWordRenderer:
         size = max(1, round(width * 2)), max(1, round(height * 2))
         return image if image.get_size() == size else pygame.transform.smoothscale(image, size)
 
+    @lru_cache(maxsize=8)
     def masked_portrait(self, image, mirrored):
         """The portrait cut by the 266 x 300 mask (`drawPortrait`'s masked draw)."""
         mask = self.mask()
@@ -566,8 +697,11 @@ class HdWordRenderer:
         Drawn once per pose (cached), then blitted."""
         symbols = symbols or {}
         pictures = tuple(symbols.get(ord(c)) if c else None for c in (front, back))
-        image, left, top = self.cube_image(width, height, col, row, mode, front, back, round(alpha * 50),
-                                           round(size * 200), round(angle * 2), pictures)
+        if QUICK_DRAWING:       # fewer poses: each new one is drawn from scratch, and a new board has fifteen cubes turning at once
+            alpha50, size200, angle2 = round(alpha * 10) * 5, round(size * 20) * 10, round(angle / TURN_STEP_DEGREES) * TURN_STEP_DEGREES * 2
+        else:
+            alpha50, size200, angle2 = round(alpha * 50), round(size * 200), round(angle * 2)
+        image, left, top = self.cube_image(width, height, col, row, mode, front, back, alpha50, size200, angle2, pictures)
         if image is not None:
             self.canvas.blit(image, (left, top))
 
@@ -612,8 +746,10 @@ class HdWordRenderer:
         left, top = math.floor(min(xs)), math.floor(min(ys))
         surface = pygame.Surface((math.ceil(max(xs)) - left + 1, math.ceil(max(ys)) - top + 1),
                                  pygame.SRCALPHA).convert_alpha()
+        # A phone's cube in motion is gone in moments: no smoothing, at about a third of the time.
+        resample = Image.Resampling.NEAREST if QUICK_DRAWING and (angle or size != 1) else Image.Resampling.BILINEAR
         for image, quad, opacity in operations:
-            draw_quad(surface, image, [(x - left, y - top) for x, y in quad], opacity)
+            draw_quad(surface, image, [(x - left, y - top) for x, y in quad], opacity, resample)
         return surface, left, top
 
     @staticmethod
@@ -677,7 +813,19 @@ class HdWordRenderer:
                           symbols=game.symbols)
         if outgoing or game.phase == 4:
             return
+        self.cursor_outline(p)
         self.arrows(game, p)
+
+    cursor = None                   # the cell the keys (or a controller) have highlighted: Desktop.grid_cursor
+
+    def cursor_outline(self, p):
+        """The keys' highlighted cell (this player's: a finger needs none), outlined on its top face, the face a touch
+        is tested against (hit)."""
+        if self.cursor is None or not 0 <= self.cursor < p.width * p.height:
+            return
+        x, y = self.cursor % p.width * (CUBE + GAP), self.cursor // p.width * (CUBE + GAP)
+        quad = [project(p.width, p.height, x + dx, y + dy, 0) for dx, dy in ((0, 0), (CUBE, 0), (CUBE, CUBE), (0, CUBE))]
+        pygame.draw.polygon(self.canvas, (255, 255, 255), quad, max(2, round(self.canvas.get_width() / 256)))
 
     # -- arrows ---------------------------------------------------------
     DIRECTIONS = ((1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1))
@@ -739,12 +887,41 @@ class HdWordRenderer:
     def draw(self, target, session):
         game = session.engine.word_grid
         fx = self.effects(game)
-        self.backdrop(game, session.pending.details['background_id'])
-        self.portraits(session, game)
-        self.status(game, fx.shown)
-        self.board(game)
-        self.prompts(game)
-        self.draw_effects(fx)
-        self.banner(game)
-        self.tutorial(game)
+        size = self.canvas_size()
+        if size == FRAME:
+            if self.canvas.get_size() != FRAME:
+                self.canvas = pygame.Surface(FRAME).convert()
+            self.dy = 0
+            self.backdrop(game, session.pending.details['background_id'])
+            self.portraits(session, game)
+            self.status(game, fx.shown)
+            self.board(game)
+            self.prompts(game)
+            self.draw_effects(fx)
+            self.banner(game)
+            self.tutorial(game)
+            opaque(self.canvas)     # alpha 0 from `convert()` on macOS (desktop_football_hd.HdFootballRenderer.draw)
+            return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]
+        # A taller frame: the scene over the whole canvas, the status bar at its top, the game in HD's 3:4 centred.
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+        whole = self.canvas
+        self.dy = (size[1] - FRAME[1]) // 2
+        self.tall_scene(game, session.pending.details['background_id'])
+        self.canvas = whole.subsurface((0, self.top_pad, FRAME[0], size[1] - self.top_pad))
+        try:
+            self.status(game, fx.shown)
+        finally:
+            self.canvas = whole
+        self.canvas = whole.subsurface((0, self.dy, *FRAME))
+        try:
+            self.portraits(session, game)
+            self.board(game)
+            self.prompts(game)
+            self.draw_effects(fx)
+            self.banner(game)
+            self.tutorial(game)
+        finally:
+            self.canvas = whole
+        opaque(self.canvas)
         return [(pygame.Rect(-32, 422, 92, 58), ('menu',))]

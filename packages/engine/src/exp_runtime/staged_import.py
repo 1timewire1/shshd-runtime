@@ -153,8 +153,9 @@ def copy_fonts(fonts, library):
             logging.warning('Could not copy staged font %s: %s', font, error)
 
 
-def import_staged(staged, targets):
+def import_staged(staged, targets, progress=None):
     """Import each game in `targets` ({game: new library directory}) from `staged`, SHS first; a worker job.
+    `progress` (a line of text, from the worker) is told how far it has got.
 
     Each library is created atomically by `import_game`, then given the fonts (a font belongs to the import that
     already succeeded) and, for CoD, the SHS HD IPA as its art source. One game failing does not undo the other:
@@ -164,11 +165,13 @@ def import_staged(staged, targets):
         if game not in targets:
             continue
         destination = Path(targets[game])
+        title = GAMES[game].TITLE
+        report = (lambda text, title=title: progress(f'{title}: {text}')) if progress else None
         try:
             if game == 'shs':
-                import_game(staged.apk, staged.episode_paths, destination, staged.hd_ipa, game='shs')
+                import_game(staged.apk, staged.episode_paths, destination, staged.hd_ipa, game='shs', progress=report)
             else:
-                import_game(staged.cod_ipa, staged.cod_episode_paths, destination, game='cod')
+                import_game(staged.cod_ipa, staged.cod_episode_paths, destination, game='cod', progress=report)
         except (ContentError, OSError) as error:
             errors.append(error if isinstance(error, ContentError) else ContentError(str(error)))
             continue
@@ -210,8 +213,9 @@ def _member_path(name):
 class _Extraction:
     """Members written under `stage` at their own relative paths, bounded in count and size."""
 
-    def __init__(self, archive, stage):
+    def __init__(self, archive, stage, progress=None, members=None):
         self.archive, self.stage, self.seen, self.count, self.total = archive, stage, set(), 0, 0
+        self.progress, self.members = progress, members     # `members`: how many there are, where that is known
 
     def add(self, name, size, copy):
         relative = _member_path(name)
@@ -224,6 +228,9 @@ class _Extraction:
         if relative.casefold() in self.seen:
             raise ContentError(f'{self.archive.name} holds two files named {relative}')
         self.seen.add(relative.casefold())
+        if self.progress:
+            self.progress(f'Unpacking {self.count} of {self.members} files' if self.members
+                          else f'Unpacking file {self.count}')
         target = self.stage.joinpath(*relative.split('/'))
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open('wb') as output:
@@ -239,7 +246,7 @@ def _check_space(archive, folder, size):
                            f'({free / 1024 ** 3:.1f} GB is free)')
 
 
-def _extract_zip(archive, stage):
+def _extract_zip(archive, stage, progress=None):
     try:
         package = ZipFile(archive)
     except (BadZipFile, OSError) as error:
@@ -247,7 +254,7 @@ def _extract_zip(archive, stage):
     with package:
         infos = [info for info in package.infolist() if not info.is_dir()]
         _check_space(archive, stage, sum(info.file_size for info in infos if _member_path(info.filename)))
-        extraction = _Extraction(archive, stage)
+        extraction = _Extraction(archive, stage, progress, sum(1 for info in infos if _member_path(info.filename)))
         for info in infos:
             try:
                 extraction.add(info.filename, info.file_size,
@@ -261,11 +268,11 @@ def _extract_zip(archive, stage):
                 raise ContentError(f'{archive.name} is damaged: {info.filename}') from error
 
 
-def _extract_rar(archive, stage):
+def _extract_rar(archive, stage, progress=None):
     from .rar import RarError, RarReader
     try:
         with RarReader(archive) as reader:
-            extraction = _Extraction(archive, stage)
+            extraction = _Extraction(archive, stage, progress)
             for member in reader:
                 if member['mode'] == stat.S_IFDIR or _member_path(member['name']) is None:
                     reader.skip()
@@ -280,7 +287,7 @@ def _extract_rar(archive, stage):
         raise ContentError(f'{archive.name} could not be read: {error}') from error
 
 
-def extract_bulk(archive, stage):
+def extract_bulk(archive, stage, progress=None):
     """Extract a bulk archive's game files into `stage`; returns the folder holding the import layout (`stage`, or
     the archive's one wrapping folder)."""
     archive, stage = Path(archive), Path(stage)
@@ -288,7 +295,7 @@ def extract_bulk(archive, stage):
     if suffix not in ARCHIVE_SUFFIXES:
         raise ContentError(f'{archive.name} is not a .zip or .rar file')
     try:
-        (_extract_zip if suffix == '.zip' else _extract_rar)(archive, stage)
+        (_extract_zip if suffix == '.zip' else _extract_rar)(archive, stage, progress)
     except OSError as error:
         raise ContentError(f'Could not extract {archive.name}: {error}') from error
     entries = list(stage.iterdir())
@@ -297,7 +304,7 @@ def extract_bulk(archive, stage):
     return stage
 
 
-def import_bulk(archive, targets):
+def import_bulk(archive, targets, progress=None):
     """A worker job: import every game a bulk archive holds into `targets` ({game: library directory}).
 
     A game whose library already exists is left as it is (and said so). Returns `import_staged`'s
@@ -306,7 +313,7 @@ def import_bulk(archive, targets):
     parent = Path(next(iter(targets.values()))).parent        # beside the libraries, so on the same drive
     parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.exp-bulk-', dir=parent) as temporary:
-        staged = discover(extract_bulk(archive, Path(temporary)))
+        staged = discover(extract_bulk(archive, Path(temporary), progress))
         if staged is None:
             raise ContentError(f'{archive.name} holds no game files. It needs the SHS Android APK or the Cause of '
                                'Death IPA, with the episode folders beside them')
@@ -315,6 +322,6 @@ def import_bulk(archive, targets):
         if not wanted:
             raise ContentError(' '.join(f'{GAMES[game].TITLE} already has a library.' for game in existing)
                                + ' Nothing was imported.')
-        imported, errors = import_staged(staged, wanted)
+        imported, errors = import_staged(staged, wanted, progress)
     return imported, errors + [ContentError(f'{GAMES[game].TITLE} already had a library, so it was left as it is.')
                                for game in existing]

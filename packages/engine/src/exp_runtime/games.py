@@ -36,3 +36,14 @@ PROFILES = {SHS_ANDROID: ('shs', 'apk'), SHS_IOS: ('shs', 'ipa'), COD_IOS: ('cod
 def game_id(resources):
     library = getattr(resources, 'library', resources)
     return getattr(library, 'game_id', 'shs')
+
+
+def has_translated_minigames(profile, record, presentation=None):
+    """Whether an episode's record is one the "Use Translated Mini-Games" switch changes (profile TRANSLATED_MINIGAMES:
+    pack -> its episodes, or None for all of them), or an episode made in the Creator that asks for them (its
+    presentation record's `minigames`)."""
+    packs = getattr(profile, 'TRANSLATED_MINIGAMES', {})
+    pack = record.get('pack_id')
+    if pack in packs and (packs[pack] is None or record.get('episode_id') in packs[pack]):
+        return True
+    return bool((presentation or {}).get('minigames'))

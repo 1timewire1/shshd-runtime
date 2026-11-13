@@ -63,8 +63,9 @@ frameworks. Producing the unsigned artifact needs no signing credentials or
 provisioning profile.
 
 The [Builds workflow](../.github/workflows/desktop-builds.yml) calls the reusable
-[iOS workflow](../.github/workflows/ios-builds.yml) alongside the desktop builds.
-The iOS job runs host tests, builds and verifies the simulator app, and packages
+[iOS workflow](../.github/workflows/ios-builds.yml) alongside the desktop builds,
+on the `ios-port` branch and manual runs only until the port runs (a job that
+always fails would hide real failures). The iOS job runs host tests, builds and verifies the simulator app, and packages
 an unsigned device build on an arm64 macOS runner. Its `ios-arm64-unsigned`
 artifact contains only the IPA and checksum; `ios-simulator-verification`
 contains the verification report. The standalone **iOS builds** workflow can

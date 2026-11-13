@@ -35,6 +35,7 @@ from .hd_ui import HdUi, S, FRAME
 from .menu import MenuFont
 
 INTRO_PHOTO_START, INTRO_PHOTO_ZOOM, INTRO_PHOTO_TURN = 0.4, 1.7, 1.9375
+PHOTO_TURN_COARSE = 2 if S == 1 else 1      # a phone turns the photo at half that: its rotozoom held the intro at 18 fps
 INTRO_STRIP_START, INTRO_STRIP_TIME = 2.6, 0.6
 BUTTONS_START_INTRO = 1.5             # `animateMainMenuButtonsIn(1.5)` (SHS HD 00027916; CoD the same)
 # Each layer's animation (see the docstring): 0.35 s of movement after its delay, held twice.
@@ -81,6 +82,12 @@ class HdMainMenu(HdUi):
     # the other way round (owner's choice, 2026-10-20) so the button at rest does not look highlighted next to the
     # keyboard's highlight. CoD's own states already read that way (desktop_cod_main.CodMainMenu).
     INFO_FRAMES = (15, 14)
+
+    # shshd-runtime (General's Aspect Ratio): the menu frame's height in points (Application.menu_frame, set by the shell):
+    # HD's 1024, or taller, laid out as mock-up B2 (HdUi.main_layout): the ribbon and title at the top as in HD, the
+    # buttons, gear and info button as far from the bottom as in HD, the photo centred between and grown.
+    height = FRAME[1]
+    grows = True
 
     def __init__(self, library):
         super().__init__(library)
@@ -196,34 +203,40 @@ class HdMainMenu(HdUi):
 
     _photo_1x = None        # (the photo, its copy at 1 pixel per point) for the intro's turn
 
+    @property
+    def extra(self):
+        """Points the frame is taller than HD's, less the buttons' raise: what the buttons move down by."""
+        return self.height - FRAME[1] - self.buttons_raise(self.height)
+
     def draw_photo(self, layer):
-        photo = self.main_layers()[1][0]
+        photo, (cx, cy) = self.main_layout(self.height)[1]
         t = self.age - INTRO_PHOTO_START
         if not self.intro or t >= INTRO_PHOTO_ZOOM and t >= INTRO_PHOTO_TURN:
-            layer.blit(photo, photo.get_rect(center=(384 * S, 512 * S)))
+            layer.blit(photo, photo.get_rect(center=(round(cx * S), round(cy * S))))
             return
         zoom = keyframes((0, .882, .941, 1), (10.0, 1.0, 1.1, 1.0), max(0.0, t) / INTRO_PHOTO_ZOOM)
         turn = -30.0 * (1 - min(1.0, max(0.0, t) / INTRO_PHOTO_TURN))
         # Turned at 1 pixel per point and then scaled up: rotozoom at S had to write the whole turned square (about
         # 13 million pixels, ~155 ms a frame); a quarter of that, and only the part inside the frame scaled up. A
         # 1080p window shows the frame at about 1 pixel per point anyway, and the settled photo is drawn at S.
+        coarse = PHOTO_TURN_COARSE
         if self._photo_1x is None or self._photo_1x[0] is not photo:
-            self._photo_1x = photo, pygame.transform.smoothscale(photo, (photo.get_width() // S,
-                                                                        photo.get_height() // S))
+            self._photo_1x = photo, pygame.transform.smoothscale(photo, (photo.get_width() // S // coarse,
+                                                                        photo.get_height() // S // coarse))
         small = self._photo_1x[1]
-        span = (FRAME[0] + FRAME[1]) / zoom                    # the frame's diagonal in photo pixels
+        span = (FRAME[0] + self.height) / zoom / coarse        # the frame's diagonal in photo pixels
         crop = pygame.Rect(0, 0, min(small.get_width(), round(span)), min(small.get_height(), round(span)))
         crop.center = small.get_rect().center
         image = pygame.transform.rotozoom(small.subsurface(crop), turn, zoom)
-        placed = image.get_rect(center=(FRAME[0] // 2, FRAME[1] // 2))
-        visible = placed.clip(pygame.Rect((0, 0), FRAME))
+        placed = image.get_rect(center=(round(cx) // coarse, round(cy) // coarse))
+        visible = placed.clip(pygame.Rect(0, 0, FRAME[0] // coarse, self.height // coarse))
         if visible.width > 0 and visible.height > 0:
             piece = image.subsurface(visible.move(-placed.x, -placed.y))
-            layer.blit(pygame.transform.smoothscale(piece, (visible.width * S, visible.height * S)),
-                       (visible.x * S, visible.y * S))
+            layer.blit(pygame.transform.smoothscale(piece, (visible.width * S * coarse, visible.height * S * coarse)),
+                       (visible.x * S * coarse, visible.y * S * coarse))
 
     def draw_ribbon_title(self, layer):
-        layers = self.main_layers()
+        layers = self.main_layout(self.height)
         (ribbon, ribbon_center), (title, title_center) = layers[2], layers[3]
         t = self.age - INTRO_STRIP_START
         progress = 1.0 if not self.intro else max(0.0, min(1.0, t / INTRO_STRIP_TIME))
@@ -241,15 +254,18 @@ class HdMainMenu(HdUi):
     def draw(self, *, buttons=True):
         """Render into the 2x canvas; `self.hits` lists the buttons (points, command) once input is open. With
         `buttons` off (a window is open over the menu) only the backdrop is drawn."""
+        size = (FRAME[0] * S, round(self.height * S))
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
         layer = self.canvas
-        wood = self.main_layers()[0][0]
-        layer.blit(wood, wood.get_rect(center=(384 * S, 512 * S)))
+        wood, (cx, cy) = self.main_layout(self.height)[0]
+        layer.blit(wood, wood.get_rect(center=(round(cx * S), round(cy * S))))
         self.draw_photo(layer)
         self.draw_ribbon_title(layer)
         self.hits = []
         if not buttons:
             return layer
-        ox, oy = GROUP_ORIGIN
+        ox, oy = GROUP_ORIGIN[0], GROUP_ORIGIN[1] + self.extra
         # The wedge: layout 74's two backdrop pieces (pack 315 frames 0 and 1, from layout 79), 13 units down.
         wedge_x = ox + self.slide(0)
         for _, node, visible, (x, y, w, h) in self.layouts.nodes(74):
@@ -295,7 +311,7 @@ class HdMainMenu(HdUi):
             info = pygame.transform.smoothscale(info, (max(1, round(info.get_width() * S)), max(1, round(info.get_height() * S))))
             if alpha < 1:
                 info = faded(info, round(255 * alpha))
-            layer.blit(info, info.get_rect(center=(INFO_CENTER[0] * S, INFO_CENTER[1] * S)))
+            layer.blit(info, info.get_rect(center=(INFO_CENTER[0] * S, round((INFO_CENTER[1] + self.extra) * S))))
         if self.ready:
             self.hits.append((pygame.Rect(round(x), round(y), nw * 2, nh * 2), ('options',)))
-            self.hits.append((pygame.Rect(INFO_CENTER[0] - 42, INFO_CENTER[1] - 42, 84, 84), ('help',)))
+            self.hits.append((pygame.Rect(INFO_CENTER[0] - 42, INFO_CENTER[1] + self.extra - 42, 84, 84), ('help',)))

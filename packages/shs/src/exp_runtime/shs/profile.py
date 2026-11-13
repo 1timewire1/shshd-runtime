@@ -40,6 +40,9 @@ BACKGROUND_SCALE_X = {1013: 1.01}
 DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (108, 108, 108), -1: (223, 163, 52)}
 IOS_DIALOGUE_COLORS = {1: (41, 104, 221), 2: (180, 78, 78), 3: (137, 137, 137), -1: (180, 109, 26)}
 NARRATION_COLORS = (223, 163, 52), (125, 67, 0)
+# HD's initFonts (1.4.38 0002af38): narration is +0xe274, TrebuchetMS-Italic in 0xffb46d1a, switching on '`' to +0xfa90, the
+# same face and colour with a stroke of 1.2 at its 32 (0.6 at 16 points). Bold, then, not the Android build's darker colour.
+NARRATION_EMPHASIS_FONT = 'TrebuchetMS_Italic16NarrationEmphasis'
 NAME_COLORS = {'PajamaHip24': (41, 104, 221), 'PajamaHip26': (41, 104, 221),
                'PajamaHip266': (180, 78, 78), 'PajamaHipG26': (137, 137, 137),
                'PajamaHipY26': (180, 109, 26), 'PajamaHipS26': (254, 53, 0)}
@@ -72,27 +75,110 @@ CHOICE_FEEDBACK_SOUNDS = {8007: 1, 8003: -1}
 # jingles, its music tracks 13 and 1, which the smartphone versions replaced with 8007/8003 at the same beats (~590
 # each across the 45 paired stories). They play as episode sound effects (service 79; music, 80, in translations made
 # before 2026-10-25) at the translator's MUSIC_BASE (26980) + track, so for that pack those requests are answer
-# feedback too. Pack -> {resource ID: feedback}.
-TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}}
+# feedback too. Pack -> {resource ID: feedback}. SHS '11's (31600, tools/translate shs11_story.CUE_TRACKS) are its tracks 0
+# and 2, at the beats of 8007 and 8003 too.
+TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}, 31600: {26980: 1, 26980 + 2: -1},
+                             **{pack: {26900 + 11: 1, 26900 + 1: -1} for pack in (31000, 31100, 31200)}}
 # shshd-runtime: a translated episode's own picture for the whole 384x512-unit frame, drawn under the location art
 # where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
 # above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
 # The X360 prototype's translations (31400) show the same strips, so they carry the same backdrop.
-TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999}
+TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999, 31000: 26999, 31100: 26999, 31200: 26999}
+# shshd-runtime: a pack's backdrop for a speaker's box colour (key 651), in place of the one above: pack -> {theme: resource}.
+# BREW's dialogue panel turns pink behind a pink box and back for anyone else (screens.js DialogueScreen, seen in the real game).
+TRANSLATED_THEME_BACKDROP = {pack: {2: 26991} for pack in (31000, 31100, 31200)}
+# shshd-runtime: the "Java '08 Look" switch (ContentLibrary.java_look): pack -> how far above one of its addon's pictures the Java
+# '08 demo's own copy is (tools/translate brew.JAVA_OFFSET): the frame's backdrop, the relationship icons, the time-badge icons
+# and the catch game's art. A picture with no copy stays as it is; the catch game draws Java's skin (desktop_brew_catch).
+# The '08 Campaign only (owner, 2026-11-06): '07's stories never had it; frames shared across the BREW games and New Rules may
+# come later.
+JAVA_LOOK_ART = {31000: 10000}
+# shshd-runtime: the "'08 Backgrounds" switch (ContentLibrary.brew_08_backgrounds; decision 7B): an '07-badged BREW story (Classic,
+# Fall '06) shows '07's copies of the 28 shared locations (tools/translate brew.LOCATION_07_OFFSET); on, '08's, which the addon
+# keeps 40 locations x 3 skies below them. pack -> (first, end, offset).
+# A Classic story's own pictures (29000 up) move to '08's redraws, 500 above them, where the addon has one (brew.OWN_08_REDRAWS).
+BREW_08_BACKGROUNDS = {pack: ((26000 + 3 * 40, 26000 + 3 * 68, -3 * 40), (29000, 29500, 500)) for pack in (31100, 31200)}
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
-TRANSLATED_PICKER_LAYOUTS = {31300: {4: [(160, 275), (52, 241), (160, 170), (269, 241)]}}
+# The BREW M.A.S.H. packs (Classic, 31100; Stage 4) offer ten photos, past the native five (owner, 2026-11-07: try a bigger
+# picker before pages): the chosen one in front as ever, the other nine at 0.4 (a slot's third number), two either side of it
+# and five in a row behind, left to right.
+MASH_PICKER = [(160, 275), (34, 232, .4), (84, 232, .4), (56, 168, .4), (108, 168, .4), (160, 168, .4), (212, 168, .4),
+               (264, 168, .4), (236, 232, .4), (286, 232, .4)]
+FOUR_PICKER = [(160, 275), (52, 241), (160, 170), (269, 241)]
+# Four photos (M.A.S.H. 2, 3, 4 and 6) take New Rules' four-face layout too: the native slots leave one side empty (owner).
+# shshd-runtime: packs whose formatted lines say "a(n) %s" (the BREW games: M.A.S.H. Pack 1's houses and cars, Fall '06's grades),
+# where the engine picks "a" or "an" by the word filled in (engine.choose_articles; owner, 2026-11-07).
+TRANSLATED_ARTICLE_PACKS = (31000, 31100, 31200)
+# shshd-runtime: packs whose title and date cards show the date as the card's title and the story's name under it (BREW '07: a
+# story over several days opens each day with a card, so the date matters most; owner, 2026-11-07). The episode's preview picture,
+# taken from its first card, keeps the story's name as the title (episode_thumbnails, Desktop capture). Fall '06 (31200) isn't one: its
+# cards are week cards, `Week 1 of 13` over the week's dates (owner, 2026-11-07). Nor is '08 (31000): each story has one card, and
+# its date matters less there, so the story's name is on top (owner, 2026-11-11).
+TRANSLATED_DATE_FIRST_PACKS = (31100,)
+# shshd-runtime: packs whose word games may have three words, one or two of them good (BREW's Skating Dating and Artistic Differences,
+# Stage 5; engine.three_word_games). Native needs two good and two bad, and stops otherwise.
+TRANSLATED_THREE_WORD_PACKS = (31000, 31100, 31200)
+# shshd-runtime: packs whose menus drop a blank last option, as BREW's (FUN_0000d6a0; engine.brew_menus): an option list ending in `|`
+# has one option fewer. SHS's own menus keep it (2026-11-07, the decompiled BREW engine check).
+TRANSLATED_BREW_MENU_PACKS = (31000, 31100, 31200)
+# Six photos (Fall '06's look choice, Stage 6): the chosen photo in front and the other five small in a row behind it, as the
+# ten-photo layout's middle row.
+SIX_PICKER = [(160, 275), (56, 168, .4), (108, 168, .4), (160, 168, .4), (212, 168, .4), (264, 168, .4)]
+TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER},
+                             31200: {4: FOUR_PICKER, 6: SIX_PICKER, 10: MASH_PICKER}}
+
+
+def _seven_to_nine(count):
+    """Seven to nine photos: the chosen one in front, two small either side of it (as the ten-photo layout), and the rest in a
+    row behind, centred, 52 apart as the ten-photo layout's five."""
+    behind = count - 5
+    first = 160 - 26 * (behind - 1)
+    return MASH_PICKER[:3] + [(first + 52 * n, 168, .4) for n in range(behind)] + MASH_PICKER[8:]
+
+
+# shshd-runtime: an episode made in the Creator may offer up to ten photos (presentation `big_pickers`; owner, 2026-11-09): BREW's
+# layouts for four, six and ten, and the ten-photo layout's shape for seven to nine. One to three and five keep the native slots.
+CREATOR_PICKER_LAYOUTS = {4: FOUR_PICKER, 6: SIX_PICKER, **{n: _seven_to_nine(n) for n in (7, 8, 9)}, 10: MASH_PICKER}
 # shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
 # (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
 # New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at
 # 27200 on (tools/translate newrules.PORTRAIT_BASE / HIRES_PORTRAIT_OFFSET).
 # The cancelled Xbox 360 prototype's translations (pack 31400, tools/translate x360.py) store theirs the same way.
 TRANSLATED_PORTRAIT_ART = {31300: (26200, 26980, 1000), 31400: (26200, 26980, 1000)}
+# Whose two sets the "Hi-Res Portraits" switch chooses between: New Rules' WinMo and X1i art. The X360's are two sizes of
+# one render, so it always shows the larger (owner, 2026-11-01: the switch doesn't belong in its episodes).
+HIRES_SWITCH_PACKS = (31300,)
+# shshd-runtime: the "MS3 Characters" switch (ContentLibrary.ms3_characters): pack -> how far above a portrait's ID its
+# April 2009 look is (tools/translate x360.MS3_LOOKS). A portrait with none stays as it is.
+MS3_CHARACTER_ART = {31400: 2000}
+# shshd-runtime: a translated pack's own pictures for the relationship icons, on the smartphone's places and motion
+# (DialogueRenderer.indicator_image): pack -> {SHS's icon: the pack's}. The ring that grows under a new icon stays SHS's.
+TRANSLATED_BADGE_ART = {pack: {3010: 26992, 3011: 26993, 3012: 26994, 3014: 26995, 3016: 26996, 3018: 26997}
+                        for pack in (31600, 31000, 31100, 31200)}
+# ...and how its pictures scale to frame units, where it isn't '11's: BREW's are 6 times its 26-pixel icons, shown at SHS's 24 units.
+TRANSLATED_BADGE_UNITS = {pack: 24 / (26 * 6) for pack in (31000, 31100, 31200)}
+# shshd-runtime: a translated pack's own sounds for a relationship icon, for and against (`dc` in SHS '11: its value going up
+# or down, whichever icons that shows), in place of SHS's (engine._relationship).
+TRANSLATED_BADGE_SOUNDS = {31600: (26980 + 6, 26980 + 5)}
+# shshd-runtime: a translated pack's sounds that have only one channel between them, as SHS '11's player has (`dk`: a new one
+# stops the last, co.a(dd, dd)): pack -> their resources (Desktop._play_sounds). SHS's own and the music go on as they do.
+TRANSLATED_ONE_SOUND_CHANNEL = {31600: range(26980, 26992)}
+# shshd-runtime: where the "Smartphone Music" switch changes something (Desktop.smartphone_switch): translated packs whose
+# stories carry the smartphone's music (shs11_story.smartphone_music). Off, those calls stay in the story and go unheard.
+# Their sound effects are the game's own either way (owner, 2026-11-03).
+SMARTPHONE_MUSIC_PACKS = (31600,)
+# shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
+# them. Day of Diss (31400's episode 1) has no minigame.
+TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None, 31000: None, 31100: None, 31200: None}
 # shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).
-TRANSLATED_NAME_SETS = {31300: 'new_rules'}
+# SHS '11's (31600) share theirs too: its `$ZOE` is another playthrough's, kept apart from the smartphone stories'.
+# '07 and '08 were separate apps, each with its own prefs.sav, so each keeps its own table (owner, 2026-11-06): a name typed in an
+# '07 story never reaches an '08 one, whose stories set `$USR` to Jenny when it's empty.
+TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11', 31000: 'brew', 31100: 'brew07', 31200: 'brew07'}
 # shshd-runtime: two-speaker lines in a translated pack (Session.dialogue_duet): pack -> (partner key, expression
 # key), global numbers the translator sets around a line two characters say together ("Both", "Andy and Laura"),
 # the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
@@ -117,19 +203,51 @@ TRANSLATED_MUSIC_LOOPS = {31400: {26900: 26901}}
 # episode creator writes it) and the runtime honours it (content.presentation_feature); the tables above win for
 # their packs. An app without them shows one speaker, the yellow named-line box, no emoticon, and the intro alone.
 PRESENTATION_RECORD = True
+# shshd-runtime: an episode made in the Creator takes the settings of its primary add-on that need the add-on's pictures and
+# sounds (presentation `addons`: frame backdrop, relationship icons and sounds, answer-feedback music, one sound channel, and the
+# add-on's switches) from the tables above as if it were that add-on's translated pack (content.feature_pack; owner,
+# 2026-11-09, CREATOR_ADDONS_PLAN.md). (add-on, edition) -> pack. The settings that need no add-on it declares one by one.
+ADDON_FEATURE_PACKS = {('shsbrew', '08'): 31000, ('shsbrew', '07'): 31100, ('shs11', ''): 31600, ('shsnr', ''): 31300,
+                       ('shsx360', ''): 31400}
+# shshd-runtime: Add-Ons' Title Screen Music (owner, 2026-11-09): each translated game's own title tune, which the main menu
+# plays once in place of MENU_MUSIC when chosen: game -> (its addon, the resource). BREW's '07 and '08 share one MIDI (track
+# 8006); New Rules' is its track 8 and '11's its track 1, the main menu's only full tune; the X360 prototype's is its
+# `music/main_menu`, which its addon carries from revision 15 (tools/translate x360.MENU_MUSIC). A third number starts the tune
+# that far in (ms, audio.mp3_from): '11's opens with 0.92 s of silence, which the menu skips (owner, 2026-11-09).
+TITLE_MUSIC = {'brew': ('shsbrew', 26906), 'nr': ('shsnr', 26988), 'x360': ('shsx360', 26996), 'shs11': ('shs11', 26981, 900)}
+# ...and which game an episode is, for Auto: its pack, or for an episode made in the Creator its primary add-on's
+# (content.feature_pack). Anything else is the smartphone's, 'default'.
+TITLE_MUSIC_PACKS = {31000: 'brew', 31100: 'brew', 31200: 'brew', 31300: 'nr', 31400: 'x360', 31600: 'shs11'}
+# The names table every episode made in the Creator shares (presentation `creator`; player.json `name_sets`), apart from the
+# smartphone stories' and each translation's (owner, 2026-11-09).
+CREATOR_NAME_SET = 'creator'
 # shshd-runtime: episodes translated from other SHS games, recognised on import by their title's tag (content.py
 # legacy_fields: "Lovers' Lane (SHSNR)" imports as "Lovers' Lane"): tag -> the picker's badge, its colour in the list
 # view (the game's own: New Rules' was blue) and the category the episode is filed under (owner, 2026-10-25). `order`
 # places an episode by another position than its id: New Rules' second built-in story, Dancing Queen (101), follows
 # King of Diss (1), ahead of the downloads (2-48); King of Diss Lite (100) stays last, as the alternative version.
-LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5})}
+# The cancelled Xbox 360 prototype's translations (tools/translate/x360.py TITLE_SUFFIX) are tagged "X360" in the Xbox
+# 360's green, under their own category (owner, 2026-10-31); their old place was Now Airing's "Date Unknown".
+LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Rules', order={101: 1.5}),
+                # Day of Diss, Monday Planner, Dating Beth, Puzzle Test (owner, 2026-11-02).
+                'SHSX360': dict(badge='X360', color=(24, 150, 24), category='Xbox 360', order={4: 2, 3: 3, 2: 4}),
+                # SHS '11, the J2ME game (tools/translate shs11_story.py), in the orange of the 11 in its logo: between that
+                # 11's outline (216, 96, 32) and its gold fill (248, 176, 8), which is too pale to read on a menu's rows.
+                'SHS11': dict(badge="'11", color=(232, 120, 16), category="SHS '11"),
+                # The BREW games (tools/translate brew.py), in the Windows Mobile games' own badge colours (owner, 2026-11-06): SHS1's
+                # green for '07, SHS2's purple for '08 (X360's green was brightened beside it). The '08 Campaign's unnumbered stories go by their in-game dates
+                # (owner, 2026-11-05): Quizzes 1-3 and Special 1 Halloween.
+                # '07 above '08 in the episode list (`section`: where its section sorts, before the Campaign's pack 31000; owner, 2026-11-06).
+                'SHS07': dict(badge="'07", color=(17, 77, 0), category="SHS '07", section=30999),
+                'SHS08': dict(badge="'08", color=(132, 44, 173), category="SHS '08",
+                              order={9001: 302.5, 9002: 303.5, 9003: 401.5, 9101: 707.5})}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)
 # shshd-runtime: a translated pack's own right/wrong sounds for service 71's quiz, pack -> (right, wrong) episode
 # resources. Translated New Rules episodes play its own jingles (tracks 13 and 1, at the translator's MUSIC_BASE
 # 26980 + track) there instead of SHS's (owner, 2026-10-25). An episode without both keeps WORD_GAME_SOUNDS.
-TRANSLATED_WORD_GAME_SOUNDS = {31300: (26980 + 13, 26980 + 1)}
+TRANSLATED_WORD_GAME_SOUNDS = {31300: (26980 + 13, 26980 + 1), 31600: (26980 + 8, 26980 + 7)}
 # Service 78's portrait selector: swapping a portrait to the front, then confirming (Android FUN_000d1b48).
 PICKER_SOUNDS = (8013, 8010)
 # Curly single quotes truncated to one byte by the authoring tool, as in Cause of Death (cod/profile.py): U+2019 as

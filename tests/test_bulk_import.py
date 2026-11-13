@@ -66,6 +66,41 @@ class BulkImportTests(unittest.TestCase):
         self.assertEqual((sorted(imported), errors), (['cod', 'shs'], []))
         self.check_both_games()
 
+    def test_a_bulk_import_says_how_far_it_has_got(self):
+        lines = []
+        imported, errors = import_bulk(self.make_zip(), self.targets, lines.append)
+        self.assertEqual((sorted(imported), errors), (['cod', 'shs'], []))
+        unpacking = [line for line in lines if line.startswith('Unpacking')]
+        self.assertEqual(unpacking[0], f'Unpacking 1 of {len(unpacking)} files')
+        self.assertEqual(unpacking[-1], f'Unpacking {len(unpacking)} of {len(unpacking)} files')
+        self.assertLess(lines.index(unpacking[-1]), lines.index('Surviving High School: copying the game'))
+        for line in ('Surviving High School: copying the HD app', 'Surviving High School: reading the game',
+                     'Surviving High School: episode 1 of 1', 'Cause of Death: copying the game',
+                     'Cause of Death: episode 1 of 1'):
+            self.assertIn(line, lines)
+        self.assertLess(lines.index('Surviving High School: episode 1 of 1'),
+                        lines.index('Cause of Death: copying the game'))
+        self.assertLessEqual(max(map(len, lines)), 44)      # the busy card's line (Application.report_progress)
+
+    def test_a_rar_does_not_say_how_many_files_it_holds_until_it_ends(self):
+        lines = []
+        path = self.root / 'games.rar'
+        path.write_bytes(rar5([('game.apk', self.members['game.apk']), ('cod.ipa', self.members['cod.ipa'])]))
+        (self.root / 'rar-stage').mkdir()
+        extract_bulk(path, self.root / 'rar-stage', lines.append)
+        self.assertEqual(lines, ['Unpacking file 1', 'Unpacking file 2'])
+
+    def test_adding_episodes_says_which_of_how_many(self):
+        import_bulk(self.make_zip(), self.targets)
+        folder = self.root / 'more'
+        folder.mkdir()
+        (folder / 'One.exp').write_bytes(episode('One more'))
+        (folder / 'Two.exp').write_bytes(episode('Two more'))
+        lines = []
+        with ContentLibrary(self.targets['shs']) as library:
+            self.assertEqual(library.add_episodes([folder], lines.append), 2)
+        self.assertEqual(lines, ['Episode 1 of 2', 'Episode 2 of 2'])
+
     def test_one_wrapping_folder_is_looked_inside(self):
         stage = self.root / 'stage'
         stage.mkdir()

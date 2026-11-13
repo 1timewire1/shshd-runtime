@@ -244,6 +244,51 @@ class HiresPortraitTests(unittest.TestCase):
         self.library.hires_portraits = False
         self.assertEqual(image_size(self.resources().read_asset(26200)), (200, 240))
 
+    def test_an_x360_episode_keeps_its_larger_render_whatever_the_new_rules_switch_says(self):
+        # Its two sizes are one render (the owner, 2026-11-01: the switch is New Rules', and hidden in its episodes), so
+        # switching New Rules to its WinMo faces must not shrink the X360's.
+        self.library.hires_portraits = False
+        self.assertEqual(self.resources(pack=31400).read_asset(26200), self.x1i)
+        self.assertEqual(self.resources(pack=31400).standard_portrait(26200), self.winmo)
+
+    def test_the_ms3_switch_shows_the_april_look_where_there_is_one(self):
+        april = picture((150, 180), (200, 10, 10, 255))
+        assets = {26200: self.winmo, 27200: self.x1i, 28200: april, 26235: self.winmo, 27235: self.x1i}
+        self.assertEqual(self.resources(31400, assets).read_asset(26200), self.x1i)     # off by default
+        self.library.ms3_characters = True
+        resources = self.resources(31400, assets)
+        self.assertEqual(resources.read_asset(26200), april)
+        self.assertEqual(resources.standard_portrait(26200), self.winmo)                # the player sizes it to this
+        self.assertEqual(resources.read_asset(26235), self.x1i)                         # the rest of the cast stays
+        self.assertEqual(self.resources(31400, {26200: self.winmo, 27200: self.x1i}).read_asset(26200), self.x1i)
+        self.assertEqual(self.resources(31300, assets).read_asset(26200), self.x1i)     # New Rules has no April
+
+    def test_the_java_look_switch_shows_the_java_copy_of_a_brew_addon_picture_where_there_is_one(self):
+        brew, java = picture((60, 60), (200, 10, 10, 255)), picture((30, 30), (10, 10, 200, 255))
+        assets = {26999: brew, 36999: java, 26566: brew}                # the backdrop, its Java copy; a picture with none
+        self.library.hd_art_mode = 'off'
+        self.assertEqual(self.resources(31000, assets).read_asset(26999), brew)          # off by default
+        self.library.java_look = True
+        resources = self.resources(31000, assets)
+        self.assertEqual(resources.read_asset(26999), java)
+        self.assertEqual(resources.read_asset(26566), brew)                              # (BREW's house has no Java copy)
+        self.assertEqual(self.resources(31300, assets).read_asset(26999), brew)          # only the BREW packs
+
+    def test_the_08_backgrounds_switch_shows_08s_shared_locations_in_an_07_story(self):
+        # Decision 7B: an '07-badged BREW story (packs 31100, 31200) names '07's copy of a shared location (26120 on); the
+        # switch serves '08's, 120 below, and '08's redraw of a Classic story's own picture, 500 above it, where there is one.
+        old, new, own, redraw = (picture((24, 8), colour) for colour in ((200, 10, 10, 255), (10, 200, 10, 255), (10, 10, 200, 255),
+                                                                          (200, 200, 10, 255)))
+        assets = {26120: old, 26000: new, 29000: own, 29500: redraw, 29003: own}
+        self.library.hd_art_mode = 'off'
+        self.assertEqual(self.resources(31100, assets).read_asset(26120), old)          # '07's by default
+        self.library.brew_08_backgrounds = True
+        self.assertEqual(self.resources(31100, assets).read_asset(26120), new)
+        self.assertEqual(self.resources(31200, assets).read_asset(26120), new)
+        self.assertEqual(self.resources(31100, assets).read_asset(29000), redraw)      # '08's redraw of an own picture
+        self.assertEqual(self.resources(31100, assets).read_asset(29003), own)         # (one it never redrew)
+        self.assertEqual(self.resources(31000, assets).read_asset(26120), old)          # (not an '07 story)
+
     def test_a_save_loads_with_whichever_portrait_set_is_current(self):
         # A save names the portrait the story set (26200), never the hi-res copy (+1000) the switch reads, and the
         # switch is not part of the save's content identity: a save made with either set opens under the other, and

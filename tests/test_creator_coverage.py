@@ -8,6 +8,7 @@ import zipfile
 from exp_runtime.creator import Asset, Character, Choice, Node, Project, compile_project
 from exp_runtime.creator.coverage import CORPUS, STATUS, summary
 from exp_runtime.exp import ExpArchive
+from exp_runtime.presentation import TRANSLATION_PACKS
 
 # Services the creator cannot express yet. Moving one out of this set means its STATUS entry must be updated too, and
 # a service that newly stops being expressible fails here.
@@ -110,6 +111,8 @@ class CreatorCoverageTests(unittest.TestCase):
             directory = Path(folder)
             manifest = json.loads((directory / 'library.json').read_text(encoding='utf-8'))
             for record in manifest['episodes']:
+                if record.get('pack_id') in TRANSLATION_PACKS:
+                    continue        # a translation calls this runtime's own services: CORPUS is the original episodes'
                 if 'file' in record:
                     found |= services((directory / record['file']).read_bytes())
                 else:

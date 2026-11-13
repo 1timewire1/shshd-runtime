@@ -73,7 +73,8 @@ def create_server(root):
     @edit_tool(name='project_update')
     def update_project(path: str, revision: str, changes: dict) -> dict:
         """Change title/game/IDs/start/language/locales/library/emoticons (six image asset IDs or null, the
-        dialogue params.emoticon images). Use project_get's revision."""
+        dialogue params.emoticon images)/options (SHSHD Runtime settings that need no add-on, each true or false:
+        word_forms, date_first, three_word_games, big_pickers). Use project_get's revision."""
         return workspace.update(path, revision, changes)
 
     @edit_tool(name='graph_edit_node')
@@ -104,10 +105,25 @@ def create_server(root):
 
     @read_tool(name='asset_list')
     def library_assets(library: str, episode: str | None = None, kind: str | None = None,
-                       query: str = '', offset: int = 0, limit: int = 50) -> dict:
+                       query: str = '', offset: int = 0, limit: int = 50, addon: str | None = None) -> dict:
         """Browse supplied resources with type, dimensions and audio duration. Offset >=0; limit 1–200. Numeric IDs are not invented names."""
         from .catalog import library_assets
-        return library_assets(workspace, library, episode=episode, kind=kind, query=query, offset=offset, limit=limit)
+        return library_assets(workspace, library, episode=episode, kind=kind, query=query, offset=offset, limit=limit, addon=addon)
+
+    @edit_tool(name='asset_save_cutscene')
+    def save_cutscene(path: str, revision: str, name: str, spec: dict, resource: int | None = None) -> dict:
+        """Embed a storyboard cutscene's JSON spec (format in exp_runtime.cutscene), or replace the project's cutscene at `resource`. Everything it draws or plays must be in the project. A cutscene node then names it."""
+        return workspace.save_cutscene(path, revision, name, spec, resource)
+
+    @edit_tool(name='asset_use_addon')
+    def use_addon(path: str, revision: str, library: str, addon: str, resource: int, copy: bool = False) -> dict:
+        """Take a picture, sound or cutscene from a library's add-on by reference, keeping its ID and declaring the add-on; or, with copy, embed a picture or sound so that no add-on is needed."""
+        return workspace.addon_asset(path, revision, library, addon, resource, copy)
+
+    @edit_tool(name='project_set_primary_addon')
+    def set_primary_addon(path: str, revision: str, library: str, addon: str | None, edition: str = '') -> dict:
+        """Make a library add-on the episode's primary (SHS, SHSHD Runtime only): its frame, relationship icons, answer music and switches come with it, its pictures win where add-ons share a number, and players need it. edition: '08 or '07 for shsbrew, '' otherwise. null leaves no primary; other declared add-ons are extras."""
+        return workspace.primary_addon(path, revision, library, addon, edition)
 
     @edit_tool(name='asset_import_library_image')
     def add_library_image(path: str, revision: str, library: str,
@@ -289,7 +305,7 @@ def create_server(root):
         graph.page(offset, limit)
         project, revision = workspace.read(path)
         assets = [a for a in project.assets if query.casefold() in f'{a.id} {a.name}'.casefold()]
-        return dict(revision=revision, assets=[dict(id=a.id, name=a.name, embedded=a.data is not None,
+        return dict(revision=revision, addons=project.addons, assets=[dict(id=a.id, name=a.name, embedded=a.data is not None, addon=a.addon,
             **(inspect_asset(a.data) if a.data is not None else dict(type='image', library=project.library)))
             for a in assets[offset:offset + limit]], total=len(assets),
             next_offset=offset + limit if offset + limit < len(assets) else None)
@@ -306,7 +322,7 @@ def create_server(root):
             project, revision = workspace.read(path)
             asset = next((a for a in project.assets if a.id == resource), None)
             if asset is None: raise ProjectError('Unknown project asset')
-            data = asset.data if asset.data is not None else read_asset(workspace, project.library, resource)
+            data = (asset.data if asset.data is not None else read_asset(workspace, project.library, resource, addon=asset.addon))
         else: data = read_asset(workspace, library, resource, episode)
         png, metadata = thumbnail(data, frame=frame, size=size)
         return media_result(png, 'image/png', dict(resource=resource, **metadata))

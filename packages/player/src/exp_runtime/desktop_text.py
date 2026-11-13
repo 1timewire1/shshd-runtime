@@ -3,6 +3,7 @@ from collections import OrderedDict
 from functools import lru_cache
 from io import BytesIO
 from math import floor
+from time import perf_counter
 
 from .graphics import faded
 from . import graphics as pygame
@@ -12,11 +13,22 @@ from .menu_assets import MenuStrings
 from .vector_text import VectorFont, load_font
 
 
+# shshd-runtime: glyphs drawn ahead of need (BitmapTextRenderer.warm), so a new line rarely strokes one of its own: an
+# outline font's glyph is rasterised in Python (vector_text, glyph_outline), several milliseconds a glyph on a PC and
+# a line's first frame on a phone took 100-160 ms more for a few new letters.
+WARM_CHARACTERS = ("etaoinsrhldcumfpgwybvkxjqzTAISOWHMBCYNDLEFGPRJKUVQXZ.,!?'-:;\"0123456789()&"
+                   "’“”…—")
+WARM_KINDS = 16                 # how many recent (font, colour, scale) uses are warmed
+GLYPH_CACHE = 2048              # glyph images kept (font, code, colour, scale): 512 churned across a few themes
+
+
 class BitmapTextRenderer:
     def __init__(self, library):
         self.library = library
         self.fonts = {}
         self.glyph_images = OrderedDict()
+        self._used = OrderedDict()              # (font name, colour, scale) of recent vector glyphs: what warm() draws
+        self._warm = True                       # nothing left to warm since the last new use
 
     def font(self, name):
         if name not in self.fonts:
@@ -89,10 +101,7 @@ class BitmapTextRenderer:
         if key not in self.glyph_images:
             font, atlas = self.fonts[name]
             if atlas is None:
-                # Vector glyphs come out positioned by pen and baseline; the
-                # layout places them by ink box, so convert once here.
-                image, dx, dy = font.render_glyph(glyph.code, placed.color, scale)
-                entry = image, dx - glyph.xoffset * scale, dy + (font.base - glyph.yoffset) * scale
+                entry = self._vector_glyph(font, glyph, placed.color, scale)
             else:
                 image = atlas.subsurface(pygame.Rect(glyph.x, glyph.y, glyph.width, glyph.height)).copy()
                 # Modulate original RGB, retaining colored atlas variants and alpha.
@@ -102,10 +111,50 @@ class BitmapTextRenderer:
                     image = pygame.transform.smoothscale(image, size)
                 entry = image, 0, 0
             self.glyph_images[key] = entry
-            if len(self.glyph_images) > 512:
+            if len(self.glyph_images) > GLYPH_CACHE:
                 self.glyph_images.popitem(last=False)
+        if self.fonts[name][1] is None:
+            use = name, placed.color, scale
+            if use not in self._used:
+                self._warm = False
+                if len(self._used) >= WARM_KINDS:
+                    self._used.popitem(last=False)
+            self._used[use] = True
+            self._used.move_to_end(use)
         self.glyph_images.move_to_end(key)
         return self.glyph_images[key]
+
+    @staticmethod
+    def _vector_glyph(font, glyph, color, scale):
+        # Vector glyphs come out positioned by pen and baseline; the
+        # layout places them by ink box, so convert once here.
+        image, dx, dy = font.render_glyph(glyph.code, color, scale)
+        return image, dx - glyph.xoffset * scale, dy + (font.base - glyph.yoffset) * scale
+
+    def warm(self, budget=.004):
+        """shshd-runtime: draw ahead the common characters (WARM_CHARACTERS) of the vector fonts, colours and scales
+        lately drawn, the latest first, for at most `budget` seconds (a glyph begun is finished). For a frame that
+        changes nothing on screen (a line at rest), so a later line finds its glyphs drawn. Returns whether all are."""
+        if self._warm:
+            return True
+        began = perf_counter()
+        for name, color, scale in reversed(list(self._used)):
+            font = self.fonts[name][0]
+            for character in WARM_CHARACTERS:
+                glyph = font.glyphs.get(ord(character))
+                if glyph is None or not (glyph.width and glyph.height):
+                    continue
+                key = name, glyph.code, color, scale
+                if key in self.glyph_images:
+                    continue
+                if len(self.glyph_images) >= GLYPH_CACHE:
+                    break                           # full: what's drawn already is what's kept
+                self.glyph_images[key] = self._vector_glyph(font, glyph, color, scale)
+                self.glyph_images.move_to_end(key, last=False)      # warmed, not yet used: evicted first
+                if perf_counter() - began >= budget:
+                    return False
+        self._warm = True
+        return True
 
     def _glyph_image(self, name, placed, scale):
         return self._glyph(name, placed, scale)[0]
@@ -118,7 +167,7 @@ class BitmapTextRenderer:
         if alpha != 255:
             image = image.copy()
             image = faded(image, alpha)
-        surface.blit(image, (floor(x + placed.x * scale + dx + .5), floor(y + placed.y * scale + dy + .5)))
+        return surface.blit(image, (floor(x + placed.x * scale + dx + .5), floor(y + placed.y * scale + dy + .5)))
 
     def draw(self, surface, name, text, x, y, width, style, *, scale=1):
         """Draw using the current canvas placement; return the next free Y.
@@ -140,18 +189,25 @@ class BitmapTextRenderer:
                     inline_density=1):
         """Draw a native layout origin without moving its ink overhang. `inline` maps glyph codes to images drawn in
         place of the glyph (`CSFont::addCharImage`), `inline_density` image pixels per layout unit. `alpha` fades the
-        glyphs (the cursor's blink, Choice hints' faint answers)."""
+        glyphs (the cursor's blink, Choice hints' faint answers). Returns the area drawn over (empty when nothing was),
+        so a caller needn't scan the surface for it (get_bounding_rect over a whole layer is slow on a phone); None
+        when the drawing backend doesn't report where its blits went."""
         self.font(name)
+        drawn = []
         for placed in layout.glyphs:
             if source_end is not None and placed.index >= source_end:
                 continue
             image = inline.get(placed.glyph.code) if inline else None
             if image is None:
-                self._blit(surface, name, placed, scale, x, y, alpha)
+                drawn.append(self._blit(surface, name, placed, scale, x, y, alpha))
                 continue
             if scale != inline_density:
                 image = self._scaled(image, scale / inline_density)
-            surface.blit(image, (floor(x + placed.x * scale + .5), floor(y + placed.y * scale + .5)))
+            drawn.append(surface.blit(image, (floor(x + placed.x * scale + .5), floor(y + placed.y * scale + .5))))
+        if any(rect is None for rect in drawn):
+            return None
+        drawn = [rect for rect in drawn if rect.width and rect.height]
+        return drawn[0].unionall(drawn[1:]) if drawn else pygame.Rect(0, 0, 0, 0)
 
     @lru_cache(maxsize=64)
     def _scaled(self, image, scale):

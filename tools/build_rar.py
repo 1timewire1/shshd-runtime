@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 
 
@@ -20,9 +21,8 @@ URL = f'https://github.com/libarchive/libarchive/releases/download/v{VERSION}/li
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def build(*, offline=False):
-    if sys.platform == 'darwin':
-        return None
+def source_archive(*, offline=False):
+    """The pinned libarchive release, downloaded once into build/rar and checked against SHA256."""
     directory = ROOT / 'build/rar'
     directory.mkdir(parents=True, exist_ok=True)
     archive = directory / f'libarchive-{VERSION}.tar.xz'
@@ -40,6 +40,32 @@ def build(*, offline=False):
             temporary.unlink(missing_ok=True)
     if hashlib.sha256(archive.read_bytes()).hexdigest() != SHA256:
         raise ValueError('libarchive source checksum mismatch')
+    return archive
+
+
+def notices(source):
+    """Upstream's licensing plus the individual source files' copyright headers (an extracted release)."""
+    notices = [(source / 'COPYING').read_text()]
+    for path in sorted((source / 'libarchive').glob('*')):
+        if path.suffix in ('.c', '.h'):
+            text = path.read_text(errors='replace')
+            if text.startswith('/*') and '*/' in text:
+                notices.append(path.name + '\n' + text[:text.index('*/') + 2])
+    return '\n\n'.join(notices)
+
+
+def license_text(*, offline=False):
+    """The notices for a build that carries libarchive without this script building it (the Android APK's)."""
+    with tempfile.TemporaryDirectory() as directory, tarfile.open(source_archive(offline=offline)) as source:
+        source.extractall(directory, **({'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}))
+        return notices(Path(directory) / f'libarchive-{VERSION}')
+
+
+def build(*, offline=False):
+    if sys.platform == 'darwin':
+        return None
+    directory = ROOT / 'build/rar'
+    archive = source_archive(offline=offline)
     install = directory / 'install'
     binary = install / ('bin/archive.dll' if sys.platform == 'win32' else 'lib/libarchive.so.13')
     marker = install / '.source-sha256'
@@ -72,13 +98,7 @@ def build(*, offline=False):
     if not binary.is_file():
         raise ValueError(f'libarchive build did not produce {binary.name}')
     # Include upstream licensing plus the individual source copyright headers.
-    notices = [(source / 'COPYING').read_text()]
-    for path in sorted((source / 'libarchive').glob('*')):
-        if path.suffix in ('.c', '.h'):
-            text = path.read_text(errors='replace')
-            if text.startswith('/*') and '*/' in text:
-                notices.append(path.name + '\n' + text[:text.index('*/') + 2])
-    license.write_text('\n\n'.join(notices), encoding='utf-8')
+    license.write_text(notices(source), encoding='utf-8')
     marker.write_text(SHA256)
     return binary, license
 

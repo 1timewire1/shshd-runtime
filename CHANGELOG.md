@@ -4,6 +4,92 @@
 
 ### Added
 
+- **The BREW games, SHS '07 and '08, translated** (`tools/translate/translate.py brew`; [BREW.md](docs/BREW.md)). 126
+  stories under their own badges: the '08 Campaign (pack 31000), the Classic stories and M.A.S.H. packs as '07 (31100),
+  and Fall '06 Football Season (31200), with the `shsbrew` add-on (revision 11) holding their art and music. Each
+  matches the Tardy-Slip reference player on its tested answer paths.
+  - **Calendar:** the Classic stories run on a calendar driver (days, date cards, time badges with BREW's icons at
+    the smartphone's size), and Fall '06 on a season driver with week cards and events run inside others.
+  - **The catch game** plays for real behind Use Translated Mini-Games (service 221), or as a word game; its skip prompt
+    knows where each story parts.
+  - **Look and text:** BREW's frame, pink behind a pink box; grey boxes for things and animals; name plates; '07's
+    art and a '08 Backgrounds switch; the Java '08 Look switch for '08; `a(n)` and plurals; BREW's menus.
+  - **Runtime:** service 223 runs a script and comes back (save version 39); pickers of four, six and ten photos.
+  - **Title cards** show SHS pictures picked for the location and sky each story opens on (HD in SHS HD).
+- **Title cards for the translated stories that opened without one:** New Rules' Dancing Queen (the smartphone
+  Homecoming Queen's card under its own name) and King of Diss, and X360's Dating Beth and Monday Planner.
+- **Undo** (Options -> Extras -> Allow Undo, off by default): a save at every stop Skip Ahead makes; the pause menu's
+  Undo loads the last, and again the one before. A mini-game under way restarts from its own save.
+- **Episode versions** (resource 5): a newer import replaces the library's older copies of the same episode, asking
+  first about one with a game in progress. The translators write version 1; the Creator has a Version box.
+- **Test channel** (`SHSHD_TEST_CHANNEL`, 127.0.0.1 only; debuggable Android builds): drive the app by its state.
+- **Options' choice pages:** Episode Titles, Start In, Confirm Button and Word Grid Controls open a page of their
+  values, and show the current one under their names.
+- **Title Screen Music** (main menu, Options -> Add-Ons): Default, Auto (the game last played), or the title tune of
+  '07 / '08, New Rules, X360 or '11 from its add-on, played once. The other add-on switches move to a Per-Game Settings
+  page on the main menu. The X360 add-on (revision 15) gains its main menu tune.
+- **HD choices** stop above the bottom bar and scroll the rest, with touch dragging, momentum, and arrows that show
+  more options above or below.
+
+- **Creator: a primary add-on and extras** (owner, 2026-11-09). A project picks the add-on its episode is built on (BREW
+  '08 or '07, '11, New Rules, X360) and takes that game's frame, relationship icons, answer music and switches; other
+  add-ons are extras for their pictures, sounds and mini-games, aliased so a shared number never reaches the wrong one.
+  Settings that need no add-on (`a(n)`/plurals, date-first cards, three-word word games, pickers of up to ten photos)
+  are project options. Every Creator episode keeps the Creator's own names table. New node: the BREW catch game.
+  MCP: `project_set_primary_addon`, `project_update(options=)`. Runtime: presentation record members `creator`,
+  `addons`, `aliases`, `word_forms`, `date_first`, `three_word_games`, `big_pickers`, `minigames`.
+
+- **Addons: shared resource packs for episodes.** An addon is an `.exp` file holding resources several episodes use,
+  such as a translated game's backgrounds and music; each episode declares the addons it reads (resource 4,
+  SCHEMA.md "Addon extension") instead of carrying its own copies.
+  - **Import:** importing an addon files it apart from the episodes, so no picker lists it. A newer revision replaces
+    an older one.
+  - **Lookup:** an episode reads its own art first, then its addons'.
+  - **Missing addon:** an episode without its addon says which one it needs, rather than starting with missing art.
+  - **`tools/translate`:** `newrules addon` writes the New Rules addon (every background in every time of day, the
+    music, the frame backdrop), and `--addon` builds the translations against it. The 50 New Rules episodes shrink
+    from 299 MB to 91 MB in all, the 44 MB addon included; their scripts and every picture and track are unchanged.
+  - **Data Management:** an Add-Ons page per library has Details, Export and Delete. Delete warns how many episodes
+    need the addon, and saves stay. Add Episodes, Library Info, Storage and Verify know about addons, and Export
+    Episodes offers the addons the exported episodes need.
+  - **Sync Devices:** addons travel with the episodes (the row is now "Episodes & Add-Ons"): every addon the receiver
+    lacks or holds older.
+  - **Creator:** a project can use an addon's pictures, sounds and cutscenes by reference, or copy pictures and sounds
+    in, and a timeline editor writes storyboards (MCP: `asset_list(addon=)`, `asset_use_addon`,
+    `asset_save_cutscene`). Native export is blocked with an explanation for a project using a fork-only mechanic; one
+    taking only addon pictures and sounds is offered to pack them into the `.exp`. Making an addon in the Creator is
+    not offered yet.
+  - **Options > Add-Ons** holds the switches that only concern translated games and addons, each shown when it
+    applies: Use Translated Mini-Games, MS3 Characters, Hi-Res Portraits, HD Portraits in CoD, Backdrop, and Use X360
+    Arena Skin.
+  - The docs are `docs/ADDONS.md`, `docs/NEW_RULES.md` and `docs/X360.md`.
+- **New Rules' minigame arena.** All 50 New Rules translations now play their minigames on New Rules' own arena: the
+  player runs its library code beside the story (the VM now allows a script beside a linked segment), and draws the
+  panel from the `shsnr` addon's skin, the X1i build's own art, fonts and layouts (`nr_arena.py`, `desktop_nr_arena.py`).
+  Keys, a controller, clicks and taps play it, and a game can be saved mid-way.
+  - The rules stay in the library's bytecode. The panel only keeps state and draws.
+  - Each game asks to be skipped first, with its results probed in advance, and sounds are added where New Rules plays
+    none.
+  - `tools/translate --arena` wires a translation's games to it. Each is guarded by service 70 selector 200, so another
+    player takes the word game instead.
+  - `tools/translate/nr_arena_test.py` writes *Minigame Arena Test*: all 5 library games and 5 download rounds.
+  - New Rules' library word games have real goals, capped at 19, after a scan of their timed goals.
+- **The X360 arena skin.** With the `shsx360` addon, Use X360 Arena Skin (off by default) redraws New Rules' arena as the
+  Xbox 360 prototype's turntable: its deck, digits and turning record, its title screen as the backdrop, and the
+  arm's swing on presses. Same geometry, rules and saves, so New Rules' stories need no rebuild.
+- **The Xbox 360 stories' real minigames.** Dating Beth's slot machine and leash game, Puzzle Test's jewel puzzle and Diss
+  Practice run from the prototypes' own rules (services 214-217, guarded by service 70 selector 201), behind Use
+  Translated Mini-Games. Other players take the word games. The Xbox 360 stories now need the `shsx360` addon.
+  - **Monday Planner** is a new translation: Diss Practice three times, on the real turntable with Josh dancing behind
+    the deck, and a speed diss.
+  - **MS3 Characters** (off by default) swaps in the April prototype's looks and dancer.
+  - Level music and ambience are mixed into one track per combination, with `zip.wav` at each dialogue's close.
+- **Storyboard cutscenes** (service 218, guarded by service 70 selector 202; `cutscene.py`, `desktop_cutscene.py`): stills
+  with a 3:4 window panned across them, overlays and sounds on a timeline, its clock following the music. Day of Diss
+  opens with one, holding on Josh's title card, which also serves as the picker's preview. SHS only for now.
+- **`chslim`, an optional Cause of Death pack:** Claire Hart's sharper portraits, found by a hash of the picture's bytes,
+  and its backdrop, behind HD Portraits in CoD and Backdrop. Sophie is left out on purpose, as her red hair matters to
+  the plot. A full Claire Hart pack could replace it later (`supersedes`).
 - **Cause of Death shows 64 of its backgrounds in HD** when you also have SHS HD. Many CoD locations are SHS HD
   backgrounds at half size. On its first preparation, a CoD library copies them from your own SHS library's HD
   episodes and the linked SHS HD bundle, in about 17 seconds. Where CoD changed a picture, the HD copy gets the
@@ -228,6 +314,43 @@
 - **The menus no longer slow down as you finish episodes.** Each time the main menu or the episode picker came
   back, the app reopened every finished episode to check its save was an ending: several seconds once dozens were
   done. Each save is now checked once, and again only when it changes.
+- **Opening Options froze a phone for minutes** (Moto g54, 2026-11-09). Its add-on switches asked about every episode,
+  reading and hashing each whole file for one small record, and asked again every frame. They now read a file's index
+  or one record only, and keep their answers until the library changes; the Java '08 Look and X360 Arena Skin checks
+  read their add-on's spec alone. The first open went from minutes to 0.15 s, and Options runs at 16 ms a frame.
+- **Frame rate on phones, above all in the minigame arena.** A phone's clocks drop once frames miss their budget, so
+  an untouched arena sat at 20 fps on a Moto g54 and only rose after a tap. Each frame now does less: the window's backdrop
+  is painted only around the frame, an empty canvas is neither scaled nor drawn, the bottom bar's scale is kept, and
+  nothing is drawn under an arena that hides it. On a phone the standard arena scales once, straight to the frame's
+  size (a touch softer than a desktop's two passes). Rounds now run near 60 fps in the standard look and about 47 in the
+  X360 skin.
+- **Freezes while scrolling the episode tiles on a phone.** Each tile decoded on the drawing thread, about 34 ms on a
+  Moto g54, so every new row froze the screen for about 200 ms, and opening Play/Resume for up to a second. On phones they
+  now load in the background, with the rows just out of sight loaded ahead; a tile not ready yet shows SHS's
+  no-thumbnail image under its title (a plain card in Cause of Death). A saved episode's tile is also composed once rather than every frame.
+- **The main menu's opening spin on a phone** ran at 18 fps; it now turns a half-size photo (over 40 fps), a touch softer
+  until it settles.
+- **Minigames fade as SHS HD's do.** Football and the word grid fade in over the scene over 0.8 s, and out again to show it,
+  rather than fading to black and cutting back. The loading band opens from a line after 0.4 s and closes the same way,
+  over 0.4 s, about the frame's centre. Decompiled from HD 1.4.38; the Mac display fix for both games stays.
+- **Bold narration.** A narrator's emphasised words were darker rather than bold on the iOS and HD fonts.
+- **A hitch at every sound effect.** Each play read and decoded its file on the drawing thread, about 45 ms on that phone.
+  The last few short effects are kept decoded, so only the first play of each costs anything.
+- **An import says how far it has got.** The busy card shows what is happening instead of one fixed line: on Android
+  how much of the picked files has copied into the app, then the files unpacked from a bulk archive, then each game's
+  copy and its episodes ("Surviving High School: episode 12 of 300"), and for Add Episodes which of how many. (Suggested
+  by zazatree.)
+- **Music no longer freezes the player.** Pausing music played from a Python file object could deadlock against the
+  audio thread, stopping the player at 0 CPU. Music now plays from a temporary file.
+- **Deleting a save lets go of that episode's live game.** A game left for the main menu stays alive behind it, so
+  Continue could still resume a deleted save, and its next autosave brought the save back. Restoring and syncing
+  progress do the same now.
+- The first launch after an import no longer crashes on the busy card.
+- **The episode explorer plays through scene fades.** When a tap on a dialogue line started a queued fade, the
+  explorer (`tree_explorer.py`, `tools/explore_tree.py`) kept tapping the line, which ignores taps until the fade
+  ends, so a run stopped there at its 30000-screen limit. It now lets the fade run. This happened in almost every
+  Cause of Death episode: a walk taking the first option on every screen now gets 5-10 times further, and
+  MTX_Secret_Files_02's exit plays to the end of the episode.
 - **A translated episode's end card keeps its frame.** The sepia scene behind "Miss An Episode?" now shows a New
   Rules (or X360) translation's last location strip where the episode showed it, over the frame backdrop, instead
   of stretched over the whole frame. The end card's scene is also settled rather than caught at the start of a

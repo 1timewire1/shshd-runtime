@@ -2,7 +2,7 @@ from types import SimpleNamespace
 import unittest
 
 from exp_runtime.tree_explorer import Explorer
-from test_runtime import Resources, branching_program
+from test_runtime import Resources, branching_program, host_call, text_words
 from test_vm import program
 
 
@@ -37,6 +37,16 @@ class ExplorerTests(unittest.TestCase):
         for _ in range(2):
             explorer.act(session(3000, ticks, answers), playthrough)
         self.assertEqual((ticks, answers), ([3001], [0]))     # one run each way, the timeout past the last 0 ms
+
+    def test_a_fade_queued_by_a_dialogue_tap_is_played_out(self):
+        # CoD MTX_Secret_Files_02's exit: service 16 queues fade 6, so the tap on the next line starts the fade and
+        # the line stays pending, ignoring taps, until the fade ends.
+        words, refs = text_words('Come down and visit anytime!')
+        resources = Resources(program(*host_call(16, 6), *host_call(13, refs[0], 0), 0x33, words=words))
+        resources.library.game_id = 'cod'
+        run = Explorer(resources, ephemeral=True).play(1)
+        self.assertEqual((run.finished, run.error), (True, ''))
+        self.assertLess(run.screens, 10)
 
     def test_mini_games_are_decided_with_their_result_values(self):
         explorer = Explorer(Resources(program(0x33)), ephemeral=True)

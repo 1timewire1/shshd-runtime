@@ -598,6 +598,29 @@ class ShellActionTests(unittest.TestCase):
         shell.draw_overlay(canvas)
         self.assertIs(drawn[-1], canvas)
 
+    def test_skip_sound_prompt_goes_on_to_the_flash_with_the_sound_as_set(self):
+        """Sound's Skip Sound Prompt (owner, 2026-10-29): no "Play with sound?"; the launch goes on as an answer would
+        (the EA flash and its jingle), leaving Music and Sound as they were."""
+        from types import SimpleNamespace
+        from exp_runtime.application_hd import JINGLE, LOADING_TIME, SOUND_DELAY
+        shell, played = self.shell, []
+        shell.app.update_holds_launch = lambda seconds: False
+        shell.app.external_music = lambda: False
+        shell.app.play_asset = played.append
+        shell.app.state = SimpleNamespace(skip_sound_prompt=True, music=False, sound=True)
+        shell.fade, shell.pause_open = None, False
+        shell.stage, shell.age = 'loading', LOADING_TIME + SOUND_DELAY
+        shell.tick(0)
+        self.assertEqual((shell.stage, shell.stack.stack, played), ('flash', [], [JINGLE]))
+        self.assertEqual((shell.app.state.music, shell.app.state.sound), (False, True))
+        # Through the game's own answer (action 1): CoD has no EA flash (its shell fades through black instead), and
+        # SHS HD's flash stage crashed its launch.
+        answers = []
+        shell.perform = answers.append
+        shell.stage, shell.age = 'loading', LOADING_TIME + SOUND_DELAY
+        shell.tick(0)
+        self.assertEqual((answers, shell.stage), ([1], 'sound'))
+
     def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
         canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))
         canvas.fill((200, 100, 50, 0))
@@ -620,6 +643,12 @@ class ShellActionTests(unittest.TestCase):
         shell.activate(('pause_cycle', 'title_language'))
         self.assertEqual((state.title_language, shell.app.picker), ('en', None))      # wraps; captions rebuild
         self.assertGreaterEqual(state.persisted, 1)
+        from exp_runtime.desktop_pause_hd import HdPauseMenu
+        shell.pause = HdPauseMenu(SimpleNamespace(library=None))
+        shell.pause.reset()
+        shell.pause.state.screen, shell.app.picker = 'choice:title_language', 'stale'      # its page (owner, 2026-11-09)
+        shell.activate(('pause_cycle', 'title_language', 'fr'))
+        self.assertEqual((state.title_language, shell.app.picker, shell.pause.state.screen), ('fr', None, 'options:general'))
         shell.activate(('pause_action', 'add_episodes'))
         self.assertEqual(shell.app.commands[-1], ('browse', 'episodes'))
 
@@ -655,14 +684,18 @@ class ShellActionTests(unittest.TestCase):
         # An open window takes the keys: Left / Right step along an alert's buttons too.
         shell.stack.queue(0)
         shell.windows.hits = [(pygame.Rect(0, 0, 1, 1), ('item', 0)), (pygame.Rect(0, 0, 1, 1), ('item', 1))]
-        self.assertIsNone(shell.key(pygame.K_SPACE))                        # nothing highlighted in it yet
-        shell.key(pygame.K_LEFT)
+        self.assertIsNone(shell.key(pygame.K_SPACE))                        # nothing highlighted: it shows the first
+        self.assertEqual(shell.focus, ('item', 0))
+        shell.key(pygame.K_RIGHT)
         self.assertEqual(shell.focus, ('item', 1))
         shell.key(pygame.K_LEFT)
         self.assertEqual(shell.focus, ('item', 0))
         shell.fade = ('out', 0.0, None)
         self.assertIsNone(shell.key(pygame.K_RIGHT))                        # nothing moves while the screen fades
         self.assertEqual(shell.focus, ('item', 0))
+        shell.fade, shell.focus = None, None
+        shell.windows.hits = shell.windows.hits[:1]                          # one button (an OK): Enter presses it
+        self.assertEqual(shell.key(pygame.K_RETURN), ('item', 0))
 
     def test_arrow_keys_work_the_options_pages_over_the_main_menu(self):
         from exp_runtime.desktop_pause_hd import PauseState, VOLUME_STEP

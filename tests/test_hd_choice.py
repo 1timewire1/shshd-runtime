@@ -180,6 +180,35 @@ class PhotographedChoiceTests(unittest.TestCase):
         self.assertEqual(page.portrait.y, 76.5)
         self.assertEqual(page.timer_center, units(385, 484 + 264 + 61))
 
+    def test_an_option_past_two_lines_gets_a_taller_row(self):
+        # shshd-runtime: BREW's Male Cheerleader (owner, 2026-11-07); two-line options keep native's 88 points.
+        long = "I don't like to use the word 'genius', but in MY case, I'll make an exception."
+        page = self.page(text='That cologne idea was great!',
+                         options=[long, 'I was just trying to help a friend.', 'Thanks!'])
+        heights = [round(row.rect.height * 2) for row in page.rows]
+        self.assertEqual(len(page.rows[0].text.lines), 3)
+        self.assertGreater(heights[0], 88)
+        self.assertEqual(heights[1:], [88, 88])
+        self.assertEqual(page.rows[1].rect.y, page.rows[0].rect.y + page.rows[0].rect.height)
+        self.assertEqual(page.rows_height, sum(heights))
+        self.assertEqual(page.max_scroll, 0)
+
+    def test_a_long_menu_stops_above_the_bottom_bar_and_scrolls(self):
+        # shshd-runtime: Fall '06's movie date (owner, 2026-11-08): a short question under a portrait is raised to its
+        # minimum after the panel is fitted, and eight rows, one of two lines, then ran under the bottom bar. The panel now
+        # ends above the bar's band and the rest of the rows scroll.
+        from exp_runtime.hd_choice import HD_BAR_TOP
+        options = ['Put arm around date.', 'Lean over and kiss her.', 'Pretend to stretch.', 'Do nothing.',
+                   'Whisper sweet nothings in her ear, and tell her about your day.', 'Run your fingers through her hair.',
+                   'Put hand on her knee.', 'Pass her the popcorn.']
+        page = self.page(text='Movie: starring...', options=options, enabled=[True] * 8)
+        self.assertLessEqual(page.footer_top + page.footer_height, HD_BAR_TOP)
+        self.assertLess(page.rows_height, sum(round(row.rect.height * 2) for row in page.rows))
+        self.assertGreater(page.max_scroll, 0)
+        # A menu that already fits is laid out as before.
+        self.assertEqual(self.page(text='What are you into?', options=['Working out.', 'Hanging out with the ladies.',
+                                                                       'Watching TV.']).top, 267)
+
     def test_survey_without_a_character(self):
         page = self.page(has_portrait=False, title='Give us feedback!', enabled=[True, True],
                          text='Help us improve the game by taking this optional survey.',

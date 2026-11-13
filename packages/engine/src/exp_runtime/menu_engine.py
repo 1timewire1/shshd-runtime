@@ -24,6 +24,9 @@ BACK, BACK_TO, QUEUE, FORM, CLEAR, ENGINE = 1, 2, 3, 8, 9, 15
 STYLE_ALERT = 2                          # a title and a row of buttons (No / Yes)
 STATE_VIBRATION, STATE_SOUND, STATE_MUSIC, STATE_SOUND_VOLUME, STATE_MUSIC_VOLUME = 10, 11, 12, 13, 14
 NO_STRING = 0xffff
+# This player's own windows (MenuEngineData.add_window: Data Management's confirmations and notices): their menu ids
+# start at CUSTOM_MENUS, their actions at CUSTOM_ACTIONS, past anything a game's resource holds.
+CUSTOM_MENUS, CUSTOM_ACTIONS = 1000, 100000
 
 
 class MenuEngineError(ValueError):
@@ -74,6 +77,7 @@ class MenuEngineData:
             raise MenuEngineError('Truncated menu engine data')
         self.menus = tuple(self._menu(index) for index in range(self.count))
         self._actions = {}
+        self.custom = {}                 # menu id -> Menu of this player's own windows (add_window)
 
     def _u16(self, offset):
         try:
@@ -100,7 +104,24 @@ class MenuEngineData:
             self._actions[action_id] = Action(action_id, struct.unpack('>H', head[0:2])[0], (head[2], head[3]), steps)
         return self._actions[action_id]
 
+    def add_window(self, menu_id, title, message, buttons):
+        """Add (or replace) a window of this player's own, `menu_id` from CUSTOM_MENUS: an alert (a title, a message and
+        a row of buttons, as "Delete Saved Game?" is) whose title, message and button labels are text, not string ids.
+        `buttons` is [(label, steps)] left to right, the steps as a resource's actions have them ((BACK, 0) to close,
+        (ENGINE, number) for the host's `perform`)."""
+        if menu_id < CUSTOM_MENUS:
+            raise MenuEngineError('A window of this player\'s own takes an id from CUSTOM_MENUS')
+        ids = []
+        for index, (label, steps) in enumerate(buttons):
+            action_id = CUSTOM_ACTIONS + (menu_id - CUSTOM_MENUS) * 16 + index
+            self._actions[action_id] = Action(action_id, label, (0, 0), tuple(steps))
+            ids.append(action_id)
+        self.custom[menu_id] = Menu(menu_id, title, message if message else NO_STRING, STYLE_ALERT, (0xff, 0xff),
+                                    bytes(16), tuple(ids))
+
     def menu(self, menu_id):
+        if menu_id in self.custom:
+            return self.custom[menu_id]
         try:
             return self.menus[menu_id]
         except IndexError:

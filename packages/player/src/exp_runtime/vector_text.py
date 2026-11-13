@@ -256,8 +256,12 @@ class VectorFont(BitmapFont):
         bottom = max(mask[2] + mask[0].height for mask, _ in layers)
         surface = pygame.Surface((right - left, bottom - top), pygame.SRCALPHA)
         for (mask, x, y), color in layers:
-            piece = pygame.image.frombytes(bytes(b for v in mask.tobytes() for b in (*color[:3], v)), mask.size,
-                                           'RGBA')
+            alpha = mask.tobytes()
+            pixels = bytearray(4 * len(alpha))              # (slices, not a per-pixel generator: the same bytes, in C)
+            for channel in range(3):
+                pixels[channel::4] = bytes((color[channel],)) * len(alpha)
+            pixels[3::4] = alpha
+            piece = pygame.image.frombytes(bytes(pixels), mask.size, 'RGBA')
             surface.blit(piece, (x - left, y - top))
         return surface, left, top
 
@@ -433,8 +437,8 @@ COD_EMPHASIS_RED = (254, 53, 53)        # 0xfffe3535
 
 
 def cod_emphasis_font(library, name: str, base: BitmapFont):
-    """Cause of Death's backtick switch fonts (cod/profile.py EMPHASIS_FONTS, initFonts 1.3.4 armv7): TrebuchetMS-Italic at
-    16 points, each instance given `setStroke(0.5, colour)`. That stroke is drawn over the fill in the fill's own
+    """The stroked TrebuchetMS-Italic switch fonts: SHS HD's narration's (shs/profile.py NARRATION_EMPHASIS_FONT) and Cause
+    of Death's backtick ones (cod/profile.py EMPHASIS_FONTS, initFonts 1.3.4 armv7): 16 points, each `setStroke(0.5, colour)`. That stroke is drawn over the fill in the fill's own
     colour (+0x15af4 red, +0x1ebb4 blue), or red over a black fill for the gray and default sets (+0x27c74 at
     0002669e, +0x30d34 at 000267fc). The narration's (+0xfa74) has a 0.6-point stroke in its own colour. The fill
     colour is the layout's (BODY_MARKERS / NARRATION_COLORS). `base` is the installed-face atlas font whose metrics
@@ -482,8 +486,14 @@ def load_font(library, name: str) -> BitmapFont:
         return base
     cache = library.__dict__.setdefault('_text_fonts', {}) if hasattr(library, '__dict__') else {}
     if name not in cache:
-        base = BitmapFont.parse(library.read_ui_asset(f'fonts/{HD_ONLY_FONTS.get(name, name)}.fnt'))
-        cache[name] = hd_font(library, name, base)
+        if name.endswith('NarrationEmphasis'):
+            # No Android descriptor of its own: the narration font's, stroked (HD only, as the plain one is vector).
+            base = BitmapFont.parse(library.read_ui_asset(f'fonts/{COD_EMPHASIS}.fnt'))
+            plain = hd_font(library, COD_EMPHASIS, base)
+            cache[name] = plain if plain is base else cod_emphasis_font(library, name, base)
+        else:
+            base = BitmapFont.parse(library.read_ui_asset(f'fonts/{HD_ONLY_FONTS.get(name, name)}.fnt'))
+            cache[name] = hd_font(library, name, base)
     return cache[name]
 
 
@@ -572,7 +582,12 @@ def load_font_sized(library, name: str, logical_size: float):
             role = {'ArialRoundedMTBold': 'arial-rounded', 'ArialMT': 'arial',
                     'TrebuchetMS_Bold': 'trebuchet-bold', 'TrebuchetMS_Italic': 'trebuchet-italic'}[parsed[0]]
             path = system_font_path(role, library) if library.hd_raw_resource(568) is not None else None
-            base = BitmapFont.parse(library.read_ui_asset(f'fonts/{name}.fnt'))
+            # The descriptor is the same at every size: read once (about 20 ms on a PC each time, and the story tree
+            # asks for a new size every few steps of a pinch).
+            bases = library.__dict__.setdefault('_text_font_bases', {}) if hasattr(library, '__dict__') else {}
+            base = bases.get(name)
+            if base is None:
+                base = bases[name] = BitmapFont.parse(library.read_ui_asset(f'fonts/{name}.fnt'))
             cache[key] = None if path is None else vector_font(base, FaceSource(path=path, label=role), logical_size)
         except (ContentError, FontError, pygame.error, OSError):
             cache[key] = None

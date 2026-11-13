@@ -1418,6 +1418,16 @@ scaling rule. The old scrolling accommodation and scrollbar are removed from
 both drawing backends; `ChoicePage.max_scroll` remains zero for API callers.
 Short panels retain their placement and type size.
 
+The HD choice panel (SHS HD's and CoD's art) is different: it never reaches
+past the bottom bar's band (`hd_choice.HD_BAR_TOP`; owner, 2026-11-08), so a
+menu taller than that keeps its text size and scrolls its rows in the table,
+as a menu over the native limit already did. Its rows scroll with the wheel
+and keys, and on a touch screen by dragging, which carries on gliding after a
+flick (`momentum.Fling`, touch hosts only). A white fade with a chevron at the
+table's top or bottom edge shows there are more options that way
+(`desktop_choice.draw_hd_more`; owner, 2026-11-09). A drag never presses the
+option it started on.
+
 The gear opens the recovered Resume/Options/Help & About/Main Menu panel;
 its remaining transition limits are in [MAIN_MENU.md](MAIN_MENU.md#pause-menu-and-choice-hints).
 Opening it suspends timer ticks, and keyboard choice shortcuts do not bypass

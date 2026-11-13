@@ -183,6 +183,7 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | Wheel, arrow keys, Page Up/Down | Scroll long option lists and other non-dialogue screens |
 | Escape | Open/close the pause menu during play; go back within application menus |
 | Main Menu / Close window | Save a separate automatic checkpoint and return to the menu / exit |
+| Controller (XInput, DirectInput, PlayStation, Switch Pro, Stadia) | Buttons by position (`gamepad.py`): the bottom face button confirms (Enter), the right one goes back (Escape), the left one erases a typed name's last letter (Backspace), the top one opens a highlighted episode's info card (I); Options' Controller page sets the right button to confirm instead (a Nintendo layout; the other face buttons swap with it). Start = Escape (pause); Back/View/Share = Tab (side panels); D-pad or left stick = arrows (held, they repeat); LB/RB = Page Up/Down. With nothing highlighted, confirm shows the first item (or presses a window's only button). Football's nine plays by position: top / bottom / left / right face buttons = the edges' middles, LT/RT the top corners, LB/RB the bottom corners, R3 the centre (the keyboard's number pad matches the field). The word grid (Options' Controller page, Word Grid Controls): Hold (the default), confirm held lays a finger on the highlighted cell, the D-pad or stick (eight ways, two D-pad buttons for a diagonal) drags it a cell at a time, and letting go lifts it; Tap, the arrows move a highlighted cell, confirm adds it to the word and the left button lets the word go. A name entry with nothing typed takes its default name; a controller cannot type one. General's Vibration rumbles a connected controller (with no phone vibrator, the switch is on the Controller page) |
 | (nothing to press) | The automatic checkpoint is also written every 60 s of play and once when the window loses focus, as the app's `SHSEngine::onTick` / `onExit` do |
 
 ## Content library contract
@@ -394,6 +395,36 @@ flip, then the tick and event handling, with the screen, menu stage and pending 
 render less those parts. Without the variable nothing is timed or written. The 2026-10-21 measurements and what
 is still slow are in CHANGELOG.md ("Smoother menus").
 
+### Test channel (this fork)
+
+Set `SHSHD_TEST_CHANNEL` to a port before launching to let a script drive the running app (`test_channel.py`; owner,
+2026-11-06): one command a line on 127.0.0.1, one JSON reply a line. Commands run on the app's own thread between
+frames, as input would, and act on its state rather than the screen: `state` (the screen, the pending story screen with
+its text and options, a skip prompt, switches, the undo chain), `continue`, `answer N`, `type TEXT`, `key NAME`,
+`back`, `skip`, `undo`, `pause`, `resume`, `set KEY on|off`, `aspect 3:4|2:3|9:16|fit|default` (General's Aspect Ratio), `game shs|cod` (as the game picker), `import PATH` (Add
+Episodes with a file the app can read; it waits for the import), `window yes|no|ok|LABEL` (a button of the menu's
+confirmation or notice, which `state` shows as `window`), `open TITLE` (or an
+id prefix; of several imported copies, the newest), `run-until KIND [SECONDS]` (lines advance until that screen, or the
+first stop it can't pass, a skip prompt included), `wait`, `timing on|off` (fps, median, p90, worst frame, and each
+frame of 100 ms or more with the command running and what showed after it), `profile on|off [WORD]` (cProfile on the
+app's thread; the costliest calls, only those naming WORD if given), `pinch FACTOR [MS] [MOVES]` (two scripted
+fingers on the open story tree, through Android's own pinch, or a stand-in of it on a desktop), `shot NAME [inline]` (with
+`inline`, the PNG in the reply), `log [N]` (the app's last log lines), `tap X Y` and `drag X1 Y1 X2 Y2 [MS]` (pointer
+events in window pixels, delivered inside the app), `files [PATH]`, `get PATH` and `put PATH BASE64` (the app's data
+folder only) and `quit`. Actions wait for a fade or
+transition before and after, as a player would; `answer` refuses a row a player couldn't pick rather than hand it to
+the game.
+
+`tools/test_channel.py` is the client. On Android, `--adb SERIAL --enable` writes the variable into the app's
+`p4a_env_vars.txt` with `run-as`, so only a debuggable build can have it (a release build never listens); an update
+resets that file. `--adb` forwards the port over USB. An iOS app gets no environment from its launch, so the channel
+also opens for a hidden `test_channel` port in the app's settings.json (kept by the app's own writes): `--ios --enable`
+sets it through the app's Documents (File Sharing, with pymobiledevice3), and `--ios` forwards the port over usbmux.
+`--shot NAME OUT`, `--put LOCAL REMOTE` and `--get REMOTE OUT` move pictures and files through the channel itself.
+With the channel switched on by the settings key, the data folder's `dev-modules` (as `exp_runtime/NAME.py`) goes first
+on the module path from the next start (`launcher.install_dev_modules`): a module `put` there is tried on a device
+without a new build, and `ping` names the folder while it's in use. Without the variable or the key nothing listens.
+
 ## Resource and execution boundaries
 
 | Layer | Responsibility |
@@ -461,7 +492,7 @@ while data and PC/SP/FP reset according to the core VM contract.
 <a id="runtime-save-schema-version-25"></a>
 <a id="runtime-save-schema-version-26"></a>
 
-## Runtime save schema, version 29
+## Runtime save schema, version 30
 
 This is a new format for the reimplementation. No pickle, object deserialization,
 or original executable code is used.
@@ -480,7 +511,7 @@ the animation's `expression_committed`, the portraits' `from_asset_id`); the
 animation keeps this fork's uncapped `age_ms` for HD's emotion effects. An HD build's saved notice clock may also run past Android's
 lifetime, to the HD letters' start plus their own lifetime. Version 26 adds
 `engine.notice_mode`, the portrait side (1 or 2) those letters started on, which they keep on later lines; older
-saves load with 0, following the current portrait. Version 27 adds exp-runtime v0.6.x's fields (upstream's own versions 22-26, described below in their terms): music and effect playheads (`music_serial`, `music_stop_ms`, `music_playback`, `sound_playback`), the scene-transition state and its random stream, bitmap/widget text history, the choice entrance clock, expression layers and the minigame effects; older saves take their defaults without inventing missing history, and an IPA library's older save reflows its typography. This fork's player does not fill the audio playheads yet (its music is `music_stream.py`'s). The scene transition is the session's: Android SHS's tick boundary, or with an HD bundle (and in CoD) `fade_transition.FadeTransition`, whose fields (`selector`, `phase`, `elapsed_ms`, `result`, `random_state`) are saved; the player only draws it. Version 28 adds each dialogue line's expression request time (`dialogue_animation.expression_ms`: 1 ms in SHS HD and CoD, whose dialog requests the expression on its first tick, issue #2; 1000 ms on Android); older saves take 1000 ms, the time they were made with. Version 29 adds an open portrait picker's slot positions (`character_picker.positions`), which a translated pack may set its own way (the SHS profile's `TRANSLATED_PICKER_LAYOUTS`); older saves take the native slots. The fork keeps the `shs-runtime-save` marker; upstream's
+saves load with 0, following the current portrait. Version 36 adds SHS '11's games, and version 37 Memory's `grid`, for one that stands in for a word grid. Version 27 adds exp-runtime v0.6.x's fields (upstream's own versions 22-26, described below in their terms): music and effect playheads (`music_serial`, `music_stop_ms`, `music_playback`, `sound_playback`), the scene-transition state and its random stream, bitmap/widget text history, the choice entrance clock, expression layers and the minigame effects; older saves take their defaults without inventing missing history, and an IPA library's older save reflows its typography. This fork's player does not fill the audio playheads yet (its music is `music_stream.py`'s). The scene transition is the session's: Android SHS's tick boundary, or with an HD bundle (and in CoD) `fade_transition.FadeTransition`, whose fields (`selector`, `phase`, `elapsed_ms`, `result`, `random_state`) are saved; the player only draws it. Version 28 adds each dialogue line's expression request time (`dialogue_animation.expression_ms`: 1 ms in SHS HD and CoD, whose dialog requests the expression on its first tick, issue #2; 1000 ms on Android); older saves take 1000 ms, the time they were made with. Version 29 adds an open portrait picker's slot positions (`character_picker.positions`), which a translated pack may set its own way (the SHS profile's `TRANSLATED_PICKER_LAYOUTS`); older saves take the native slots. Version 30 adds New Rules' minigame arena while it is open (`engine.nr_arena`, `nr_arena.py`) and, for a story running beside a linked segment (New Rules' minigame library), that segment's data (`vm.linked_data`); older saves never had an arena open. The fork keeps the `shs-runtime-save` marker; upstream's
 `exp-runtime-save` saves are not accepted, because the same version numbers
 describe different fields there. Version-number references below that concern
 IPA libraries and survey receipts are upstream's numbering. JSON fields are:

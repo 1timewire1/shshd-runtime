@@ -88,7 +88,11 @@ class Explorer:
         """Answer the pending screen once."""
         action = session.pending
         name = action.name
-        if name == 'dialogue':
+        if getattr(session, 'transitioning', False):
+            # A tap can queue a scene fade (service 16) and leave its screen pending; taps are ignored until the
+            # fade ends (CoD MTX_Secret_Files_02's exit line).
+            session.tick(session.engine.scene_transition.duration_ms)
+        elif name == 'dialogue':
             if not session.engine.dialogue_animation.complete:
                 session.answer()                     # the first tap finishes the reveal
                 session.tick(2000)

@@ -1,0 +1,585 @@
+"""Android SDL host. Picker callbacks hand results back to the game thread."""
+from concurrent.futures import Future, ThreadPoolExecutor
+import logging
+import os
+from pathlib import Path
+from queue import Empty, Queue
+import shutil
+import time
+
+
+# Android ships none of the faces the HD and CoD screens draw with (Arial, Arial Rounded MT Bold, Trebuchet MS).
+# A player supplies them as font files (a bulk import copies them into each library's `fonts/` folder), under their
+# Windows/macOS file names or the face's name. `pygame.font.match_font` family -> file stems by (bold, italic).
+FONT_FILES = {
+    'arial': {(False, False): ('arial', 'arialmt'), (True, False): ('arialbd', 'arial-boldmt', 'arial bold'),
+              (False, True): ('ariali', 'arial-italicmt', 'arial italic'),
+              (True, True): ('arialbi', 'arial-bolditalicmt', 'arial bold italic')},
+    'arialroundedmtbold': {style: ('arialroundedmtbold', 'arlrdbd', 'arial rounded bold')
+                           for style in ((False, False), (True, False), (False, True), (True, True))},
+    'trebuchetms': {(False, False): ('trebuc', 'trebuchetms', 'trebuchet ms'),
+                    (True, False): ('trebucbd', 'trebuchetms-bold', 'trebuchet ms bold'),
+                    (False, True): ('trebucit', 'trebuchetms-italic', 'trebuchet ms italic'),
+                    (True, True): ('trebucbi', 'trebuchetms-bolditalic', 'trebuchet ms bold italic')},
+}
+FONT_FILES['arialrounded'] = FONT_FILES['arialroundedmtbold']
+FONT_FILES['trebuchet'] = FONT_FILES['trebuchetms']
+FONT_SUFFIXES = ('.ttf', '.otf', '.ttc')
+SYSTEM_FONTS = Path('/system/fonts')
+FONT_RESCAN_S = 5.0                     # how long match_font trusts its listing of the font folders
+# How long side panels turned on in portrait wait for the app to turn to landscape before they switch off.
+PANELS_ROTATE_MS = 3000
+# Android screens come in every shape (the owner's point): only one this much taller than wide counts as portrait
+# for the side panels' rule. Phones (about 2.2) and upright tablets (1.33-1.6) turn; a near-square screen (a
+# foldable's inner one) keeps its panels however it is held.
+PANELS_TALL = 1.2
+# How long the screen stays portrait after landscape before the panels switch off: turning the phone back, not the
+# moment's flip while Android hands rotation over (seen on the emulator as the device turned sideways).
+PANELS_PORTRAIT_MS = 700
+# The HD frame at its own resolution (768 x 1024 points at 2 pixels a point, the iPad's screen). The app draws into a
+# surface sized so the frame fits it at exactly this size, and SDL's renderer scales that surface to the screen on the
+# GPU: fitting the frame to a phone's 1080 pixels with pygame's smoothscale took 1.1 s a frame on a Moto g54's CPU.
+FRAME_PIXELS = (768, 1024)
+
+
+def screen_size():
+    """The screen's size in pixels as it is turned now: the display's current mode, which SDL updates on rotation
+    (pygame's window sizes give the drawing surface's under SCALED)."""
+    import pygame
+    sizes = pygame.display.get_desktop_sizes()
+    return tuple(sizes[0]) if sizes else pygame.display.get_window_size()
+
+
+def logical_size(window):
+    """The drawing surface for a `window` (pixels): its shape, at the scale where the frame fits it as FRAME_PIXELS."""
+    width, height = window
+    scale = max(FRAME_PIXELS[0] / width, FRAME_PIXELS[1] / height)
+    return round(width * scale), round(height * scale)
+
+
+def font_finder(directories):
+    """pygame's `match_font` for Android: a face the player supplied (FONT_FILES, in `directories()`'s folders),
+    else Android's own Roboto in the asked style, so text still draws (in another face) without the files."""
+    # The folders' faces, kept FONT_RESCAN_S: callers ask every frame (the time badge's `available`), and a scan took
+    # about 28 ms a call on a Moto g54 (2026-11-07). Faces a bulk import adds are found once the listing is that old.
+    listing = [None, {}]
+
+    def faces():
+        now = time.monotonic()
+        if listing[0] is not None and now - listing[0] < FONT_RESCAN_S:
+            return listing[1]
+        files = {}
+        for directory in directories():
+            try:
+                for path in directory.iterdir():
+                    if path.is_file() and path.suffix.lower() in FONT_SUFFIXES:
+                        files.setdefault(path.stem.lower(), str(path))
+            except OSError:
+                continue
+        listing[:] = [now, files]
+        return files
+
+    def match_font(name, bold=False, italic=False):
+        families = [part.strip().lower().replace(' ', '') for part in str(name).split(',')]
+        files = faces()
+        for family in families:
+            for stem in FONT_FILES.get(family, {}).get((bool(bold), bool(italic)), (family,)):
+                if stem in files:
+                    return files[stem]
+        style = 'BoldItalic' if bold and italic else 'Bold' if bold else 'Italic' if italic else 'Regular'
+        for fallback in (f'Roboto-{style}.ttf', 'Roboto-Regular.ttf', 'Roboto[wdth,wght].ttf', 'NotoSans-Regular.ttf'):
+            if (SYSTEM_FONTS / fallback).is_file():
+                return str(SYSTEM_FONTS / fallback)
+        return None
+    return match_font
+
+
+class Host:
+    REQUEST = 4107
+    LIFECYCLE = frozenset()     # the window and app events (pygame's), filled in once pygame is imported (__init__)
+    TOUCH = frozenset()         # the finger events: they only feed the pinch, never act, so never dropped either
+
+    next_copy_report = 0.0          # when the busy card next hears how much of the picked files has been copied
+
+    def __init__(self):
+        from android import activity
+        from jnius import autoclass
+        from ..application import Application
+        from .. import desktop_dialogue, desktop_word_hd, momentum
+        desktop_dialogue.REUSE_AT_REST = True       # a line waiting for its reader isn't redrawn: `_at_rest`
+        desktop_word_hd.QUICK_DRAWING = True        # the word game's haze and turning cubes: `haze_layer`, `turn_ms`
+        momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (owner's report)
+        self.activity_api = activity
+        self.activity = autoclass('org.kivy.android.PythonActivity').mActivity
+        self.bridge = autoclass('org.shshd.runtime.DocumentBridge')
+        self.orientation = autoclass('org.shshd.runtime.OrientationBridge')
+        self.sdl_activity = autoclass('org.libsdl.app.SDLActivity')
+        self.intent = autoclass('android.content.Intent')
+        self.uri = autoclass('android.net.Uri')
+        self.vibrator = self.find_vibrator(autoclass)
+        from .. import graphics
+        if self.vibrator is not None:
+            graphics.set_vibrator(self.vibrate)     # General's Vibration (desktop_pause_hd.DEVICE_VIBRATION_LABEL)
+        # Sync Devices (sync_flow.py): the phone's name, and Wi-Fi taking broadcasts while it looks for receivers.
+        self.autoclass, self.multicast = autoclass, None
+        graphics.device_name, graphics.hold_multicast = self.device_name, self.hold_multicast
+        # Backups (a sync's "before sync" one) where a player can reach them over USB: the app's external files
+        # folder (Android/data/<package>/files), which needs no permission.
+        external = self.activity.getExternalFilesDir(None)
+        if external is not None:
+            Application.USER_FOLDER_ROOT = str(external.getAbsolutePath())
+        self.root = Path(str(self.activity.getFilesDir().getAbsolutePath())) / 'SHSHD Runtime'
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.staging = self.root / 'imports'
+        # Previous process may have been killed during a document copy.
+        shutil.rmtree(self.staging, ignore_errors=True)
+        self.staging.mkdir()
+        os.environ['XDG_DATA_HOME'] = str(self.root.parent)
+        import pygame
+        pygame.font.match_font = font_finder(self.font_directories)
+        # pygame's own resize watch re-creates the window surface from whichever thread delivers the resize: on
+        # Android that is the UI thread, whose GL calls race SDL's thread for the context (EGL_BAD_ACCESS, then SDL's
+        # thread dies: a crash on rotating). resize() makes the new surface on SDL's thread instead.
+        pygame.display.init()
+        pygame.display._set_autoresize(False)       # pygame-ce's (private, used by its own window code)
+        Host.LIFECYCLE = frozenset(getattr(pygame, name) for name in (
+            'QUIT', 'WINDOWFOCUSGAINED', 'WINDOWFOCUSLOST', 'WINDOWSHOWN', 'WINDOWHIDDEN', 'WINDOWEXPOSED',
+            'WINDOWMINIMIZED', 'WINDOWRESTORED', 'WINDOWSIZECHANGED', 'WINDOWRESIZED', 'VIDEORESIZE', 'VIDEOEXPOSE',
+            'APP_WILLENTERBACKGROUND', 'APP_DIDENTERBACKGROUND', 'APP_WILLENTERFOREGROUND', 'APP_DIDENTERFOREGROUND',
+            'APP_LOWMEMORY', 'APP_TERMINATING') if hasattr(pygame, name))
+        Host.TOUCH = frozenset((pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP))
+        self.results = Queue()
+        self.copier = ThreadPoolExecutor(max_workers=1)
+        self.pending = False
+        self.closed = False
+        self.backgrounded = False
+        self.imported = []
+        self.panels_view = None         # [game, 'asked' | 'landscape', ms asked] while a game's side panels are open
+        self.app = Application(file_picker=self.pick, library_root=self.root / 'libraries',
+                               settings_path=self.root / 'settings.json', url_opener=self.open_url,
+                               can_quit=False)
+        self.app.fixed_window = True    # the window is the screen: the side panels never widen it
+        self.app.finger_input = self.finger     # (the test channel's scripted pinch: test_channel.py `pinch`)
+        activity.bind(on_activity_result=self.on_result)
+
+    def font_directories(self):
+        """Where supplied faces are found: the app's own `fonts/` folder, then every library's (bulk imports copy a
+        player's font files into each library they create)."""
+        libraries = self.root / 'libraries'
+        found = [self.root / 'fonts']
+        try:
+            found += sorted(path / 'fonts' for path in libraries.iterdir() if (path / 'fonts').is_dir())
+        except OSError:
+            pass
+        return found
+
+    def pick(self, kind):
+        if self.pending:
+            return
+        if kind == 'library':
+            self.app.message = ('Android keeps imported libraries inside the app. '
+                                'Choose Game to import APK/IPA files, or Bulk Import for a ZIP collection.')
+            return
+        self.pending = True
+        try:
+            self.bridge.choose(self.activity, self.REQUEST)
+        except Exception as error:
+            self.pending = False
+            self.app.message = f'Could not open Android file picker: {error}'
+
+    def on_result(self, request, result, data):
+        if request != self.REQUEST or self.closed:
+            return
+        if result != -1 or data is None:
+            self.results.put(('cancel', None))
+            return
+        # Read Java Intent while the callback owns it; copy on a worker.
+        try:
+            clips = data.getClipData()
+            uris = ([str(clips.getItemAt(i).getUri().toString()) for i in range(clips.getItemCount())]
+                    if clips is not None else [str(data.getData().toString())])
+            self.results.put(('copying', None))
+            self.copier.submit(self.copy_documents, uris)
+        except Exception as error:
+            self.results.put(('error', str(error)))
+
+    def copy_documents(self, uris):
+        paths = []
+        try:
+            for value in uris:
+                paths.append(Path(str(self.bridge.copy(self.activity, self.uri.parse(value), str(self.staging)))))
+            self.results.put(('paths', paths))
+        except Exception as error:
+            self.remove_staged(paths)
+            self.results.put(('error', str(error)))
+
+    @staticmethod
+    def staged_size(folder):
+        """The bytes copied into the staging folder so far (a file can go from under this, as a copy ends)."""
+        size = 0
+        for path in Path(folder).rglob('*'):
+            try:
+                size += path.stat().st_size if path.is_file() else 0
+            except OSError:
+                pass
+        return size
+
+    @staticmethod
+    def remove_staged(paths):
+        for path in paths:
+            shutil.rmtree(path.parent, ignore_errors=True)
+
+    def poll(self):
+        # Content import is asynchronous; never remove its source mid-job.
+        if self.imported and not self.app.busy:
+            self.remove_staged(self.imported)
+            self.imported = []
+        if self.app.busy and self.app.job_kind != 'copying':
+            return
+        now = time.monotonic()
+        if self.app.job_kind == 'copying' and now >= self.next_copy_report:
+            # The file picker's copy says nothing while it runs, and one 1 GB zip is one file: what has landed so far.
+            from ..application import size_text
+            self.next_copy_report = now + 0.5
+            size = self.staged_size(self.staging)
+            if size:
+                self.app.report_progress(f'Copied {size_text(size)}')
+        try:
+            kind, value = self.results.get_nowait()
+        except Empty:
+            return
+        if kind == 'copying':
+            # The picked files are being copied into the app (a 1 GB zip takes a while): the busy screen shows, and
+            # nothing else can start meanwhile. The copy's result ends it.
+            self.app.job, self.app.job_kind = Future(), 'copying'
+            return
+        if self.app.job_kind == 'copying':
+            self.app.job = self.app.job_kind = None
+            self.app.progress_text = ''
+        self.pending = False
+        if kind == 'error':
+            self.app.message = f'Could not read selected files: {value}'
+        elif kind == 'paths':
+            self.imported = value
+            self.app._attempt(lambda: self.app.import_paths(value))
+
+    def panels_orientation(self, elapsed):
+        """The side panels want landscape (the screen's width holds them beside the game): turning them on in portrait
+        (a screen PANELS_TALL times taller than wide) turns the app to landscape (OrientationBridge), without locking
+        it there. Turned back to portrait afterwards, or not turned within PANELS_ROTATE_MS, the panels switch off;
+        rotation is the user's again once they are. Portrait counts once it has lasted PANELS_PORTRAIT_MS."""
+        # Retired (owner, 2026-11-12): the panels open on their own where there's room beside the game (landscape), and
+        # behind the corner button where there isn't (desktop.Desktop.panels_wanted); the app no longer turns for them.
+        if self.panels_view is not None:
+            self.panels_view = None
+            self.orientation.release(self.activity)
+        return
+        game = self.app.game if self.app.screen == 'game' else None
+        width, height = self.app.window.get_size()
+        state = self.panels_view if self.panels_view is not None and self.panels_view[0] is game else None
+        if height <= width * PANELS_TALL:
+            self.panels_view = [game, 'landscape', 0]
+            return
+        if state is None:
+            self.panels_view = [game, 'asked', 0]
+            self.orientation.requestLandscape(self.activity)
+            return
+        if state[1] == 'landscape':
+            state[1:] = ['leaving', 0]
+        state[2] += elapsed
+        if state[2] >= (PANELS_PORTRAIT_MS if state[1] == 'leaving' else PANELS_ROTATE_MS):
+            game.toggle_panels()
+            self.panels_view = None
+            self.orientation.release(self.activity)
+
+    def top_inset(self):
+        """The share of the window's height the status bar (and a camera cutout) covers at its top: Android 15 draws an
+        app under them (edge to edge), so the player keeps what hangs from the frame's top below it (Desktop.top_inset)."""
+        try:
+            view = self.activity.getWindow().getDecorView()
+            insets = view.getRootWindowInsets()
+            height = view.getHeight()
+            if insets is None or height <= 0:
+                return 0.
+            return max(0., insets.getSystemWindowInsetTop() / height)
+        except Exception as error:          # (pyjnius raises its own JavaException)
+            logging.info('No window insets: %s', error)
+            return 0.
+
+    def bottom_inset(self):
+        """The share of the window's height the navigation bar (or the gesture bar) covers at its bottom (as top_inset):
+        the side panels' close strip keeps above it (Desktop.bottom_inset)."""
+        try:
+            view = self.activity.getWindow().getDecorView()
+            insets = view.getRootWindowInsets()
+            height = view.getHeight()
+            if insets is None or height <= 0:
+                return 0.
+            return max(0., insets.getSystemWindowInsetBottom() / height)
+        except Exception as error:          # (pyjnius raises its own JavaException)
+            logging.info('No window insets: %s', error)
+            return 0.
+
+    def find_vibrator(self, autoclass):
+        """The phone's vibrator, or None: none fitted, or the APK was built without the VIBRATE permission (an
+        older build): General's Vibration is then not offered."""
+        try:
+            from jnius import cast
+            context = autoclass('android.content.Context')
+            granted = autoclass('android.content.pm.PackageManager').PERMISSION_GRANTED
+            if self.activity.checkSelfPermission('android.permission.VIBRATE') != granted:
+                return None
+            vibrator = cast('android.os.Vibrator', self.activity.getSystemService(context.VIBRATOR_SERVICE))
+            if vibrator is None or not vibrator.hasVibrator():
+                return None
+            self.effect = (autoclass('android.os.VibrationEffect')
+                           if autoclass('android.os.Build$VERSION').SDK_INT >= 26 else None)
+            return vibrator
+        except Exception as error:          # (pyjnius raises its own JavaException)
+            logging.warning('No vibrator: %s', error)
+            return None
+
+    effect = None                       # android.os.VibrationEffect from Android 8; before it, vibrate(ms)
+
+    def vibrate(self, duration_ms):
+        """Service 82 on the phone: Android's original asks its vibrator for 1000 ms (FUN_000a3040)."""
+        try:
+            if self.effect is not None:
+                self.vibrator.vibrate(self.effect.createOneShot(duration_ms, self.effect.DEFAULT_AMPLITUDE))
+            else:
+                self.vibrator.vibrate(duration_ms)
+        except Exception as error:
+            logging.warning('Vibration failed: %s', error)
+
+    def device_name(self):
+        """The phone's name as its owner set it (Settings > About phone), else its maker and model."""
+        try:
+            settings = self.autoclass('android.provider.Settings$Global')
+            name = settings.getString(self.activity.getContentResolver(), 'device_name')
+            if name:
+                return str(name)
+        except Exception as error:
+            logging.warning('Sync: no device name: %s', error)
+        build = self.autoclass('android.os.Build')
+        model = str(build.MODEL or 'Android phone')
+        maker = str(build.MANUFACTURER or '')
+        return model if model.lower().startswith(maker.lower()) else f'{maker.capitalize()} {model}'.strip()
+
+    def hold_multicast(self, held):
+        """sync_flow.hold_multicast: WifiManager's MulticastLock (needs CHANGE_WIFI_MULTICAST_STATE), held while
+        the sender listens for receivers' beacons."""
+        if held:
+            if self.multicast is None:
+                from jnius import cast
+                context = self.autoclass('android.content.Context')
+                wifi = cast('android.net.wifi.WifiManager',
+                            self.activity.getApplicationContext().getSystemService(context.WIFI_SERVICE))
+                self.multicast = wifi.createMulticastLock('shshd-sync')
+                self.multicast.setReferenceCounted(False)
+            self.multicast.acquire()
+        elif self.multicast is not None and self.multicast.isHeld():
+            self.multicast.release()
+
+    def open_url(self, url):
+        self.activity.startActivity(self.intent(self.intent.ACTION_VIEW, self.uri.parse(url)))
+
+    def event(self, event):
+        import pygame
+        if event.type in (pygame.APP_WILLENTERBACKGROUND, pygame.APP_DIDENTERBACKGROUND):
+            self.active(False)
+            return True
+        if event.type in (pygame.APP_WILLENTERFOREGROUND, pygame.APP_DIDENTERFOREGROUND):
+            if event.type == pygame.APP_DIDENTERFOREGROUND:
+                self.active(True)
+            return True
+        if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+            self.finger(event)
+            return True
+        if self.pinching and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+            return True                 # the first finger's mouse events: a pinch is never a tap or a drag
+        if event.type in (pygame.KEYDOWN, pygame.KEYUP) and event.key == pygame.K_AC_BACK:
+            event = pygame.event.Event(event.type, dict(event.dict, key=pygame.K_ESCAPE))
+        return self.app.handle_event(event)
+
+    fingers = None                      # {finger id: (x, y)} in the drawing surface's pixels, while touching
+    pinching = False                    # two fingers have been down since the screen was last untouched
+    pinch_tree = False                  # ... and the gesture began on the story tree (it then follows them anywhere)
+    pinch = None                        # (span, anchor) where two fingers began pinching the tree, else None
+
+    def finger(self, event, check_sdl=True):
+        """Two fingers on the story tree panel zoom it and carry it along, as UIScrollView's pinch does (HD's tree
+        is one): the size follows how far apart they are, and the scene point that was between them stays between
+        them (SidePanels.pinch_tree, worked out from where the two began, so no move between two frames is lost).
+        A finger lifted and put down again carries on from there. SDL turns only the first finger into mouse
+        events; those stop for the whole gesture. `check_sdl` False: a scripted pinch (the test channel's), whose
+        fingers SDL's own list doesn't have."""
+        import math
+        import pygame
+        fingers = self.fingers if self.fingers is not None else {}
+        width, height = self.app.window.get_size()
+        if event.type == pygame.FINGERUP:
+            fingers.pop(event.finger_id, None)
+        else:
+            fingers[event.finger_id] = (event.x * width, event.y * height)
+        if len(fingers) > 1 and check_sdl:
+            # A finger lifted whose FINGERUP never arrived must not count: SDL's own list says who is touching.
+            try:
+                from pygame._sdl2 import touch
+                down = {touch.get_finger(event.touch_id, i)['id'] for i in range(touch.get_num_fingers(event.touch_id))}
+                for finger_id in [f for f in fingers if f not in down and f != event.finger_id]:
+                    del fingers[finger_id]
+            except (ImportError, pygame.error, KeyError, TypeError):
+                pass
+        self.fingers = fingers
+        game = self.app.game if self.app.screen == 'game' else None
+        panels = getattr(game, 'side_panels', None)
+        if len(fingers) != 2:
+            self.pinch = None
+            if not fingers:
+                self.pinching = self.pinch_tree = False
+            if panels is not None:
+                panels.tree_pinching = False    # (the tree is painted in full again: SidePanels.draw_tree)
+            return
+        (ax, ay), (bx, by) = fingers.values()
+        span, centre = math.hypot(bx - ax, by - ay), ((ax + bx) / 2, (ay + by) / 2)
+        if not self.pinching:
+            self.pinching = True
+            if game is not None:
+                game.tree_drag = None   # the first finger's drag ends once the second lands
+                game.tree_fling.stop()
+            # The gesture belongs to the tree if it starts there; it then follows the fingers anywhere.
+            self.pinch_tree = (panels is not None and panels.tree_rect is not None
+                               and panels.tree_rect.collidepoint(centre))
+            if self.pinch_tree:
+                logging.info('Pinch on the story tree at %s', centre)
+        if not self.pinch_tree or panels is None or panels.tree_rect is None:
+            return
+        if self.pinch is None:
+            if span > 0:                # (two fingers on one spot: wait for them to part)
+                self.pinch = (span, panels.pinch_anchor(centre))
+                panels.tree_pinching = True
+            return
+        start_span, anchor = self.pinch
+        panels.pinch_tree(anchor, span / start_span, centre)
+
+    def resize(self):
+        """The first frame, or the screen turned (or a split screen changed it): a new drawing surface for the window
+        (logical_size, scaled to the screen by SDL's renderer), made here on SDL's thread (pygame's own watch is off,
+        see __init__), for the app and the running game, as the iOS host's `resize`. Frames drawn into the old one
+        never showed."""
+        import pygame
+        size = screen_size()
+        if size == getattr(self, 'window_size', None):
+            return
+        logging.info('Android window %s -> %s, drawn at %s', getattr(self, 'window_size', None), size,
+                     logical_size(size))
+        # set_mode makes SDL ask for an orientation from this hint (read at the call; empty: FULL_USER, rotation the
+        # user's). While the side panels hold landscape it must ask for landscape too, or each new window would turn
+        # the app back to portrait and the panels' rule would read that as the user turning it.
+        holding = self.panels_view is not None and self.orientation.isHolding()
+        os.environ['SDL_IOS_ORIENTATIONS'] = 'LandscapeLeft LandscapeRight' if holding else ''
+        # RESIZABLE as well: SDL takes a fixed window's shape as the only orientation allowed (a landscape one locked the
+        # app sideways).
+        window = pygame.display.set_mode(logical_size(size), pygame.SCALED | pygame.RESIZABLE)
+        # The screen's size this surface was made for (pygame reports the drawing surface's own size as the window's
+        # under SCALED); if the screen turned meanwhile, the next frame sees the difference and catches up.
+        self.window_size = size
+        # SCALED asks SDL for a window the drawing surface's size, and SDL keeps that size until Android reports a
+        # change, which it never does (the screen did not change): SDL's GL then drew a 1:1 corner of the surface.
+        # SDL's own resize callback reads the real surface size again.
+        self.sdl_activity.onNativeResize()
+        self.app.window = window
+        self.app.top_inset = self.top_inset()
+        self.app.bottom_inset = self.bottom_inset()
+        if self.app.game is not None:
+            self.app.game.window = window
+            self.app.game.top_inset = self.app.top_inset
+            self.app.game.bottom_inset = self.app.bottom_inset
+        if self.panels_view is not None:
+            self.orientation.afterWindow(self.activity)     # SDL's own request replaced the panels' (FULL_USER)
+
+    def active(self, active):
+        import pygame
+        was_backgrounded = getattr(self, 'backgrounded', False)
+        self.backgrounded = not active
+        if self.app.active != active:
+            self.app.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED if active else pygame.WINDOWFOCUSLOST))
+        if not active and not was_backgrounded:
+            # Persist even an existing save, then stop one-shot sound effects.
+            if self.app.game:
+                self.app._attempt(lambda: self.app.state.checkpoint(self.app.game.session))
+            if pygame.mixer.get_init():
+                pygame.mixer.stop()
+
+    def run(self):
+        import pygame
+        from .. import frame_log
+        clock = pygame.time.Clock()
+        running = True
+        # Development only: SHSHD_PROFILE names a file that gets Python's profile of the loop every 300 frames (where a
+        # phone's frames go, which a desktop's timings do not tell).
+        profile_path, profiler, frames = os.environ.get('SHSHD_PROFILE'), None, 0
+        if profile_path:
+            import cProfile
+            profiler = cProfile.Profile()
+            profiler.enable()
+        try:
+            while running:
+                elapsed = clock.tick(60)
+                frames += 1
+                if profiler is not None and frames % 300 == 0:
+                    profiler.disable()
+                    profiler.dump_stats(profile_path)
+                    profiler.enable()
+                if self.app.skip_elapsed:           # Application.run's: the picker's Continue, a long load
+                    elapsed, self.app.skip_elapsed = 0, False
+                self.poll()
+                self.resize()
+                was_active = self.app.active
+                token = self.app.input_token()
+                with frame_log.section('events'):
+                    # One input per frame (Application.run's rule) drops the rest of the batch's input, never its
+                    # window and app events: rotating sends focus lost then gained together, and dropping the second
+                    # left the app inactive (no frames) after turning the phone.
+                    input_closed = False
+                    for event in pygame.event.get():
+                        if event.type not in self.LIFECYCLE and event.type not in self.TOUCH:
+                            if input_closed:
+                                continue
+                        running = self.event(event) and not self.app.quit_requested
+                        if not running:
+                            break
+                        if event.type not in self.LIFECYCLE and (
+                                self.app.input_token() != token
+                                or (self.app.screen == 'game'
+                                    and self.app.game.screen_token != self.app.game._screen_token())):
+                            input_closed = True
+                if running:
+                    # A resumed frame must not advance timers by the sleep duration.
+                    with frame_log.section('tick'):
+                        self.app.tick(elapsed if was_active and self.app.active else 0)
+                    if self.app.test_channel is not None:             # (test_channel.py: debug builds only)
+                        self.app.test_channel.poll(self.app)
+                    self.panels_orientation(elapsed if self.app.active else 0)
+                    if self.app.active:
+                        with frame_log.section('render'):
+                            self.app.render()
+                    else:
+                        time.sleep(.05)
+                if frame_log.LOG is not None:
+                    frame_log.LOG.frame(elapsed, *self.app._frame_log_place())
+        finally:
+            if frame_log.LOG is not None:
+                frame_log.LOG.close()
+            self.closed = True
+            self.activity_api.unbind(on_activity_result=self.on_result)
+            self.copier.shutdown(wait=True)
+            try:
+                self.app.close()
+            finally:
+                shutil.rmtree(self.staging, ignore_errors=True)
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)
+    Host().run()

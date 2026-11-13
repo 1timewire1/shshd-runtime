@@ -1,4 +1,4 @@
-"""The cancelled Xbox 360 SHS prototype's stories as creator projects (reference/Other Games/docs/SHS_X360.md).
+"""The cancelled Xbox 360 SHS prototype's stories as creator projects (docs/X360.md).
 
 The prototype (MS4, 2009-05-26) is a 3D game on Wanako's "Tongas" engine. Its story logic is Lua 5.1 source: event
 scripts embedded in templates/eventconfig.wxr and the conversations in scripts/dialogs/. This module reads its
@@ -9,13 +9,17 @@ TRANSLATOR_PLAN.md gives sources without bytecode. Two stories are new to this p
   talks, then Hector's diss battle intro and the demo's end card;
 * the puzzle test (prototype/puzzle/event1-2): two short scenes, Moondog and then Beth.
 
+Episode 3's Monday Planner (episode3/monday_*) is New Rules' King of Diss cut down to one day and restaged, and comes
+with its X360 cast, places and Diss Practice (docs/X360.md).
+
 What carries over: every line, speaker, choice (with its enable condition), numeric state (gameStats.*, the
 *Dialogs flags), condition, scene jump and the hub's min/max gating, as the scripts have them, including the
 prototype's unfinished hub (five talks among four people, so someone is talked to twice). An answer's preview
 emotion (AddChoices' third argument) becomes the speaker's expression on that answer's branch. Objectives the
-selection post-it checks off become notices. What is dropped: cameras, 3D animation, waits, sound effects, emoticon
-effects, the presentation card and the skip button. Music is the X360's placeholder tracks (licensed songs), so the
-translation plays none unless a cue is mapped (`music`).
+selection post-it checks off become notices. What is dropped: cameras, 3D animation, waits, the bubbles' own sound,
+emoticon effects and the skip button; Day of Diss's camera moves and presentation card become a storyboard
+(Story.opening). A level's music and ambience play as one track (MIXES),
+and script cues and sounds as they come (script_music, SCRIPT_SOUNDS); a story's own music comes with `music_files`.
 
 Art: the King of Diss cast wears its New Rules looks (nr_art), as the New Rules translation of King of Diss does;
 the puzzle test's Beth is the SHS shared-bank Beth. Backgrounds are New Rules' location strips.
@@ -38,6 +42,43 @@ BACKGROUND_BASE = 26000                 # five IDs apart, as the creator allocat
 SCENE_BACKGROUND_BASE = 26100           # the prototype's own backgrounds (scene_backgrounds), one ID each
 PORTRAIT_BASE = 26200                   # five consecutive IDs per look
 HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rules translation stores it
+# The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
+# the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
+# stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 16   # 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
+# The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
+# version replaces it too. Raise it when a build must never be replaced by an earlier one.
+STORY_VERSION = 1
+STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
+                                        # doesn't use a later revision's art isn't rebuilt, and keeps its saves
+ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
+ADDON_FILE = 'X360_Addon_Xbox_360'
+RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog',     # at PORTRAIT_BASE + 5 x index
+           'mrpibb', 'mom_ryan', 'mrsfaulkner', 'spike', 'spud', 'dexter', 'andy')      # from LATER_RENDER_BASE
+# The "MS3 Characters" switch (owner, 2026-11-02; shs/profile.py MS3_CHARACTER_ART): the renders the April build drew
+# differently, MS3_PORTRAIT_OFFSET above their usual IDs, only at the larger size, in the addon alone. Everyone else stays
+# as they are. MS3's Josh wears Zack's model. Its Kim, Ryan and Hector are MS4's old models, as `old ryan` has them, and
+# its Zack keeps MS4's neutral pose (reference tools x360_ms3_zack.py), so the portraits all share one pose.
+MS3_PORTRAIT_OFFSET = 2000
+MS3_LOOKS = {'josh': 'zack_ms3_standard', 'zack': 'zack_ms3_standard', 'kim': 'old_kim', 'ryan': 'old_ryan',
+             'hector': 'old_hector'}
+SCENES = ('diss_battle', 'parking_lot', 'parking_lot_hector', 'parking_lot_kim', 'parking_lot_nicole',
+          'parking_lot_ryan', 'beths_room', 'zachs_room', 'beths_house_out', 'dogpound',   # SCENE_BACKGROUND_BASE + index
+          'hallway_a', 'front_morning', 'front_afternoon', 'math', 'ryan_house', 'hallway_b', 'english', 'old_lot',
+          'josh_room', 'josh_practice', 'kim_room')
+LOOK_PORTRAIT_BASE = 26250              # a cast member drawn in a New Rules look (no render): per story, in the episode
+# PORTRAIT_BASE's eight run into LOOK_PORTRAIT_BASE; the others are here, inside what shs/profile.py's
+# TRANSLATED_PORTRAIT_ART moves to the larger set, past the jewel puzzle (x360_arena_art.PUZZLE_JEWELS).
+FIRST_RENDERS, LATER_RENDER_BASE = 8, 26750
+
+
+def render_base(render):
+    index = RENDERS.index(render)
+    return PORTRAIT_BASE + 5 * index if index < FIRST_RENDERS else LATER_RENDER_BASE + 5 * (index - FIRST_RENDERS)
+
+
+# The stories' title tag (shs/profile.py LEGACY_GAMES): the picker's X360 badge, and its own category.
+TITLE_SUFFIX = ' (SHSX360)'
 FRAME_BACKDROP = 26999                  # New Rules' UI backdrop under the strips (shs/profile.py TRANSLATED_FRAME_BACKDROP)
 # Line emoticons (shs/profile.py TRANSLATED_PORTRAIT_EFFECTS, emoticon_effects): the global number set around a line,
 # the six cells of the X360's 4x4 emoticon sheet (effect n = cell n - 1), and the sounds its effects play.
@@ -50,7 +91,44 @@ OBJECTIVE_SOUND = ('data/sound/fx/success.wav', 26988)
 SING_TYPE, SING_MARK = 6, '{'           # OpenDialog type 6 is the X360's sing bubble; '{' is SHS's music note
 # The prototype's own music, when the translation is given its files (music_assets): an intro and the loop it runs
 # into (shs/profile.py TRANSLATED_MUSIC_LOOPS: Day of Diss's `dont_trust_me`), then any other cue.
-MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26902
+MUSIC_INTRO, MUSIC_LOOP, MUSIC_OTHER = 26900, 26901, 26914
+# What the maps and scripts play, as one track each: SHS has one music stream, and a level layers its music and ambience.
+# (file, its SOUNDMASTER Volume), the music first, whose length the track takes; the ambience repeats under it. The gain
+# comes from the music alone (mix_track), so it doesn't change level from place to place.
+MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
+         'freedom_suburban': (26903, (('data/sound/music/freedom.ogg', 40), ('data/sound/ambient/suburban.ogg', 96))),
+         'freedom_dog_pound': (26904, (('data/sound/music/freedom.ogg', 40), ('data/sound/ambient/dog_pound.ogg', 96))),
+         # The crowd is 127 in the X360; here 16 dB under each music, as it drowned the music out (owner, 2026-11-01).
+         'diss_battle': (26905, (('data/sound/music/diss_001.ogg', 40), ('data/sound/ambient/crowd.wav', 75))),
+         'jumparound': (26906, (('data/sound/music/jumparound.ogg', 90), ('data/sound/ambient/crowd.wav', 99))),
+         # The morning's hallway: its crowd is 127 in the X360; 16 dB under the music as above (diss_001, being louder,
+         # takes it at full).
+         'chilled': (26908, (('data/sound/music/chilled.ogg', 40), ('data/sound/fx/crowdindoor.wav', 68))),
+         'diss_001': (26909, (('data/sound/music/diss_001.ogg', 40), ('data/sound/fx/crowdindoor.wav', 127))),
+         'lazy': (26910, (('data/sound/music/lazy.ogg', 40),)),
+         # After school, where the map has none (owner, 2026-11-02). No sound master names this file, and its passing
+         # traffic sets its level, as a track's peak does.
+         'city_street': (26911, (('data/sound/ambient/city_street.wav', 127),)),
+         # Diss Practice's: the maps name the first, and the other two nothing; one for each round (owner, 2026-11-02).
+         'dbp': (26907, (('data/sound/music/dbp_bg_music.ogg', 127),)),
+         'dbp_2': (26912, (('data/sound/music/dbp_bg_music2.ogg', 127),)),
+         'dbp_3': (26913, (('data/sound/music/dbp_bg_music3.ogg', 127),))}
+# The prototype's main menu tune (sound.wxr `music/main_menu`, Volume 40), which no story plays: the addon carries it for the
+# player's Title Screen Music setting (shs profile TITLE_MUSIC; owner, 2026-11-09), mixed as the stories' tracks are. Its ID
+# is apart from theirs (other cues count up from MUSIC_OTHER).
+ADDON_MIXES = {'main_menu': (26996, (('data/sound/music/main_menu.ogg', 40),))}
+MENU_MUSIC = ADDON_MIXES['main_menu'][0]
+MIX_RATE, MIX_PEAK, MIX_KNEE, MIX_RMS, MIX_BITRATE = 44100, 0.89, 0.7, 0.15, '128k'     # MIX_RMS: New Rules' louder tracks
+# The lot's crowd under Day of Diss's music: its loudness (RMS) against the loop's, 16 dB under (see MIXES).
+PAIR_AMBIENCE = ('data/sound/ambient/crowd.wav', 10 ** (-16 / 20))
+# `CreateFx` on the level or camera that only plays a sound (fx.wxr). Day of Diss's `sound/whip` is in its opening's timeline
+# (x360_arena_art.opening); `sound/step_dust` is left out with Josh's steps (owner, 2026-11-02).
+SCRIPT_SOUNDS = {'generic/disaster': ('data/sound/fx/dbp_fail.wav', 26982)}
+# A sound played at its SOUNDMASTER Volume, where playing it whole stands out from the rest (owner, 2026-11-02: the record
+# scratch, at 64 of 127).
+SOUND_VOLUMES = {'data/sound/fx/dbp_fail.wav': 64}
+# `gameSHS.CloseDialog`'s `sound/bubble`: every dialogue's close (owner, 2026-11-01: trying it).
+CLOSE_SOUND = ('data/sound/fx/zip.wav', 26981)
 EXPRESSIONS = (1, 4, 2, 3, 5)           # New Rules faces in SHS slots 0-4: neutral, angry, happy, sad, surprised
 # The prototype's own emotions rendered for those slots (reference/Other Games/tools/x360_portrait.py)
 RENDERED_EMOTIONS = ('neutral', 'angry', 'happy', 'sad', 'excited')
@@ -106,26 +184,168 @@ class Story:
     # An off-screen line (no speaker: a phone call, a voice from outside) in a cast member's text colour
     # ("R G B" of its leading &:R G B;) is theirs: SHS has no off-screen bubble, so it shows them speaking.
     voices: dict = field(default_factory=dict)
+    # Plays the prototype's own music where it is given (translate's music_files): Day of Diss's (owner, 2026-10-26).
+    # The other two were imported without it.
+    own_music: bool = False
+    # X360 LocationName -> the track its level plays (MIXES), started as the story arrives there.
+    level_music: dict = field(default_factory=dict)
+    # A script's music cue -> its track (MIXES); it runs until the script's next cue.
+    script_music: dict = field(default_factory=dict)
+    # The own music's intro and loop take this ambience (PAIR_AMBIENCE).
+    pair_ambience: bool = False
+    # The jewel puzzle plays after this event, where the player has it (owner, 2026-11-01). The prototype's scenes aren't
+    # linked and never reach it; other players go straight on.
+    puzzle_after: str = ''
+    addon_revision: int = STORY_ADDON_REVISION
+    # The storyboard cutscene's spec (x360_arena_art.opening) to play before the hub opens, where the player draws them.
+    opening: int = 0
+    # GUI_STATE this story's scripts decide by.
+    keep_state: frozenset = frozenset()
+    # X360 event -> the prototype's own background (SCENES) it uses, for a story with one per scene rather than location.
+    event_scenes: dict = field(default_factory=dict)
+    # X360 event -> the track (MIXES) to start as the story arrives there, or '' for silence: for a level's music where a
+    # location's differs by the event.
+    event_music: dict = field(default_factory=dict)
+    # `CreateFx` and `Resources[n]` cues -> (file, asset ID), besides SCRIPT_SOUNDS.
+    script_sounds: dict = field(default_factory=dict)
+    # X360 event -> (old, new) text changes to its script, for what the prototype left unwired.
+    script_edits: dict = field(default_factory=dict)
+    # Unistrings the prototype lacks.
+    extra_text: dict = field(default_factory=dict)
+    # Its practice rounds and battle (Builder.diss_comment, diss_round, speed_diss).
+    diss_rounds: bool = False
+    # A title card before its first event, where the prototype has none: (its background, SCENES; the subtitle), under the
+    # story's title (owner, 2026-11-11, from reference/screenshots/verify/title_cards/X360_BACKGROUNDS.png).
+    title_card: tuple = ()
 
 
 # The New Rules looks King of Diss gives these characters (nr_looks.json; its $josh's first look).
 DAY_OF_DISS = Story('Day of Diss', 1, ['kingofdiss/introduction'], [
     Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
     Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016')],
-    {'parking_lot': 23, 'diss_battle': 23}, player='josh')
+    {'parking_lot': 23, 'diss_battle': 23}, player='josh', own_music=True, level_music={'diss_battle': 'diss_battle'},
+    script_music={'jumparound': 'jumparound'}, pair_ambience=True, opening=26796, addon_revision=16)
 # The test's hero is the zach model, called Josh in its text, so he wears Josh's render (owner, 2026-10-27: MS3's
 # Josh stood in with Zack's model, and the test was never updated); Moondog's look is Dancing Queen's.
 PUZZLE_TEST = Story('Puzzle Test', 2, ['prototype/puzzle/event1', 'prototype/puzzle/event2'], [
     Cast('zach', 'Josh', 1, '0020'), Cast('moondog', 'Moondog', 1, '0214'), Cast('beth', 'Beth', 2, bank=2050)],
-    {'zachs_room': 5, 'beths_room': 4}, player='zach', renders={'zach': 'josh'})
+    {'zachs_room': 5, 'beths_room': 4}, player='zach', renders={'zach': 'josh'},
+    level_music={'zachs_room': 'freedom', 'beths_room': 'freedom'}, puzzle_after='prototype/puzzle/event1', addon_revision=5)
 # BREW '08 "Dogged Pursuit" as the X360 retold it (episode1, titled "Dating Beth" in MS3's textbank): here the zach
 # model is Zack. The house and the pound have no New Rules picture of their own (the prototype's own backgrounds
 # are used: --backgrounds); the lot stands in.
 DATING_BETH = Story('Dating Beth', 3, ['episode1/event1'], [
     Cast('zach', 'Zack', 1, '0020'), Cast('beth', 'Beth', 2, bank=2050), Cast('moondog', 'Moondog', 1, '0214')],
     {'zachs_room': 5, 'beths_room': 4, 'beths_house_out': 23, 'dogpound': 23}, player='zach',
-    renders={'zach': 'zack'}, voices={'250 140 200': 'beth'})      # Beth's pink; Zack's dad (uncoloured) has no model
-STORIES = {'day-of-diss': DAY_OF_DISS, 'puzzle-test': PUZZLE_TEST, 'dating-beth': DATING_BETH}
+    renders={'zach': 'zack'}, voices={'250 140 200': 'beth'},      # Beth's pink; Zack's dad (uncoloured) has no model
+    level_music={'zachs_room': 'freedom', 'beths_room': 'freedom', 'beths_house_out': 'freedom_suburban',
+                 'dogpound': 'freedom_dog_pound'}, title_card=('dogpound', 'Dogged Pursuit'))
+# What MS4's Diss Practice does as it ends (minigames/dissbattlepractice/game.lua, DBP:EndGame), here as an event would.
+# The script names a level's line whatever the score, so a failed second round would repeat "level 2": each is said on
+# passing, and a fail has New Rules' own line, without its "try again later" (owner, 2026-11-01). Three slots make
+# level 4 the most a player can reach, so "level 5" (dialog_003) is left out.
+# The word game's goals (owner, 2026-11-02: King of Diss's level + 3, read as words, was far too easy): what New Rules'
+# Rhythm asks of that target. Its grades 3, 4 and 5 in 40 s are scores of 50, 90 and 150, which are 10, 13 and 17 straight
+# good notes on its speed ladder; for 30 s, three quarters of that. The HD word game fits about 18 picks in 30 s.
+PRACTICE_TARGETS = (8, 10, 13)
+WORD_GAME_PASSED = ' or '.join(f'((disslevel == {level}) and (diss_score >= {target}))'
+                               for level, target in enumerate(PRACTICE_TARGETS))
+_NARRATION = 'Dialog("","bubbles/narrator/left","bubbles/enter_from_bottom","episode3/diss_battle_practice/%s",20,"x")\n'
+PRACTICE_END = ('if gameStats.diss_passed == 1 then\n'
+                'gameStats.disslevel = gameStats.disslevel + 1\n'
+                'if gameStats.disslevel == 1 then\n'
+                + ''.join(_NARRATION % f'dialog_000{c}' for c in ('', 'b', 'c', 'd')) +
+                'elseif gameStats.disslevel == 2 then\n' + _NARRATION % 'dialog_001' +
+                'elseif gameStats.disslevel == 3 then\n' + _NARRATION % 'dialog_002' +
+                'end\nelse\n' + _NARRATION % 'ouch' + 'end\n'
+                'if gameStats.tod == 0 then\n'
+                'GuiScreen.AddControl("gameover","GGRP:hud/gameover/main",CreateV2(0,0),"100")\n'
+                'GuiScreen.gameover.main.gameovertext.Text = ToUniString("[:episode3/end_demo/dialog_001]")\n'
+                'elseif gameStats.tod == 1 then\ngame.RunEvent("episode3/monday_afternoon")\n'
+                'elseif gameStats.tod == 2 then\ngame.RunEvent("episode3/monday_evening")\nend\n')
+# King of Diss's word game for Rhythm (newrules.WORDLESS_GAMES, LIBRARY_GAME_MS, WORD_GAME_REFRESH_MS; its intro line).
+DISS_PRACTICE = {'text': "Work on your rhythm until you get hot! Don't hit the wrong notes...",
+                 'good': ['Beat', 'Groove', 'Flow', 'Bass', 'Tempo', 'Rhythm'],
+                 'bad': ['Bent note', 'Off-key', 'Screech', 'Clunk', 'Sour note', 'Static'],
+                 'duration_ms': 30000, 'refresh_ms': 3000, 'result': 'diss_score'}
+DISS_COMMENTS = tuple(f'episode3/comment/diss_00{n}' for n in range(1, 6))     # DissComment, functions/episode3.lua
+DISS_PASS = 5000                        # exp_runtime.x360_diss.PASS_SCORE
+# The battle (owner, 2026-11-01): the prototype has `--call diss practice minigame or something` where New Rules plays
+# its Rhyme game, and only the win. New Rules' Spike battle as our King of Diss translation plays it: its speed diss, the
+# same rounds (newrules.rhyme_rounds(library, 2)), ten hits to finish, three misses to lose, seven to win.
+SPEED_DISS_TITLE = 'Speed diss!'
+SPEED_DISS_PROMPT = 'Flow: {{flow}}/{hits}\nMiss: {{miss}}/{misses}\nRhymes with {{ {word} {{'
+SPEED_DISS_HITS, SPEED_DISS_MISSES, SPEED_DISS_WIN, SPEED_DISS_MS = 10, 3, 7, 3900
+SPIKE_ROUNDS = (('rude', ('lewd', 'crook', 'socks'), 0), ('crash', ('trash', 'chatter', 'ride', 'rat'), 0),
+                ('cradle', ('ladle', 'crime', 'tool'), 0), ('ran', ('fun', 'sing', 'lend', 'tan'), 3),
+                ('lily', ('membrane', 'chilly', 'store'), 1), ('guy', ('shorty', 'thigh', 'door', 'ran'), 1),
+                ('dues', ('money', 'ruse', 'socks'), 1), ('lewd', ('crude', 'pimple', 'took', 'guy'), 0),
+                ('tan', ('street', 'lewd', 'can'), 2), ('spend', ('president', 'cruise', 'door', 'bend'), 3),
+                ('rap', ('snap', 'planned', 'bling'), 0), ('cool', ('shoes', 'ladle', 'school', 'store'), 2))
+FAIL_SOUND = ('data/sound/fx/dbp_fail.wav', 26982)      # SCRIPT_SOUNDS' generic/disaster; `sound/scratch` too (fx.wxr)
+WHOOSH_SOUND = ('data/sound/fx/whoosh_002.wav', 26983)
+_SPIKE_LOSS = ('else\ngameSHS.SetCharacterEmotion("spike","happy")\ngameSHS.SetCharacterEmotion("josh","sad")\n'
+               'OpenDialog("spike", 6)\nDialogText("episode3/diss_battle_001/dialog_007b")\n'
+               'DialogText("episode3/diss_battle_001/dialog_008b")\nCloseDialog()\n'
+               'OpenDialog("hector", 0)\nDialogText("episode3/diss_battle_001/dialog_009b")\n'
+               'DialogText("episode3/diss_battle_001/dialog_010b")\nCloseDialog()\n'
+               'OpenDialog("josh", 2)\nDialogText("episode3/diss_battle_001/dialog_011b")\nCloseDialog()\nend\n')
+MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
+    Cast('josh', 'Josh', 1, '0020'), Cast('kim', 'Kim', 2, '0027'), Cast('ryan', 'Ryan', 1, '0042'),
+    Cast('nicole', 'Nicole', 2, '0038'), Cast('hector', 'Hector', 1, '0016'), Cast('mrpibb', 'Mr. Pibb', 1),
+    Cast('mom_ryan', "Ryan's Mom", 2), Cast('mrsfaulkner', 'Mrs. Faulkner', 2), Cast('spike', 'Spike', 1),
+    Cast('spud', 'Spud', 1), Cast('dexter', 'Dexter', 1)],
+    {location: 23 for location in ('school_hallway_a', 'school_front', 'math_classroom', 'ryan_house_out', 'school_hallway_b',
+                                   'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
+    player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
+    title_card=('front_afternoon', 'King of Diss'),
+    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=13,
+    # Andy is fully modelled and nobody's in the prototype (its `andy` template wears Moondog): he's Spike (owner, 2026-11-02).
+    renders={'spike': 'andy'},
+    keep_state=frozenset({'tod'}), diss_rounds=True,
+    # One background per place, as most SHS episodes have; the school front and Josh's room by scene (owner, 2026-11-01).
+    event_scenes={'episode3/monday_morning': 'hallway_a', 'episode3/practice_diss_001': 'front_morning',
+                  'episode3/talk_teachers': 'math', 'episode3/talk_mom_001': 'ryan_house',
+                  'episode3/talk_mom_002': 'ryan_house', 'episode3/monday_afternoon': 'front_afternoon',
+                  'episode3/practice_diss_002': 'hallway_b', 'episode3/talk_teachers_002': 'english',
+                  'episode3/diss_battle_001': 'old_lot', 'episode3/memory_lane_002': 'old_lot',
+                  'episode3/monday_evening': 'josh_room', 'episode3/practice_diss_003': 'josh_practice',
+                  'episode3/talk_kim_001': 'kim_room', 'episode3/talk_kim_001b': 'kim_room'},
+    # The levels' music where their scene has no cue of its own. A practice map's cue is Diss Practice's. Memory lane and
+    # back at Kim's run on from Kim's.
+    event_music={'episode3/practice_diss_001': 'dbp', 'episode3/practice_diss_002': 'dbp_2',
+                 'episode3/practice_diss_003': 'dbp_3', 'episode3/talk_teachers': 'freedom',
+                 'episode3/talk_teachers_002': 'freedom', 'episode3/talk_mom_001': 'freedom_suburban',
+                 'episode3/talk_mom_002': 'freedom_suburban', 'episode3/monday_afternoon': 'city_street',
+                 'episode3/diss_battle_001': 'freedom', 'episode3/talk_kim_001': 'freedom'},
+    script_sounds={'sound/whoosh': WHOOSH_SOUND, 'sound/scratch': FAIL_SOUND,
+                   'SNFX:fx/doorbell.wav': ('data/sound/fx/doorbell.wav', 26984),
+                   'SNFX:fx/phone_tone.wav': ('data/sound/fx/phone_tone.wav', 26989)},
+    script_edits={
+        # Mrs. Faulkner's scene is whole and in both builds, but nothing leads to it (`gameStats.teachers` is never set):
+        # a second visit after school, as Ryan's mom has (owner, 2026-11-01). It goes on to the evening by `tod`.
+        'episode3/talk_teachers': (('--Scenario setting', 'gameStats.teachers = 1\n--Scenario setting'),),
+        'episode3/monday_afternoon': (
+            ('if gameStats.disslevel > 0 then',
+             'if gameStats.teachers == 1 then\ngameSHS.AddChoices(ToUniString("[:episode3/choice/talk_teachers]"),'
+             '"GGRP:bubbles/choice/choice","me.RunCmd(0) gameStats.choice = 3")\nend\n'
+             'if gameStats.disslevel > 0 then'),
+            ('elseif gameStats.choice == 2 then',
+             'elseif gameStats.choice == 3 then\ngame.RunEvent("episode3/talk_teachers_002")\n'
+             'elseif gameStats.choice == 2 then')),
+        # A local of the scene, which the story's numbers have to hold.
+        'episode3/talk_mom_002': (('local kissmom = 0', 'gameStats.kissmom = 0'), ('kissmom = 1', 'gameStats.kissmom = 1'),
+                                  ('if kissmom == 0 then', 'if gameStats.kissmom == 0 then')),
+        # Her line given to Mr. Pibb, who isn't there.
+        'episode3/talk_teachers_002': (('Dialog("mrpibb",', 'Dialog("mrsfaulkner",'),),
+        'episode3/diss_battle_001': (
+            ('--call diss practice minigame or something', f'SpeedDiss()\nif gameStats.flow >= {SPEED_DISS_WIN} then'),
+            ('--Call next decision making state', _SPIKE_LOSS + '--Call next decision making state')),
+    },
+    extra_text={'episode3/diss_battle_practice/ouch':
+                "Ouch. You couldn't quite move up to the next level of diss battling..."})
+STORIES = {'day-of-diss': DAY_OF_DISS, 'puzzle-test': PUZZLE_TEST, 'dating-beth': DATING_BETH,
+           'monday-planner': MONDAY_PLANNER}
 # Dating Beth's two minigames as the SHS word game, with BREW Dogged Pursuit's own words for them (its catch
 # minigames "Think!" and "Catch Rex"). The slot machine (bulbs +1, crosses -1, 15 s) and the leash's power bar
 # (won: choice 1, lost: 0) become word games whose score decides the same branches. SHS's word game needs three bad
@@ -137,7 +357,8 @@ BUTTON_SMASH = {'good': ['(Got it.)', '(Nice grip, dude!)'], 'bad': ['(Ow my fin
                 'duration_ms': 15000, 'refresh_ms': 1400, 'result': 'leash'}
 # The word game in 15 s makes the X360's scores too easy (owner, 2026-10-27), so its score is mapped onto the
 # script's: 5 or better is the slot machine's best (choice 3: the pound), 3-4 its middle (2: the river), less fails
-# (0); the leash is held at 5 or better.
+# (0); the leash is held at 5 or better. The real slot machine's bulbs are mapped the same way (owner, 2026-11-01);
+# the real leash game's win or loss is the script's own choice.
 SLOT_MACHINE_LEVELS = ((5, 3), (3, 2))  # (word game score at least, the script's choice points)
 BUTTON_SMASH_WIN = 5                    # the leash held: this score or better
 
@@ -201,9 +422,14 @@ class Prototype:
     def script(self, path):
         return lua_subset.parse(self.files[f'data/scripts/{path}.lua'].decode('utf-8'))
 
-    def event(self, name):
+    def event(self, name, edits=()):
         event = self.events[name]
-        return event.get('LocationName', ''), lua_subset.parse(event['Script'])
+        script = event['Script']
+        for old, new in edits:
+            if script.count(old) != 1:
+                raise TranslateError(f'{name}: {old!r} is there {script.count(old)} times')
+            script = script.replace(old, new)
+        return event.get('LocationName', ''), lua_subset.parse(script)
 
     def text(self, key, depth=0):
         """A unistring with its `[:id]` includes and `<:str,id>` names resolved (a name is the speaker's name-plate
@@ -373,6 +599,9 @@ class Builder:
         self.thought = False            # the open dialogue is a think bubble
         self.effects = []               # (character, emoticon effect) waiting for the next line
         self.effects_skipped = 0
+        self.mixes_used, self.sounds_used = set(), set()    # what translate() embeds (MIXES, SCRIPT_SOUNDS)
+        self.left_chain = False         # a script cue has taken over from the intro-and-loop pair
+        self.spoke = False              # a line since the last dialogue closed (dialogue_closed)
         self.sounds = {}                # effect -> its embedded sound's ID (translate() fills it)
         self.objective_sound = None     # OBJECTIVE_SOUND's ID, when embedded
         self.line_start = None          # the first node of the latest line (its effect's score node, or the line)
@@ -449,8 +678,18 @@ class Builder:
         if name == 'scene.level.Resources.0' or target[0] == 'index' and lua_subset.dotted(target[1]) == \
                 'scene.level.Resources':
             cue = value[1] if value[0] == 'str' else ''
+            if cue in self.story.script_sounds:
+                self.play_sound(self.story.script_sounds[cue])
+                return
             if cue.startswith('SNFX:music/') and cue[11:] in self.chained:
-                return                      # the runtime runs the intro into this loop by itself
+                if self.left_chain:         # back from another cue; otherwise the runtime runs the intro into this loop
+                    self.left_chain = False
+                    self.add('music', params={'resource': MUSIC_LOOP, 'loop': True})
+                return
+            if cue.startswith('SNFX:music/') and cue[11:] in self.story.script_music:
+                if self.play_mix(self.story.script_music[cue[11:]]):
+                    self.left_chain = True
+                return
             if cue.startswith('SNFX:music/') and cue[11:] in self.music:
                 self.add('music', params={'resource': self.music[cue[11:]], 'loop': True})
             return
@@ -463,7 +702,7 @@ class Builder:
             self.add('end')
             return
         var = variable(name)
-        if var is None or value[0] == 'table' or var in GUI_STATE:
+        if var is None or value[0] == 'table' or (var in GUI_STATE and var not in self.story.keep_state):
             return
         follows_line = self.line_start is not None and self.pending == self.line_exit
         self.add('set', variable=var, params={'expression': expression(value)})
@@ -590,15 +829,38 @@ class Builder:
 
     collecting = False
 
+    def play_sound(self, sound):
+        if sound[0] in self.proto.files:
+            self.sounds_used.add(sound)
+            self.add('sound', params={'resource': sound[1]})
+
+    def play_mix(self, key):
+        """Starts a track of MIXES if the pak has its files; whether it did."""
+        resource, layers = MIXES[key]
+        if not all(path in self.proto.files for path, _ in layers):
+            return False
+        self.mixes_used.add(key)
+        self.add('music', params={'resource': resource, 'loop': True})
+        return True
+
     def call(self, expr):
         if expr[0] == 'method':
             return
         name, args = call_name(expr), expr[2]
+        if name in ('scene.level.CreateFx', 'camera.CreateFx'):
+            cue = string_arg(args, 0)
+            sound = self.story.script_sounds.get(cue) or SCRIPT_SOUNDS.get(cue)
+            if sound is not None:
+                self.play_sound(sound)
+            return
         effect = re.fullmatch(r'scene\.(\w+)\.CreateFx', name or '')
         if effect:                              # an emoticon over a character, shown with their next line
             fx = (string_arg(args, 0) or '').rpartition('hud/emoticon/')[2]
             if fx in X360_EFFECTS:
                 self.effects.append((effect.group(1), X360_EFFECTS[fx]))
+            return
+        if self.story.diss_rounds and name in ('DissComment', 'dissTutorial', 'SpeedDiss'):
+            {'DissComment': self.diss_comment, 'dissTutorial': self.diss_round, 'SpeedDiss': self.speed_diss}[name]()
             return
         if name is None or IGNORED_CALLS.match(name):
             return
@@ -607,6 +869,7 @@ class Builder:
             self.bubble = int(args[1][1]) if len(args) > 1 and args[1][0] == 'num' else 0
         elif name == 'CloseDialog':
             self.speaker = None
+            self.dialogue_closed()
         elif name == 'DialogText':
             self.line(self.speaker, string_arg(args, 0))
         elif name == 'Dialog':
@@ -614,11 +877,13 @@ class Builder:
             self.thought = '/think/' in (string_arg(args, 1) or '')
             self.line(string_arg(args, 0), string_arg(args, 3))
             self.thought = False
+            self.dialogue_closed()
         elif name == 'gameSHS.OpenDialog':      # MS3's form (Dating Beth): (who, bubble group, entrance[, ...])
             self.speaker, self.bubble = string_arg(args, 0), 0
             self.thought = '/think/' in (string_arg(args, 1) or '')
         elif name == 'gameSHS.CloseDialog':
             self.speaker, self.thought = None, False
+            self.dialogue_closed()
         elif name == 'gameSHS.SetDialogText':
             self.line(self.speaker, string_arg(args, 0))
         elif name in MINIGAME_CALLS:
@@ -653,16 +918,94 @@ class Builder:
         else:
             raise TranslateError(f'call {name}')
 
+    def diss_comment(self):
+        """One of Josh's five rhymes on his way to practise, at random, as DissComment has it."""
+        self.add('random', params={'bound': len(DISS_COMMENTS), 'result': 'comment'})
+        ends = []
+        for i, key in enumerate(DISS_COMMENTS):
+            test = self.add('branch', params={'expression': f'(comment == {i})'})
+            self.pending = [(test.id, 'next')]
+            self.line('josh', key)
+            self.dialogue_closed()
+            ends += self.pending
+            self.pending = [(test.id, 'otherwise')]
+        self.pending += ends
+
+    def diss_round(self):
+        """A practice round: Diss Practice where the player has it and its switch is on, with its tutorial the first
+        time, or the word game; then what Diss Practice does when one ends (PRACTICE_END)."""
+        self.add('minigames_available', params={'result': 'real_minigames'})
+        real = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(real.id, 'next')]
+        first = self.add('branch', params={'expression': '(dissPractice == 0)'})
+        self.pending = [(first.id, 'next')]
+        self.add('x360_diss', params={'result': 'diss_score', 'tutorial': 1})
+        ends = self.pending
+        self.pending = [(first.id, 'otherwise')]
+        self.add('x360_diss', params={'result': 'diss_score', 'tutorial': 0})
+        self.pending += ends
+        self.add('set', variable='diss_passed', params={'expression': f'(diss_score > {DISS_PASS})'})
+        ends = self.pending
+        self.pending = [(real.id, 'otherwise')]
+        self.add('word_game', text=DISS_PRACTICE['text'], params={k: v for k, v in DISS_PRACTICE.items() if k != 'text'})
+        self.add('set', variable='diss_passed', params={'expression': f'({WORD_GAME_PASSED})'})
+        self.pending += ends
+        self.block(lua_subset.parse(PRACTICE_END))
+
+    def speed_diss(self):
+        """The battle's speed diss (SPIKE_ROUNDS): the timed rounds until ten hits or three misses, or they run out. A
+        round timed out counts as a miss: its timer picks a wrong answer."""
+        for name in ('flow', 'miss'):
+            self.add('set', variable=name, params={'expression': '0'})
+        ends = []
+        for word, options, answer in SPIKE_ROUNDS:
+            test = self.add('branch', params={'expression':
+                                              f'((flow >= {SPEED_DISS_HITS}) or (miss >= {SPEED_DISS_MISSES}))'})
+            ends.append((test.id, 'next'))
+            self.pending = [(test.id, 'otherwise')]
+            wrong = [i for i in range(len(options)) if i != answer]
+            node = self.add('choice', speaker=SPEED_DISS_TITLE, theme=1, character=self.story.player,
+                            text=SPEED_DISS_PROMPT.format(hits=SPEED_DISS_HITS, misses=SPEED_DISS_MISSES,
+                                                          word=word.capitalize()),
+                            options=[Choice(option.capitalize()) for option in options],
+                            timeout_ms=SPEED_DISS_MS, timeout_option=wrong[0])
+            self.pending = [(node.id, ('option', answer))]
+            self.add('set', variable='flow', params={'expression': '(flow + 1)'})
+            self.play_sound(WHOOSH_SOUND)
+            right = self.pending
+            self.pending = [(node.id, ('option', i)) for i in wrong]
+            self.add('set', variable='miss', params={'expression': '(miss + 1)'})
+            self.play_sound(FAIL_SOUND)
+            self.pending += right
+        self.pending += ends
+
+    def jewel_puzzle(self):
+        """The jewel puzzle where the player has it and its switch is on. Nothing in the story reads its score."""
+        self.add('minigames_available', params={'result': 'real_minigames'})
+        test = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(test.id, 'next')]
+        self.add('x360_puzzle', params={'result': 'puzzle_score'})
+        self.pending += [(test.id, 'otherwise')]
+
     def minigame(self, name):
         """Dating Beth's slot machine and leash power bar, as SHS word games (SLOT_MACHINE, BUTTON_SMASH), whose
-        score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS, the leash won (1) at
-        BUTTON_SMASH_WIN or better."""
-        if name == 'gameSHS.RunSlotMachineMinigame':
-            game, levels, below = SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0
-        else:
-            game, levels, below = BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0
+        score sets the script's choice: the slot machine's points by SLOT_MACHINE_LEVELS (the real one's bulbs too,
+        where the player has it and its switch is on), the leash won (1) at BUTTON_SMASH_WIN or better (the real one
+        sets it for itself)."""
+        slot = name == 'gameSHS.RunSlotMachineMinigame'
+        game, levels, below = ((SLOT_MACHINE, SLOT_MACHINE_LEVELS, 0) if slot
+                               else (BUTTON_SMASH, ((BUTTON_SMASH_WIN, 1),), 0))
+        self.add('minigames_available', params={'result': 'real_minigames'})
+        test = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(test.id, 'next')]
+        self.add('x360_slot' if slot else 'x360_leash', params={'result': game['result'] if slot else 'choice'})
+        real = self.pending
+        self.pending = [(test.id, 'otherwise')]
         self.add('word_game', params=dict(game))
-        ends = []
+        if slot:
+            self.pending += real
+            real = []
+        ends = real
         for least, points in levels:            # the first level the score reaches
             test = self.add('branch', params={'expression': f"({game['result']} >= {least})"})
             self.pending = [(test.id, 'next')]
@@ -672,7 +1015,20 @@ class Builder:
         self.add('set', variable='choice', params={'expression': str(below)})
         self.pending += ends
 
+    def dialogue_closed(self):
+        """CLOSE_SOUND, once a dialogue that said something closes. A notice after it still goes ahead of the line."""
+        if not self.spoke or CLOSE_SOUND[0] not in self.proto.files:
+            self.spoke = False
+            return
+        self.spoke = False
+        after_line = self.pending == self.line_exit
+        self.sounds_used.add(CLOSE_SOUND)
+        self.add('sound', params={'resource': CLOSE_SOUND[1]})
+        if after_line:
+            self.line_exit = self.pending
+
     def line(self, who, key):
+        self.spoke = True
         raw = self.proto.text(key)
         colour = re.match(r'&:(\d+ \d+ \d+);', raw)
         if not who and colour and colour.group(1) in self.story.voices:
@@ -743,6 +1099,13 @@ class Builder:
         if self.hub is not None:
             self.link(self.hub)
             return
+        if self.story.opening:
+            self.add('cutscene_available', params={'result': 'real_cutscene'})
+            test = self.add('branch', params={'expression': '(real_cutscene == 1)'})
+            self.pending = [(test.id, 'next')]
+            self.add('transition', params={'selector': SCENE_TRANSITION})       # (runs as its last press ends it)
+            self.add('cutscene', params={'spec': self.story.opening})
+            self.pending += [(test.id, 'otherwise')]
         labels = [story_text(self.proto.labels[key]) for key in OBJECTIVE_LABELS]
         self.add('message', text='\n'.join(f'- {label}' for label in labels), params={'title': 'Objectives',
                                                                                     'flag': 0})
@@ -773,14 +1136,36 @@ class Builder:
         if name in self.event_starts:
             self.link(self.event_starts[name])
             return
-        location, script = self.proto.event(name)
+        location, script = self.proto.event(name, self.story.script_edits.get(name, ()))
         if location not in self.story.locations:
             raise TranslateError(f'{name}: location {location!r} has no background')
         self.location = location
-        node = self.scene_background(location) or self.add(
+        node = self.scene_background(self.story.event_scenes.get(name, location)) or self.add(
             'background', asset=self.backgrounds[self.story.locations[location]], params={'variant': 0})
         self.event_starts[name] = node.id
+        if location in self.story.level_music:
+            self.play_mix(self.story.level_music[location])
+        if self.story.event_music.get(name) == '':
+            self.add('stop_audio', params={'channel': 0})
+        elif name in self.story.event_music:
+            self.play_mix(self.story.event_music[name])
         self.block(script)
+
+
+def at_volume(wav, volume):
+    """A 16-bit PCM WAVE (pcm_wav's) at a SOUNDMASTER Volume; what isn't one as it is, as pcm_wav leaves it."""
+    import io
+    import wave
+    import numpy as np
+    if wav[:4] != b'RIFF':
+        return wav
+    with wave.open(io.BytesIO(wav)) as reader:
+        params, frames = reader.getparams(), reader.readframes(reader.getnframes())
+    out = io.BytesIO()
+    with wave.open(out, 'wb') as writer:
+        writer.setparams(params)
+        writer.writeframes((np.frombuffer(frames, '<i2') * (volume / 127)).astype('<i2').tobytes())
+    return out.getvalue()
 
 
 def even_level(intro, loop, window_s=2.0, settle_s=4.0, peak=0.89):
@@ -826,12 +1211,94 @@ def even_level(intro, loop, window_s=2.0, settle_s=4.0, peak=0.89):
     return write(a * shared, a_params), write(b * shared, b_params)
 
 
-def music_assets(files, music):
+def decoded(data, rate, channels):
+    """Audio bytes (anything ffmpeg reads) as floats, (frames, channels)."""
+    import numpy as np
+    pcm = _ffmpeg(['-i', 'pipe:0', '-f', 's16le', '-acodec', 'pcm_s16le', '-ar', str(rate), '-ac', str(channels), 'pipe:1'], data)
+    return (np.frombuffer(pcm, '<i2').astype(np.float64) / 32768).reshape(-1, channels)
+
+
+def _ffmpeg(arguments, data):
+    import shutil
+    import subprocess
+    ffmpeg = shutil.which('ffmpeg')
+    if ffmpeg is None:
+        raise TranslateError('the X360 stories\' mixed music needs ffmpeg on PATH')
+    return subprocess.run([ffmpeg, '-v', 'error', *arguments], input=data, capture_output=True, check=True).stdout
+
+
+_mix_cache = {}
+
+
+def mix_track(files, key):
+    """MIXES[key] as an MP3: its layers at their Volumes, the ambience repeating under the music, all brought up by what
+    puts the music alone at MIX_RMS or MIX_PEAK, whichever comes first (at their literal Volumes `freedom` was far under
+    the player's other music). The same files always give the same bytes (the stories share them in the addon)."""
+    import numpy as np
+
+    def layered(layers):
+        music = None
+        for path, volume in layers:
+            samples = decoded(files[path], MIX_RATE, 2) * (volume / 127)
+            if music is None:
+                music = samples
+            else:
+                music = music + np.resize(samples, music.shape)     # (repeats whole frames: both have two channels)
+        return music
+    if key not in _mix_cache:
+        layers = (MIXES.get(key) or ADDON_MIXES[key])[1]
+        music = layered(layers[:1])
+        gain = min(MIX_PEAK / max(np.abs(music).max(), 1e-9), MIX_RMS / max(np.sqrt((music ** 2).mean()), 1e-9))
+        pcm = (limited(layered(layers) * gain) * 32767).astype('<i2').tobytes()
+        _mix_cache[key] = _ffmpeg(['-f', 's16le', '-ar', str(MIX_RATE), '-ac', '2', '-i', 'pipe:0', '-f', 'mp3',
+                                   '-acodec', 'libmp3lame', '-b:a', MIX_BITRATE, '-write_xing', '0',
+                                   '-id3v2_version', '0', 'pipe:1'], pcm)
+    return _mix_cache[key]
+
+
+def limited(samples):
+    """Peaks over MIX_KNEE rounded off below MIX_PEAK; everything under it untouched (a dog's bark over the music)."""
+    import numpy as np
+    over = np.abs(samples) > MIX_KNEE
+    room = MIX_PEAK - MIX_KNEE
+    out = samples.copy()
+    out[over] = np.sign(samples[over]) * (MIX_KNEE + room * np.tanh((np.abs(samples[over]) - MIX_KNEE) / room))
+    return out
+
+
+def with_ambience(intro, loop, ambience, level):
+    """An evened intro and loop (WAV bytes) with an ambience repeating under both, running on from the intro into the
+    loop, its loudness `level` times the loop's. The music keeps its level; the sum's peaks are rounded off (limited)."""
+    import io
+    import wave
+    import numpy as np
+
+    def read(data):
+        with wave.open(io.BytesIO(data)) as clip:
+            params = clip.getparams()
+            samples = np.frombuffer(clip.readframes(params.nframes), '<i2').astype(np.float64) / 32768
+        return samples.reshape(-1, params.nchannels), params
+
+    def write(samples, params):
+        out = io.BytesIO()
+        with wave.open(out, 'wb') as clip:
+            clip.setparams(params)
+            clip.writeframes((np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes())
+        return out.getvalue()
+    a, a_params = read(intro)
+    b, b_params = read(loop)
+    layer = decoded(ambience, a_params.framerate, a_params.nchannels)
+    layer = layer * level * np.sqrt((b ** 2).mean()) / max(np.sqrt((layer ** 2).mean()), 1e-9)
+    over = np.resize(layer, (len(a) + len(b), a_params.nchannels))
+    return write(limited(a + over[:len(a)]), a_params), write(limited(b + over[len(a):]), b_params)
+
+
+def music_assets(files, music, ambience=None):
     """Assets for the prototype's own music (cue -> bytes), each cue mapped in `music` to its resource. A cue with a
     `<cue>_loop` file is an intro the runtime runs into that loop without a gap (MUSIC_INTRO into MUSIC_LOOP, shs
     profile TRANSLATED_MUSIC_LOOPS): only the intro is started, and the prototype's later switch to the loop cue is
-    left to the runtime (the returned `chained` cues). A WAV pair is brought to one level first (even_level). Any other
-    cue takes the next ID from MUSIC_OTHER."""
+    left to the runtime (the returned `chained` cues). A WAV pair is brought to one level first (even_level), and
+    takes `ambience` ((bytes, volume)) under it. Any other cue takes the next ID from MUSIC_OTHER."""
     assets, chained, other = [], set(), MUSIC_OTHER
     for cue, data in sorted(files.items()):
         if cue.endswith('_loop') and cue[:-5] in files:
@@ -842,6 +1309,8 @@ def music_assets(files, music):
             loop = files[cue + '_loop']
             if data[:4] == b'RIFF' and loop[:4] == b'RIFF':
                 data, loop = even_level(data, loop)            # the WAVs, at one level
+                if ambience is not None:
+                    data, loop = with_ambience(data, loop, *ambience)
             assets += [Asset(MUSIC_INTRO, f'music {cue}', data), Asset(MUSIC_LOOP, f'music {cue}_loop', loop)]
             music[cue] = MUSIC_INTRO
             chained.add(cue + '_loop')
@@ -853,8 +1322,8 @@ def music_assets(files, music):
 
 def rendered_portraits(folder, story):
     """cast id -> its five portraits from a folder of x360_portrait.py renders (<id>_<emotion>.png, SHS HD-sized; or
-    the catalogue's layout, <id>/<id>_<emotion>.png), in SHS's slot order (RENDERED_EMOTIONS); cast members without
-    all five are left out."""
+    the catalogue's layout, <id>/<id>_<emotion>.png), in SHS's slot order (RENDERED_EMOTIONS). A placeholder (Mom Ryan,
+    Spike...) has only its neutral, in all five slots; other cast members without all five are left out."""
     from PIL import Image
     folder, out = Path(folder), {}
     for cast in story.cast:
@@ -864,20 +1333,36 @@ def rendered_portraits(folder, story):
             if all(p.exists() for p in paths):
                 out[cast.id] = [Image.open(p).convert('RGBA') for p in paths]
                 break
+            if story.event_scenes and paths[0].exists():
+                out[cast.id] = [Image.open(paths[0]).convert('RGBA')] * len(paths)
+                break
+    return out
+
+
+def ms3_portraits(folder):
+    """{resource ID: bytes} of the MS3 Characters set (MS3_LOOKS), from the catalogue's layout."""
+    from PIL import Image
+    out = {}
+    for render, look in MS3_LOOKS.items():
+        for i, emotion in enumerate(RENDERED_EMOTIONS):
+            picture = Image.open(Path(folder) / look / f'{look}_{emotion}.png').convert('RGBA')
+            out[render_base(render) + MS3_PORTRAIT_OFFSET + i] = nr_art.png(picture)
     return out
 
 
 def scene_backgrounds(folder, story):
     """The prototype's own backgrounds for a story from a folder of captures (Additional Resources/x360-backgrounds:
     960 x 1440 JPEGs or PNGs cut by x360_bgshots.py): <location>.jpg for a location (and its hub), and
-    <location>_<who>.jpg for a talk with <who> there. Those the story has no use for are left out."""
+    <location>_<who>.jpg for a talk with <who> there; or for a story with event_scenes, just those. Those the story has
+    no use for are left out."""
     from PIL import Image
     out = {}
     for path in sorted(Path(folder).iterdir()):
         if path.suffix.lower() not in ('.jpg', '.png'):
             continue
         location = next((loc for loc in story.locations if path.stem == loc or path.stem.startswith(loc + '_')), None)
-        if location is not None:
+        if story.title_card and path.stem == story.title_card[0] or (
+                path.stem in story.event_scenes.values() if story.event_scenes else location is not None):
             out[path.stem] = Image.open(path).convert('RGB')
     return out
 
@@ -894,18 +1379,26 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     rendered = rendered or {}
     backgrounds = backgrounds or {}
     music = dict(music or {})
-    assets, chained = music_assets(music_files or {}, music)
+    proto.strings.update(story.extra_text)
+    under = (proto.files[PAIR_AMBIENCE[0]], PAIR_AMBIENCE[1]) if story.pair_ambience and PAIR_AMBIENCE[0] in proto.files \
+        else None
+    assets, chained = music_assets(music_files if story.own_music and music_files else {}, music, under)
     builder = Builder(proto, story, music, chained)
-    project = Project(title=story.title, game='shs', pack_id=PACK_ID, episode_id=story.episode_id, nodes=[])
+    project = Project(title=story.title + TITLE_SUFFIX, game='shs', pack_id=PACK_ID, episode_id=story.episode_id,
+                      episode_version=STORY_VERSION, nodes=[])
     project.assets.extend(assets)
     # New Rules backgrounds only for the locations the prototype's own don't cover
-    uncovered = sorted({number for name, number in story.locations.items() if name not in backgrounds})
+    scenes_covered = story.event_scenes and all(scene in backgrounds for scene in story.event_scenes.values())
+    uncovered = sorted({number for name, number in story.locations.items() if name not in backgrounds
+                        and not scenes_covered})
     for k, location in enumerate(uncovered):
         asset_id = BACKGROUND_BASE + 5 * k
         project.assets.append(Asset(asset_id, f'location {location}', nr_art.jpeg(art.background(location, 0))))
         builder.backgrounds[location] = asset_id
-    for k, (key, picture) in enumerate(sorted(backgrounds.items())):
-        asset_id = SCENE_BACKGROUND_BASE + k
+    for key, picture in sorted(backgrounds.items()):
+        if key not in SCENES:
+            raise TranslateError(f'background {key!r} has no ID: add it to SCENES')
+        asset_id = SCENE_BACKGROUND_BASE + SCENES.index(key)
         project.assets.append(Asset(asset_id, f'scene {key}', nr_art.jpeg(picture)))
         builder.scene_backgrounds[key] = asset_id
     backdrop = art.backdrop()
@@ -923,7 +1416,10 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
     for k, cast in enumerate(story.cast):
         if cast.id in rendered:                 # before the SHS bank too: Beth's renders replace SHS's own Beth
             from PIL import Image
-            base = PORTRAIT_BASE + 5 * k
+            render = story.renders.get(cast.id, cast.id)
+            if render not in RENDERS:
+                raise TranslateError(f'render {render!r} has no ID: add it to RENDERS')
+            base = render_base(render)
             for i, picture in enumerate(rendered[cast.id]):
                 sd = picture.resize((picture.width // 2, picture.height // 2), Image.LANCZOS)
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', nr_art.png(sd)))
@@ -934,7 +1430,7 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
             for i in range(5):
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', None))
         else:
-            base = PORTRAIT_BASE + 5 * k
+            base = LOOK_PORTRAIT_BASE + 5 * k
             slots = looks[cast.look]['slots']
             for i, picture in enumerate(art.portrait_bank(list(slots), EXPRESSIONS)):
                 project.assets.append(Asset(base + i, f'{cast.name} {i}', nr_art.png(picture)))
@@ -944,20 +1440,100 @@ def translate(proto: Prototype, story: Story, art: nr_art.Art, hires_art=None, l
                     project.assets.append(Asset(base + HIRES_PORTRAIT_OFFSET + i, f'{cast.name} HD {i}',
                                                 nr_art.png(picture)))
         project.characters.append(Character(cast.id, cast.name, base, cast.theme, [base + i for i in range(5)]))
+    if story.opening:
+        project.assets.append(Asset(story.opening, 'Opening', None, ADDON_ID))
+        project.addons = [dict(id=ADDON_ID, revision=story.addon_revision)]
     builder.add('speakers', params={'player': story.player, 'narrator': ''})
     # No SHS relationship badges (the owner's call, 2026-10-26): the X360 shows none, and its own emoticons take the
     # portrait's corner. Property 629 = 1 hides a character's badge; the relationship (407) is left as it is.
     for cast in story.cast:
         builder.add('relationship', character=cast.id, params={'operation': 'add', 'value': 0, 'romantic': False,
                                                                 'hide': True, 'result': f'badge_{cast.id}'})
+    if story.title_card and story.title_card[0] in builder.scene_backgrounds:
+        scene, subtitle = story.title_card
+        builder.add('title', text=story.title, params={'subtitle': subtitle, 'background': builder.scene_backgrounds[scene],
+                                                       'flag': 0})
     for name in story.events:
         builder.run_event(name)
+        if name == story.puzzle_after:
+            builder.jewel_puzzle()
     if builder.pending:
         builder.add('end')
     if any(n.kind == 'notice' for n in builder.nodes) and builder.objective_sound is not None:
         project.assets.append(Asset(OBJECTIVE_SOUND[1], 'objective sound', pcm_wav(proto.files[OBJECTIVE_SOUND[0]])))
+    for key in sorted(builder.mixes_used):
+        project.assets.append(Asset(MIXES[key][0], f'music {key}', mix_track(proto.files, key)))
+    for path, resource in sorted(builder.sounds_used):
+        data = pcm_wav(proto.files[path])
+        if path in SOUND_VOLUMES:
+            data = at_volume(data, SOUND_VOLUMES[path])
+        project.assets.append(Asset(resource, f'sound {Path(path).stem}', data))
     project.nodes = builder.nodes
     project.start = builder.nodes[0].id
     for i, node in enumerate(project.nodes):
         node.x, node.y = 40 + 320 * (i % 12), 80 + 140 * (i // 12)
     return project
+
+
+# -- the X360 addon -------------------------------------------------------------------------------------------------
+def addon_holds(resource_id):
+    """Whether a story's resource is one the addon carries: the scene backgrounds, the renders (both sizes), the
+    prototype's music, the emoticons and their sounds, the objective sound and the frame backdrop (26900-26999), and
+    the arena skin (x360_arena_art.SKIN_IDS). New Rules' location strips and looks stay in the story that uses them."""
+    import x360_arena_art
+    renders = {render_base(render) + i for render in RENDERS for i in range(5)}
+    return (SCENE_BACKGROUND_BASE <= resource_id < SCENE_BACKGROUND_BASE + len(SCENES) or resource_id in renders
+            or resource_id - HIRES_PORTRAIT_OFFSET in renders or 26900 <= resource_id <= 26999
+            or resource_id in x360_arena_art.SKIN_IDS)
+
+
+def build_addon(stories, skin=None):
+    """The X360 addon's `.exp` bytes from the stories' exported `.exp` bytes (every story, built with the renders,
+    backgrounds and music they are to share): each resource addon_holds, which every story holding it must hold
+    alike; with `skin` (x360_arena_art.build_skin's {id: bytes}) the arena's X360 skin too."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+    from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+    resources = {}
+    for data in stories:
+        archive = ExpArchive(data)
+        for resource_id in sorted(archive.entries):
+            if not addon_holds(resource_id):
+                continue
+            payload = archive.read(resource_id)
+            if resources.setdefault(resource_id, payload) != payload:
+                raise TranslateError(f'resource {resource_id} differs between the stories')
+    for resource_id, payload in (skin or {}).items():
+        if resources.setdefault(resource_id, payload) != payload:
+            raise TranslateError(f'skin resource {resource_id} is already a story resource')
+    resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
+    resources[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
+    return encode_exp(resources)
+
+
+def strip_addon(data, addon, revision=STORY_ADDON_REVISION):
+    """A story's `.exp` bytes without what the addon (its ExpArchive) holds, declaring the addon instead (resource 4).
+    Every resource left out must be the addon's own byte for byte: a story built from other art needs the addon
+    rebuilt with it. Returns (bytes, the IDs left out)."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, requires_bytes
+    from exp_runtime.exp import ExpArchive, encode_exp
+    archive = ExpArchive(data)
+    resources, left_out = {}, []
+    # (A story with an opening already declares the addon its spec is in.)
+    for resource_id in sorted(archive.entries):
+        payload = archive.read(resource_id)
+        if resource_id in addon.entries and resource_id >= 26000:
+            if addon.read(resource_id) != payload:
+                raise TranslateError(f'resource {resource_id} differs from the addon\'s: rebuild the addon')
+            left_out.append(resource_id)
+            continue
+        resources[resource_id] = payload
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, revision)])
+    return encode_exp(resources), left_out
+
+
+def use_addon(project, left_out, revision=STORY_ADDON_REVISION):
+    """The project takes `left_out` (strip_addon's) from the addon, so that its `.expproj` and what compiles from it say so."""
+    project.addons = [dict(id=ADDON_ID, revision=revision)]
+    for asset in project.assets:
+        if asset.id in left_out:
+            asset.data, asset.addon = None, ADDON_ID

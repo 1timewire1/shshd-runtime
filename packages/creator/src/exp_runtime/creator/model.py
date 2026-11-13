@@ -23,7 +23,7 @@ KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 
          'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
          'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
          'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
-         'open_url', 'survey', 'end', 'native')
+         'open_url', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
@@ -105,6 +105,8 @@ class Asset:
     # None is an exact reference into the selected game's original base bank.
     # Embedded assets are owned by this document, never by an external path.
     data: bytes | None = None
+    # shshd-runtime: with no data, the addon (Project.addons) that holds this ID (creator/addons.py).
+    addon: str = ''
 
 
 @dataclass
@@ -135,6 +137,14 @@ class Project:
     native: dict = field(default_factory=dict)
     # shshd-runtime: the image of each emoticon (EMOTICONS), None for one the project doesn't use (version 3).
     emoticons: list[int | None] = field(default_factory=lambda: [None] * len(EMOTICONS))
+    # shshd-runtime: the addons the export declares, {id, revision} each (version 3; docs/ADDONS.md). One may be the primary
+    # ({..., primary: true, edition}: its settings come with it, and it's listed first; owner, 2026-11-09), the others extras.
+    addons: list[dict] = field(default_factory=list)
+    # shshd-runtime: the translated games' settings that need no add-on, each on or off (FREE_SETTINGS; owner, 2026-11-09).
+    options: dict = field(default_factory=dict)
+    # shshd-runtime: the episode's version (episode_version.py), 1-65535, or None for none: a newer export replaces an
+    # older copy when imported (owner, 2026-11-06).
+    episode_version: int | None = None
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -145,6 +155,21 @@ class Project:
             raise ProjectError('Choose an MP3 or WAV file')
         if len(data) > MAX_ASSET_BYTES:
             raise ProjectError('Audio exceeds the EXP resource size limit')
+        used = {asset.id for asset in self.assets}
+        resource = next((i for i in range(26000, 32768) if i not in used), None)
+        if resource is None:
+            raise ProjectError('No free episode resource IDs remain')
+        asset = Asset(resource, name, data)
+        self.assets.append(asset)
+        return asset
+
+    def add_cutscene(self, name: str, data: bytes) -> Asset:
+        """Embed a storyboard cutscene's spec (exp_runtime.cutscene_spec) at the next free episode ID."""
+        from exp_runtime.cutscene_spec import read_spec
+        try:
+            read_spec(data)
+        except ValueError as error:
+            raise ProjectError(str(error)) from error
         used = {asset.id for asset in self.assets}
         resource = next((i for i in range(26000, 32768) if i not in used), None)
         if resource is None:
@@ -184,7 +209,48 @@ def _string(value, label, limit=60000):
         raise ProjectError(f'Invalid Unicode in {label}') from error
 
 
+# The translated games' settings that need no add-on (presentation.py), which a project turns on one by one: name -> label.
+FREE_SETTINGS = {'word_forms': '"a(n)" and "word(s)" picked by the word or number (BREW)',
+                 'date_first': 'Title cards show the date first (BREW)',
+                 'three_word_games': 'Word games of three words (BREW)',
+                 'big_pickers': 'Portrait pickers of up to ten photos (BREW)'}
+# A primary add-on's editions, where it serves more than one game: BREW's '07 and '08 stories have different switches.
+ADDON_EDITIONS = {'shsbrew': ('08', '07')}
+
+
+def primary_addon(project):
+    """The project's primary add-on entry, or None."""
+    return next((entry for entry in project.addons if entry.get('primary')), None)
+
+
+def _validate_addons(project):
+    from exp_runtime.addons import requires_bytes
+    if not isinstance(project.addons, list):
+        raise ProjectError('Invalid add-on list')
+    if not isinstance(project.options, dict) or any(key not in FREE_SETTINGS or type(value) is not bool
+                                                    for key, value in project.options.items()):
+        raise ProjectError('Invalid episode options')
+    if not project.addons:
+        return
+    primaries = [entry for entry in project.addons if entry.get('primary')]
+    if len(primaries) > 1:
+        raise ProjectError('Only one add-on can be the primary')
+    for entry in project.addons:
+        if set(entry) - {'id', 'revision', 'primary', 'edition'}:
+            raise ProjectError(f'Invalid add-on entry: {sorted(entry)}')
+        editions = ADDON_EDITIONS.get(entry.get('id'), ('',))
+        if entry.get('primary') and entry.get('edition', '') not in editions:
+            raise ProjectError(f'The {entry.get("id")} add-on\'s edition must be one of {", ".join(repr(e) for e in editions)}')
+    if primaries and project.addons[0] is not primaries[0]:
+        raise ProjectError('The primary add-on must be listed first')
+    try:
+        requires_bytes([(entry['id'], entry['revision']) for entry in project.addons])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ProjectError(f'Invalid add-on: {error}') from error
+
+
 def validate_structure(project: Project):
+    _validate_addons(project)
     """Check data types and sizes, while allowing unfinished stories to save."""
     _string(project.title, 'episode title', 1000)
     _string(project.start, 'start node ID', 100)
@@ -193,6 +259,8 @@ def validate_structure(project: Project):
         raise ProjectError('Choose the SHS or CoD game profile')
     _integer(project.pack_id, 0, 32767, 'Pack ID')
     _integer(project.episode_id, 1, 32767, 'Episode ID')
+    if project.episode_version is not None:
+        _integer(project.episode_version, 1, 65535, 'Episode version')
     if not isinstance(project.nodes, list) or not 1 <= len(project.nodes) <= 20000:
         raise ProjectError('A project needs between 1 and 20000 nodes')
     ids = set()
@@ -279,7 +347,12 @@ def validate_structure(project: Project):
         if asset.id in ids:
             raise ProjectError(f'Duplicate asset ID: {asset.id}')
         ids.add(asset.id)
-        if asset.data is None:
+        if asset.addon:
+            if asset.data is not None or asset.id < 26000:
+                raise ProjectError(f'{asset.name}: an add-on\'s asset holds no data of its own and an episode ID')
+            if asset.addon not in {entry['id'] for entry in project.addons}:
+                raise ProjectError(f'{asset.name}: the project doesn\'t declare the {asset.addon} add-on')
+        elif asset.data is None:
             if asset.id >= 25000:
                 raise ProjectError('Only base-bank images may be external references')
         else:
@@ -376,6 +449,12 @@ def project_from_record(data):
                     option['condition'] = ''
         if version < 3:
             data['emoticons'] = [None] * len(EMOTICONS)
+        # shshd-runtime: added within version 3, which hasn't been in a release: a project saved before them has neither.
+        data.setdefault('addons', [])
+        data.setdefault('options', {})
+        data.setdefault('episode_version', None)
+        for asset in data['assets']:
+            asset.setdefault('addon', '')
         nodes = []
         for record in data['nodes']:
             node = _construct(Node, record)

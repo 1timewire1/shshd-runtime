@@ -121,7 +121,7 @@ class CreatorPresentationTests(unittest.TestCase):
         details = compile_details(project)
         jo = details.characters['jo']
         archive = ExpArchive(details.data)
-        self.assertEqual(presentation_record(archive), dict(duet=DUET_KEYS))
+        self.assertEqual(presentation_record(archive), dict(duet=DUET_KEYS, creator=True))
         s = session(details.data)
         action = s.advance()
         self.assertEqual(action.details['text'], 'Both of us!')
@@ -140,7 +140,7 @@ class CreatorPresentationTests(unittest.TestCase):
         project = line(cast(), Node('a', speaker='TV', text='Breaking news.', params=dict(bubble=3)),
                        Node('b', speaker='Radio', text='Static.'))
         data = compile_project(project)
-        self.assertEqual(presentation_record(ExpArchive(data)), dict(narration_theme=BUBBLE_KEY))
+        self.assertEqual(presentation_record(ExpArchive(data)), dict(narration_theme=BUBBLE_KEY, creator=True))
         s = session(data)
         self.assertEqual(s.advance().details['presentation_mode'], 3)
         self.assertEqual(s.narration_theme(), 3)
@@ -154,7 +154,7 @@ class CreatorPresentationTests(unittest.TestCase):
         line(project, Node('a', character='jo', text='Aww.', params=dict(emoticon=4)), Node('b', character='jo', text='Ok.'))
         data = compile_project(project)
         self.assertEqual(presentation_record(ExpArchive(data)),
-                         dict(portrait_effects=(EMOTICON_KEY, (None, None, None, heart.id, None, None))))
+                         dict(portrait_effects=(EMOTICON_KEY, (None, None, None, heart.id, None, None)), creator=True))
         s = session(data)
         s.advance()
         self.assertEqual(s.portrait_effect(), (4, heart.id))
@@ -166,14 +166,15 @@ class CreatorPresentationTests(unittest.TestCase):
         intro, loop = project.add_audio('intro.mp3', AUDIO), project.add_audio('loop.mp3', AUDIO + b'\1')
         line(project, Node('m', 'music', params=dict(resource=intro.id, then_loop=loop.id)), Node('a', text='Hi'))
         data = compile_project(project)
-        self.assertEqual(presentation_record(ExpArchive(data)), dict(music_loops={intro.id: loop.id}))
+        self.assertEqual(presentation_record(ExpArchive(data)), dict(music_loops={intro.id: loop.id}, creator=True))
         s = session(data)
         s.advance()
         self.assertEqual(s.engine.music_id, intro.id)
 
-    def test_an_episode_without_the_options_has_no_record(self):
+    def test_an_episode_without_the_options_is_only_marked_as_the_creators(self):
+        # Every episode made in the Creator keeps the Creator's own names table (owner, 2026-11-09).
         archive = ExpArchive(compile_project(line(cast(), Node('a', character='alex', text='Hi'))))
-        self.assertNotIn(RESOURCE, archive.entries)
+        self.assertEqual(presentation_record(archive), dict(creator=True))
 
     def test_each_option_is_checked(self):
         def fails(project, message):

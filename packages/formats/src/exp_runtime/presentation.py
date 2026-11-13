@@ -10,6 +10,21 @@ Each member names what the runtime reads, all optional:
 - `portrait_effects`: {key, images}: the global number holding a line's emoticon (emoticon_effects, 1-6) and the
   episode image of each of the six effects, null for one the episode lacks (Session.portrait_effect).
 - `music_loops`: {intro: loop}: music resources that are an intro running into a loop (music_stream.MusicStream.chain).
+
+Members for episodes made in the Creator (owner, 2026-11-09; CREATOR_ADDONS_PLAN.md):
+
+- `creator`: true. The episode keeps the Creator's own names table (player.json `name_sets`), apart from the smartphone
+  stories' and every translation's.
+- `addons`: {primary, edition}: the add-on whose settings the episode takes, where they need its pictures and sounds
+  (frame backdrop, relationship icons, answer-feedback music, its switches); `edition` picks between an add-on's games
+  ('07 or '08 for the BREW add-on, '' for the others). The profile maps it to a translated pack (ADDON_FEATURE_PACKS).
+- Settings that need no add-on, each true to use: `word_forms` ("a(n)" and "word(s)" in formatted lines), `date_first`
+  (title and date cards show the date as the title), `three_word_games` (a word game of three words, one or two good)
+  and `big_pickers` (a portrait picker of up to ten photos). `minigames`: the episode plays translated mini-games, so
+  the player offers the "Use Translated Mini-Games" switch for it.
+- `aliases`: {episode resource: [add-on, its resource]}: a picture or sound taken from an extra add-on (not the primary),
+  under a number of the episode's own. The add-ons reuse numbers, and an episode reads a number from the first add-on it
+  lists that has it, which is the primary; an alias always reaches the add-on it names.
 """
 import json
 
@@ -20,7 +35,14 @@ MAGIC = b'SHSHD-PRESENTATION\0'
 FORMAT = 'shshd-presentation'
 VERSION = 1
 EFFECTS = 6
-MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops')
+MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creator', 'addons', 'word_forms', 'date_first',
+           'three_word_games', 'big_pickers', 'minigames', 'aliases')
+# The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
+# 31500, SHS '11 31600): their episodes take their game's settings from the profile's tables and declare none of the members
+# above for an episode made in the Creator.
+TRANSLATION_PACKS = range(31000, 31700)
+FLAGS = ('creator', 'word_forms', 'date_first', 'three_word_games', 'big_pickers', 'minigames')
+EDITIONS = ('', '07', '08')
 
 
 def _number(value, what):
@@ -61,6 +83,26 @@ def normalize(record):
             raise ValueError('music_loops must be {intro: loop}')
         result['music_loops'] = {_number(int(intro), 'an intro'): _number(loop, 'a loop')
                                  for intro, loop in loops.items()}
+    for flag in FLAGS:
+        if flag in record:
+            if record[flag] is not True:
+                raise ValueError(f'{flag} must be true')
+            result[flag] = True
+    if 'aliases' in record:
+        aliases = record['aliases']
+        if not isinstance(aliases, dict):
+            raise ValueError('aliases must be {episode resource: [add-on, resource]}')
+        result['aliases'] = {}
+        for resource, target in aliases.items():
+            if (not isinstance(target, list) or len(target) != 2 or not isinstance(target[0], str) or not target[0]):
+                raise ValueError('an alias must be [add-on, resource]')
+            result['aliases'][_number(int(resource), 'an aliased resource')] = (target[0], _number(target[1], 'a resource'))
+    if 'addons' in record:
+        addons = record['addons']
+        if (not isinstance(addons, dict) or set(addons) != {'primary', 'edition'} or not isinstance(addons['primary'], str)
+                or not addons['primary'] or addons['edition'] not in EDITIONS):
+            raise ValueError("addons must be {primary: an add-on's ID, edition: '', '07' or '08'}")
+        result['addons'] = (addons['primary'], addons['edition'])
     return result
 
 
@@ -75,8 +117,12 @@ def presentation_record(archive):
     """The archive's normalized record, None without one. Raises ContentError for a malformed one."""
     if RESOURCE not in archive.entries:
         return None
-    data = archive.read(RESOURCE)
-    if not data.startswith(MAGIC):
+    return presentation_from_bytes(archive.read(RESOURCE))
+
+
+def presentation_from_bytes(data):
+    """Resource 3's normalized record from its bytes, None if they aren't one. Raises ContentError for a malformed one."""
+    if data is None or not data.startswith(MAGIC):
         return None
     try:
         return normalize(json.loads(data[len(MAGIC):]))

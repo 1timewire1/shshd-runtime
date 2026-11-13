@@ -14,6 +14,7 @@ LETTER_HZ = 30
 PORTRAIT_MS = 300
 NAME_FADE_MS = 300
 CONTINUE_MS = 250
+REST_AGE_MS = 3200      # a changed expression's effects run on age_ms, and end by then (portrait_effects.py)
 BOX_TRAVEL_MS = 120
 BOX_OPEN_MS = 200
 BOX_RESIZE_MS = 250
@@ -141,6 +142,15 @@ class DialogueAnimation:
     expression_decorations: ExpressionDecorations = field(default_factory=ExpressionDecorations)
     # When the line's expression is requested, in presentation time: EXPRESSION_MS, or IOS_EXPRESSION_MS (start()).
     expression_ms: int = EXPRESSION_MS
+
+    @property
+    def at_rest(self):
+        """Whether nothing on this line can still change on screen by itself, until something happens to it."""
+        return (self.complete and self.continue_ms >= CONTINUE_MS and self.elapsed_ms >= self.duration_ms
+                and (self.initial_expression == self.expression
+                     or (self.presentation_ms >= self.expression_end_ms and self.age_ms >= REST_AGE_MS))
+                and (self.expression_transition is None or self.expression_transition.elapsed_ms >= EXPRESSION_END_MS - EXPRESSION_MS)
+                and (self.relationship is None or self.relationship.elapsed_ms >= self.relationship.duration_ms))
 
     @property
     def expression_end_ms(self):

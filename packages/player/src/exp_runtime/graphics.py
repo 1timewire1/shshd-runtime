@@ -10,6 +10,7 @@ _vibrator = None
 # UIKit's (the iOS host's UISwitches and UISliders): None draws them into the frame (desktop, Android); a list, which
 # the host empties before each frame, receives where each is this frame (desktop_pause_hd.place_controls) instead.
 native_controls = None
+_gamepads = None        # the desktop's connected controllers (gamepad.py): they rumble as the device's vibrator
 
 
 def set_vibrator(vibrator):
@@ -19,15 +20,42 @@ def set_vibrator(vibrator):
 
 
 def supports_vibration():
-    return _vibrator is not None or bool(getattr(_backend, 'vibration_available', False))
+    return (_vibrator is not None or bool(getattr(_backend, 'vibration_available', False))
+            or bool(_gamepads and _gamepads.vibration_available))
 
 
 def vibrate(duration_ms=1000):
-    """The device vibrates (service 82 asks Android's vibrator for 1000 ms; the iPhone plays its system alert)."""
+    """The device vibrates (service 82 asks Android's vibrator for 1000 ms; the iPhone plays its system alert); on the
+    desktop, the connected controllers rumble."""
     if _vibrator is not None:
         _vibrator(duration_ms)
-    elif supports_vibration():
+    elif getattr(_backend, 'vibration_available', False):
         _backend.vibrate()
+    elif _gamepads and _gamepads.vibration_available:
+        _gamepads.vibrate()
+
+
+def gamepads():
+    """The desktop's controllers (gamepad.Gamepads) while its run loop has them, else None."""
+    return _gamepads
+
+
+def controller_connected():
+    return bool(_gamepads and _gamepads.connected)
+
+
+def vibration_source():
+    """What General's Vibration would vibrate: 'device' (a phone's vibrator), 'controller' (only a connected
+    controller: Options shows the switch on its Controller page), or None."""
+    if _vibrator is not None or getattr(_backend, 'vibration_available', False):
+        return 'device'
+    return 'controller' if controller_connected() else None
+
+
+def install_gamepads(gamepads):
+    global _gamepads
+    previous, _gamepads = _gamepads, gamepads
+    return previous
 
 
 class _MenuMusic:
@@ -117,9 +145,14 @@ def faded(surface, alpha):
     per_pixel = get_masks is not None and bool(get_masks()[3])
     if alpha is None and per_pixel:
         return surface              # (set_alpha(None) would also switch off its per-pixel blending)
-    if alpha is None or not per_pixel:
-        # 255 rather than None: pygame-ce's set_alpha(None) keeps the last alpha of a surface faded before.
-        surface.set_alpha(255 if alpha is None else max(0, round(alpha)))
+    if alpha is None:
+        # 255 first: pygame-ce's set_alpha(None) can keep the last alpha of a surface faded before. Then None, as a surface left at
+        # 255 still blends: that took a full frame's blit from 0.1 ms to 10 on a PC and from about 1 to 34 on a phone.
+        surface.set_alpha(255)
+        surface.set_alpha(None)
+        return surface
+    if not per_pixel:
+        surface.set_alpha(max(0, round(alpha)))
         return surface
     result = surface.copy()
     result.fill((255, 255, 255, max(0, round(alpha))), special_flags=__getattr__('BLEND_RGBA_MULT'))
@@ -179,6 +212,12 @@ def install(backend):
     previous, _backend = _backend, backend
     native_controls = None
     return previous
+
+
+def native():
+    """Whether a host's own backend draws (iOS's), not pygame: the HD modules that draw with pygame itself
+    (desktop_app_hd) are then not used."""
+    return _backend is not None and getattr(_backend, '__name__', None) != 'pygame'   # (the fallback below sets pygame)
 
 
 def __getattr__(name):

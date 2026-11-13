@@ -3,6 +3,8 @@ import importlib.util
 from io import BytesIO
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -22,6 +24,91 @@ def silent_wav(seconds, rate=1000):
         clip.setnchannels(1); clip.setsampwidth(2); clip.setframerate(rate)
         clip.writeframes(b'\0\0' * round(seconds * rate))
     return out.getvalue()
+
+
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class CueFileTests(unittest.TestCase):
+    def test_pausing_a_wav_cue_never_hangs_the_player(self):
+        # The owner's hang, 2026-11-01: a stream read through Python holds SDL's audio lock waiting for the interpreter,
+        # and pygame's `music.pause` waits for that lock holding the interpreter. From memory, this hung every run.
+        script = '''
+import os, sys, time
+os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+import pygame
+from exp_runtime.music_stream import MusicStream
+pygame.mixer.init(22050, -16, 2, 1024)
+data = open(sys.argv[1], 'rb').read()
+stream = MusicStream()
+stream.play(1, 1, lambda music_id: (data, 0), 0)
+assert pygame.mixer.music.get_busy()
+for _ in range(60):
+    end = time.monotonic() + 0.02
+    while time.monotonic() < end:
+        sum(i * i for i in range(2000))
+    stream._pause_stream(True)
+    time.sleep(0.002)
+    stream._pause_stream(False)
+stream.reset()
+print('played', flush=True)
+os._exit(0)
+'''
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cue.wav'
+            path.write_bytes(silent_wav(30, 22050))
+            env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p),
+                       TMPDIR=folder, TEMP=folder, TMP=folder)      # its cue files go with this folder
+            try:
+                result = subprocess.run([sys.executable, '-c', script, str(path)], capture_output=True, text=True,
+                                        timeout=30, env=env)
+            except subprocess.TimeoutExpired:
+                self.fail('music.pause hung')
+        self.assertIn('played', result.stdout, result.stderr)
+
+    def test_pygames_stream_takes_a_file_and_a_hosts_mixer_the_bytes(self):
+        from exp_runtime.music_stream import CueFiles, cue_source
+        import exp_runtime.music_stream as module
+        with tempfile.TemporaryDirectory() as folder, patch.object(module, '_cue_files', CueFiles(folder)):
+            source = cue_source(SimpleNamespace(__name__='pygame.mixer_music'), b'RIFFcue')
+            self.assertEqual(Path(source).read_bytes(), b'RIFFcue')
+            self.assertEqual(cue_source(SimpleNamespace(load=None), b'RIFFcue').getvalue(), b'RIFFcue')
+            self.assertEqual(cue_source(Mock(), b'RIFFcue').getvalue(), b'RIFFcue')
+
+    def test_a_cue_without_a_file_still_plays_from_memory(self):
+        from exp_runtime.music_stream import CueFiles, cue_source
+        import exp_runtime.music_stream as module
+        with tempfile.TemporaryDirectory() as folder:
+            files = CueFiles(Path(folder) / 'missing')
+            with patch.object(module, '_cue_files', files):
+                source = cue_source(SimpleNamespace(__name__='pygame.mixer_music'), b'RIFFcue')
+        self.assertEqual(source.getvalue(), b'RIFFcue')
+
+    def test_cue_files_are_shared_kept_for_an_intro_and_its_loop_and_cleared_after(self):
+        from exp_runtime.music_stream import CueFiles
+        with tempfile.TemporaryDirectory() as folder:
+            files = CueFiles(folder)
+            first = files.path(b'first')
+            self.assertEqual(files.path(b'first'), first)
+            second = files.path(b'second')
+            self.assertTrue(Path(first).exists() and Path(second).exists())    # the intro, and its loop
+            third = files.path(b'third')
+            self.assertFalse(Path(first).exists())
+            self.assertEqual(sorted(p.name for p in Path(third).parent.iterdir()),
+                             sorted((Path(second).name, Path(third).name)))
+            self.assertEqual(files.path(b'first'), first)                      # asked again: written again
+            self.assertEqual(Path(first).read_bytes(), b'first')
+
+    def test_a_folder_a_killed_run_left_is_cleared_a_days_later_but_not_a_running_ones(self):
+        from exp_runtime.music_stream import CUE_FOLDER_PREFIX, STALE_CUE_FOLDER_S, CueFiles
+        with tempfile.TemporaryDirectory() as folder:
+            old, new = Path(folder) / (CUE_FOLDER_PREFIX + 'old'), Path(folder) / (CUE_FOLDER_PREFIX + 'new')
+            for path in (old, new):
+                path.mkdir()
+                (path / 'x.cue').write_bytes(b'x')
+            when = old.stat().st_mtime - STALE_CUE_FOLDER_S - 60
+            os.utime(old, (when, when))
+            CueFiles(folder).path(b'cue')
+            self.assertFalse(old.exists())
+            self.assertTrue((new / 'x.cue').exists())
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
@@ -51,6 +138,38 @@ class MusicLoopTests(unittest.TestCase):
             stream.play(8201, 1, lambda music_id: (intro, 0), 0)                   # any other cue: as before
             self.assertEqual(music.play.call_args.kwargs, {'loops': -1, 'start': 0})
             self.assertEqual(music.queue.call_count, 1)
+
+    def test_a_song_asked_for_again_on_repeat_goes_on_and_repeats_where_the_pack_says_so(self):
+        # SHS '11's game song: the line before can have the same song on, playing once. It carries on, then loops.
+        from exp_runtime.music_stream import MusicStream
+        track = silent_wav(2)
+        stream = MusicStream()
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            stream.play(8201, 0, lambda music_id: (track, 0), 0)
+            stream.update(1000, enabled=True, menu_open=False, paused=False)
+            music.play.reset_mock()
+            stream.play(8201, 1, lambda music_id: (track, 0), 1000, takes_loop=True)
+            music.play.assert_not_called()                                         # not started over
+            music.get_busy.return_value = False
+            with self.assertNoLogs(level='WARNING'):
+                stream.update(2500, enabled=True, menu_open=False, paused=False)
+            self.assertEqual(music.play.call_args.kwargs, {'loops': -1, 'start': 0})
+            self.assertTrue(stream.loaded)
+
+    def test_elsewhere_a_song_asked_for_again_keeps_the_flag_it_started_with_as_playmusic_does(self):
+        from exp_runtime.music_stream import MusicStream
+        track = silent_wav(2)
+        stream = MusicStream()
+        with patch('pygame.mixer.music') as music:
+            music.get_busy.return_value = True
+            stream.play(8201, 0, lambda music_id: (track, 0), 0)
+            stream.play(8201, 1, lambda music_id: (track, 0), 1000)
+            music.get_busy.return_value = False
+            music.play.reset_mock()
+            stream.update(2500, enabled=True, menu_open=False, paused=False)
+            music.play.assert_not_called()
+            self.assertFalse(stream.loaded)
 
     def test_a_looping_cue_the_mixer_lets_end_starts_again_and_a_single_one_still_ends(self):
         # Android's SDL_mixer played the word grid's 72 s MP3 (8201, `loops=-1`) once and fell silent (the owner's
@@ -1027,9 +1146,36 @@ class MusicPlaybackTests(unittest.TestCase):
         ui.session.engine.sound_ids = [28202]
         ui.session.engine.sound_serial += 1
         with patch('pygame.mixer.Sound') as sound:
+            sound.return_value.get_length.return_value = 1
             ui._sync_audio()
             r.read_asset.assert_called_once_with(28202)
             sound.return_value.play.assert_called_once_with()
+
+    def test_a_short_sound_is_decoded_once_per_episode_and_only_the_last_few_are_kept(self):
+        ui, r = self.make_ui(music=8222)
+        with patch('pygame.mixer.Sound') as sound:
+            sound.return_value.get_length.return_value = 1
+            ui._play_sounds([28202])
+            ui._play_sounds([28202])
+            self.assertEqual(sound.call_count, 1)
+            self.assertEqual(sound.return_value.play.call_count, 2)
+            for asset in range(ui.SOUNDS_KEPT):         # pushes the oldest out; 28202 was played last before these
+                ui._play_sounds([asset])
+            sound.reset_mock()
+            ui._play_sounds([ui.SOUNDS_KEPT - 1])
+            sound.assert_not_called()
+            ui._play_sounds([28202])
+            self.assertEqual(sound.call_count, 1)
+            sound.reset_mock()
+            sound.return_value.get_length.return_value = ui.SOUND_KEPT_SECONDS + 1     # long: not worth the memory
+            ui._play_sounds([9001])
+            ui._play_sounds([9001])
+            self.assertEqual(sound.call_count, 2)
+            sound.reset_mock()
+            sound.return_value.get_length.return_value = 1
+            ui.session.resources = Mock(read_asset=Mock(return_value=b'other episode'))     # its ids are its own
+            ui._play_sounds([28202])
+            self.assertEqual(sound.call_count, 1)
 
     @unittest.skipUnless(Path('.shs-library/library.json').is_file(), 'user library is not present')
     def test_original_apk_contains_and_plays_every_redirected_track(self):

@@ -5,6 +5,7 @@ from io import BytesIO
 from copy import deepcopy
 import logging
 import os
+import random
 import re
 from types import SimpleNamespace
 import webbrowser
@@ -16,7 +17,8 @@ from . import graphics as pygame
 from .app_icon import set_window_icon
 from .content import ContentError, presentation_feature
 from .audio import music_cue
-from .games import GAMES, game_id
+from .games import GAMES, game_id, has_translated_minigames
+from .content import feature_pack, free_setting, pack_setting
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -26,12 +28,28 @@ try:
     # lacks; CoD never plays either (tools/test_packages.py's cod-player case).
     from .desktop_football_hd import HdFootballRenderer
     from .desktop_word_hd import HdWordRenderer
+    from .desktop_shs11_hd import Shs11HdRenderer
 except ImportError:
-    HdFootballRenderer = HdWordRenderer = None
+    HdFootballRenderer = HdWordRenderer = Shs11HdRenderer = None
 from .location_pan import LocationPan, default_ease
 from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
+from .desktop_nr_arena import NRArenaRenderer
+from .desktop_nr_arena_x360 import X360ArenaRenderer
+from .desktop_x360_diss import X360DissRenderer
+from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
+from .desktop_cutscene import CutsceneRenderer
+from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
+from .desktop_x360_slot import X360SlotRenderer
+from .desktop_shs11_memory import Shs11MemoryRenderer, memory_spec
+from .desktop_brew_catch import BrewCatchRenderer
+from .desktop_shs11_reflex import Shs11ReflexRenderer
+from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
+from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
+from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import FRAME as HD_FRAME, HdPauseMenu, KEYS_ACTIVATE, focus_step, place_controls
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step,
+                               place_controls)
+from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
 from .ad_intro import has_links, play_option
@@ -39,7 +57,8 @@ from .hd_choice import SELECT_MS, TRANSITION_MS, panel_alpha
 from .hd_ui import FRAME as HD_FRAME, S as HD_S
 from .menu_engine import MenuEngineData, MenuEngineError, MenuStack
 from .desktop_picker import CharacterPickerRenderer, CodCharacterPickerRenderer, HdCharacterPickerRenderer
-from .desktop_loading import HdLoadingRenderer, LoadingRenderer
+from .animation_curves import ease_in_out
+from .desktop_loading import HdLoadingRenderer, LOADING_CLOSE_MS, LoadingRenderer
 from .desktop_message import MessageRenderer
 from .desktop_panels import DTViewRenderer, FaceplacePanelRenderer
 from .desktop_title import CodTitleRenderer, HdTitleRenderer, TitleRenderer
@@ -50,7 +69,10 @@ from .dtview_faceplace import NOT_WARPABLE
 from .fonts import TextStyle
 from .loading import LoadingScreen
 from .runtime import SaveError, Session
-from .choice_hints import word_game_outcomes
+from .skip_ahead import can_skip, skip_ahead
+from .undo import chain_for
+from .minigames import MINIGAMES
+from .choice_hints import ARENA_RESULTS, arena_outcomes, brew_catch_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -94,6 +116,64 @@ CONTINUE_GUARD_MS = 250
 WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 
 
+OPAQUE_ENOUGH = 250
+
+
+def opaque_enough(surface, least=OPAQUE_ENOUGH):
+    """Whether every pixel of `surface` is at least `least` opaque (255: wholly). A mask's count, in C: reading the
+    alpha bytes back into Python took about 40 ms for a 1080 x 2400 picture on a PC (several times that on a phone),
+    on every new location and every frame of a location pan."""
+    if not surface.get_masks()[3]:
+        return True
+    mask = getattr(pygame, 'mask', None)
+    if mask is None:
+        return min(pygame.image.tobytes(surface, 'RGBA')[3::4]) >= least
+    width, height = surface.get_size()
+    return mask.from_surface(surface, least - 1).count() == width * height
+
+
+def frame_wide(size):
+    """Whether a story layer of `size` pixels is frame-wide: the 320 x 480-unit column with HD's 32-unit margins either
+    side (384 x 480). Within a pixel of that shape: at a density like 2.4 pixels a unit (a frame narrower than HD's) the
+    margins round to whole pixels (77 for 76.8), and such a layer squeezed into the column warped every portrait."""
+    width, height = size
+    return abs(width * 480 - height * FRAME_UNITS[0]) <= 480
+
+
+def set_story_scale(renderer, scale):
+    """A story renderer (DialogueRenderer, ChoiceRenderer, InputRenderer, MessageRenderer) drawing at `scale` pixels
+    per layout unit from now on: its canvases made again at that density and everything it cached at the old one
+    dropped. Nothing changes when it already draws at that scale (3:4 always: STORY_SCALE)."""
+    if renderer is None or getattr(renderer, 'scale', scale) == scale:
+        return
+    renderer.scale = scale
+    size = (round(320 * scale), round(480 * scale))
+    if hasattr(renderer, 'wide'):
+        renderer.margin = round(32 * scale)
+        renderer.wide = pygame.Surface((size[0] + 2 * renderer.margin, size[1]), pygame.SRCALPHA).convert_alpha()
+        renderer.canvas = renderer.wide.subsurface((renderer.margin, 0, *size))
+    else:
+        renderer.canvas = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
+    if hasattr(renderer, 'name_layer'):
+        renderer.name_layer = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
+    for name in ('cached_key', 'cached_page', 'hint_key'):
+        if hasattr(renderer, name):
+            setattr(renderer, name, None)
+    for kind in type(renderer).__mro__:
+        for value in vars(kind).values():
+            if hasattr(value, 'cache_clear'):
+                value.cache_clear()
+
+
+def window_margins(size, frame):
+    """The parts of a window of `size` outside the rect `frame`."""
+    width, height = size
+    areas = (pygame.Rect(0, 0, width, frame.top), pygame.Rect(0, frame.bottom, width, height - frame.bottom),
+             pygame.Rect(0, frame.top, frame.left, frame.height),
+             pygame.Rect(frame.right, frame.top, width - frame.right, frame.height))
+    return [area for area in areas if area.width > 0 and area.height > 0]
+
+
 def word_game_options(outcomes):
     """(option labels, the score each finishes the quiz with) for the skip prompt, best first, then "Play" (labels
     only): Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, the score ranges for more
@@ -109,6 +189,54 @@ def word_game_options(outcomes):
                       else f'Score {low} to {high}')
         scores.append(32767 if index == 0 else low)
     return (*labels, 'Play'), tuple(scores)
+
+
+def arena_skip_options(outcomes):
+    """(option labels, the result each hands the story) for a New Rules arena game's skip prompt, as word_game_options
+    labels them (Win / Lose, Skip, or the result ranges), then "Play" (labels only). Each outcome hands its lowest
+    result: every result in it leads the same way to the episode's end (checked on all 50 episodes, 2026-10-31)."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None:
+        return labels, (ARENA_RESULTS - 1, 0)
+    return labels, tuple(low for low, _ in reversed(outcomes))
+
+
+def brew_catch_skip_options(outcomes, target):
+    """(option labels, the score each finishes the BREW catch game with) for its skip prompt, as word_game_options labels
+    them (Win / Lose, Skip, or the score ranges), then "Play" (labels only). The best outcome scores the target, as
+    the game itself can at most; any other its lowest score."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None or len(outcomes) == 2:
+        return labels, (target, 0)
+    if len(outcomes) == 1:
+        return labels, (target,)
+    best = outcomes[-1][0]                      # nothing scores more than the target, so the best names it
+    labels = (f'Score {target}' if best >= target else f'Score {best} to {target}', *labels[1:])
+    return labels, tuple(target if index == 0 else low for index, (low, _) in enumerate(reversed(outcomes)))
+
+
+def shs11_skip_options(outcomes, best=2):
+    """(option labels, the result each hands the story) for an SHS '11 game's skip prompt, best first, then "Play" (labels only):
+    Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, Win / Come close / Lose for its three."""
+    if outcomes is None or len(outcomes) == 2:
+        return ('Win', 'Lose', 'Play'), (best, 0)
+    if len(outcomes) == 1:
+        return ('Skip', 'Play'), (best,)
+    return ('Win', 'Come close', 'Lose', 'Play'), (2, 1, 0)
+
+
+# shshd-runtime: a skip prompt's outcomes are worked out on this worker, from a copy of the session, with the loading band on
+# show if they take longer than PROMPT_QUICK_S (owner, 2026-11-07: M.A.S.H. 3 and 4's took 2 s on the g54).
+_PROMPT_WORKER = None
+PROMPT_SEARCHING = object()
+
+
+def _prompt_worker():
+    global _PROMPT_WORKER
+    if _PROMPT_WORKER is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _PROMPT_WORKER = ThreadPoolExecutor(max_workers=1, thread_name_prefix='skip-prompt')
+    return _PROMPT_WORKER
 
 
 class _PromptEngine:
@@ -144,8 +272,89 @@ class _UntimedChoice:
         return getattr(self.real_session, name)
 
 
+# New Rules' minigame arena (desktop_nr_arena.py): its frames, its menu and its info box draw over it.
+ARENA_ACTIONS = ('arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit')
+# Keys as New Rules' Nokia key codes (nr_arena.KEY_BITS): OK / fire, the joystick, the right soft key.
+LEASH_KEYS = {pygame.K_LEFT: LEFT, pygame.K_RIGHT: RIGHT, pygame.K_UP: UP, pygame.K_DOWN: DOWN,
+              pygame.K_a: LEFT, pygame.K_d: RIGHT, pygame.K_w: UP, pygame.K_s: DOWN}
+MEMORY_DIGITS = {**{getattr(pygame, f'K_{n}'): n - 1 for n in range(1, 10)},
+                 **{getattr(pygame, f'K_KP{n}'): n - 1 for n in range(1, 10)}}
+MEMORY_MOVES = {pygame.K_LEFT: (-1, 0), pygame.K_RIGHT: (1, 0), pygame.K_UP: (0, -1), pygame.K_DOWN: (0, 1),
+                pygame.K_a: (-1, 0), pygame.K_d: (1, 0), pygame.K_w: (0, -1), pygame.K_s: (0, 1)}
+ARENA_KEYS = {pygame.K_RETURN: -5, pygame.K_KP_ENTER: -5, pygame.K_SPACE: -5, pygame.K_UP: -1, pygame.K_DOWN: -2,
+              pygame.K_LEFT: -3, pygame.K_RIGHT: -4, pygame.K_BACKSPACE: -7}
+ARENA_NUMBER_KEYS = {**{getattr(pygame, f'K_{n}'): 48 + n for n in range(10)},
+                     **{getattr(pygame, f'K_KP{n}'): 48 + n for n in range(10)}}
+
+
+# New Rules' text is all lowercase (its fonts had only capitals); a game's name in its menus, word by word, where
+# capitalising the word isn't enough (owner, 2026-10-31: "welcome to the dj fever game").
+ARENA_GAME_WORDS = {'dj': 'DJ'}
+
+
+def arena_menu_prompt(details):
+    """(title, text, options) for New Rules' menu shown as SHS's choice: its last sentence, a question ("view
+    tutorial?"), is the title and the rest ("welcome to the `rhyming` game.") the text, without New Rules' font
+    switches and in sentence case, as SHS's own menus are written. The words it highlights (between backticks) are
+    the game's name, written as a name (ARENA_GAME_WORDS: "DJ Fever")."""
+    def name(match):
+        return ' '.join(ARENA_GAME_WORDS.get(word, word.capitalize()) for word in match.group(1).split())
+
+    def sentences(string):
+        string = re.sub(r'`([^`]*)`', name, string)
+        string = re.sub(r'\s+', ' ', string.replace('`', '').replace('~', '')).strip()
+        return re.sub(r'(^|[.!?] )([a-z])', lambda m: m.group(1) + m.group(2).upper(), string)
+    body = sentences(details.get('title') or '')
+    parts = re.split(r'(?<=[.!])\s+(?=[^.!?]*\?$)', body, maxsplit=1)
+    title, text = (parts[1], parts[0]) if len(parts) == 2 else (body, '')
+    return title, text, [sentences(option) for option in details.get('options', [])]
+
+
+# After New Rules' exit the arena's last picture (the bare frame) fades out over the story's next screen, rather than
+# cutting to it (owner, 2026-10-30; this player's own, as New Rules shows the next screen at once).
+ARENA_HANDOVER_MS = 400
+MINIGAME_EXITS = {'football': 26, 'word_grid': 7}       # each game's phase while `finishGame` runs
+MINIGAME_FADE_MS, MINIGAME_EXIT_MS = 800, 960
+# Football's nine plays (football.py SLOTS: three rows of three, top left first) by controller position (owner,
+# 2026-10-29): the face buttons are the edges' middles, the triggers the top corners, the bumpers the bottom corners
+# and the right stick's click the centre. The number pad matches the field (7 8 9 above 1 2 3); the number row keeps
+# reading order (1 is the top left).
+FOOTBALL_BUTTONS = {'lt': 0, 'north': 1, 'rt': 2, 'west': 3, 'r3': 4, 'east': 5, 'lb': 6, 'south': 7, 'rb': 8}
+# Hold mode's drag (Options' Word Grid Controls): a push steps one cell at once, then one every GRID_HOLD_STEP_MS while
+# it is held (this player's pace; a finger moves as fast as it likes).
+GRID_HOLD_FIRST_MS, GRID_HOLD_STEP_MS = 0, 220
+FOOTBALL_KEYPAD = {pygame.K_KP7: 0, pygame.K_KP8: 1, pygame.K_KP9: 2, pygame.K_KP4: 3, pygame.K_KP5: 4,
+                   pygame.K_KP6: 5, pygame.K_KP1: 6, pygame.K_KP2: 7, pygame.K_KP3: 8}
+
+
+class _DateFirstCard:
+    """shshd-runtime: a session as a date-first card's renderer sees it (Desktop._date_first): the pending card's title and subtitle
+    swapped, everything else the session's own."""
+
+    def __init__(self, session):
+        self._session = session
+        details = session.pending.details
+        self.pending = _Swapped(session.pending, dict(details, title=details['subtitle'], subtitle=details['title']))
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
+class _Swapped:
+    def __init__(self, pending, details):
+        self._pending, self.details = pending, details
+
+    def __getattr__(self, name):
+        return getattr(self._pending, name)
+
+
 class Desktop:
     story_layer = None
+    story_over_scene = False        # the story layer is HD's frame over the scene (the look picker)
+    story_band = None               # a 3:4 game's own background, lengthened into the band above it (band_picture)
+    story_lift = 0                  # units the story layer is drawn above its place (a picker centred in a tall frame)
+    story_fills_frame = False       # the story layer is the whole frame, of its shape (a title card)
+    story_centred = False           # the story layer is a picture at the frame's width, centred (a storyboard)
     # An HD choice being closed after a pick: {'action', 'index', 'ms'}. The row shows its pressed colour, the panel
     # fades out (hd_choice.SELECT_MS, TRANSITION_MS), then the choice is answered.
     choice_closing = None
@@ -153,10 +362,12 @@ class Desktop:
     # under the prompt is the one without the panel; once the prompt has closed, the choice fades in again with its
     # whole entrance, unless the pick went on.
     choice_held = None
-    # The app's own way to open a link (Application.open_url: the iOS host's `open_url`), or None for webbrowser.
+    # The app's own way to open a link (Application.open_url: a mobile host's), or None for webbrowser.
     url_opener = None
-    # The host's window is its view (iOS): the side panels never widen it; landscape gives them room (ios.Host).
+    # The host's window is its screen (a mobile host's): the side panels never widen it; landscape gives them room.
     fixed_window = False
+    # General's Aspect Ratio (frame_shape.CHOICES), as the app gives it: the frame's shape (frame_units).
+    aspect_ratio = '3:4'
     # The option the arrow keys have selected. Enter or Space picks it. Mouse clears it.
     choice_focus = None
     # The same for the Android pause menu's rows (HD's pause menu keeps its own, `pause_hd.state.focus`).
@@ -165,12 +376,16 @@ class Desktop:
     # before a football game or word grid (Win, Lose or Play), and whether to skip the High School Story ad intros.
     # {'action', 'session', 'options', 'resolve'} while it is up (`session` stands in for the real one when drawing it).
     # `minigame_played` is the game the player chose to play and `ad_asked` the ad choice already asked about.
-    skip_minigames = False
+    _skip_minigames = False
     skip_ad_intros = False
     # Autoplay Dialogue (this player's option): dialogue, title cards and message panels take no taps; once their text
     # is out they wait AUTOPLAY_WAIT_MS (a title card AUTOPLAY_TITLE_WAIT_MS) and advance by themselves (owner's
     # choice, 2026-10-21: longer than the Continue pill's 250 ms expansion, to be safe).
     autoplay = False
+    skip_ahead = False  # Extras' Allow Skip Ahead: the pause menu's row and the N key (skip_ahead.py)
+    undo = False        # Extras' Allow Undo: a save at each stop, the pause menu's Undo row and the U key (undo.py)
+    _undo_chain = None  # (record id, its UndoChain)
+    _undo_seen = None   # the pending screen last looked at for a save
     AUTOPLAY_WAIT_MS = 750
     AUTOPLAY_TITLE_WAIT_MS = 1500
     autoplay_ms = 0
@@ -178,19 +393,51 @@ class Desktop:
     _untimed = None                 # (action, _UntimedChoice) for the pending timed choice
     hd_backdrop = True              # CoD: SHS HD's collage beside the frame (the player's "SHS HD Backdrop" switch)
     hires_portraits = True          # translated New Rules episodes: the "Hi-Res Portraits" switch (set_hires_portraits)
+    ms3_characters = False          # translated X360 episodes: the "MS3 Characters" switch (set_ms3_characters)
+    java_look = False               # translated BREW episodes: the "Java '08 Look" switch (set_java_look)
+    brew_08_backgrounds = False     # '07-badged BREW episodes: the "'08 Backgrounds" switch (set_brew_08_backgrounds)
+    smartphone_music = True         # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
+    _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
+    ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
+    ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
+    _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
+    x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
+    arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
     host_prompt = None
     minigame_played = None
     ad_asked = None
     panel_alpha = None          # the HD menu view's alpha for this frame (None: drawn whole)
     panel_overlay = None        # the HD timer layers for this frame (outside the view's fades)
     edge_layer = None
+    _edge_scaled = (None, None, None)   # (edge_layer, size, the layer at that size)
+    minigame_shown = None               # (the minigame's state, when it first showed) for its fade in
+    loading_handover = None             # {layer, since} the HD band, to close over what follows it
+    _blank_canvas = b''
     fade = None
     # Warping through the story tree: `warp_unlocked` is the app's option (the iOS app keeps it locked until Football
     # Season has been completed once); touches on the tree are ignored until `warp_lockout` (a warp locks them for a second).
     warp_unlocked = True
+    controller_confirm = 'south'    # a controller's confirm button (Options' Controller page; the app's MenuState)
+    grid_controls = 'hold'          # the word grid with a controller: 'hold' or 'tap' (Options' Controller page)
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
+    # shshd-runtime (owner, 2026-11-12): the Side Panels setting (player.json `side_panels`, on by default), and the
+    # panels closed for this episode with Tab or the switch while there's room beside the game (panels_wanted).
+    side_panels_enabled = True
+    panels_dismissed = False
+    # ...and without room beside the game, the panels over the whole screen, half each, behind the corner button (the
+    # story waits while they're up): open or closed, and how far they've slid down.
+    panels_overlay = False
+    overlay_progress = 0.0
+    OVERLAY_MS = 300
+    # The corner button: resource 18's frame (the two faces), on a card this many of the alert's points square, where
+    # the Faceplace alert's card sits (its left 569, top 86: desktop_faceplace_alert), so a new post covers it.
+    PANELS_BUTTON_ICON, PANELS_BUTTON_SIZE, PANELS_BUTTON_AT = 5, 112, (646, 86)
+    ALERT_TAP = (560, 76, 208, 140)         # the alert's card, in its points: a tap there opens the panels too
+    # Where the corner button shows: the story's own screens, not a minigame's (whose score or clock sits there).
+    PANELS_BUTTON_ACTIONS = ('dialogue', 'choice', 'message_panel', 'survey_confirmation', 'presentation', 'vm_pause',
+                             'text_input', 'character_picker', 'cutscene')
     # Milliseconds spent computing Choice hints (choice_hints.preview_choices runs inside render()). That time shows
     # up in the next frame's elapsed; tick() leaves it off the story clock so a slow preview never shortens a timed
     # choice's countdown.
@@ -215,7 +462,93 @@ class Desktop:
             session.share_names(self.names)
         session.choice_click = False        # the tap plays it (`_menu_sound`), not the later answer
         session.choice_timer = not self._disable_choice_timer
+        session.nr_arena = self._arena_minigames
+        session.grids_as_memory = self._grids_as_memory
+        session.shs11_hd_sounds = self._skin_has_its_sounds()
+        session.shs11_seen_this_run = self._shs11_seen_this_run
+        session.skip_arena = self._skip_minigames
+        session.cutscenes = True            # (this player draws them: desktop_cutscene)
         self._session = session
+
+    @property
+    def word_grid_skin(self):
+        """The "Use Word Grid Skin" switch: SHS '11's games in the HD word game's look, and with its sounds (Session.shs11_hd_sounds)."""
+        return self._word_grid_skin
+
+    @word_grid_skin.setter
+    def word_grid_skin(self, value):
+        self._word_grid_skin = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.shs11_hd_sounds = self._skin_has_its_sounds()
+
+    def _skin_has_its_sounds(self):
+        """Only where the skin really draws: without the HD bundle's art, '11's own look keeps '11's own sounds."""
+        hd = getattr(self, 'shs11_hd', None)
+        return self._word_grid_skin and hd is not None and hd.available()
+
+    _shs11_seen_this_run = None
+
+    @property
+    def shs11_seen_this_run(self):
+        """The SHS '11 tutorials finished since the app started, a set the Application keeps from episode to episode."""
+        return self._shs11_seen_this_run
+
+    @shs11_seen_this_run.setter
+    def shs11_seen_this_run(self, seen):
+        self._shs11_seen_this_run = seen
+        if getattr(self, '_session', None) is not None:
+            self._session.shs11_seen_this_run = seen
+
+    _grids_as_memory = False
+
+    @property
+    def grids_as_memory(self):
+        """shshd-runtime's "Use '11's Memory for Word Grid" (owner, 2026-11-04): letter grids play as SHS '11's Memory.
+        Asked as each grid opens (shs11_games.grid_memory), so one already open stays as it is."""
+        return self._grids_as_memory
+
+    @grids_as_memory.setter
+    def grids_as_memory(self, value):
+        self._grids_as_memory = bool(value) and self.memory_grid_switch()
+        if getattr(self, '_session', None) is not None:
+            self._session.grids_as_memory = self._grids_as_memory
+
+    def memory_grid_switch(self):
+        """Whether the switch is offered: in SHS, with what can draw the game: the HD word game's art (the Word Grid skin, which it
+        always has), or failing that SHS '11's addon (its own look)."""
+        if game_id(self.session.resources) != 'shs':
+            return False
+        if self.shs11_hd is not None and self.shs11_hd.art_available():
+            return True
+        try:
+            return memory_spec(self.session.resources) is not None
+        except (ContentError, OSError, ValueError):
+            return False
+
+    @property
+    def skip_minigames(self):
+        """Ask to Skip Mini-Games: football, the word grid and the word quiz first ask Win, Lose or Play, and so do
+        New Rules' arena games (Session.skip_arena: their stories wait at service 213)."""
+        return self._skip_minigames
+
+    @skip_minigames.setter
+    def skip_minigames(self, value):
+        self._skip_minigames = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.skip_arena = self._skip_minigames
+
+    @property
+    def arena_minigames(self):
+        """shshd-runtime's "Use Translated Mini-Games" (owner, 2026-10-31, as Minigame Arena): translated episodes play
+        their minigames for real, New Rules' in its arena; off, as the timed choices they carry for players without it.
+        A story asks as each game starts (service 70's arena query), so a game already playing keeps its form."""
+        return self._arena_minigames
+
+    @arena_minigames.setter
+    def arena_minigames(self, value):
+        self._arena_minigames = bool(value)
+        if getattr(self, '_session', None) is not None:
+            self._session.nr_arena = self._arena_minigames
 
     @property
     def disable_choice_timer(self):
@@ -287,9 +620,28 @@ class Desktop:
             self.football_renderer = FootballRenderer(session.resources, self.story_text, self.dialogue_renderer)
         self.football_hd = HdFootballRenderer(session.resources) if HdFootballRenderer else None
         self.word_hd = HdWordRenderer(session.resources, self.dialogue_renderer) if HdWordRenderer else None
+        self.shs11_hd = Shs11HdRenderer(session.resources, self.dialogue_renderer) if Shs11HdRenderer else None
+        self.nr_arena_renderer = NRArenaRenderer(session.resources)
+        self.x360_arena_renderer = X360ArenaRenderer(session.resources)
+        self.x360_slot_renderer = X360SlotRenderer(session.resources)
+        self.shs11_memory_renderer = Shs11MemoryRenderer(session.resources)
+        self.shs11_reflex_renderer = Shs11ReflexRenderer(session.resources)
+        # (One cache for both: Reflex draws Memory's grid, clock and score, and what _prime_games loads serves either.)
+        self.shs11_reflex_renderer._images = self.shs11_memory_renderer._images
+        self.shs11_reflex_renderer._glyphs = self.shs11_memory_renderer._glyphs
+        self.brew_catch_renderer = BrewCatchRenderer(session.resources)
+        self.x360_leash_renderer = X360LeashRenderer(session.resources)
+        self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
+        self.cutscene_renderer = CutsceneRenderer(session.resources)
+        self.x360_diss_renderer = X360DissRenderer(session.resources)
+        self.puzzle_key = None          # the jewel puzzle: (key, direction, ms to its next repeat) of a held direction key
+        self.puzzle_pad = False         # OK came from a controller's confirm, and is held
+        self.leash_anchor = None        # where a drag last turned, in frame units, while one is shaking the leash
+        self._x360_arena = None             # whether the X360 addon's arena skin is there (x360_arena_switch)
         self.pause_hd = HdPauseMenu(session.resources)
         # Released drags gliding on: the tree slows as HD's does (UIScrollView's fast rate), the wall at the normal one.
         self.tree_fling, self.wall_fling = momentum.Fling(momentum.RATE_FAST), momentum.Fling()
+        self.choice_fling = momentum.Fling()        # a long choice's rows gliding on after a flick (touch hosts)
         if self.dialogue_renderer.game_id() == 'cod':
             # Cause of Death's own Pause / Options / Help & About (its menu engine windows in its own art).
             from .desktop_cod_pause import CodPauseMenu
@@ -360,7 +712,7 @@ class Desktop:
         self.press = ButtonPress()
         self.images = OrderedDict()
         self._background_layer_cache = None   # (key, scaled surface) from the last _draw_background_layer call
-        self._frame_backdrop_cache = (None, None)   # (key, scaled surface or None), see _frame_backdrop
+        self._frame_backdrop_cache = (None, {})     # (key, {resource: scaled surface or None}), see _frame_backdrop
         self.buttons = []
         self.scroll = self.max_scroll = 0
         self.screen_token = None
@@ -550,9 +902,11 @@ class Desktop:
         engine, stream, now = self.session.engine, self.music_stream, pygame.time.get_ticks()
         if stream.volume != self.music_volume:
             stream.set_volume(self.music_volume)
-        if self.music_enabled != self.music_was_enabled:
-            self.music_was_enabled = self.music_enabled
-            if not self.music_enabled:
+        # A translated episode's smartphone music, with its switch off, goes as it does with Music off.
+        enabled = self.music_enabled and (self.smartphone_music or not self.smartphone_switch())
+        if enabled != self.music_was_enabled:
+            self.music_was_enabled = enabled
+            if not enabled:
                 stream.disable(now)                  # setMusicEnabled(false): stopMusic(-1, true)
         token = (engine.music_id, engine.music_flag, engine.music_serial)
         if token != self.music_token:
@@ -560,12 +914,23 @@ class Desktop:
                 stream.reset()                       # a new or reloaded session starts its own cue
             self.music_token = token
             if engine.music_id >= 0:
-                if self.music_enabled:               # playMusic ignores requests while Music is off
-                    stream.play(engine.music_id, engine.music_flag, self._open_cue, now, held=self.menu_open)
+                if enabled:                          # playMusic ignores requests while Music is off
+                    music_id, opener = engine.music_id, self._open_cue
+                    swaps = self._x360_swaps()
+                    if swaps is not None and music_id in swaps[1]:
+                        # The X360 look's own music for the games' track (owner, 2026-10-31), under its own ID, so
+                        # a later request for New Rules' track isn't taken for it.
+                        archive, music_id = swaps[2], swaps[1][music_id]
+                        opener = lambda _id: (archive.read(music_id), 0)       # noqa: E731
+                    stream.play(music_id, engine.music_flag, opener, now, held=self.menu_open,
+                                takes_loop=self.smartphone_switch())
             else:
                 stream.stop(engine.music_stop_ms, now)
-        stream.update(now, enabled=self.music_enabled, menu_open=self.menu_open,
-                      paused=not self.active or engine.music_paused, held_back=self.pause_song is not None)
+        self._x360_tutorial_music(stream, now)
+        self._end_x360_music(stream, engine, now)
+        stream.update(now, enabled=enabled, menu_open=self.menu_open,
+                      paused=not self.active or engine.music_paused or self._panels_hold_music(),
+                      held_back=self.pause_song is not None)
         self._sync_pause_song(now)
 
     def _sync_pause_song(self, now):
@@ -669,16 +1034,109 @@ class Desktop:
         except pygame.error as error:
             logging.warning('Vibration buzz cannot be played: %s', error)
 
+    def _end_x360_music(self, stream, engine, now):
+        """The X360 look's game music fades out as the game ends: as "Time's up!" appears (the panel's time_up; owner,
+        2026-11-01, at first "your score"), or once the arena is gone. Diss Practice's music belongs to the game, and
+        the story doesn't stop it."""
+        from .desktop_nr_arena_x360 import MUSIC_FADE_MS
+        current = stream.current
+        if current is None or stream.fade is not None or getattr(self, '_x360_arena', None) is not True:
+            return                          # (the addon's skin is known to be there once the switch was offered)
+        try:
+            spec = self.x360_arena_renderer.x360()[0]
+        except ValueError:
+            return
+        music = {*spec.get('music_track', {}).values(), spec.get('tutorial_music')}
+        if current['id'] not in music:
+            return
+        arena = engine.nr_arena
+        if arena is None or arena.time_up:
+            stream.stop(MUSIC_FADE_MS, now)
+
+    def _in_x360_tutorial(self):
+        """Whether a tutorial is running in the X360 look: from a yes to "view tutorial?" until the game's own music
+        request, which comes as the game starts. Not kept in a save: a tutorial resumed from one plays as New Rules' does."""
+        if self.x360_tutorial is None:
+            return False
+        engine = self.session.engine
+        if engine.music_serial != self.x360_tutorial or self._x360_swaps() is None:
+            self.x360_tutorial = None
+            return False
+        return True
+
+    def _x360_tutorial_music(self, stream, now):
+        """New Rules plays no music in a tutorial; the X360 look plays the tutorials' own (owner, 2026-11-01)."""
+        if not self.music_enabled or not self._in_x360_tutorial():
+            return
+        spec, archive = self.x360_arena_renderer.x360()
+        resource = spec.get('tutorial_music')
+        if resource is not None:
+            stream.play(resource, True, lambda _id: (archive.read(resource), 0), now, held=self.menu_open)
+
+    def _x360_tutorial_sounds(self):
+        """New Rules plays no sound in a tutorial's practice; the X360 look plays the game's for each hit effect there."""
+        if self._in_x360_tutorial() and self.x360_arena_renderer.hits:
+            from .desktop_nr_arena_x360 import HIT_TRACKS, NR_TRACK_BASE
+            hits = self.x360_arena_renderer.hits
+            self._play_sounds([NR_TRACK_BASE + HIT_TRACKS[kind] for kind in hits])
+            hits.clear()
+
+    def _x360_swaps(self):
+        """While the arena is open in the X360 look: ({New Rules sound: [X360 sounds]}, {New Rules music: X360 music},
+        the X360 addon's archive), from its skin's spec (owner, 2026-10-31: right, wrong and the swaps' bonus noise,
+        and the games' track, Diss Practice's); else None. Nothing the script sees changes."""
+        if not (self.arena_skin and self.session.engine.nr_arena is not None and self.x360_arena_switch()):
+            return None
+        from .desktop_nr_arena_x360 import NR_TRACK_BASE
+        spec, archive = self.x360_arena_renderer.x360()
+        return ({NR_TRACK_BASE + int(track): ids for track, ids in spec.get('sound_tracks', {}).items()},
+                {NR_TRACK_BASE + int(track): music for track, music in spec.get('music_track', {}).items()}, archive)
+
     def _play_sounds(self, assets):
         if not self.sound_enabled:
             return
+        swaps = self._x360_swaps()
         try:
             for asset in assets:
-                sound = pygame.mixer.Sound(file=BytesIO(self.session.resources.read_asset(asset)))
+                if swaps is not None and swaps[0].get(asset):
+                    name = random.choice(swaps[0][asset])       # one of the X360's, as it picks
+                    sound = self._sound(name, lambda: swaps[2].read(name))
+                else:
+                    sound = self._sound(asset, lambda: self.session.resources.read_asset(asset))
                 sound.set_volume(self.sound_volume)
+                if asset in self._one_channel():
+                    if self._channel_sound is not None:
+                        self._channel_sound.stop()
+                    self._channel_sound = sound
                 sound.play()
         except (ContentError, pygame.error) as error:
             logging.warning('Sound %s cannot be played: %s', assets, error)
+
+    _channel_sound = None               # the last of a translated pack's one-channel sounds (TRANSLATED_ONE_SOUND_CHANNEL)
+
+    def _one_channel(self):
+        return pack_setting(self.session.resources, 'TRANSLATED_ONE_SOUND_CHANNEL', ()) or ()
+
+    SOUNDS_KEPT = 32
+    SOUND_KEPT_SECONDS = 5
+    _sounds_kept = (None, {})           # (the resources they came from, {key: decoded Sound})
+
+    def _sound(self, key, read):
+        """A sound effect, decoded once: read and decoded at every play, each hit in a minigame cost a phone's frame 45 ms.
+        The last few short ones are kept, per episode (its ids are its own)."""
+        resources = self.session.resources
+        if self._sounds_kept[0] is not resources:
+            self._sounds_kept = (resources, {})
+        kept = self._sounds_kept[1]
+        sound = kept.pop(key, None)
+        if sound is None:
+            sound = pygame.mixer.Sound(file=BytesIO(read()))
+            if sound.get_length() > self.SOUND_KEPT_SECONDS:
+                return sound
+            if len(kept) >= self.SOUNDS_KEPT:
+                del kept[next(iter(kept))]
+        kept[key] = sound
+        return sound
 
     def _sync_text_input(self):
         if self.capture:
@@ -698,6 +1156,7 @@ class Desktop:
             self.text_input_started = enabled
         if enabled and hasattr(self, 'viewport'):
             x, y, w, h = INPUT_RECT
+            y -= self._input_lift()                     # (the box is drawn higher in a taller frame)
             pygame.key.set_text_input_rect(pygame.Rect(
                 self.viewport.x + x * self.viewport.width / 320,
                 self.viewport.y + y * self.viewport.height / 480,
@@ -776,12 +1235,46 @@ class Desktop:
 
     SKIP_OPTIONS = ('Win', 'Lose', 'Play')
 
-    def _host_prompt(self):
+    PROMPT_QUICK_S = 0.1        # a skip prompt's outcomes found this fast show it at once; slower, the loading band first
+    prompt_job = None           # the outcome search under way: {action, future, started}
+
+    def _search_outcomes(self, action, search, wait=False):
+        """`search(session)`'s outcomes for the skip prompt of `action`, worked out on the prompt worker from a copy of the
+        session; PROMPT_SEARCHING while it runs past PROMPT_QUICK_S (the loading band shows meanwhile: _loading_prompt), or
+        at once with `wait`. A search that fails gives None, as the outcome functions do when they can't tell."""
+        from concurrent.futures import TimeoutError as Pending
+        job = self.prompt_job
+        if job is None or job['action'] is not action:
+            session = self.session
+            vm = getattr(session, 'vm', None)
+            if vm is None:
+                return search(session)          # (a stand-in session, as tests use: nothing to copy)
+            copy = deepcopy(session, {id(session.resources): session.resources, id(vm.program): vm.program})
+            copy.ephemeral = True
+            job = self.prompt_job = dict(action=action, future=_prompt_worker().submit(search, copy),
+                                         started=pygame.time.get_ticks())
+        try:
+            outcomes = job['future'].result(timeout=None if wait else 0 if job.get('waited') else self.PROMPT_QUICK_S)
+        except Pending:
+            job['waited'] = True
+            return PROMPT_SEARCHING
+        except Exception:               # noqa: BLE001 -- a search that fails: the prompt offers what it can without one
+            outcomes = None
+        self.prompt_job = None
+        return outcomes
+
+    def _loading_prompt(self, action):
+        """A stand-in prompt while its outcomes are worked out: it holds the game as the prompt does, takes no picks, and is
+        drawn as the loading band (render)."""
+        self.host_prompt = dict(action=action, session=None, options=(), resolve=lambda index: None, loading=True)
+        return self.host_prompt
+
+    def _host_prompt(self, wait=False):
         """The host prompt over the pending screen, or None; the mini-game prompt opens the first time a football game,
-        word grid or word quiz (service 71, both games) is seen."""
+        word grid or word quiz (service 71, both games) is seen. `wait`: don't stand in while its outcomes are worked out."""
         action = self.session.pending
         prompt = self.host_prompt
-        if prompt is not None and prompt['action'] is not action:
+        if prompt is not None and (prompt['action'] is not action or prompt.get('loading')):
             prompt = self.host_prompt = None
         if (prompt is None and self.skip_minigames and action is not None
                 and action.name in ('football', 'word_grid', 'word_game')
@@ -789,20 +1282,204 @@ class Desktop:
             if action.name == 'word_game':
                 # shshd-runtime: a quiz offers each outcome its story has (choice_hints.word_game_outcomes): most have
                 # two, some three (Football Star's movie date: 0-3, 4-5, 6 or more), a vote package's one.
-                outcomes = word_game_outcomes(self.session)
+                outcomes = self._search_outcomes(action, word_game_outcomes, wait)
+                if outcomes is PROMPT_SEARCHING:
+                    return self._loading_prompt(action)
                 options, scores = word_game_options(outcomes)
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, outcomes),
                                            options, lambda index: self._resolve_word_game(action, scores, index))
             else:
                 prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action),
                                            self.SKIP_OPTIONS, lambda index: self._resolve_minigame(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_slot'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            # shshd-runtime: the X360's slot machine offers each outcome its story has.
+            outcomes = self._search_outcomes(action, x360_slot_outcomes, wait)
+            if outcomes is PROMPT_SEARCHING:
+                return self._loading_prompt(action)
+            options, points = arena_skip_options(outcomes)
+            options = tuple(option.replace(' or more', '') for option in options)       # (5 is all there is)
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The slot machine: hit the light bulbs.', options,
+                                       lambda index: self._resolve_x360_slot(action, points, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name in ('shs11_memory', 'shs11_reflex')
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            # shshd-runtime: SHS '11's games offer each result their story treats differently.
+            outcomes = self._search_outcomes(action, shs11_outcomes, wait)
+            if outcomes is PROMPT_SEARCHING:
+                return self._loading_prompt(action)
+            options, results = shs11_skip_options(outcomes, getattr(getattr(self.session.engine, action.name), 'best_result', 2))
+            prompt = self._open_prompt(action, 'Skip this mini-game?', self._minigame_summary(action, len(results)), options,
+                                       lambda index: self._resolve_shs11(action, results, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'brew_catch'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            # shshd-runtime: it offers each outcome its story has (choice_hints.brew_catch_outcomes): most two, some three.
+            target = self.session.engine.brew_catch.target
+            outcomes = self._search_outcomes(action, brew_catch_outcomes, wait)
+            if outcomes is PROMPT_SEARCHING:
+                return self._loading_prompt(action)
+            options, scores = brew_catch_skip_options(outcomes, target)
+            prompt = self._open_prompt(action, 'Skip this mini-game?', self._brew_catch_summary(outcomes, target),
+                                       options, lambda index: self._resolve_brew_catch(action, scores, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_leash'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_x360_leash(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_diss'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'Diss practice: catch the good notes with the needle.',
+                                       self.SKIP_OPTIONS, lambda index: self._resolve_x360_diss(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'A jewel puzzle. Its score changes nothing that follows.',
+                                       ('Skip', 'Play'), lambda index: self._resolve_x360_puzzle(action, index))
+        if prompt is None and action is not None and action.name == 'arena_skip' and not self.error:
+            if self.skip_minigames and hasattr(self.session.resources, 'read_asset'):
+                # shshd-runtime: a New Rules arena game offers each outcome its story has (choice_hints.arena_outcomes,
+                # the results 0-15): most two, a few three.
+                outcomes = self._search_outcomes(action, arena_outcomes, wait)
+                if outcomes is PROMPT_SEARCHING:
+                    return self._loading_prompt(action)
+                options, results = arena_skip_options(outcomes)
+                prompt = self._open_prompt(action, 'Skip this mini-game?', self._arena_summary(outcomes), options,
+                                           lambda index: self._resolve_arena_skip(action, results, index))
+            else:
+                self._attempt(lambda: self.session.answer(-1))     # switched off meanwhile: it plays
+        if (prompt is None and action is not None and action.name == 'arena_menu' and not self.error
+                and hasattr(self.session.resources, 'read_asset')):
+            # shshd-runtime (owner, 2026-10-31): New Rules' menu over the arena (its tutorial offer) is SHS's choice,
+            # drawn over the arena (render's under_layer); the pick goes back to the library as its option's index.
+            title, text, options = arena_menu_prompt(action.details)
+            prompt = self._open_prompt(action, title, text, options,
+                                       lambda index: self._resolve_arena_menu(action, index))
         return prompt
 
-    def _open_prompt(self, action, title, text, options, resolve):
+    @staticmethod
+    def _arena_summary(outcomes):
+        """What the arena game about to start decides, for its skip prompt."""
+        game = 'A New Rules minigame, in its arena.'
+        if outcomes is None or len(outcomes) == 2:
+            passed = f' (a result of {outcomes[1][0]} or more)' if outcomes else ''
+            return f'{game} Win passes it{passed}; Lose fails it.'
+        if len(outcomes) == 1:
+            return f'{game} Its result changes nothing that follows.'
+        return f'{game} Its story goes {len(outcomes)} ways, by result.'
+
+    def _resolve_arena_skip(self, action, results, index):
+        """The arena game's skip prompt: an outcome hands its story that result instead of the game; Play plays it."""
+        if self.session.pending is action:
+            value = results[index] if index < len(results) else -1
+            self._attempt(lambda: self.session.answer(value))
+
+    def _resolve_x360_slot(self, action, points, index):
+        """The slot machine's skip prompt: an outcome hands its story those points; Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(points):
+            self.minigame_played = action
+            self.session.engine.x360_slot.start()       # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_x360_slot(points[index]))
+
+    def _resolve_shs11(self, action, results, index):
+        """An SHS '11 game's skip prompt: an outcome finishes it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(results):
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_shs11(results[index]))
+
+    @staticmethod
+    def _brew_catch_summary(outcomes, target):
+        """What the catch game about to start decides, for its skip prompt."""
+        game = 'The catch game: catch the good things, dodge the bad.'
+        if outcomes is None or len(outcomes) == 2:
+            return f'{game} Win scores {target}; Lose scores nothing.'
+        if len(outcomes) == 1:
+            return f'{game} Its score changes nothing that follows.'
+        return f'{game} Its story goes {len(outcomes)} ways, by score (at most {target}).'
+
+    def _resolve_brew_catch(self, action, scores, index):
+        """The catch game's skip prompt: an outcome finishes it with that score (brew_catch_skip_options), Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index >= len(scores):
+            self.minigame_played = action
+            return
+        self._attempt(lambda: self.session.skip_brew_catch(scores[index]))
+
+    def _resolve_x360_leash(self, action, index):
+        """The leash game's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            self.session.engine.x360_leash.start()      # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_x360_diss(self, action, index):
+        """Diss Practice's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 2:
+            self.minigame_played = action
+            self.session.engine.x360_diss.start()       # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_x360_puzzle(self, action, index):
+        """The jewel puzzle's skip prompt: Skip goes straight on, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 1:
+            self.minigame_played = action
+            self.session.engine.x360_puzzle.start()     # the prompt was its go-ahead: no second one
+            return
+        self._attempt(lambda: self.session.skip_minigame(False))
+
+    def _resolve_arena_menu(self, action, index):
+        if self.session.pending is action:
+            details = action.details
+            taken = ('view tutorial' in (details.get('title') or '').casefold()
+                     and details['options'][index].casefold() == 'yes' and self._x360_swaps() is not None)
+            self.x360_tutorial = self.session.engine.music_serial if taken else None
+            if taken:
+                self.x360_arena_renderer.hits.clear()   # (the game before's)
+            self._attempt(lambda: self.session.answer(index))
+
+    PROMPT_PAGE = 5             # outcomes on a page of a skip prompt with more than PROMPT_ROWS rows
+    PROMPT_ROWS = 7
+    # The HD panel's height limit for these prompts, past the native 964 points: seven rows under a four-line description (a catch
+    # game's, with its page) need 975 (owner, 2026-11-07: a bit taller rather than a scroll).
+    PROMPT_PANEL_LIMIT = 984
+
+    def _open_prompt(self, action, title, text, options, resolve, page=0):
         """A narrator-style choice (no character: the gold theme, no portrait) over `action`; `resolve(index)` runs
-        once the pick has closed it."""
+        once the pick has closed it. A skip prompt with more outcomes than its panel shows at once (more than
+        PROMPT_ROWS rows, its last Play) goes in pages of PROMPT_PAGE outcomes, each with Next Page (the last back to the
+        first) and Play (owner, 2026-11-07: M.A.S.H.'s catch games go fifteen ways)."""
+        options = tuple(options)
+        if len(options) > self.PROMPT_ROWS and options[-1] == 'Play':
+            outcomes, size = options[:-1], self.PROMPT_PAGE
+            pages = -(-len(outcomes) // size)
+            shown = outcomes[page * size:(page + 1) * size]
+
+            def turn(index):
+                if index < len(shown):
+                    resolve(page * size + index)
+                elif index == len(shown):
+                    # The next page is there at once: no closing, fade-in or fly-on (owner, 2026-11-07: paging felt slow).
+                    self._open_prompt(action, title, text, options, resolve, (page + 1) % pages)['instant'] = True
+                else:
+                    resolve(len(outcomes))                  # Play
+            prompt = self._open_prompt(action, title, f'{text} Page {page + 1} of {pages}.', shown + ('Next Page', 'Play'),
+                                       turn)
+            prompt['next_row'] = len(shown)
+            return prompt
         details = dict(title=title, text=text, options=list(options), values=list(range(len(options))),
-                       enabled=[True] * len(options), timeout_ms=0, timeout_result=0, character_id=-1, portrait_mode=0)
+                       enabled=[True] * len(options), timeout_ms=0, timeout_result=0, character_id=-1, portrait_mode=0,
+                       panel_limit=self.PROMPT_PANEL_LIMIT)
         stand_in = SimpleNamespace(pending=SimpleNamespace(name='choice', details=details, request=None),
                                    engine=_PromptEngine(self.session.engine), vm=SimpleNamespace(steps_executed=0),
                                    scene=self.session.scene, remaining_ms=None, resources=self.session.resources)
@@ -858,6 +1535,16 @@ class Desktop:
             if len(outcomes) == 1:
                 return f'{quiz} Its score changes nothing that follows.'
             return f'{quiz} Its story goes {len(outcomes)} ways, by score.'
+        if action.name == 'shs11_memory':
+            game = engine.shs11_memory
+            words = list(dict.fromkeys(round_[1] for round_ in game.rounds))
+            shown = ', '.join(words[:8]) + (' ...' if len(words) > 8 else '')
+            return f'Memory. Score {game.win_score} in {round(game.clock_ms / 1000)} seconds. Words: {shown}.'
+        if action.name == 'shs11_reflex':
+            game = engine.shs11_reflex
+            middle = f' {game.close_score} or more comes close.' if outcomes == 3 else ''
+            return (f'Reflex. Score {game.win_score} in {round(game.clock_ms / 1000)} seconds, '
+                    f'picking the right icons to fill the gauge.{middle}')
         game = engine.word_grid
         words = []
         for problem in game.problems:
@@ -941,14 +1628,29 @@ class Desktop:
                 ready = engine.message_panel is not None and engine.message_panel.ready
             elif action.name == 'presentation':
                 ready = engine.title_screen is not None and engine.title_screen.ready
+            elif action.name == 'cutscene':
+                ready = engine.cutscene is not None and engine.cutscene.held
         if not ready:
             self.autoplay_ms = 0
             return
         self.autoplay_ms += elapsed_ms
-        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name == 'presentation' else self.AUTOPLAY_WAIT_MS
+        wait = self.AUTOPLAY_TITLE_WAIT_MS if action.name in ('presentation', 'cutscene') else self.AUTOPLAY_WAIT_MS
         if self.autoplay_ms >= wait:
             self.autoplay_ms = 0
             self._answer()
+
+    def _sync_cutscene(self):
+        """A cutscene that names a track runs on that track's position, so its sounds land on their beats. With Music off, or
+        once a press has jumped, it runs on the session's clock."""
+        action = self.session.pending
+        if action is None or action.name != 'cutscene':
+            return
+        stream = self.music_stream
+        if stream.current is None or stream.paused:
+            return
+        game = self.session.engine.cutscene
+        if game is not None and stream.current['id'] == game.music:
+            game.sync(round(stream.position() * 1000))
 
     def _tick_fade(self, elapsed_ms):
         fade = self.fade
@@ -964,6 +1666,68 @@ class Desktop:
             self.window.blit(fade['frozen'], (0, 0))
         ms = pygame.time.get_ticks() - fade['since']
         self._draw_cover(fade['kind'], scene_fade.coverage(fade['kind'], fade['phase'], ms))
+
+    def _fade_minigame(self, action, renderer):
+        """HD's minigame is a view over the scene: `internalTransitionOn` eases its alpha up over 0.8 s, and `finishGame`
+        eases it back to 0 over 0.8 s (UIKit's curve 0, 1.4.38 00048728 / 000485b0), the callback following at 960 ms."""
+        engine = self.session.engine
+        game = engine.football if action.name == 'football' else engine.word_grid
+        faded(renderer.canvas, None)                # (a plain surface keeps the whole-surface alpha it was last given)
+        now = pygame.time.get_ticks()
+        if self.minigame_shown is None or self.minigame_shown[0] is not game:
+            self.minigame_shown = (game, now)
+        if game.phase == MINIGAME_EXITS[action.name]:
+            alpha = 1 - ease_in_out((MINIGAME_EXIT_MS - game.phase_ms) / MINIGAME_FADE_MS)
+        else:
+            alpha = ease_in_out((now - self.minigame_shown[1]) / MINIGAME_FADE_MS)
+        if alpha < 1 and not self.capture:
+            self.panel_alpha = alpha
+            background = self.dialogue_renderer.image(engine.panel.background_id)
+            self.pending_background = background
+            self.pending_background_origin = self.dialogue_renderer.background_origin(background, engine)
+
+    def _draw_loading_handover(self):
+        """The band closing over what follows it (`hideLoadingScreen`: desktop_loading.LOADING_CLOSE_MS)."""
+        handover = self.loading_handover
+        action = self.session.pending
+        if handover is None or (action is not None and action.name == 'loading') or not hasattr(self, 'bg_viewport'):
+            return
+        now = pygame.time.get_ticks()
+        if handover['since'] is None:
+            handover['since'] = now
+        ms = now - handover['since']
+        if ms >= LOADING_CLOSE_MS or self.capture:
+            self.loading_handover = None
+            return
+        area = getattr(self, 'picture_frame', self.bg_viewport)
+        if not self._hd_frame_shape():
+            area = self._scene_card((self._frame_tall - FRAME_UNITS[1]) / 2)      # where the band was (render)
+        scale = 1 - ease_in_out(ms / LOADING_CLOSE_MS)
+        height = max(1, round(area.height * scale))
+        band = pygame.transform.smoothscale(handover['layer'], (area.width, height))
+        self.window.blit(band, (area.x, area.y + round(area.height * (1 - scale) / 2)))
+
+    def _draw_arena_handover(self):
+        """The arena's last picture fading out over the screen that follows it (ARENA_HANDOVER_MS)."""
+        handover = getattr(self, 'arena_handover', None)
+        action = self.session.pending
+        if (handover is None or (action is not None and action.name in ARENA_ACTIONS)
+                or not hasattr(self, 'bg_viewport')):
+            return
+        now = pygame.time.get_ticks()
+        if handover['since'] is None:
+            handover['since'] = now
+        ms = now - handover['since']
+        if ms >= ARENA_HANDOVER_MS or self.capture:
+            self.arena_handover = None
+            return
+        area = getattr(self, 'picture_frame', self.bg_viewport)
+        width, height = handover['layer'].get_size()
+        if abs(height * 3 - width * 4) > 8:
+            area = self.bg_viewport             # a canvas of the frame's own shape (the X360 skin's: fills_frame)
+        if handover['scaled'] is None or handover['scaled'].get_size() != area.size:
+            handover['scaled'] = pygame.transform.smoothscale(handover['layer'], area.size)
+        self.window.blit(faded(handover['scaled'], round(255 * (1 - ms / ARENA_HANDOVER_MS))), area)
 
     def _draw_transition(self):
         """The session's queued transition over the frame (fade_transition.FadeTransition; Android's has no layers)."""
@@ -1029,9 +1793,51 @@ class Desktop:
         self.ui_sounds.play(library, asset, self.sound_volume if volume is None else volume,
                             stop_others=stop_others, when_idle=when_idle)
 
+    # A speaker's bubble may hold extra rows in a frame taller than HD's (owner, 2026-11-11): as many whole rows (HD's
+    # 26-unit line step) as fit in this share of the height the frame adds.
+    EXTRA_ROWS_SHARE = .5
+    ROW_UNITS = 26
+
+    def _sync_story_scale(self):
+        """The story's renderers draw the frame 768 pixels wide whatever its width in units (General's Aspect Ratio:
+        384 at 3:4 and 2:3, 2 pixels a unit; 320 from 9:16, 2.4), so on a phone, whose drawing surface is 768 pixels
+        wide, their layers need no resampling; `_edge_units` is the frame's margin each side of the column (32, 0)."""
+        width, tall = self.frame_units()
+        self._edge_units = (width - 320) / 2
+        self.session.dialogue_extra_rows = max(0, int((tall - FRAME_UNITS[1]) * self.EXTRA_ROWS_SHARE / self.ROW_UNITS))
+        # A narrator's bubble keeps HD's distance from the frame's edge (its 32-unit margin less this frame's), and every
+        # bubble sits nearer the middle of a taller frame, as the choice does (owner, 2026-11-11: narration was cut at a
+        # phone's edge, and the bubbles read low).
+        self.session.dialogue_offset = (FRAME_UNITS[0] / 2 - 160 - self._edge_units,
+                                        (tall - FRAME_UNITS[1]) / 2)
+        # A phone's status bar over the frame's top (Android draws an app under it): what hangs from the frame's top (a
+        # game's HUD, the Faceplace alert) keeps below it.
+        window_w, window_h = self.usable_size()     # (the frame keeps above a phone's navigation bar)
+        scale = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else 1.
+        self._top_pad = max(0., self.top_inset * window_h - (window_h - tall * scale) / 2) / scale
+        for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
+            if game is not None:
+                game.top_pad = round(self._top_pad * 768 / width)       # (in its canvas's points)
+        for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
+                     getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
+                     getattr(self, 'nr_arena_renderer', None), getattr(self, 'football_hd', None),
+                     getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
+                     getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
+                     getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
+                     getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None)):
+            if card is not None:
+                card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
+        scale = STORY_SCALE * FRAME_UNITS[0] / width
+        self.dialogue_renderer.edge_units = self._edge_units        # its bar's margins (cached with its scale)
+        for renderer in (self.dialogue_renderer, self.choice_renderer, self.input_renderer, self.message_renderer):
+            set_story_scale(renderer, scale)
+
     def render(self):
+        self._sync_story_scale()
         self.buttons = []
         action = self.session.pending
+        if action is not None and action.name == 'dialogue':
+            self._prime_games()
         if self.session.engine.panel.background_id >= 0:
             self.last_background_id = self.session.engine.panel.background_id
         self._sync_text_input()
@@ -1042,13 +1848,62 @@ class Desktop:
             self.screen_token, self.scroll, self.choice_focus = token, 0, None
         self.canvas.fill((0, 0, 0, 0))
         self.story_layer = None
+        self.under_fills_frame = False
+        self.story_over_scene = False
+        self.story_band = None
+        self.story_fills_frame = False
+        self.story_below = False
+        self.story_centred = False
+        self.story_lift = 0
+        self.scene_zoom = 1.
+        self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
         self.pending_background_alpha = 255
         details = action.details if action else {}
         ask = self._host_prompt()
         closed = self._ui_closed(action)
-        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input') and not self.error:
+        if ask and action.name in ARENA_ACTIONS and not self.error:
+            # The arena's menu as SHS's choice (_host_prompt): the arena, without its own menu, under the choice.
+            try:
+                renderer = self._arena_renderer()
+                renderer.draw(None, self.session, overlay=False)
+                self.under_layer = renderer.canvas
+                self.story_band = getattr(renderer, 'band_picture', lambda: None)()
+                self.under_fills_frame = getattr(renderer, 'fills_frame', False)
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Panel rendering stopped: %s', error)
+        if ask and ask.get('loading') and not self.error:
+            # A skip prompt's outcomes being worked out (_search_outcomes): service 91's loading band over the scene (HD's, or
+            # Android's where HD's can't be drawn, as service 91 picks), from a stand-in for the state it reads, as the poll's
+            # bar is; it takes no clicks but the gear.
+            job = self.prompt_job or {}
+            elapsed = max(0, pygame.time.get_ticks() - job.get('started', pygame.time.get_ticks()))
+            renderer = self.loading_hd if self.loading_hd.available() else self.loading_renderer
+            loading = LoadingScreen(blocking=False, elapsed_ms=min(3000, elapsed))
+            loading.elapsed_ms = elapsed                    # (its own clock, past service 91's 3 s cap: the runner keeps running)
+            view = SimpleNamespace(engine=SimpleNamespace(panel=self.session.engine.panel, loading=loading))
+            buttons = renderer.draw(self.canvas, view) or [((-32, 422, 92, 58), ('menu',))]     # (the gear: the pause menu)
+            if getattr(renderer, 'hd_layer', False):
+                self.story_layer = renderer.canvas
+                if not self._hd_frame_shape():
+                    # Over the scene, centred in a taller frame, as service 91's own band is (owner, 2026-11-12: it sat
+                    # low before a BREW catch game's skip prompt).
+                    self.story_over_scene = True
+                    self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
+            self.pending_background = getattr(renderer, 'pending_background', None)
+            self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
+            self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command) for rect, command in buttons]
+            edge_bar = getattr(renderer, 'edge_bar', None)
+            if edge_bar:
+                # No hint under it: service 91's "Touch the screen to continue" asks for a tap this band doesn't take.
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
+                                                                          edge_bar == 'bar')
+            self.scroll = self.max_scroll = 0
+            self._present()
+            return
+        if action and not ask and not closed and action.name in ('word_grid', 'football', 'character_picker', 'loading', 'download_poll', 'message_panel', 'survey_confirmation', 'presentation', 'text_input', *ARENA_ACTIONS) and not self.error:
             try:
                 # A dict of values here would build every branch eagerly -- each an `available()` gate that
                 # reads and (pre-caching) re-decompressed an HD resource -- for the one the dict ends up
@@ -1062,6 +1917,7 @@ class Desktop:
                     'message_panel': message, 'survey_confirmation': message,
                     'presentation': self._title_renderer,
                     'text_input': lambda: self.input_renderer,
+                    **{name: self._arena_renderer for name in ARENA_ACTIONS},
                 }
                 renderer = selectors[action.name]()
                 # (where the host presents the alert itself, input_alert, the entry stays drawn under it)
@@ -1081,19 +1937,55 @@ class Desktop:
                     view = SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=poll))
                     renderer.draw(self.canvas, view)
                     buttons = []
+                elif action.name == 'presentation' and self._date_first(details):
+                    buttons = renderer.draw(self.canvas, _DateFirstCard(self.session))
                 else:
                     buttons = renderer.draw(None if action.name == 'text_input' else self.canvas,
                                             self.session, **options)
                 if action.name == 'text_input' or getattr(renderer, 'hd_layer', False):
                     self.story_layer = renderer.canvas
+                    self.story_over_scene = getattr(renderer, 'over_scene', False)
+                    self.story_band = getattr(renderer, 'band_picture', lambda: None)()
+                    self.story_fills_frame = getattr(renderer, 'fills_frame', False)
+                    if action.name == 'character_picker':
+                        # A taller frame centres the picker as HD's frame does (owner, 2026-11-11): its layer moves
+                        # up by half the height added (its taps follow, _picker_point).
+                        self.story_lift = (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) / 2
+                    elif action.name in ('loading', 'download_poll') and not self._hd_frame_shape():
+                        # HD's loading band is a layer over the scene (the frame's own background): in a frame of another
+                        # shape it goes over the scene centred, as the picker does, not as a 3:4 picture with the window's
+                        # backdrop above it (owner, 2026-11-11: the scene was cut to 3:4 before a minigame).
+                        self.story_over_scene = True
+                        self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
+                    elif action.name in ('message_panel', 'survey_confirmation') and not self._hd_frame_shape():
+                        # A notice (an objective list, a minigame's instructions) is a card over the scene too: centred
+                        # in a taller frame, as the loading band is, its buttons with it (owner, 2026-11-12: they sat
+                        # low). The gear and the bar's hint stay at the frame's bottom.
+                        self.story_over_scene = True
+                        self.story_lift = (self._frame_tall - FRAME_UNITS[1]) / 2
+                    elif action.name == 'text_input':
+                        self.story_lift = self._input_lift()
+                if action.name in ARENA_ACTIONS:
+                    self.arena_handover = dict(layer=renderer.canvas, since=None, scaled=None)
                 self.pending_background = getattr(renderer, 'pending_background', None)
                 self.pending_background_origin = getattr(renderer, 'pending_background_origin', (160, 180))
                 self.pending_background_alpha = getattr(renderer, 'pending_background_alpha', 255)
+                if action.name in MINIGAME_EXITS and getattr(renderer, 'hd_layer', False):
+                    self._fade_minigame(action, renderer)
+                elif action.name == 'loading' and renderer is self.loading_hd:
+                    self.loading_handover = dict(layer=renderer.canvas, since=None)
                 if action.name == 'text_input':
                     # The gear opens the pause menu here too (owner, 2026-10-29). The originals leave it inert, but their
                     # keyboard covered it; this player's gear stays in sight (on a desktop always), so an inert one read as
                     # broken. The pause menu stops text input, which hides the keyboard (_sync_text_input) until Resume.
                     buttons = [*buttons, ((-32, 422, 92, 58), ('menu',))]
+                # The gear's button is at the frame's left edge, 32 units outside the column in HD's frame.
+                buttons = [((rect[0] + 32 - self._edge_units, *rect[1:]) if command == ('menu',) and rect[0] == -32
+                            else rect, command) for rect, command in buttons]
+                if self.story_lift and action.name in ('message_panel', 'survey_confirmation', 'text_input'):
+                    # (A centred notice's buttons go up with it, as the name entry's field does; the gear stays.)
+                    buttons = [(rect if command == ('menu',) else (rect[0], rect[1] - self.story_lift, *rect[2:]), command)
+                               for rect, command in buttons]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 edge_bar = getattr(renderer, 'edge_bar', None)
@@ -1112,17 +2004,23 @@ class Desktop:
         # The skip prompt (`_minigame_ask`) is drawn as a choice, from a stand-in for the session.
         source = ask['session'] if ask else self._choice_source()
         if (action and (action.name in ('choice', 'word_game') or ask) and not self.error and not closed
+                and not (ask and ask.get('loading'))
                 and hasattr(self.session.resources, 'read_asset')):
             try:
                 page = self.choice_renderer.page(source)
+                if ask and ask.get('instant'):
+                    self.choice_renderer.age_ms, ask['instant'] = 60_000, False      # a prompt's next page: shown at once
                 self.max_scroll = page.max_scroll * 1.5
                 self.scroll = min(self.scroll, self.max_scroll)
+                # A taller frame centres the choice as HD's frame does (owner, 2026-11-11): its layer, its rows' taps
+                # and its timer move up by half the height added; the gear stays at the bottom.
+                lift = (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) / 2
                 pointer = None
                 if hasattr(self, 'viewport') and self.press.origin is None and not self.menu_open:
                     x, y = pygame.mouse.get_pos()
                     if self.viewport.collidepoint(x, y):
                         pointer = ((x - self.viewport.x) * 320 / self.viewport.width,
-                                   (y - self.viewport.y) * 480 / self.viewport.height)
+                                   (y - self.viewport.y) * 480 / self.viewport.height + lift)
                 closing = self.choice_closing if self.choice_closing and self.choice_closing['action'] is action else None
                 if closing is None and self.choice_held is not None and self.choice_held['action'] is action:
                     closing = dict(index=self.choice_held['index'], ms=SELECT_MS + TRANSITION_MS)     # faded out
@@ -1140,16 +2038,20 @@ class Desktop:
                     # HD: the menu view fades in and, after a pick, out (hd_choice.panel_alpha); the timer layers do not
                     # fade and are hidden when the fade-out starts.
                     self.panel_alpha = panel_alpha(self.choice_renderer.age_ms, closing['ms'] if closing else None)
-                    if closing is None or closing['ms'] < SELECT_MS:
-                        self.panel_overlay = self.choice_renderer.overlay
+                    if ((closing is None or closing['ms'] < SELECT_MS)
+                            and (getattr(page, 'timer_center', None) is not None or getattr(page, 'scored', False))):
+                        self.panel_overlay = self.choice_renderer.overlay     # (only a timer or a quiz draws on it)
                 if closing is not None:
                     buttons = [button for button in buttons if button[1] == ('menu',)]
                 self.hint_discount_ms += self.choice_renderer.take_hint_ms()
                 self.story_layer = self.choice_renderer.wide
+                self.story_lift = lift
                 self.edge_layer = self.dialogue_renderer.bottom_bar_layer(self.choice_renderer.footer_text,
                                                                           self.dialogue_renderer.gear_pressed)
                 self.pending_background = self.choice_renderer.pending_background
                 self.pending_background_origin = self.choice_renderer.pending_background_origin
+                buttons = [(rect if command == ('menu',) else (rect[0], rect[1] - lift, rect[2], rect[3]), command)
+                           for rect, command in buttons]
                 self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                                 for rect, command in buttons]
                 if pygame.time.get_ticks() < self.message_until:
@@ -1159,6 +2061,60 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Choice rendering stopped: %s', error)
+        if action and action.name == 'cutscene' and not ask and not closed and not self.error:
+            try:
+                engine = self.session.engine
+                self.cutscene_renderer.draw(self.session)
+                self.story_layer = self.cutscene_renderer.canvas
+                self.story_centred = True           # no taller than its spec serves: centred, backdrop round it
+                self.panel_alpha = None
+                self.pending_background = self.dialogue_renderer.image(engine.panel.background_id)
+                self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                self.edge_layer = None              # it has the whole frame
+                self.buttons = [(pygame.Rect(0, 0, *SIZE), ('continue',))]
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Cutscene rendering stopped: %s', error)
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch') and not ask and not closed
+                and not self.error):
+            try:
+                engine = self.session.engine
+                renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
+                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer, 'brew_catch': self.brew_catch_renderer,
+                            'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
+                if action.name in ('shs11_memory', 'shs11_reflex'):
+                    self._warm_shs11_sounds(getattr(engine, action.name))
+                renderer.draw(self.session)
+                self.story_layer = renderer.canvas
+                self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
+                self.story_below = getattr(renderer, 'extended_below', False)           # (the X360's: desktop_x360_slot)
+                self.scene_zoom = getattr(renderer, 'scene_zoom', 1.)                   # (Diss Practice's scene)
+                screen = getattr(renderer, 'SCREEN_HEIGHT', None)
+                if screen is not None and not self._hd_frame_shape():
+                    # A game in a frame of its own at the canvas's top (the BREW catch game, both looks): in a taller
+                    # frame that screen is centred, the bottom bar and gear staying at the frame's bottom (owner,
+                    # 2026-11-12). Never lower than HD's place (2:3 lifts it a little, 3:4 not at all).
+                    picture = self.__dict__.get('_frame_width', FRAME_UNITS[0]) * 4 / 3      # the 3:4 picture, units
+                    tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+                    self.story_lift = max(0., (tall - picture * (2 - screen / renderer.canvas.get_height())) / 2)
+                self.panel_alpha = renderer.alpha(getattr(engine, action.name))
+                # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
+                self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(
+                    action.details.get('background_id', engine.panel.background_id))     # (a grid names its own)
+                if self.pending_background is not None:
+                    self.pending_background_origin = self.dialogue_renderer.background_origin(self.pending_background, engine)
+                self.edge_layer = self.dialogue_renderer.bottom_bar_layer('', self.dialogue_renderer.gear_pressed,
+                                                                          getattr(renderer, 'edge_bar', 'bar') == 'bar')
+                self.buttons = [(pygame.Rect(-round(self._edge_units * 1.5), 633, 150, 87), ('menu',))]
+                self.scroll = self.max_scroll = 0
+                self._present()
+                return
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Minigame rendering stopped: %s', error)
         if closed and not self.error:
             # An answered menu, entry or picker under the closing blinds: the scene and the bottom bar alone.
             engine = self.session.engine
@@ -1179,7 +2135,7 @@ class Desktop:
                 self.pending_background_origin = self.dialogue_renderer.pending_background_origin
                 self.scroll = self.max_scroll = 0
                 # The gear is flush with the frame's left edge, 48 canvas pixels (32 units) outside the UI column.
-                self.buttons = [(pygame.Rect(-48, 633, 150, 87), ('menu',)),
+                self.buttons = [(pygame.Rect(-round(self._edge_units * 1.5), 633, 150, 87), ('menu',)),
                                 (pygame.Rect(0, 0, *SIZE), ('continue',))]
                 if pygame.time.get_ticks() < self.message_until:
                     self._text(self.message, 20, 701, 450, font=self.small, color=MUTED)
@@ -1314,19 +2270,34 @@ class Desktop:
         return self.picker_hd if self.picker_hd.available() else self.picker_renderer
 
     def _word_grid(self):
-        """HD's word game art when an HD app bundle is imported, else the Android renderer."""
-        return self.word_hd if self.word_hd is not None and self.word_hd.available() else self.grid_renderer
+        """HD's word game art when an HD app bundle is imported, else the Android renderer (with the keys' highlighted
+        cell, grid_cursor)."""
+        renderer = self.word_hd if self.word_hd is not None and self.word_hd.available() else self.grid_renderer
+        if renderer is not None:
+            renderer.cursor = self.grid_cursor
+        return renderer
 
     _backdrop = (None, None)        # (window size, surface) of the last window backdrop
+
+    def _canvas_empty(self):
+        """Whether the canvas is still as render() cleared it. All zero bytes, so a compare: get_bounding_rect costs as
+        much as the scale it would save."""
+        buffer = self.canvas.get_buffer()
+        if len(self._blank_canvas) != buffer.length:
+            self._blank_canvas = bytes(buffer.length)
+        return self._blank_canvas.startswith(buffer)
 
     def _window_backdrop(self, size):
         """While the "SHS HD Backdrop" switch is on, SHS HD's faded main-menu collage around the frame
         (hd_ui.window_backdrop), else None (the dark fill)."""
-        key = size, self.hd_backdrop
+        key = size, self.hd_backdrop, self.ch_backdrop
         if self._backdrop[0] != key:
             surface = None
             try:
-                collage = self.backdrop_collage() if self.hd_backdrop else None
+                if self.ch_backdrop and self.ch_switch():
+                    from .desktop_cod_main import addon_backdrop
+                    surface = addon_backdrop(self.session.resources.library, size)
+                collage = self.backdrop_collage() if self.hd_backdrop and surface is None else None
                 if collage is not None:
                     from .hd_ui import window_backdrop
                     surface = window_backdrop(collage, size)
@@ -1356,12 +2327,55 @@ class Desktop:
         return self.backdrop_collage() is not None
 
     def hires_switch(self):
-        """shshd-runtime: whether this episode has a second, hi-res portrait set (the game profile's
-        TRANSLATED_PORTRAIT_ART: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        """shshd-runtime: whether this episode has a second, hi-res portrait set to choose (the game profile's
+        HIRES_SWITCH_PACKS: translated New Rules episodes), so the "Hi-Res Portraits" switch changes something."""
+        return feature_pack(self.session.resources) in getattr(GAMES.get(game_id(self.session.resources)), 'HIRES_SWITCH_PACKS', ())
+
+    def ms3_switch(self):
+        """shshd-runtime: whether this episode has the April build's looks to choose (MS3_CHARACTER_ART: translated X360
+        episodes), so the "MS3 Characters" switch changes something."""
+        return feature_pack(self.session.resources) in getattr(GAMES.get(game_id(self.session.resources)), 'MS3_CHARACTER_ART', ())
+
+    def java_look_switch(self):
+        """shshd-runtime: whether this episode has the Java '08 demo's look to choose (JAVA_LOOK_ART: translated BREW
+        episodes, with an addon that carries it), so the "Java '08 Look" switch changes something."""
+        resources = self.session.resources
+        if feature_pack(resources) not in getattr(GAMES.get(game_id(resources)), 'JAVA_LOOK_ART', ()):
+            return False
+        from .desktop_brew_catch import library_has_java_look
+        return library_has_java_look(getattr(resources, 'library', None))
+
+    def brew_08_switch(self):
+        """shshd-runtime: whether this episode shows BREW's shared locations in '07's art (BREW_08_BACKGROUNDS), so the "'08
+        Backgrounds" switch changes something."""
+        return feature_pack(self.session.resources) in getattr(GAMES.get(game_id(self.session.resources)), 'BREW_08_BACKGROUNDS', ())
+
+    def smartphone_switch(self):
+        """shshd-runtime: whether this episode has the smartphone's music (SMARTPHONE_MUSIC_PACKS: translated SHS '11
+        episodes), so the "Smartphone Music" switch changes something. It only picks what's heard: the engine and a save
+        hold the same requests either way, so changing it needs nothing else."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
-        packs = getattr(GAMES.get(game_id(resources)), 'TRANSLATED_PORTRAIT_ART', {})
-        return record.get('pack_id') in packs
+        return record.get('pack_id') in getattr(GAMES.get(game_id(resources)), 'SMARTPHONE_MUSIC_PACKS', ())
+
+    def word_grid_switch(self):
+        """shshd-runtime: whether the "Use Word Grid Skin" switch is offered: Use Translated Mini-Games on, the games having
+        been asked for by this episode (smartphone_switch's pack), and the HD bundle's word game art there."""
+        return self.arena_minigames and self.shs11_hd is not None and self.shs11_hd.available()
+
+    def ch_switch(self):
+        """shshd-runtime: whether the library has the game's optional portrait addon (PORTRAIT_ADDON), so the CH
+        switches change something."""
+        library = getattr(self.session.resources, 'library', None)
+        addon = getattr(GAMES.get(game_id(self.session.resources)), 'PORTRAIT_ADDON', None)
+        return addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None
+
+    def minigames_switch(self):
+        """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
+        profile's TRANSLATED_MINIGAMES)."""
+        resources = self.session.resources
+        record = getattr(resources, 'record', None) or {}
+        return has_translated_minigames(GAMES.get(game_id(resources)), record, getattr(resources, 'presentation', None))
 
     def set_hires_portraits(self, enabled):
         """shshd-runtime: the "Hi-Res Portraits" switch, from either Options page. The library reads the other set
@@ -1372,6 +2386,49 @@ class Desktop:
         library = getattr(self.session.resources, 'library', None)
         if library is not None:
             library.hires_portraits = enabled
+        self._drop_portraits()
+
+    def set_ms3_characters(self, enabled):
+        """shshd-runtime: the "MS3 Characters" switch, as set_hires_portraits: the next portrait drawn is the other set's,
+        and a save names the standard portraits, so it needs nothing of its own."""
+        self.ms3_characters = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.ms3_characters = enabled
+        self._drop_portraits()
+
+    def set_java_look(self, enabled):
+        """shshd-runtime: the "Java '08 Look" switch: the library serves the Java copies of the BREW addon's pictures from the
+        next one drawn (EpisodeResources._java_look), so every cached picture is dropped; the catch game picks its skin as it
+        draws. Saves name the addon's own pictures, so they need nothing of their own."""
+        self.java_look = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.java_look = enabled
+        self._drop_portraits()
+        self.dialogue_renderer.drop_translated_badges()
+        self.brew_catch_renderer.drop_images()
+        self._frame_backdrop_cache = (None, {})          # both box colours' backdrops, as scaled so far
+        self.badge_hd._tab_cache = None                  # a time badge on screen, with its icon
+
+    def set_brew_08_backgrounds(self, enabled):
+        """shshd-runtime: the "'08 Backgrounds" switch: the library serves '08's shared locations from the next picture drawn
+        (EpisodeResources._brew_08_background), so cached pictures are dropped. Saves name '07's, so they need nothing."""
+        self.brew_08_backgrounds = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.brew_08_backgrounds = enabled
+        self._drop_portraits()
+
+    def set_ch_portraits(self, enabled):
+        """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""
+        self.ch_portraits = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.ch_portraits = enabled
+        self._drop_portraits()
+
+    def _drop_portraits(self):
         self.images.clear()
         cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
                   CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
@@ -1418,64 +2475,151 @@ class Desktop:
         # run to its edges. Measured from HD photos: the UI is ~3.9 px per
         # unit at 1500x2000 (this build used to fit it to the window height at
         # 4.17), with the bar's 24-unit strip exactly 24 units tall.
-        scale = min(width / FRAME_UNITS[0], height / FRAME_UNITS[1])
-        frame = pygame.Rect(0, 0, max(1, round(FRAME_UNITS[0] * scale)), max(1, round(FRAME_UNITS[1] * scale)))
-        frame.center = (width // 2, height // 2)
+        # General's Aspect Ratio (frame_shape.py) keeps the frame's width and makes it taller: the column stays at the
+        # bottom, the extra height above it. A screen drawn as a whole 3:4 picture (a minigame, the arena) sits at the
+        # bottom too (picture_frame), so its own bar and gear are where the story's are; a card over the scene (the
+        # pause menu, a notice) is centred (card_frame); the Faceplace alert's strip keeps to the top (alert_frame).
+        # At 3:4 all four are the frame.
+        units = self.frame_units()
+        self._frame_width, self._frame_tall = units
+        edge = (units[0] - 320) / 2                 # the frame's margin each side of the column: 32 units, 0 from 9:16
+        usable = self.usable_size()[1]               # (above a phone's navigation bar: nav_height)
+        scale = min(width / units[0], usable / units[1])
+        self._present_scale = scale
+        frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
+        frame.center = (width // 2, usable // 2)
+        # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there).
+        picture = pygame.Rect(0, 0, frame.width, max(1, round(units[0] * 4 / 3 * scale)))
+        self._frames = (frame, picture.move(frame.x, frame.bottom - picture.height),
+                        picture.move(frame.x, frame.centery - picture.height // 2), picture.move(frame.x, frame.y))
         target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
         with frame_log.section('present'):
-            scaled = self.canvas if self.canvas.get_size() == target_size else pygame.transform.smoothscale(self.canvas, target_size)
+            # A screen with its own layer leaves the canvas empty: no pass, and nothing to blit.
+            if self._canvas_empty():
+                scaled = None
+            elif self.canvas.get_size() == target_size:
+                scaled = self.canvas
+            else:
+                scaled = pygame.transform.smoothscale(self.canvas, target_size)
         alpha, overlay = self.panel_alpha, self.panel_overlay
         self.panel_alpha = self.panel_overlay = None
-        if alpha is not None and alpha < 1:
+        if scaled is not None and alpha is not None and alpha < 1:
             scaled = faded(scaled, round(255 * alpha))
         # The column also sits 5.5 units above the frame's bottom edge (box
         # top and bottom lines both measured 21.5 px lower than HD's at
         # 3.9 px per unit; the right border matched to a pixel).
-        self.viewport = pygame.Rect(frame.x + round(32 * scale),
+        self.viewport = pygame.Rect(frame.x + round(edge * scale),
                                     frame.bottom - target_size[1] - round(UI_BOTTOM_INSET * scale), *target_size)
         self.bg_viewport = frame
         bg_size = frame.size
         with frame_log.section('backdrop'):
             backdrop = self._window_backdrop(self.window.get_size())
-            if backdrop is not None:
-                self.window.blit(backdrop, (0, 0))
+            # Only around the frame: the background layer starts by filling the frame itself.
+            for area in window_margins((width, height), frame):
+                if backdrop is not None:
+                    self.window.blit(backdrop, area, area)
+                else:
+                    self.window.fill((8, 12, 20), area)
+            nav = self.nav_height()
+            if nav:
+                # Under a phone's navigation bar, below the frame: the bar's own dark, as Android apps leave it.
+                self.window.fill((20, 20, 24), pygame.Rect(0, height - nav, width, nav))
+            self._draw_background_layer(bg_size, self.bg_viewport, self._frame_covered(alpha))
+        under = getattr(self, 'under_layer', None)
+        if under is not None:
+            # A screen under the choice that covers the whole frame (New Rules' arena under its menu): a 3:4 picture at
+            # the frame's bottom, or one of the frame's own shape over all of it (the X360 skin's: fills_frame).
+            if self.__dict__.get('under_fills_frame'):
+                self.window.blit(pygame.transform.smoothscale(under, frame.size), frame)
             else:
-                self.window.fill((8, 12, 20))
-            self._draw_background_layer(bg_size, self.bg_viewport)
+                self.window.blit(pygame.transform.smoothscale(under, self.picture_frame.size), self.picture_frame)
+                self._draw_picture_band(backdrop, height)
         ui_layers = []
         if self.story_layer is not None:
             # Drawn at HD density and resampled once, straight to the window.
             layer = self.story_layer
-            if layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
-                # The whole 384x512-unit frame (HD's football).
-                area = self.bg_viewport
-            elif layer.get_width() * 480 == layer.get_height() * FRAME_UNITS[0]:
-                # A frame-wide layer (its column plus HD's 32-unit side margins).
-                area = pygame.Rect(self.bg_viewport.x, self.viewport.y, self.bg_viewport.width, self.viewport.height)
+            if self.story_centred:
+                # A picture as wide as the frame and no taller (a storyboard: desktop_cutscene), centred; past the shape
+                # its spec serves, black above and below it.
+                tall = round(frame.width * layer.get_height() / layer.get_width())
+                area = frame if abs(tall - frame.height) <= 1 else pygame.Rect(
+                    frame.x, frame.centery - tall // 2, frame.width, tall)
+                self._draw_bands(area)
+            elif self.story_fills_frame:
+                # A card drawn over the whole frame in its own shape (desktop_title: HD's 768 x 1024 at 3:4).
+                area = frame
+            elif self.story_below:
+                # A game's canvas going on below HD's 3:4 to the frame's bottom, that 3:4 centred (desktop_x360_slot).
+                tall = round(layer.get_height() * frame.width / layer.get_width())
+                area = pygame.Rect(frame.x, frame.bottom - tall, frame.width, tall)
+            elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0] and self.story_over_scene:
+                # HD's frame drawn over the scene (the look picker): at the story's scale with the column, its bottom
+                # the frame's, cut by a narrower frame's sides; the scene shows above it.
+                area = self._scene_card(0)
+            elif layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0]:
+                # The whole 384x512-unit frame (HD's football): 3:4, at the bottom of a taller frame. A game drawn over
+                # the scene (see-through: the BREW catch game, '11's and the X360's games) leaves the scene above it
+                # as the background layer drew it, not the window's backdrop (owner, 2026-11-12).
+                area = self.picture_frame
+                if not (layer.get_masks()[3] and self.pending_background is not None and self.story_band is None):
+                    self._draw_picture_band(backdrop, height)
+            elif frame_wide(layer.get_size()):
+                # A frame-wide layer (its column plus HD's 32-unit side margins), cut by a narrower frame's edges.
+                margin = round(32 * scale)
+                area = pygame.Rect(self.viewport.x - margin, self.viewport.y, self.viewport.width + 2 * margin,
+                                   self.viewport.height)
             else:
                 area = self.viewport
+            if self.story_lift:
+                area = area.move(0, -round(self.story_lift * scale))
             with frame_log.section('present'):
                 # Already the area's size when the window is drawn at the story's own density (Android): no pass.
                 layer = layer if layer.get_size() == area.size else pygame.transform.smoothscale(layer, area.size)
             if alpha is not None and alpha < 1:
                 layer = faded(layer, round(255 * alpha))
+            clip = self.window.get_clip()
+            self.window.set_clip(frame.clip(clip))
             self.window.blit(layer, area)
+            self.window.set_clip(clip)
             ui_layers.append((layer, area))
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
             edge_height = round(self.viewport.height * 72 / 480)
-            self.window.blit(pygame.transform.smoothscale(self.edge_layer, (self.bg_viewport.width, edge_height)),
-                             (self.bg_viewport.x, self.bg_viewport.bottom - edge_height))
-        self.window.blit(scaled, self.viewport)
-        ui_layers.append((scaled, self.viewport))
+            edge_size = (self.bg_viewport.width, edge_height)
+            # The layer is the same surface until the bar changes (bottom_bar_layer's cache).
+            if self._edge_scaled[:2] != (self.edge_layer, edge_size):
+                self._edge_scaled = (self.edge_layer, edge_size, pygame.transform.smoothscale(self.edge_layer, edge_size))
+            self.window.blit(self._edge_scaled[2], (self.bg_viewport.x, self.bg_viewport.bottom - edge_height))
+        if scaled is not None:
+            self.window.blit(scaled, self.viewport)
+            ui_layers.append((scaled, self.viewport))
         if overlay is not None:
-            self.window.blit(pygame.transform.smoothscale(overlay, target_size), self.viewport)
+            self.window.blit(pygame.transform.smoothscale(overlay, target_size),
+                             self.viewport.move(0, -round(self.story_lift * scale)))
         self._panel_handover(ui_layers)
+        hd_frame = (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self._frame_tall) == FRAME_UNITS
+        alert_area = self._alert_area(frame, scale, hd_frame)
+        self._panels_button_rect = None
+        if self._panels_button_shown():
+            self._draw_panels_button(alert_area)
+        self._alert_tap_rect = None
         if hd_alert is not None:
-            # HD's alert is a strip of the frame, cut by the frame's own edge.
-            self.window.blit(pygame.transform.smoothscale(hd_alert, frame.size), frame)
+            # HD's alert is a strip of the frame, cut by the frame's own edge: in another shape, at the story's scale,
+            # against the frame's right edge and top as on HD's.
+            if hd_frame:
+                self.window.blit(pygame.transform.smoothscale(hd_alert, self.alert_frame.size), self.alert_frame)
+            else:
+                self._blit_part(hd_alert, alert_area, frame, self.ALERT_REGION)
+            self._alert_tap_rect = self._alert_points(alert_area, self.ALERT_TAP)
         if hd_badge is not None:
-            self.window.blit(pygame.transform.smoothscale(hd_badge, frame.size), frame)
+            # The scene label's tab at HD's (15, 50) units: in another shape, at the story's scale, as far from the
+            # frame's left edge, and centred in a taller frame as the narration it sits over is.
+            if hd_frame:
+                self.window.blit(pygame.transform.smoothscale(hd_badge, self.picture_frame.size), self.picture_frame)
+            else:
+                lift = round((self._frame_tall - FRAME_UNITS[1]) / 2 * scale)
+                self._blit_part(hd_badge, pygame.Rect(frame.x, frame.y + lift, round(FRAME_UNITS[0] * scale),
+                                                      round(FRAME_UNITS[1] * scale)), frame, self.BADGE_REGION)
         if hd_pause:
             self._draw_hd_pause(frame)
         if self.notice_stack is not None and self.notice_stack.stack:
@@ -1497,7 +2641,7 @@ class Desktop:
         zoom_mode = self._tree_zoom_mode()
         if zoom_mode is None:
             self.tree_zoom.close(instantly=True)
-            self.tree_zoom.tab = None
+            self.tree_zoom.tab = self.tree_zoom.portrait_tab = None
         if zoom_mode is not None and self.tree_zoom.showing:
             try:
                 with frame_log.section('panels'):
@@ -1505,7 +2649,16 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Tree zoom rendering stopped: %s', error)
+        elif self.overlay_progress > 0 and not self.error:
+            try:
+                with frame_log.section('panels'):
+                    self._draw_panels_overlay()
+            except (ContentError, pygame.error, OSError, ValueError) as error:
+                self.error = str(error)
+                logging.error('Side panel rendering stopped: %s', error)
         elif (self.panels_open or self.panels_progress > 0) and not self.error:
+            from .desktop_side_panels import PANEL as SIDE_PANEL
+            self.side_panels.tree_shape = self.side_panels.wall_shape = SIDE_PANEL     # (beside the game: HD's column)
             left_margin = pygame.Rect(0, 0, self.bg_viewport.x, height)
             right_margin = pygame.Rect(self.bg_viewport.right, 0, width - self.bg_viewport.right, height)
             try:
@@ -1522,6 +2675,12 @@ class Desktop:
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
+            if zoom_mode == 'portrait':
+                self.tree_zoom.draw_portrait_tab(self.window, self.tree_zoom.portrait_tab_rect(self.bg_viewport))
+            else:
+                self.tree_zoom.portrait_tab = None      # `SHSPZButton` is off the screen in landscape
+        self._draw_arena_handover()
+        self._draw_loading_handover()
         self._draw_transition()
         if self.fade:
             self._draw_fade()
@@ -1531,7 +2690,7 @@ class Desktop:
 
     @property
     def tree_zoom(self):
-        """HD's tree zoom tab (desktop_tree_zoom.py; exploration, with a temporary marker), made when first used."""
+        """HD's tree zoom tab and portrait zoom button (desktop_tree_zoom.py; exploration), made when first used."""
         zoom = self.__dict__.get('_tree_zoom')
         if zoom is None:
             zoom = self.__dict__['_tree_zoom'] = desktop_tree_zoom.TreeZoom()
@@ -1570,9 +2729,6 @@ class Desktop:
             panels.draw_tree(self.window, self.session, 1.0,
                              pygame.Rect(round(start + (end - start) * a), 0, column, height))
             return
-        x, y, w, h = desktop_tree_zoom.PORTRAIT_WALL
-        panels.draw_wall(self.window, self.session, 1.0,
-                         pygame.Rect(round(left + x * s), round(top + y * s), round(w * s), round(h * s)))
         shut, zoomed = desktop_tree_zoom.PORTRAIT_TREE_Y
         w, h = desktop_tree_zoom.PORTRAIT_TREE
         middle = shut + (zoomed - shut) * a
@@ -1582,7 +2738,18 @@ class Desktop:
                 round(left), round(top + (middle - h / 2) * s), round(w * s), round(h * s)))
         finally:
             panels.tree_shape = PANEL
-        self.window.blit(game, (0, round(desktop_tree_zoom.GAME_SHIFT * s * a)))
+        # `SHSEngine::onStart` adds the wall after the tree, so where they overlap the wall is on top. The game comes
+        # last: it is brought to the front (`bringSubviewToFront:`).
+        x, y, w, h = desktop_tree_zoom.PORTRAIT_WALL
+        panels.draw_wall(self.window, self.session, 1.0,
+                         pygame.Rect(round(left + x * s), round(top + y * s), round(w * s), round(h * s)))
+        frame = self.bg_viewport
+        rect = zoom.game_rect(frame)
+        if rect.size == frame.size:
+            self.window.blit(game, (rect.x - frame.x, rect.y - frame.y))
+        else:
+            source = frame.clip(game.get_rect())
+            self.window.blit(pygame.transform.smoothscale(game.subsurface(source), rect.size), rect.topleft)
 
     def _tree_zoom_toggled(self):
         """`toggleDTZ`: zooming in during the story pauses it (`invokePauseMenu`, with its sound 8011); either way
@@ -1601,10 +2768,14 @@ class Desktop:
         result = self.tree_zoom.pointer(event, down=pygame.MOUSEBUTTONDOWN, up=pygame.MOUSEBUTTONUP)
         if result == 'toggled':
             self._tree_zoom_toggled()
+        # `togglePZ` has no sound and no pause: the story carries on in the smaller game.
+        result = result or self.tree_zoom.portrait_pointer(event, down=pygame.MOUSEBUTTONDOWN, up=pygame.MOUSEBUTTONUP)
         if result:
             return True
         if not self.tree_zoom.showing:
             return False
+        if not self.tree_zoom.tree_showing:
+            return self._portrait_zoom_pointer(event)
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.tree_zoom.toggle()
             self._tree_zoom_toggled()
@@ -1612,13 +2783,69 @@ class Desktop:
         pointer = event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)
         if not pointer or not self.tree_zoom.settled:
             return pointer
+        return self._zoomed_panels_pointer(event)
+
+    def _zoomed_panels_pointer(self, event):
+        """A pointer event on the panels a zoom has uncovered. In portrait the wall lies over the tree's right end, so
+        it comes first there. Always used up."""
+        position = pygame.mouse.get_pos() if event.type == pygame.MOUSEWHEEL else event.pos
+        wall = self.side_panels.wall_rect
+        if not self.tree_drag and wall is not None and wall.collidepoint(position):
+            self._wall_pointer(event)
+            return True
         if self._tree_pointer(event) or self._wall_pointer(event):
             return True
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self._tree_click(event.pos)
         return True
 
-    def _draw_background_layer(self, target_size, viewport):
+    def _portrait_zoom_pointer(self, event):
+        """Input with only the portrait zoom in: what the shrunken game covers is the game's (False, and
+        _portrait_game_event moves it), what it uncovers is the tree's and the wall's. A press stays with whichever got
+        it. True when the event is used up."""
+        zoom = self.tree_zoom
+        pointer = event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)
+        if not pointer:
+            return False
+        if zoom.game_down:
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                zoom.game_down = False
+            return False
+        if not zoom.settled:
+            return True
+        position = pygame.mouse.get_pos() if event.type == pygame.MOUSEWHEEL else event.pos
+        if not (self.tree_drag or self.wall_drag) and zoom.game_rect(self.bg_viewport).collidepoint(position):
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                zoom.game_down = True
+            return False
+        return self._zoomed_panels_pointer(event)
+
+    def _portrait_game_event(self, event):
+        """A pointer event the shrunken game takes, at the same place on the game at full size."""
+        zoom = self.tree_zoom
+        if zoom.portrait_t <= 0 or not hasattr(event, 'pos'):
+            return event
+        return pygame.event.Event(event.type, {**event.dict, 'pos': zoom.to_game(self.bg_viewport, event.pos)})
+
+    def _frame_covered(self, alpha):
+        """Whether this frame's story layer hides all of the frame (the arena's): nothing under it needs drawing. Not with
+        any alpha channel, which a `convert()`ed canvas has on a Mac and can hold at 0 (graphics.opaque)."""
+        layer = self.story_layer
+        if layer is None or not (alpha is None or alpha >= 1) or layer.get_masks()[3]:
+            return False
+        if self.story_fills_frame:
+            return True             # an opaque canvas of the frame's own shape (a game in a taller frame) hides it all
+        return (self.pending_background is None
+                and layer.get_width() * FRAME_UNITS[1] == layer.get_height() * FRAME_UNITS[0])
+
+    _background_cover = None        # what `_blit_art` last covered the whole frame with, opaquely
+    _edge_units = 32                # the frame's margin each side of the column (_sync_story_scale)
+    top_inset = 0.                  # the share of the window's height a phone's status bar covers (platforms/android.py)
+    bottom_inset = 0.               # ...and its navigation or gesture bar, at the bottom
+    STRIP_PAD = 8                   # panel points kept under the close strip besides (owner, 2026-11-12: to be safe)
+    _top_pad = 0.                   # units of the frame's top under it (_sync_story_scale)
+
+    def _draw_background_layer(self, target_size, viewport, covered=False):
         """Composited directly at window resolution, under the UI canvas.
 
         self.canvas is left transparent where a background belongs (see
@@ -1640,14 +2867,23 @@ class Desktop:
         """
         # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
-        self.window.fill((0, 0, 0), viewport)
-        # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
-        frame_backdrop = self._frame_backdrop(viewport.size)
-        if frame_backdrop is not None:
-            self.window.blit(frame_backdrop, viewport)
         background = self.pending_background
         placement = None if background is None else self._background_placement(background, target_size)
         change = self._location_change(background, placement)
+        # What is under an opaque picture that filled the frame last frame and does again needn't be drawn.
+        hidden = (change is None and self.pending_background_alpha >= 255 and placement is not None
+                  and self._background_cover == (id(background), tuple(placement), tuple(viewport)))
+        if not covered and not hidden:
+            self.window.fill((0, 0, 0), viewport)
+            # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
+            if placement is not None and background.get_width() >= 2 * background.get_height():
+                # A location strip: where it is in the frame, as frame units from the top (the backdrop's bars hug it).
+                unit = target_size[1] / self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+                self._strip_units = (placement[1] / unit, (placement[1] + placement[3]) / unit)
+            frame_backdrop = self._frame_backdrop(viewport.size)
+            if frame_backdrop is not None:
+                self.window.blit(frame_backdrop, viewport)
+        self._background_cover = None
         if placement is not None:
             if change is not None and change['from'] is not None:
                 placement = tuple(a + (b - a) * change['p'] for a, b in zip(change['from'], placement))
@@ -1660,20 +2896,73 @@ class Desktop:
     def _frame_backdrop(self, size):
         """The playing episode's picture for the whole frame, scaled to `size`, or None for black: the resource its
         pack names in the game profile's TRANSLATED_FRAME_BACKDROP (New Rules' UI backdrop for its translations,
-        whose 3:1 location strips leave bands above and below), when the episode carries it."""
+        whose 3:1 location strips leave bands above and below), when the episode carries it. A pack may have another for
+        the speaker's box colour (TRANSLATED_THEME_BACKDROP: BREW's panel is pink behind a pink box)."""
         resources = self.session.resources
         record = getattr(resources, 'record', None) or {}
-        backdrops = getattr(GAMES.get(self.session.engine.game_key), 'TRANSLATED_FRAME_BACKDROP', {})
-        asset_id = backdrops.get(record.get('pack_id'))
+        game = GAMES.get(self.session.engine.game_key)
+        asset_id = pack_setting(resources, 'TRANSLATED_FRAME_BACKDROP')
         exists = getattr(resources, 'exists', None)
         if asset_id is None or exists is None or not exists(asset_id):
             return None
-        key = (id(resources), asset_id, size)
+        engine = self.session.engine
+        theme = engine.panel.theme
+        picker, pending = engine.character_picker, self.session.pending
+        if picker is not None and pending is not None and pending.name == 'character_picker' and picker.characters:
+            # On a portrait picker it follows the highlighted portrait: a boy's blue, a girl's pink (owner, 2026-11-07).
+            theme = engine.numbers.get(engine.number_key(picker.characters[picker.selected], 651), 0)
+        elif pending is not None and pending.name == 'choice':
+            # On a choice it follows the choice's own box (desktop_choice: its character's theme), not the last line's
+            # speaker: the player's choices are blue after a girl's pink line (owner, 2026-11-09).
+            theme = engine.numbers.get(engine.number_key((pending.details or {}).get('character_id', -1), 651), 0)
+        themed = (pack_setting(resources, 'TRANSLATED_THEME_BACKDROP', {}) or {}).get(theme)
+        if themed is not None and exists(themed):
+            asset_id = themed
+        tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+        strip = (None if (self.__dict__.get('_frame_width', FRAME_UNITS[0]), tall) == FRAME_UNITS
+                 else self._backdrop_strip(tall))
+        key = (id(resources), size, getattr(getattr(resources, 'library', None), 'java_look', False),
+               strip and tuple(round(v, 1) for part in strip for v in part))
         if self._frame_backdrop_cache[0] != key:
+            self._frame_backdrop_cache = (key, {})      # (the surfaces of this episode at this size: one per colour)
+        surfaces = self._frame_backdrop_cache[1]
+        if asset_id not in surfaces:
             image = self._image(asset_id)
-            scaled = None if image is None else pygame.transform.smoothscale(image, size)
-            self._frame_backdrop_cache = (key, scaled)
-        return self._frame_backdrop_cache[1]
+            if image is None:
+                surfaces[asset_id] = None
+            elif strip is None:
+                surfaces[asset_id] = pygame.transform.smoothscale(image, size)      # the 3:4 frame, as always
+            else:
+                # Taller (General's Aspect Ratio): lengthened so its bars stay round the strip (backdrop_fit.py).
+                k = image.get_width() / FRAME_UNITS[0]                          # source pixels per frame unit
+                (top, bottom), (new_top, new_bottom) = strip
+                long = backdrop_fit.lengthen(image.convert_alpha(), (top * k, bottom * k), (new_top * k, new_bottom * k),
+                                             round(tall * k))
+                # A frame narrower than HD's (from 9:16) shows the middle of it, cut at the sides as the strip is.
+                wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
+                cut = round((FRAME_UNITS[0] - wide) / 2 * k)
+                if cut > 0:
+                    long = long.subsurface((cut, 0, long.get_width() - 2 * cut, long.get_height()))
+                surfaces[asset_id] = pygame.transform.smoothscale(long, size)
+            # An opaque backdrop is drawn as one, without blending: in a taller frame it shows round the strip every
+            # frame, and a frame-sized alpha blit cost about 20 ms on a PC (the BREW catch game, 2026-11-12). HD's own
+            # frame only when wholly opaque, so its pixels stay as they were.
+            found = surfaces[asset_id]
+            if found is not None and opaque_enough(found, OPAQUE_ENOUGH if strip is not None else 255):
+                surfaces[asset_id] = found.convert()
+        return surfaces[asset_id]
+
+    # Where a location strip sits in the 3:4 frame, in frame units from its top (DialogueRenderer.background_origin's
+    # y 180 less HD_BG_SHIFT's 20.5, 32 in, half the strip's 160 units either side): the backdrops' bars hug it.
+    STRIP_AT_3_4 = (111.5, 271.5)
+
+    def _backdrop_strip(self, tall):
+        """The strip's rows in frame units, ((top, bottom) in the 3:4 frame, (top, bottom) in this one): where this
+        frame's strip was drawn (`_strip_units`), else where `_shaped_placement` puts one (above the column, risen by
+        STRIP_RISE of the added height)."""
+        lift = tall - 480 - 32 - (tall - FRAME_UNITS[1]) * self.STRIP_RISE      # below HD's place
+        now = self.__dict__.get('_strip_units') or (self.STRIP_AT_3_4[0] + lift, self.STRIP_AT_3_4[1] + lift)
+        return self.STRIP_AT_3_4, now
 
     # `GameModel::setLocationImageID` changes the location layer's contents and bounds with Core Animation's implicit
     # actions on, so a new scene picture crossfades in (0.25 s); `SHSUIChapterScreen::animate` turns the actions off
@@ -1753,6 +3042,28 @@ class Desktop:
         location layer's bounds as scaled and positioned on screen."""
         bw, bh = background.get_size()
         tw, th = target_size
+        # General's Aspect Ratio (frame_shape.py): the frame is `wide` x `tall` units, HD's 384 x 512 at 3:4.
+        wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
+        tall = self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+        zoom = self.__dict__.get('scene_zoom', 1.)
+        if zoom > 1 and (wide, tall) != FRAME_UNITS and self.pending_background_origin not in (None, 'cover'):
+            # A scene drawn as at 3:4 and scaled to the frame's height about its left edge (Diss Practice: its
+            # renderer's scene_zoom, Josh scaled with it): where 3:4 puts the picture in a frame this wide, times J.
+            self._frame_width, self._frame_tall = FRAME_UNITS
+            try:
+                x, y, w, h = self._background_placement(background, (tw, th / zoom))
+            finally:
+                self._frame_width, self._frame_tall = wide, tall
+            return x * zoom, y * zoom, w * zoom, h * zoom
+        if (wide, tall) != FRAME_UNITS and self.pending_background_origin is not None:
+            return self._shaped_placement(background, target_size, wide, tall)
+        if self.pending_background_origin is None:
+            if (wide, tall) == FRAME_UNITS:
+                return (0., 0., float(tw), float(th))
+            # Stretched to the 3:4 frame as before; another shape takes the picture scaled evenly until it covers,
+            # centred (a 2:3 picture shows whole at 2:3).
+            k = max(tw / bw, th / bh)
+            return ((tw - bw * k) / 2, (th - bh * k) / 2, bw * k, bh * k)
         if self.pending_background_origin == 'cover':
             # Cause of Death's chapter card: its iPhone screen shows the whole picture fitted to the 320x480 column;
             # here it is scaled evenly until it covers the 3:4 frame, centred where the column's centre is (owner:
@@ -1762,8 +3073,6 @@ class Desktop:
             crop = pygame.Rect(round(bw / 2 - 192 * k), round(bh / 2 - centre * k), round(384 * k), round(512 * k))
             sx, sy = tw / crop.width, th / crop.height
             return (-crop.x * sx, -crop.y * sy, bw * sx, bh * sy)
-        if self.pending_background_origin is None:
-            return (0., 0., float(tw), float(th))
         else:
             cx, cy = self.pending_background_origin
             # In HD's frame the art sits 48 units further right and 20.5
@@ -1777,7 +3086,7 @@ class Desktop:
             # 2026-10-14): the 480x720 art panned with the speaker so the frame is always covered. Its own iPhone
             # screen shows the art 1 px per point from the plain focal point (IMG_0483), which leaves the 3:4
             # frame's margins past the art's edge.
-            if cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'):
+            if self._location_pans(cy):
                 # HD pans the location layer by speaker (location_pan.py): its center is `x` points from
                 # the frame's left edge, i.e. x / 2 - 32 in this crop's UI units. The pan takes the art's width in
                 # HD points: 960 for a 480-pixel picture as for its 960-pixel HD twin.
@@ -1797,6 +3106,65 @@ class Desktop:
                                  round(384 * bg_scale), round(512 * bg_scale))
             sx, sy = tw / window.width, th / window.height
             return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
+
+    def _location_pans(self, cy):
+        """Whether the location layer pans by speaker (location_pan.py): a dialogue scene's picture (focal y 180)
+        with HD's art, and every Cause of Death scene."""
+        return cy == 180 and (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod')
+
+    # How far a strip (New Rules, BREW) rises in a frame taller than HD's: by this share of the added height (the
+    # owner's pick B, 2026-11-11).
+    STRIP_RISE = .5
+    # How much larger the Faceplace alert is drawn in a frame the column's width (a phone) than at HD's scale.
+    ALERT_ZOOM = 1.5
+
+    def _shaped_placement(self, background, target_size, wide, tall):
+        """`_background_placement` in a frame of another shape than HD's 3:4 (General's Aspect Ratio), `wide` x `tall`
+        units with the column at its bottom, centred: (x, y, width, height) in target pixels.
+
+        A location picture (480 units wide, 720 tall: one that covers HD's frame) is shown
+        - at 2:3 (384 wide) whole: scaled to the frame, nothing panned (owner, 2026-11-11);
+        - from 9:16 (the column's 320 wide) as SD SHS and Cause of Death show it on an iPhone's screen, one art unit a
+          unit about SD's own focal point, panned by speaker as HD pans; past its height (Fit Screen past 9:20)
+          enlarged to the frame's height;
+        - in between, at a scale between the two;
+        always covering the frame, sliding down or across rather than leave an edge. HD's focal shift (HD_BG_SHIFT,
+        measured in its frame) fades out towards SD's layout. A strip (New Rules, BREW) keeps its size and rises with
+        the frame (STRIP_RISE); its frame backdrop shows round it (_frame_backdrop). Cause of Death's chapter card
+        (`cover`) covers the frame about the column's centre."""
+        bw, bh = background.get_size()
+        tw, th = target_size
+        unit_x, unit_y = tw / wide, th / tall              # target pixels per frame unit
+        if self.pending_background_origin == 'cover':
+            centre = tall - FRAME_UNITS[1] + 26.5 + 240     # the column's centre, as far from the bottom as in HD's
+            k = max(wide / bw, centre * 2 / bh, (tall - centre) * 2 / bh)      # frame units per art pixel
+            return ((wide - bw * k) / 2 * unit_x, (centre - bh * k / 2) * unit_y, bw * k * unit_x, bh * k * unit_y)
+        cx, cy = self.pending_background_origin
+        bg_scale = bw / 480                                 # art pixels per art unit (the picture is 480 units wide)
+        high = bh / bg_scale
+        side = (wide - 320) / 2                             # the frame's margin each side of the column
+        top = tall - 480                                    # the column's top as the background counts it (HD: 32)
+        between = (FRAME_UNITS[0] - wide) / (FRAME_UNITS[0] - 320)      # 0 at HD's width, 1 at the column's
+        shift_x, shift_y = HD_BG_SHIFT[0] * (1 - between), HD_BG_SHIFT[1] * (1 - between)
+        pans = self._location_pans(cy)
+        picture = cy + HD_BG_SHIFT[1] + 32 - high / 2 <= 0 and cy + HD_BG_SHIFT[1] + 32 + high / 2 >= FRAME_UNITS[1]
+        if picture:
+            whole = max(wide / 480, tall / high)            # the picture fitted to the frame (2:3: exactly)
+            scale = max(whole + (1 - whole) * between, wide / 480, tall / high)
+            width, height = 480 * scale, high * scale
+            ay = min(max(top + cy + shift_y, tall - height / 2), height / 2)
+        else:
+            width, height = 480., high
+            # (HD's own offset from the column kept: the strip's place was chosen in HD's frame.)
+            ay = top + cy + HD_BG_SHIFT[1] - (tall - FRAME_UNITS[1]) * self.STRIP_RISE
+        if pans:
+            ax = self.location_pan.x(self.session.engine.panel.location_align, width * 2, pygame.time.get_ticks(),
+                                     wide * 2) / 2
+        else:
+            ax = side + cx + shift_x
+        if picture:
+            ax = min(max(ax, wide - width / 2), width / 2)
+        return ((ax - width / 2) * unit_x, (ay - height / 2) * unit_y, width * unit_x, height * unit_y)
 
     def _blit_art(self, background, placement, target_size, viewport, alpha, *, cache=True):
         """Draw `background` laid over `placement` (see _background_placement), clipped to the frame. Where the
@@ -1819,21 +3187,76 @@ class Desktop:
             area = pygame.Rect(viewport.x + round(left), viewport.y + round(top),
                                round(right - left), round(bottom - top))
         key = (id(background), None if crop is None else tuple(crop), area.size)
+        shaped = (self.__dict__.get('_frame_width', FRAME_UNITS[0]),
+                  self.__dict__.get('_frame_tall', FRAME_UNITS[1])) != FRAME_UNITS
+        whole = self._whole_art(background, placement, area, left - x, top - y) if shaped and crop is not None else None
+        if whole is not None:
+            scaled_bg = whole
+            key = None
         # Between two frames of the same scene only the location pan and the implicit animations above change this
         # layer -- each settles after 0.25s -- so a frame whose key matches the last one reuses that scaled surface
         # instead of smoothscaling the same pixels again. Alpha is set fresh every time regardless (never left over
         # from a cache hit): a mid-transition frame's lowered alpha must not stick to a later, fully-opaque one
         # reusing the same cached surface.
         cached_key, cached_surface = self._background_layer_cache or (None, None)
-        if cache and key == cached_key:
+        if whole is not None:
+            pass
+        elif cache and key == cached_key:
             scaled_bg = cached_surface
         else:
             source = background if crop is None else background.subsurface(crop)
-            scaled_bg = pygame.transform.smoothscale(source, area.size)
+            if bw >= 2 * bh and shaped:
+                # A strip (New Rules, BREW: pixel art the translators enlarged with nearest-neighbour) outside HD's
+                # frame: pixel-perfect, its pixels kept square-edged (owner, 2026-11-11).
+                scaled_bg = pygame.transform.scale(source, area.size)
+            else:
+                scaled_bg = pygame.transform.smoothscale(source, area.size)
+            if opaque_enough(scaled_bg):     # smoothscale leaves an opaque picture at 253 or 254
+                scaled_bg = scaled_bg.convert()
             if cache:
                 self._background_layer_cache = (key, scaled_bg)
-        scaled_bg = faded(scaled_bg, round(alpha))
+        if scaled_bg.get_masks()[3]:
+            scaled_bg = faded(scaled_bg, round(alpha))
+        elif alpha < 255:
+            scaled_bg = faded(scaled_bg.copy(), round(alpha))
+        else:
+            # Never given a whole-surface alpha, even 255: that takes a blit from about 1 ms to 33 on a phone.
+            if cache and area == viewport:
+                self._background_cover = (id(background), tuple(placement), tuple(viewport))
         self.window.blit(scaled_bg, area)
+
+    WHOLE_ART_LIMIT = 3     # a whole picture is scaled for _whole_art only up to this many times the frame's pixels
+
+    def _whole_art(self, background, placement, area, dx, dy):
+        """shshd-runtime (a frame of another shape than HD's): the part of `background` laid over `placement` that
+        `area` shows (`dx`, `dy` target pixels into the picture), cut from the whole picture scaled once (two kept:
+        a crossfade's old and new). A location pan then moves a window over it each frame instead of scaling a new
+        crop: at 1080 x 2400 that was 13 ms a frame on a PC and the most of a line change on a phone. None when the
+        picture would be too large to keep (WHOLE_ART_LIMIT) or rounds smaller than `area` (_blit_art crops then).
+        HD's own 3:4 frame never comes here, so it stays as it was."""
+        size = round(placement[2]), round(placement[3])
+        if (size[0] < area.width or size[1] < area.height
+                or size[0] * size[1] > self.WHOLE_ART_LIMIT * area.width * area.height):
+            return None
+        bw, bh = background.get_size()
+        key = id(background), size
+        wholes = self.__dict__.setdefault('_whole_arts', OrderedDict())
+        scaled = wholes.get(key)
+        if scaled is None or scaled[0] is not background:
+            if bw >= 2 * bh:
+                image = pygame.transform.scale(background, size)        # a strip: pixel-perfect (see _blit_art)
+            else:
+                image = pygame.transform.smoothscale(background, size)
+            if opaque_enough(image):
+                image = image.convert()
+            scaled = wholes[key] = background, image
+            while len(wholes) > 2:
+                wholes.popitem(last=False)
+        wholes.move_to_end(key)
+        image = scaled[1]
+        x = min(max(0, round(dx)), size[0] - area.width)
+        y = min(max(0, round(dy)), size[1] - area.height)
+        return image.subsurface((x, y, *area.size))
 
     def _draw_scene_badge(self, badge, *, previous_glyph=-1):
         layer = self.dialogue_renderer.frame(204 if badge.blue else 236, 13).copy()
@@ -1926,11 +3349,21 @@ class Desktop:
         buttons = self.pause_renderer.draw(self.canvas, application=self.on_menu_page is not None,
                                             main_menu=self.on_main_menu is not None,
                                             pressed=self.press.pressed or self.menu_focus,
-                                            elapsed_ms=self.pause_elapsed_ms, closing=self.pause_closing)
+                                            elapsed_ms=self.pause_elapsed_ms, closing=self.pause_closing,
+                                            extra_entries=((('Skip Ahead', ('skip_ahead',)),)
+                                                           if self.skip_ahead and can_skip(self.session) else ())
+                                            + ((('Undo', ('undo',)),) if self._undo_ready() else ()))
         self.buttons = [(pygame.Rect(*(round(value * 1.5) for value in rect)), command)
                         for rect, command in buttons]
         if pygame.time.get_ticks() < self.message_until:
             self._text(self.message, 30, 640, 420, font=self.small)
+
+    def _date_first(self, details):
+        """shshd-runtime: whether this card shows its date as the title (TRANSLATED_DATE_FIRST_PACKS: the BREW games). Not in a
+        capture: an episode's preview picture keeps the story's name as the title (owner, 2026-11-07)."""
+        if self.capture or not details.get('subtitle'):
+            return False
+        return free_setting(self.session.resources, 'TRANSLATED_DATE_FIRST_PACKS', 'date_first')
 
     def _title_renderer(self):
         """The chapter / week card: Cause of Death's own (SHS HD's at iPhone size), HD's with an HD bundle, else
@@ -1952,9 +3385,105 @@ class Desktop:
             self._tinted = key, self.pause_hd.sepia(self.window.subsurface(area).copy())
         self.window.blit(self._tinted[1], area)
 
+    def _frame_part(self, index):
+        """One of _present's 3:4 places in the frame, while it's the frame they were made for; else the frame itself
+        (the same at 3:4)."""
+        frames = self.__dict__.get('_frames')
+        return frames[index] if frames is not None and frames[0] is self.bg_viewport else self.bg_viewport
+
+    picture_frame = property(lambda self: self._frame_part(1), doc="A whole 3:4 picture: at the frame's bottom.")
+    card_frame = property(lambda self: self._frame_part(2), doc='A card over the scene: centred in the frame.')
+    alert_frame = property(lambda self: self._frame_part(3), doc="The Faceplace alert's strip: at the frame's top.")
+
+    # Where the HD overlays' cards can be, in HD's frame points (768 x 1024): the Faceplace alert's strip at the right
+    # (desktop_faceplace_alert STRIP_LEFT on, a card some lines tall from CARD_TOP) and the scene label's band
+    # (desktop_badge_hd: its tab, TAB_TOP down and 120 tall, sliding in from the left to REST_X).
+    ALERT_REGION = (560, 0, 208, 720)
+    BADGE_REGION = (0, 90, 410, 140)
+
+    def _blit_part(self, layer, area, clip, region):
+        """`layer` laid over `area` (resampled to it), within `clip`: only `region` (HD frame points: where the overlay's
+        card can be) is resampled, not the whole frame-sized layer, which on a phone cost a frame's budget."""
+        k = layer.get_width() / 768
+        bounds = pygame.Rect(*(round(v * k) for v in region)).clip(layer.get_rect())
+        if bounds.width <= 0 or bounds.height <= 0:
+            return
+        kx, ky = area.width / layer.get_width(), area.height / layer.get_height()
+        dest = pygame.Rect(area.x + round(bounds.x * kx), area.y + round(bounds.y * ky),
+                           max(1, round(bounds.width * kx)), max(1, round(bounds.height * ky)))
+        before = self.window.get_clip()
+        self.window.set_clip(clip.clip(before))
+        self.window.blit(pygame.transform.smoothscale(layer.subsurface(bounds), dest.size), dest)
+        self.window.set_clip(before)
+
+    def _hd_frame_shape(self):
+        """Whether the frame is HD's own 3:4 (General's Aspect Ratio's 3:4)."""
+        return (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self.__dict__.get('_frame_tall', FRAME_UNITS[1])) == FRAME_UNITS
+
+    INPUT_LIFT_SHARE = .75
+
+    def _input_lift(self):
+        """Units the name entry is drawn above its place in a taller frame: three quarters of the height the frame adds,
+        so the box sits in the frame's upper half, clear of a phone's keyboard below it (owner, 2026-11-12: at 20:9 it
+        sat two thirds down, in both games), and still below the Faceplace alert and the side panels' button at the top
+        right (all of it put the box under them). Its gear and bar stay at the frame's bottom."""
+        if self._hd_frame_shape():
+            return 0
+        return (self.__dict__.get('_frame_tall', FRAME_UNITS[1]) - FRAME_UNITS[1]) * self.INPUT_LIFT_SHARE
+
+    def _scene_card(self, lift):
+        """Where HD's frame drawn over the scene goes (the look picker, the loading band): at the story's scale with the
+        column, its bottom the frame's less `lift` units, cut by a narrower frame's sides."""
+        frame = self.bg_viewport
+        scale = self.__dict__.get('_present_scale') or frame.width / self.__dict__.get('_frame_width', FRAME_UNITS[0])
+        margin = round(32 * scale)
+        tall = round(FRAME_UNITS[1] * scale)
+        return pygame.Rect(self.viewport.x - margin, frame.bottom - tall - round(lift * scale),
+                           self.viewport.width + 2 * margin, tall)
+
+    def _draw_bands(self, area):
+        """The frame above and below `area` (a storyboard narrower in shape than the frame): black. Not the episode's
+        frame backdrop, which is a pack's location-strip art (New Rules' under the X360's storyboards: owner,
+        2026-11-12, once those were rendered tall enough that no phone needs bands)."""
+        frame = self.bg_viewport
+        bands = [pygame.Rect(frame.x, frame.y, frame.width, area.y - frame.y),
+                 pygame.Rect(frame.x, area.bottom, frame.width, frame.bottom - area.bottom)]
+        for band in bands:
+            band = band.clip(self.window.get_rect())
+            if band.height > 0:
+                self.window.fill((0, 0, 0), band)
+
+    def _draw_picture_band(self, backdrop, height):
+        """Above a 3:4 picture in a taller frame (picture_frame), the window's backdrop, as beside the frame; or the
+        game's own background (`story_band`, its renderer's band_picture: owner, 2026-11-11) lengthened upward with
+        whole repeats of its pattern (backdrop_fit), its part under the game as the game draws it."""
+        band = pygame.Rect(self.bg_viewport.x, self.bg_viewport.y, self.bg_viewport.width,
+                           self.picture_frame.y - self.bg_viewport.y).clip(self.window.get_rect())
+        if band.height <= 0:
+            return
+        picture = self.story_band
+        if picture is not None:
+            key = (id(picture), self.bg_viewport.size, self.picture_frame.height)
+            cached = self.__dict__.get('_band_cache')
+            if cached is None or cached[0] != key:
+                # backdrop_fit.extend's picture of the frame's shape: the game draws its bottom (band_picture's
+                # game, with the same height), this its top.
+                wide = self.__dict__.get('_frame_width', FRAME_UNITS[0])
+                long = round(picture.get_height() * self._frame_tall / (wide * 4 / 3))
+                lengthened = backdrop_fit.extend(picture, long)
+                cached = self._band_cache = (key, pygame.transform.smoothscale(lengthened, self.bg_viewport.size))
+            self.window.blit(cached[1], band, band.move(-self.bg_viewport.x, -self.bg_viewport.y))
+            return
+        if backdrop is not None:
+            self.window.blit(backdrop, band, band)
+        else:
+            self.window.fill((8, 12, 20), band)
+
     def _draw_hd_pause(self, frame):
-        """HD's pause menu: the frame dimmed sepia with UIKit panels over it (desktop_pause_hd.py)."""
+        """HD's pause menu: the frame dimmed sepia with UIKit panels over it (desktop_pause_hd.py), its 3:4 card centred
+        in a taller frame (card_frame)."""
         area = frame.clip(self.window.get_rect())
+        frame = getattr(self, 'card_frame', frame)
         if area.width <= 0 or area.height <= 0:
             return
         if not self.pause_closing:           # Resume takes the tint away at once; only the card zooms out
@@ -1984,13 +3513,54 @@ class Desktop:
         # No Skip Ad / Upsell Intros here: they only act as an episode starts, so the main menu's Options alone lists
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
+                    aspect_ratio=ASPECT_NAMES[self.aspect_ratio],
                     **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
+                    **(dict(controller_confirm=CONFIRM_NAMES[self.controller_confirm],
+                            grid_controls=GRID_CONTROLS_NAMES[self.grid_controls],
+                            controller_vibration=pygame.vibration_source() == 'controller')
+                       if pygame.controller_connected() else {}),
                     music_volume=self.music_volume,
-                    sound_volume=self.sound_volume, side_panels=self.panels_open, choice_hints=self.choice_hints,
-                    skip_minigames=self.skip_minigames,
+                    sound_volume=self.sound_volume, side_panels=getattr(self, 'side_panels_enabled', True), choice_hints=self.choice_hints,
+                    skip_minigames=self.skip_minigames, skip_ahead=self.skip_ahead,
+                    **({'skip_ahead_row': True} if self.skip_ahead and can_skip(self.session) else {}),
+                    undo=self.undo, **({'undo_row': True} if self._undo_ready() else {}),
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
-                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}))
+                    **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
+                    **({'ms3_characters': self.ms3_characters} if self.ms3_switch() else {}),
+                    **({'java_look': self.java_look} if self.java_look_switch() else {}),
+                    **({'brew_08_backgrounds': self.brew_08_backgrounds} if self.brew_08_switch() else {}),
+                    **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
+                    **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
+                    **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
+                    **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
+                    **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
+                    **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
+
+    def frame_units(self):
+        """The frame's size in layout units for General's Aspect Ratio in this window (frame_shape.frame_units), above a
+        phone's navigation bar (usable_size)."""
+        return frame_shape.frame_units(self.aspect_ratio, self.usable_size(), self.fixed_window)
+
+    def nav_height(self):
+        """Pixels at the window's bottom a phone's navigation or gesture bar covers (Host.bottom_inset; none on a
+        computer): the frame keeps above them, so the gear and the bar's words aren't under it (owner, 2026-11-12)."""
+        return round(self.bottom_inset * self.window.get_height())
+
+    def usable_size(self):
+        """The window less its navigation bar: what the frame is fitted to."""
+        width, height = self.window.get_size()
+        return width, max(1, height - self.nav_height())
+
+    def x360_arena_switch(self):
+        """shshd-runtime: whether the "Use X360 Arena Skin" switch is offered: in a translated New Rules episode (hires_switch)
+        with Use Translated Mini-Games on, and the X360 addon's arena skin imported (desktop_nr_arena_x360; owner,
+        2026-10-31)."""
+        if not (self.hires_switch() and self.arena_minigames):
+            return False
+        if self._x360_arena is None:
+            self._x360_arena = self.x360_arena_renderer.available()
+        return self._x360_arena
 
     def pause_box(self):
         if self.pause_hd.available() and not self.error:
@@ -2014,14 +3584,15 @@ class Desktop:
             # (`notifyNewMenu`'s 0.4 s zoom; the owner, on the device).
             self.notice_shown, self.notice_ms = current, 0
         layer = pygame.Surface((HD_FRAME[0] * HD_S, HD_FRAME[1] * HD_S), pygame.SRCALPHA)
-        self.notice_windows.draw(layer, current, pressed=self.notice_pressed)
+        self.notice_windows.draw(layer, current, pressed=self.notice_pressed or self.notice_focus)
         scale = pause_scale(self.notice_ms)
-        size = tuple(max(1, round(length * scale)) for length in area.size)
+        card = getattr(self, 'card_frame', area)        # the window's 3:4 picture, centred in a taller frame
+        size = tuple(max(1, round(length * scale)) for length in card.size)
         self.window.blit(pygame.transform.smoothscale(layer, size),
-                         pygame.Rect((0, 0), size).move(area.centerx - size[0] // 2, area.centery - size[1] // 2))
+                         pygame.Rect((0, 0), size).move(card.centerx - size[0] // 2, card.centery - size[1] // 2))
 
     def _pause_point(self, position):
-        frame = self.bg_viewport
+        frame = self.card_frame
         return ((position[0] - frame.x) * 768 / frame.width, (position[1] - frame.y) * 1024 / frame.height)
 
     def _set_volume(self, which, value):
@@ -2111,6 +3682,38 @@ class Desktop:
             self.pause_hd.back()
             self._menu_sound()
             return
+        if kind == 'pause_cycle' and command[1] == 'aspect_ratio':
+            # General's Aspect Ratio: a shape picked on its choice page (or the next one), kept by the app (on_settings).
+            choices = frame_shape.CHOICES
+            self.aspect_ratio = (command[2] if len(command) > 2 else
+                                 choices[(choices.index(self.aspect_ratio) + 1) % len(choices)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and len(command) > 2 and command[1] in ('grid_controls', 'controller_confirm'):
+            # A value picked on the option's choice page (desktop_pause_hd.CHOICE_NAMES): as a step to it, then back.
+            if getattr(self, command[1]) != command[2]:
+                self.command(command[:2])
+            self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'grid_controls':
+            self.grid_controls = 'hold' if self.grid_controls == 'tap' else 'tap'
+            if self.on_settings:
+                self.on_settings()
+            return
+        if kind == 'pause_cycle' and command[1] == 'controller_confirm':
+            # Options' Controller page: the confirm button, bottom or right (gamepad.py); the app keeps it.
+            self.controller_confirm = 'east' if self.controller_confirm == 'south' else 'south'
+            pads = pygame.gamepads()
+            if pads is not None:
+                pads.confirm = self.controller_confirm
+            if self.on_settings:
+                self.on_settings()
+            return
         if kind == 'pause_link':
             # A link in a help page's text (an About page's override): behind the game's "Exit Game?" prompt, as the
             # main menu's copy of the page already does (application_hd.HdShell.activate).
@@ -2123,13 +3726,22 @@ class Desktop:
                 self.pause_song_page = self.pause_hd.state.screen
                 self._sync_music()
             elif command[1] == 'side_panels':
-                self.toggle_panels()
+                # The saved setting (player.json): off, no panels and no button in any episode.
+                self.side_panels_enabled = not self.side_panels_enabled
+                self.panels_dismissed = False
+                self.panels_open = self.panels_wanted()
+                if self.on_settings is not None:
+                    self.on_settings()
                 self._menu_sound()
                 return
             elif command[1] == 'choice_hints':
                 self.choice_hints = not self.choice_hints
             elif command[1] == 'skip_minigames':
                 self.skip_minigames = not self.skip_minigames
+            elif command[1] == 'skip_ahead':
+                self.skip_ahead = not self.skip_ahead
+            elif command[1] == 'undo':
+                self.undo = not self.undo
             elif command[1] == 'skip_ad_intros':
                 self.skip_ad_intros = not self.skip_ad_intros
             elif command[1] == 'autoplay':
@@ -2140,6 +3752,26 @@ class Desktop:
                 self.hd_backdrop = not self.hd_backdrop
             elif command[1] == 'hires_portraits':
                 self.set_hires_portraits(not self.hires_portraits)
+            elif command[1] == 'ms3_characters':
+                self.set_ms3_characters(not self.ms3_characters)
+            elif command[1] == 'java_look':
+                self.set_java_look(not self.java_look)
+            elif command[1] == 'brew_08_backgrounds':
+                self.set_brew_08_backgrounds(not self.brew_08_backgrounds)
+            elif command[1] == 'smartphone_music':
+                self.smartphone_music = not self.smartphone_music
+            elif command[1] == 'word_grid_skin':
+                self.word_grid_skin = not self.word_grid_skin
+            elif command[1] == 'grids_as_memory':
+                self.grids_as_memory = not self.grids_as_memory
+            elif command[1] == 'ch_portraits':
+                self.set_ch_portraits(not self.ch_portraits)
+            elif command[1] == 'ch_backdrop':
+                self.ch_backdrop = not self.ch_backdrop
+            elif command[1] == 'arena_minigames':
+                self.arena_minigames = not self.arena_minigames
+            elif command[1] == 'arena_skin':
+                self.arena_skin = not self.arena_skin
             elif command[1] == 'vibration':
                 self.vibration_enabled = not self.vibration_enabled
                 if self.vibration_enabled and self.audio:
@@ -2165,6 +3797,12 @@ class Desktop:
             self._menu_sound()
         if kind == 'menu':
             self.open_pause()
+        elif kind == 'skip_ahead':
+            self._menu_sound()
+            self._skip_ahead()
+        elif kind == 'undo':
+            self._menu_sound()
+            self._undo()
         elif kind == 'resume':
             # The menu scales from 1 to 0.00001 over 400 ms before the story resumes (`notifyNewMenu`'s zoom run
             # backwards, docs/MAIN_MENU.md); `tick` closes it once the zoom is done.
@@ -2222,7 +3860,7 @@ class Desktop:
             elif ask is not None:
                 if kind == 'choose' and 0 <= command[1] < len(ask['options']):
                     self._menu_sound()
-                    if self._hd_choice_drawn():
+                    if self._hd_choice_drawn() and command[1] != ask.get('next_row'):
                         self.choice_closing = dict(action=action, index=command[1], ms=0, prompt=ask)
                     else:
                         self.host_prompt = None
@@ -2239,7 +3877,7 @@ class Desktop:
             elif kind == 'choose' and action and action.name == 'word_game':
                 self._answer(command[1])
             elif kind == 'continue' and action and action.name in ('presentation', 'dialogue', 'message_panel',
-                                                                     'survey_confirmation'):
+                                                                     'survey_confirmation', 'cutscene'):
                 if not self.autoplay and not self._continue_guarded(action):   # Autoplay: `_tick_autoplay`
                     if (action.name == 'message_panel' and self.dialogue_renderer.game_id() == 'cod'
                             and self.session.engine.message_panel is not None
@@ -2248,6 +3886,10 @@ class Desktop:
                     self._answer()
             elif action and action.name == 'football' and kind in ('continue', 'choose'):
                 self._attempt(lambda: self.session.answer(command[1] if kind == 'choose' else None))
+            elif kind == 'arena_key' and action and action.name == 'arena_frame':
+                self.session.arena_press(command[1])
+            elif kind == 'arena_answer' and action and action.name in ('arena_menu', 'arena_info'):
+                self._attempt(lambda: self.session.answer(command[1]))
         self._sync_text_input()
 
     def _continue_guarded(self, action):
@@ -2272,6 +3914,8 @@ class Desktop:
             return [SimpleNamespace(index=index, rect=None)
                     for index, enabled in enumerate(action.details['enabled']) if enabled]
         try:
+            if asking and self.host_prompt.get('loading'):
+                return []
             page = self.choice_renderer.page(self.host_prompt['session'] if asking else self._choice_source())
         except (ContentError, pygame.error, OSError, ValueError):
             return []
@@ -2313,12 +3957,16 @@ class Desktop:
         self._sync_text_input()
         if event.type == pygame.QUIT:
             return False
+        if (self.panels_overlay or self.overlay_progress > 0) and self._overlay_event(event):
+            return True                 # the panels over the screen take everything (Escape closes them)
         if self.notice_stack is not None and self.notice_stack.stack:
             # A native notice/confirm window (the wall's "Exit Game?" confirmation, or the Decision Tree's
             # "Locked" notice) is modal: it takes every event ahead of everything else below, including the
             # pause menu's own Escape handling right after this.
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 self.notice_stack.pop()
+            elif event.type == pygame.KEYDOWN:
+                self._notice_key(event.key)
             else:
                 self._notice_pointer(event)
             return True
@@ -2326,7 +3974,13 @@ class Desktop:
                 pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL,
                 pygame.TEXTINPUT):
             return True                         # the menu is zooming out after Resume: input waits for the story
-        if (self.tree_zoom.tab is not None or self.tree_zoom.showing) and self._tree_zoom_pointer(event):
+        if self.tree_zoom.tab is not None or self.tree_zoom.showing:
+            if self._tree_zoom_pointer(event):
+                return True
+            event = self._portrait_game_event(event)
+        if event.type == pygame.KEYUP:
+            self._puzzle_key_up(event)
+        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -2347,13 +4001,15 @@ class Desktop:
         action = self.session.pending
         if action and action.name == 'text_input' and (not self.active or self.error):
             return True
-        if self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error:
+        if self._overlay_event(event):
+            return True
+        if self._panels_ready() and not self.menu_open and not self.error:
             if self._tree_pointer(event):
                 return True
-        if self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error:
+        if self._panels_ready() and not self.menu_open and not self.error:
             if self._wall_pointer(event):
                 return True
-        if (self.panels_open and self.panels_progress >= 1 and not self.menu_open and not self.error
+        if (self._panels_ready() and not self.menu_open and not self.error
                 and event.type == pygame.MOUSEBUTTONUP and event.button == 1 and self._tree_click(event.pos)):
             return True
         pointer = (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
@@ -2365,7 +4021,7 @@ class Desktop:
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
             hit = self._gear_hit(event.pos) or (self.viewport.collidepoint(event.pos) and any(
-                command == ('menu',) and rect.collidepoint(x, y) for rect, command in self.buttons))
+                command == ('menu',) and self._button_hit(rect, command, x, y) for rect, command in self.buttons))
             if event.type == pygame.MOUSEBUTTONDOWN and hit:
                 self.gear_pointer_down = True
                 self.press.update('down', ('menu',), self._press_token())
@@ -2381,7 +4037,7 @@ class Desktop:
         if (action and action.name == 'character_picker' and not self.menu_open and not self.error
                 and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1):
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
-            y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
+            y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height + self.story_lift     # (centred)
             if event.type == pygame.MOUSEBUTTONDOWN:
                 self.picker_pointer_down = 0 <= x <= 320 and 0 <= y <= 480
             elif self.picker_pointer_down:
@@ -2394,16 +4050,67 @@ class Desktop:
                         self.command(('choose', index))
             return True
         asking = self.host_prompt is not None and self.host_prompt['action'] is action
+        if (action and action.name in ARENA_ACTIONS and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            frame = self.picture_frame
+            command = self._arena_tap(action, (event.pos[0] - frame.x) * 768 / frame.width,
+                                      (event.pos[1] - frame.y) * 1024 / frame.height)
+            if command is not None:
+                self.command(command)
+            return True
+        if (action and action.name in ('x360_slot', 'x360_diss', 'brew_catch') and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            x, y, height = self._game_point(event.pos, {'x360_slot': self.x360_slot_renderer,
+                                                        'x360_diss': self.x360_diss_renderer}.get(action.name))
+            if 0 <= x < 150 and height - 144 <= y <= height:
+                self.command(('menu',))
+            elif (0 <= x <= 768 and 0 <= y <= height) or (action.name in ('brew_catch', 'x360_slot')
+                                                           and self.bg_viewport.collidepoint(event.pos)):
+                # (The catch game's screen and the slots are centred in a taller frame: a tap anywhere counts.)
+                self._attempt(lambda: self.session.answer(None))
+            return True
+        if (action and action.name in ('shs11_memory', 'shs11_reflex') and not self.menu_open and not self.error and not asking
+                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+            game, renderer = self._shs11_game(action)
+            # A canvas of the frame's own shape (the Word Grid skin's, fills_frame) over the frame, the game `dy` lower.
+            tall = getattr(renderer, 'fills_frame', False)
+            frame = self.bg_viewport if tall else self.picture_frame
+            width, height = renderer.canvas_size() if tall else (768, 1024)
+            x = (event.pos[0] - frame.x) * width / frame.width
+            y = (event.pos[1] - frame.y) * height / frame.height
+            if 0 <= x < 150 and height - 144 <= y <= height:
+                self.command(('menu',))
+            elif 0 <= x <= width and 0 <= y <= height:
+                y -= getattr(renderer, 'dy', 0) if tall else 0
+                cell = None if game.phase != PLAY else renderer.cell_at(x, y)
+                renderer.cursor_shown = False
+                if game.phase != PLAY or cell is not None:
+                    self._attempt(lambda: self.session.answer(cell))
+            return True
+        if (action and action.name == 'x360_leash' and not self.menu_open and not self.error and not asking
+                and (event.type == pygame.MOUSEMOTION
+                     or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
+            self._leash_pointer(event)
+            return True
+        if (action and action.name == 'x360_puzzle' and not self.menu_open and not self.error and not asking
+                and (event.type == pygame.MOUSEMOTION
+                     or (event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP) and event.button == 1))):
+            self._puzzle_pointer(event)
+            return True
         if (action and action.name == 'football' and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             if self._football().__class__ is HdFootballRenderer:
-                frame = self.bg_viewport
-                x = (event.pos[0] - frame.x) * 768 / frame.width
-                y = (event.pos[1] - frame.y) * 1024 / frame.height
-                if 0 <= x < 150 and 880 <= y <= 1024:
+                hd = self.football_hd
+                # Its canvas (HD's 768 x 1024, or the frame's shape: desktop_football_hd) over the frame; the gear at
+                # its bottom, the plays `dy` below HD's place.
+                frame = self.bg_viewport if hd.fills_frame else self.picture_frame
+                width, height = hd.canvas_size()
+                x = (event.pos[0] - frame.x) * width / frame.width
+                y = (event.pos[1] - frame.y) * height / frame.height
+                if 0 <= x < 150 and height - 144 <= y <= height:
                     self.command(('menu',))
-                elif 0 <= x <= 768 and 0 <= y <= 1024:
-                    self._attempt(lambda: self.session.answer(self.football_hd.hit((x, y))))
+                elif 0 <= x <= width and 0 <= y <= height:
+                    self._attempt(lambda: self.session.answer(hd.hit((x, y - hd.dy))))
                 return True
             x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
@@ -2415,10 +4122,16 @@ class Desktop:
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             hd = self._word_grid().__class__ is HdWordRenderer
             if hd:
-                frame = self.bg_viewport
-                x = (event.pos[0] - frame.x) * 768 / frame.width
-                y = (event.pos[1] - frame.y) * 1024 / frame.height
-                gear = 0 <= x < 150 and 880 <= y <= 1024
+                word = self.word_hd
+                # Its canvas (HD's 768 x 1024, or the frame's shape: desktop_word_hd) over the frame; the gear at its
+                # bottom, the board `dy` below HD's place.
+                frame = self.bg_viewport if word.fills_frame else self.picture_frame
+                width, height = word.canvas_size()
+                x = (event.pos[0] - frame.x) * width / frame.width
+                y = (event.pos[1] - frame.y) * height / frame.height
+                (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS     # (in points, twice the units)
+                gear = (x - 2 * cx) ** 2 + (y - (height - FRAME_UNITS[1] * 2) - 2 * cy) ** 2 <= (2 * radius) ** 2
+                y -= word.dy
             else:
                 x = (event.pos[0] - self.viewport.x) * 320 / self.viewport.width
                 y = (event.pos[1] - self.viewport.y) * 480 / self.viewport.height
@@ -2428,6 +4141,7 @@ class Desktop:
             else:
                 phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEMOTION: 'move',
                          pygame.MOUSEBUTTONUP: 'up'}[event.type]
+                self.grid_cursor = None
                 renderer = self.word_hd if hd else self.grid_renderer
                 index = renderer.hit((x, y), self.session.engine.word_grid)
                 self._attempt(lambda: self.session.grid_pointer(phase, index))
@@ -2462,18 +4176,27 @@ class Desktop:
                 and (event.type == pygame.MOUSEMOTION or event.button == 1)):
             x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
             y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
-            hit = (next((command for rect, command in self.buttons if rect.collidepoint(x, y)), None)
+            hit = (next((command for rect, command in self.buttons if self._button_hit(rect, command, x, y)), None)
                    if self.viewport.collidepoint(event.pos) else None)
             phase = {pygame.MOUSEBUTTONDOWN: 'down', pygame.MOUSEBUTTONUP: 'up',
                      pygame.MOUSEMOTION: 'move'}[event.type]
             if event.type == pygame.MOUSEMOTION:
                 self.choice_focus = self.menu_focus = None
+            if self._choice_drag(phase, y):
+                return True
             command = self.press.update(phase, hit, self._press_token())
             if command is not None:
                 self.command(command)
             return True
         if event.type == pygame.KEYDOWN:
             self.press.cancel()
+            # The letter shortcuts are letters while a name is typed (owner, 2026-11-07: a name with a `u` undid the game).
+            typing = action is not None and action.name == 'text_input'
+            if event.key == pygame.K_n and not typing and self.skip_ahead and self._skip_ahead_ready():
+                self._skip_ahead()
+            if event.key == pygame.K_u and not typing and self._undo_ready():
+                self._undo()
+                return True
             rows = (self._choice_focus_rows(action, asking)
                     if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
                     else [])
@@ -2493,17 +4216,19 @@ class Desktop:
                 if picker is not None and picker.characters and not picker.moving:
                     step = 1 if event.key == pygame.K_RIGHT else -1
                     self.command(('choose', (picker.selected + step) % len(picker.characters)))
-            elif action and action.name == 'character_picker' and pygame.K_1 <= event.key <= pygame.K_5:
+            elif action and action.name == 'character_picker' and (pygame.K_1 <= event.key <= pygame.K_9 or event.key == pygame.K_0):
                 picker = self.session.engine.character_picker
+                # 1-9, and 0 for a tenth (a translated pack's ten photos, BREW's M.A.S.H.; owner, 2026-11-07).
                 # Keys wait for a running swap to end (CharacterPicker.moving): mashed keys left the rings misplaced.
-                if event.key - pygame.K_1 < len(picker.characters) and not picker.moving:
-                    self.command(('choose', event.key - pygame.K_1))
+                index = 9 if event.key == pygame.K_0 else event.key - pygame.K_1
+                if index < len(picker.characters) and not picker.moving:
+                    self.command(('choose', index))
             elif action and (action.name in ('choice', 'word_game', 'football') or asking) and pygame.K_1 <= event.key <= pygame.K_9:
                 index = event.key - pygame.K_1
                 if asking:
                     if index < len(self.host_prompt['options']):
                         self.command(('choose', index))
-                elif action.name == 'football' or (action.name == 'word_game' and index < 4) or (action.name == 'choice'
+                elif action.name == 'football' or (action.name == 'word_game' and index < len(self.session.engine.word_game.options)) or (action.name == 'choice'
                         and index < len(action.details['options']) and action.details['enabled'][index]):
                     self.command(('choose', index))
             elif action and action.name == 'text_input' and event.key == pygame.K_BACKSPACE:
@@ -2532,31 +4257,99 @@ class Desktop:
                 x = (event.pos[0] - self.viewport.x) * SIZE[0] / self.viewport.width
                 y = (event.pos[1] - self.viewport.y) * SIZE[1] / self.viewport.height
                 for rect, command in self.buttons:
-                    if rect.collidepoint(x, y):
+                    if self._button_hit(rect, command, x, y):
                         self.command(command)
                         break
+            elif getattr(self, 'bg_viewport', None) is not None and self.bg_viewport.collidepoint(event.pos):
+                # Outside the column but in the frame (HD's margins; a taller frame's height above the column): a
+                # screen that continues on a tap anywhere in the column does here too, as HD's whole view does.
+                whole = pygame.Rect(0, 0, *SIZE)
+                if any(command == ('continue',) and rect.contains(whole) for rect, command in self.buttons):
+                    self.command(('continue',))
         self._sync_text_input()
         return True
 
-    # HD's gear (pack 155 frame 58, 74 x 72 units) sits flush with the frame's left and bottom edges, partly in the
-    # 32-unit margin outside the UI column, so its touch area is tested in frame units, not column units.
-    GEAR_FRAME_RECT = (-3.5, 441, 74, 71)
+    # HD's gear (pack 155 frame 58, 74 x 72 units placed at (-3.5, 441)) sits flush with the frame's left and bottom
+    # edges, partly in the 32-unit margin outside the UI column, so its touch area is tested in frame units, not column
+    # units. Its frame is mostly transparent: the gear itself fills (0, 462)-(47, 511), centred at (23.5, 486.5), 26.4
+    # units at most from the centre (the pressed glow 30.8). The touch area is that circle at the glow's radius; the
+    # frame's box and the column buttons' rect (-32, 422, 92, 58) reached twice as far right and 24 units above, so taps
+    # on the bar opened the pause menu (owner, 2026-11-07).
+    GEAR_FRAME_CENTRE, GEAR_FRAME_RADIUS = (23.5, 486.5), 30
 
-    def _gear_hit(self, position):
-        if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open:
-            return False
+    def _hd_gear_shown(self):
         try:
-            if self.dialogue_renderer.hd_bar() is None:
-                return False
+            return self.dialogue_renderer.hd_bar() is not None
         except (AttributeError, ValueError, pygame.error):
             return False
+
+    def _gear_hit(self, position):
+        if not any(command == ('menu',) for _, command in self.buttons) or self.menu_open or not self._hd_gear_shown():
+            return False
+        # The gear is at the frame's bottom left whatever its shape (General's Aspect Ratio), at the story's scale.
         frame = self.bg_viewport
-        unit = frame.width / FRAME_UNITS[0]
-        x, y = (position[0] - frame.x) / unit, (position[1] - frame.y) / unit
-        left, top, width, height = self.GEAR_FRAME_RECT
-        return left <= x <= left + width and top <= y <= top + height
+        unit = frame.width / self.__dict__.get('_frame_width', FRAME_UNITS[0])
+        x, y = (position[0] - frame.x) / unit, (position[1] - frame.bottom) / unit + FRAME_UNITS[1]
+        (cx, cy), radius = self.GEAR_FRAME_CENTRE, self.GEAR_FRAME_RADIUS
+        return (x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2
+
+    def _button_hit(self, rect, command, x, y):
+        """A button under column point (x, y). With HD's gear, the gear's own button is `_gear_hit`, not its rect."""
+        if command == ('menu',) and self._hd_gear_shown():
+            return False
+        return rect.collidepoint(x, y)
 
     # -- warping through the story tree (SHSDTView touchesEnded / SHSDTTitleOverView / SHSDTHelpOverView) --------
+
+    # -- a choice too long for its panel (hd_choice: the rows that don't fit scroll) ------------------------------------
+
+    choice_drag = None          # [y at the press (column units), scroll then, moved] while a finger is down on a choice
+    CHOICE_DRAG_START = 4       # column units a finger moves before it scrolls the rows instead of pressing one
+
+    def _choice_drag(self, phase, y):
+        """A drag scrolls a choice's rows when they don't all fit, as native's table view scrolls under the finger
+        (owner, 2026-11-08: the scroll bar showed on the g54 but touch couldn't move it; only the wheel and keys did).
+        Once the finger has moved it picks nothing on release, and a flick glides on (momentum, on touch hosts; owner,
+        2026-11-09). A touch that catches a gliding list only stops it. True when the event was the drag's."""
+        if phase == 'down':
+            caught = self.choice_fling.stop()
+            self.choice_drag = [y, self.scroll, False, caught] if self.max_scroll > 0 and not self.menu_open else None
+            if caught and self.choice_drag is not None:
+                self.press.cancel()
+                return True
+            return False
+        drag = self.choice_drag
+        if drag is None:
+            return False
+        if phase == 'up':
+            self.choice_drag = None
+            if drag[2]:
+                self.choice_fling.release()
+            if drag[2] or drag[3]:
+                self.press.cancel()
+                return True
+            return False
+        if not drag[2] and abs(y - drag[0]) < self.CHOICE_DRAG_START:
+            return drag[3]
+        if not drag[2]:
+            drag[2] = True
+            self.press.cancel()
+        self.scroll = min(self.max_scroll, max(0, drag[1] - (y - drag[0]) * 1.5))
+        self.choice_fling.track(self.scroll)
+        return True
+
+    def _coast_choice(self):
+        """Each frame: a flicked choice's rows gliding on, until they slow to nothing or reach the first or last row."""
+        fling = getattr(self, 'choice_fling', None)
+        if fling is None:
+            return
+        if getattr(self, 'max_scroll', 0) <= 0:
+            fling.stop()
+            return
+        values = fling.step(self.scroll)
+        if values is not None:
+            self.scroll = min(self.max_scroll, max(0, values[0]))
+            fling.settled(self.scroll)
 
     tree_drag = None            # [pointer, scroll (y, x) at the start, moved] while a finger is down on the tree
 
@@ -2641,6 +4434,7 @@ class Desktop:
             if not dragged:
                 url = next((url for rect, url in panels.wall_targets if rect.collidepoint(event.pos)), None)
                 if url:
+                    self._close_panels_now()        # (over the screen they'd hide the window and take its taps)
                     if self.notice_stack is not None:
                         self.wall_link = url
                         self.notice_stack.queue(self.exit_menu)
@@ -2657,6 +4451,409 @@ class Desktop:
         self.notice_stack.clear()
         if number == self.exit_action and self.wall_link:
             self._open_link(self.wall_link)
+
+    notice_focus = None             # the notice window's button the arrow keys (or a controller) have highlighted
+
+    def _notice_key(self, key):
+        """Keys while a notice window is open: the arrows highlight its buttons and Enter presses the highlighted one;
+        with none highlighted, Enter presses a window's only button, or highlights the first of several (Escape steps
+        back: handle_event)."""
+        if self.notice_ms < PAUSE_OPEN_MS:
+            return
+        targets = [command for _, command in self.notice_windows.hits]
+        focus = self.notice_focus if self.notice_focus in targets else None
+        if focus_step(key):
+            self.notice_focus = step_focus(targets, focus, focus_step(key))
+        elif key in KEYS_ACTIVATE and targets:
+            if focus is None and len(targets) > 1:
+                self.notice_focus = targets[0]
+                return
+            self.notice_focus = None
+            self.notice_stack.press(self.notice_data.action((focus or targets[0])[1]))
+
+    def _arena_renderer(self):
+        """New Rules' arena, told how tall the frame is in the window so it scales its art up to there: in the X360
+        look where the "Use X360 Arena Skin" switch is on and the X360 addon is imported, else New Rules' own."""
+        renderer = (self.x360_arena_renderer if self.arena_skin and self.x360_arena_switch()
+                    else self.nr_arena_renderer)
+        viewport = getattr(self, 'picture_frame', None)
+        if viewport is not None:
+            renderer.target_height = viewport.height
+        return renderer
+
+    def _arena_tap(self, action, x, y):
+        """The command for a click at (x, y) in frame pixels (768 x 1024) on New Rules' arena: the gear, bottom left,
+        opens the pause menu as on football's frame; Sequences' items (their number keys, 765) and the info box take
+        clicks. Anywhere else a tap is the OK key, the only key the turning games play by (owner, 2026-10-31)."""
+        if 0 <= x < 150 and 880 <= y <= 1024:
+            return ('menu',)
+        if not (0 <= x <= 768 and 0 <= y <= 1024):
+            return None
+        command = self._arena_renderer().hit((x, y))
+        if command is None and action.name == 'arena_frame':
+            command = ('arena_key', -5)
+        return command
+
+    def _arena_key(self, event):
+        """New Rules' arena by keys (a controller's arrive as these, gamepad.py): Enter / Space (a controller's
+        confirm) are its OK, the arrows its joystick, Backspace its right soft key and 0-9 its number keys; on its menu
+        the arrows move the highlight and Enter picks. Escape stays the pause menu. True when the key was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ARENA_ACTIONS or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        key = event.key
+        if action.name in ('arena_entrance', 'arena_exit'):
+            return key in ARENA_KEYS or key in ARENA_NUMBER_KEYS          # New Rules takes no keys meanwhile
+        if action.name == 'arena_frame':
+            code = ARENA_KEYS.get(key)
+            if code is None:
+                code = ARENA_NUMBER_KEYS.get(key)
+            if code is None:
+                return False
+            self.command(('arena_key', code))
+            return True
+        if action.name == 'arena_menu' and key in (pygame.K_UP, pygame.K_DOWN):
+            self._arena_renderer().move_focus(action, -1 if key == pygame.K_UP else 1)
+            return True
+        if key in KEYS_ACTIVATE:
+            focus = self._arena_renderer().focus(action)
+            self.command(('arena_answer', focus if focus is not None else 0))
+            return True
+        return False
+
+    def _football_input(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'football' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _slot_key(self, event):
+        """The slot machine and Diss Practice take one input: Enter, Space or a controller's confirm. True when the key
+        was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ('x360_slot', 'x360_diss', 'brew_catch') or self.menu_open or self.error
+                or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
+            return False
+        self._attempt(lambda: self.session.answer(None))
+        return True
+
+    def shs11_renderer(self, action):
+        """What draws an SHS '11 game: its own look, or the word game's with the switch on and its art there."""
+        game = self.session.engine.shs11_memory if action.name == 'shs11_memory' else None
+        stands_in = game is not None and game.grid          # in a grid's place it always has a grid's look (owner, 2026-11-04)
+        if self.shs11_hd is not None and (self.shs11_hd.art_available() if stands_in else self.word_grid_skin and self.shs11_hd.available()):
+            return self.shs11_hd
+        return self.shs11_memory_renderer if action.name == 'shs11_memory' else self.shs11_reflex_renderer
+
+    PRIMED_PACK = 31600             # SHS '11's translated stories (ADDON_FEATURE_PACKS)
+
+    def _prime_games(self):
+        """shshd-runtime: in an SHS '11 story, the art its games draw with, loaded a step a frame while a line sits still
+        (the dialogue's layer unchanged), so a game's first frame has little left to load (owner, 2026-11-12: a hitch
+        as one opened; the Word Grid skin's fonts and haze took a PC 100 ms in that frame). Whichever look the games
+        will wear; a step that fails ends it, and the game loads what it needs as before."""
+        resources = self.session.resources
+        if (getattr(resources, 'record', None) or {}).get('pack_id') != self.PRIMED_PACK:
+            return
+        if not getattr(self.dialogue_renderer, 'still', False):
+            return
+        key = (id(resources), self.word_grid_skin)
+        priming = self.__dict__.get('_priming')
+        if priming is None or priming[0] != key:
+            renderers = [self.shs11_memory_renderer, self.shs11_reflex_renderer]
+            if self.shs11_hd is not None and self.word_grid_skin:
+                renderers.insert(0, self.shs11_hd)
+            background = self.session.engine.panel.background_id
+            steps = (step for renderer in renderers for step in renderer.prime_steps(background))
+            priming = self._priming = (key, steps)
+        try:
+            next(priming[1])()
+        except StopIteration:
+            self._priming = (key, iter(()))
+        except Exception as error:      # noqa: BLE001 -- only a head start: the game loads it itself if this can't
+            logging.warning('Preparing the minigames stopped: %s', error)
+            self._priming = (key, iter(()))
+
+    def _warm_shs11_sounds(self, game):
+        """Decode a game's sounds as it opens, so that the first of each isn't decoded in the frame it plays in: one a
+        frame (all in its first frame was a hitch on a phone as a game opened, owner 2026-11-12); its opening plays
+        none, and any played sooner is decoded then, as it would be anyway."""
+        if not self.sound_enabled:
+            return
+        if game is not self._shs11_warmed:
+            self._shs11_warmed = game
+            hd_sounds = getattr(game, 'grid', False) or self.session.shs11_hd_sounds
+            self._shs11_to_warm = list(dict.fromkeys(
+                [a for assets in GRID_SOUNDS.values() for a in assets] if hd_sounds else SHS11_GAME_SOUNDS))
+        if self._shs11_to_warm:
+            asset = self._shs11_to_warm.pop(0)
+            try:
+                self._sound(asset, lambda name=asset: self.session.resources.read_asset(name))
+            except (ContentError, pygame.error) as error:
+                logging.warning('Sound %s cannot be played: %s', asset, error)
+
+    _shs11_warmed = None
+    _shs11_to_warm = ()
+
+    def _shs11_game(self, action):
+        """(The SHS '11 game in play, its renderer)."""
+        game = self.session.engine.shs11_memory if action.name == 'shs11_memory' else self.session.engine.shs11_reflex
+        return game, self.shs11_renderer(action)
+
+    def _memory_key(self, event):
+        """SHS '11's games: 1 to 9 pick their cells, as '11's keys do. The arrows, WASD and a D-pad move a cursor over the grid and
+        Enter, Space or confirm pick under it, or go on from the tutorial's boxes. True when the key was one."""
+        action = self.session.pending
+        if (action is None or action.name not in ('shs11_memory', 'shs11_reflex') or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        game, renderer = self._shs11_game(action)
+        playing = game.phase == PLAY
+        cell = MEMORY_DIGITS.get(event.key)
+        if cell is not None:
+            if playing:
+                renderer.cursor = cell
+                self._attempt(lambda: self.session.answer(cell))
+            return True
+        if event.key in KEYS_ACTIVATE:
+            chosen = renderer.cursor if playing else None
+            self._attempt(lambda: self.session.answer(chosen))
+            return True
+        move = MEMORY_MOVES.get(event.key)
+        if move is None:
+            return False
+        if playing:
+            column, row = renderer.cursor % 3, renderer.cursor // 3
+            renderer.cursor = (row + move[1]) % 3 * 3 + (column + move[0]) % 3
+            renderer.cursor_shown = True
+        return True
+
+    def _leash_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'x360_leash' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _leash_key(self, event):
+        """The leash game: OK starts it; the arrows, WASD and a controller's D-pad shake it. A controller's stick reads as
+        arrows too, but _leash_stick reads it for itself. True when the key was one."""
+        if not self._leash_ready():
+            return False
+        if event.key in KEYS_ACTIVATE:
+            self._attempt(lambda: self.session.answer(None))
+            return True
+        direction = LEASH_KEYS.get(event.key)
+        if direction is None:
+            return False
+        button = getattr(event, 'controller', None)
+        if button is None or pygame.gamepads().holding(button):
+            self.session.engine.x360_leash.shake(direction)
+        return True
+
+    def _leash_stick(self):
+        """The leash game, each frame: a controller's stick, read as the prototype reads it."""
+        if not self._leash_ready():
+            self.leash_anchor = None
+            return
+        pads = pygame.gamepads()
+        for x, y in pads.sticks.values() if pads is not None else ():
+            direction = stick_direction(x, y)
+            if direction is not None:
+                self.session.engine.x360_leash.shake(direction, SHAKE_WINDOW_STICK_MS)
+
+    def _leash_pointer(self, event):
+        """The leash game's mouse and touch: a press is OK, or the gear; holding it and dragging back and forth shakes."""
+        x, y, height = self._game_point(event.pos, self.x360_leash_renderer)
+        if event.type == pygame.MOUSEBUTTONUP:
+            self.leash_anchor = None
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if 0 <= x < 150 and height - 144 <= y <= height:
+                self.command(('menu',))
+            elif (0 <= x <= 768 and 0 <= y <= height) or self.bg_viewport.collidepoint(event.pos):
+                self.leash_anchor = (x, y)
+                self._attempt(lambda: self.session.answer(None))
+        elif self.leash_anchor is not None:
+            direction = drag_direction(self.leash_anchor, x, y)
+            if direction is not None:
+                self.leash_anchor = (x, y)
+                self.session.engine.x360_leash.shake(direction)
+
+    def _game_point(self, pos, renderer):
+        """(x, y, height): window point `pos` in a minigame canvas's pixels, and the canvas's height. HD's 768 x 1024 at
+        the frame's bottom (picture_frame), or a canvas going on below it to the frame's bottom (`renderer`'s
+        extended_below: the X360's in a taller frame), whose top is that 3:4's, centred."""
+        if renderer is not None and getattr(renderer, 'extended_below', False):
+            frame = self.bg_viewport
+            height = renderer.canvas_size()[1]
+            k = frame.width / 768
+            return (pos[0] - frame.x) / k, (pos[1] - frame.bottom) / k + height, height
+        frame = self.picture_frame
+        return (pos[0] - frame.x) * 768 / frame.width, (pos[1] - frame.y) * 1024 / frame.height, 1024
+
+    def _puzzle_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'x360_puzzle' and not self.menu_open and not self.error
+                and self.host_prompt is None)
+
+    def _puzzle_key(self, event):
+        """The jewel puzzle: OK starts it, is held to drag, and goes on past the score; the arrows, WASD and a controller's
+        D-pad or stick move the cursor, repeating while held. True when the key was one."""
+        if not self._puzzle_ready():
+            return False
+        if event.key in KEYS_ACTIVATE:
+            self.puzzle_pad = getattr(event, 'controller', None) is not None
+            self._attempt(lambda: self.session.answer(None))
+            return True
+        direction = LEASH_KEYS.get(event.key)
+        if direction is None:
+            return False
+        self.session.engine.x360_puzzle.move(direction)
+        if getattr(event, 'controller', None) is None:          # (a controller's direction repeats by itself)
+            self.puzzle_key = (event.key, direction, REPEAT_DELAY_MS)
+        return True
+
+    def _puzzle_key_up(self, event):
+        if self.puzzle_key is not None and self.puzzle_key[0] == event.key:
+            self.puzzle_key = None
+        action = self.session.pending
+        if event.key in KEYS_ACTIVATE and action is not None and action.name == 'x360_puzzle':
+            self.session.engine.x360_puzzle.release()
+
+    def _puzzle_frame(self, elapsed_ms):
+        """The jewel puzzle, each frame: a held key's repeats, and a controller's confirm let go."""
+        action = self.session.pending
+        if action is None or action.name != 'x360_puzzle':
+            self.puzzle_key, self.puzzle_pad = None, False
+            return
+        game = self.session.engine.x360_puzzle
+        if not self._puzzle_ready():
+            game.let_go()
+            self.puzzle_key, self.puzzle_pad = None, False
+            return
+        if self.puzzle_pad:
+            pads = pygame.gamepads()
+            if pads is None or not pads.holding('confirm'):
+                game.release()
+                self.puzzle_pad = False
+        if self.puzzle_key is not None:
+            key, direction, left = self.puzzle_key
+            left -= elapsed_ms
+            if left <= 0:
+                game.move(direction)
+                left = REPEAT_MS
+            self.puzzle_key = (key, direction, left)
+
+    def _puzzle_pointer(self, event):
+        """The jewel puzzle's mouse and touch: a press on a jewel holds it and a drag takes its row or column along; off
+        the board a press is OK, or the gear; a mouse over the board with its button up points the cursor."""
+        x, y, height = self._game_point(event.pos, self.x360_puzzle_renderer)
+        game = self.session.engine.x360_puzzle
+        if event.type == pygame.MOUSEBUTTONUP:
+            game.let_go()
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if 0 <= x < 150 and height - 144 <= y <= height:
+                self.command(('menu',))
+            elif on_board(x, y) and game.phase == 'running':
+                game.grab(*cell_at(x, y))
+            elif (0 <= x <= 768 and 0 <= y <= height) or self.bg_viewport.collidepoint(event.pos):
+                self._attempt(lambda: self.session.answer(None))
+                if game.button:                                 # (not a hold of its own: nothing to let go of)
+                    game.release()
+        elif game.target is not None:
+            game.drag(*cell_at(x, y))
+        elif on_board(x, y):
+            game.point(*cell_at(x, y))
+
+    def _football_key(self, event):
+        """A play picked by its position (FOOTBALL_BUTTONS, FOOTBALL_KEYPAD); True when the key was one."""
+        if not self._football_input():
+            return False
+        slot = FOOTBALL_BUTTONS.get(getattr(event, 'controller', None), FOOTBALL_KEYPAD.get(event.key))
+        if slot is None:
+            return False
+        self.command(('choose', slot))
+        return True
+
+    grid_cursor = None              # the word grid's cell the arrow keys (or a controller) have highlighted
+
+    def _grid_key(self, event):
+        """The word grid by keys (this player's; a finger draws the word natively): the arrows move a highlighted
+        cell, Enter adds it to the word (starting one; only a neighbour of the last letter joins, as under a finger),
+        Backspace lets the word go as lifting the finger would (its error sound when it was no word). The first key
+        only shows the highlight. True when the key was one of these."""
+        action = self.session.pending
+        game = self.session.engine.word_grid
+        if (action is None or action.name != 'word_grid' or game is None or self.menu_open or self.error
+                or self.host_prompt is not None):
+            return False
+        key, width = event.key, game.problem.width
+        cells = len(game.board)
+        moves = {pygame.K_LEFT: (-1, 0), pygame.K_RIGHT: (1, 0), pygame.K_UP: (0, -1), pygame.K_DOWN: (0, 1)}
+        if key not in moves and key not in KEYS_ACTIVATE and key != pygame.K_BACKSPACE:
+            return False
+        if self._grid_holding_mode(event):
+            if key in KEYS_ACTIVATE and self.grid_cursor is not None and 0 <= self.grid_cursor < cells:
+                cursor = self.grid_cursor
+                self._attempt(lambda: self.session.grid_pointer('down', cursor))
+                self.grid_drag, self.grid_step_ms = True, GRID_HOLD_FIRST_MS
+                return True
+            if key in moves and self.grid_drag:
+                return True                     # the held drag steers itself (_grid_hold)
+        if self.grid_cursor is None or not 0 <= self.grid_cursor < cells:
+            if key == pygame.K_BACKSPACE and game.selection:
+                self._attempt(lambda: self.session.grid_pointer('up'))
+            else:
+                self.grid_cursor = cells // 2 if not game.selection else game.selection[-1]
+            return True
+        if key in moves:
+            dx, dy = moves[key]
+            col, row = self.grid_cursor % width, self.grid_cursor // width
+            col = min(width - 1, max(0, col + dx))
+            row = min(cells // width - 1, max(0, row + dy))
+            self.grid_cursor = row * width + col
+        elif key == pygame.K_BACKSPACE:
+            if game.selection:
+                self._attempt(lambda: self.session.grid_pointer('up'))
+        else:
+            cursor = self.grid_cursor
+            self._attempt(lambda: self.session.grid_pointer('move' if game.selection else 'down', cursor))
+        return True
+
+    grid_drag = False               # Hold mode: the confirm button is down on the grid (a finger laid on it)
+    grid_step_ms = 0                # Hold mode: ms until the held drag steps to the next cell
+
+    def _grid_holding_mode(self, event):
+        """Whether a controller key works the grid in Hold mode (Options' Word Grid Controls)."""
+        return (self.grid_controls == 'hold' and getattr(event, 'controller', None) is not None
+                and pygame.gamepads() is not None)
+
+    def _grid_hold(self, elapsed_ms):
+        """Hold mode, each frame: while the confirm button is held the highlighted cell follows the D-pad or the stick,
+        eight ways (gamepad.Gamepads.steering), every GRID_HOLD_STEP_MS, and each cell it reaches joins the word as
+        under a dragged finger; letting go lifts the finger (a word that was none gets its error sound)."""
+        if not self.grid_drag:
+            return
+        pads, game = pygame.gamepads(), self.session.engine.word_grid
+        action = self.session.pending
+        if (pads is None or game is None or action is None or action.name != 'word_grid' or self.menu_open
+                or not pads.holding('confirm')):
+            self.grid_drag = False
+            if game is not None and action is not None and action.name == 'word_grid':
+                self._attempt(lambda: self.session.grid_pointer('up'))
+            return
+        dx, dy = pads.steering()
+        if not (dx or dy):
+            self.grid_step_ms = 0                     # a fresh push steps at once
+            return
+        self.grid_step_ms -= elapsed_ms
+        if self.grid_step_ms > 0:
+            return
+        self.grid_step_ms = GRID_HOLD_STEP_MS
+        width = game.problem.width
+        col = min(width - 1, max(0, self.grid_cursor % width + dx))
+        row = min(len(game.board) // width - 1, max(0, self.grid_cursor // width + dy))
+        if row * width + col != self.grid_cursor:
+            self.grid_cursor = cursor = row * width + col
+            self._attempt(lambda: self.session.grid_pointer('move', cursor))
 
     def _notice_pointer(self, event):
         """Pointer input while a native notice/confirm window is open (same hit-list convention as
@@ -2728,10 +4925,121 @@ class Desktop:
         except (AttributeError, ContentError, ValueError, IndexError):
             return 'Please complete Football Season episode to unlock this feature.'
 
+    def _skip_ahead_ready(self):
+        """Nothing is holding the story up that a skip shouldn't run over."""
+        return (not self.error and not self.fade and self.host_prompt is None and can_skip(self.session)
+                and not (self.notice_stack is not None and self.notice_stack.stack))
+
+    def _skip_ahead(self):
+        """Skip Ahead (skip_ahead.py): the session goes to the next stop, and the screen fades in from black on it, as a
+        warp's does. Its music is whichever should be playing there. The sounds and buzzes along the way are dropped."""
+        if not self._skip_ahead_ready():
+            return
+        moved = []
+        self._attempt(lambda: moved.append(skip_ahead(self.session)))
+        if self.error:
+            return
+        if not moved[0]:
+            self._notice('Nothing left to skip')
+            return
+        engine = self.session.engine
+        self.sound_serial, self.vibration_serial = engine.sound_serial, engine.vibration_serial
+        self.menu_open = self.pause_closing = False
+        self.autoplay_ms = 0
+        self.side_panels.tree_follow = True
+        self.location_pan = LocationPan()
+        self.location_shown = self.location_changing = None
+        self.ui_layers = self.ui_handover = None
+        self.fade = dict(kind=6, phase='in', since=pygame.time.get_ticks(), frozen=None)
+
+    def _undo_for(self, session):
+        """The undo chain of the episode `session` plays (undo.py), or None."""
+        record_id = (getattr(session.resources, 'record', None) or {}).get('id')
+        if self._undo_chain is None or self._undo_chain[0] != record_id:
+            self._undo_chain = (record_id, chain_for(session))
+        return self._undo_chain[1]
+
+    def _record_undo(self):
+        """Each frame, while Allow Undo is on: a save when a new stop has come up; the chain goes once the episode ends."""
+        session = self.session
+        if not self.undo or self.error or getattr(session, 'ephemeral', False):
+            return
+        chain = self._undo_for(session)
+        if chain is None:
+            return
+        if session.episode_ended:
+            if self._undo_seen is not False:
+                chain.clear()
+                self._undo_seen = False
+            return
+        action = session.pending
+        if action is None or action is self._undo_seen or session.transitioning:
+            return
+        self._undo_seen = action
+        self._attempt(lambda: chain.record(session))
+
+    def _undo_ready(self):
+        """Undo is on, nothing holds the story up, and there's a save to go back to. A mini-game's skip prompt doesn't
+        hold it: the pause menu opens over the prompt, which is a stop of its own (undoing there goes back one)."""
+        if not self.undo or self.error or self.fade or self.session.episode_ended:
+            return False
+        chain = self._undo_for(self.session)
+        return chain is not None and (chain.can_undo(self.session) or self._undo_restarts())
+
+    def _undo_restarts(self):
+        """Whether Undo restarts the mini-game under way rather than going back (owner, 2026-11-06): one of the engine's
+        games is being played (with Skip Mini-games on, Play was picked: at its skip prompt it goes back as at any
+        stop) and its save is the chain's latest. New Rules' arena games are the story's own script, stops and all."""
+        action = self.session.pending
+        if action is None or action.name not in MINIGAMES:
+            return False
+        if self.host_prompt is not None and self.host_prompt['action'] is action:
+            return False                                            # (still at its skip prompt)
+        chain = self._undo_for(self.session)
+        return chain is not None and chain.at_latest(self.session)
+
+    def _undo(self):
+        """Undo (undo.py): back to the last stop kept, faded in from black as Skip Ahead's and a warp's are. In a
+        mini-game under way, that game from its start, without its skip prompt (Play was already picked)."""
+        if not self._undo_ready():
+            return
+        restart = self._undo_restarts()
+        try:
+            chain = self._undo_for(self.session)
+            restored = chain.restart(self.session) if restart else chain.undo(self.session)
+        except (SaveError, VMError, OSError, ValueError) as error:
+            self._notice(f'Could not undo: {error}')
+            return
+        if restored is None:
+            return
+        restored.share_names(self.session.engine.strings)          # the one names table (Session.share_names)
+        if hasattr(self.session, 'process'):
+            self.session.process.attach(restored, restored=True)
+        self.session = restored
+        self._undo_seen = restored.pending                          # (it's the chain's end already)
+        self.error, self.music_token = None, None
+        self.sound_serial = restored.engine.sound_serial
+        self.vibration_serial = restored.engine.vibration_serial
+        self.menu_open = self.pause_closing = False
+        self.host_prompt = None
+        self.minigame_played = None
+        self.autoplay_ms = 0
+        self.side_panels.tree_follow = True
+        self.location_pan = LocationPan()
+        self.location_shown = self.location_changing = None
+        self.ui_layers = self.ui_handover = None
+        self.fade = dict(kind=6, phase='in', since=pygame.time.get_ticks(), frozen=None)
+        if restart:
+            prompt = self._host_prompt(wait=True)                   # (Skip Mini-games: its prompt, answered Play)
+            if prompt is not None and prompt['action'] is restored.pending:
+                self.host_prompt = None
+                prompt['resolve'](len(prompt['options']) - 1)
+
     def _warp(self, node):
         """`SHSDTView warpToNode:animatedScroll:`: load the scene's saved game and fade the game back in from black; the
         side panels stay open and the tree scrolls to the scene."""
         self.tree_zoom.close()          # `warpToNode:` -> `closeDTZ`
+        self.panels_overlay = False     # (owner, 2026-11-12: a warp closes the panels over the screen; the story goes on)
         try:
             restored = self.session.warp(node)
         except (SaveError, VMError, OSError, ValueError) as error:
@@ -2752,9 +5060,14 @@ class Desktop:
         self.fade = dict(kind=6, phase='in', since=now, frozen=None)
         self.warp_lockout = now + 1000
 
-    def snapshot(self, size=(432, 580)):
-        """The game's frame as a saved-game screenshot for the episode picker (the pause menu left out)."""
+    def snapshot(self, size=(432, 580), *, shaped=False):
+        """The game's frame as a saved-game screenshot for the episode picker (the pause menu left out); 3:4, or with
+        `shaped` the frame's own shape (General's Aspect Ratio: the end-of-episode menu's backdrop), `size` then giving
+        only its width."""
         opened, self.menu_open = self.menu_open, False
+        shape = self.aspect_ratio
+        if not shaped:
+            self.aspect_ratio = '3:4'
         # A live (non-capture) Desktop's own render() ends with pygame.display.flip(), presenting straight to the
         # real screen -- fine for its normal per-frame use, but this method also runs mid-transition (the
         # end-of-episode card's sepia source, a resume tile's screenshot) purely to read pixels back off `window`,
@@ -2768,7 +5081,10 @@ class Desktop:
         finally:
             self.menu_open = opened
             self.capture = was_capture
+            self.aspect_ratio = shape
         frame = self.bg_viewport.clip(self.window.get_rect())
+        if shaped:
+            size = (size[0], max(1, round(frame.height * size[0] / max(1, frame.width))))
         return pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
 
     def _coast_panels(self):
@@ -2786,8 +5102,14 @@ class Desktop:
             panels.wall_scrolled_at = pygame.time.get_ticks()
 
     def tick(self, elapsed_ms):
+        self._record_undo()
         if self.active:
             self._coast_panels()
+            self._coast_choice()
+            self._grid_hold(elapsed_ms)
+            self._leash_stick()
+            self._puzzle_frame(elapsed_ms)
+            self._x360_tutorial_sounds()
         self.tree_zoom.advance(elapsed_ms)
         if self.hint_discount_ms:
             discount = min(elapsed_ms, self.hint_discount_ms)
@@ -2815,7 +5137,7 @@ class Desktop:
         # A native notice (the "Locked" notice, the wall link's "Exit Game?") holds the game like the pause menu does:
         # it is modal, and the scene behind it is dimmed sepia, so typing and clocks wait for its button (owner's report).
         notice_open = self.notice_stack is not None and bool(self.notice_stack.stack)
-        if (self.active and not self.error and not self.menu_open and not notice_open
+        if (self.active and not self.error and not self.menu_open and not notice_open and not self.panels_overlay
                 and not (self.fade and self.fade['phase'] == 'out')):
             pending, remaining = self.session.pending, self.session.remaining_ms
             game = self.session.engine.word_game
@@ -2844,10 +5166,19 @@ class Desktop:
                 self.choice_closing = dict(action=pending, index=None, ms=SELECT_MS)
             else:
                 self._attempt(lambda: self.session.tick(elapsed_ms))
+                self._sync_cutscene()
             if self.session.pending is not None and (self.session.pending.name in ('choice', 'word_game')
                                                      or self.host_prompt is not None):
                 self.choice_renderer.age_ms += elapsed_ms     # the HD panel's fade-in and its labels' fly-on
             self._tick_autoplay(elapsed_ms)
+        self.panels_open = self.panels_wanted()
+        if self.panels_overlay and not self._overlay_allowed():
+            self.panels_overlay = False         # (room beside the game now, or the setting off)
+        goal = 1.0 if self.panels_overlay else 0.0
+        if self.overlay_progress != goal:
+            move = elapsed_ms / self.OVERLAY_MS
+            self.overlay_progress = (min(goal, self.overlay_progress + move) if self.overlay_progress < goal
+                                     else max(goal, self.overlay_progress - move))
         target = 1.0 if self.panels_open else 0.0
         step = elapsed_ms / 250  # Not a recovered native duration; a reasonable slide speed.
         if self.panels_progress < target:
@@ -2859,15 +5190,220 @@ class Desktop:
         # content slides into the newly-available margin over `progress`.
         # Closing leaves the window as it is (owner's choice): the game stays
         # centred in whatever shape the player has.
-        should_be_wide = self.panels_open or self.panels_progress > 0
-        if should_be_wide != self._panels_wide:
-            if should_be_wide:
-                self._widen_for_panels()
-            self._panels_wide = should_be_wide
+        # (The window is no longer widened for them: they open where there is room. Owner, 2026-11-12.)
+
+    # A panel is HD's 224 x 768 points at the window's height beside the frame (desktop_side_panels.PANEL); a pixel's
+    # rounding short of that still counts (a 4:3 window's margins are 298 for 298.7).
+    PANELS_ROOM_SLACK = 2
+
+    def _overlay_allowed(self):
+        """The panels may open over the whole screen: the setting on, the episode using one, HD's panel art, and no
+        room for them beside the game."""
+        return (self.side_panels_enabled and any(self.panels_used()) and not self.panels_room()
+                and self.side_panels.available())
+
+    def open_panels_overlay(self):
+        """The corner button, a tap on the Faceplace alert, or Tab: the panels slide down over the whole screen, and the
+        story waits under them (owner, 2026-11-12)."""
+        if not self._overlay_allowed():
+            return
+        self.panels_overlay = True
+        self.side_panels.tree_follow = True
+        self.session.engine.faceplace_toast = None      # (its post is on the wall now)
+        self._sync_music()                              # (its music waits, as under the pause menu)
+        self._panels_whoosh()
+
+    def close_panels_overlay(self):
+        """The close strip, Tab or Escape (or a warp): the panels slide back up and the story goes on."""
+        if self.panels_overlay:
+            self.panels_overlay = False
+            self._panels_whoosh()                      # (the music comes back once they're up: _panels_hold_music)
+
+    def _close_panels_now(self):
+        """The panels over the screen gone at once, without the slide or its whoosh: a linked Faceplace post asks
+        "Exit Game?" first, and that window must be in front with nothing over it (owner, 2026-11-12: the panels stayed
+        up, the window behind them, and its No did nothing once they were closed)."""
+        if self.panels_overlay or self.overlay_progress > 0:
+            self.panels_overlay = False
+            self.overlay_progress = 0.0
+            self.wall_drag = None
+            self._sync_music()
+
+    def _panels_hold_music(self):
+        """The story's music waits while the panels cover the screen and until they've slid away (owner, 2026-11-12):
+        paused where it is, as when the app loses focus, not stored and played again from its place as the pause menu
+        does. That replay seeks in the cue, which on a phone held the audio a second, so the closing whoosh came late,
+        and done as they began to close it held that frame too, so they jumped shut."""
+        return self.panels_overlay or self.overlay_progress > 0
+
+    def _panels_whoosh(self):
+        """The panels over the screen opening or closing: the whoosh HD's tree zoom tab plays on every toggle (8017,
+        `toggleDTZ`; owner, 2026-11-12), else the menus' click."""
+        if hasattr(GAMES[game_id(self.session.resources)], 'TREE_ZOOM_SOUND'):
+            self._ui_sound('TREE_ZOOM_SOUND')
+        else:
+            self._menu_sound()
+
+    def _panels_ready(self):
+        """The panels take input: beside the game or over the screen, settled."""
+        return ((self.panels_open and self.panels_progress >= 1)
+                or (self.panels_overlay and self.overlay_progress >= 1))
+
+    def _panels_button_shown(self):
+        action = self.session.pending
+        return (self._overlay_allowed() and not self.panels_overlay and self.overlay_progress <= 0
+                and not self.menu_open and not self.error and not self.capture
+                and action is not None and action.name in self.PANELS_BUTTON_ACTIONS)
+
+    def _alert_area(self, frame, scale, hd_frame):
+        """Where the Faceplace alert's 768 x 1024-point layer lies on the window (its card at its top right)."""
+        if hd_frame:
+            return self.alert_frame
+        # HD's card is small on a phone: enlarged towards ALERT_ZOOM as the frame narrows to the column's width (owner,
+        # 2026-11-11), about its top-right corner.
+        narrow = (FRAME_UNITS[0] - self.__dict__.get('_frame_width', FRAME_UNITS[0])) / (FRAME_UNITS[0] - 320)
+        zoom = 1 + (self.ALERT_ZOOM - 1) * max(0., min(1., narrow))
+        width = round(FRAME_UNITS[0] * scale * zoom)
+        return pygame.Rect(frame.right - width, frame.y + round(self._top_pad * scale), width,
+                           round(FRAME_UNITS[1] * scale * zoom))
+
+    @staticmethod
+    def _alert_points(area, rect):
+        """`rect` in the alert layer's points, on the window."""
+        kx, ky = area.width / 768, area.height / 1024
+        x, y, w, h = rect
+        return pygame.Rect(area.x + round(x * kx), area.y + round(y * ky), round(w * kx), round(h * ky))
+
+    def _draw_panels_button(self, area):
+        """The corner button: the story tree's two-faces icon on a white card, where the alert's card sits."""
+        x, y = self.PANELS_BUTTON_AT
+        rect = self._alert_points(area, (x, y, self.PANELS_BUTTON_SIZE, self.PANELS_BUTTON_SIZE))
+        frames = self.side_panels.node_frames()
+        if not frames or rect.width < 4:
+            return
+        radius = max(2, rect.width // 6)
+        pygame.draw.rect(self.window, (255, 255, 255), rect, border_radius=radius)
+        pygame.draw.rect(self.window, (41, 104, 221), rect, max(2, rect.width // 28), border_radius=radius)
+        icon = frames[self.PANELS_BUTTON_ICON][0]
+        side = round(rect.width * 0.8)
+        fit = min(side / icon.get_width(), side / icon.get_height())
+        icon = pygame.transform.smoothscale(icon, (max(1, round(icon.get_width() * fit)), max(1, round(icon.get_height() * fit))))
+        self.window.blit(icon, icon.get_rect(center=rect.center))
+        self._panels_button_rect = rect
+
+    def _overlay_geometry(self):
+        """(scale, top, body height, strip height): the panels over the whole window at HD's panel scale for half its
+        width, below a phone's status bar, above the close strip."""
+        from .desktop_side_panels import BAR
+        width, height = self.window.get_size()
+        s = width / 2 / 224
+        frame = getattr(self, 'bg_viewport', None)
+        top = round(self.top_inset * height) if frame is None or frame.y <= 0 else 0
+        strip = round(BAR * 1.25 * s)
+        below = round(self.bottom_inset * height + self.STRIP_PAD * s)
+        self._overlay_below = below
+        return s, top, height - top - strip - below, strip
+
+    def _draw_panels_overlay(self):
+        """The panels over the whole screen, sliding down from its top as they open: the tree in the left half and the
+        wall in the right (one alone across the screen), each laid out at HD's scale in its half's taller shape, and the
+        close strip across the bottom, rising into place (owner, 2026-11-12)."""
+        from .desktop_side_panels import DARK_BAR
+        panels, window = self.side_panels, self.window
+        width, height = window.get_size()
+        s, top, body, strip = self._overlay_geometry()
+        eased = ease_in_out(self.overlay_progress)
+        drop = round((1 - eased) * (top + body))
+        tree, wall = self.panels_used()
+        half = width // 2
+        if top:
+            window.fill((0, 0, 0), pygame.Rect(0, -drop, width, top))
+        if tree:
+            rect = pygame.Rect(0, top - drop, half if wall else width, body)
+            panels.tree_shape = (rect.width / s, body / s)
+            panels.draw_tree(window, self.session, 1.0, rect)
+        else:
+            panels.tree_rect = None
+        if wall:
+            span = round(224 * s)
+            rect = pygame.Rect(half if tree else (width - span) // 2, top - drop, width - half if tree else span, body)
+            panels.wall_shape = (224, body / s)
+            panels.draw_wall(window, self.session, 1.0, rect)
+        else:
+            panels.wall_rect = None
+        below = self.__dict__.get('_overlay_below', 0)
+        band = pygame.Rect(0, height - round(eased * (strip + below)), width, strip)
+        # (the bar's art is see-through: nothing under it shows; its colour runs on under it, below the padding)
+        window.fill((24, 24, 28), pygame.Rect(0, band.y, width, height - band.y))
+        window.blit(panels.frame(DARK_BAR, band.size), band.topleft)
+        label = pygame.Surface(band.size, pygame.SRCALPHA)
+        panels.centered(label, 'ArialRoundedMTBold14', 16, 'Close', width / s / 2, 13 * 1.25, 200, (255, 255, 255), s)
+        window.blit(label, band.topleft)
+        self._overlay_strip = band
+
+    def _overlay_event(self, event):
+        """Input for the corner button, the alert's tap and the panels over the screen; True when it was theirs."""
+        down = event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+        up = event.type == pygame.MOUSEBUTTONUP and event.button == 1
+        if self.panels_overlay or self.overlay_progress > 0:
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_TAB):
+                self.close_panels_overlay()
+                return True
+            strip = self.__dict__.get('_overlay_strip')
+            if up and strip is not None and strip.collidepoint(event.pos):
+                self.close_panels_overlay()
+                return True
+            if self.overlay_progress >= 1 and not self.error and event.type in (
+                    pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+                if self._tree_pointer(event) or self._wall_pointer(event):
+                    return True
+                if up and self._tree_click(event.pos):
+                    return True
+            # Nothing under the panels takes input while they cover the screen (the story waits).
+            return event.type != pygame.KEYUP
+        if self.menu_open or self.error or not (down or up):
+            return False
+        for rect in (self.__dict__.get('_panels_button_rect'),
+                     self.__dict__.get('_alert_tap_rect') if self._overlay_allowed() else None):
+            if rect is not None and rect.collidepoint(event.pos):
+                if up:
+                    self.open_panels_overlay()
+                return True
+        return False
+
+    def panels_used(self):
+        """(tree, wall): the panels this episode turns on (services 101 and 114: only Football Star, so far)."""
+        engine = self.session.engine
+        return bool(engine.dt_view.enabled), bool(engine.faceplace.enabled)
+
+    def panels_room(self):
+        """Whether the panels this episode uses fit beside the frame at the window's height (a wide window, a phone or
+        tablet in landscape)."""
+        frame = getattr(self, 'bg_viewport', None)
+        if frame is None:
+            return False
+        width, height = self.window.get_size()
+        need = 224 * height / 768 - self.PANELS_ROOM_SLACK
+        tree, wall = self.panels_used()
+        return (not tree or frame.x >= need) and (not wall or width - frame.right >= need)
+
+    def panels_wanted(self):
+        """The side panels are open beside the game: the setting on, the episode using one or both, room for them, and
+        not closed for this episode (owner, 2026-11-12). Without room they wait behind the corner button."""
+        return (self.side_panels_enabled and not self.panels_dismissed and any(self.panels_used())
+                and self.panels_room())
 
     def toggle_panels(self):
-        """Open or close the story tree and Faceplace panels (Tab, or the Side Panels switch in Options)."""
-        self.panels_open = not self.panels_open
+        """Tab: where the panels have room beside the game, close them for this episode or open them again; where they
+        don't, open or close them over the whole screen."""
+        if not self.panels_room():
+            if self.panels_overlay:
+                self.close_panels_overlay()
+            elif self._overlay_allowed():
+                self.open_panels_overlay()
+            return
+        self.panels_dismissed = not self.panels_dismissed
+        self.panels_open = self.panels_wanted()
         self.side_panels.tree_follow = True
         if self.panels_open:
             # Real device confirmed: opening the side panels dismisses a
@@ -2892,14 +5428,16 @@ class Desktop:
         self.window = pygame.display.set_mode((needed, height), pygame.RESIZABLE)
 
     def run(self):
+        from .gamepad import Gamepads
         clock = pygame.time.Clock()
         running = True
+        gamepads = Gamepads.start()
         try:
             while running:
                 elapsed = clock.tick(60)
                 # Draw before hit-testing to keep button positions in sync after a load.
                 self.render()
-                for event in pygame.event.get():
+                for event in gamepads.events() if gamepads else pygame.event.get():
                     running = self.handle_event(event)
                     if not running:
                         break
@@ -2910,6 +5448,8 @@ class Desktop:
                 if running:
                     self.tick(elapsed)
         finally:
+            if gamepads:
+                gamepads.stop()
             pygame.quit()
 
 

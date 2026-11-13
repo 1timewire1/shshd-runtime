@@ -69,6 +69,40 @@ def answer_screen(session, value=None):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_service_223_runs_a_script_and_comes_back_even_across_a_save(self):
+        # shshd-runtime (Stage 6b): BREW runs a due event inside the script that's waiting (translated Fall '06). 223 runs the
+        # script named and returns 0 to its caller when it ends; a save in the inner script keeps the caller waiting (version 39).
+        words, (before, after) = text_words('Before.', 'After.')
+        inner_words, (inside,) = text_words('Inside.')
+        r = Resources(program(*host_call(13, before, 0), *host_call(223, 25003), 0x21, (0x2a, 3),
+                              *host_call(13, after, 0), 0x33, words=words))
+        r.programs[25003] = program(*host_call(13, inside, 0), 0x33, words=inner_words)
+        s = Session(r)
+        self.assertEqual(s.advance().details['text'], 'Before.')
+        action = answer_screen(s)
+        self.assertEqual((action.details['text'], s.scene, len(s.nest_stack)), ('Inside.', 25003, 1))
+        saved = s.snapshot()
+        self.assertEqual((saved['version'], [entry['scene'] for entry in saved['nested']]), (39, [25001]))
+        restored = Session.from_snapshot(r, copy.deepcopy(saved))
+        self.assertEqual((restored.scene, len(restored.nest_stack)), (25003, 1))
+        for session in (s, restored):
+            action = answer_screen(session)
+            self.assertEqual((action.details['text'], session.scene, session.nest_stack), ('After.', 25001, []))
+        bad = copy.deepcopy(saved)
+        bad['nested'][0]['script_sha256'] = '0' * 64
+        with self.assertRaises(SaveError):
+            Session.from_snapshot(r, bad)
+
+    def test_a_brew_menu_drops_a_blank_last_option_and_shs_keeps_it(self):
+        # The decompiled BREW engine (FUN_0000d6a0) adds the part after a menu's last `|` only when it isn't blank, so Fall '06's
+        # math answers, built ending in `|`, have four options; SHS's own choice keeps a blank last field (FUN_000b04b8).
+        words, (title, options) = text_words('You', '2500|100|1000|10000| ')
+        for pack, expected in ((31200, ['2500', '100', '1000', '10000']), (1, ['2500', '100', '1000', '10000', ''])):
+            r = Resources(program(*host_call(1, title, options, -1, 0, 0, -1, -1, 0), 0x33, words=words))
+            r.record = dict(r.record, pack_id=pack)
+            action = Session(r).advance()
+            self.assertEqual((action.name, action.details['options']), ('choice', expected))
+
     def test_notice_after_minigame_is_deferred_to_next_dialogue(self):
         words, refs = text_words('New class', 'Story continues')
         r = Resources(program(*host_call(88, refs[0]), *host_call(13, refs[1], 0), 0x33, words=words))

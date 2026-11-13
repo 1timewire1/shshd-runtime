@@ -65,6 +65,7 @@ class CodShell(HdShell):
         self.windows = CodMenuWindows(library, self.data, art, logging_disabled=lambda: app.state.logging_disabled)
         self.stack = MenuStack(self.data, self.perform)
         self.main.backdrop_enabled = lambda: app.state.hd_backdrop
+        self.main.ch_backdrop_enabled = lambda: app.state.ch_backdrop
         self.pause = CodPauseMenu(SimpleNamespace(library=library), art)
         self.pause.main_menu = True
         self.stage = 'loading'
@@ -155,6 +156,8 @@ class CodShell(HdShell):
 
     def perform(self, number):
         """CoD's `doMenuEngineAction` numbers, run through HdShell's (see the table above)."""
+        if number in (self.CONFIRM_ACTION, self.DECLINE_ACTION):  # this player's own (a Data Management confirmation): HdShell's
+            return super().perform(number)
         if number == 1:                   # the sound answer is in: no EA flash; the EA screen fades to black, then the menu
             self.stack.clear()
             self.leave(self.arrive, hold=BLACK_HOLD, time=BLACK_FADE)

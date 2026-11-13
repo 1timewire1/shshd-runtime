@@ -5,6 +5,7 @@ Rows come from episode_index.py; this module binds them to a library, its releas
 from dataclasses import dataclass
 from io import BytesIO
 import logging
+import threading
 
 from . import graphics as pygame
 
@@ -69,6 +70,11 @@ class PickerModel:
         self.position = {r['id']: (row, column) for row, entry in enumerate(self.rows)
                          for column, r in enumerate(entry.episodes)}
         self._previews = {}
+        self._preview_lock = threading.Lock()
+        self._wanted = {}               # {record id: record} for the background thread, the newest asked for first
+        self._decoded = {}              # {record id: an image it finished, not yet in `_previews`}
+        self._decoding = None           # the record id it has in hand; None once a forget_preview outdates that
+        self._decoder = None
         self._has_info = {}
         # The standard-edition marker only says something when HD episodes sit beside them.
         self.mixed = self.prefer == HD and any(self.variants[r['id']] == HD for r in self.records)
@@ -155,22 +161,96 @@ class PickerModel:
         cached = self._previews.get(record['id'])
         if cached is not None:
             return cached
+        return self._keep_preview(record, self._decode_preview(record))
+
+    def preview_soon(self, record):
+        """preview(), without the wait: None until the background thread has it. A phone took 34 ms a tile, on the
+        drawing thread a freeze of 200 ms at each new row."""
+        cached = self._previews.get(record['id'])
+        if cached is not None:
+            return cached
+        with self._preview_lock:
+            image = self._decoded.pop(record['id'], False)
+        if image is not False:
+            return self._keep_preview(record, image)
+        self.want_preview(record)
+        return None
+
+    _waiting = None
+
+    def waiting_preview(self):
+        """What a tile shows until preview_soon has its preview: SHS's placeholder, else the flat card (Cause of Death
+        always: that picture is SHS's, owner 2026-11-03). One surface, decoded once, for them all."""
+        if self._waiting is None:
+            image = None
+            try:
+                data = episode_thumbnails.missing_preview(self.library) if self.cod is None else None
+                image = pygame.image.load(BytesIO(data)) if data else None
+            except (pygame.error, OSError, ValueError):     # (ValueError: an archive already closed)
+                image = None
+            if image is not None and image.get_size() != TILE_PIXELS:
+                image = pygame.transform.smoothscale(image, TILE_PIXELS)
+            if image is None:
+                image = pygame.Surface(TILE_PIXELS)
+                image.fill((70, 78, 100))
+            self._waiting = image.convert()
+        return self._waiting
+
+    def want_preview(self, record):
+        """Ask the background thread for a preview, ahead of those asked for earlier."""
+        record_id = record['id']
+        if record_id in self._previews:
+            return
+        with self._preview_lock:
+            if record_id in self._decoded or record_id == self._decoding:
+                return
+            self._wanted.pop(record_id, None)
+            self._wanted[record_id] = record
+            if self._decoder is None:           # it ends when it runs out, so a picker left behind holds no thread
+                self._decoder = threading.Thread(target=self._decode_wanted, name='episode-previews', daemon=True)
+                self._decoder.start()
+
+    def _decode_wanted(self):
+        while True:
+            with self._preview_lock:
+                if not self._wanted:
+                    self._decoder = None
+                    return
+                record_id, record = self._wanted.popitem()
+                self._decoding = record_id
+            try:
+                image = self._decode_preview(record)
+            except Exception as error:          # a library let go under it, say: the flat card
+                logging.warning('Episode preview cannot be read: %s', error)
+                image = None
+            with self._preview_lock:
+                if self._decoding == record_id:
+                    self._decoded[record_id] = image
+                self._decoding = None
+
+    def _decode_preview(self, record):
+        """The preview at the tile's size, unconverted, or None. Takes no display state: the background thread runs it."""
         library, image = self.library, None
         for load in (lambda: episode_thumbnails.bundled_preview(library, record),
                      lambda: self._read(episode_thumbnails.thumbnail_path(library, record)),
                      lambda: episode_thumbnails.missing_preview(library)):
             try:
                 data = load()
-                image = pygame.image.load(BytesIO(data)).convert() if data else None
+                image = pygame.image.load(BytesIO(data)) if data else None
             except (pygame.error, OSError):
                 image = None
             if image is not None:
                 break
+        if image is not None and image.get_size() != TILE_PIXELS:
+            image = pygame.transform.smoothscale(image, TILE_PIXELS)
+        return image
+
+    def _keep_preview(self, record, image):
         if image is None:
             image = pygame.Surface(TILE_PIXELS).convert()
             image.fill((70, 78, 100))
-        elif image.get_size() != TILE_PIXELS:
-            image = pygame.transform.smoothscale(image, TILE_PIXELS)
+        else:
+            image = image.convert()
         self._previews[record['id']] = image
         return image
 
@@ -180,3 +260,8 @@ class PickerModel:
 
     def forget_preview(self, record_id):
         self._previews.pop(record_id, None)
+        with self._preview_lock:
+            self._decoded.pop(record_id, None)
+            self._wanted.pop(record_id, None)
+            if self._decoding == record_id:
+                self._decoding = None

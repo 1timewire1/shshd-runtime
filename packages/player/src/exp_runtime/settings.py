@@ -1,17 +1,40 @@
-"""App-wide preferences, independent of either game's imported library."""
+"""App-wide preferences, independent of either game's imported library.
+
+Besides the update check: the preferences both games share (menu.SHARED_PREFERENCES: the switches and volumes of
+Options, owner 2026-10-29), which game the app opens in (`start_in`, General's Start In), the game an episode was
+last started in (`last_game`, what Start In's Last Played opens) and the display's shape (`aspect_ratio`, General's Aspect
+Ratio: this device's, so never synced or backed up; None for its default, frame_shape.default).
+"""
 import json
 import logging
 import os
 from pathlib import Path
 import tempfile
 
+from .frame_shape import CHOICES as ASPECT_RATIOS, default as default_aspect
 from .launcher import user_data_directory
+
+# General's Start In: the game an episode was last played in (the default: the game chooser until there is one; owner,
+# 2026-10-29), the game chooser, or one game.
+START_IN = ('auto', 'games', 'shs', 'cod')
+# Data Management's folders a player may choose on a computer (owner, 2026-10-30): where Back Up Progress and Export
+# Episodes write. None is the default, a folder of this app's in Downloads.
+FOLDERS = ('backup_folder', 'export_folder')
 
 
 class AppSettings:
     def __init__(self, path=None):
         self.path = Path(path) if path is not None else user_data_directory() / 'settings.json'
         self.check_for_updates = True
+        self.preferences = {}           # shared game preferences (MenuState checks each value as it reads it)
+        self.start_in = 'auto'
+        self.last_game = None
+        self.aspect_ratio = None
+        self.backup_folder = self.export_folder = None
+        # Hidden (no menu row; owner, 2026-11-12): the test channel's port (test_channel.py). On iOS, where an app gets
+        # no environment from its launch, this is how the channel is switched on: the file is in the app's Documents,
+        # which only a computer with the device on its cable can write.
+        self.test_channel = None
         try:
             data = json.loads(self.path.read_text(encoding='utf-8'))
             if (not isinstance(data, dict) or data.get('version') != 1
@@ -19,28 +42,94 @@ class AppSettings:
                 raise ValueError('Invalid application settings')
             self.check_for_updates = data['check_for_updates']
         except FileNotFoundError:
-            pass
+            return
         except (OSError, ValueError) as error:
             # A damaged/unreadable preference must not silently re-enable
             # networking the player may have disabled.
             self.check_for_updates = False
             logging.warning('Could not read application settings: %s', error)
+            return
+        # The rest is optional (older files have only the update check); a damaged value is left at its default.
+        if isinstance(data.get('preferences'), dict):
+            self.preferences = {key: value for key, value in data['preferences'].items()
+                                if isinstance(key, str) and isinstance(value, (bool, int, str))}
+        if data.get('start_in') in START_IN:
+            self.start_in = data['start_in']
+        if isinstance(data.get('last_game'), str) and data['last_game'] in START_IN[2:]:
+            self.last_game = data['last_game']
+        if data.get('aspect_ratio') in ASPECT_RATIOS:
+            self.aspect_ratio = data['aspect_ratio']
+        for key in FOLDERS:
+            if isinstance(data.get(key), str) and data[key]:
+                setattr(self, key, data[key])
+        if type(data.get('test_channel')) is int and 1024 <= data['test_channel'] <= 65535:
+            self.test_channel = data['test_channel']
 
     def set_update_check(self, enabled):
         if type(enabled) is not bool:
             raise ValueError('Update preference must be a boolean')
+        self._write(check_for_updates=enabled)
+
+    def set_preferences(self, values):
+        """The shared preferences as they now are (MenuState.persist); written only when one changed."""
+        values = dict(self.preferences, **values)
+        if values != self.preferences:
+            self._write(preferences=values)
+
+    def set_start_in(self, choice):
+        if choice not in START_IN:
+            raise ValueError('Unknown start-up choice')
+        self._write(start_in=choice)
+
+    def set_aspect_ratio(self, choice):
+        """General's Aspect Ratio (frame_shape.CHOICES), or None for this device's default."""
+        if choice is not None and choice not in ASPECT_RATIOS:
+            raise ValueError('Unknown aspect ratio')
+        if choice != self.aspect_ratio:
+            self._write(aspect_ratio=choice)
+
+    def aspect(self, fixed_window):
+        """The shape in use: the one chosen, else the device's default (Fit Screen on a phone, 3:4 on a computer)."""
+        return self.aspect_ratio or default_aspect(fixed_window)
+
+    def set_last_game(self, game):
+        if game not in START_IN[2:]:
+            raise ValueError('Unknown game')
+        if game != self.last_game:
+            self._write(last_game=game)
+
+    def set_folder(self, key, folder):
+        """Backups' or exports' folder (FOLDERS), or None for the default."""
+        if key not in FOLDERS:
+            raise ValueError('Unknown folder setting')
+        self._write(**{key: None if folder is None else str(folder)})
+
+    def boot_game(self, has_library):
+        """The game the app opens in when it is not told one (`has_library(game)`: whether it has a library), or None
+        for the game chooser."""
+        game = self.last_game if self.start_in == 'auto' else self.start_in
+        return game if game in START_IN[2:] and has_library(game) else None
+
+    def _write(self, **changes):
+        values = dict(check_for_updates=self.check_for_updates, preferences=self.preferences,
+                      start_in=self.start_in, last_game=self.last_game, aspect_ratio=self.aspect_ratio,
+                      **{key: getattr(self, key) for key in FOLDERS})
+        if self.test_channel is not None:
+            values['test_channel'] = self.test_channel      # (hidden: kept as it was)
+        values.update(changes)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.path.parent,
                                              prefix='.settings-', delete=False) as stream:
                 temporary = Path(stream.name)
-                json.dump(dict(version=1, check_for_updates=enabled), stream)
+                json.dump(dict(version=1, **values), stream)
                 stream.write('\n')
                 stream.flush()
                 os.fsync(stream.fileno())
             temporary.replace(self.path)
-            self.check_for_updates = enabled
+            for key, value in values.items():
+                setattr(self, key, value)
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)

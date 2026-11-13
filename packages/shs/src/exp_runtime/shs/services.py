@@ -4,6 +4,7 @@ from copy import deepcopy
 from ..loading import LoadingScreen, loading_waits
 from ..vm import VMError
 from .football import read_football
+from ..shs11_games import MemoryGame, grid_memory
 from .word_grid import read_grid
 from .survey import confirmation as survey_confirmation, is_survey, script_response
 
@@ -66,13 +67,37 @@ def dispatch(self, vm, *, resource_exists=None):
         if not self.loading.blocking:
             # Compact calls retain their count in bytecode. Register-count
             # calls lose it on completion; keep nonlegacy counts for saves.
-            if vm.program.instructions[request.pc].opcode == 0x1e and len(args) != 1:
+            if vm.instruction_at(request.pc).opcode == 0x1e and len(args) != 1:
                 details['argument_count'] = len(args)
             vm.resume(0)  # The call completes, but host +0x118 still gates execution.
         return EngineAction('loading', request, False, details)
     if y == 70:
         at_least(1)
         selector = args[0]
+        from ..engine import NR_ARENA_QUERY
+        if selector == NR_ARENA_QUERY:
+            # shshd-runtime: whether New Rules' minigame arena plays here (its library attached and the player's
+            # switch on); native players and upstream answer 0, and the story takes its other way.
+            available = getattr(self, 'nr_arena_enabled', False) and vm.linked is not None
+            return complete('query_build', int(available), selector=selector)
+        from ..x360_games import X360_MINIGAMES_QUERY
+        if selector == X360_MINIGAMES_QUERY:
+            # shshd-runtime: whether the X360 translations' real minigames play here (the same switch); others take
+            # the timed choice the story carries.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
+        from ..shs11_services import SHS11_MINIGAMES_QUERY
+        if selector == SHS11_MINIGAMES_QUERY:
+            # shshd-runtime: whether SHS '11's real minigames play here (the same switch); others take what the
+            # smartphone has at that spot.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
+        from ..brew_services import BREW_MINIGAMES_QUERY
+        if selector == BREW_MINIGAMES_QUERY:
+            # shshd-runtime: whether the BREW games' catch game plays here (the same switch); others take timed word choices.
+            return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)
+        from ..cutscene import CUTSCENE_QUERY
+        if selector == CUTSCENE_QUERY:
+            # shshd-runtime: whether storyboard cutscenes play here (a player that draws them); others go straight on.
+            return complete('query_build', int(getattr(self, 'cutscenes_enabled', False)), selector=selector)
         if self.hd_version is not None:
             # SHSScript::syscall case 0x46 (HD): 2 -> 2, 3 -> 6, 6 -> the app version (CFBundleVersion) in host
             # string slot 0, 9 -> 1, 10 -> 2 when the in-app store is available, else 1 (answered as available:
@@ -110,14 +135,23 @@ def dispatch(self, vm, *, resource_exists=None):
         # Construct transactionally: invalid content leaves the frame and
         # engine random stream available for inspection and a saved stop.
         random = deepcopy(self.random)
-        game.initialize(random)
-        self.word_grid, self.random = game, random
-        self.grid_tutorials_seen |= bool(game.tutorials)
         base, variant = args[5], args[4]
         background = base + variant if base >= 0 and variant in (1, 2) else base
         if resource_exists and not resource_exists(background):
             background = base
-        return EngineAction('word_grid', request, False, dict(
-            background_id=background, left_character=args[6], left_expression=args[7],
-            right_character=args[8], right_expression=args[9]))
+        details = dict(background_id=background, left_character=args[6], left_expression=args[7],
+                       right_character=args[8], right_expression=args[9])
+        # shshd-runtime: the "Use '11's Memory for Word Grid" switch.
+        memory = grid_memory(game, random) if getattr(self, 'grids_as_memory', False) else None
+        if memory is not None:
+            if self.shs11_tutorial_due('shs11_tutorial_seen', MemoryGame.KIND):
+                memory = MemoryGame.opened(memory.rounds, memory.total_ms // 1000, memory.target, tutorial=True)
+                memory.grid = True
+            self.shs11_memory, self.random = memory, random
+            return EngineAction('shs11_memory', request, False, details)
+        random = deepcopy(self.random)
+        game.initialize(random)
+        self.word_grid, self.random = game, random
+        self.grid_tutorials_seen |= bool(game.tutorials)
+        return EngineAction('word_grid', request, False, details)
     return None

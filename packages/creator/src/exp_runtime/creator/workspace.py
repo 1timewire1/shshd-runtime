@@ -48,13 +48,15 @@ class Workspace:
         project = state.project
         return {'revision': state.revision, 'live': state.live, 'unsaved': state.unsaved,
                 'title': project.title, 'game': project.game,
-                'pack_id': project.pack_id, 'episode_id': project.episode_id, 'start': project.start,
+                'pack_id': project.pack_id, 'episode_id': project.episode_id,
+                'episode_version': project.episode_version, 'start': project.start,
                 'language': project.language, 'locales': project.locales, 'library': project.library,
                 'emoticons': project.emoticons,
                 'native': bool(project.native), 'node_count': len(project.nodes),
                 'nodes': [asdict(n) for n in project.nodes[offset:offset + limit]],
                 'characters': [asdict(c) for c in project.characters],
-                'assets': [{'id': a.id, 'name': a.name, 'embedded': a.data is not None,
+                'addons': project.addons, 'options': project.options,
+                'assets': [{'id': a.id, 'name': a.name, 'embedded': a.data is not None, 'addon': a.addon,
                             'bytes': len(a.data) if a.data else 0} for a in project.assets]}
 
     def create(self, name, title='Untitled episode', game='shs', pack_id=30000, episode_id=1):
@@ -225,6 +227,31 @@ class Workspace:
         def apply(project):
             with ContentLibrary(path) as content:
                 import_library_image(project, content, resource, content.open_episode(episode) if episode else None)
+        return self.edit(name, revision, apply)
+
+    def save_cutscene(self, name, revision, title, spec, resource=None):
+        from .cutscenes import save_cutscene
+        return self.edit(name, revision, lambda project: save_cutscene(project, title, spec, resource))
+
+    def addon_asset(self, name, revision, library, addon, resource, copy=False):
+        from exp_runtime.content import ContentLibrary
+        from .addons import copy_addon_asset, use_addon_asset
+        path = self.path(library)
+
+        def apply(project):
+            with ContentLibrary(path) as content:
+                (copy_addon_asset if copy else use_addon_asset)(project, content, addon, resource)
+        return self.edit(name, revision, apply)
+
+    def primary_addon(self, name, revision, library, addon, edition=''):
+        from exp_runtime.content import ContentLibrary
+        from .addons import drop_unused_addons, set_primary_addon
+        path = self.path(library)
+
+        def apply(project):
+            with ContentLibrary(path) as content:
+                set_primary_addon(project, content, addon, edition)
+            drop_unused_addons(project)
         return self.edit(name, revision, apply)
 
     def import_episode(self, source, destination, game='shs'):

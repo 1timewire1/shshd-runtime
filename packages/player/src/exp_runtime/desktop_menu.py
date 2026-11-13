@@ -466,12 +466,18 @@ class MenuRenderer:
             self.button('GitHub Project', (30, 390, 260, 29), ('project',), pressed=app.pressed)
         elif screen == 'browser':
             self.panel({'apk': 'Choose Game', 'music_apk': 'Add APK Music', 'episodes': 'Add Episodes',
-                        'library': 'Open Library', 'bulk': 'Bulk Import'}[app.browser_kind])
+                        'library': 'Open Library', 'bulk': 'Bulk Import', 'backups': 'Backups Folder',
+                        'exports': 'Exports Folder'}[app.browser_kind])
             pygame.draw.rect(self.canvas, (230, 236, 244), (19, 110, 282, 37), border_radius=4)
             self.label(app.path_text, (24, 114, 272, 30), size=11)
             self.buttons.append((pygame.Rect(19, 110, 282, 37), ('path',)))
             self.button('Up', (20, 155, 60, 27), ('up',))
-            self.label('Click a folder to open it', (91, 161, 210, 23), size=11, color=GRAY)
+            if app.browser_kind in ('backups', 'exports'):
+                # Choosing a folder: back to the default one (a folder of this app's in Downloads) in one press.
+                self.label('Click to open a folder', (91, 161, 112, 23), size=11, color=GRAY)
+                self.button('Default', (213, 155, 88, 27), ('default_folder',))
+            else:
+                self.label('Click a folder to open it', (91, 161, 210, 23), size=11, color=GRAY)
             clip = pygame.Rect(19, 190, 282, 210)
             self.canvas.set_clip(clip)
             for i, path in enumerate(app.files):
@@ -485,8 +491,9 @@ class MenuRenderer:
                 self.buttons.append((rect.clip(clip), ('file', path)))
             self.canvas.set_clip(None)
             if not app.files:
-                self.label('No matching files in this folder.', (30, 230, 260, 70), color=GRAY)
-            if app.browser_kind in ('episodes', 'library'):
+                self.label('No folders in this folder.' if app.browser_kind in ('backups', 'exports')
+                           else 'No matching files in this folder.', (30, 230, 260, 70), color=GRAY)
+            if app.browser_kind in ('episodes', 'library', 'backups', 'exports'):
                 self.button('Use This Folder', (162, 436, 146, 29), ('folder',))
         if app.busy:
             if app.job_kind == 'previews':
@@ -494,7 +501,7 @@ class MenuRenderer:
             elif app.job_kind == 'copying':             # iOS: the picked files are being copied into the app
                 self.overlay('Importing content', app.progress_text)
             else:
-                self.overlay('Importing content', 'Checking and copying your files...')
+                self.overlay('Importing content', app.progress_text or 'Checking and copying your files...')
             self.buttons = []
             # Small animated progress indicator; work runs outside the UI thread.
             x = 55 + round((math.sin(pygame.time.get_ticks() / 250) + 1) * 90)

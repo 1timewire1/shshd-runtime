@@ -2,23 +2,30 @@
 
 The scripts keep New Rules' own bytecode. Each host call is renamed or sent through a shim (kiwi_rewrite.py) according to
 the map below. The map was checked against the 45 New Rules stories that also exist as smartphone EXPs: with the same
-answers, the two versions show the same lines through these calls (reference/Other Games/docs/TRANSLATOR_PLAN.md).
+answers, the two versions show the same lines through these calls (docs/NEW_RULES.md).
 
 Characters keep their numbers (the paired stories number them identically). Portraits are New Rules' paper-doll
 looks, pre-rendered into five-picture expression banks; backgrounds are its location strips (nr_art.py).
 """
+import bisect
 from collections import Counter
 from dataclasses import dataclass, field, replace
 import re
 import struct
 
+from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
+from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+from exp_runtime.nr_arena import SHAKE
 from exp_runtime.vm import KiwiVM, StopKind, VMError
 
 from kiwi_rewrite import Rewriter
 import nr_art
 
+# The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
+# version replaces it too. Raise it when a build must never be replaced by an earlier one.
+STORY_VERSION = 1
 PACK_ID = 31300                         # the owner's block for New Rules (TRANSLATOR_PLAN.md decision 5)
 NARRATOR = 199                          # New Rules narrates without a speaker (box mode -4); SHS needs a character
 PLAYER = 1                              # the primary speaker (74) when a story has no dialogue to judge by
@@ -35,6 +42,15 @@ MUSIC_BASE = 26980                      # New Rules music index i = MUSIC_BASE +
 # New Rules' UI backdrop (nr_art.Art.backdrop), which the runtime draws over SHS's frame under the location strip
 # instead of black for this pack (shs/profile.py TRANSLATED_FRAME_BACKDROP).
 FRAME_BACKDROP = 26999
+# The New Rules addon (shshd-runtime addons.py): New Rules' backgrounds in every mode, its music and its frame backdrop,
+# shared by every translation that declares it instead of each carrying its own copies (owner, 2026-10-30). Raise the
+# revision when an ID above changes meaning; episodes need at least the revision they were built against.
+# Revision 2 adds the minigame library and the arena's skin; 3 the arena's copy of the dialogue screens' frame.
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 3
+ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
+# New Rules' minigame arena drawn from the X1i build's art (nr_arena_art.build_skin), after the backgrounds (26000-26173)
+# and below the episodes' own portraits (26200 on): the player's desktop_nr_arena.SKIN names the same IDs.
+ARENA_SKIN = {'skin.json': 26174, 'static.png': 26175, 'tile.png': 26176, 'atlas.png': 26177, 'frame.png': 26178}
 MODE_KEY = 31300                        # SHS global number holding the current mode, for title cards
 # The SHS picture each title card (30) shows instead of its stretched New Rules strip, by (download id, script, PC of
 # the call): a shared-bank background, which SHS HD replaces with its own HD copy (owner's picks, 2026-10-25, from the
@@ -61,6 +77,11 @@ TITLE_CARD_BACKGROUNDS = {
     (100, 25001, 1528): 1057, (100, 25001, 1909): 1108, (100, 25001, 2077): 1108, (100, 25001, 2260): 1090,
     (100, 25001, 3072): 1090, (101, 25102, 162): 1108,
 }
+# The built-in stories with no title card of their own get one before their first line (owner, 2026-11-11), by download id:
+# (title, subtitle, SHS picture). Dancing Queen takes the smartphone Homecoming Queen's card (pack 5 episode 10: `Meet the
+# new girl...` over 1108) with its own name; King of Diss, bank 1090 (portrait-catalog/bank_backgrounds.md row 0077) and no
+# subtitle. (King of Diss Lite opens on its own `Chapter 1` card.)
+ADDED_TITLE_CARDS = {101: ('Dancing Queen', 'Meet the new girl...', 1108), 1: ('King of Diss', '', 1090)}
 # On the library title only; the story's own title card is unchanged. The importer recognises the tag (shs profile
 # LEGACY_GAMES), drops it from the title, files the episode under New Rules and badges it "NR".
 TITLE_SUFFIX = ' (SHSNR)'
@@ -109,6 +130,12 @@ DROPPED = {10, 29, 36, 37, 38, 39, 44, 45, 46, 58, 59, 62, 64, 66}
 # New Rules' build query (32): selector -> constant.
 BUILD = {1: 1, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}     # the Java build answers 2 to selector 1 (keyboard_guards)
 KEYBOARD_WINDOW = 60                    # keyboard_guards(): how far after a selector-1 query the text entry may be
+# arena_code(): how far after a selector-1 query the call to the game may be. Most rounds ask "platform 1, or 32(4) is
+# 1?" before calling the round's word game, else go on to the arena (2026-10-31): the arena call then sits 22-31 past
+# the query, so the first window, 20, found 38 of the downloads' 104 guards: the other rounds played as timed choices
+# with the arena on. 40 finds every guarded round in the 47 downloads, each added guard with that shape; 60 adds a
+# spurious one.
+ARENA_GUARD_WINDOW = 40
 
 
 class TranslateError(ValueError):
@@ -149,6 +176,7 @@ class Report:
     protagonist: int = PLAYER                               # the primary speaker chosen (protagonist())
     word_games: int = 0                                     # minigame rounds played as SHS word games
     library_games: dict = field(default_factory=dict)       # a built-in story's library calls by game (LIBRARY_ENTRIES)
+    arena_additions: dict = field(default_factory=dict)     # ARENA_ADDITIONS made to the downloads' arena games
     borrowed: int = 0                                       # lines given their full story's expression (King of Diss Lite)
 
 
@@ -341,14 +369,18 @@ def music_resource(index):
 
 
 def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing_dictionary=None, casing_exact=None,
-              twin_games=(), casing_titles=(), hires_art=None, borrow_from=None):
-    """The SHS `.exp` bytes for one New Rules episode. `hires_art`: the X1i jar's parts, for the second, HD-sized
+              twin_games=(), casing_titles=(), hires_art=None, borrow_from=None, addon=None, arena=False):
+    """The SHS `.exp` bytes for one New Rules episode. `addon`: the resource IDs the New Rules addon holds (its archive's
+    entries), which the episode then leaves out and reads from the addon it declares; None to carry its own copies.
+    `hires_art`: the X1i jar's parts, for the second, HD-sized
     portrait set (HIRES_PORTRAIT_OFFSET), if any. `music`: index -> rendered MP3 bytes (a callable), if any;
     `casing_dictionary`: casing.learn's dictionary, which restores capitals (else the text stays lowercase);
     `casing_exact`: the paired smartphone story's strings by lowercase text, whose casing wins where they match;
     `twin_games`: its word games' (good, bad) lists (pairs.twin_word_games), whose extra words fill out the rounds;
     `borrow_from`: the full story a retelling (King of Diss Lite) takes its lines' expressions and its voices' colours
-    from (borrowed_presentation)."""
+    from (borrowed_presentation). `arena`: where the player has New Rules' minigame arena (SHS 70(ARENA_QUERY)), the
+    minigames play there as New Rules wrote them, else as today: a built-in story's library calls enter the library's
+    games (library_game), and a download's platform queries before an arena round answer 2 (arena_code)."""
     report = report or Report()
     resources = {}
     sexes = {}
@@ -387,14 +419,17 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         bank_of[rid, address] = banks[slots]
     report.looks = len(banks)
     shown_elsewhere = {(rid, pc) for (number, rid, pc) in TITLE_CARD_BACKGROUNDS if number == episode.download_id}
+    held = set(addon or ())                     # resources the addon provides: not rendered here
     for location, mode in sorted(used_scenes(episode, shown_elsewhere)):
-        resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
-    backdrop = art.backdrop()
+        if BACKGROUND_BASE + MODES * location + mode not in held:
+            resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
+    backdrop = art.backdrop() if FRAME_BACKDROP not in held else None
     if backdrop is not None:
         resources[FRAME_BACKDROP] = nr_art.png(backdrop)
     for rid, program in sorted(episode.scripts.items()):
         rewriter = Rewriter(program, zero_gap=True)
         guards = keyboard_guards(program)
+        arena_pcs, arena_guards = arena_code(program) if arena and episode.library is None else ((), ())
         players = scene_players(program, names, scores)
         handovers = announcements(program, names, scores, sexes)
         # Arena rounds are the downloads'; a built-in story's timed menus are its own (Dancing Queen's "choose a move!").
@@ -403,21 +438,27 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         for start, game in rounds.items():
             rewriter.replace_function(start, ('word_game', start), lambda s, game=game: word_game(s, program, game, twin_games, player))
             report.word_games += 1
+        for pc, target in sorted(arena_calls(program).items()) if arena_pcs else ():
+            rewriter.replace_call(pc, ('arena entry', target), 0, lambda s, target=target: arena_entry(s, target))
         for pc, entry, argc in library_calls(program):
             kind = (episode.library_entries or LIBRARY_ENTRIES).get(entry)
             if kind is None or episode.library is None:
                 raise TranslateError(f'script {rid} calls library code at {entry}, which has no translation')
             index = report.library_games.get(kind, 0)
             report.library_games[kind] = index + 1
+            # The face picker stays SHS's picker: the arena's portraits come with the addon's (not yet).
+            own = entry if arena and kind != 'faces' else None
             rewriter.replace_call(pc, ('library', kind, index), argc,
-                                  lambda s, kind=kind, index=index: library_game(s, kind, index, episode.library, player,
-                                                                                 music is not None))
+                                  lambda s, kind=kind, index=index, own=own: library_game(
+                                      s, kind, index, episode.library, player, music is not None, own))
         last_line = rewriter.words([-1])                       # the last line shown, for a choice's description
         for pc, service, argc in rewriter.calls():
             key = (service, argc)
             report.calls[key] = report.calls.get(key, 0) + 1
             handler = HANDLERS.get(service)
-            if service == SCRIPT_JUMP and episode.script_offset:
+            if pc in arena_pcs and service in ARENA_SERVICES:
+                rewriter.rename(pc, ARENA_SERVICES[service])
+            elif service == SCRIPT_JUMP and episode.script_offset:
                 script_jump(rewriter, pc, episode.script_offset)
             elif service in RENAME:
                 rewriter.rename(pc, RENAME[service])
@@ -427,6 +468,7 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                 handler(rewriter, pc, argc, dict(last_line=last_line, rid=rid, bank_of=bank_of, report=report,
                                                  program=program, music=music, names=names, primary=primary,
                                                  service=service, keyboard_guards=guards, scores=scores,
+                                                 arena_guards=arena_guards,
                                                  scene_players=players, announcements=handovers,
                                                  player=player, episode_id=episode.download_id, sexes=sexes,
                                                  quiet_transitions=quiet, borrowed=borrowed,
@@ -434,10 +476,16 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
             else:
                 report.unmapped[key] = report.unmapped.get(key, 0) + 1
                 rewriter.redirect(pc, ('unmapped', service), lambda s: s.result(0))
+        if arena_pcs:
+            for name, _ in arena_additions(rewriter, program, arena_pcs, music is not None):
+                report.arena_additions[name] = report.arena_additions.get(name, 0) + 1
         if rid - episode.script_offset == 25001:
+            card = ADDED_TITLE_CARDS.get(episode.download_id)
             rewriter.prologue(lambda s: (s.push(NARRATOR), s.call(75, 1), set_player(s, players.get('start', primary)),
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
-                                         s.push(NARRATOR), s.push(-1), s.call(72, 2)))
+                                         s.push(NARRATOR), s.push(-1), s.call(72, 2),
+                                         *((s.text(card[0]), s.text(card[1]), s.push(card[2]), s.push(0), s.call(8, 4))
+                                           if card else ())))
         elif 'start' in players:
             rewriter.prologue(lambda s: set_player(s, players['start']))
         resources[rid - episode.script_offset] = rewriter.finish().to_bytes()
@@ -446,11 +494,43 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         # profile TRANSLATED_WORD_GAME_SOUNDS) play them
         tracks = used_music(episode) | {RIGHT_TRACK, WRONG_TRACK}
         for index in sorted(tracks):
-            resources[MUSIC_BASE + index] = music(index)
+            if MUSIC_BASE + index not in held:
+                resources[MUSIC_BASE + index] = music(index)
         report.music = len(tracks)
+    if addon is not None:
+        resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+    resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     # The tag tells the importer this is a New Rules story, which the picker never hides as its smartphone version.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources), report
+
+
+def build_addon(art, music=None, library=None, arena_source=None):
+    """The New Rules addon's `.exp` bytes: every location's background in every mode, the frame backdrop and, with
+    `music` (index -> MP3 bytes), every music track, at the IDs the translations use; with `library` (New Rules'
+    minigame library, a KiwiProgram) its translation (translate_library) at LIBRARY, which the runtime runs beside
+    every story declaring the addon; with `arena_source` (the X1i jar's resources) the arena's skin (ARENA_SKIN,
+    nr_arena_art.build_skin), which the player draws the arena from."""
+    resources = {}
+    if library is not None:
+        resources[LIBRARY] = translate_library(library, music=music is not None).to_bytes()
+    if arena_source is not None:
+        import nr_arena_art
+        # The arena stands on the dialogue screens' frame (owner, 2026-10-30), without the scene frame's bars.
+        for name, data in nr_arena_art.build_skin(arena_source, backdrop=art.backdrop(bars=False)).items():
+            resources[ARENA_SKIN[name]] = data
+    for location in range(len(nr_art.LOCATIONS)):
+        for mode in range(MODES):
+            resources[BACKGROUND_BASE + MODES * location + mode] = nr_art.jpeg(art.background(location, mode))
+    backdrop = art.backdrop()
+    if backdrop is not None:
+        resources[FRAME_BACKDROP] = nr_art.png(backdrop)
+    if music is not None:
+        for index in range(len(MUSIC_TRACKS)):
+            resources[MUSIC_BASE + index] = music(index)
+    resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
+    resources[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
+    return encode_exp(resources)
 
 
 # -- shims ---------------------------------------------------------------------------------------------------------
@@ -889,15 +969,7 @@ def music(rewriter, pc, argc, context):
         done = s.label()
         s.result(0)
         s.arg(2); s.push(MUSIC_PRELOAD); s.emit(0x0a); s.jump_if_nonzero(done)
-        sound = s.label()
-        for track in sorted(SOUND_TRACKS):
-            s.arg(1); s.push(track); s.emit(0x0a); s.jump_if_nonzero(sound)
-        s.arg(1); s.push(MUSIC_BASE); s.emit(0x50); s.push(0)
-        s.call(80, 2)
-        s.jump(done)
-        s.label(sound)
-        s.arg(1); s.push(MUSIC_BASE); s.emit(0x50)
-        s.call(79, 1)
+        play_track(s, index_arg=1)
         s.label(done)
     rewriter.redirect(pc, 'music', build)
 
@@ -997,6 +1069,72 @@ def keyboard_guards(program):
     return {i.pc for i in instructions
             if i.opcode == 0x1f and i.operand >> 8 == 32 and pushed_values(program, i.pc, 1)[0] == 1
             and any(j.opcode == 0x1f and j.operand >> 8 == 49 for j in instructions[i.pc:i.pc + KEYBOARD_WINDOW])}
+
+
+def functions(program):
+    """{caller's function: {callee starts}} and the sorted function starts: every SAVE_RETURN + JUMP target in the
+    program's own code is a function, which runs to the next one (New Rules lays them out one after another). The
+    code before the first belongs to None."""
+    instructions = program.instructions
+    end = len(instructions)
+    calls = [(i.pc, instructions[i.pc + 1].operand) for i in instructions[:-1]
+             if i.opcode == 0x42 and instructions[i.pc + 1].opcode == 0x29 and instructions[i.pc + 1].operand < end]
+    starts = sorted({target for _, target in calls})
+    edges = {}
+    for pc, target in calls:
+        edges.setdefault(function_of(starts, pc), set()).add(target)
+    return edges, starts
+
+
+def function_of(starts, pc):
+    k = bisect.bisect_right(starts, pc)
+    return starts[k - 1] if k else None
+
+
+def arena_code(program):
+    """(pcs, guards) of a download's own copy of the arena game (SHS_NEW_RULES_ENGINE.md §6): `pcs`, the code of every
+    function the game reaches from the one opening the panel (50), whose New Rules arena services are renamed to the
+    player's (ARENA_SERVICES); `guards`, the platform queries (32(1)) that choose between the game and its round
+    function: a query followed within ARENA_GUARD_WINDOW instructions by a call to a function that reaches the game."""
+    pcs, guards, _ = _arena_parts(program)
+    return pcs, guards
+
+
+def arena_calls(program):
+    """The JUMPs (after a SAVE_RETURN) by which a download's story enters its arena game: those following a guard
+    (arena_code) within ARENA_GUARD_WINDOW instructions, to a function that reaches the game, as {PC: target}."""
+    return _arena_parts(program)[2]
+
+
+def _arena_parts(program):
+    instructions = program.instructions
+    edges, starts = functions(program)
+    roots = {function_of(starts, i.pc) for i in instructions if i.opcode == 0x1f and i.operand >> 8 == 50}
+    roots.discard(None)
+    game, todo = set(), list(roots)
+    while todo:
+        start = todo.pop()
+        if start not in game:
+            game.add(start)
+            todo.extend(edges.get(start, ()))
+    reaching, grew = set(roots), True
+    while grew:
+        grew = False
+        for caller, callees in edges.items():
+            if caller is not None and caller not in reaching and callees & reaching:
+                reaching.add(caller)
+                grew = True
+    pcs = frozenset(i.pc for i in instructions if function_of(starts, i.pc) in game)
+    guards, calls = set(), {}
+    for i in instructions:
+        if i.opcode == 0x1f and i.operand >> 8 == 32 and i.pc not in pcs and pushed_values(program, i.pc, 1)[0] == 1:
+            entries = [instructions[j.pc + 1] for j in instructions[i.pc:i.pc + ARENA_GUARD_WINDOW]
+                       if j.opcode == 0x42 and j.pc + 1 < len(instructions) and instructions[j.pc + 1].opcode == 0x29
+                       and instructions[j.pc + 1].operand in reaching]
+            if entries:
+                guards.add(i.pc)
+                calls[entries[0].pc] = entries[0].operand
+    return frozenset(pcs), frozenset(guards), calls
 
 
 @dataclass
@@ -1117,7 +1255,40 @@ LIBRARY_ENTRIES = {32611: 'rhyme', 31473: 'rhythm', 28903: 'beat boxing', 28201:
 # dancer level + 2 in practice, 7 - the level at the dance-off.
 DANCING_QUEEN = range(25101, 25107)
 DANCING_QUEEN_ENTRIES = {**LIBRARY_ENTRIES, 28903: 'dance steps', 30244: 'dj fever'}
+# New Rules' arena (docs/NEW_RULES.md): its services and the other New Rules services the minigame library calls, as
+# shshd-runtime's New Rules arena services (200-212), which the runtime answers as New Rules' engine does. Random and
+# the global numbers are SHS's own.
+ARENA_SERVICES = {50: 200, 51: 201, 52: 202, 53: 203, 54: 204, 55: 205, 56: 206, 57: 207,
+                  29: 208, 5: 209, 9: 210, 10: 211, 32: 212}
+LIBRARY_RENAME = {**ARENA_SERVICES, 6: 27, 15: 54, 16: 55}
+ARENA_QUERY = 200                       # SHS service 70 selector: 1 when the player has the arena
+ARENA_SKIP = 213                        # shshd-runtime: before an arena game, -1 plays it, else its result (arena_skip)
+
+
+def arena_skip(s, play, out):
+    """Ask to Skip Mini-Games before an arena game: shshd-runtime's 213 answers -1 to play it (on to `play`), or the
+    result the story reads instead, which goes in B as the game would leave it (on to `out`)."""
+    s.call(ARENA_SKIP, 0); s.push_result(); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(play)
+    s.push_result(); s.emit(0x04); s.jump(out)
+
+
+def arena_entry(s, target):
+    """The body replacing a download story's call into its arena game (arena_calls): arena_skip, then the game: the
+    shim drops its frame, so the stack holds the return address as the call left it, and jumps there."""
+    play, out = s.label(), s.label()
+    arena_skip(s, play, out)
+    s.label(play)
+    s.emit(0x22); s.jump(target)
+    s.label(out)
 LIBRARY_GAME_MS = 30000                 # the library plays 40 s; a KiWi word holds 32,767 ms at most
+# What the word game asks where the arena asks a grade (owner, 2026-11-02; docs/NEW_RULES.md): the story reads the
+# library's 0-10 grade against its target, and raw hits read that way were far too easy. Rhythm's: the straight run that
+# scores each grade in 40 s, n(n + 1) / 2 points, at three quarters for 30 s, up to the owner's cap. The first Rhythm a story
+# plays has the arena's +2 first-play handicap. The games that score otherwise ask at least SHS's own pace: 6 in 20 s.
+RHYTHM_HITS = {1: 8, 2: 8, 3: 8, 4: 10, 5: 13, 6: 16}
+RHYTHM_FIRST_HITS = {**RHYTHM_HITS, 6: 10}
+RHYTHM_MOST_HITS = 19
+LIBRARY_GAME_HITS = 9
 RHYME_PROMPT = '`%s` rhymes with...'    # the library string before its rhyme pairs' words
 RHYME_END = 'rhyming'                   # and the one after them
 # The arena games without words of their own, played as SHS word games: (banner, good words, bad words). Rhythm's
@@ -1151,20 +1322,140 @@ SPEED_DISS_MS = 3900
 RIGHT_TRACK, WRONG_TRACK = 13, 1                         # FEEDBACK_TRACKS: New Rules' right and wrong jingles
 
 
-def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1, entries=LIBRARY_ENTRIES):
+def play_track(s, index_arg=None, index=None):
+    """SHS 79 (a sound effect, SOUND_TRACKS) or 80 (music, once) for New Rules music index argument `index_arg` or
+    the constant `index`, as `music` plays service 7's modes 0 and 2."""
+    def push_index():
+        s.arg(index_arg) if index_arg is not None else s.push(index)
+    if index is not None:
+        if index in SOUND_TRACKS:
+            s.push(MUSIC_BASE + index); s.call(79, 1)
+        else:
+            s.push(MUSIC_BASE + index); s.push(0); s.call(80, 2)
+        return
+    sound, done = s.label(), s.label()
+    for track in sorted(SOUND_TRACKS):
+        push_index(); s.push(track); s.emit(0x0a); s.jump_if_nonzero(sound)
+    push_index(); s.push(MUSIC_BASE); s.emit(0x50); s.push(0); s.call(80, 2)
+    s.jump(done)
+    s.label(sound)
+    push_index(); s.push(MUSIC_BASE); s.emit(0x50); s.call(79, 1)
+    s.label(done)
+
+
+# The minigame library's sound hooks, empty in its WinMo copy (PUSH_FP, SET_FP, LEAVE, RETURN), which its games call
+# where the downloads' own copies of the arena games call their filled-in twins (owner, 2026-10-31: the downloads'
+# games had sounds, the library's none). PRELOAD (index) only loads a track (service 7 mode 1) and stays empty.
+LIBRARY_PRELOAD, LIBRARY_PLAY, LIBRARY_GAME_MUSIC = 28189, 28193, 28197
+# The track the downloads' arena games start (their twin of LIBRARY_GAME_MUSIC plays the word left on the stack where
+# build query 32(270) would have put 8; the player answers 270 with 0, and the round starts track 14).
+GAME_MUSIC_TRACK = 14
+# Where the hooks' and additions' shims go: the library's code already ends at the KiWi limit (32767), so they
+# overwrite functions nothing reaches (no jump to them, their addresses never pushed, no story calls them): a list
+# helper and a table reset of the Java copy's.
+LIBRARY_ROOM = ((29997, 30042), (27221, 27243))
+# shshd-runtime's additions to the arena games (owner, 2026-10-31), in the library and in every download's own copy.
+# Each site is found by the shape of its code (arena_shape) from 2 instructions before it to 10 after; the library's
+# site is given. The copies are the same games compiled into each download, so only their addresses differ: every
+# shape matches once in each copy holding that game (all 47 downloads, 2026-10-31).
+#   (name, library site, shape, addition: a track played as a sound effect, or SHAKE for 500 ms)
+SWAP_TRACK = 11                         # a swap item, in Rhythm and DJ Fever: Fever's bonus noise (owner, 2026-10-31,
+                                        # after trying #06)
+ARENA_ADDITIONS = (
+    ('rhythm good note', 30998, '29:* 28:73 1a:708 5b 1f:13314 62 40:* 3e 15 40:* 1a:* 53', 13),
+    ('rhythm swap', 30941, '5c:27393 28:130 5f 5a 3e 15 5f 3f 1a:* 0e 2b:46 60', SWAP_TRACK),
+    ('fever good note', 29671, '2e:231 28:274 1a:708 5b 1f:13314 1a:* 05 3f 25 15 1a:692 1a:*', 13),
+    ('fever swap', 29851, '15 28:94 5f 5a 3e 15 5f 3f 40:* 0e 2b:38 23:65533', SWAP_TRACK),
+    ('sequences wrong picture', 29297, '1f:14341 28:39 1a:* 5b 3e 15 40:* 41:5 50 3f 1a:* 0d', 1),
+    ('sequences empty slot', 29451, '15 28:32 1a:* 5b 3e 15 41:5 1a:748 1a:* 1a:* 1f:14340 23:6', 1),
+    ('sequences time out', 29150, '0d 2b:26 40:* 2b:15 1a:* 05 3f 26 15 40:* 5a 0e', 1),
+    ('rhyme wrong answer', 32010, '15 28:19 1a:708 1a:* 1f:13314 5b 42 29:* 15 61 1a:* 3e', 'shake'),
+)
+ARENA_SHAKE_MS = 500                    # as Rhythm shakes on a bent note
+
+
+def arena_shape(instruction):
+    """An instruction as ARENA_ADDITIONS writes it, hex opcode and operand, the operand '*' where copies differ:
+    addresses (jumps, loads, pushed data and text addresses) and pushed constants other than arena properties
+    (690-780) and negative numbers."""
+    op, arg = instruction.opcode, instruction.operand
+    if arg is None:
+        return f'{op:02x}'
+    if op in (0x29, 0x40) or (op in (0x1a, 0x1b) and not (690 <= arg <= 780 or arg >= 0xF000)):
+        return f'{op:02x}:*'
+    return f'{op:02x}:{arg}'
+
+
+def arena_additions(rewriter, program, pcs=None, music=True):
+    """Make ARENA_ADDITIONS where their shapes match in `program` (New Rules' code: the library, or a download's script
+    with `pcs` its arena code), before the renames; the sounds only with `music`. Returns (name, PC) of each made."""
+    shapes = [arena_shape(i) for i in program.instructions]
+    made = []
+    for name, _, shape, addition in ARENA_ADDITIONS:
+        if addition != 'shake' and not music:
+            continue
+        tokens = shape.split()
+        for k in range(2, len(shapes) - len(tokens) + 3):
+            pc = program.instructions[k].pc
+            if (pcs is None or pc in pcs) and shapes[k - 2:k - 2 + len(tokens)] == tokens:
+                if addition == 'shake':
+                    build = lambda s: (s.push(SHAKE), s.push(ARENA_SHAKE_MS), s.call(ARENA_SERVICES[52], 2))
+                else:
+                    build = lambda s, track=addition: (s.push(MUSIC_BASE + track), s.call(79, 1))
+                rewriter.insert(pc, build)
+                made.append((name, pc))
+    return made
+
+
+def translate_library(library, music=False):
+    """New Rules' minigame library (25200, a linked segment) for shshd-runtime: every host call renamed to the service
+    that answers it (LIBRARY_RENAME), its code and data left where New Rules' stories expect them, with
+    ARENA_ADDITIONS; with `music` (the addon holds the tracks) its sound hooks play New Rules' tracks as the downloads'
+    copies do. Raises TranslateError for a service with no counterpart."""
+    rewriter = Rewriter(library, zero_gap=True, room=LIBRARY_ROOM)
+    for pc, service, argc in rewriter.calls():
+        if service not in LIBRARY_RENAME:
+            raise TranslateError(f'the minigame library calls New Rules service {service}, which has no counterpart')
+        rewriter.rename(pc, LIBRARY_RENAME[service])
+    sites = {name: site for name, site, _, _ in ARENA_ADDITIONS}
+    for name, pc in arena_additions(rewriter, library, music=music):
+        if pc != sites[name]:
+            raise TranslateError(f'the minigame library has its {name} at {pc}, not {sites[name]}')
+    if music:
+        # Every track the library plays is one of New Rules' sound effects (its right/wrong jingles, time's up, Fever's
+        # bonus), so the play hook's shim is short: SHS 79 with MUSIC_BASE + the index.
+        constants = {0x5a: 0, 0x5b: 1}
+        for i in library.instructions:
+            if i.opcode == 0x29 and i.operand == LIBRARY_PLAY:
+                push = library.instructions[i.pc - library.previous_instruction_count - 2]
+                track = constants.get(push.opcode, push.operand if push.opcode == 0x1a else None)
+                if track not in SOUND_TRACKS:
+                    raise TranslateError(f'the minigame library plays track {track} at {i.pc}, not a sound effect')
+
+        def play(s):
+            s.arg(1); s.push(MUSIC_BASE); s.emit(0x50); s.call(79, 1)
+        rewriter.replace_function(LIBRARY_PLAY, 'play', play, argc=1)
+        rewriter.replace_function(LIBRARY_GAME_MUSIC, 'game music', lambda s: play_track(s, index=GAME_MUSIC_TRACK))
+    return rewriter.finish()
+
+
+def read_builtin(source, scripts=KING_OF_DISS, title='King of Diss', download_id=1, entries=LIBRARY_ENTRIES,
+                 linked=False):
     """A built-in story from New Rules' res_large.pud (`source`: resources by ID, nr_art.load) as an Episode, its compact
     dialogue streams written out (expand_streams) and the minigame library it calls kept beside it, with its games by
-    entry (`entries`)."""
+    entry (`entries`). `linked`: the episode runs beside the library (an arena build, whose addon links it), so its
+    reads of the library's data stay: the sequence games' tables (King of Diss's beat boxing passes 32427, 32423
+    and 32424, Dancing Queen's dance steps 32426, 32423 and 32424). Otherwise they read 0."""
     library = decode_program(source[LIBRARY]) if LIBRARY in source else None
-    boundary = library.previous_data_count if library is not None else None
+    boundary = library.previous_data_count if library is not None and not linked else None
     return Episode(download_id, title, {rid: expand_streams(decode_program(source[rid]), boundary)
                                         for rid in scripts}, library, entries)
 
 
-def read_dancing_queen(source):
+def read_dancing_queen(source, linked=False):
     """Dancing Queen, built into res_large.pud beside King of Diss: episode 101 of the translated pack (the downloads
     are 2-48, King of Diss 1, its Lite version 100)."""
-    episode = read_builtin(source, DANCING_QUEEN, 'Dancing Queen', 101, DANCING_QUEEN_ENTRIES)
+    episode = read_builtin(source, DANCING_QUEEN, 'Dancing Queen', 101, DANCING_QUEEN_ENTRIES, linked)
     episode.script_offset = DANCING_QUEEN[0] - 25001
     return episode
 
@@ -1421,7 +1712,8 @@ def expand_streams(program, library_data=None):
     out as the New Rules calls it stands for, in a block after the code: the call becomes a jump there, and the block
     drops the call's argument, makes the calls and jumps back after it. The streams are static data, so this is exact.
     New instructions only follow the code, so no address moves. A read of the linked library's data (an address from
-    `library_data`, its first word, on: the team battle passes three of its variables to the library) reads 0."""
+    `library_data`, its first word, on: the team battle passes three of its variables to the library) reads 0; with
+    no `library_data` (the library runs beside the story) it stays."""
     from exp_runtime.decode.bytecode import BytecodeInstruction
     from kiwi_rewrite import word
     code = [(0x1a, 0) if library_data is not None and i.opcode == 0x40 and i.operand >= library_data
@@ -1562,12 +1854,24 @@ def rhyme_groups(pairs):
     return sorted(groups.values(), key=lambda group: -len(group))
 
 
-def library_game(s, kind, index, library, player=True, music=False):
+def library_game(s, kind, index, library, player=True, music=False, entry=None):
     """The body replacing a call into the minigame library, then B = the result, as the library leaves it (a score, or
     the face's index): the speed disses as the Lite builds play theirs (speed_diss), Rhythm and beat boxing as SHS's
-    word game (71), the face picker as SHS's portrait picker (78)."""
+    word game (71), the face picker as SHS's portrait picker (78). With `entry`, a player that has the arena (SHS
+    70(ARENA_QUERY)) plays the library's own game instead, unless the player skips it (arena_skip): the shim drops its
+    frame, so the stack holds the story's arguments and return address as the call left them, and jumps to the entry
+    in the linked library."""
+    out = s.label()
+    if entry is not None:
+        own, play = s.label(), s.label()
+        s.push(ARENA_QUERY); s.call(70, 1); s.push_result(); s.jump_if_zero(own)
+        arena_skip(s, play, out)
+        s.label(play)
+        s.emit(0x22); s.jump(entry)
+        s.label(own)
     if kind == 'rhyme':
         speed_diss(s, rhyme_rounds(library, index), player, music)
+        s.label(out)
         return
     if kind == 'faces':
         # (title, subtitle, prompt, count, candidate characters, flag): the candidates' looks are the faces offered.
@@ -1587,7 +1891,21 @@ def library_game(s, kind, index, library, player=True, music=False):
             s.push(NARRATOR)
         s.push(1); s.push(WORD_GAME_REFRESH_MS)
         s.call(71, 8)
+        # The result the story's own comparison wants, its target (the call's first argument) or short of it.
+        reached = s.label()
+        s.push_result()
+        if kind == 'rhythm':
+            s.select(1, RHYTHM_FIRST_HITS if index == 0 else RHYTHM_HITS, RHYTHM_MOST_HITS)
+        else:
+            s.push(LIBRARY_GAME_HITS)
+        s.emit(0x0d); s.jump_if_nonzero(reached)
+        s.arg(1); s.push(1); s.emit(0x51); s.emit(0x04); s.jump(out)
+        s.label(reached)
+        s.arg(1); s.emit(0x04)
+        s.label(out)
+        return
     s.push_result(); s.emit(0x04)                           # B, which the caller reads
+    s.label(out)
 
 
 def rhyme_rounds(library, index):
@@ -1666,7 +1984,9 @@ def library_calls(program):
 
 def build_query(rewriter, pc, argc, context):
     """32: (selector) -> New Rules' constants in R (R is only set by LOAD_R or a host call, so one LOAD_R each).
-    Selector 1 answers 1, or 2 where it guards keyboard name entry (keyboard_guards)."""
+    Selector 1 answers 1, or 2 where it guards keyboard name entry (keyboard_guards); where it guards an arena round
+    (arena_code), 2 when the player has the arena (SHS 70(ARENA_QUERY)), else 1."""
+    arena = pc in context.get('arena_guards', ())
     answers = {**BUILD, **({1: 2} if pc in context['keyboard_guards'] else {})}
 
     def build(s):
@@ -1674,11 +1994,16 @@ def build_query(rewriter, pc, argc, context):
         for selector, value in answers.items():
             other = s.label()
             s.arg(1); s.push(selector); s.emit(0x0a); s.jump_if_zero(other)
+            if selector == 1 and arena:
+                platform_one = s.label()
+                s.push(ARENA_QUERY); s.call(70, 1); s.push_result(); s.jump_if_zero(platform_one)
+                s.result(2); s.jump(done)
+                s.label(platform_one)
             s.result(value); s.jump(done)
             s.label(other)
         s.result(0)
         s.label(done)
-    rewriter.redirect(pc, ('build_query', answers[1]), build)
+    rewriter.redirect(pc, ('build_query', 'arena' if arena else answers[1]), build)
 
 
 def script_jump(rewriter, pc, offset):

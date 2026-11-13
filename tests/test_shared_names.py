@@ -102,6 +102,19 @@ class PlayerFileTests(unittest.TestCase):
             self.assertEqual(again.names_for(smartphone), {'$Emily': 'Emily'})
             self.assertEqual(again.names_for(translated), {'$Emily': 'Nova'})
 
+    def test_the_brew_games_each_keep_their_own_names(self):
+        # '07 and '08 were separate apps with their own prefs.sav (owner, 2026-11-06): a name typed in an '07 story
+        # never reaches the '08 Campaign, and Classic and Fall '06 share '07's.
+        with tempfile.TemporaryDirectory() as directory:
+            campaign, classic, season = (dict(id=c * 64, pack_id=p, episode_id=1, titles=['t'] * 5, name=f'{c}.exp')
+                                         for c, p in (('a', 31000), ('b', 31100), ('c', 31200)))
+            library = SimpleNamespace(directory=Path(directory), episodes=[campaign, classic, season], game_id='shs',
+                                      select=lambda selector: campaign, open_episode=None)
+            state = MenuState(library)
+            state.names_for(classic)['$USR'] = 'Alex'
+            self.assertEqual(state.names_for(season), {'$USR': 'Alex'})
+            self.assertEqual(state.names_for(campaign), {})
+
     def test_a_name_the_opening_resets_wins_over_the_last_playthroughs(self):
         # The intro skips run the opening script before the window shares the table: Hector's Guide sets "$matt" back
         # to "you" there, and the last playthrough's handle must not come back.

@@ -152,9 +152,9 @@ class ApplicationUpdateTests(unittest.TestCase):
         opener = app.url_opener = Mock()
         self.future.set_result(release())
         app.tick(0)
-        with patch.object(app.renderer, 'label', wraps=app.renderer.label) as label:
+        with patch.object(app.app_screens, 'window', wraps=app.app_screens.window) as window:   # the HD card
             app.render()
-            self.assertIn(update_message('0.5.0'), [call.args[0] for call in label.call_args_list])
+            self.assertIn(update_message('0.5.0'), [call.args[2] for call in window.call_args_list])
         self.assertEqual([c for _, c in app.buttons], [('update_no',), ('update_yes',)])
         app.command(('choose_game', 'shs'))
         self.assertEqual(app.screen, 'games')  # Covered controls are inert.
@@ -191,6 +191,35 @@ class ApplicationUpdateTests(unittest.TestCase):
             for kind in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
                 app.handle_event(pygame.event.Event(kind, pos=(380, 610), button=1))
         self.assertEqual(app.message, '')
+
+    def test_the_busy_card_draws_for_a_job_that_is_not_data_management(self):
+        """The first launch after an import prepares the new episodes' previews before any Data Management job has run
+        (owner, 2026-10-30): the busy card names that job without a Data Management title."""
+        import pygame
+        app = self.app()
+        app.window = pygame.display.set_mode((768, 1024))
+        drawn = []
+        canvas = pygame.Surface((768, 1024))
+        app.shell = SimpleNamespace(render=lambda: canvas, main=SimpleNamespace(
+            draw_busy=lambda canvas, title, text: drawn.append((title, text))))
+        app.screen, app.job, app.job_kind, app.progress_text = 'main', Mock(), 'previews', '3 of 40'
+        with patch.object(app, 'present_frame'):
+            app.render_shell()
+        self.assertEqual(drawn, [('Preparing episodes', '3 of 40')])
+        # And any other job, before one has reported (kinds from zazatree's fix for this crash, efb42be).
+        for kind in ('bulk', 'copying'):
+            drawn.clear()
+            app.job_kind, app.progress_text = kind, ''
+            with patch.object(app, 'present_frame'):
+                app.render_shell()
+            self.assertEqual(drawn[0][0], 'Importing content')
+            self.assertIn('Checking and copying', drawn[0][1])
+        # What an import reports is its line; a job's end clears it.
+        drawn.clear()
+        app.report_progress('Unpacking 3 of 40 files')
+        with patch.object(app, 'present_frame'):
+            app.render_shell()
+        self.assertEqual(drawn, [('Importing content', 'Unpacking 3 of 40 files')])
 
     def test_yes_opens_only_the_release_page_then_closes_the_game(self):
         app = self.app()
@@ -239,8 +268,11 @@ class ApplicationUpdateTests(unittest.TestCase):
         app = self.app()
         self.future.set_running_or_notify_cancel()
         app.command(('options',)); app.tick(200); app.render()
-        self.assertIn(('toggle_updates',), [command for _, command in app.buttons])
-        app.command(('toggle_updates',))
+        options = app.app_screens.options                                   # the chooser's HD Options
+        options.activate(('pause_open', 'options:general'))
+        options.menu.slide = None; app.render()
+        self.assertIn(('pause_toggle', 'check_updates'), [command for _, command in options.buttons])
+        options.activate(('pause_toggle', 'check_updates'))
         self.future.set_result(release())
         app.command(('back',)); app.tick(200)
         self.assertIsNone(app.update_prompt)
@@ -286,14 +318,15 @@ class ApplicationUpdateTests(unittest.TestCase):
         import pygame
         app = self.app()
         app.render()
-        old = app.buttons[0][0].center
-        position = tuple(round(n * app.viewport.width / 320) for n in old)
+        def window(rect):           # an HD app screen's button (frame points) in the window
+            v = app.viewport
+            return (round(v.x + rect.centerx * v.width / 768), round(v.y + rect.centery * v.height / 1024))
+        position = window(app.buttons[0][0])
         app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=position))
         self.assertIsNotNone(app.pressed)
         self.future.set_result(release()); app.tick(0); app.render()
         self.assertIsNone(app.pressed)
-        yes = next(r for r, command in app.buttons if command == ('update_yes',)).center
-        position = tuple(round(n * app.viewport.width / 320) for n in yes)
+        position = window(next(r for r, command in app.buttons if command == ('update_yes',)))
         app.url_opener = Mock()
         app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=position))
         app.url_opener.assert_not_called()

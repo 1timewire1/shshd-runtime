@@ -25,6 +25,8 @@ from zlib import error as ZlibError
 from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
 from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS, game_id
+from .addons import IDENTIFIER as ADDON_IDENTIFIER, addon_record
+from .episode_version import episode_revision
 from .presentation import EFFECTS, presentation_record
 
 
@@ -142,6 +144,14 @@ def legacy_fields(titles, game, episode_id=None):
                 fields['order'] = info['order'][episode_id]
             return fields
     return {}
+
+
+def _with_legacy_order(record, game):
+    """An already imported translation with its place as the game now gives it (legacy_fields), so importing it again
+    picks up a new order. Its title's tag is long gone, so this goes by the `legacy` it was recorded with."""
+    info = getattr(GAMES.get(game), 'LEGACY_GAMES', {}).get(record.get('legacy'), {})
+    order = info.get('order', {}).get(record['episode_id'])
+    return record if order is None or record.get('order') == order else dict(record, order=order)
 
 
 def file_digest(path: Path) -> str:
@@ -397,6 +407,36 @@ def _episode_zip_inputs(package, catalog_name):
     return episodes, sidecars
 
 
+
+class ReplaceSavedEpisodes(ContentError):
+    """shshd-runtime: an import would replace older copies of episodes that have games in progress; it stopped before
+    writing anything, for the player to say whether they go (`add_episodes(..., replace_saved=...)`)."""
+
+    def __init__(self, records):
+        self.records = list(records)
+        names = ', '.join(dict.fromkeys((r.get('titles') or [r['name']])[0] for r in self.records))
+        super().__init__(f'Newer versions would replace episodes with saved games: {names}')
+
+
+def _same_episode(a, b):
+    """shshd-runtime: copies of one episode, for versions (episode_version.py): the same pack, number and release."""
+    return (a['pack_id'], a['episode_id'], a.get('variant')) == (b['pack_id'], b['episode_id'], b.get('variant'))
+
+
+def _finished_save(path):
+    """shshd-runtime: a save made at its episode's end (has_saved_game); False for one that can't be read."""
+    try:
+        if path.stat().st_size > 8 * 1024 * 1024:
+            return False
+        saved = json.loads(path.read_text(encoding='utf-8'))
+        pending = saved.get('pending')
+        name = pending.get('name') if isinstance(pending, dict) else None
+        scene_loads = saved.get('scene_loads', 0)
+        return name == 'episode_exit' or (name == 'finished' and type(scene_loads) is int and scene_loads > 0)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 @contextmanager
 def _episode_inputs(paths, *, game):
     """Collect EXPs and optional native category sidecars as one import batch."""
@@ -487,7 +527,7 @@ def _apk_music_members(apk: ZipFile, ipa_members):
 
 
 def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd_ipa_path: Path | None = None, *,
-                music_apk: Path | None = None, game: str | None = None) -> dict:
+                music_apk: Path | None = None, game: str | None = None, progress=None) -> dict:
     """Create a relocatable library atomically; keep original inputs untouched.
 
     A failed import leaves no partly usable library. Additional episodes are
@@ -495,7 +535,9 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
     The historical ``apk_path`` argument also accepts the supported iOS IPA.
     ``hd_ipa_path`` is the optional SHS HD (iPad) bundle, accepted only alongside
     an SHS APK: it unlocks HD-native art (see HD_ASSET_MAP) but nothing requires it.
+    ``progress`` (a line of text, from the worker) is told how far it has got.
     """
+    report = progress or (lambda text: None)
     apk_path, destination = Path(apk_path), Path(destination)
     hd_ipa_path = Path(hd_ipa_path) if hd_ipa_path is not None else None
     if (hd_ipa_path is None and music_apk is not None and apk_path.suffix.lower() == '.ipa'
@@ -521,6 +563,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         # Validate the private copy, so source changes during import cannot
         # leave a manifest describing different bytes from those we retain.
         copied_apk = staged / 'content' / ('input.' + kind)
+        report('copying the game')
         shutil.copyfile(apk_path, copied_apk)
         apk_hash = file_digest(copied_apk)
         final_apk = copied_apk.with_name(apk_hash + '.' + kind)
@@ -528,6 +571,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         hd_ipa_manifest = final_ipa = None
         if hd_ipa_path is not None:
             copied_ipa = staged / 'content' / 'input.ipa'
+            report('copying the HD app')
             shutil.copyfile(hd_ipa_path, copied_ipa)
             ipa_hash = file_digest(copied_ipa)
             final_ipa = copied_ipa.with_name(ipa_hash + '.ipa')
@@ -558,6 +602,7 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
                 records[sha] = _with_episode_alias(records[sha], name)
             return sha
 
+        report('reading the game')
         try:
             with ZipFile(final_apk) as apk:
                 if kind == 'ipa':
@@ -590,7 +635,9 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         except BadZipFile as error:
             raise ContentError(f'The supplied {kind.upper()} is not a valid ZIP archive') from error
         with _episode_inputs(episode_paths, game=source_game) as (external, catalog):
-            for path in external:
+            external = list(external)
+            for index, path in enumerate(external):
+                report(f'episode {index + 1} of {len(external)}')
                 data = path.read_bytes()
                 sha = digest(data)
                 episode_record(data, path.name, dict(file=f'content/{sha}.exp'))
@@ -680,6 +727,26 @@ class ContentLibrary:
                     or (member_key in record and not isinstance(record[member_key], str))):
                 raise ContentError('Invalid episode entry in content library manifest')
             seen.add(record['id'])
+        # shshd-runtime: addons (addons.py), shared resource packs episodes declare; listed apart from the episodes, so
+        # no picker shows them.
+        if not isinstance(m.get('addons', []), list):
+            raise ContentError('Invalid addon list in content library manifest')
+        for record in m.get('addons', []):
+            if (not isinstance(record, dict) or not isinstance(record.get('sha256'), str)
+                    or not re.fullmatch('[0-9a-f]{64}', record['sha256']) or record.get('id') != record['sha256']
+                    or record['id'] in seen or record.get('file') != f"content/{record['sha256']}.exp"
+                    or not isinstance(record.get('name'), str) or not isinstance(record.get('title'), str)
+                    or not isinstance(record.get('addon'), str) or not ADDON_IDENTIFIER.fullmatch(record['addon'])
+                    or type(record.get('revision')) is not int or not 1 <= record['revision'] <= 65535
+                    or sum(1 for other in m['addons'] if other.get('addon') == record['addon']) != 1
+                    or not isinstance(record.get('supersedes', {}), dict)):
+                raise ContentError('Invalid addon entry in content library manifest')
+            seen.add(record['id'])
+        self.addons = m.get('addons', [])
+        self._addon_archives = {}
+        self._episode_requires = {}     # an episode's sha -> the addons it declares (episode_requires)
+        self._episode_presentation = {}     # an episode's sha -> its presentation record (episode_presentation)
+        self._addon_indexes = {}            # an addon's id -> its file's index (addon_has)
         from .episode_catalog import EpisodeCatalog
         self.catalog = EpisodeCatalog.from_data(m.get('episode_catalog', []))
         if 'store' in m and (getattr(GAMES[self.game_id], 'STORE_FILENAME', None) is None
@@ -753,6 +820,11 @@ class ContentLibrary:
         # shshd-runtime: translated New Rules episodes carry two portrait sets; True shows the X1i jar's redrawn,
         # higher-resolution ones (the game profile's TRANSLATED_PORTRAIT_ART), False New Rules' WinMo ones.
         self.hires_portraits = True
+        self.ms3_characters = False     # translated X360 episodes: the April build's looks (MS3_CHARACTER_ART)
+        self.java_look = False          # translated BREW episodes: the Java '08 demo's look (JAVA_LOOK_ART)
+        self.brew_08_backgrounds = False    # '07-badged BREW episodes: '08's shared locations (BREW_08_BACKGROUNDS)
+        self.ch_portraits = True        # CoD with its portrait addon (PORTRAIT_ADDON): Claire Hart's sharper originals
+        self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
         self._hd_resource_cache = {}
@@ -929,6 +1001,15 @@ class ContentLibrary:
             self._hd_resource_cache[hd_id] = _zip_read(self.hd_ipa, self.hd_members[hd_id])
         return self._hd_resource_cache[hd_id]
 
+    def _content_path(self, record: dict, suffix: str) -> Path:
+        """shshd-runtime: an imported file's path, its name checked but not its bytes (`_content_file` hashes the whole file),
+        for reading a small part of it: an episode's presentation record, an addon's index or one resource. What it opens is
+        verified then, as ever."""
+        sha = record.get('sha256')
+        if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha) or record.get('file') != f'content/{sha}{suffix}':
+            raise ContentError('Invalid content path in library')
+        return self.directory / record['file']
+
     def _content_file(self, record: dict, suffix: str) -> Path:
         sha = record.get('sha256')
         if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{64}', sha):
@@ -961,13 +1042,211 @@ class ContentLibrary:
 
     def open_episode(self, selector: str):
         record = self.select(selector)
+        return EpisodeResources(self, record, ExpArchive(self.episode_bytes(record)))
+
+    def portrait_addon_map(self, addon):
+        """The map in the game's portrait addon (`addon`: the profile's PORTRAIT_ADDON), read once per file."""
+        record, archive = self.addon(addon[0])
+        if self._portrait_addon_map[0] != record['id']:
+            self._portrait_addon_map = record['id'], json.loads(archive.read(addon[1]))
+        return self._portrait_addon_map[1]
+
+    def addon_has(self, addon_id: str, resource_id: int) -> bool:
+        """shshd-runtime: whether the imported addon `addon_id` holds a resource, from its file's index alone: `addon` reads and
+        hashes the whole file first (Options' Title Screen Music asks about four addons)."""
+        from .exp import file_index
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            return False
+        if record['id'] in self._addon_archives:
+            return resource_id in self._addon_archives[record['id']].entries
+        try:
+            return resource_id in self._addon_indexes.setdefault(record['id'], file_index(self._content_path(record, '.exp')))
+        except (ContentError, OSError):
+            return False
+
+    def addon_resource(self, addon_id: str, resource_id: int) -> bytes | None:
+        """shshd-runtime: one resource of the imported addon `addon_id` (its index and that record only), or None."""
+        from .exp import read_file_resource
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            return None
+        if record['id'] in self._addon_archives:
+            archive = self._addon_archives[record['id']]
+            return archive.read(resource_id) if resource_id in archive.entries else None
+        try:
+            return read_file_resource(self._content_path(record, '.exp'), resource_id)
+        except (ContentError, OSError):
+            return None
+
+    def addon(self, addon_id: str):
+        """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None. An addon that
+        supersedes it stands in, its record's revision the one it stands in at."""
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            record = next((a for a in self.addons if addon_id in a.get('supersedes', {})), None)
+            if record is None:
+                return None
+            record = dict(record, revision=record['supersedes'][addon_id])
+        cached = self._addon_archives.get(record['id'])
+        if cached is None:
+            data = self._content_file(record, '.exp').read_bytes()
+            if digest(data) != record['sha256']:
+                raise ContentError('Addon content does not match its imported hash')
+            cached = self._addon_archives[record['id']] = ExpArchive(data)
+        return record, cached
+
+    def addon_on_hand(self, record: dict) -> bool:
+        """shshd-runtime: whether an addon record can be read: already open (a preview's isolated copy has no files of its own), or
+        with its file in place."""
+        return record['id'] in self._addon_archives or (self.directory / record['file']).is_file()
+
+    def episode_requires(self, record: dict):
+        """shshd-runtime: the addons an episode declares, ((id, revision), ...). Read from its file once: the manifest
+        doesn't hold them, so this works for episodes already imported. Only an imported file can declare any."""
+        sha = record.get('sha256')
+        found = self._episode_requires.get(sha)
+        if found is None:
+            found = ()
+            if 'file' in record:
+                try:
+                    declared = addon_record(ExpArchive(self._content_file(record, '.exp').read_bytes()))
+                except (ContentError, OSError):
+                    declared = None
+                if declared is not None and declared[0] == 'requires':
+                    found = tuple(declared[1])
+            self._episode_requires[sha] = found
+        return found
+
+    def episode_presentation(self, record: dict):
+        """shshd-runtime: an episode's presentation record (resource 3, presentation.normalize), {} for none or a malformed
+        one. Read from its file once, as episode_requires is."""
+        from .presentation import TRANSLATION_PACKS
+        sha = record.get('sha256')
+        found = self._episode_presentation.get(sha)
+        if found is None:
+            found = {}
+            # A translation declares none of what the library asks about (its pack's tables have it), so only other
+            # imported files are read: the g54's 186 translations were most of the first Options visit.
+            if 'file' in record and record.get('pack_id') not in TRANSLATION_PACKS:
+                from .exp import read_file_resource
+                from .presentation import RESOURCE as PRESENTATION, presentation_from_bytes
+                try:        # (resource 3 alone: reading every episode whole froze a phone's Options for minutes)
+                    found = presentation_from_bytes(read_file_resource(self._content_path(record, '.exp'), PRESENTATION)) or {}
+                except (ContentError, OSError):
+                    found = {}
+            self._episode_presentation[sha] = found
+        return found
+
+    def feature_packs(self):
+        """shshd-runtime: the packs whose add-on settings the library's episodes have (content.feature_pack): each
+        translation's own, and each episode made in the Creator its primary add-on's."""
+        key = self.episodes_key()
+        if self._feature_packs[0] != key:
+            mapping = getattr(GAMES.get(getattr(self, 'game_id', None)), 'ADDON_FEATURE_PACKS', {})
+            packs = set()
+            for record in self.episodes:
+                primary = self.episode_presentation(record).get('addons')
+                packs.add(mapping.get(tuple(primary), record.get('pack_id')) if primary else record.get('pack_id'))
+            self._feature_packs = (key, frozenset(packs))
+        return set(self._feature_packs[1])
+
+    def episodes_key(self):
+        """shshd-runtime: what the library's episodes and addons are now, for answers kept until they change (Options asks
+        its questions every frame)."""
+        # Every change replaces the manifest and its lists (never edits them in place), so their identities and lengths say
+        # whether anything changed, without walking 470 records a question (g54: 5 ms a frame).
+        return id(self.manifest), id(self.episodes), len(self.episodes), id(self.addons), len(self.addons)
+
+    _feature_packs = (None, frozenset())
+
+    def addon_users(self, addon: dict):
+        """shshd-runtime: the episodes that need an addon record, or an addon it stands in for."""
+        names = {addon['addon'], *addon.get('supersedes', ())}
+        return [record for record in self.episodes if any(name in names for name, _ in self.episode_requires(record))]
+
+    def episode_bytes(self, record: dict) -> bytes:
+        """An episode's EXP file as it was imported (from the library's content, or the game package it ships in)."""
         if self.kind + '_member' in record:
             data = _zip_read(self.package, record[self.kind + '_member'])
         else:
             data = self._content_file(record, '.exp').read_bytes()
         if digest(data) != record['sha256']:
             raise ContentError('Episode content does not match its imported hash')
-        return EpisodeResources(self, record, ExpArchive(data))
+        return data
+
+    def remove_episodes(self, ids) -> int:
+        """Take episodes out of the library (Delete Episodes): a new manifest without them, then their content files.
+        Built-in episodes, and those inside the game's package, stay (the next open would list them again). Returns
+        how many went."""
+        ids = set(ids)
+        gone = [e for e in self.episodes if e['id'] in ids and 'file' in e and not e.get('builtin')]
+        if not gone:
+            return 0
+        current = json.loads((self.directory / 'library.json').read_text(encoding='utf-8'))
+        if current != self.manifest:
+            raise ContentError('The library changed since it was opened; reopen it and try again')
+        updated = dict(self.manifest, episodes=[e for e in self.episodes if e not in gone])
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self.directory, prefix='.library-',
+                                         suffix='.json', delete=False) as stream:
+            stream.write(json.dumps(updated, indent=2, ensure_ascii=False) + '\n')
+        Path(stream.name).replace(self.directory / 'library.json')
+        self.manifest, self.episodes = updated, updated['episodes']
+        for record in gone:
+            (self.directory / record['file']).unlink(missing_ok=True)
+        return len(gone)
+
+    def has_saved_game(self, record) -> bool:
+        """shshd-runtime: whether an episode has a game in progress (its autosave or its saved game). A save made at the
+        episode's end (Session.episode_ended: waiting at its exit, or `finished` after a scene load) is not one: the menu
+        offers no Continue for it either (MenuState.resume_path). A save that can't be read counts, so nothing is lost."""
+        saves = self.directory / 'saves'
+        return any(path.is_file() and not _finished_save(path)
+                   for path in (saves / (record['id'] + suffix) for suffix in ('.shs-auto.json', '.shs-save.json')))
+
+    def forget_episode_files(self, record):
+        """shshd-runtime: an episode's own files beside its content (Delete Episodes, or a newer version replacing it):
+        its saved games and screenshot, its undo chain, its preview, and its Decision Tree with its scenes' saves.
+        Football Star's scenes are the top level of `dtsaves/`, which other episodes' folders sit in."""
+        from types import SimpleNamespace
+        from .runtime import Session
+        from .undo import clear
+        saves = self.directory / 'saves'
+        for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
+            (saves / (record['id'] + suffix)).unlink(missing_ok=True)
+        clear(self.directory, record['id'])
+        for suffix in ('.jpg', '.none'):
+            (self.directory / 'thumbs' / (record['id'] + suffix)).unlink(missing_ok=True)
+        resources = SimpleNamespace(library=self, record=record, identity={'episode_sha256': record['sha256']})
+        tree, scenes = Session.tree_files(resources)
+        tree.unlink(missing_ok=True)
+        if Session.original_tree(resources):
+            for path in scenes.glob('*.json.gz'):
+                path.unlink(missing_ok=True)
+        elif scenes.is_dir():
+            shutil.rmtree(scenes)
+
+    def remove_addons(self, ids) -> int:
+        """shshd-runtime: the addons with these record ids out of the library, as remove_episodes; how many went. Episodes that
+        need one say so until it's imported again (EpisodeResources.check_addons)."""
+        ids = set(ids)
+        gone = [a for a in self.addons if a['id'] in ids]
+        if not gone:
+            return 0
+        current = json.loads((self.directory / 'library.json').read_text(encoding='utf-8'))
+        if current != self.manifest:
+            raise ContentError('The library changed since it was opened; reopen it and try again')
+        updated = dict(self.manifest, addons=[a for a in self.addons if a not in gone])
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self.directory, prefix='.library-',
+                                         suffix='.json', delete=False) as stream:
+            stream.write(json.dumps(updated, indent=2, ensure_ascii=False) + '\n')
+        Path(stream.name).replace(self.directory / 'library.json')
+        self.manifest, self.addons = updated, updated['addons']
+        self._portrait_addon_map = None, None
+        for record in gone:
+            self._addon_archives.pop(record['id'], None)
+            (self.directory / record['file']).unlink(missing_ok=True)
+        return len(gone)
 
     def read_ui_asset(self, name: str) -> bytes:
         """Read an exact named UI asset, separately from numeric EXP resources.
@@ -1077,20 +1356,31 @@ class ContentLibrary:
             self.manifest, self.music_apk, self.music_members = updated, retained, members
             return len(members)
 
-    def add_episodes(self, paths: list[Path]) -> int:
+    def add_episodes(self, paths: list[Path], progress=None, *, replace_saved=None, keep=()) -> int:
         """Validate a batch before atomically publishing an expanded manifest.
 
         Content is copied under its hash; existing content and saves are never
         replaced. Duplicate filenames become aliases for catalog matching. A
         failed validation leaves the entire library unchanged. A store listing
         (CoD's mtxprods) in the batch replaces the library's.
+
+        shshd-runtime: a versioned episode (episode_version.py) replaces the
+        library's older copies of itself instead (`_install_episodes`);
+        `replace_saved` answers whether one with a saved game goes too; ids
+        in `keep` (the episode being played) always stay.
         """
         with _episode_inputs(paths, game=self.game_id) as (candidates, catalog):
             store = _store_listing(paths, game=self.game_id)
             if not candidates and not catalog.entries and store is None:
                 raise ContentError('No EXP episodes found in the selected files, ZIPs, RARs or folders')
-            return self._install_episodes(((path.read_bytes(), path.name, {}) for path in candidates), catalog=catalog,
-                                          store=store)
+            candidates = list(candidates)
+
+            def episodes():
+                for index, path in enumerate(candidates):
+                    if progress:
+                        progress(f'Episode {index + 1} of {len(candidates)}')
+                    yield path.read_bytes(), path.name, {}
+            return self._install_episodes(episodes(), catalog=catalog, store=store, replace_saved=replace_saved, keep=keep)
 
     def store_listing(self):
         """The imported store listing (CoD's mtxprods products, cod/store.py) as data, or None."""
@@ -1157,16 +1447,65 @@ class ContentLibrary:
             return 0
         return self._install_episodes([record])
 
-    def _install_episodes(self, episodes, *, catalog=None, drop=(), store=None) -> int:
+    def restore_builtin_episodes(self) -> int:
+        """Write a built-in episode's missing content file again from the retained game package (Verify Library);
+        returns how many came back. Only the copy the library already lists is restored (its checksum must match)."""
+        profile = GAMES[self.game_id]
+        lost = [e for e in self.episodes if e.get('builtin') == profile.BUILTIN and 'file' in e
+                and not (self.directory / e['file']).is_file()]
+        if not lost:
+            return 0
+        hd = dict(hd_ipa=self.hd_ipa) if self.game_id == 'shs' and self.kind == 'apk' else {}
+        record = profile.extract_builtin(self.package, self.asset_root, ios=self.kind == 'ipa', **hd)
+        if record is None or digest(record[0]) not in {e['id'] for e in lost}:
+            return 0
+        self._install_episodes([record])
+        return sum(1 for e in lost if (self.directory / e['file']).is_file())
+
+    def _install_episodes(self, episodes, *, catalog=None, drop=(), store=None, replace_saved=None, keep=()) -> int:
+        """shshd-runtime: an episode with a version (episode_version.py) replaces the library's copies of the same episode
+        (pack, episode number, release) that have none or an older or equal one (a rebuild at the same version, as an
+        addon's), and is itself left out if a newer copy is held (owner, 2026-11-06). A copy being replaced that has a
+        saved game is asked about (owner): with `replace_saved` None the import stops before writing anything and
+        raises ReplaceSavedEpisodes naming them; True replaces them too, False keeps them beside the new one.
+        `last_replaced`, `last_kept` and `last_older` say what happened."""
+        self.last_replaced, self.last_kept, self.last_older = [], [], []
         records = {e['id']: e for e in self.episodes if e['id'] not in drop}
+        addons = {a['addon']: a for a in self.addons}
         catalog = self.catalog.merge(catalog) if catalog is not None else self.catalog
         with tempfile.TemporaryDirectory(prefix='.exp-import-', dir=self.directory) as temporary:
             stage = Path(temporary)
-            additions = []
+            additions, repairs, repaired, addon_additions = [], [], set(), []
+            asking = []                                     # older copies with saved games, when replace_saved is None
+            listed = {record['id'] for record in self.episodes}     # in the library before this batch
             for data, name, source in episodes:
                 sha = digest(data)
+                addon = self._addon_entry(data, sha, name, addons)
+                if addon is not None:
+                    # shshd-runtime: an addon (addons.py) is kept once per id, the highest revision.
+                    if addon is not False:
+                        (stage / (sha + '.exp')).write_bytes(data)
+                        addons[addon['addon']] = addon
+                        addon_additions.append(addon)
+                        for superseded in addon.get('supersedes', ()):
+                            addons.pop(superseded, None)
+                    else:
+                        # Its file went missing (Verify Library removes a damaged one): this copy restores it.
+                        held = next((a for a in self.addons if a['sha256'] == sha), None)
+                        if (held is not None and sha not in repaired
+                                and not (self.directory / held['file']).is_file()):
+                            (stage / (sha + '.exp')).write_bytes(data)
+                            repairs.append(held)
+                            repaired.add(sha)
+                    continue
                 if sha in records:
-                    records[sha] = _with_episode_alias(records[sha], name)
+                    records[sha] = _with_legacy_order(_with_episode_alias(records[sha], name), self.game_id)
+                    if (sha in listed and sha not in repaired and 'file' in records[sha]
+                            and not (self.directory / records[sha]['file']).is_file()):
+                        # Its file went missing (Verify Library removes a damaged one): this copy restores it.
+                        (stage / (sha + '.exp')).write_bytes(data)
+                        repairs.append(records[sha])
+                        repaired.add(sha)
                     continue
                 archive = ExpArchive(data)
                 meta, programs = archive.metadata(), archive.programs()
@@ -1177,11 +1516,35 @@ class ContentLibrary:
                               scripts=sorted(programs), file=f'content/{sha}.exp', **source,
                               **episode_index_fields(archive, programs))
                 record.update(legacy_fields(record['titles'], self.game_id, meta.episode_id))
+                revision = episode_revision(archive)
+                if revision is not None:
+                    record['revision'] = revision
+                    copies = [r for r in records.values() if _same_episode(r, record) and not r.get('builtin')]
+                    if any(r.get('revision', 0) > revision for r in copies):
+                        self.last_older.append(record)          # a newer copy is held: this one is left out
+                        continue
+                    for old in copies:
+                        if old['id'] in keep:
+                            self.last_kept.append(old)
+                            continue
+                        if self.has_saved_game(old) and replace_saved is not True:
+                            (asking if replace_saved is None else self.last_kept).append(old)
+                            continue
+                        del records[old['id']]
+                        if old in additions:                    # (an older one earlier in this batch)
+                            additions.remove(old)
+                        else:
+                            self.last_replaced.append(old)
                 (stage / (sha + '.exp')).write_bytes(data)
                 records[sha] = record
                 additions.append(record)
+            if asking:
+                raise ReplaceSavedEpisodes(asking)
             store_sha = digest(store) if store is not None else None
-            if (not additions and not drop and list(records.values()) == self.episodes
+            for record in repairs:
+                (stage / (record['id'] + '.exp')).replace(self.directory / record['file'])
+            if (not additions and not addon_additions and not drop and not self.last_replaced
+                    and list(records.values()) == self.episodes
                     and catalog.entries == self.catalog.entries
                     and (store is None or self.manifest.get('store', {}).get('sha256') == store_sha)):
                 return 0
@@ -1190,6 +1553,9 @@ class ContentLibrary:
             if current != self.manifest:
                 raise ContentError('The library changed during import; reopen it and try again')
             updated = dict(self.manifest, episodes=list(records.values()))
+            if addons:
+                updated['addons'] = list(addons.values())
+            replaced = [a for a in self.addons if addons.get(a['addon']) is not a]
             if catalog.entries:
                 updated['episode_catalog'] = catalog.to_data()
             if store is not None:
@@ -1197,15 +1563,45 @@ class ContentLibrary:
                 updated['store'] = dict(file=f'content/{store_sha}.json', sha256=store_sha)
             manifest_path = stage / 'library.json'
             manifest_path.write_text(json.dumps(updated, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
-            for record in additions:
+            for record in additions + addon_additions:
                 (stage / (record['id'] + '.exp')).replace(self.directory / record['file'])
             if store is not None:
                 (stage / f'{store_sha}.json').replace(self.directory / updated['store']['file'])
             manifest_path.replace(self.directory / 'library.json')
             self.manifest, self.episodes = updated, updated['episodes']
+            self.addons = updated.get('addons', [])
+            for record in replaced:                                 # an older revision of an addon just imported
+                self._addon_archives.pop(record['id'], None)
+                (self.directory / record['file']).unlink(missing_ok=True)
+            for record in self.last_replaced:                       # an older version of an episode just imported
+                self.forget_episode_files(record)
+                (self.directory / record['file']).unlink(missing_ok=True)
             self._store = None
             self.catalog = catalog
-            return len(additions)
+            self.last_addons_added = len(addon_additions)
+            return len(additions) + len(addon_additions)
+
+    def _addon_entry(self, data, sha, name, addons):
+        """For `_install_episodes`: None when `data` is no addon; False for an addon the library already holds, or holds
+        at a higher revision; else the new addon's manifest record (a rebuild at the same revision replaces it)."""
+        try:
+            archive = ExpArchive(data)
+            record = addon_record(archive)
+        except ContentError as error:
+            raise ContentError(f'{name}: {error}') from error
+        if record is None or record[0] != 'provides':
+            return None
+        provides = record[1]
+        held = addons.get(provides['id'])
+        if held is not None and (held['sha256'] == sha or held['revision'] > provides['revision']):
+            return False
+        if any(provides['revision'] <= a.get('supersedes', {}).get(provides['id'], 0) for a in addons.values()):
+            return False                                # what a held addon already stands in for
+        entry = dict(id=sha, sha256=sha, name=name, addon=provides['id'], title=provides['title'],
+                     revision=provides['revision'], file=f'content/{sha}.exp')
+        if 'supersedes' in provides:
+            entry['supersedes'] = dict(provides['supersedes'])
+        return entry
 
     def close(self):
         self.apk.close()
@@ -1247,11 +1643,148 @@ def presentation_feature(resources, name):
     return (getattr(resources, 'presentation', None) or {}).get(name)
 
 
+def declared(resources, name):
+    """shshd-runtime: an episode's own declaration of a presentation member (resource 3), where its game accepts one
+    (PRESENTATION_RECORD); None otherwise."""
+    if not getattr(GAMES.get(game_id(resources)), 'PRESENTATION_RECORD', False):
+        return None
+    return (getattr(resources, 'presentation', None) or {}).get(name)
+
+
+def feature_pack(resources):
+    """shshd-runtime: the pack whose settings that need an add-on's pictures and sounds an episode has (the profile's tables
+    of translated packs: frame backdrop, relationship icons, answer-feedback music, the add-ons' switches): an episode made
+    in the Creator takes its primary add-on's (presentation `addons`, mapped by ADDON_FEATURE_PACKS; owner, 2026-11-09),
+    any other its own pack's."""
+    primary = declared(resources, 'addons')
+    if primary is not None:
+        pack = getattr(GAMES.get(game_id(resources)), 'ADDON_FEATURE_PACKS', {}).get(tuple(primary))
+        if pack is not None:
+            return pack
+    return (getattr(resources, 'record', None) or {}).get('pack_id')
+
+
+def pack_setting(resources, table, default=None):
+    """shshd-runtime: an episode's entry in one of the profile's per-pack tables of settings that need an add-on
+    (feature_pack), or `default`."""
+    entries = getattr(GAMES.get(game_id(resources)), table, None) or {}
+    pack = feature_pack(resources)
+    if isinstance(entries, dict):
+        return entries.get(pack, default)
+    return pack in entries or default
+
+
+def free_setting(resources, table, member):
+    """shshd-runtime: whether an episode has a setting that needs no add-on: its pack is in the profile's `table` (a
+    translation), or it declares `member` (resource 3: an episode made in the Creator)."""
+    record = getattr(resources, 'record', None) or {}
+    if record.get('pack_id') in getattr(GAMES.get(game_id(resources)), table, ()):
+        return True
+    return bool(declared(resources, member))
+
+
 class EpisodeResources:
     def __init__(self, library: ContentLibrary, record: dict, archive: ExpArchive):
         self.library, self.record, self.archive = library, record, archive
         self.programs = archive.programs()
         self._presentation = False
+        self._addon_archives = None
+        self._required_addons = None
+        self._addon_pictures = {}
+
+    @property
+    def required_addons(self):
+        """shshd-runtime: the addons the episode reads (addons.py), ((id, revision), ...). A malformed record is set
+        aside with a warning, as the presentation record is."""
+        if self._required_addons is None:
+            self._required_addons = ()
+            try:
+                declared = addon_record(self.archive)
+            except ContentError as error:
+                logging.warning('%s: %s', self.record.get('name', 'episode'), error)
+                declared = None
+            if declared is not None and declared[0] == 'requires':
+                self._required_addons = declared[1]
+        return self._required_addons
+
+    def missing_addons(self):
+        """The required addons the library lacks or holds at too low a revision, as [(id, revision), ...]."""
+        missing = []
+        for addon_id, revision in self.required_addons:
+            held = next((a for a in getattr(self.library, 'addons', ()) if a['addon'] == addon_id), None)
+            if held is None:
+                stand_in = next((a for a in getattr(self.library, 'addons', ()) if addon_id in a.get('supersedes', {})), None)
+                held = None if stand_in is None else dict(revision=stand_in['supersedes'][addon_id])
+            if held is None or held['revision'] < revision:
+                missing.append((addon_id, revision))
+            elif 'file' in held and not self.library.addon_on_hand(held):
+                missing.append((addon_id, revision))    # its file went (Verify Library removes a damaged one)
+        return missing
+
+    def check_addons(self):
+        """Raise ContentError naming the addons this episode needs and the library lacks (before playing it)."""
+        missing = self.missing_addons()
+        if missing:
+            names = ', '.join(f'"{addon_id}" (revision {revision} or later)' for addon_id, revision in missing)
+            raise ContentError(f'This episode needs the {names} addon. Import the addon file that came with it, then '
+                               'try again.' if len(missing) == 1 else
+                               f'This episode needs these addons: {names}. Import them, then try again.')
+
+    def _addons(self):
+        """The archives of the required addons the library holds, in the order the episode lists them."""
+        if self._addon_archives is None:
+            self._addon_archives = []
+            for addon_id, revision in self.required_addons:
+                found = self.library.addon(addon_id) if hasattr(self.library, 'addon') else None
+                if found is not None and found[0]['revision'] >= revision:
+                    self._addon_archives.append(found[1])
+        return self._addon_archives
+
+    def _bank_archive(self, resource_id):
+        """The archive holding an episode-bank resource (26000 and up): the episode's own, else the first required
+        addon with it; None when neither has it."""
+        return self._resolve(resource_id)[0]
+
+    def _resolve(self, resource_id):
+        """(archive, resource) for an episode-bank resource: the episode's own; else, for a number the episode aliases to an
+        add-on (presentation `aliases`: an extra add-on's picture or sound in an episode made in the Creator), that
+        add-on's resource; else the first required addon with it. (None, resource) when none has it."""
+        if resource_id in self.archive.entries or not self.required_addons:
+            return (self.archive if resource_id in self.archive.entries else None), resource_id
+        alias = (declared(self, 'aliases') or {}).get(resource_id)
+        if alias is not None:
+            found = self.library.addon(alias[0]) if hasattr(self.library, 'addon') else None
+            if found is not None and alias[1] in found[1].entries:
+                return found[1], alias[1]
+            return None, resource_id
+        return next((archive for archive in self._addons() if resource_id in archive.entries), None), resource_id
+
+    # New Rules loads its minigame library (25200) beside whichever story runs: a linked segment (VM_SPEC.md §2.3).
+    LINKED_SCRIPT = 25200
+
+    def linked_program(self):
+        """shshd-runtime: the linked segment the scripts run beside, or None: resource LINKED_SCRIPT in the episode or
+        one of its addons, when its header marks it linked (an ordinary script there stays an ordinary script)."""
+        if not hasattr(self, '_linked'):
+            self._linked = None
+            program = self.programs.get(self.LINKED_SCRIPT)
+            if program is None and hasattr(self.archive, 'entries'):
+                archive = next((a for a in self._addons() if self.LINKED_SCRIPT in a.entries), None) \
+                    if self.required_addons else None
+                if archive is not None:
+                    try:
+                        program = decode_program(archive.read(self.LINKED_SCRIPT))
+                    except ValueError as error:
+                        raise ContentError(f'Cannot load the linked script: {error}') from error
+            if program is not None and program.previous_flag:
+                self._linked = program
+        return self._linked
+
+    def _bank_read(self, resource_id):
+        if not hasattr(self.archive, 'entries'):            # a stand-in archive that only reads
+            return self.archive.read(resource_id)
+        archive, resource_id = self._resolve(resource_id)
+        return (archive or self.archive).read(resource_id)
 
     @property
     def presentation(self):
@@ -1288,15 +1821,22 @@ class EpisodeResources:
     def exists(self, resource_id: int) -> bool:
         # FUN_00082bc0 selects the episode bank at 26000 for art resources.
         if resource_id >= 26000:
-            return resource_id in self.archive.entries
+            return self._bank_archive(resource_id) is not None
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
+        resource_id = self._brew_08_background(resource_id)
+        java = self._java_look(resource_id)
+        if java is not None:
+            return self._bank_read(java)
+        sharper = self._addon_portrait(resource_id)
+        if sharper is not None:
+            return sharper
         hires = self._hires_portrait(resource_id)
         if hires is not None:
-            return self.archive.read(hires)     # already HD-sized: no twin store fill on top
+            return self._bank_read(hires)       # already HD-sized: no twin store fill on top
         if resource_id >= 26000:
-            data = self.archive.read(resource_id)
+            data = self._bank_read(resource_id)
         else:
             # A verified HD-native upgrade (ContentLibrary.hd_asset) always wins outright and is returned as-is:
             # it is already HD, so running it through the twin store below too would upscale it a second time.
@@ -1317,27 +1857,86 @@ class EpisodeResources:
     def standard_portrait(self, resource_id):
         """The episode's own portrait (raw bytes) that `read_asset`'s hi-res copy stands in for, so the player can
         show the copy at the size the original fills; None when `read_asset` returns no hi-res copy."""
-        return None if self._hires_portrait(resource_id) is None else self.raw_asset(resource_id)
+        if self._hires_portrait(resource_id) is None and self._addon_portrait(resource_id) is None:
+            return None
+        return self.raw_asset(resource_id)
+
+    def _addon_portrait(self, resource_id):
+        """shshd-runtime: a sharper copy of this picture from the game's optional portrait addon (the profile's
+        PORTRAIT_ADDON: its id, and the resource holding its map), while the player wants them (library.ch_portraits). No
+        episode declares that addon, and a portrait has a different ID in each episode, so the map goes by a hash of the
+        picture's bytes; an entry for the hash and the resource comes first, where one picture serves two expressions and
+        the addon has one for only one of them. Else None."""
+        addon = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'PORTRAIT_ADDON', None)
+        if addon is None or not getattr(self.library, 'ch_portraits', False) or not hasattr(self.library, 'addon'):
+            return None
+        found = self.library.addon(addon[0])
+        if found is None:
+            return None
+        if resource_id not in self._addon_pictures:
+            spec = self.library.portrait_addon_map(addon)
+            try:
+                key = hashlib.sha1(self.raw_asset(resource_id)).hexdigest()[:20]
+            except (ContentError, KeyError, OSError):
+                key = None
+            self._addon_pictures[resource_id] = spec['resources'].get(f'{key}:{resource_id}', spec['portraits'].get(key))
+        target = self._addon_pictures[resource_id]
+        return None if target is None else found[1].read(target)
+
+    def _own_picture(self, resource_id):
+        """shshd-runtime: whether an episode made in the Creator holds this picture itself: its primary add-on's switches move
+        only the add-on's pictures (feature_pack). A translated episode's pictures are its add-on's, and always move."""
+        return declared(self, 'addons') is not None and resource_id in getattr(self.archive, 'entries', ())
+
+    def _brew_08_background(self, resource_id):
+        """shshd-runtime: '08's copy of a shared location an '07-badged BREW episode shows, while the player wants '08's
+        (library.brew_08_backgrounds; the profile's BREW_08_BACKGROUNDS: pack -> ranges of (first, end, offset): the shared locations, and a
+        Classic story's own pictures '08 redrew); else the resource itself."""
+        if resource_id < 26000 or not getattr(self.library, 'brew_08_backgrounds', False):
+            return resource_id
+        ranges = pack_setting(self, 'BREW_08_BACKGROUNDS', ())
+        if ranges and self._own_picture(resource_id):
+            return resource_id
+        for first, end, offset in ranges:
+            if first <= resource_id < end and self._bank_archive(resource_id + offset) is not None:
+                return resource_id + offset
+        return resource_id
+
+    def _java_look(self, resource_id):
+        """shshd-runtime: the resource holding the Java '08 demo's copy of a translated BREW episode's addon picture, while the
+        player wants that look (library.java_look; the profile's JAVA_LOOK_ART: pack -> how far above it the copy is), or None."""
+        if resource_id < 26000 or not getattr(self.library, 'java_look', False):
+            return None
+        offset = pack_setting(self, 'JAVA_LOOK_ART')
+        if offset is None or self._own_picture(resource_id) or self._bank_archive(resource_id + offset) is None:
+            return None
+        return resource_id + offset
 
     def _hires_portrait(self, resource_id):
         """shshd-runtime: the resource holding the hi-res copy of a translated episode's portrait, when the player
-        wants them (library.hires_portraits) and the episode has one: the game profile's TRANSLATED_PORTRAIT_ART,
-        pack -> (first, end, offset), moves portraits in [first, end) by offset. Else None."""
-        if not getattr(self.library, 'hires_portraits', False):
-            return None
+        wants them (library.hires_portraits, for the packs the switch concerns: HIRES_SWITCH_PACKS) and the episode has
+        one: the game profile's TRANSLATED_PORTRAIT_ART, pack -> (first, end, offset), moves portraits in [first, end)
+        by offset. Else None."""
         profile = GAMES.get(getattr(self.library, 'game_id', None))
-        span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(self.record.get('pack_id'))
-        if span is None or not span[0] <= resource_id < span[1]:
+        pack = feature_pack(self)
+        if not getattr(self.library, 'hires_portraits', False) and pack in getattr(profile, 'HIRES_SWITCH_PACKS', ()):
             return None
+        span = getattr(profile, 'TRANSLATED_PORTRAIT_ART', {}).get(pack)
+        if span is None or not span[0] <= resource_id < span[1] or self._own_picture(resource_id):
+            return None
+        offset = getattr(profile, 'MS3_CHARACTER_ART', {}).get(pack)
+        if offset is not None and getattr(self.library, 'ms3_characters', False):
+            if self._bank_archive(resource_id + offset) is not None:
+                return resource_id + offset
         hires = resource_id + span[2]
-        return hires if hires in self.archive.entries else None
+        return hires if self._bank_archive(hires) is not None else None
 
     def raw_asset(self, resource_id: int) -> bytes:
         """The episode's own bytes, never substituted (what the twin store is built from). `library.read_asset`
         is not used here for a low id: it silently prefers a verified HD-native upgrade when one is imported
         (ContentLibrary.hd_asset), which is a different, unrelated substitution this must stay clear of."""
         if resource_id >= 26000:
-            return self.archive.read(resource_id)
+            return self._bank_read(resource_id)
         return self.library.android_asset(resource_id)
 
     def hd_asset(self, resource_id: int) -> bytes | None:

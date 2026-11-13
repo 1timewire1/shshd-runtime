@@ -329,6 +329,7 @@ and reports the write error. See the [exit contract](STORY_SERVICES.md#episode-e
 | --- | --- |
 | `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", title_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English titles. `names` (object of `$KEY` to string, at most 4096) is the name table every episode shares ([RUNTIME.md](RUNTIME.md#names-shared-across-episodes)) |
 | `saves/<episode-sha>.shs-save.json` | Existing manual F5/F9 slot, [runtime save schema](RUNTIME.md#runtime-save-schema-version-13) |
+| `settings.json` (the app's data folder, not a library) | `{version:1, check_for_updates:bool, preferences:{...}, start_in:"auto"\|"games"\|"shs"\|"cod" (default "auto"), last_game:"shs"\|"cod"\|null}`. `preferences` holds the Options both games share (`menu.SHARED_PREFERENCES`), which override `player.json`'s copies; an older file with only `check_for_updates` still reads |
 | `saves/<episode-sha>.shs-auto.json` | Automatic checkpoint on menu return and application exit, same schema |
 
 Preferences and saves use temporary files plus atomic replacement. Resume after
@@ -496,6 +497,14 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
   this player adds (General / Sound / Extras / Data Management) slide like native pages.
+- **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Episode Titles and Start In,
+  the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
+  letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
+  picking one sets it and slides back (`desktop_pause_hd.CHOICE_NAMES`, screen `choice:<key>`). They were buttons that
+  stepped through the values.
+- **Add-Ons on the main menu** (owner, 2026-11-09): Use Translated Mini-Games, a **Per-Game Settings** page holding the other
+  add-on switches (back from it returns to Add-Ons), and **Title Screen Music**, a choice page of the tunes the menu can play
+  ([ADDONS.md](ADDONS.md#settings)). Choosing one plays it at once, from its start. The pause menu keeps them all on Add-Ons.
   Native exits (`notifyMenuRemoved` -> `animateView` with the exit byte) are not
   decompiled, so the reverse slide is ours.
 - **Music switch.** In the main menu, off fades the menu's song over 1000 ms
@@ -569,7 +578,10 @@ How the sounds play:
 
 Not applied:
 - The Decision Tree zoom toggle (`-[SHSViewController toggleDTZ]`, 8011 and
-  8017). Ours zooms with the wheel and has no such button.
+  8017). Ours zooms with the wheel and has no such button. HD 1.4.38 never creates
+  that button or its portrait twin (`togglePZ`): no code names either class. Both
+  are ported as an experiment, off unless `SHSHD_TREE_ZOOM=1`, in
+  `desktop_tree_zoom.py`, whose docstring has the details.
 - The store pages' clicks (`SHSMTXMenu`). Their stand-ins, the episode pickers,
   click as rows.
 
@@ -602,7 +614,7 @@ gains/correct answers, red recognized losses/wrong answers or a
 no-gain alternative when another option has a known gain, amber mixed effects.
 Episodes translated from SHS: New Rules (`tools/translate`, pack 31300) also count New Rules' own right/wrong answer
 jingles, which they play as episode music where the smartphone versions play SHS's correct/wrong sounds
-(`shs/profile.py` `TRANSLATED_FEEDBACK_MUSIC`).
+(`shs/profile.py` `TRANSLATED_FEEDBACK_MUSIC`). Those from SHS '11 and the BREW games do the same with their own chimes.
 Unresolved choices retain their original styling. It applies to ordinary
 choices, including their actual randomized/custom return values. Service 71
 word quizzes use the current deal's explicit good/bad weights, including bad
@@ -635,6 +647,24 @@ and the portrait picker still wait for the player, and the gear still opens the 
 that need no answer. That row runs the native timeout callback (`Session.expire_choice`), with its own timeout
 result. The word quiz (service 71) keeps its clock; that is Ask to Skip Mini-Games'. Hints mark the real options
 only.
+
+**Options → Extras → Use '11's Memory for Word Grid** (this player's, off by default): letter grids play as SHS '11's Memory. It's offered in SHS with HD's word game art or the `shs11` addon. See [SHS11.md](SHS11.md#memory-in-place-of-letter-grids).
+
+**Options → Extras → Allow Skip Ahead** (this player's, off by default): adds **Skip Ahead** to the pause menu, under Resume, and the **N** key. Either one goes straight to the next thing that needs the player (`skip_ahead.py`), and the screen fades in on it. It is an all-games version of SHS '11's hidden code 4687 (`reference/Other Games/docs/SHS_11_JAVA_ENGINE.md`), and is one-shot, unlike that code.
+
+- **It stops at:** a choice, name entry, the look picker, a quiz, a mini-game, the arena, a service with no handler, and the next title card.
+- **It goes past:** dialogue, message panels, cutscenes, loading and poll screens, and the title card it was pressed on. Their sounds and vibration are dropped. The script still runs as in play, so flags, the tree and the wall keep up, and the music is whichever should be playing at the stop.
+- **It never finishes a story:** with nothing left to stop at, it holds on the last line. On that line, it says "Nothing left to skip".
+
+Everything is skipped, read or not. Skipping only what the player has seen is a possible later addition (the owner, 2026-11-04), and would need its own record of lines, as the tree only tracks scenes.
+
+**Options → Extras → Allow Undo** (this player's, off by default; owner, 2026-11-06): Skip Ahead's inverse (`undo.py`). While it's on, the game keeps a save each time the story reaches one of Skip Ahead's stops (title cards included), taken as it comes up. **Undo** in the pause menu, under Resume, and the **U** key load the latest, so a wrong choice or a lost mini-game can be taken back; the screen fades in on it.
+
+- **Past the latest save:** back to it. **Sitting at it** (an unanswered choice): it's deleted and the one before loads.
+- **In a mini-game under way:** that game starts over from its own save (owner). With Skip Mini-games on, the restart skips the prompt, since Play was already picked; at the skip prompt itself, Undo goes back one, as at any stop. This covers the engine's games (catch, word games and grids, football, SHS '11's, the X360's). New Rules' arena games are the story's own script and undo stop by stop.
+- After an undo the chain ends where it landed, so a new path never meets the old one's saves.
+- A save is the whole game, randomness included, so a random pick comes out the same. The story tree isn't part of it: scenes seen stay seen.
+- The chain lives beside the autosave (`saves/<episode>.shs-undo/`, about 10 KB a save, at most 400), survives closing the app, and goes when the episode ends, starts over or its saved game is deleted. It is never synced or backed up. Nothing is kept while the switch is off.
 
 In Cause of Death the Choice Hints switch is named **Choice & Answer Hints**, since only CoD has the typed puzzles
 whose faint answers it also shows. On a device that can vibrate (exp-runtime's iOS host), the Sound page's last
@@ -788,3 +818,46 @@ scene 25006, PC 1245 now completes into the first football mini game. The tested
 route plays both halves and returns to dialogue. Relationship indicators now
 render with native icon/count selection, cache writes, sound and animation;
 see [UI_FIDELITY.md](UI_FIDELITY.md#npc-relationship-indicators).
+
+## This player's own screens in HD
+
+The game chooser, Bulk Import and each game's Setup page (with the message, update and busy cards over them) are drawn
+in the HD frame by `desktop_app_hd.py` (owner, 2026-10-30), no longer by the SD renderer. No HD art exists before a
+library: it comes from the player's own SHS HD app, and none ships. So they use the HD pause menu's card (its
+measurements, colours, rows and Arial Bold), and `AppCard` draws the parts that card takes from the art (the blue
+back button and the orange buttons) as shapes. They are drawn in SHS HD's blue on a dark gradient, with the kiwi
+above the card. The chooser shows each imported game's own app icon. The busy card notes that an import can take a
+while, and shows how far it has got (`Application.report_progress`, the import functions' `progress`). Commands are the SD screens' own; the buttons are listed in frame points (`Application.buttons_in_frame`).
+The chooser's Options is the HD main menu's Options (`AppOptions`): the pause menu's own pages, controls and
+input, on the same card. Its value buttons and the sliders' speakers are drawn as shapes too. It reads and writes the
+shared options in `settings.json`, since no library is open there; the next game opened takes them, because the
+shared copy wins. Options only one game offers are left out (`ONE_GAME_OPTIONS`: SHS's ad and upsell intros,
+New Rules Hi-Res Portraits and Episode Titles); each game's own Options still has them. Its pages:
+- General, Sound, Controller (with a controller connected), Extras and Add-Ons (the switches that only concern translated
+  games and addons; hidden when none of them is offered);
+- Data Management for both games (owner, 2026-10-30), with the Backups and Exports folders and Reset Settings.
+  Choosing a folder returns to its page with the notice. Each game that has a library is opened for a row in turn
+  (`AppOptions.each`, `Application.opened_library`):
+  - Library: Library Info, Storage, Verify Library and the two Rebuild rows cover each game; Delete has a row per
+    game, then Delete Both Libraries.
+  - Episodes: Delete / Export Episodes and Reset Decision Tree pick the game first, then show that game's own list on
+    the app's card (`ChooserList`), with no game menu opened.
+  - Progress: Back Up Progress asks Combined (one file holding a bundle per game, `progress_bundle.write_set`; the
+    default) or Separate. Restore Progress lists both kinds. Reset Names and Delete All Saves cover each game.
+  - Add-Ons picks the game first, when both have a library ([ADDONS.md](ADDONS.md#data-management)).
+  - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
+    Receiving needs no library at all.
+  Open Another Library, Add Episodes and Add APK Music stay per game.
+
+The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,
+Add Episodes, Add APK Music, and the Backups and Exports folders. It is a tall card with:
+- the folder's path at the top (a tap lets you type one, and Enter opens it);
+- a strip with Up, and Default for the two folder settings;
+- the folder's entries as rows, with shape icons, scrolled by the wheel and Page Up / Down;
+- Back and, where a folder is what you choose, Use This Folder.
+
+Opened from an HD library, it wears that game's own card (`shell.pause`, SHS's or CoD's art and colours) over its main
+menu without the buttons, as On Demand does. Before a library it wears the app's card on the dark backdrop.
+
+A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. The standard edition's
+own SD menus stay as they are.

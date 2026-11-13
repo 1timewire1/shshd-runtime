@@ -374,6 +374,14 @@ exp-runtime never read 3. Every member is optional:
 | `narration_theme` | key | A named line without a portrait (mode 3) in blue (1), pink (2) or gray (3) |
 | `portrait_effects` | `{key, images}` | An emoticon over the speaker: effect 1–6 (lightning, sweat, anger, heart, exclamation, question), `images` its six episode images or `null` |
 | `music_loops` | `{"intro": loop}` | An intro music resource running into its loop without a gap |
+| `creator` | `true` | Made in the Creator: the episode keeps the Creator's own names table (player.json `name_sets["creator"]`) |
+| `addons` | `{primary, edition}` | The add-on whose settings that need its pictures and sounds the episode takes: frame backdrop, relationship icons and sounds, answer-feedback music, one sound channel, its switches. `edition` is `"08"` or `"07"` for `shsbrew`, `""` otherwise |
+| `word_forms` | `true` | `a(n)` and `word(s)` in formatted lines (service 22) become `a`/`an` and singular/plural |
+| `date_first` | `true` | Title and date cards show the date as the title |
+| `three_word_games` | `true` | A word game (71) may have three words, one or two of them good |
+| `big_pickers` | `true` | A portrait picker (78) may offer up to ten photos |
+| `minigames` | `true` | The episode plays translated mini-games, so the player offers their switch for it |
+| `aliases` | `{"resource": [addon, resource]}` | A picture or sound taken from an extra add-on, under one of the episode's numbers |
 
 Keys are SHS global numbers (owner 0, service 54) that the script sets around
 the line and clears after it: the duet partner as its character ID + 1 (0
@@ -384,9 +392,81 @@ behind it.
 
 The runtime honours the record in the SHS profile (`PRESENTATION_RECORD`;
 `content.presentation_feature`). Episodes translated by `tools/translate`
-(packs 31300 and 31400) keep their settings in the profile's `TRANSLATED_*`
-tables, which take precedence. A malformed record is set aside with a warning
+(packs 31000-31600) keep their settings in the profile's `TRANSLATED_*`
+tables, which take precedence. An episode naming a primary add-on reads the
+tables of that add-on's translated pack (`ADDON_FEATURE_PACKS`:
+`content.feature_pack`), but only for the settings that need the add-on's
+pictures and sounds; the others it declares one by one (`free_setting`). With
+a primary, the switches that move an add-on's pictures (Java '08 Look, '08
+Backgrounds, Hi-Res Portraits, MS3 Characters) move only the add-on's, never
+the episode's own. An alias reaches the add-on it names before the usual
+lookup, in which the first add-on listed (the primary) wins. A malformed record is set aside with a warning
 and the episode plays without it. An app without the feature shows the first
 speaker alone, the yellow named-line box, no emoticon, and the intro with its
 own repeat flag. The episode creator writes the record when a project uses
 these options ([CREATOR.md](CREATOR.md)).
+
+## Addon extension (shshd-runtime)
+
+An **addon** is an ordinary EXP archive holding resources that several
+episodes share, such as a translated game's backgrounds and music. Each
+episode then doesn't need its own copy. [ADDONS.md](ADDONS.md) covers how they
+behave and what the current ones hold. Resource **4** begins with
+`SHSHD-ADDONS\0`, followed by UTF-8 JSON with `format: "shshd-addons"` and
+`version: 1` (`addons.py`). This is SHSHD Runtime metadata, not a recovered
+native format; native players and upstream exp-runtime never read resource 4.
+The record holds exactly one of:
+
+| Member | Value | In |
+| --- | --- | --- |
+| `provides` | `{id, title, revision}` | An addon: its short name (`[a-z0-9-]`, at most 32), a display title and its resource layout's revision (1–65535) |
+| `requires` | `[{id, revision}, ...]` | An episode: the addons it reads, each at least that revision |
+
+`provides` may also list `supersedes`, `[{id, revision}, ...]`: addons this one holds everything of, under the same IDs. Importing
+it removes them, episodes requiring them read it instead (at the revision listed), and importing one of them later is ignored
+unless it's newer than that.
+
+**Import.** The library recognises an addon by its `provides` record and lists
+it under the manifest's `addons`, apart from `episodes`, so no picker shows it.
+It keeps one addon per id:
+- a higher revision replaces a lower one, and the older file is removed;
+- a rebuild at the same revision replaces it too;
+- a lower revision is ignored.
+
+**Lookup.** An episode's episode-bank resources (26000 and up, the bank
+`FUN_00082bc0` selects for art) resolve from the episode itself first, then
+from each required addon in the order listed. Lower IDs keep coming from the
+game package.
+
+**A missing addon.** An episode whose addon is missing, or older than required,
+still opens for indexing and previews. Starting it shows a message naming the
+addon, not missing art. A malformed record is set aside with a warning.
+
+The New Rules translations (`tools/translate`, pack 31300) share the `shsnr`
+addon: every background in every time-of-day mode (26000–26173), the music
+(26980–26994) and the frame backdrop (26999).
+
+## Episode version extension (shshd-runtime)
+
+An episode may contain resource **5** beginning with `SHSHD-EPISODE `,
+followed by UTF-8 JSON with `format: "shshd-episode"`, `version: 1` and
+`revision`, the episode's version (1–65535; `episode_version.py`; owner,
+2026-11-06). This is SHSHD Runtime metadata, not a recovered native format;
+native players and upstream exp-runtime never read resource 5.
+
+**Import.** Copies are the same episode when their pack, episode number and
+release (`variant`) match. An episode with a version:
+- replaces the library's copies that have no version, or an older or equal one
+  (a rebuild at the same version, as with an addon), with their saved games,
+  undo chains, previews and Decision Trees;
+- is left out when the library holds a newer copy;
+- never replaces a built-in episode or the one being played.
+
+A copy that would be replaced but has a game in progress (an autosave or a
+saved game) is asked about first: the import stops before writing anything,
+and the player chooses Replace or No (keep it beside the new one). A save
+only loads into the build it was made in, so it can't move to the new
+version. Menus without a confirmation window, and Sync Devices, keep it.
+An episode without a version imports as before: distinct copies stay side by
+side. The translators (`tools/translate`) write version 1, and the creator
+writes a project's **Version** when it has one.

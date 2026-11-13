@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 
 
-MINIGAMES = frozenset(('word_game', 'word_grid', 'football'))
+MINIGAMES = frozenset(('word_game', 'word_grid', 'football', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
 @dataclass
@@ -37,15 +37,31 @@ class WordGame:
 
     HD_SELECT_MS, HD_FLY_OFF_MS, HD_FLY_ON_MS, HD_EFFECT_MS = 100, 500, 700, 1000
 
+    @property
+    def three_words(self):
+        """shshd-runtime: three words, at least one good and one bad (BREW's spinning menus of three: Skating Dating has one good
+        and two bad, Artistic Differences two good and one): all of them each round, shuffled. Native needs two of each."""
+        return len(self.good) + len(self.bad) == 3 and bool(self.good) and bool(self.bad)
+
     def deal(self, random):
-        """FUN_000af010: rejection sampling, then exactly twenty pair swaps."""
-        if len(self.good) < 2 or len(self.bad) < 3:
-            raise ValueError('Word game needs at least two good and three bad entries')
+        """FUN_000af010: rejection sampling, then exactly twenty pair swaps. shshd-runtime: with only two bad entries (BREW's word
+        games, which always show two of each) the fourth is always good; native needs three, or its rejection loop never ends."""
+        if self.three_words:
+            self.options, self.weights = [*self.good, *self.bad], [1] * len(self.good) + [-1] * len(self.bad)
+            for _ in range(20):
+                a, b = random.below(3), random.below(3)
+                self.options[a], self.options[b] = self.options[b], self.options[a]
+                self.weights[a], self.weights[b] = self.weights[b], self.weights[a]
+            self.refresh_remaining_ms = self.refresh_ms
+            self.round += 1
+            return
+        if len(self.good) < 2 or len(self.bad) < 2:
+            raise ValueError('Word game needs at least two good and two bad entries')
         first, second = random.below(len(self.good)), random.below(len(self.bad))
         third = random.below(len(self.bad))
         while third == second:
             third = random.below(len(self.bad))
-        good_fourth = random.next() & 1 == 0
+        good_fourth = random.next() & 1 == 0 or len(self.bad) == 2
         pool, excluded = (self.good, (first,)) if good_fourth else (self.bad, (second, third))
         fourth = random.below(len(pool))
         while fourth in excluded:
@@ -60,8 +76,8 @@ class WordGame:
         self.round += 1
 
     def pick(self, index, random):
-        if type(index) is not int or not 0 <= index < 4:
-            raise ValueError('Choose a word by its zero-based index (0–3)')
+        if type(index) is not int or not 0 <= index < len(self.options):
+            raise ValueError(f'Choose a word by its zero-based index (0–{len(self.options) - 1})')
         if self.hd:
             # SHSMenu ignores taps while a selection is pending; handleMenuSelection while labels fly.
             if self.selected >= 0 or self.fly_off_ms or self.fly_on_ms:
@@ -112,20 +128,22 @@ class WordGame:
         return self.duration_ms > 0 and self.remaining_ms < 0 and self.selected < 0
 
     def validate(self):
-        if (len(self.good) < 2 or len(self.bad) < 3 or self.duration_ms <= 0
+        # (Two bad entries, as `deal` allows for BREW's word games: a save made in one must load, Undo's and the autosave alike.)
+        rows = 3 if self.three_words else 4
+        if ((len(self.good) < 2 or len(self.bad) < 2) and not self.three_words or self.duration_ms <= 0
                 or self.duration_ms > 32767 or not -32768 <= self.refresh_ms <= 32767
                 or not (-self.HD_SELECT_MS if self.hd else 0) <= self.remaining_ms <= self.duration_ms
                 or not self.refresh_ms - self.duration_ms <= self.refresh_remaining_ms <= self.refresh_ms
-                or len(self.options) != 4 or len(self.weights) != 4
-                or sum(w == 1 for w in self.weights) not in (1, 2)
+                or len(self.options) != rows or len(self.weights) != rows
+                or sum(w == 1 for w in self.weights) not in ((len(self.good),) if self.three_words else (1, 2))
                 or any(w not in (-1, 1) for w in self.weights)
                 or any(s not in (self.good if w == 1 else self.bad)
                        for s, w in zip(self.options, self.weights))
                 or self.round < 1 or not 0 <= self.score <= self.round - (0 if self.hd else 1)
                 or not 0 <= self.entry_ms <= 400 or not 0 <= self.animation_ms <= 200
                 or self.last_delta not in (-1, 0, 1)
-                or not -1 <= self.selected < 4 or not 0 <= self.select_ms <= self.HD_SELECT_MS
-                or not 0 <= self.fly_off_ms <= self.HD_FLY_OFF_MS or not -1 <= self.fly_off_row < 4
+                or not -1 <= self.selected < rows or not 0 <= self.select_ms <= self.HD_SELECT_MS
+                or not 0 <= self.fly_off_ms <= self.HD_FLY_OFF_MS or not -1 <= self.fly_off_row < rows
                 or not 0 <= self.fly_on_ms <= self.HD_FLY_ON_MS or not 0 <= self.shown_ms <= 60_000
                 or not 0 <= self.effect_ms <= self.HD_EFFECT_MS or self.scored not in (-1, 0, 1)
                 or not self.hd and (self.selected, self.select_ms, self.fly_off_ms, self.fly_on_ms,

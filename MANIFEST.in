@@ -46,3 +46,7 @@ include ios/EXPRuntime/PythonBridge.m ios/EXPRuntime/Info.plist
 include ios/EXPRuntime/NativeCanvas.swift ios/EXPRuntime/NativeFonts.h ios/EXPRuntime/NativeFonts.m
 include ios/probe/exp_ios_probe.py
 include ios/probe/rar_fixture.py
+include docs/ANDROID_APP.md tools/build_android.py android/main.py android/build-requirements.txt
+recursive-include android/recipes *.py
+recursive-include android/java *.java
+include .github/workflows/android-builds.yml

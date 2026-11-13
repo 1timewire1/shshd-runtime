@@ -24,6 +24,10 @@ number is informational. See [SHS IPA support](docs/IPA.md) and
 
 ## Download an app
 
+An experimental [Android port](docs/ANDROID_APP.md) and **Android APK** build
+workflow are included. It reuses the pygame renderer and needs Android build
+and device verification before it can be considered a working release.
+
 Open this repository's **Releases** page and download the archive for your
 system: `shshd-runtime-<version>-windows-x64.zip`, `-linux-x64.tar.gz`,
 `-macos-arm64.zip` (Apple Silicon) or `-macos-x64.zip` (Intel). Extract it and
@@ -136,7 +140,9 @@ you close the app.
 
 With the SHS HD IPA (and for Cause of Death), Options lists **General**,
 **Sound**, **Extras** and, on the main menu, **Data Management**. Extras holds
-the play aids: Disable Choice Timer, Choice Hints and Ask to Skip Mini-Games.
+the play aids: Disable Choice Timer, Choice Hints, Ask to Skip Mini-Games,
+Allow Skip Ahead and Use '11's Memory for Word Grid (the Android menus do not
+offer those last two).
 Without it, SHS uses the original Android menus, where the same switches sit
 under **Options** and **Options → Cheats**.
 
@@ -295,6 +301,9 @@ To contribute code, tests, documentation or compatibility reports, start with
 - [Main menu](docs/MAIN_MENU.md) and [episode catalog](docs/EPISODE_CATALOG.md).
 - [Cause of Death](docs/COD.md), its [release dates](docs/COD_RELEASE_DATES.md)
   and [store listing](docs/COD_STORE.md).
+- [Addons](docs/ADDONS.md), and the translated games:
+  [New Rules](docs/NEW_RULES.md), the [cancelled Xbox 360 game](docs/X360.md),
+  [SHS '11](docs/SHS11.md) and the [BREW games, SHS '07 and '08](docs/BREW.md).
 - [Episode introductions and week cards](docs/TITLE_SCREENS.md).
 - [Mini games](docs/MINIGAMES.md) and [story services](docs/STORY_SERVICES.md).
 - [Development and tests](docs/DEVELOPMENT.md), [distribution](docs/DISTRIBUTION.md)

@@ -10,10 +10,25 @@ from .content import ContentError
 from .desktop_dialogue import DialogueRenderer
 from .choice_hints import preview_choices
 
-# A mobile host's choice: work the hints out on a worker, from a copy of the session made as the choice comes up, so
-# the choice shows at once and its hints follow (the preview took ~450 ms of a phone's frame). Desktop keeps them
-# worked out before the choice is drawn.
-BACKGROUND_HINTS = False
+# Work the hints out on a worker, from a copy of the session made as the choice comes up, so the choice shows at once
+# and its hints follow (the preview took ~450 ms of a phone's frame, and up to 0.8 s of a PC's: owner, 2026-11-12, every
+# platform now). The worker steps aside for the frames (_stepping_aside): the interpreter lock it held otherwise kept
+# the frame thread waiting as long as the preview ran, a freeze all the same.
+BACKGROUND_HINTS = True
+HINT_SLICE_S, HINT_REST_S = .002, .002      # the worker's turns: so long at work, then so long asleep
+
+
+def _stepping_aside():
+    """The preview's `pause` (choice_hints.preview_choices): after HINT_SLICE_S of work, sleep HINT_REST_S, which lets
+    the frame thread take the interpreter lock."""
+    import time
+    since = [time.perf_counter()]
+
+    def pause():
+        if time.perf_counter() - since[0] >= HINT_SLICE_S:
+            time.sleep(HINT_REST_S)
+            since[0] = time.perf_counter()
+    return pause
 _HINT_WORKER = None
 
 
@@ -97,7 +112,7 @@ class ChoiceRenderer:
         game = session.engine.word_game
         key = id(session), session.scene, session.vm.steps_executed, game.round if game else None
         if game:
-            details = dict(details, options=game.options, enabled=[True] * 4, minigame=True)
+            details = dict(details, options=game.options, enabled=[True] * len(game.options), minigame=True)
         if key != self.cached_key:
             if self.layout is None:
                 self.layout = ChoiceLayout(self.resources)
@@ -434,6 +449,25 @@ class ChoiceRenderer:
         def px(rect):
             return pygame.Rect(round(rect.x * k), round(rect.y * k), round(rect.width * k), round(rect.height * k))
 
+        # A settled menu (its labels flown on, no timer or quiz) that nothing changed since the last frame -- the same
+        # page, scroll, pressed / hovered / focused row and hints -- is last frame's: redrawing it was about 15 ms a
+        # frame on a phone (more at a narrow frame's 2.4 pixels a unit), most of a frame's budget.
+        game = session.engine.word_game if page.scored else None
+        rest = None
+        if (target is None and game is None and (page.timer_center is None or session.remaining_ms is None)
+                and all(self.label_home(row, None) >= 1 for row in page.rows)):
+            table = page.table
+            downs = tuple(pressed == ('choose', row.index) or focus == row.index or (
+                pointer is not None and pygame.Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
+                .clip(pygame.Rect(table.x, table.y, table.width, table.height)).collidepoint(pointer))
+                for row in page.rows)
+            hints = (tuple(hint.kind for hint in self.hints) if choice_hints and self.hint_key == self.cached_key
+                     else None)
+            rest = (id(page), scroll, downs, hints, id(self.wide), k)
+            if rest == self.__dict__.get('_rest_key') and self.__dict__.get('_rest_buttons') is not None:
+                return page, list(self._rest_buttons)
+        self._rest_key = self._rest_buttons = None
+
         self.canvas.set_clip(None)
         self.wide.fill((0, 0, 0, 0))
         # The circle timer and the running man are layers of the engine view, not of the menu's view: they do not take
@@ -497,6 +531,12 @@ class ChoiceRenderer:
             self.draw_hd_label(row, rect, scroll, self.label_home(row, game), g, theme)
             if hit.height > 0:
                 buttons.append((hit, ('choose', row.index)))
+        if page.max_scroll:
+            # shshd-runtime: more options above or below (owner, 2026-11-09): a fade over the edge row and a chevron that way.
+            if scroll > .5:
+                self.draw_hd_more(table, up=True)
+            if scroll < page.max_scroll - .5:
+                self.draw_hd_more(table, up=False)
         self.canvas.set_clip(None)
         if page.portrait is not None:
             self.draw_hd_portrait(session, page)
@@ -522,6 +562,8 @@ class ChoiceRenderer:
         if target is not None:
             target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
             target.blit(pygame.transform.smoothscale(self.overlay, target.get_size()), (0, 0))
+        if rest is not None:
+            self._rest_key, self._rest_buttons = rest, list(buttons)
         return page, buttons
 
     def label_home(self, row, game):
@@ -530,7 +572,8 @@ class ChoiceRenderer:
         if game is None:
             return fly_on(row.position, self.age_ms / 1000)
         if game.fly_off_ms:
-            return 1 - fly_off(row.position, game.fly_off_row, (game.HD_FLY_OFF_MS - game.fly_off_ms) / 1000)
+            return 1 - fly_off(row.position, game.fly_off_row, (game.HD_FLY_OFF_MS - game.fly_off_ms) / 1000,
+                               count=len(game.options))
         if game.fly_off_row >= 0:
             return 0.
         return fly_on(row.position, game.shown_ms / 1000, QUIZ_FLY_ON_SECONDS)
@@ -564,6 +607,28 @@ class ChoiceRenderer:
         density = geometry.density if geometry is not None else 2
         for offset in label_offsets(home, geometry):
             self.canvas.blit(cache[key], (round((rect.x + offset / density) * k), round(rect.y * k)))
+
+    MORE_FADE, MORE_CHEVRON = 22, (84, 92, 112)     # the fade's height (units) and the chevron's colour
+
+    def draw_hd_more(self, table, *, up):
+        """shshd-runtime: a choice's rows go on past the table's top (`up`) or bottom: the edge fades to white and a chevron
+        points the way the hidden rows are (owner, 2026-11-09: on a phone the scroll bar alone didn't say so)."""
+        k = self.scale
+        height = max(1, round(self.MORE_FADE * k))
+        key = (table.width, height, up)
+        cache = self.__dict__.setdefault('_more', {})
+        if key not in cache:
+            band = pygame.Surface((table.width, height), pygame.SRCALPHA).convert_alpha()
+            for y in range(height):
+                t = (height - y) / height if up else (y + 1) / height
+                band.fill((255, 255, 255, round(230 * t ** 1.5)), (0, y, table.width, 1))
+            cx, cy, w, h, t = table.width / 2, height * (.38 if up else .62), 9 * k, 4.5 * k, max(2, round(1.6 * k))
+            d = -1 if up else 1                     # the chevron's point: up, or down
+            points = [(cx - w, cy - d * h / 2), (cx, cy + d * h / 2), (cx + w, cy - d * h / 2),
+                      (cx + w, cy - d * h / 2 - d * t), (cx, cy + d * h / 2 - d * t), (cx - w, cy - d * h / 2 - d * t)]
+            pygame.draw.polygon(band, self.MORE_CHEVRON + (255,), points)
+            cache[key] = band
+        self.canvas.blit(cache[key], (table.x, table.y if up else table.bottom - height))
 
     def draw_hd_portrait(self, session, page):
         """The menu's SHSPortraitLayer: ring clipped by clipPortraitHousing, disc, then the expression-zero art."""
@@ -671,12 +736,16 @@ class ChoiceRenderer:
         if self.hint_key == self.cached_key:
             return
         if BACKGROUND_HINTS:
+            if self.__dict__.get('hint_held') != self.cached_key:
+                # The choice's own first frame is its heaviest: the worker starts on the next one, not against it.
+                self.hint_held = self.cached_key
+                return
             if self.hint_job is None or self.hint_job[0] != self.cached_key:
                 from copy import deepcopy
                 real = getattr(session, 'real_session', session)     # (Disable Choice Timer's stand-in)
                 copy = deepcopy(real, {id(real.resources): real.resources, id(real.vm.program): real.vm.program})
                 copy.ephemeral = True
-                self.hint_job = (self.cached_key, _hint_worker().submit(preview_choices, copy))
+                self.hint_job = (self.cached_key, _hint_worker().submit(preview_choices, copy, pause=_stepping_aside()))
             elif self.hint_job[1].done():
                 try:
                     self.hints = self.hint_job[1].result()

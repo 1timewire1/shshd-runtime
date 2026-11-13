@@ -34,6 +34,8 @@ from io import BytesIO
 from . import graphics as pygame
 
 from . import momentum
+
+DELETE_SAVE_LABEL = 'Delete'        # the popup's Delete Save button
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .graphics import faded
 from .episode_picker import EpisodeInfo
@@ -42,6 +44,8 @@ from .hd_layout import HdLayouts
 from .hd_ui import HdUi
 
 from .hd_scale import S
+
+BACKGROUND_PREVIEWS = S == 1          # a phone's tiles load behind the scene (EpisodePicker.preview_soon)
 FRAME = (768, 1024)
 ROW_HEIGHT = 320
 TILE = (216, 290)
@@ -95,6 +99,33 @@ class HdEpisodePicker(HdUi):
     NEW_GAME, CONTINUE, RESTORE = STRING_NEW_GAME, STRING_CONTINUE, STRING_RESTORE
     RESTORE_TITLE, RESTORE_TEXT = STRING_RESTORE_TITLE, STRING_RESTORE_TEXT
 
+    # shshd-runtime (General's Aspect Ratio, owner 2026-11-12): drawn at the menu frame's height (Application.menu_frame,
+    # set by the application when `grows`): the rows have that much more room, so more of them show; the bottom bar
+    # keeps HD's distance from the frame's bottom; the popup and alerts are centred; the backdrop is the main menu's
+    # taller layout (HdUi.main_layout). HD's 1024 at 3:4.
+    grows = True
+    height = FRAME[1]
+    top_pad = 0             # points at the top the rows start below (a phone's status bar over a taller frame's top)
+    bottom_pad = 0          # ...and at the bottom the buttons keep above (its navigation or gesture bar: owner, 2026-11-12)
+
+    @property
+    def extra(self):
+        return self.height - FRAME[1]
+
+    BAR_GAP = 8             # points kept besides between the buttons and that bar (as the story's gear has)
+
+    @property
+    def button_y(self):
+        return BUTTON_Y + self.extra - (self.bottom_pad + self.BAR_GAP if self.bottom_pad else 0)
+
+    @property
+    def card_top_left(self):
+        return CARD_TOP_LEFT[0], CARD_TOP_LEFT[1] + self.extra // 2
+
+    @property
+    def frame_rect(self):
+        return pygame.Rect(0, 0, FRAME[0], self.height)
+
     def __init__(self, library, model, shots):
         """`shots(record)` gives a record's saved-game screenshot (432 x 580) or None."""
         super().__init__(library)
@@ -110,7 +141,6 @@ class HdEpisodePicker(HdUi):
         self.hits = []
         self.pressed = None
         self.saved = set()
-        self.faces = {}              # record id -> (preview, shot, face): tile_image's composite while both stay
         self.drag = None
         self.fling = momentum.Fling()   # a released drag gliding on
         self.fling_row = None        # the row it slides sideways, or None for the rows' column
@@ -151,7 +181,7 @@ class HdEpisodePicker(HdUi):
         return len(self.model.rows) * ROW_HEIGHT
 
     def max_scroll_y(self):
-        return max(0, self.content_height() - FRAME[1] + (FRAME[1] - BUTTON_Y))
+        return max(0, self.content_height() - (self.button_y - self.top_pad))
 
     def max_scroll_x(self, row):
         return max(0, TILE_X + len(row.episodes) * TILE_STEP - FRAME[0])
@@ -172,8 +202,8 @@ class HdEpisodePicker(HdUi):
         top = row_index * ROW_HEIGHT
         if top < self.scroll_y:
             self.scroll_y = top
-        elif top + ROW_HEIGHT > self.scroll_y + BUTTON_Y:
-            self.scroll_y = top + ROW_HEIGHT - BUTTON_Y
+        elif top + ROW_HEIGHT > self.scroll_y + self.button_y - self.top_pad:
+            self.scroll_y = top + ROW_HEIGHT - (self.button_y - self.top_pad)
         offset = self.row_x.get(row.key, 0)
         left = TILE_X + column * TILE_STEP
         if left < offset + TILE_X:
@@ -215,7 +245,7 @@ class HdEpisodePicker(HdUi):
         self.popup_focus = None
 
     def row_at(self, point):
-        index = int((point[1] + self.scroll_y) // ROW_HEIGHT)
+        index = int((point[1] - self.top_pad + self.scroll_y) // ROW_HEIGHT)
         return self.model.rows[index] if 0 <= index < len(self.model.rows) else None
 
     def pointer_move(self, point):
@@ -277,9 +307,9 @@ class HdEpisodePicker(HdUi):
     INFO_KEY = pygame.K_i            # the highlighted episode's info card (an episode that has one)
 
     def popup_commands(self):
-        """The popup's New Game, Continue and back, in keyboard order."""
+        """The popup's New Game, Continue, back and Delete Save, in keyboard order."""
         record = self.popup
-        return [('new', record['id']), ('continue', record['id']), ('close',)]
+        return [('new', record['id']), ('continue', record['id']), ('close',), ('delete_save', record['id'])]
 
     def popup_key(self, key):
         """The New Game / Continue popup's keys: arrows or Tab move a highlight over its two cards and its back button,
@@ -341,10 +371,14 @@ class HdEpisodePicker(HdUi):
 
     # ------------------------------------------------------------ drawing
 
-    @lru_cache(maxsize=1)
-    def backdrop(self):
+    def shaped_backdrop(self):
+        """The main menu's backdrop at this frame's height (a 3:4 one's own where it has no taller layout)."""
+        return self.main_backdrop(self.height) if self.height != FRAME[1] else self.main_backdrop()
+
+    @lru_cache(maxsize=2)
+    def backdrop(self, height=FRAME[1]):
         """The main menu's backdrop, dimmed behind the rows (see module docstring)."""
-        layer = self.main_backdrop().copy()
+        layer = self.shaped_backdrop().copy()
         shade = pygame.Surface(layer.get_size(), pygame.SRCALPHA)
         shade.fill((0, 0, 0, BACKDROP_DIM_ALPHA))
         layer.blit(shade, (0, 0))
@@ -373,15 +407,19 @@ class HdEpisodePicker(HdUi):
         for index, line in enumerate(lines):
             self.text(layer, line, points, x - 10, y - 12 + index * (points + 4))
 
+    _faces = None                   # {record id: (preview, saved screenshot, the tile's face made of them)}
+
     def tile_image(self, record):
         """The tile's face at 2x: the preview, or preview above / saved screenshot below the zigzag."""
-        preview = self.model.preview(record)
+        preview = self.model.preview_soon(record) if BACKGROUND_PREVIEWS else self.model.preview(record)
+        if preview is None:
+            return self.model.waiting_preview()
         shot = self.saved_face(record)
         if shot is None:
             return preview
-        # Kept while the preview and the screenshot are the same (both cached): the masks are multiply blends, which
-        # the iOS host draws in Python (a third of a second a frame for two saved tiles on an iPad).
-        cached = self.faces.get(record['id'])
+        if self._faces is None:
+            self._faces = {}
+        cached = self._faces.get(record['id'])
         if cached is not None and cached[0] is preview and cached[1] is shot:
             return cached[2]
         face = pygame.Surface((TILE[0] * S, TILE[1] * S), pygame.SRCALPHA)
@@ -393,7 +431,7 @@ class HdEpisodePicker(HdUi):
         window = shot_window(shot, BOTTOM_MASK_TOP - SHOT_OFFSET, bottom_mask.get_height() // S)
         window.blit(bottom_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         face.blit(window, (0, BOTTOM_MASK_TOP * S))
-        self.faces[record['id']] = (preview, shot, face)
+        self._faces[record['id']] = (preview, shot, face)
         return face
 
     def draw_tile(self, layer, record, x, y):
@@ -405,7 +443,8 @@ class HdEpisodePicker(HdUi):
                              2 * S, border_radius=4 * S)
         mark = self.model.mark(record)
         if mark is not None:
-            self.draw_standard_mark(layer, x + TILE[0] - 42, y + TILE[1] - 30, mark, self.model.mark_color(record))
+            self.draw_standard_mark(layer, x + TILE[0] - 8 - self.mark_width(mark), y + TILE[1] - 30, mark,
+                                    self.model.mark_color(record))
         info = self.info_rect(record, x, y)
         if info is not None:
             self.draw_info_mark(layer, info)
@@ -416,7 +455,8 @@ class HdEpisodePicker(HdUi):
         show); None without an info card."""
         if not self.model.has_info(record):
             return None
-        right = x + TILE[0] - 8 - (42 if self.model.mark(record) is not None else 0)
+        mark = self.model.mark(record)
+        right = x + TILE[0] - 8 - (self.mark_width(mark) + 8 if mark is not None else 0)
         return pygame.Rect(right - INFO_PLATE[0], y + TILE[1] - 10 - INFO_PLATE[1], *INFO_PLATE)
 
     def draw_info_mark(self, layer, rect):
@@ -444,11 +484,15 @@ class HdEpisodePicker(HdUi):
         pygame.draw.rect(surface, glyph, stem, border_radius=2 * S)
         layer.blit(surface, (round(cx * S - size * S / 2), round(cy * S - size * S / 2)))
 
+    def mark_width(self, mark):
+        """The tag plate's width in points: 34, wider for a tag that needs it (the X360 translations' "X360")."""
+        return max(34, -(-self.font(13).size(mark)[0] // S) + 10)
+
     def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
         """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition.
         An episode translated from another SHS game shows its game's tag ("NR") on the same plate, in its game's
         colour lightened for the dark plate (owner, 2026-10-25)."""
-        width, height = 34, 20
+        width, height = self.mark_width(mark), 20
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
         pygame.draw.rect(plate, (0, 0, 0, 150), plate.get_rect(), border_radius=6 * S)
         tint = MARK_COLOR if color is None else tuple(round(c + (255 - c) * MARK_TINT) for c in color)
@@ -471,14 +515,18 @@ class HdEpisodePicker(HdUi):
     @lru_cache(maxsize=1)
     def plain_backdrop(self):
         """The main menu's backdrop, undimmed (the list screens' card sits over it as the menus' cards do)."""
-        return self.main_backdrop()
+        return self.shaped_backdrop()
 
     def begin_layer(self, backdrop=True, *, dim=True):
         """The layer a draw starts from: the canvas over the main-menu backdrop (dimmed for the tile grid), or, with
         `backdrop` off, a transparent layer holding only that dim, for zooming in over the live main menu while its
         buttons slide out (Application.render_picker)."""
+        size = (FRAME[0] * S, round(self.height * S))
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+            self.see_through = None
         if backdrop:
-            self.canvas.blit(self.backdrop() if dim else self.plain_backdrop(), (0, 0))
+            self.canvas.blit(self.backdrop(self.height) if dim else self.plain_backdrop(), (0, 0))
             return self.canvas
         if getattr(self, 'see_through', None) is None:
             self.see_through = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA).convert_alpha()
@@ -493,9 +541,11 @@ class HdEpisodePicker(HdUi):
         layer = self.begin_layer(backdrop)
         self.hits = []
         strings = self.strings()
+        if BACKGROUND_PREVIEWS:
+            self.want_nearby()
         for index, row in enumerate(self.model.rows):
-            top = index * ROW_HEIGHT - self.scroll_y
-            if top + ROW_HEIGHT <= 0 or top >= FRAME[1]:
+            top = index * ROW_HEIGHT - self.scroll_y + self.top_pad
+            if top + ROW_HEIGHT <= 0 or top >= self.height:
                 continue
             offset = self.row_x.get(row.key, 0)
             for column, record in enumerate(row.episodes):
@@ -503,15 +553,15 @@ class HdEpisodePicker(HdUi):
                 if x + TILE[0] + 20 <= 0 or x - 20 >= FRAME[0]:
                     continue
                 self.draw_tile(layer, record, x, top + TILE_Y)
-                self.hits.append((pygame.Rect(x, top + TILE_Y, *TILE).clip(pygame.Rect(0, 0, *FRAME)), ('tile', record['id'])))
+                self.hits.append((pygame.Rect(x, top + TILE_Y, *TILE).clip(self.frame_rect), ('tile', record['id'])))
                 info = self.info_rect(record, x, top + TILE_Y)
                 if info is not None:          # after the tile's own hit, so it wins
-                    self.hits.append((info.inflate(8, 8).clip(pygame.Rect(0, 0, *FRAME)), ('info', record['id'])))
+                    self.hits.append((info.inflate(8, 8).clip(self.frame_rect), ('info', record['id'])))
             self.draw_row_label(layer, row, top)
             divider = self.bundle_image('VT_divider.png')
             layer.blit(pygame.transform.smoothscale(divider, (748 * S, 4 * S)), (10 * S, (top + ROW_HEIGHT - 2) * S))
-        back = pygame.Rect(BACK_X, BUTTON_Y, *BUTTON_SIZE)
-        restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], BUTTON_Y, *BUTTON_SIZE)
+        back = pygame.Rect(BACK_X, self.button_y, *BUTTON_SIZE)
+        restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], self.button_y, *BUTTON_SIZE)
         dim = bool(self.popup or self.alert)
         self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('back',))
         if self.show_restore:
@@ -523,6 +573,19 @@ class HdEpisodePicker(HdUi):
                 self.hits.append((restore, ('restore',)))
         self.draw_overlay(layer, strings)
         return layer
+
+    def want_nearby(self):
+        """Have the previews just out of sight ready for a scroll: a row above and below, a tile either side. Asked for
+        before the visible tiles, which the thread takes first."""
+        for index, row in enumerate(self.model.rows):
+            top = index * ROW_HEIGHT - self.scroll_y + self.top_pad
+            if top + 2 * ROW_HEIGHT <= 0 or top - ROW_HEIGHT >= self.height:
+                continue
+            offset = self.row_x.get(row.key, 0)
+            for column, record in enumerate(row.episodes):
+                x = TILE_X + column * TILE_STEP - offset
+                if x + TILE[0] + TILE_STEP > 0 and x - TILE_STEP < FRAME[0]:
+                    self.model.want_preview(record)
 
     overlay_shown = None
     overlay_opened = 0
@@ -595,11 +658,11 @@ class HdEpisodePicker(HdUi):
         card = self.card_image()
         if self._card is None or self._card[0] is not card:
             self._card = (card, pygame.transform.smoothscale(card, (CARD[0] * S, CARD[1] * S)))
-        layer.blit(self._card[1], (CARD_TOP_LEFT[0] * S, CARD_TOP_LEFT[1] * S))
+        layer.blit(self._card[1], (self.card_top_left[0] * S, self.card_top_left[1] * S))
 
     def draw_popup(self, layer, record, strings):
         self.draw_card(layer)
-        left, top = CARD_TOP_LEFT
+        left, top = self.card_top_left
         preview = self.model.preview(record)
         shot = self.saved_face(record)
         for label, image, x, command in ((strings[self.NEW_GAME], preview, left + 22, ('new', record['id'])),
@@ -617,12 +680,19 @@ class HdEpisodePicker(HdUi):
         back = pygame.Rect(left + 22, top + 359, *BUTTON_SIZE)
         self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('close',) or self.popup_focus == ('close',))
         self.hits.append((back, ('close',)))
+        # Delete Save (this player's; Data Management, owner 2026-10-29): the back button's twin at the card's right,
+        # asking "Delete Saved Game?" first (Application.picker_command).
+        delete = pygame.Rect(left + CARD[0] - 22 - BUTTON_SIZE[0], top + 359, *BUTTON_SIZE)
+        command = ('delete_save', record['id'])
+        self.draw_button(layer, delete.x, delete.y, label=DELETE_SAVE_LABEL,
+                         pressed=self.pressed == command or self.popup_focus == command)
+        self.hits.append((delete, command))
         # A click outside the card closes it.
-        self.hits.insert(0, (pygame.Rect(0, 0, *FRAME), ('close',)))
+        self.hits.insert(0, (self.frame_rect, ('close',)))
 
     def draw_alert(self, layer, title, text):
         self.draw_card(layer)
-        left, top = CARD_TOP_LEFT
+        left, top = self.card_top_left
         font = self.font(32)
         heading = font.render(title, True, self.TEXT_COLOR)
         layer.blit(heading, heading.get_rect(midtop=(FRAME[0] // 2 * S, (top + 30) * S)))
@@ -638,7 +708,7 @@ class HdEpisodePicker(HdUi):
         """An episode's info card on the alert's card: its title, airdate and price, then the store description at
         the largest size that fits above the OK button."""
         self.draw_card(layer)
-        left, top = CARD_TOP_LEFT
+        left, top = self.card_top_left
         width = CARD[0] - 60
         y = top + 24
         for line in self.wrap(info.title, INFO_TITLE_POINTS, width, 2):

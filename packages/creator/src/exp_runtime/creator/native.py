@@ -20,14 +20,32 @@ def _resources(project):
         raise ProjectError('Invalid native resource bank') from error
 
 
+def _declared_addons(archive):
+    """((id, revision), ...) of the addons an episode declares (its resource 4 stays in a native project's resources)."""
+    from exp_runtime.addons import addon_record
+    record = addon_record(archive)
+    return tuple(record[1]) if record is not None and record[0] == 'requires' else ()
+
+
 def import_exp(data, *, game='shs'):
     archive = ExpArchive(data)
     record = authoring_record(archive)
     if record and record.get('project'):
         document = record['project']
+        declared = _declared_addons(archive)
+        if document.get('episode_version') is None:
+            from exp_runtime.episode_version import episode_revision
+            document['episode_version'] = episode_revision(archive)
+        if not document.get('addons'):
+            document['addons'] = [dict(id=name, revision=revision) for name, revision in declared]
         for asset in document.get('assets', []):
             if asset.get('data') == '@resource':
-                asset['data'] = base64.b64encode(archive.read(asset['id'])).decode('ascii')
+                if asset['id'] in archive.entries:
+                    asset['data'] = base64.b64encode(archive.read(asset['id'])).decode('ascii')
+                elif declared:          # (a translation made before projects could say so: its addon holds this one)
+                    asset['data'], asset['addon'] = None, declared[0][0]
+                else:
+                    raise ProjectError(f'The episode has lost resource {asset["id"]}')
         project = project_from_record(document)
         project.library = ''
         return project
@@ -38,6 +56,8 @@ def import_exp(data, *, game='shs'):
                                                      for key, value in resources.items()}})
     project.locales = {language: {'title': title} for language, title in
                       zip(('en', 'fr', 'it', 'de', 'es'), meta.titles)}
+    from exp_runtime.episode_version import episode_revision
+    project.episode_version = episode_revision(archive)
     for script, program in sorted(archive.programs().items()):
         instructions = program.instructions
         if not instructions:
@@ -73,6 +93,7 @@ def import_exp(data, *, game='shs'):
     project.start = next((n.id for n in project.nodes if n.scene == 25001), project.nodes[0].id)
     project.assets = [Asset(key, f'Resource {key}', value) for key, value in resources.items()
                       if value.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8'))]
+    project.addons = [dict(id=name, revision=revision) for name, revision in _declared_addons(archive)]
     from .editing import auto_layout
     auto_layout(project)
     validate_structure(project)

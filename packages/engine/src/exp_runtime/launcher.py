@@ -26,6 +26,27 @@ def user_data_directory() -> Path:
     return root / APP_NAME
 
 
+DEV_MODULES = 'dev-modules'
+
+
+def install_dev_modules():
+    """shshd-runtime: with the test channel switched on by the hidden settings key (`test_channel`), the data folder's
+    `dev-modules` (laid out as `exp_runtime/NAME.py`) goes first on the module path, so a module copied there by the
+    channel's `put` is loaded in place of the app's own: a change tried on a device without a new build (owner,
+    2026-11-12, for iOS). Called by a host before it imports the app; True when installed. Nothing happens without the
+    key or the folder."""
+    import json
+    folder = user_data_directory() / DEV_MODULES
+    try:
+        settings = json.loads((user_data_directory() / 'settings.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if type(settings.get('test_channel') if isinstance(settings, dict) else None) is not int or not folder.is_dir():
+        return False
+    sys.path.insert(0, str(folder))
+    return True
+
+
 def library_locations():
     root = user_data_directory()
     locations = {}

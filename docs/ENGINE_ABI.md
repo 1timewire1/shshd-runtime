@@ -561,6 +561,114 @@ other state/panel services, native save/resource extensions, audio and outstandi
 mini-game presentation. The corpus's presence of a service does not prove the
 Android helper matches its original iOS semantics.
 
+## 5.1 New Rules' minigame arena (shshd-runtime services 200–212)
+
+These are not native SHS services. Episodes translated from SHS: New Rules
+(`tools/translate`) call them, as does New Rules' own minigame library, which
+runs beside the story as a linked segment (VM_SPEC.md §2.3). Each stands in for
+one New Rules service and answers as New Rules' engine does. The panel, its
+properties and its clock are decoded in
+[NEW_RULES.md](NEW_RULES.md#the-arena) and modelled in `nr_arena.py`.
+
+| Service | New Rules | Arguments | Result |
+| --- | --- | --- | --- |
+| 200 | 50 | margins, show score | Opens the arena panel |
+| 201 | 51 | label id (690–695), text | Sets a label |
+| 202 | 52 | property, value | Sets a property on the selected slot |
+| 203 | 53 | property | The property's value |
+| 204 | 54 | slot | The slot's item |
+| 205 | 55 | slot, item or text | Puts an item in a slot |
+| 206 | 56 | slot, property, v1[, v2[, v3]] | Sets a property; 718 closes the panel |
+| 207 | 57 | slot, property, v | Sets a property |
+| 208 | 29 | — | Waits for the next frame (the session completes it on its next tick) |
+| 209 | 5 | [−k], format, values… | Formats into string slot k−1 (slot 0 without a selector); the slot's handle |
+| 210 | 9 | title, `a\|b…`, selection | A menu over the panel; waits; the chosen index |
+| 211 | 10 | text | An info box over the panel; waits for OK; 0 |
+| 212 | 32 | selector | New Rules' build query as the Java (arena) build answers it |
+
+Service **70 selector 200** answers 1 when the arena plays here: New Rules'
+library is attached and the player's arena switch is on (`Session.nr_arena`).
+Native players and upstream exp-runtime answer 0 to an unknown selector, so a
+translated story takes the word game or timed choices it also carries.
+
+Service **213** (no arguments) goes before each arena game. It answers −1 to play
+the game. With Ask to Skip Mini-Games on, it waits for the player's choice and
+answers the result the game would have left instead
+([NEW_RULES.md](NEW_RULES.md#skipping)).
+
+## 5.2 The X360 minigames (shshd-runtime services 214–217)
+
+These are not native SHS services either. Episodes translated from the cancelled
+Xbox 360 game call them after **70 selector 201** answers 1, which it does only
+with the player's minigames switch on. Otherwise a story takes the fallback it
+also carries ([X360.md](X360.md#minigames)).
+
+| Service | Game | Arguments | Result, after waiting for the game |
+| --- | --- | --- | --- |
+| 214 | Slot machine | — | Bulbs taken, 0–5 |
+| 215 | Leash game | — | 1 won, 0 lost |
+| 216 | Jewel puzzle | — | The score |
+| 217 | Diss Practice | show the tutorial first | The score, at most 32767 |
+
+## 5.3 Storyboard cutscenes (shshd-runtime service 218)
+
+Service **218** (`spec`) plays the storyboard whose JSON spec is resource `spec`, and
+completes with 0 after its last press. A story asks **70 selector 202** first, which
+answers 1 only on a player that draws them (`Session.cutscenes`). Native players and
+upstream exp-runtime answer 0 to an unknown selector, so a story goes straight on.
+
+The spec is described in `cutscene.py`. A service 16 before it runs when its last press
+ends it, with the last picture up under the closing blinds.
+
+## 5.4 SHS '11's minigames (shshd-runtime services 219 and 220)
+
+Episodes translated from SHS '11 call these (`seconds`, `target`, `rounds`, `table`, `character`, the player) after
+**70 selector 203** answers 1, which it does only with the player's minigames switch on.
+Otherwise a story takes what it also carries, the smartphone's game at that spot.
+
+| Service | Game | A record of `table` |
+| --- | --- | --- |
+| 219 | Memory | 6 words: cue text, word text, bonus, points a letter, letter time in ms, the round's limit in ms |
+| 220 | Reflex | 13 words: right icons at least, the gauge's size, bonus, points a bar, right, wrong and skull pictures, odds of 1, 2 and 3 bars and of a skull, flash ms, hold ms |
+
+Each waits for the game (`shs11_games.py`, with its tutorial the first time in a story) and
+completes with **2** at 98% of the target or more, **1** above 75%, else **0**. [SHS11.md](SHS11.md) has the rules.
+
+Service **96**, a word grid, can also open Memory, with the player's "Use '11's Memory for Word Grid" switch on and a grid that fits (`shs11_games.grid_memory`). It then completes with the grid's own result: **1** at 98% of the target or more, else **0**.
+
+## 5.5 The BREW games' catch game (shshd-runtime service 221)
+
+Episodes translated from the BREW games call it after **70 selector 204** answers 1, which it does only with the player's
+minigames switch on. Otherwise a story plays a word game (71) in its place. Its 11 arguments: the kind (1 angled, 2 sideways,
+3 orbit, as BREW's services 20, 21 and 19), the target, ms between items, speed, spread, the odds (of coming at the angle, or
+from the left), the angle, the player's picture, a list of items (its length, then value, picture and count each), a table of
+sizes (picture, width, height each) and how many sizes it holds. A 12th, optional: a table of the scores at which the story after it can go another way (a count, then
+the scores; -1 for none), read by the translator from the story's own comparisons. Only the skip prompt reads it
+(`choice_hints.brew_catch_outcomes`: one preview per stretch of scores instead of trying them in turn). It waits for the game (`brew_catch.py`) and completes with
+the score, from 0 to the target. The scripts test it themselves. [BREW.md](BREW.md) has more.
+
+## 5.6 Running a script and coming back (shshd-runtime service 223)
+
+Service **223** (`script`) runs scene script `script` to its end and then returns to the instruction after the call, as a
+call into another scene would if SHS had one. The caller's frames wait on a stack that saves keep (save version 39). Fall '06's
+nest runner uses it for the events BREW runs inside another (service 37), one after another, as the decompiled '08 engine
+does (`FUN_0000af08`). It takes exactly one argument and nests at most 16 deep (`NESTED_SCRIPT_DEPTH`); the inner script's end
+(a halt) resumes the caller with 0. Native players and upstream exp-runtime
+stop at it as an unknown service. [BREW.md](BREW.md) has the season driver around it.
+
+## 5.7 The BREW packs' text and menus
+
+In the BREW translations (profile `TRANSLATED_ARTICLE_PACKS`, `TRANSLATED_BREW_MENU_PACKS`, `TRANSLATED_THREE_WORD_PACKS`), and
+in an episode made in the Creator that declares the same setting (SCHEMA.md "Presentation extension"), some native services
+answer as BREW's engine did:
+
+- **22 and 0** (formatting): `a(n)` before a word becomes `a` or `an` by that word, and `word(s)` or `word(es)` after a number
+  the singular for 1 and the plural otherwise (`engine.choose_articles`, `choose_plurals`). Service 0 only for a Creator episode
+  that asks.
+- **1** (a menu): a blank last option, from a list ending in `|`, is dropped, as BREW's menu builder does (`FUN_0000d6a0`);
+  SHS keeps it.
+- **71** (a word game) may have three words, one or two of them good; natively it stops without two of each.
+
 ## 6. iOS HD-build-only services (Faceplace / DT view)
 
 Reference: the HD iPad build's own `Surviving_HS` binary (`com.ea.shs.ipad.inc`,

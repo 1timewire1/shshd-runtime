@@ -1,5 +1,12 @@
 """Encode authored minigame tables using the recovered SHS native ABI."""
+from exp_runtime.brew_services import ANGLED, BREW_CATCH, ORBIT, SIDEWAYS
+from exp_runtime.shs11_services import SHS11_MEMORY, SHS11_REFLEX
+
 from .model import ProjectError
+
+MEMORY_FIELDS = ('bonus', 'points', 'letter_ms', 'limit_ms')
+REFLEX_FIELDS = ('least_right', 'gauge', 'bonus', 'points', 'right', 'wrong', 'skull', 'one_bar', 'two_bars', 'three_bars',
+                 'skulls', 'flash_ms', 'hold_ms')
 
 
 def integer(value, low, high, name):
@@ -15,8 +22,120 @@ def words(values, name, minimum=1):
     return values
 
 
+def validate_shs11(kind, p):
+    """shs11_games.py's rounds, as a story's table holds them (ENGINE_ABI.md 5.4)."""
+    name = 'Memory' if kind == 'shs11_memory' else 'Reflex'
+    integer(p['seconds'], 1, 3276, f'{name} seconds')
+    integer(p['target'], 1, 32767, f'{name} target')
+    rounds = p['rounds']
+    if not isinstance(rounds, list) or not 1 <= len(rounds) <= 256 or any(not isinstance(r, dict) for r in rounds):
+        raise ProjectError(f'{name} needs 1–256 rounds')
+    fields = MEMORY_FIELDS if kind == 'shs11_memory' else REFLEX_FIELDS
+    for i, r in enumerate(rounds, 1):
+        expected = set(fields) | ({'cue', 'word'} if kind == 'shs11_memory' else set())
+        if set(r) != expected:
+            raise ProjectError(f'{name} round {i} needs exactly {sorted(expected)}')
+        for field in fields:
+            integer(r[field], 0, 32767, f'{name} round {i} {field}')
+        if kind == 'shs11_memory':
+            word = r['word']
+            if not isinstance(r['cue'], str) or not r['cue'] or '\0' in r['cue']:
+                raise ProjectError(f'Memory round {i} needs a cue')
+            if not isinstance(word, str) or not 1 <= len(word) <= 9 or not word.isascii() or not word.isalpha() or not word.isupper():
+                raise ProjectError(f'Memory round {i}: the word is 1 to 9 capital letters, for its nine tiles')
+            if r['limit_ms'] < 1:
+                raise ProjectError(f'Memory round {i} needs a time limit')
+        else:
+            if sum(r[odds] for odds in ('one_bar', 'two_bars', 'three_bars', 'skulls')) > 100:
+                raise ProjectError(f'Reflex round {i}: its four odds are out of 100')
+            if r['gauge'] < 1 or r['hold_ms'] < 1:
+                raise ProjectError(f'Reflex round {i} needs a gauge and a hold time')
+
+
+CATCH_KINDS = {'angled': ANGLED, 'sideways': SIDEWAYS, 'orbit': ORBIT}
+CATCH_ADDON, CATCH_SPEC = 'shsbrew', 26998       # the add-on's catch art and its spec (desktop_brew_catch)
+CATCH_MOST = 20                                  # brew_catch.MAX_ITEMS
+
+
+def brew_catch_sizes(library):
+    """{picture: (width, height)} of every catch picture the library's BREW add-on draws, {} without one."""
+    import json
+    found = library.addon(CATCH_ADDON) if library is not None and hasattr(library, 'addon') else None
+    if found is None or CATCH_SPEC not in found[1].entries:
+        return {}
+    pictures = json.loads(found[1].read(CATCH_SPEC)).get('catch', {}).get('pictures', {})
+    return {int(picture): (entry[1], entry[2]) for picture, entry in pictures.items()}
+
+
+def validate_catch(p):
+    """The catch game's settings (brew_catch.CatchGame.opened), apart from the pictures' sizes (catch_sizes)."""
+    if p['kind'] not in CATCH_KINDS:
+        raise ProjectError('The catch game\'s kind is angled, sideways or orbit')
+    integer(p['target'], 1, 32767, 'Catch target')
+    integer(p['interval_ms'], 1, 32767, 'Catch interval')
+    integer(p['speed'], 1, 32767, 'Catch speed')
+    integer(p['spread'], 0, 32767, 'Catch spread')
+    integer(p['chance'], 0, 100, 'Catch chance')
+    integer(p['angle'], 0, 89, 'Catch angle')
+    integer(p['player'], 0, 32767, 'Catch player picture')
+    items = p['items']
+    if not isinstance(items, list) or not 1 <= len(items) <= CATCH_MOST or any(not isinstance(i, dict) for i in items):
+        raise ProjectError(f'The catch game needs 1–{CATCH_MOST} kinds of item')
+    for n, item in enumerate(items, 1):
+        if set(item) != {'value', 'picture', 'count'}:
+            raise ProjectError(f'Catch item {n} needs exactly value, picture and count')
+        integer(item['value'], -32768, 32767, f'Catch item {n} value')
+        integer(item['picture'], 0, 32767, f'Catch item {n} picture')
+        integer(item['count'], 0, 32767, f'Catch item {n} count')
+    if not any(item['count'] for item in items):
+        raise ProjectError('The catch game needs at least one item to come')
+    if not isinstance(p['sizes'], dict):
+        raise ProjectError('Catch sizes are {picture: [width, height]}')
+
+
+def catch_sizes(p, library_sizes):
+    """[(picture, width, height)] for the player and each item: the node's own sizes, else the add-on's."""
+    own = {}
+    for picture, size in p['sizes'].items():
+        if (not isinstance(size, list) or len(size) != 2 or any(type(v) is not int or not 1 <= v <= 240 for v in size)):
+            raise ProjectError('A catch picture\'s size is [width, height], 1 to 240 each')
+        own[int(picture)] = tuple(size)
+    result = []
+    for picture in dict.fromkeys([p['player'], *(item['picture'] for item in p['items'])]):
+        size = own.get(picture, library_sizes.get(picture))
+        if size is None:
+            raise ProjectError(f'The catch game shows picture {picture}, which the shsbrew add-on doesn\'t draw: choose the '
+                               'library holding it, or another picture')
+        result.append((picture, *size))
+    return result
+
+
+def catch_cuts(p, branches):
+    """The scores where the story after the game parts (the skip prompt's stretches, ENGINE_ABI.md 5.5): from `branches`, the
+    (operator, value) of each branch on its result, each stretch starting where a comparison changes; and the target."""
+    starts = {p['target']}
+    for operator, value in branches:
+        if type(value) is not int:
+            continue
+        starts.update({'<': (value,), '>=': (value,), '<=': (value + 1,), '>': (value + 1,)}.get(operator, (value, value + 1)))
+    return sorted(s for s in starts if 0 < s <= p['target'])
+
+
+def emit_catch(asm, p, sizes, cuts):
+    kind = CATCH_KINDS[p['kind']]
+    spread, chance, angle = ((p['spread'], 0, 0) if kind == ORBIT else (0, p['chance'], p['angle']) if kind == ANGLED
+                             else (0, p['chance'], 0))
+    items = [len(p['items'])] + [word for item in p['items'] for word in (item['value'], item['picture'], item['count'])]
+    asm.call(BREW_CATCH, kind, p['target'], p['interval_ms'], p['speed'], spread, chance, angle, p['player'], asm.table(items),
+             asm.table([word for size in sizes for word in size]), len(sizes), asm.table([len(cuts), *cuts]))
+
+
 def validate(kind, p):
-    if kind == 'word_game':
+    if kind == 'brew_catch':
+        validate_catch(p)
+    elif kind in ('shs11_memory', 'shs11_reflex'):
+        validate_shs11(kind, p)
+    elif kind == 'word_game':
         words(p['good'], 'Positive words', 2); words(p['bad'], 'Negative words', 3)
         integer(p['duration_ms'], 1, 32767, 'Word-game duration')
         integer(p['refresh_ms'], 0, 32767, 'Word-game refresh')
@@ -111,7 +230,17 @@ def validate(kind, p):
 
 def emit(asm, kind, p, text, character):
     """Return the result in the native R register; caller stores it explicitly."""
-    if kind == 'word_game':
+    if kind in ('shs11_memory', 'shs11_reflex'):
+        table = []
+        for i, r in enumerate(p['rounds']):
+            if kind == 'shs11_memory':
+                table += [text(f'rounds.{i}.cue', r['cue']), text(f'rounds.{i}.word', r['word'])]
+                table += [r[field] for field in MEMORY_FIELDS]
+            else:
+                table += [r[field] for field in REFLEX_FIELDS]
+        asm.call(SHS11_MEMORY if kind == 'shs11_memory' else SHS11_REFLEX, p['seconds'], p['target'], len(p['rounds']),
+                 asm.table(table), character() or -1)
+    elif kind == 'word_game':
         asm.call(71, -1, text('text'), asm.text('|'.join(text(f'good.{i}', v, raw=True) for i, v in enumerate(p['good']))),
                  asm.text('|'.join(text(f'bad.{i}', v, raw=True) for i, v in enumerate(p['bad']))), p['duration_ms'], character('character'), 0, p['refresh_ms'])
     elif kind == 'football':

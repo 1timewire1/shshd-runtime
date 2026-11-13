@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 
 from .content import is_bundled
+from .episode_index import section_place
 from .languages import TITLE_LANGUAGES, episode_title
 from .games import GAMES, game_id
 from .launcher import default_library, remember_library
@@ -50,7 +51,7 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
     sections = [EpisodeSection(key, label, tuple(episodes)) for key, (label, episodes) in groups.items()]
     sections.sort(key=lambda section: (
         section.title.casefold() != mega_label.casefold(),
-        min((e['pack_id'], e['episode_id']) for e in section.episodes), section.key))
+        min((section_place(e), e['episode_id']) for e in section.episodes), section.key))
     resumed = tuple(e for e in records if e['id'] in saved)
     if resumed:
         sections.insert(0, EpisodeSection('saved', saved_label, resumed))
@@ -59,45 +60,57 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
 
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
+# The preferences both games share (owner, 2026-10-29): Options' switches, sliders and the Episode Titles language,
+# kept app-wide (the player's settings.AppSettings) as well as in each library's player.json. Game data stays per
+# library: the selected episode, the name tables, the warp lock (Football Season's progress) and the HD art mode
+# (its twin store is the library's). Each value's check: a type, or the values it may take.
+SHARED_PREFERENCES = dict(
+    music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
+    skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'),
+    order=('episode', 'title'), title_language=TITLE_LANGUAGES, title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11'),
+    last_title_game=('default', 'brew', 'nr', 'x360', 'shs11'))
+
+
+def shared_preference(key, value):
+    """Whether `value` is one a shared preference `key` may hold."""
+    check = SHARED_PREFERENCES.get(key)
+    if check is bool:
+        return type(value) is bool
+    if isinstance(check, range):
+        return type(value) is int and value in check
+    return check is not None and value in check
+
+
+def preference_defaults():
+    """The shared preferences (SHARED_PREFERENCES) at their defaults."""
+    defaults = MenuState.__new__(MenuState)
+    defaults._preference_defaults()
+    return {key: getattr(defaults, key) for key in SHARED_PREFERENCES}
+
 
 class MenuState:
     """Per-library preferences and selection; saves remain content-bound.
 
     Automatic checkpoints have their own file, preserving the player's F5
     slot. Resume uses the newer of those two saves and validates it on load.
+
+    `shared` holds the preferences both games share (an object with a `preferences` dict and
+    `set_preferences(values)`: the player's AppSettings): they override player.json's copies, and saving writes both.
     """
-    def __init__(self, library, *, process=None):
+    # shshd-runtime: whether the player using this state draws storyboard cutscenes (desktop_cutscene; Session.cutscenes). A
+    # headless state doesn't, so a story asking takes its other way.
+    cutscenes = False
+    def __init__(self, library, *, process=None, shared=None):
         self.library = library
+        self.shared = shared
         self.process = process or RuntimeProcess()
         self.path = library.directory / 'player.json'
         # resume_path's answer for a save whose checkpoint is an ending, by (path, mtime, size): checking it opens the
         # whole episode, and the menus ask for every episode each time they refresh (seconds once many are finished).
         self.ended_saves = {}
-        self.music = self.sound = True
-        self.vibration = False         # Sound's Simulated Vibration Sound: service 82's buzz (vibration.py); off by default
-        # General's Vibration: service 82 on the device's own vibrator, where the host has one (graphics.set_vibrator:
-        # Android's, the iPhone's); off by default, as the buzz.
-        self.device_vibration = False
-        # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
-        self.music_volume = self.sound_volume = 50
-        self.logging_disabled = False
-        # The story tree's warping: the iOS app locks it until Football Season has been completed once; this player
-        # starts it unlocked so scenes can be visited (set false in player.json for the app's behavior).
-        self.hd_art = 'fill'           # higher-density art for standard episodes: 'off', 'twins' or 'fill' (hd_twins.py);
-                                        # 'fill' is the only one reachable without hand-editing player.json
-        self.warp_unlocked = False     # `SHSEngine +0x6490a` (a lock) is set at first run and cleared when Football Season ends
-        self.choice_hints = False
-        # ask whether to play, win or lose each football game / word grid: this fork's counterpart of exp-runtime
-        # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
-        self.skip_minigames = False
-        self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
-        self.skip_upsell_intros = False     # pass the store plugs some SHS episodes open with (upsell_intro.py)
-        self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
-        self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
-        self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
-        self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
-        self.order = 'episode'
-        self.title_language = 'en'
+        self._preference_defaults()
         self.selected = None
         # The app's name-replacement table (`SHSEntityTable` renames, kept in shs_options.sav): `$USR`, a series lead's
         # `$ZOE` / `$Scott` / `$Travis`, `$DATE`... written by the scripts (services 46, 47, 113) and shown wherever text
@@ -137,10 +150,42 @@ class MenuState:
                     self.vibration = data['vibration']
                 if type(data.get('device_vibration')) is bool:
                     self.device_vibration = data['device_vibration']
+                if type(data.get('side_panels')) is bool:
+                    self.side_panels = data['side_panels']
                 if type(data.get('hd_backdrop')) is bool:
                     self.hd_backdrop = data['hd_backdrop']
                 if type(data.get('hires_portraits')) is bool:
                     self.hires_portraits = data['hires_portraits']
+                if type(data.get('ms3_characters')) is bool:
+                    self.ms3_characters = data['ms3_characters']
+                if type(data.get('java_look')) is bool:
+                    self.java_look = data['java_look']
+                if type(data.get('brew_08_backgrounds')) is bool:
+                    self.brew_08_backgrounds = data['brew_08_backgrounds']
+                if type(data.get('smartphone_music')) is bool:
+                    self.smartphone_music = data['smartphone_music']
+                if type(data.get('word_grid_skin')) is bool:
+                    self.word_grid_skin = data['word_grid_skin']
+                if type(data.get('skip_ahead')) is bool:
+                    self.skip_ahead = data['skip_ahead']
+                if type(data.get('undo')) is bool:
+                    self.undo = data['undo']
+                if type(data.get('grids_as_memory')) is bool:
+                    self.grids_as_memory = data['grids_as_memory']
+                if type(data.get('ch_portraits')) is bool:
+                    self.ch_portraits = data['ch_portraits']
+                if type(data.get('ch_backdrop')) is bool:
+                    self.ch_backdrop = data['ch_backdrop']
+                if type(data.get('arena_minigames')) is bool:
+                    self.arena_minigames = data['arena_minigames']
+                if type(data.get('arena_skin')) is bool:
+                    self.arena_skin = data['arena_skin']
+                if type(data.get('skip_sound_prompt')) is bool:
+                    self.skip_sound_prompt = data['skip_sound_prompt']
+                if data.get('controller_confirm') in ('south', 'east'):
+                    self.controller_confirm = data['controller_confirm']
+                if data.get('grid_controls') in ('tap', 'hold'):
+                    self.grid_controls = data['grid_controls']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
                     self.hd_art = data['hd_art']
                 self.title_language = data.get('title_language', 'en')
@@ -165,6 +210,10 @@ class MenuState:
                 self.name_sets.update({key: dict(table) for key, table in sets.items()})
             except (ValueError, OSError) as error:
                 self.warning = f'Could not read preferences: {error}'
+        if shared is not None:
+            for key, value in shared.preferences.items():
+                if shared_preference(key, value):
+                    setattr(self, key, value)
         ids = {e['id'] for e in library.episodes}
         if self.selected not in ids:
             saved = [(self.resume_path(e['id']), e['id']) for e in library.episodes]
@@ -173,6 +222,68 @@ class MenuState:
             default = next((e for e in library.episodes if (e.get('pack_id'), e.get('episode_id')) == preferred),
                            library.episodes[0])
             self.selected = max(saved)[1] if saved else default['id']
+
+    def _preference_defaults(self):
+        """Every preference at its default (Data Management's Reset Settings takes the shared ones from here:
+        preference_defaults)."""
+        self.music = self.sound = True
+        self.vibration = False         # Sound's Simulated Vibration Sound: service 82's buzz (vibration.py); off by default
+        # General's Vibration: service 82 on the device's own vibrator, where the host has one (graphics.set_vibrator:
+        # Android's, the iPhone's); off by default, as the buzz.
+        self.device_vibration = False
+        # HD's option sliders (0-100; `CSEngine::init` starts both at 50) and its usage-sharing switch.
+        self.music_volume = self.sound_volume = 50
+        self.logging_disabled = False
+        # The story tree's warping: the iOS app locks it until Football Season has been completed once; this player
+        # starts it unlocked so scenes can be visited (set false in player.json for the app's behavior).
+        self.hd_art = 'fill'           # higher-density art for standard episodes: 'off', 'twins' or 'fill' (hd_twins.py);
+                                        # 'fill' is the only one reachable without hand-editing player.json
+        self.warp_unlocked = False     # `SHSEngine +0x6490a` (a lock) is set at first run and cleared when Football Season ends
+        self.choice_hints = False
+        # ask whether to play, win or lose each football game / word grid: this fork's counterpart of exp-runtime
+        # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
+        self.skip_minigames = False
+        self.skip_ad_intros = False    # start the High School Story ad episodes at their title card (ad_intro.py)
+        self.skip_upsell_intros = False     # pass the store plugs some SHS episodes open with (upsell_intro.py)
+        self.autoplay = False          # dialogue advances by itself, without taps (this player's; desktop.Desktop.autoplay)
+        self.disable_choice_timer = False   # timed choices wait, with a row that lets the time run out (this player's)
+        # shshd-runtime: the story tree and Faceplace wall in an episode that uses them (owner, 2026-11-12: on by default;
+        # desktop.Desktop.panels_wanted): beside the game where there's room, else behind a button
+        self.side_panels = True
+        self.hd_backdrop = True        # CoD: SHS HD's faded collage beside the frame, else a dark fill (this player's)
+        self.hires_portraits = True    # translated New Rules episodes: the X1i jar's redrawn portraits (ContentLibrary)
+        self.smartphone_music = True   # translated SHS '11 episodes: the smartphone's music, else none
+        self.skip_ahead = False        # Skip Ahead is offered in a story (skip_ahead.py)
+        self.undo = False              # Undo keeps its saves and is offered in a story (undo.py)
+        self.grids_as_memory = False   # letter grids play as SHS '11's Memory, with its addon
+        self.word_grid_skin = False    # ...their minigames in the HD word game's look
+        self.ms3_characters = False    # translated X360 episodes: the April build's looks, else the May build's (ContentLibrary)
+        self.java_look = False         # translated BREW episodes: the Java '08 demo's look, else BREW's (ContentLibrary)
+        self.brew_08_backgrounds = False   # '07-badged BREW episodes: '08's shared locations, else '07's (decision 7B)
+        # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
+        self.ch_portraits = True
+        self.ch_backdrop = True
+        # translated New Rules episodes: their minigames in New Rules' own arena (desktop_nr_arena.py); off, the timed
+        # choices the translations carry for players without it (owner, 2026-10-31: the arena by default)
+        self.arena_minigames = True
+        # ...in the cancelled X360 prototype's look, where its addon is imported (desktop_nr_arena_x360.py; owner,
+        # 2026-10-31: New Rules' look by default)
+        self.arena_skin = False
+        # Sound's Skip Sound Prompt (owner, 2026-10-29): the launch passes "Play with sound?" and keeps Music / Sound
+        # as they are (application_hd.HdShell.tick)
+        self.skip_sound_prompt = False
+        # Options' Controller page (owner, 2026-10-29): a controller's confirm button, the bottom one ('south') or, for
+        # a Nintendo layout, the right one ('east') (gamepad.py)
+        self.controller_confirm = 'south'
+        # The word grid with a controller (owner, 2026-10-29): 'hold' (the default), the confirm button held drags, the
+        # stick or D-pad steering it (desktop.Desktop._grid_hold); 'tap', confirm adds the highlighted cell
+        self.grid_controls = 'hold'
+        self.order = 'episode'
+        self.title_language = 'en'
+        # Add-Ons' Title Screen Music (owner, 2026-11-09): the main menu's tune, the game's own ('default'), a translated game's
+        # from its addon (the profile's TITLE_MUSIC), or 'auto', the game of the episode last played (`last_title_game`)
+        self.title_music = 'default'
+        self.last_title_game = 'default'
 
     def title(self, record):
         return episode_title(record, self.title_language)
@@ -188,11 +299,17 @@ class MenuState:
         record = self.library.select(episode)
         return self.library.directory / 'saves' / (record['id'] + '.shs-shot.jpg')
 
-    def names_for(self, record):
+    def names_for(self, record, resources=None):
         """The name-replacement table an episode's sessions share: its translated game's own (the profile's
-        TRANSLATED_NAME_SETS, by pack), else the library's."""
-        sets = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'TRANSLATED_NAME_SETS', {})
+        TRANSLATED_NAME_SETS, by pack), the Creator's for an episode made there (presentation `creator`, CREATOR_NAME_SET;
+        owner, 2026-11-09), else the library's."""
+        profile = GAMES.get(getattr(self.library, 'game_id', None))
+        sets = getattr(profile, 'TRANSLATED_NAME_SETS', {})
         key = sets.get(record.get('pack_id')) if isinstance(record, dict) else None
+        if key is None and resources is not None:
+            from .content import declared
+            if declared(resources, 'creator'):
+                key = getattr(profile, 'CREATOR_NAME_SET', None)
         return self.names if key is None else self.name_sets.setdefault(key, {})
 
     def resume_path(self, episode):
@@ -232,7 +349,11 @@ class MenuState:
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
-                    hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
+                    side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
+                    skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
+                    grid_controls=self.grid_controls,
                     names=self.names,      # in the order written: replacement walks the table in that order
                     name_sets=self.name_sets)
         temporary = None
@@ -248,14 +369,28 @@ class MenuState:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+        if self.shared is not None:
+            self.shared.set_preferences({key: getattr(self, key) for key in SHARED_PREFERENCES})
 
     def session(self, episode, *, resume=True):
         resources = self.library.open_episode(episode)
+        if hasattr(resources, 'check_addons'):
+            resources.check_addons()            # shshd-runtime: a clear message, not missing art, without its addon
         path = self.resume_path(episode) if resume else None
+        if path is None:
+            from .undo import clear
+            clear(self.library.directory, resources.record['id'])     # a fresh start: the last playthrough's undo chain goes
         session = Session.load(resources, path) if path else Session(resources)
         # Shared before the intro skips below run the opening script: a name it sets there ("$matt" back to "you" in
         # Hector's Guide) must reach the table, not lose to the last playthrough's value when the window shares it.
-        session.share_names(self.names_for(resources.record))
+        session.share_names(self.names_for(resources.record, resources))
+        # The player's answers to what a story may ask before its first screen (service 70's queries), set before the intro
+        # skips below run the opening: they did, with these unset, and Day of Diss on the g54 (Skip Upsell Intros on) took
+        # its no-cutscene branch for good (owner, 2026-11-11). The player sets them again as it takes the session.
+        session.cutscenes = self.cutscenes
+        session.nr_arena = self.arena_minigames
+        session.grids_as_memory = self.grids_as_memory
+        session.skip_arena = self.skip_minigames
         if path is None and self.skip_ad_intros:
             from .ad_intro import skip_ad_intro
             session = skip_ad_intro(session)

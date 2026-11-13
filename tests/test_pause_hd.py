@@ -39,6 +39,31 @@ class HdPauseTests(unittest.TestCase):
         _, buttons = self.menu.layout(self.settings, **kw)
         return buttons
 
+    def test_the_main_menus_add_ons_hold_per_game_settings_and_title_screen_music(self):
+        # Owner, 2026-11-09: on the main menu, Add-Ons keeps Use Translated Mini-Games and Title Screen Music and puts the
+        # other add-on switches one page further in; the pause menu lists them all on Add-Ons, as before.
+        self.settings.update(arena_minigames=True, java_look=False, hires_portraits=True, title_music='Auto',
+                             title_music_names={'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08"})
+        state = self.menu.state
+        state.screen = 'options:addons'
+        self.assertEqual([c for _, c in self.commands()], [('pause_toggle', 'arena_minigames'), ('pause_toggle', 'java_look'),
+                                                          ('pause_toggle', 'hires_portraits'), ('pause_back',)])
+        self.menu.main_menu = True
+        self.assertEqual([c for _, c in self.commands()], [('pause_toggle', 'arena_minigames'), ('pause_open', 'options:per_game'),
+                                                          ('pause_open', 'choice:title_music'), ('pause_back',)])
+        self.menu.open('options:per_game')
+        self.menu.slide = None
+        self.assertEqual([c for _, c in self.commands()], [('pause_toggle', 'java_look'), ('pause_toggle', 'hires_portraits'),
+                                                          ('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.assertEqual(state.screen, 'options:addons')                     # back to Add-Ons, not Options
+        self.menu.slide = None
+        state.screen = 'choice:title_music'
+        self.assertEqual([c for _, c in self.commands()], [('pause_cycle', 'title_music', key) for key in ('default', 'auto', 'brew')]
+                         + [('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.assertEqual(state.screen, 'options:addons')
+
     def test_pause_rows_are_88_high_and_the_card_is_centered(self):
         buttons = self.commands()
         self.assertEqual([c for _, c in buttons], [('resume',), ('pause_open', 'options'),
@@ -146,9 +171,14 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(switch_badge('hires_portraits'), ('NR', LEGACY_GAMES['SHSNR']['color']))
         self.assertIsNone(switch_badge('hd_backdrop'))
         self.settings.update(hires_portraits=True)
+        self.assertNotIn('hires_portraits', [c[1] for _, c in self.commands() if c[0] == 'pause_toggle'])
+        screen, state.screen = state.screen, 'options'
+        self.assertIn(('pause_open', 'options:addons'), [c for _, c in self.commands()])    # now it has a row
+        state.screen = 'options:addons'
         with patch.object(type(self.menu), 'badge', autospec=True, return_value=30) as badge:
             self.assertIn('hires_portraits', [c[1] for _, c in self.commands() if c[0] == 'pause_toggle'])
         self.assertEqual([call.args[4:] for call in badge.call_args_list], [('NR', LEGACY_GAMES['SHSNR']['color'])])
+        state.screen = screen
         del self.settings['hires_portraits']
         # This player's Autoplay Dialogue comes after the side panels (owner, 2026-10-21).
         self.settings.update(autoplay=False, disable_choice_timer=True)
@@ -189,13 +219,57 @@ class HdPauseTests(unittest.TestCase):
         self.assertIn(('pause_open', 'options:data'), [c for _, c in self.commands()])
         state.screen = 'options:general'
         rows = self.commands()
-        self.assertEqual(rows[-2][1], ('pause_cycle', 'title_language'))                 # last row: its button
-        from exp_runtime.desktop_pause_hd import CONTROL_RIGHT, PANEL_W, PANEL_X
-        self.assertEqual((rows[-2][0].width, rows[-2][0].height), (104, 34))          # a little bigger than a switch
-        self.assertEqual(rows[-2][0].right, PANEL_X + PANEL_W - CONTROL_RIGHT)          # against the card's right
-        state.screen = 'options:data'
-        self.assertEqual([c for _, c in self.commands()], [('pause_action', 'add_episodes'),
-                                                           ('pause_action', 'open_library'), ('pause_back',)])
+        self.assertEqual(rows[-2][1], ('pause_open', 'choice:title_language'))         # last row: opens its page
+        from exp_runtime.desktop_pause_hd import PANEL_W, PANEL_X
+        self.assertEqual((rows[-2][0].x, rows[-2][0].width), (PANEL_X, PANEL_W))       # the whole row
+        state.screen = 'options:data'                                       # its pages, those with an offered row
+        self.assertEqual([c for _, c in self.commands()], [('pause_open', 'data:library'),
+                                                           ('pause_open', 'data:episodes'), ('pause_back',)])
+        state.screen = 'data:library'
+        self.assertEqual([c for _, c in self.commands()], [('pause_action', 'open_library'), ('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.assertEqual(state.screen, 'options:data')                      # back to Data Management
+
+    def test_aspect_ratio_is_generals_first_choice_and_opens_a_page_of_the_shapes(self):
+        from exp_runtime.desktop_pause_hd import ASPECT_LABEL, ASPECT_NAMES
+        self.settings.update(aspect_ratio=ASPECT_NAMES['fit'], title_language='English')
+        rows = self.menu.option_rows('general', self.settings, self.menu.strings())
+        choices = [(label, key) for kind, label, key in rows if kind == 'choice']
+        self.assertEqual(choices[0], (ASPECT_LABEL, 'aspect_ratio'))
+        picks = self.menu.option_rows('choice:aspect_ratio', self.settings, self.menu.strings())
+        self.assertEqual([(label, key) for _, label, key in picks],
+                         [(name, ('aspect_ratio', value)) for value, name in ASPECT_NAMES.items()])
+
+    def test_start_in_opens_a_page_of_its_choices_and_unlock_warping_is_an_extras_action(self):
+        """General's Start In and Episode Titles open a menu page of their values (owner, 2026-11-09), the current one
+        ticked, each row picking its value; back from it is the option's page. Extras' Unlock Warping is an action row,
+        offered only while the host says the lock is on."""
+        from exp_runtime.desktop_pause_hd import START_IN_NAMES
+        state = self.menu.state
+        state.screen = 'options:general'
+        self.settings.update(title_language='English', start_in=START_IN_NAMES['games'])
+        rows = self.commands()
+        self.assertEqual([c for _, c in rows][-3:], [('pause_open', 'choice:title_language'),
+                                                     ('pause_open', 'choice:start_in'), ('pause_back',)])
+        self.menu.open('choice:start_in')
+        self.menu.slide = None
+        self.assertEqual([c for _, c in self.commands()], [('pause_cycle', 'start_in', value) for value in START_IN_NAMES]
+                         + [('pause_back',)])
+        self.assertFalse(self.menu.back())
+        self.menu.slide = None
+        self.assertEqual(state.screen, 'options:general')
+        self.settings['title_language_names'] = {'en': 'English', 'fr': 'French'}       # the host's own names
+        state.screen = 'choice:title_language'
+        self.assertEqual([label for _, label, _ in self.menu.option_rows('choice:title_language', self.settings,
+                                                                         self.menu.strings())], ['English', 'French'])
+        state.screen = 'options:sound'
+        self.assertNotIn(('pause_toggle', 'skip_sound_prompt'), [c for _, c in self.commands()])   # in a story
+        self.settings['skip_sound_prompt'] = False
+        self.assertEqual([c for _, c in self.commands()][-2], ('pause_toggle', 'skip_sound_prompt'))
+        state.screen = 'options:extras'
+        self.assertNotIn(('pause_action', 'unlock_warp'), [c for _, c in self.commands()])
+        self.settings['unlock_warp'] = True
+        self.assertEqual([c for _, c in self.commands()][-2], ('pause_action', 'unlock_warp'))
 
     def test_back_steps_out_one_screen_at_a_time(self):
         state = self.menu.state
@@ -294,8 +368,8 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(menu.key(pygame.K_RETURN), ('pause_open', 'options'))
         state.screen = 'options:sound'
         self.commands()
-        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing here is highlighted yet
-        menu.key(pygame.K_DOWN)
+        self.assertIsNone(menu.key(pygame.K_RETURN))                        # nothing highlighted: it shows the first
+        self.assertEqual(state.focus, ('pause_toggle', 'music'))
         self.assertEqual(menu.key(pygame.K_SPACE), ('pause_toggle', 'music'))
         menu.key(pygame.K_DOWN)
         self.assertEqual(state.focus[:2], ('pause_slider', 'music'))
@@ -378,6 +452,33 @@ class CodPauseTests(unittest.TestCase):
                          [('pause_toggle', 'choice_hints'), ('pause_toggle', 'skip_minigames'), ('pause_back',)])
         rows = self.menu.option_rows('extras', self.settings, self.menu.strings())
         self.assertEqual({key: label for _, label, key in rows}['choice_hints'], 'Choice & Answer Hints')
+
+    def test_the_add_ons_page_holds_the_translated_games_switches(self):
+        from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
+        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin',
+                                      'arena_skin'))
+        self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
+        self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
+        self.settings.update(ms3_characters=False, arena_minigames=True)
+        rows = self.menu.option_rows('addons', self.settings, self.menu.strings())
+        self.assertEqual([(kind, label, key) for kind, label, key in rows],
+                         [('switch', 'Use Translated Mini-Games', 'arena_minigames'), ('switch', 'MS3 Characters', 'ms3_characters')])
+
+    def test_the_x360_skin_wears_new_rules_tag_and_names_the_x360_in_its_colour(self):
+        from exp_runtime import desktop_pause_hd
+        from exp_runtime.shs.profile import LEGACY_GAMES
+        self.assertEqual(desktop_pause_hd.switch_badge('arena_skin'), ('NR', LEGACY_GAMES['SHSNR']['color']))
+        self.assertEqual(desktop_pause_hd.ARENA_SKIN_LABEL, 'Use X360 Arena Skin')
+        self.assertEqual(desktop_pause_hd.legacy_tag(desktop_pause_hd.LABEL_TINTS['arena_skin']),
+                         ('X360', LEGACY_GAMES['SHSX360']['color']))
+        self.assertEqual(desktop_pause_hd.CH_PORTRAITS_LABEL, 'HD Portraits in CoD')
+
+    def test_a_cod_translations_tag_is_claire_harts_dark_green_ch(self):
+        from exp_runtime import desktop_pause_hd
+        from exp_runtime.cod.profile import LEGACY_GAMES
+        self.assertEqual(desktop_pause_hd.switch_badge('ch_backdrop'), ('CH', LEGACY_GAMES['CHC']['color']))
+        red, green, blue = LEGACY_GAMES['CHC']['color']
+        self.assertTrue(green > red and green > blue and green < 128)
 
     def test_cods_sound_page_offers_vibration_too(self):
         self.menu.state.screen = 'options:sound'

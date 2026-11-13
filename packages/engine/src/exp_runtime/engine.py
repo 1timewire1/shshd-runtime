@@ -5,6 +5,7 @@ handlers remain pending; episode exits are terminal application handoffs.
 See docs/ENGINE_ABI.md for native addresses and current limitations.
 """
 from copy import deepcopy
+import re
 from dataclasses import asdict, dataclass, field
 from typing import ClassVar
 
@@ -12,6 +13,13 @@ from .games import GAMES
 
 from .randomness import NativeRandom, Random48, pipe_list
 from .minigames import WordGame
+from .nr_arena import NRArena
+from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
+from .x360_diss import DissPractice, X360_DISS
+from .x360_puzzle import JewelPuzzle, X360_PUZZLE
+from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
+from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
+from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
 from .character_picker import CharacterPicker
 from .scene_badge import SceneBadge
@@ -68,6 +76,65 @@ NATIVE_DEFAULT_YIELDS = frozenset((12, 14, 19, 20, 21, 23, 31, 41, 42, 48, 62, 6
 SHS_HD_YIELDS = NATIVE_DEFAULT_YIELDS | frozenset((
     6, 15, 22, 26, 30, 32, 36, 37, 38, 43, 56, 57, 58, 59, 60, 61, 66, 83, 84, 85, 87, 98,
     *range(101, 121)))
+# shshd-runtime: New Rules' minigame arena (nr_arena.py, docs/NEW_RULES.md), the services the
+# translated New Rules stories and their minigame library call in place of New Rules' own (tools/translate
+# newrules.ARENA_SERVICES): the panel (50-57), the frame wait (29), formats (5), the menu and the info box over the
+# panel (9, 10) and the build query (32). Service 70 selector NR_ARENA_QUERY answers 1 where they work.
+# 213 is this player's own, called before an arena game: -1 plays it, another value is the result the story reads
+# instead (Ask to Skip Mini-Games, Session.skip_arena; docs/NEW_RULES.md).
+NR_ARENA_SERVICES = frozenset(range(200, 214))
+NR_ARENA_QUERY = 200
+RELATIONSHIP_SKULL = 3011
+NR_BUILD = {1: 2, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}  # New Rules' 32 as the Java (arena) build answers it
+
+
+def badge_sound(change, sounds):
+    """The sound of a translated pack's relationship change: `sounds`' first if it's for the better, its second if for the
+    worse, neither if it's only another icon for the same standing. More skulls are worse, as fewer of anything else are."""
+    if not change.changed or change.asset_id < 0 or change.previous_asset < 0:
+        return None
+    standing = [-count if asset == RELATIONSHIP_SKULL else count
+                for asset, count in ((change.previous_asset, change.previous_count), (change.asset_id, change.count))]
+    return sounds[0] if standing[1] > standing[0] else sounds[1] if standing[1] < standing[0] else None
+
+
+def _shs11_details(character):
+    """An SHS '11 game's action: who a look that shows a portrait shows (the word game's look, desktop_shs11_hd)."""
+    return dict(left_character=-1, left_expression=0, right_character=signed16(character), right_expression=0)
+
+
+# shshd-runtime: "a(n)" before a word a script fills in (the BREW games' `a(n) %s`), as "a" or "an" by the word's sound (choose_articles).
+ARTICLE_SLOT = re.compile(r'\b([Aa])\(n\)(\s+)(\S+)')
+LETTER_NAMES_WITH_VOWELS = set('AEFHILMNORSX')                # an A, an F, an S: a grade or letter said by its name
+A_BEFORE = ('uni', 'use', 'usu', 'uti', 'ure', 'uro', 'eu', 'one', 'once', 'ewe')    # a university, a one-way...
+AN_BEFORE = ('hour', 'honest', 'honor', 'honour', 'heir')                          # ...an hour
+
+
+# shshd-runtime: "word(s)" / "word(es)" after a number a script fills in (Fall '06's record: `%d Win(s) and %d Loss(es).  You
+# have %d more game(s) to go.`), as the singular for 1 and the plural otherwise (choose_plurals; owner, 2026-11-09). The number may
+# come up to two words before (`3 more game(s)`).
+PLURAL_SLOT = re.compile(r"\b(-?\d+)((?:\s+[A-Za-z']+){0,2}?\s+)([A-Za-z]+)\((s|es)\)")
+
+
+def choose_plurals(text):
+    """`text` with each "N ... word(s)" made "word" when N is 1 and "words" otherwise ("Loss(es)": "Loss" or "Losses")."""
+    return PLURAL_SLOT.sub(lambda m: m.group(1) + m.group(2) + m.group(3) + ('' if m.group(1) in ('1', '-1') else m.group(4)), text)
+
+
+def choose_articles(text):
+    """`text` with each "a(n) word" made "a word" or "an word" by how the word begins; "A(n)" keeps its capital."""
+    def article(match):
+        letter, space, word = match.groups()
+        core = word.strip("\"'(").rstrip("+-.,!?;:)\"'")
+        if not core:
+            return match.group(0)
+        if len(core) == 1 and core.isalpha():
+            an = core.upper() in LETTER_NAMES_WITH_VOWELS
+        else:
+            lower = core.lower()
+            an = (lower[0] in 'aeiou' and not lower.startswith(A_BEFORE)) or lower.startswith(AN_BEFORE)
+        return letter + ('n' if an else '') + space + word
+    return ARTICLE_SLOT.sub(article, text)
 
 
 @dataclass
@@ -75,6 +142,28 @@ class EngineState:
     # Not saved: the HD build's app version when an HD app bundle is imported (Session sets it); switches the
     # few services whose HD handler differs from Android's.
     hd_version = None
+    badge_sounds = None             # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
+    # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
+    # TRANSLATED_ARTICLE_PACKS; Session sets it).
+    choose_articles = False
+    # Not saved: whether a word game of three words, at least one good and one bad, plays (WordGame.three_words: a pack in
+    # TRANSLATED_THREE_WORD_PACKS, the BREW games; Session sets it). Elsewhere it stays the stop it is natively.
+    three_word_games = False
+    # Not saved: whether a choice drops a blank last option, as BREW's menus do (FUN_0000d6a0 adds the part after the last `|` only
+    # when something other than spaces and control characters is left; a pack in TRANSLATED_BREW_MENU_PACKS; Session sets it).
+    # SHS keeps it, blank (FUN_000b04b8).
+    brew_menus = False
+    # Not saved: a translated pack's own portrait picker layouts, by count (TRANSLATED_PICKER_LAYOUTS; Session sets it). Service 78
+    # takes one of those counts even past the native five (the BREW M.A.S.H. packs' ten photos).
+    picker_layouts = None
+    # Not saved: shshd-runtime's switch for New Rules' minigame arena (Session.nr_arena sets it); service 70
+    # selector NR_ARENA_QUERY answers 1 only with it on.
+    nr_arena_enabled = False
+    shs11_seen_this_run = None      # Not saved: the SHS '11 tutorials finished since the app started (Session.shs11_seen_this_run sets it)
+    grids_as_memory = False         # Not saved: shshd-runtime's "Use '11's Memory for Word Grid" (Session.grids_as_memory sets it)
+    cutscenes_enabled = False       # shshd-runtime: service 70 selector CUTSCENE_QUERY (Session.cutscenes)
+    # Not saved: whether service 213 asks before an arena game (Session.skip_arena sets it); else it plays at once.
+    nr_arena_skip = False
     # Not saved: the last link a script asked service 100 to open (a no-op in HD; see dispatch), for the host.
     store_link = ''
     vibration_serial = 0
@@ -116,6 +205,17 @@ class EngineState:
     choice_ms: int = 250
     random48: Random48 = field(default_factory=Random48)
     word_game: WordGame | None = None
+    nr_arena: NRArena | None = None     # shshd-runtime: New Rules' minigame arena panel, while open (nr_arena.py)
+    x360_slot: SlotMachine | None = None        # shshd-runtime: the X360 translations' slot machine (x360_games.py)
+    x360_leash: LeashGame | None = None         # shshd-runtime: and their leash game
+    x360_puzzle: JewelPuzzle | None = None      # shshd-runtime: and their jewel puzzle
+    cutscene: Cutscene | None = None            # shshd-runtime: a storyboard cutscene
+    x360_diss: DissPractice | None = None       # shshd-runtime: and their Diss Practice
+    shs11_memory: MemoryGame | None = None      # shshd-runtime: SHS '11's Memory (shs11_games.py)
+    shs11_tutorial_seen: bool = False           # (per story: see shs11_games.py)
+    shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
+    shs11_reflex_tutorial_seen: bool = False
+    brew_catch: CatchGame | None = None         # shshd-runtime: the BREW games' catch game (brew_catch.py)
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -174,7 +274,11 @@ class EngineState:
         self.background_pan.automatic = True  # 0007e59c resets automatic panning.
         self.dialogue_animation = self.scene_badge = self.faceplace_toast = None
         self.dialogue_history = DialogueHistory()
-        self.word_game = self.word_grid = self.football = None
+        self.word_game = self.word_grid = self.football = self.nr_arena = self.x360_slot = self.x360_leash = None
+        self.x360_puzzle = None
+        self.cutscene = None
+        self.x360_diss = None
+        self.shs11_memory = self.shs11_reflex = self.brew_catch = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -288,8 +392,9 @@ class EngineState:
         change.validate()
         self.numbers[self.number_key(character, 3000)] = asset
         self.numbers[self.number_key(character, 3001)] = count
-        if not settled and change.sound is not None:
-            self.request_sound(change.sound)
+        sound = change.sound if self.badge_sounds is None else badge_sound(change, self.badge_sounds)
+        if not settled and sound is not None:
+            self.request_sound(sound)
         return change
 
     def _alert_for(self, post) -> None:
@@ -300,6 +405,13 @@ class EngineState:
             toast.message = post
         else:
             self.faceplace_toast = FaceplaceToast(post)
+
+    def shs11_tutorial_due(self, flag, kind):
+        """Whether an SHS '11 game opening now shows its tutorial: `shs11_games`' note."""
+        seen = self.shs11_seen_this_run
+        due = kind not in seen if seen is not None else not getattr(self, flag)
+        setattr(self, flag, True)
+        return due
 
     def read_text(self, vm: KiwiVM, reference: int) -> str:
         """FUN_0009f420/0009f258: packed text or a runtime string slot."""
@@ -382,6 +494,101 @@ class EngineState:
             result.append(chr(byte))
         return ''.join(result)
 
+    def _nr_arena_service(self, vm, request, y, args, need, at_least, complete):
+        """New Rules' arena and the New Rules services its minigame library calls (NR_ARENA_SERVICES), as New Rules'
+        engine answers them. The frame wait, the menu and the info box wait for the session. Its text takes the
+        stored substitutions ($keys), as New Rules' own strings do (class_6.method_268)."""
+        arena = self.nr_arena
+        if y == 200:                                            # 50: open (margins, show the score)
+            need(2)
+            self.nr_arena = NRArena.opened(args[0] != 0, args[1] != 0)
+            return EngineAction('arena_entrance', request, False)       # the script waits out the entrance
+        if y == 208:                                            # 29: wait one frame
+            need(0)
+            return EngineAction('arena_frame', request, False)
+        if y == 209:                                            # 5: format into a string slot
+            at_least(2)
+            return complete('format_string', self._nr_format(vm, args))
+        if y == 210:                                            # 9: a menu over the panel; waits for the answer
+            need(3)
+            options = [option for option in self.resolve_text(vm, args[1]).split('|')]
+            return EngineAction('arena_menu', request, False, dict(
+                title=self.resolve_text(vm, args[0]), options=options, selected=max(0, args[2])))
+        if y == 211:                                            # 10: an info box over the panel; waits for OK
+            need(1)
+            return EngineAction('arena_info', request, False, dict(text=self.resolve_text(vm, args[0])))
+        if y == 212:                                            # 32: the build query
+            need(1)
+            return complete('query_build', NR_BUILD.get(args[0], 0), selector=args[0])
+        if y == 213:                                            # this player's: play the arena game, or skip it
+            need(0)
+            if not self.nr_arena_skip:
+                return complete('arena_play', -1)
+            return EngineAction('arena_skip', request, False)
+        if arena is None:
+            raise VMError(f'New Rules arena service {y} without an open arena')
+        if y == 201:                                            # 51: a label
+            need(2)
+            arena.set_label(args[0], None if args[1] == -1 else self.resolve_text(vm, args[1]))
+            return complete('nr_arena_label')
+        if y == 203:                                            # 53: read a property
+            need(1)
+            return complete('nr_arena_get', signed16(arena.get(args[0])))
+        if y == 204:                                            # 54: a slot's item
+            need(1)
+            return complete('nr_arena_get', signed16(arena.item(args[0])))
+        if y == 205:                                            # 55: put an item in a slot
+            need(2)
+            if arena.item_kind == 3 and args[1] >= 0:
+                arena.set_text_item(args[0], self.resolve_text(vm, args[1]))
+            else:
+                arena.set_item(args[0], args[1])
+            return complete('nr_arena_item')
+        # 52 (the selected slot), 56 (three values) and 57 (one value): set a property.
+        if y == 202:
+            need(2)
+            slot, prop, values = -10, args[0], (args[1], -1, -1)
+        elif y == 206:
+            at_least(3)
+            slot, prop = args[0], args[1]
+            values = tuple(args[2 + i] if 2 + i < len(args) else -1 for i in range(3))
+        else:
+            need(3)
+            slot, prop, values = args[0], args[1], (args[2], -1, -1)
+        text = None
+        if prop in (762, 763):
+            text = self.resolve_text(vm, values[0]) if values[0] != -1 else ''
+        elif prop == 747 and values[2] != -1:
+            text = self.resolve_text(vm, values[2])
+        closed = arena.set(slot, prop, *values, text=text)
+        for asset in arena.sounds:                      # the panel's own (time's up)
+            self.request_sound(asset)
+        arena.sounds.clear()
+        if closed:
+            arena.exit_ms = 0                   # New Rules' exit plays before the script goes on (nr_arena.py)
+            return EngineAction('arena_exit', request, False)
+        return complete('nr_arena_set', prop=prop)
+
+    def _nr_format(self, vm, args):
+        """New Rules' 5: ([-k], format, values...) formats into string slot k-1 (slot 0 without a selector) and returns
+        its handle (0x7FF5 + slot), with %d, %s and %c."""
+        slot, at = (-args[0] - 1, 1) if args[0] < 0 else (0, 0)
+        if not 0 <= slot < len(self.dynamic_strings) - 1:
+            raise VMError('Formatting destination is outside the string slots')
+        pattern, position, argument, out = self.read_text(vm, args[at]), 0, at + 1, ''
+        while position < len(pattern):
+            char = pattern[position]
+            if char == '%' and position + 1 < len(pattern) and pattern[position + 1] in 'cds' and argument < len(args):
+                spec, value = pattern[position + 1], args[argument]
+                char = (self.read_text(vm, value) if spec == 's' else str(signed16(value))
+                        if spec == 'd' else chr(value & 0xff))
+                position += 1
+                argument += 1
+            out += char
+            position += 1
+        self.dynamic_strings[slot] = out
+        return 0x7FF5 + slot
+
     def dispatch(self, vm: KiwiVM, *, resource_exists=None, dialogue_override=None) -> EngineAction:
         request = vm.pending
         if request is None or request.kind != StopKind.YIELD:
@@ -433,6 +640,10 @@ class EngineState:
                     argument += 1
                 self.dynamic_strings[10] += char
                 position += 1
+            if self.choose_articles:
+                # shshd-runtime: as service 22's, for an episode made in the Creator, whose `{placeholders}` format here
+                # (presentation `word_forms`; owner, 2026-11-09).
+                self.dynamic_strings[10] = choose_plurals(choose_articles(self.dynamic_strings[10]))
             self.dynamic_strings[slot] = self.dynamic_strings[10]
             return complete('format_string', 0x7ff5 + slot, slot=slot)
         if y in (50, 51):
@@ -651,6 +862,8 @@ class EngineState:
                     index += 1
                 if keep_last:
                     out += pattern[-1]
+                if self.choose_articles:
+                    out = choose_plurals(choose_articles(out))
                 self.write_text(vm, args[0], out)
             return complete('format_into_memory', destination=args[0])
         if y == 26:
@@ -835,6 +1048,8 @@ class EngineState:
                 # FUN_000b04b8 leaves a blank last field when it is whitespace.
                 if options and not options[-1].strip():
                     options[-1] = ''
+                if self.brew_menus and len(options) > 1 and all(ord(c) <= 0x20 for c in options[-1]):
+                    options.pop()                       # shshd-runtime: BREW's menus (Fall '06's math answers end in `|`)
                 character = self.ui_defaults.get(74, -1) if args[5] == -2 else args[5]
                 return EngineAction('choice', request, False, dict(
                     title=title, text=text, options=options, values=list(range(len(options))),
@@ -848,16 +1063,18 @@ class EngineState:
         if y == 78:
             need(3)
             text, count, address = args
-            if not 1 <= count <= 5:
+            layout = (self.picker_layouts or {}).get(count)
+            if layout is None and not 1 <= count <= 5:
                 raise VMError('Character selection requires 1 to 5 character IDs')
             characters = [signed16(vm.read_word(address + i)) for i in range(count)]
             prompt = self.resolve_text(vm, text)
-            self.character_picker = CharacterPicker.start(characters)
+            self.character_picker = CharacterPicker.start(characters, *(() if layout is None else (layout,)))
             return EngineAction('character_picker', request, False, dict(text=prompt))
         if y == 71:
             need(8)
             good, bad = (pipe_list(self.read_text(vm, ref)) for ref in args[2:4])
-            if len(good) < 2 or len(bad) < 3 or args[4] <= 0:
+            three = self.three_word_games and len(good) + len(bad) == 3 and bool(good) and bool(bad)   # shshd-runtime: BREW's menus of three
+            if (len(good) < 2 or len(bad) < 2) and not three or args[4] <= 0:
                 return EngineAction('unhandled_yield', request, False, dict(
                     reason='Unsupported word-game lists or nonpositive duration'))
             game = WordGame(good, bad, args[4], args[7], args[4], args[7])
@@ -876,6 +1093,56 @@ class EngineState:
             return EngineAction('word_game', request, False, dict(
                 title=self.read_text(vm, args[0]), text=self.read_text(vm, args[1]),
                 character_id=args[5], portrait_mode=args[6]))
+        if y in NR_ARENA_SERVICES:
+            return self._nr_arena_service(vm, request, y, args, need, at_least, complete)
+        if y == X360_SLOT:                                      # asked for only where service 70 said it plays
+            need(0)
+            self.x360_slot = SlotMachine()
+            return EngineAction('x360_slot', request, False)
+        if y == X360_LEASH:                                     # (likewise)
+            need(0)
+            self.x360_leash = LeashGame(swap_ms=(2 + self.random.below(4)) * 1000)      # math.random(2,5)
+            return EngineAction('x360_leash', request, False)
+        if y == X360_PUZZLE:                                    # (likewise)
+            need(0)
+            self.x360_puzzle = JewelPuzzle.dealt(self.random)
+            return EngineAction('x360_puzzle', request, False)
+        if y == CUTSCENE:                                       # (likewise); the session reads its spec (`args[0]`)
+            need(1)
+            return EngineAction('cutscene', request, False, dict(spec=args[0]))
+        if y == X360_DISS:                                      # (likewise), its argument: show its tutorial first
+            need(1)
+            self.x360_diss = DissPractice.opened(bool(args[0]))
+            return EngineAction('x360_diss', request, False)
+        if y == SHS11_MEMORY:                                   # (likewise): seconds, target, rounds, their table, the player
+            need(5)
+            rounds = []
+            for k in range(args[2]):
+                cue, word, *numbers = [vm.read_word(args[3] + ROUND_WORDS * k + i) for i in range(ROUND_WORDS)]
+                rounds.append([self.resolve_text(vm, cue), self.read_text(vm, word), *numbers])
+            self.shs11_memory = MemoryGame.opened(rounds, args[0], args[1], tutorial=self.shs11_tutorial_due('shs11_tutorial_seen', MemoryGame.KIND))
+            return EngineAction('shs11_memory', request, False, _shs11_details(args[4]))
+        if y == SHS11_REFLEX:                                   # (likewise)
+            need(5)
+            rounds = [[signed16(vm.read_word(args[3] + REFLEX_ROUND_WORDS * k + i)) for i in range(REFLEX_ROUND_WORDS)]
+                      for k in range(args[2])]
+            self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1],
+                                                  tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
+            return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
+        if y == BREW_CATCH:                                     # (likewise): the kind, target, spawn ms, speed, spread, chance, angle,
+            if len(args) != 12:                                 # player's picture, list of items, table of sizes, sizes in it, and
+                need(11)                                        # (12th, optional) the story's cut-offs, for the skip prompt only
+            count = signed16(vm.read_word(args[8]))
+            if not 0 <= count <= MAX_ITEMS:
+                raise VMError('A catch game has too many kinds of item')
+            items = [tuple(signed16(vm.read_word(args[8] + 1 + ITEM_WORDS * k + i)) for i in range(ITEM_WORDS)) for k in range(count)]
+            sizes = {signed16(vm.read_word(args[9] + 3 * k)): (vm.read_word(args[9] + 3 * k + 1), vm.read_word(args[9] + 3 * k + 2))
+                     for k in range(args[10])}
+            mode, target, interval, speed, spread, chance, angle, sprite = (signed16(v) for v in args[:8])
+            if sprite not in sizes or any(item[1] not in sizes for item in items):
+                raise VMError('A catch game shows a picture with no size')
+            self.brew_catch = CatchGame.opened(mode, target, interval, speed, spread, chance, angle, sprite, items, sizes, self.random)
+            return EngineAction('brew_catch', request, False)
         if y == 3:
             need(3)
             if self.choice_builder is None:

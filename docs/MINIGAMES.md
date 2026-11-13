@@ -4,6 +4,8 @@ Revision: 2026-09-13. Reference: Android SHS 1.0.9, `lib/armeabi/libshs09.so`,
 SHA-256 `b17aa4c71bc46666d414cafae6fac92bbcd755f3dcccd73975cf05f4a119665b`.
 Addresses below are Ghidra virtual addresses with image base `0x10000`.
 The three mini-game families in this dispatcher are services **71, 94, 96**.
+Translated games add their own: [New Rules' arena](NEW_RULES.md), the
+[X360 games](X360.md#minigames) and [SHS '11's](SHS11.md#minigames).
 Their rules run independently of pygame and return results to the original
 KiWi instruction stream. This is an implemented subset of the original engine,
 not a claim of complete episode support or verified pixel/frame equivalence.
@@ -52,6 +54,15 @@ and saves that decision for the current call; resuming it does not prompt
 again. The next minigame gets a new prompt, even in the same scene. Existing
 saves already in play are not interrupted. Both skips remain available from
 the pause menu while that minigame is active and the preference is enabled.
+
+shshd-runtime: where the prompt offers each outcome its story has (word games,
+the BREW catch game, the New Rules arena, the X360 slot machine, SHS '11's
+games), those outcomes are worked out on a worker thread from a copy of the
+session (`Desktop._search_outcomes`). One done within 0.1 s opens the prompt at
+once; a slower one stands in with service 91's loading band (its native 0.4 s
+delay and 0.4 s entrance) until it is ready, the game held as under the prompt.
+Undo's restart, which answers Play, waits for it instead (owner, 2026-11-07:
+M.A.S.H. 3 and 4's catch prompts took 2 s on the g54).
 
 This covers SHS football and word grids, plus the four-option word-selection
 game shared with CoD. The inspected CoD collection contains service-71 calls;
@@ -134,7 +145,9 @@ word_game(
 
 The supported configuration requires at least two positive entries, three
 negative entries and positive duration. Native rejection loops assume those
-list lengths; malformed configurations remain explicit stops here.
+list lengths; malformed configurations remain explicit stops here. This fork
+also takes exactly two negative entries, where the fourth entry is always
+positive: BREW's word games always show two of each ([BREW.md](BREW.md)).
 
 A deal samples one positive index and two distinct negative indices. A random
 bit selects the fourth entry's category; rejection sampling avoids reusing an
@@ -380,6 +393,10 @@ Evidence: dispatcher 96; record builders `000cd014/000cce44/000ccf0c`;
 generation `000cb570/000c536c/000c512c/000c4318`; input `000d08fc/000cf228/000cf35c`;
 scoring `000c3874`; transitions `000d01a4/000cfb30`; tick `000d1124`;
 camera `000cc398/000c7ef8/000c7f98/0004e114`.
+
+### 5.4 As SHS '11's Memory
+
+With **Options → Extras → Use '11's Memory for Word Grid** on (this player's own, off by default), a letter grid plays as SHS '11's Memory instead, and returns the grid's own result. See [SHS11.md](SHS11.md#memory-in-place-of-letter-grids) for which grids qualify. The story can't tell the difference, and a grid with pictures, or one Memory can't hold, stays a grid.
 
 ## 6. Sprite-atlas and glyph-font payload schemas
 

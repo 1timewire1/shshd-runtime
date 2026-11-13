@@ -44,29 +44,51 @@ NATIVE_NOPS = frozenset({
 })
 
 
+def linked_layout(linked: KiwiProgram | None) -> dict:
+    """KiwiVM keyword arguments for a script that runs beside `linked` (or alone): the segment, and the stack that fits
+    above its data, at most SHS's 0x400 words. New Rules' library data ends at 32501, which leaves its engine's own
+    256-word stack."""
+    if linked is None or not linked.previous_flag:
+        return {}
+    data_end = linked.previous_data_count + len(linked.main_words) + linked.gap_count + len(linked.extra_words)
+    return dict(linked=linked, stack_capacity=max(1, min(0x400, 0x7FF5 - data_end)))
+
+
 class KiwiVM:
-    """One standalone script with persistent stack backing and mutable data.
+    """One script with persistent stack backing and mutable data, and optionally a linked second segment.
 
     PC, SP, and FP start at zero (FUN_00055c6c). A, B, the result/count
     register, the data gap, and unused stack cells start unknown: native
     allocation/reset does not establish their contents. Stores initialize
     them. Stack capacity 0x400 comes from FUN_0009ef60/00056f1c.
+
+    `linked` (shshd-runtime) is a segment whose header sets `previous_flag`, such as New Rules' minigame library
+    25200: its code and data sit above its split boundaries (VM_SPEC.md §2.3), so a PC at or above the code boundary
+    runs its instructions, and an address at or above the data boundary (below the stack) is its data. It stays
+    attached, with its data, when the next scene's script loads. New Rules' engine places its 256-word stack right
+    above the library's data (`0x7FF5 - 256`), which `stack_capacity=256` reproduces.
     """
 
-    def __init__(self, program: KiwiProgram, *, stack_capacity: int = 0x400):
+    # shshd-runtime: called every STEP_HOOK_EVERY instructions when set. Only Choice Hints' previews set it (on their own
+    # copies, run on a worker thread), so they can step aside for the thread drawing the frames; a story never has one.
+    step_hook = None
+    STEP_HOOK_EVERY = 1024
+
+    def __init__(self, program: KiwiProgram, *, stack_capacity: int = 0x400, linked: KiwiProgram | None = None):
         if program.previous_flag:
-            raise VMError('linked KiWi segments are not yet executable')
+            raise VMError('a linked KiWi segment runs only beside a primary script')
         if not 0 < stack_capacity < 0x7FF5:
             raise VMError('invalid stack capacity')
         self.program = program
         self.stack_base = 0x7FF5 - stack_capacity
-        self.data: list[int | None] = (
-            [signed16(w) for w in program.main_words]
-            + [None] * program.gap_count
-            + [signed16(w) for w in program.extra_words]
-        )
+        self.data: list[int | None] = self._segment_data(program)
         if len(self.data) > self.stack_base:
             raise VMError('data overlaps the VM stack address range')
+        self.linked: KiwiProgram | None = None
+        self.linked_data: list[int | None] = []
+        self.code_boundary = self.data_boundary = 0x8000        # the native constructor's defaults
+        if linked is not None:
+            self._attach(linked)
         self._stack: list[int | None] = [None] * stack_capacity
         self.pc = self.sp = self.fp = 0
         self.a: int | None = None
@@ -76,6 +98,37 @@ class KiwiVM:
         self.steps_executed = 0
         self.opcode_counts: Counter[int] = Counter()
         self.recent_pcs: deque[int] = deque(maxlen=32)
+
+    @staticmethod
+    def _segment_data(program: KiwiProgram) -> list[int | None]:
+        return ([signed16(w) for w in program.main_words] + [None] * program.gap_count
+                + [signed16(w) for w in program.extra_words])
+
+    def _attach(self, linked: KiwiProgram) -> None:
+        if not linked.previous_flag:
+            raise VMError('a linked segment must set previous_flag')
+        code, data = linked.previous_instruction_count, linked.previous_data_count
+        linked_data = self._segment_data(linked)
+        if len(self.program.instructions) > code:
+            raise VMError('the script overlaps its linked segment\'s code')
+        if len(self.data) > data:
+            raise VMError('the script overlaps its linked segment\'s data')
+        if data + len(linked_data) > self.stack_base:
+            raise VMError('the linked segment\'s data overlaps the VM stack address range')
+        self.linked, self.linked_data = linked, linked_data
+        self.code_boundary, self.data_boundary = code, data
+
+    def instruction_at(self, pc: int):
+        """The instruction at `pc`, the linked segment's above the code boundary; VMError when there is none."""
+        pc = signed16(pc)
+        if self.linked is not None and pc >= self.code_boundary:
+            index = pc - self.code_boundary
+            instructions = self.linked.instructions
+        else:
+            index, instructions = pc, self.program.instructions
+        if not 0 <= index < len(instructions):
+            raise self._error('instruction address out of range')
+        return instructions[index]
 
     def _error(self, message: str) -> VMError:
         return VMError(f'pc={self.pc} sp={self.sp} fp={self.fp}: {message}')
@@ -98,6 +151,11 @@ class KiwiVM:
         address = signed16(address)
         if address >= self.stack_base:
             return self._stack_word(address - self.stack_base)
+        if self.linked is not None and address >= self.data_boundary:
+            index = address - self.data_boundary
+            if index >= len(self.linked_data):
+                raise self._error(f'data address {address} out of range')
+            return self._known(self.linked_data[index], f'data word {address}')
         if not 0 <= address < len(self.data):
             raise self._error(f'data address {address} out of range')
         return self._known(self.data[address], f'data word {address}')
@@ -106,6 +164,8 @@ class KiwiVM:
         address = signed16(address)
         if self.stack_base <= address < self.stack_base + len(self._stack):
             self._stack[address - self.stack_base] = signed16(value)
+        elif self.linked is not None and 0 <= address - self.data_boundary < len(self.linked_data):
+            self.linked_data[address - self.data_boundary] = signed16(value)
         elif 0 <= address < len(self.data):
             self.data[address] = signed16(value)
         else:
@@ -160,6 +220,8 @@ class KiwiVM:
         if self.pending is None or self.pending.kind != StopKind.HALT:
             raise self._error('next script requires a halted VM')
         validated = KiwiVM(program, stack_capacity=len(self._stack))
+        if self.linked is not None:
+            validated._attach(self.linked)      # the new script must fit below it; the segment keeps its data
         self.program, self.data = validated.program, validated.data
         self.pc = self.sp = self.fp = 0
         self.pending = None
@@ -168,16 +230,25 @@ class KiwiVM:
     def snapshot(self) -> dict:
         """Portable state, including popped cells still addressable by scripts."""
         from dataclasses import asdict
-        return dict(pc=self.pc, sp=self.sp, fp=self.fp, a=self.a, b=self.b,
-                    result=self.result, data=list(self.data), stack=list(self._stack),
-                    pending=asdict(self.pending) if self.pending else None,
-                    steps_executed=self.steps_executed,
-                    opcode_counts={str(k): v for k, v in self.opcode_counts.items()},
-                    recent_pcs=list(self.recent_pcs))
+        state = dict(pc=self.pc, sp=self.sp, fp=self.fp, a=self.a, b=self.b,
+                     result=self.result, data=list(self.data), stack=list(self._stack),
+                     pending=asdict(self.pending) if self.pending else None,
+                     steps_executed=self.steps_executed,
+                     opcode_counts={str(k): v for k, v in self.opcode_counts.items()},
+                     recent_pcs=list(self.recent_pcs))
+        if self.linked is not None:
+            state['linked_data'] = list(self.linked_data)
+        return state
+
+    def _code_end(self) -> int:
+        """One past the highest PC this machine can run."""
+        if self.linked is not None:
+            return self.code_boundary + len(self.linked.instructions)
+        return len(self.program.instructions)
 
     @classmethod
-    def from_snapshot(cls, program: KiwiProgram, state: dict):
-        """Restore state against the original program; reject incompatible saves."""
+    def from_snapshot(cls, program: KiwiProgram, state: dict, *, linked: KiwiProgram | None = None):
+        """Restore state against the original program (and its linked segment); reject incompatible saves."""
         def integer(value, low, high):
             if type(value) is not int or not low <= value <= high:
                 raise VMError('Invalid integer in VM snapshot')
@@ -190,13 +261,18 @@ class KiwiVM:
             stack = state['stack']
             if not isinstance(stack, list):
                 raise VMError('Invalid stack in VM snapshot')
-            vm = cls(program, stack_capacity=len(stack))
+            vm = cls(program, stack_capacity=len(stack), linked=linked)
             if (set(state) != set(vm.snapshot()) or not isinstance(state['data'], list)
-                    or len(state['data']) != len(vm.data)):
+                    or len(state['data']) != len(vm.data)
+                    or (linked is not None and (not isinstance(state['linked_data'], list)
+                                                or len(state['linked_data']) != len(vm.linked_data)))):
                 raise VMError('VM snapshot shape does not match the loaded script')
             vm._stack = [word(v) for v in stack]
             vm.data = [word(v) for v in state['data']]
-            vm.pc = integer(state['pc'], 0, len(program.instructions))
+            if linked is not None:
+                vm.linked_data = [word(v) for v in state['linked_data']]
+            code_end = vm._code_end()
+            vm.pc = integer(state['pc'], 0, code_end)
             vm.sp = integer(state['sp'], 0, len(stack))
             vm.fp = integer(state['fp'], 0, len(stack))
             vm.a, vm.b, vm.result = (word(state[k]) for k in ('a', 'b', 'result'))
@@ -208,13 +284,12 @@ class KiwiVM:
             recent = state['recent_pcs']
             if not isinstance(recent, list) or len(recent) > 32:
                 raise VMError('Invalid VM instruction history')
-            vm.recent_pcs = deque((integer(v, 0, len(program.instructions) - 1)
-                                   for v in recent), maxlen=32)
+            vm.recent_pcs = deque((integer(v, 0, code_end - 1) for v in recent), maxlen=32)
             saved = state['pending']
             if saved is not None:
                 kind = StopKind(saved['kind'])
-                pc = integer(saved['pc'], 0, len(program.instructions) - 1)
-                instruction = program.instructions[pc]
+                pc = integer(saved['pc'], 0, code_end - 1)
+                instruction = vm.instruction_at(pc)
                 args = tuple(integer(v, -32768, 32767) for v in saved['args'])
                 vm.pending = VMStop(kind, pc, saved['byte_offset'], saved['yield_id'], args)
                 if set(saved) != {'kind', 'pc', 'byte_offset', 'yield_id', 'args'}:
@@ -245,10 +320,11 @@ class KiwiVM:
             raise ValueError('max_steps must be positive')
         if self.pending is not None:
             return self.pending
+        hook, every = self.step_hook, self.STEP_HOOK_EVERY - 1
         for _ in range(max_steps):
-            if not 0 <= signed16(self.pc) < len(self.program.instructions):
-                raise self._error('instruction address out of range')
-            instruction = self.program.instructions[self.pc]
+            if hook is not None and not self.steps_executed & every:
+                hook()
+            instruction = self.instruction_at(self.pc)
             op = instruction.opcode
             arg = instruction.operand
             next_pc = self.pc + 1
@@ -387,5 +463,5 @@ class KiwiVM:
             self.pc = next_pc & 0xFFFF
             if self.pending is not None:
                 return self.pending
-        instruction = self.program.instructions[self.recent_pcs[-1]]
+        instruction = self.instruction_at(self.recent_pcs[-1])
         return VMStop(StopKind.BUDGET, instruction.pc, instruction.byte_offset)

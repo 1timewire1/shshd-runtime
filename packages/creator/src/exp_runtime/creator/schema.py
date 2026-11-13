@@ -6,7 +6,8 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey'))
+                      'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                      'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
 FIELDS = {
@@ -18,6 +19,7 @@ FIELDS = {
     'input': ('text', 'next'), 'title': ('text', 'next'), 'message': ('text', 'next'),
     'notice': ('text', 'next'), 'scene_label': ('text', 'next'),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
+    'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'), 'brew_catch': ('next',),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
     'text_default': ('text', 'next'), 'expression_default': ('character', 'expression', 'next'),
     'character_art': ('character', 'asset', 'next'), 'character_name': ('character', 'text', 'next'),
@@ -57,7 +59,8 @@ NOTES = {
     'expression_default': 'The expression a character\'s dialogue uses when its expression is -1 (service 5).',
     'character_art': 'Changes a character\'s portrait base (service 72); five consecutive IDs are its expressions.',
     'character_name': 'Renames a character; the name may contain $KEY. capitalize applies the native case rule (49).',
-    'picker': 'Shows 1-5 reusable characters (params.characters) to choose a look from, stores the zero-based index '
+    'picker': 'Shows 1-5 reusable characters (params.characters; up to 10 with the project option big_pickers, SHSHD Runtime only) '
+              'to choose a look from, stores the zero-based index '
               'in params.result and, when character is set, gives that character the chosen look\'s portrait.',
     'vibrate': 'Native vibration (service 82); the desktop plays a buzz.',
     'faceplace': 'SHS HD only. params.action: enable (114, show the wall for this episode), clear (118), name_chosen '
@@ -81,6 +84,34 @@ NOTES = {
               'the returned percentages in params.results. The servers are gone: offline, the player sees a local '
               'receipt, the results stay 0 and the story continues.',
     'random': 'bound must be positive. Stores an actual native random draw in result.',
+    'minigames_available': "shshd-runtime only. Stores in result whether the player plays a translated story's real "
+                           'minigames: 1 where its switch is on, 0 on any other player, which should take a word game.',
+    'cutscene_available': "shshd-runtime only. Stores in result whether the player draws storyboard cutscenes: 1 where it "
+                          'does, 0 on any other player, which should go straight on.',
+    'cutscene': "shshd-runtime only, behind cutscene_available. Plays the storyboard whose JSON spec is resource `spec`, in the "
+                'project or an addon it requires (see CREATOR.md). It waits at the spec\'s hold for a press.',
+    'shs11_memory': "shshd-runtime only, behind minigames_available. SHS '11's Memory: each round shows a cue, then flashes "
+                    'its word (1 to 9 letters) on nine tiles to pick in order. Target above 0; result is 2 at 98% of it or '
+                    'more, 1 above 75%, else 0. Drawn from the HD word game or the shs11 addon. The character is who it shows, '
+                    'if anyone.',
+    'brew_catch': "shshd-runtime only, behind minigames_available; needs the shsbrew add-on. The BREW games' catch game: items fall "
+                  '(kind angled: at `angle` degrees with `chance` percent of them; sideways: from the left with `chance` percent; '
+                  'orbit: round a circle `spread` wide) every interval_ms at `speed`, and the player moves to catch them. Each item '
+                  'is {value, picture, count}; the player and pictures are BREW picture numbers from the add-on (sizes are read '
+                  'from it, or given as {picture: [width, height]}). Result: the score, 0 to target. Branches on it set the skip '
+                  "prompt's stretches.",
+    'shs11_reflex': "shshd-runtime only, behind minigames_available. SHS '11's Reflex: tap the right icons to fill a gauge. "
+                    "right, wrong and skull are pictures in '11's icon sheet; the four odds are out of 100. Result as Memory's. "
+                    'Drawn from the HD word game or the shs11 addon.',
+    'x360_slot': "shshd-runtime only, behind minigames_available. The X360 prototype's slot machine, drawn from its "
+                 'addon; stores the points (the bulbs taken, 0 to 5) in result.',
+    'x360_leash': "shshd-runtime only, behind minigames_available. The X360 prototype's leash game, drawn from its "
+                  'addon; stores in result whether it was won (1) or lost (0).',
+    'x360_puzzle': "shshd-runtime only, behind minigames_available. The X360 prototype's jewel puzzle, drawn from its "
+                   'addon; stores the score in result (0 if skipped).',
+    'x360_diss': "shshd-runtime only, behind minigames_available. The X360 prototype's Diss Practice, drawn from its "
+                 'addon; stores the score in result (over 5000 is its pass; a skip stores a pass or 0). tutorial 1 '
+                 'shows its tutorial screen first.',
     'music': 'Music IDs are 8201–8232 in SHS and 8201–8209 in CoD, or an embedded MP3 (asset_import_audio). '
              'Some SHS IDs select offsets in another audio asset. SHS only: params.then_loop names an embedded MP3/WAV '
              'the track runs into without a gap after playing once (-1 none); other apps play the track alone, '

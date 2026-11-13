@@ -165,3 +165,41 @@ class ExpArchive:
                     raise ContentError(f'Invalid KiWi resource {resource_id}: {error}') from error
         return programs
 
+
+
+def file_index(path) -> dict[int, int]:
+    """shshd-runtime: {resource: record offset} of the CSPUD file at `path`, from its index alone (the start of the file), so a
+    caller wanting one small resource of a large file never reads the rest (`read_file_resource`). Opening Options read every
+    episode whole for its presentation record, which froze a phone for minutes (owner, 2026-11-09)."""
+    with open(path, 'rb') as stream:
+        return _file_index(stream)
+
+
+def _file_index(stream):
+    head = stream.read(9)
+    if len(head) < 9 or head[:5] != b'CSPUD':
+        raise ContentError('Not a CSPUD EXP archive')
+    count, = struct.unpack_from('>I', head, 5)
+    table = stream.read(6 * count)
+    if not count or len(table) != 6 * count:
+        raise ContentError('Invalid EXP index extent')
+    return dict(struct.unpack_from('>HI', table, 6 * i) for i in range(count))
+
+
+def read_file_resource(path, resource_id: int) -> bytes | None:
+    """shshd-runtime: one resource of the CSPUD file at `path`, reading only its index and that record; None if it has none.
+    The record is checked and decoded as ExpArchive does, as the one record of an archive of its own."""
+    with open(path, 'rb') as stream:
+        offset = _file_index(stream).get(resource_id)
+        if offset is None:
+            return None
+        stream.seek(offset)
+        header = stream.read(12)
+        if len(header) != 12:
+            raise ContentError(f'Invalid record offset for resource {resource_id}')
+        stored = struct.unpack_from('>I', header)[0]
+        if stored > MAX_PAYLOAD:
+            raise ContentError(f'Invalid record size for resource {resource_id}')
+        payload = stream.read(stored)
+    single = b'CSPUD' + struct.pack('>I', 1) + struct.pack('>HI', resource_id, 15) + header + payload
+    return ExpArchive(single).read(resource_id)

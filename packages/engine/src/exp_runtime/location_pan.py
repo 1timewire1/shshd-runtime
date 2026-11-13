@@ -14,12 +14,13 @@ FRAME_WIDTH = 768
 DURATION_S = .25
 
 
-def center_x(align, width):
-    """The layer's x position, in points, for an alignment and the image's width in points."""
+def center_x(align, width, frame=FRAME_WIDTH):
+    """The layer's x position, in points, for an alignment and the image's width in points, in a frame `frame` points
+    wide (HD's 768; narrower in a player's taller frame, General's Aspect Ratio)."""
     if align == 3:
-        return FRAME_WIDTH - width / 2
+        return frame - width / 2
     if align == 2:
-        return FRAME_WIDTH / 2
+        return frame / 2
     return width / 2
 
 
@@ -38,14 +39,14 @@ def default_ease(t):
 
 
 class LocationPan:
-    """Animates the layer between alignments; `x(align, width, now_ms)` is the current center x."""
+    """Animates the layer between alignments; `x(align, width, now_ms[, frame])` is the current center x."""
 
     def __init__(self):
         self.target = self.start = None
         self.origin = self.since = 0.
 
-    def x(self, align, width, now_ms):
-        goal = center_x(align, width)
+    def x(self, align, width, now_ms, frame=FRAME_WIDTH):
+        goal = center_x(align, width, frame)
         if self.target is None:
             self.target = self.start = goal
         elif goal != self.target:

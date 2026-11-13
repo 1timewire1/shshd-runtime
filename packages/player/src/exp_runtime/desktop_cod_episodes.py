@@ -30,7 +30,7 @@ from io import BytesIO
 
 from . import graphics as pygame
 
-from .desktop_cod_main import title_layer
+from .desktop_cod_main import title_backdrop
 from .desktop_cod_menu import CodButtons
 from .desktop_episode_list_hd import HdEpisodeList
 from .desktop_episode_picker import BOTTOM_MASK, TOP_MASK, HdEpisodePicker
@@ -103,8 +103,8 @@ class CodPickerStyle(CodButtons):
     def card_image(self):
         return recolor_border(self.bundle_image('popupBackground.png'), BORDER)
 
-    def main_backdrop(self):
-        return title_layer(self.library)
+    def main_backdrop(self, height=1024):
+        return title_backdrop(self.library, height)
 
 
 class CodEpisodePicker(CodPickerStyle, HdEpisodePicker):

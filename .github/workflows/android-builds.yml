@@ -1,0 +1,97 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['master']
+    paths:
+      - 'android/**'
+      - 'packages/**'
+      - 'tools/build_android.py'
+      - '.github/workflows/android-builds.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install native tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf autoconf-archive automake autopoint gettext libtool libltdl-dev pkg-config cmake ninja-build ccache patch zip unzip libffi-dev libssl-dev zlib1g-dev liblzma-dev libbz2-dev
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          python -m pip install -r android/build-requirements.txt uv
+      - name: Check shared runtime
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          uv sync --locked --extra desktop
+          uv run --locked --extra desktop python -m unittest discover -s tests
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: build/android/p4a
+          key: android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt') }}-${{ github.run_id }}
+          restore-keys: |
+            android-native-${{ runner.os }}-${{ hashFiles('android/build-requirements.txt') }}-
+      # The release key (tools/build_android.read_signing), from the repository's secrets: every tester build carries
+      # it, so each installs over the last. Without the secrets (a fork), a debug build with the runner's own key.
+      - name: Release key
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "No release key: building a debug APK"
+            exit 0
+          fi
+          umask 077
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/signing/release.jks"
+          printf 'keystore=release.jks\nalias=%s\nstore_password=%s\nkey_password=%s\n' \
+            "$KEY_ALIAS" "$STORE_PASSWORD" "$KEY_PASSWORD" > "$RUNNER_TEMP/signing/signing.properties"
+          echo "args=--release --signing $RUNNER_TEMP/signing/signing.properties" >> "$GITHUB_OUTPUT"
+      - name: Build APK
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: python tools/build_android.py --build ${{ steps.signing.outputs.args }}
+      - name: Remove release key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled()
+        with:
+          path: build/android/p4a
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shshd-runtime-android
+          path: |
+            dist/android/*.apk
+            dist/android/*.sha256
+            build/android/source/source-manifest.json
+          if-no-files-found: error
+          retention-days: 7

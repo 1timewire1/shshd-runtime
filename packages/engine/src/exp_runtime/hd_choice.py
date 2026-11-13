@@ -14,6 +14,7 @@ panel, decompiled".
   own). The description widget is 65 (node 4): text height + its 20-point delta, plus 20 points when there is no
   character; with a portrait the text is measured with 1, 2 then 3 of ARR_LINE_OFFSETS_MENU_LEFT/RIGHT until it
   fits that many lines. Rows are 88 points each, dropped from the computation while the panel exceeds 964 points.
+  (shshd-runtime: a label past two lines makes its row taller; see hd_choice_page.)
   The footer is widget 3, or 22 when timed (its score capsule, node 13, hidden). The panel is centred,
   top = (1024 - total) / 2, and only then is a portrait's description raised to 136 points.
 - `drawSelf` (000504e4): header, description widget, a separator at the description's bottom ((179,179,179), 6
@@ -34,6 +35,9 @@ from .ui_assets import Rect
 PANEL_X, PANEL_WIDTH = 104, 560
 ROW_HEIGHT = 88
 PANEL_LIMIT = 964
+# shshd-runtime: the HD bottom bar's band top in points: its 72-unit layer at the frame's foot, the band 48 units down
+# (desktop_dialogue.bottom_bar_layer), at 1024 / 480 points a unit.
+HD_BAR_TOP = int((480 - 72 + 48) * 1024 / 480)
 TABLE_INSET = 6
 LABEL_PADDING = (24, 12)
 HEADER_NO_PORTRAIT, HEADER_LEFT, HEADER_RIGHT = 8, 7, 16
@@ -100,6 +104,10 @@ class PanelGeometry:
     effect_rise: int = 30
     running_man: tuple = (28, 5, .07)
     running_drop: int = 1
+    # shshd-runtime: where the bottom bar's band starts, in points (0: no check). The panel never reaches past it: rows that
+    # would scroll into view instead (owner, 2026-11-08: a Fall '06 menu's last option ran under the bar). Native lets a
+    # panel at its limit (PANEL_LIMIT, centred) end 22 points into the bar.
+    bar_top: int = 0
 
     def units(self, x, y):
         """Points to column units."""
@@ -108,7 +116,8 @@ class PanelGeometry:
 
 HD_GEOMETRY = PanelGeometry(2, COLUMN, 1024, PANEL_X, PANEL_WIDTH, ROW_HEIGHT, PANEL_LIMIT, TABLE_INSET, LABEL_PADDING,
                             PORTRAIT_DESCRIPTION_MINIMUM, NO_PORTRAIT_EXTRA, MENU_LINE_OFFSETS, TITLE_LINE_OFFSETS,
-                            (36, 100), 74, 694, 256, 10, TIMER_CENTER, TIMER_SIZE, -600)
+                            (36, 100), 74, 694, 256, 10, TIMER_CENTER, TIMER_SIZE, -600,
+                            bar_top=HD_BAR_TOP)
 # Cause of Death: setMetrics(20, 0, 280, ..); 44-point rows; the panel kept within 450 points and centred in 480; a
 # portrait's description raised to 68; 10 more without a character; ARR_LINE_OFFSETS_MENU_LEFT {95; 95,85; 95,85,65}
 # and ARR_TITLE_LINE_OFFSETS_LEFT/RIGHT {0,20} / {0,5} (read from the binary); labels inset 12 x 6; the box line 18 or
@@ -267,9 +276,34 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     footer_height = bank.layouts[footer].height
     options = [(index, label) for index, (label, enabled) in enumerate(zip(details['options'], details['enabled']))
                if enabled]
-    rows_height = len(options) * g.row_height
-    while rows_height and header_height + rows_height + footer_height + description_height > g.panel_limit:
-        rows_height -= g.row_height
+    table_x, _ = g.units(g.panel_x + g.table_inset, 0)
+    table_width = (g.panel_width - 2 * g.table_inset) / d
+    hx, vy = g.label_padding
+    label_width = table_width - 2 * hx / d
+    # shshd-runtime: a label that wraps past two lines gets a taller row, one option line more for each (a translated
+    # story's long option, BREW's Male Cheerleader; owner, 2026-11-07). Native rows are all 88 points, whatever the
+    # label; a label of one or two lines keeps exactly that.
+    pitch = round((option.cap + option.gap) * d)
+    heights = []
+    for _, label in options:
+        lines = len(text_in_region(option, label, Rect(0, 0, label_width, g.row_height / d), 0x19, None, (), d)[0].lines)
+        heights.append(g.row_height + max(0, lines - 2) * pitch)
+    rows_height, shown = sum(heights), len(heights)
+    # shshd-runtime: the player's own prompts may ask for more room than the native limit (details' panel_limit: a skip
+    # prompt's page of seven rows under its description, desktop.Desktop._open_prompt).
+    limit = max(g.panel_limit, details.get('panel_limit', 0))
+    # shshd-runtime: the description as it will be drawn (a portrait's is raised to its minimum below), and the panel's foot
+    # kept above the bottom bar (g.bar_top): it is centred on the height without that minimum, as native, then drawn with it.
+    drawn = max(description_height, g.description_minimum) if has_portrait else description_height
+
+    def overflows(rows):
+        total = header_height + rows + footer_height + description_height
+        if total > limit:
+            return True
+        return bool(g.bar_top) and int((g.screen_height - total) / 2) + total - description_height + drawn > g.bar_top
+    while rows_height and overflows(rows_height):
+        shown -= 1
+        rows_height -= heights[shown]
     total = header_height + rows_height + footer_height + description_height
     top = int((g.screen_height - total) / 2)
     if has_portrait and description_height < g.description_minimum:
@@ -291,15 +325,13 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
         description, text, Rect(x, y, rw / d, rh / d), 0x19 if has_portrait else 0x1a, color, offsets, d)
 
     rows = []
-    table_x, _ = g.units(g.panel_x + g.table_inset, 0)
-    table_width = (g.panel_width - 2 * g.table_inset) / d
-    for position, (index, label) in enumerate(options):
-        cell_top = rows_top + position * g.row_height
+    cell_top = rows_top
+    for position, ((index, label), row_height) in enumerate(zip(options, heights)):
         _, cell_y = g.units(0, cell_top)
-        hx, vy = g.label_padding
-        region_rect = Rect(table_x + hx / d, cell_y + vy / d, table_width - 2 * hx / d, (g.row_height - 2 * vy) / d)
+        region_rect = Rect(table_x + hx / d, cell_y + vy / d, label_width, (row_height - 2 * vy) / d)
         layout, origin = text_in_region(option, label, region_rect, 0x19, option_color, (), d)
-        rows.append(HdRow(index, position, Rect(table_x, cell_y, table_width, g.row_height / d), layout, origin))
+        rows.append(HdRow(index, position, Rect(table_x, cell_y, table_width, row_height / d), layout, origin))
+        cell_top += row_height
     _, table_y = g.units(0, rows_top)
     table = Rect(table_x, table_y, table_width, rows_height / d)
 
@@ -320,7 +352,7 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     return HdChoicePage(theme, top, header, header_height, tall, description_height, rows_top, rows_height,
                         footer, footer_top, footer_height, title_font, title_layout, title_origin,
                         description_layout, description_origin, description_font, tuple(rows), portrait, clip,
-                        max(0, (len(options) * g.row_height - rows_height) / d), table, timer,
+                        max(0, (sum(heights) - rows_height) / d), table, timer,
                         tuple(argb(c) for c in ROW_COLORS.get(theme, ROW_COLORS[0])), scored, geometry=g)
 
 

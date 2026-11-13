@@ -3,13 +3,14 @@ import importlib.util
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+import re
 import shutil
 import struct
 import sys
 import unittest
 
 from exp_runtime.decode.bytecode import OPERAND_OPCODES, decode_program
-from exp_runtime.vm import KiwiVM, StopKind
+from exp_runtime.vm import KiwiVM, StopKind, linked_layout as nr_linked_layout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translate'))
 from kiwi_rewrite import Rewriter  # noqa: E402
@@ -142,6 +143,162 @@ class NewRulesShimTests(unittest.TestCase):
                 borrowed_themes=borrowed_themes or {}))
         return rewriter.finish(), report
 
+    def test_the_minigame_library_keeps_its_place_and_calls_the_arena_services(self):
+        # New Rules' library 25200 is a linked segment (VM_SPEC.md 2.3): its calls are renamed (arena 50-57, the frame
+        # wait 29, formats 5... to 200-212; random and globals to SHS's), and nothing moves.
+        from test_vm_linked import linked
+        nr = self.nr
+        library = linked((0x1A, 3), call(6, 1), (0x1A, 707), call(53, 1), call(29, 0), (0x1A, 1900), call(16, 1), 0x43,
+                         words=(1, 2), data_boundary=50, code_boundary=100)
+        out = nr.translate_library(library)
+        self.assertEqual((out.previous_instruction_count, out.previous_data_count), (100, 50))
+        self.assertEqual(out.instructions[0].pc, 100)
+        self.assertEqual([i.operand >> 8 for i in out.instructions if i.opcode == 0x1f], [27, 203, 208, 55])
+        with self.assertRaisesRegex(nr.TranslateError, 'service 48'):
+            nr.translate_library(linked(call(48, 0), 0x43, data_boundary=50, code_boundary=100))
+        with self.assertRaisesRegex(Exception, 'appended'):
+            Rewriter(library).words([1])                    # a linked segment can't grow
+
+    def test_the_librarys_sound_hooks_play_new_rules_tracks_with_the_addons_music(self):
+        # The library's games call its empty sound hooks where the downloads' copies play tracks: the play hook with
+        # a sound effect's index (13, right; 1, wrong: 0x5B pushes 1) and the game-music hook. With the addon's music
+        # the hooks play them (79 / 80 at MUSIC_BASE + index). The library's code already reaches the KiWi limit, so
+        # the shims overwrite a function nothing calls (its room); every other instruction stays where it was.
+        from unittest.mock import patch
+        from test_vm_linked import linked
+        nr = self.nr
+        base = nr.LIBRARY_PLAY
+        assert nr.LIBRARY_GAME_MUSIC == base + 4
+        stub = (0x48, 0x4A, 0x22, 0x43)
+        game, room = base + 8, (base + 19, base + 39)
+        source = (*stub, *stub, (0x1A, 13), 0x42, (0x29, base), 0x15, 0x5B, 0x42, (0x29, base), 0x15,
+                  0x42, (0x29, base + 4), 0x43, *(0x43,) * 20, 0x43)
+        library = linked(*source, words=(0,), data_boundary=50, code_boundary=base)
+        story = program(0x42, (0x29, game), 0x33)
+
+        def played(segment):
+            vm = KiwiVM(story, **nr_linked_layout(segment))
+            seen = []
+            while (stop := vm.run()).kind == StopKind.YIELD:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        def code(instructions):
+            return [(i.pc, i.opcode, i.operand) for i in instructions]
+        with patch.object(nr, 'LIBRARY_ROOM', (room,)):
+            out = nr.translate_library(library, music=True)
+            self.assertEqual(played(out), [(79, (nr.MUSIC_BASE + 13,)), (79, (nr.MUSIC_BASE + 1,)),
+                                           (80, (nr.MUSIC_BASE + nr.GAME_MUSIC_TRACK, 0))])
+            self.assertEqual(len(out.instructions), len(library.instructions))
+            self.assertEqual([out.instructions[0].opcode, out.instructions[4].opcode], [0x29, 0x29])
+            self.assertEqual(code(out.instructions[8:19]), code(library.instructions[8:19]))
+            self.assertEqual(code(out.instructions[39:]), code(library.instructions[39:]))
+            self.assertEqual(played(nr.translate_library(library)), [])       # no music in the addon: still empty
+            music = linked(*source[:12], (0x1A, 8), *source[13:], words=(0,), data_boundary=50, code_boundary=base)
+            with self.assertRaisesRegex(nr.TranslateError, 'track 8'):
+                nr.translate_library(music, music=True)                       # a music track would need 80
+
+    def test_arena_additions_find_their_code_by_its_shape_and_run_before_it(self):
+        # A download's copy of Rhythm (its good-note branch, entered by the jump at 0) and of Rhyme (its wrong answer,
+        # entered at 13): each site is found by its code's shape, addresses aside, and its addition runs first, the
+        # right jingle (79) and the shake (202 with SHAKE), then the code that was there (52: 708 = 1 or 2).
+        nr = self.nr
+        rhythm = [(0x29, 2), (0x28, 73), (0x1A, 708), 0x5B, (0x1F, 0x3402), 0x62, (0x40, 5), 0x3E, 0x15, (0x40, 6),
+                  (0x1A, 1500), 0x53, 0x33]
+        rhyme = [(0x29, 16), 0x15, (0x28, 19), (0x1A, 708), (0x1A, 2), (0x1F, 0x3402), 0x5B, 0x42, (0x29, 40), 0x15,
+                 0x61, (0x1A, 4000), 0x3E, 0x33]
+        source = program(*rhythm, *rhyme, words=(0,) * 8)
+        rewriter = Rewriter(source, zero_gap=True)
+        made = nr.arena_additions(rewriter, source, music=True)
+        self.assertEqual(made, [('rhythm good note', 2), ('rhyme wrong answer', 16)])
+        out = rewriter.finish()
+        self.assertEqual(len([i for i in out.instructions if i.pc < len(source.instructions)]),
+                         len(source.instructions))
+
+        def first_calls(start):
+            vm = KiwiVM(out)
+            vm.pc = start
+            seen = []
+            while len(seen) < 2 and (stop := vm.run()).kind == StopKind.YIELD:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(0)
+            return seen
+        self.assertEqual(first_calls(0), [(79, (nr.MUSIC_BASE + 13,)), (52, (708, 1))])
+        from exp_runtime.nr_arena import SHAKE
+        self.assertEqual(first_calls(13), [(202, (SHAKE, nr.ARENA_SHAKE_MS)), (52, (708, 2))])
+        self.assertEqual([name for name, _ in nr.arena_additions(Rewriter(source), source, music=False)],
+                         ['rhyme wrong answer'])                    # no music: the shake alone
+
+    def test_a_library_call_enters_the_librarys_own_game_where_the_player_has_the_arena(self):
+        # The story calls the game at 100 with two arguments; the library leaves 42 in B. With the arena (70(200)
+        # answers 1) the shim asks whether to skip the game (213: -1 plays it), then drops its frame and jumps there,
+        # so the story reads the library's own result; a skip's answer is the result instead. Without the arena, the
+        # word game plays as before.
+        from test_vm_linked import linked
+        nr = self.nr
+        library = linked((0x1A, 42), 0x04, 0x43, data_boundary=50, code_boundary=100)
+        story = program((0x1A, 7), (0x1A, 0), 0x42, (0x29, 100), (0x19, 2), 0x08, (0x1F, 0x0D01), 0x33,
+                        words=text_words('intro'))
+        rewriter = Rewriter(story, zero_gap=True)
+        for pc, entry, argc in nr.library_calls(story):
+            rewriter.replace_call(pc, ('library', 'rhythm', 0), argc,
+                                  lambda s, entry=entry: nr.library_game(s, 'rhythm', 0, None, True, False, entry))
+        out = rewriter.finish()
+
+        def play(arena, skip=-1):
+            vm = KiwiVM(out, **nr_linked_layout(library))
+            stop = vm.run()
+            self.assertEqual((stop.yield_id, stop.args), (70, (nr.ARENA_QUERY,)))
+            vm.resume(arena)
+            seen = []
+            while (stop := vm.run()).kind == StopKind.YIELD and len(seen) < 20:
+                seen.append((stop.yield_id, stop.args))
+                vm.resume(skip if stop.yield_id == nr.ARENA_SKIP else 0)
+            return seen
+        self.assertEqual(play(1), [(nr.ARENA_SKIP, ()), (13, (42,))])
+        self.assertEqual(play(1, skip=5), [(nr.ARENA_SKIP, ()), (13, (5,))])     # skipped: the story reads 5
+        self.assertIn(71, [service for service, _ in play(0)])
+
+    def test_a_downloads_arena_round_is_found_and_its_platform_query_asks_the_player(self):
+        # The download's own arena game (the function at 9 calls a helper at 16 that waits a frame, 29, then opens the
+        # panel, 50) is renamed to the player's arena services; its platform query (32(1)) before the call to the game
+        # answers 2 where the player has the arena, else 1. A query elsewhere still answers 1. The story's call into the
+        # game first asks whether to skip it (213): -1 plays it; a result skips it, read from B.
+        nr = self.nr
+        source = program((0x1A, 1), call(32, 1), 0x42, (0x29, 9), 0x33,                       # 0-4: the story
+                         (0x1A, 1), call(32, 1), 0x33, 0x33,                                    # 5-8: another query
+                         0x48, 0x4A, 0x42, (0x29, 16), call(50, 0), 0x22, 0x43,                 # 9-15: the game
+                         call(29, 0), 0x43)
+        pcs, guards = nr.arena_code(source)
+        self.assertEqual(guards, {1})
+        self.assertEqual(nr.arena_calls(source), {3: 9})
+        self.assertTrue({13, 16} <= pcs and not {1, 6} & pcs)
+        rewriter = Rewriter(source, zero_gap=True)
+        rewriter.replace_call(3, ('arena entry', 9), 0, lambda s: nr.arena_entry(s, 9))
+        for pc, service, argc in rewriter.calls():
+            if pc in pcs and service in nr.ARENA_SERVICES:
+                rewriter.rename(pc, nr.ARENA_SERVICES[service])
+            elif service == 32:
+                nr.build_query(rewriter, pc, argc, dict(keyboard_guards=set(), arena_guards=guards))
+        out = rewriter.finish()
+        services = [i.operand >> 8 for i in out.instructions if i.opcode == 0x1f]
+        self.assertIn(200, services)
+        self.assertIn(208, services)
+        self.assertIn(70, services)
+        vm = KiwiVM(out)
+        stop = vm.run()
+        self.assertEqual((stop.yield_id, stop.args), (70, (nr.ARENA_QUERY,)))
+        vm.resume(1)                                                # the query answers 2: the game plays
+        self.assertEqual(vm.run().yield_id, nr.ARENA_SKIP)
+        vm.resume(-1)
+        self.assertEqual(vm.run().yield_id, 208)
+        vm.resume(0)
+        self.assertEqual(vm.run().yield_id, 200)
+        vm = KiwiVM(out)
+        vm.run(); vm.resume(1)
+        vm.run(); vm.resume(4)                                      # skipped with 4
+        self.assertEqual((vm.run().kind, vm.b), (StopKind.HALT, 4))
+
     def test_king_of_diss_lite_borrows_the_full_storys_expressions_and_crowd_colour(self):
         # Lite's 40 has no expression word and its crowd lists the offscreen group (gray); a line the full story also
         # has takes its expression (Hector standing in for Kim, whom Lite leaves out), and its crowd the full colour.
@@ -248,6 +405,11 @@ class NewRulesShimTests(unittest.TestCase):
         episode = nr.Episode(9, 'Test', {25001: source})
         self.assertEqual(nr.used_scenes(episode, {(25001, pc)}), set())         # a listed card needs no strip
 
+    def test_the_built_in_stories_without_a_card_get_the_owners(self):
+        # Owner, 2026-11-11: Dancing Queen takes the smartphone Homecoming Queen's card with its own name; King of Diss, bank 1090
+        self.assertEqual(self.nr.ADDED_TITLE_CARDS, {101: ('Dancing Queen', 'Meet the new girl...', 1108),
+                                                     1: ('King of Diss', '', 1090)})
+
     def test_no_transition_falls_just_before_a_game(self):
         # SHS 16 shows its transition when the next panel ends: one queued just before a panel that a game follows
         # would fall between them, so that engine-mode-11 call is dropped.
@@ -263,11 +425,37 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertIn((16, (20,)), yields(kept))
         self.assertNotIn((16, (20,)), yields(dropped))
 
+    def test_a_library_games_word_goals_answer_the_storys_grade_target(self):
+        # The story's target is the call's first argument, and it reads B against it: the shim leaves that target once
+        # the hits are enough, one short of it otherwise (docs/NEW_RULES.md).
+        nr = self.nr
+
+        def result(kind, index, target, hits):
+            story = program((0x1A, target), *[(0x1A, 0)] * 7, 0x42, (0x29, 100), (0x19, 8), 0x08, (0x1F, 0x0D01), 0x33,
+                            words=text_words('intro'))
+            rewriter = Rewriter(story, zero_gap=True)
+            for pc, _, argc in nr.library_calls(story):
+                rewriter.replace_call(pc, 'game', argc, lambda s: nr.library_game(s, kind, index, None, False))
+            seen = yields(rewriter.finish(), [hits])
+            self.assertEqual(seen[0][0], 71)
+            return next(args[0] for service, args in seen if service == 13)
+
+        for target, hits in ((3, 8), (4, 10), (5, 13), (6, 16), (7, 19), (8, 19), (9, 19), (10, 19)):   # level + 3, capped
+            self.assertEqual(result('rhythm', 1, target, hits), target)
+            self.assertEqual(result('rhythm', 1, target, hits - 1), target - 1)
+            self.assertEqual(result('rhythm', 1, target, 32767), target)                                # a skip's win
+            self.assertEqual(result('rhythm', 1, target, 0), target - 1)                                # and its loss
+        self.assertEqual(result('rhythm', 0, 6, 10), 6)                                                 # first play
+        self.assertEqual(result('rhythm', 0, 6, 9), 5)
+        for kind, target in (('beat boxing', 7), ('dance steps', 5), ('dj fever', 3), ('dj fever', 7)):
+            self.assertEqual(result(kind, 0, target, 9), target)
+            self.assertEqual(result(kind, 0, target, 8), target - 1)
+
     def test_the_sequence_games_show_their_own_description(self):
         nr = self.nr
-        source = program(0x42, (0x29, 9999), 0x08, 0x33)
+        source = program((0x1A, 7), 0x42, (0x29, 9999), (0x19, 1), 0x08, 0x33)
         rewriter = Rewriter(source)
-        rewriter.replace_call(1, 'beat', 0, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
+        rewriter.replace_call(2, 'beat', 1, lambda s: nr.library_game(s, 'beat boxing', 0, None, player=False))
         result = rewriter.finish()
         game = next(args for service, args in yields(result) if service == 71)
         self.assertEqual(game[1], rewriter.strings[nr.GAME_DESCRIPTIONS['beat boxing']])   # not the call's argument
@@ -589,6 +777,23 @@ class NewRulesShimTests(unittest.TestCase):
         source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
         self.assertEqual(yields(self.nr.expand_streams(source, library_data=29396)), [(30, (0,))])
 
+    def test_library_reads_stay_where_the_library_runs_beside_the_story(self):
+        # An arena build: the dance steps pass the library's own tables (32426, 32423, 32424) to its sequences game.
+        source = program((0x40, 30000), call(30, 1), 0x33, words=[0])
+        kept = self.nr.expand_streams(source)
+        self.assertEqual((kept.instructions[0].opcode, kept.instructions[0].operand), (0x40, 30000))
+
+    def test_the_arena_test_menu_needs_the_arena_and_quits(self):
+        import nr_arena_test
+        rewriter = Rewriter(program(0x33))
+        rewriter.prologue(nr_arena_test.menu)
+        menu = rewriter.finish()
+        # Without the arena (70(200) = 0): a line saying so, then the episode ends (7).
+        self.assertEqual([service for service, _ in yields(menu, [0])], [70, 13, 7])
+        # With it: the first menu (2, three options, 4), whose Quit ends the episode.
+        quit = yields(menu, [1, 0, 0, 0, 0, nr_arena_test.QUIT])
+        self.assertEqual([service for service, _ in quit], [70, 2, 3, 3, 3, 4, 7])
+
     def test_a_speed_diss_is_timed_rhyme_choices_until_its_hits_or_misses_run_out(self):
         # The story calls the library (SAVE_RETURN + JUMP past its code) and reads B; here it shows B with 30.
         source = program(0x42, (0x29, 9999), 0x08, call(30, 1), 0x33)
@@ -745,6 +950,19 @@ class CasingTests(unittest.TestCase):
             self.assertEqual(casing.strings(replace(source, main_words=cased))[0][1], 'Zoe tries to catch Sam, but...')
 
 
+@unittest.skipUnless(HAS_PIL, 'Pillow is not installed')
+class ArenaSkinTests(unittest.TestCase):
+    def test_a_new_rules_font_reads_its_metrics_and_glyphs(self):
+        import nr_arena_art
+        # space 8, gap 1, track -2, two characters (A, B) 12 high; two colours; A is 2 x 1 (clear, red), B empty.
+        data = (bytes([8, 1, 0xFE]) + struct.pack('>h', 2) + bytes([12]) + b'AB' + struct.pack('>h', 2)
+                + bytes([0, 0, 0, 255, 0, 0]) + struct.pack('>h', 2) + bytes([2, 1, 0, 1, 0]))
+        font = nr_arena_art.read_font(data)
+        self.assertEqual((font['space'], font['gap'], font['track'], font['height']), (8, 1, -2, 12))
+        self.assertEqual(sorted(font['glyphs']), [ord('A')])
+        self.assertEqual(list(font['glyphs'][ord('A')].getdata()), [(0, 0, 0, 0), (255, 0, 0, 255)])
+
+
 @unittest.skipUnless(HAS_NUMPY, 'tools/translate/midi_render.py needs numpy')
 class MidiTests(unittest.TestCase):
     def test_notes_and_tempo(self):
@@ -769,6 +987,1000 @@ class MidiTests(unittest.TestCase):
         self.assertLess(len(once), int((0.5 + midi_render.JAVA_TAIL) * midi_render.RATE))   # silence cut
         self.assertAlmostEqual(float(np.abs(once).max()), 0.89, places=4)
         self.assertEqual(len(midi_render.render_java(data, loop=True)), midi_render.RATE // 2)
+
+
+class NovelPatchTests(unittest.TestCase):
+    """novel_patch on an authored two-line script: new words, a removed line and a new scene around the rest."""
+    chapters = {1: ['', 'CHAPTER ONE', '“Hello there,” she said, “old friend—really.” And she left.',
+                    '“*One.* Two. Three.”', '“Amir,” he said. “Is here.”']}
+
+    def script(self):
+        first, second, third = text_words('Keep me'), text_words('Change me'), text_words('Drop me')
+        words = first + second + third
+        return program((0x1A, 0), (0x1B, 0x0102), call(13, 3),
+                       (0x1A, len(first)), (0x1B, 0x0304), call(13, 3),
+                       (0x1A, 32), (0x1A, len(first) + len(second)), 0x5A, call(65, 3), 0x33, words=words)
+
+    def patched(self, ops, renames=None):
+        from exp_runtime.exp import ExpArchive, Metadata, encode_exp
+        from novel_patch import apply
+        exp = encode_exp({1: Metadata(9, 1, ('T',) * 5).to_bytes(), 25001: self.script().to_bytes()})
+        data, _ = apply(dict(ops=ops, pack_id=31500, title='T (Extended)', cast={'Emily': 7},
+                             renames=renames or {}), exp, self.chapters)
+        archive = ExpArchive(data)
+        self.assertEqual((archive.metadata().pack_id, archive.metadata().titles[0]), (31500, 'T (Extended)'))
+        return decode_program(archive.read(25001))
+
+    @staticmethod
+    def said(prog):
+        memory = list(prog.main_words) + [0] * prog.gap_count + list(prog.extra_words)
+        lines = []
+        for service, args in yields(prog):
+            address = args[0] if service == 13 else args[1] if service == 65 else None
+            if address is None:
+                lines.append(service)
+                continue
+            text = b''
+            while memory[address]:
+                text += struct.pack('>H', memory[address])
+                address += 1
+                if not memory[address - 1] & 255:
+                    break
+            lines.append(text.rstrip(b'\0').decode('latin-1'))
+        return lines
+
+    def test_house_style_joins_quotations_at_the_tag(self):
+        from novel_patch import reference
+        self.assertEqual(reference({'ch': 1, 'p': 2}, self.chapters, {}), 'Hello there, old friend... Really.')
+        self.assertEqual(reference({'ch': 1, 'p': 3, 's': [0, 2]}, self.chapters, {}), '`One.` Two.')
+        self.assertEqual(reference({'ch': 1, 'p': 4, 'join': '...'}, self.chapters, {'Amir': 'Dex'}), 'Dex... Is here.')
+
+    def test_long_text_splits_at_sentences(self):
+        from novel_patch import LONGEST_LINE, split_long
+        lines = split_long('A long sentence goes here. ' * 12)
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(all(len(line) <= LONGEST_LINE for line in lines))
+
+    def test_patch_keeps_everything_it_does_not_name(self):
+        prog = self.patched([
+            {'op': 'replace', 'find': 'Change me', 'text': {'own': 'Changed'}},
+            {'op': 'remove', 'find': 'Drop me'},
+            {'op': 'before', 'find': 'Change me', 'do': [
+                {'bg': 1087}, {'say': 'Emily', 'expr': 2, 'text': {'ch': 1, 'p': 3}}, {'music': 8223}]},
+            {'op': 'after', 'find': 'Keep me', 'do': [{'narrate': {'own': 'Own words'}}]}])
+        self.assertEqual(self.said(prog), ['Keep me', 'Own words', 11, '`One.` Two. Three.', 80, 'Changed'])
+
+    def test_a_prefix_must_name_one_place(self):
+        from novel_patch import PatchError
+        with self.assertRaises(PatchError):
+            self.patched([{'op': 'remove', 'find': 'Nothing like this'}])
+
+
+@unittest.skipUnless(importlib.util.find_spec('PIL'), 'needs Pillow')
+class BrewShimTests(unittest.TestCase):
+    """brew.py's shims on authored scripts, run against a small host that keeps SHS's numbers."""
+
+    def context(self, rewriter, looks=(), player=True):
+        return self.brew.script_context(rewriter, 25001, dict(looks), player, rewriter.program)
+
+    def setUp(self):
+        import brew
+        self.brew = brew
+
+    def test_a_title_card_shows_the_owners_pick_for_its_location_or_story(self):
+        # CARD_BANK by the strip it opens on (location index, sky), else CARD_BY_TITLE; an add-on picture only once it has one
+        brew = self.brew
+        strip = lambda index, sky: brew.BACKGROUND_BASE + brew.SKY_MODES * index + sky
+        self.assertEqual(brew.title_card(strip(44, 0), 'Any', {}), 1030)
+        self.assertEqual(brew.title_card(strip(21, 1), 'Any', {}), 1133)
+        self.assertEqual(brew.title_card(strip(21, 2), 'Any', {}), strip(21, 2))          # no pick: the strip itself
+        self.assertEqual(brew.title_card(29012, 'Euro Trashed', {}), 1033)
+        self.assertEqual(brew.title_card(-1, brew.SEASON_TITLE, {}), 1108)
+        self.assertEqual(brew.title_card(-1, 'Any', {}), -1)
+        self.assertEqual(brew.title_card(29000, 'Theme Park', {}), 29000)
+        self.assertEqual(brew.title_card(29000, 'Theme Park', {'card_pictures': {'theme_park': 26980}}), 26980)
+        self.assertEqual(brew.CARD_PICTURES['theme_park'][0], 26980)
+
+    def test_a_date_card_shows_the_pick_for_the_scene_its_day_opens_on(self):
+        # Owner, 2026-11-11: an '07 story's date cards each show the pick for their day's first scene (day_pictures finds them)
+        brew = self.brew
+        strip = lambda index, sky: brew.BACKGROUND_BASE + brew.SKY_MODES * index + sky
+        self.assertEqual(brew.scene_card(strip(64, 0)), 1120)
+        self.assertEqual(brew.scene_card(29015), 1027)
+        self.assertIsNone(brew.scene_card(strip(21, 2)))
+        self.assertEqual(brew.title_card(29003, 'French Connection', {}), 1114)       # an own picture, by its number
+        def card(day):
+            def prologue(rewriter, pc, argc, context):
+                rewriter.prologue(lambda s: (brew.set_global(s, brew.DAY_KEY, lambda: s.push(day)),
+                                             brew.set_global(s, 77, lambda: brew.push_day_card(s, {2: 1058, 4: 1120}, 1030))))
+            return self.run_script(program((0x1f, 1 << 8 | 0), 0x33), {1: prologue})[1][0, 77]
+        self.assertEqual((card(4), card(2), card(3)), (1120, 1058, 1030))
+
+    def test_the_addon_takes_a_card_picture_only_from_the_episode_that_has_it(self):
+        # CARD_PICTURES by hash, from a folder searched through: the smartphone's copy of the episode holds a thumbnail there
+        import hashlib
+        import tempfile
+        from unittest.mock import patch
+        from exp_runtime.exp import encode_exp
+        brew, picture = self.brew, b'the HD theme park'
+        table = {'theme_park': (26980, hashlib.sha1(picture).hexdigest(), (('A.exp', 26231), ('B.exp', 26021)))}
+        with tempfile.TemporaryDirectory() as folder, patch.dict(brew.CARD_PICTURES, table, clear=True):
+            Path(folder, 'A.exp').write_bytes(encode_exp({1: b'meta', 26231: b'a thumbnail'}))
+            self.assertEqual(brew.card_pictures(folder), ({}, {}))
+            Path(folder, 'HD', 'Storm').mkdir(parents=True)
+            Path(folder, 'HD', 'Storm', 'B.exp').write_bytes(encode_exp({1: b'meta', 26021: picture}))
+            self.assertEqual(brew.card_pictures(folder), ({26980: picture}, {'theme_park': 26980}))
+
+    def run_script(self, prog, handlers, looks=(), numbers=None, player=True):
+        """The rewritten script against SHS's number services. Returns (other calls, numbers); R after a handled call is the host's."""
+        rewriter = Rewriter(prog)
+        context = self.context(rewriter, looks, player)
+        for pc, service, argc in rewriter.calls():
+            handlers[service](rewriter, pc, argc, context)
+        vm, numbers, calls = KiwiVM(rewriter.finish()), {} if numbers is None else numbers, []
+        for _ in range(5000):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                return calls, numbers
+            service, args = stop.yield_id, stop.args
+            result = 0
+            if service in (44, 54):
+                numbers[0, args[0]] = args[1]
+            elif service in (45, 55):
+                result = numbers.get((0, args[0]), 0)
+            elif service == 52:
+                numbers[args[0], args[1]] = args[2]
+            elif service == 53:
+                result = numbers.get((args[0], args[1]), 0)
+            else:
+                calls.append((service, args))
+            vm.resume(result)
+        raise AssertionError('the script did not halt')
+
+    def test_quotes_go_only_where_they_wrap_a_whole_line_or_option(self):
+        # '07 quotes every spoken line; SHS's box doesn't (owner, 2026-11-06). A choice list quotes each option.
+        unquote = self.brew.unquote
+        self.assertEqual(unquote(b'"Yeah. I wonder what this is all about?"'), b'Yeah. I wonder what this is all about?')
+        self.assertEqual(unquote(b'"Yeah, definitely." | "Actually... Nah."'), b'Yeah, definitely. | Actually... Nah.')
+        self.assertEqual(unquote(b"\"Why see 'Blood Baby'?\""), b"Why see 'Blood Baby'?")
+        for kept in (b'"Hi," she said.', b'He said "no".', b'plain', b'"'):
+            self.assertIsNone(unquote(kept), kept)
+        self.assertEqual(unquote(b'"A "b" c"'), b'A "b" c')
+        # Speech quoting a title keeps the inner pair (Trick or Treat, owner 2026-11-07); narrated quotes and split lines stay.
+        self.assertEqual(unquote(b'"I just got this one, "Alone," that is cool."'), b'I just got this one, "Alone," that is cool.')
+        self.assertEqual(unquote(b'"And, "taping of Mates" is three words."'), b'And, "taping of Mates" is three words.')
+        for kept in (b'"A" and "B"', b'"Hi," she said, "bye."', b'"I think so..." (Oh, wow.) "Uh, could you roll off me?"'):
+            self.assertIsNone(unquote(kept), kept)
+
+    def test_entry_title_and_a_quoted_bracketed_option_are_tidied(self):
+        # Owner, 2026-11-07: '07's name entry has no brackets; Male Cheerleader quotes a bracketed option as well.
+        tidy = self.brew.tidy
+        self.assertEqual(tidy(b'(Enter name:)'), b'Enter name:')
+        self.assertIsNone(tidy(b'(Please enter your name.)'))
+        self.assertEqual(tidy(b'Okay.|"(Point at Beth and say, "Let\'s go.")" '), b'Okay.|Point at Beth and say, "Let\'s go." ')
+
+    def test_upgrade_gives_kiwi_v2_with_the_same_machine(self):
+        body = struct.pack('>4H', 0, 0, 0, 1) + bytes((0x33,))
+        upgraded = decode_program(self.brew.upgrade(b'kiwi\x01\x00' + body))
+        self.assertEqual((upgraded.version, upgraded.previous_flag, [i.opcode for i in upgraded.instructions]), (2, 0, [0x33]))
+
+    def test_a_look_is_found_when_its_character_is_next_shown(self):
+        entries = [271, -1, 0, 219, 225]
+        code = [0x5A, (0x1A, 1000), call(13, 2)]
+        for value in entries:
+            code += [(0x1A, 3), (0x1A, 635), (0x1A, value), call(62, 3)]
+        line = [(0x1A, 3), (0x1A, 0), (0x1A, 2), call(72, 3)]
+        handlers = {62: self.brew.list_push, 64: self.brew.list_set, 13: self.brew.scene_open, 72: self.brew.line}
+        bank, changed_bank = 27005, 27010
+        changed = [271, -1, 0, 219, 300]
+        looks = [(self.brew.look_hash(entries), bank), (self.brew.look_hash(changed), changed_bank)]
+        calls, numbers = self.run_script(program(*code, *line, *line, 0x33, words=text_words('Hi')), handlers, looks)
+        # Found once, however many lines follow, and not while the list was being built.
+        self.assertEqual([c for c in calls if c[0] == 72], [(72, (3, bank))])
+        self.assertLess(calls.index((72, (3, bank))), next(i for i, c in enumerate(calls) if c[0] == 13 and len(c[1]) == 3))
+        # Entry 2 is 0: BREW's pink box.
+        self.assertEqual(numbers[3, self.brew.THEME], 2)
+        # A thing's look (the phone, 144) or one with no picture is the smartphone's grey box (owner, 2026-11-07).
+        for body in (144, -1):
+            code = [0x5A]
+            for value in (body, -1, 1):
+                code += [(0x1A, 7), (0x1A, 635), (0x1A, value), call(62, 3)]
+            _, grey = self.run_script(program(*code, 0x33), {62: self.brew.list_push}, looks)
+            self.assertEqual(grey[7, self.brew.THEME], self.brew.GREY_THEME, body)
+        # A re-dress to another known look: the hash moves with the changed entry.
+        redress = [(0x1A, 3), (0x1A, 635), (0x1A, 4), (0x1A, 300), call(64, 4)]
+        numbers[0, self.brew.DEPTH_KEY] = 1
+        calls, numbers = self.run_script(program(*redress, *line, 0x33, words=text_words('Hi')), handlers, looks, numbers)
+        self.assertEqual([c for c in calls if c[0] == 72], [(72, (3, changed_bank))])
+
+    def said(self, words, code, captions=None):
+        """What the narrator says and which badges show, running `code` (lines through line()) with a scene open."""
+        rewriter = Rewriter(program(*code, words=words))
+        context = self.context(rewriter)
+        if captions is not None:
+            context['captions'] = [(address, icon, rewriter.text(text)) for address, icon, text in captions]
+        for pc, service, argc in rewriter.calls():
+            {72: self.brew.line, 1: self.brew.title_line}[service](rewriter, pc, argc, context)
+        vm, out, numbers = KiwiVM(rewriter.finish()), [], {(0, self.brew.DEPTH_KEY): 1}
+        globals_ = {self.brew.DEPTH_KEY: 1}
+
+        def read(address):
+            text = bytearray()
+            for w in vm.data[address:]:
+                for c in ((w >> 8) & 255, w & 255):
+                    if not c:
+                        return text.decode()
+                    text.append(c)
+        for _ in range(5000):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                return out
+            args, result = stop.args, 0
+            if stop.yield_id in (52, 53):
+                if stop.yield_id == 52:
+                    numbers[args[0], args[1]] = args[2]
+                else:
+                    result = numbers.get((args[0], args[1]), 0)
+            elif stop.yield_id in (44, 54):
+                globals_[args[0]] = args[1]
+            elif stop.yield_id in (45, 55):
+                result = globals_.get(args[0], 0)
+            elif stop.yield_id == 13:
+                thought = len(args) == 4 and args[0] in (0xFFFE, -2)
+                out.append(('thought', read(args[1])) if thought else read(args[0]))
+            elif stop.yield_id == 90:
+                out.append(('badge', args[0], read(args[1]) if args[1] != 0xFFFF and args[1] != -1 else None))
+            elif stop.yield_id == 22:                       # format, %s and %d only (an event opener's `%s..`: dots)
+                values = iter(args[2:])
+                text = re.sub(r'%[sd]', lambda m: read(next(values)) if m.group() == '%s' else str(next(values)), read(args[1]))
+                data = text.encode() + b'\0' * (2 - len(text.encode()) % 2)
+                for k in range(0, len(data), 2):
+                    vm.data[args[0] + k // 2] = data[k] << 8 | data[k + 1]
+            vm.resume(result)
+        self.fail('did not halt')
+
+    def test_a_line_led_by_speech_splits_from_its_asides_and_one_led_by_an_aside_does_not(self):
+        # Owner, 2026-11-06 (Detention to the Rescue): '07 mixes quoted speech and bracketed asides in one line.
+        led = '"Excellent. And we got Lyle." (She opens a pocket and the lizard pops his head out.)'
+        said = self.said(text_words(led), [(0x1A, 3), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3), 0x33])
+        self.assertEqual(said, ['Excellent. And we got Lyle.', ('thought', 'She opens a pocket and the lizard pops his head out.')])
+        self.assertEqual(self.brew.tidy(b'(Whispers.) "Calm down, little guy..."'), b'(Whispers.) Calm down, little guy...')
+        self.assertEqual(self.brew.shown_parts(b'(Whispers.) Calm down, little guy...'), [(b'(Whispers.) Calm down, little guy...', False)])
+
+    def test_choice_options_lose_brackets_but_lines_keep_theirs(self):
+        self.assertEqual(self.brew.tidy(b"(Play it off like it's a joke.)|(Kiss Angie.)"), b"Play it off like it's a joke.|Kiss Angie.")
+        self.assertEqual(self.brew.tidy(b'"Yes."|(Shrug.)'), b'Yes.|Shrug.')
+        for kept in (b'(She sighs.)', b'(A) and (B)|Other', b'He said "no" (quietly).'):
+            self.assertIsNone(self.brew.tidy(kept), kept)
+
+    def test_a_word_games_question_gets_its_names(self):
+        # Service 71 shows its texts raw (ENGINE_ABI), so the translator fills `$USR` in first (Detention, 2026-11-06).
+        rewriter = Rewriter(program(0x33, words=text_words("Don't worry, $USR! Hand me a $TOOL.") + text_words('Plain.')))
+        found = self.brew.named_texts(rewriter.program, rewriter)
+        self.assertEqual([keys for _, _, keys in found], [['$USR', '$TOOL']])
+
+    def test_a_long_line_is_said_in_pieces_at_sentence_ends(self):
+        text = ('It\'s gym class today, and as usual, Jane has forged a doctor\'s note to get out of gym. It\'s not that she hates '
+                'sports, it\'s just that she\'d rather be studying. That 4.0 GPA doesn\'t happen by accident.')
+        said = self.said(text_words(text), [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3), 0x33])
+        self.assertEqual(said, self.brew.split_long(text))
+        self.assertEqual(len(said), 2)
+        self.assertTrue(all(len(piece) <= self.brew.LONGEST_LINE for piece in said))
+
+    def test_the_title_line_is_left_out(self):
+        fmt, title = text_words('%s\n\n%s'), text_words('Hi.')
+        buffer = len(fmt) + len(title)
+        words = fmt + title + [0] * 20
+        code = [(0x1A, buffer), 0x5A, (0x1A, len(fmt)), (0x1A, len(fmt)), call(1, 4),
+                (0x1A, 0xFFFF), (0x1A, buffer), (0x1A, 0xFFFF), call(72, 3),
+                (0x1A, 0xFFFF), (0x1A, len(fmt)), (0x1A, 0xFFFF), call(72, 3), 0x33]
+        self.assertEqual(self.said(words, code), ['Hi.'])
+
+    def test_a_caption_is_a_badge_for_the_next_line_only(self):
+        caption, line = text_words('Monday, after school: At the Gym.'), text_words('Hi.')
+        code = [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3)]
+        code += [(0x1A, 0xFFFF), (0x1A, len(caption)), (0x1A, 0xFFFF), call(72, 3)] * 2 + [0x33]
+        said = self.said(caption + line, code, captions=[(0, 26504, 'MON - At the Gym')])
+        # The line said with the badge ends in three dots (an event's opener, owner 2026-11-07); the next is as written.
+        self.assertEqual(said, [('badge', 26504, 'MON - At the Gym'), 'Hi...', ('badge', -1, None), 'Hi.'])
+
+    def test_a_caption_badge_goes_after_the_first_piece_of_a_long_line(self):
+        caption = text_words('Monday: At home.')
+        text = 'A first sentence that runs on for quite a while. ' * 3 + 'And then a second one, which also takes its time to end.' * 2
+        code = [(0x1A, 0xFFFF), (0x1A, 0), (0x1A, 0xFFFF), call(72, 3), (0x1A, 0xFFFF), (0x1A, len(caption)), (0x1A, 0xFFFF), call(72, 3), 0x33]
+        said = self.said(caption + text_words(text), code, captions=[(0, 26566, 'MON - At home')])
+        pieces = self.brew.split_long(text)
+        self.assertEqual(said, [('badge', 26566, 'MON - At home'), pieces[0], ('badge', -1, None), *pieces[1:]])
+
+    def test_a_caption_badge_names_the_day_and_place_with_brews_icon(self):
+        self.assertEqual(self.brew.caption_badge('Wednesday, after school: Tryouts, Phase 2.'), (self.brew.EVENT_ICON_BASE + 104, 'WED - Tryouts, Phase 2'))
+        self.assertEqual(self.brew.caption_badge('Wednesday night, Inside the party'), (self.brew.EVENT_ICON_BASE + 138, 'WED Night - Inside the party'))
+        self.assertEqual(self.brew.caption_badge('Monday, after school: Driving home alone.')[0], self.brew.EVENT_ICON_BASE + 113)
+        self.assertEqual(self.brew.caption_badge('At school: Meeting Brian.'), (self.brew.EVENT_ICON_BASE + 108, 'At school - Meeting Brian'))
+
+    def test_the_title_card_has_the_events_day_as_brews_planner_heads_it(self):
+        # setup: the calendar (69) from November 18, a Monday, then the event (33) on November 20.
+        code = [(0x1A, 810), (0x1A, 900), (0x1A, 11), (0x1A, 18), (0x1A, 1), (0x1A, 11), (0x1A, 20), call(69, 7)]
+        code += [(0x1A, 26000), 0x5A, 0x5A, 0x5A, (0x1A, 11), (0x1A, 20), (0x1A, 810), (0x1A, 0xFFFF), (0x1A, 104), 0x5A, call(33, 10), 0x33]
+        script = program(*code).to_bytes()
+        self.assertEqual(self.brew.event_date({25001: b'kiwi\x01' + script[6:]}), 'Wednesday, November 20')   # v2 less its link flag
+
+    def test_text_entry_is_the_smartphones_and_its_answer_becomes_the_events_text(self):
+        title, default = text_words('Enter your name'), text_words('Jenny')
+        code = [(0x1A, 0), (0x1A, len(title)), 0x5B, call(29, 3), 0x21, call(99, 1), 0x33]
+        rewriter = Rewriter(program(*code, words=title + default))
+        context = self.context(rewriter)
+        for pc, service, argc in rewriter.calls():
+            if service == 29:
+                self.brew.text_entry(rewriter, pc, argc, context)
+        vm, seen = KiwiVM(rewriter.finish()), []
+
+        def read(address):
+            out = bytearray()
+            for w in vm.data[address:]:
+                for c in ((w >> 8) & 255, w & 255):
+                    if not c:
+                        return out.decode()
+                    out.append(c)
+        for _ in range(100):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                break
+            args = stop.args
+            if stop.yield_id == 17:
+                seen.append((17, read(args[0]), read(args[1]), read(args[2])))
+            elif stop.yield_id == 46:
+                seen.append((46, read(args[0]), args[1]))
+            else:
+                seen.append((stop.yield_id, tuple(args)))
+            vm.resume(0x7FF5 if stop.yield_id == 17 else 0)
+        self.assertEqual(seen, [(17, 'Enter your name', '', 'Jenny'), (46, self.brew.EVENT_TEXT, 0x7FF5), (99, (1,))])
+
+    def test_a_big_casts_setup_stays_within_the_sessions_budget(self):
+        """Quiz 3's setup, 16 characters of 23 entries, once ran out searching the look table at every write."""
+        code = []
+        for character in range(16):
+            for value in range(23):
+                code += [(0x1A, character), (0x1A, 635), (0x1A, value + 200), call(62, 3)]
+        rewriter = Rewriter(program(*code, 0x33))
+        context = self.context(rewriter, [(i, 27000 + 5 * i) for i in range(30)])
+        for pc, service, argc in rewriter.calls():
+            self.brew.list_push(rewriter, pc, argc, context)
+        vm, numbers, steps = KiwiVM(rewriter.finish()), {}, 0
+        while True:
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                break
+            steps += 1
+            args = stop.args
+            if stop.yield_id == 52:
+                numbers[args[0], args[1]] = args[2]
+            vm.resume(numbers.get((args[0], args[1]), 0) if stop.yield_id == 53 else 0)
+        self.assertLess(steps, 2500)
+
+    def test_a_timed_menu_counts_its_options_and_takes_a_random_one_at_the_limit(self):
+        options = text_words('One|Two|Three|Four')
+        code = [(0x1A, 0), (0x1A, 0), (0x1A, 500), call(30, 3), (0x1A, 4000), call(31, 1), call(74, 0), 0x33]
+        handlers = {30: self.brew.spinning_menu, 31: self.brew.menu_timer, 74: self.brew.wait}
+        rewriter = Rewriter(program(*code, words=options))
+        context = self.context(rewriter)
+        for pc, service, argc in rewriter.calls():
+            handlers[service](rewriter, pc, argc, context)
+        vm, seen = KiwiVM(rewriter.finish()), []
+        while True:
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                break
+            seen.append((stop.yield_id, stop.args))
+            vm.resume(3 if stop.yield_id == 27 else 0)
+        self.assertIn((27, (4,)), seen)
+        choice = next(args for service, args in seen if service == 1)
+        self.assertEqual((choice[3], choice[4], choice[5]), (4000, 3, -2))
+
+    def test_narration_loses_its_brackets_and_a_characters_become_a_thought(self):
+        text = text_words('(Thinking.)') + text_words('(One.) Two (three.)')
+        words = len(text_words('(Thinking.)'))
+        def said(character):
+            code = [0x5A, (0x1A, 1000), call(13, 2), (0x1A, character), (0x1A, 0), (0x1A, -1), call(72, 3),
+                    (0x1A, character), (0x1A, words), (0x1A, -1), call(72, 3), 0x33]
+            prog = program(*code, words=text)
+            rewriter = Rewriter(prog)
+            context = self.context(rewriter)
+            for pc, service, argc in rewriter.calls():
+                {13: self.brew.scene_open, 72: self.brew.line}[service](rewriter, pc, argc, context)
+            final = rewriter.finish()
+            memory = list(final.main_words) + [0] * final.gap_count + list(final.extra_words)
+            def read(address):
+                out = bytearray()
+                for w in memory[address:]:
+                    for c in (w >> 8, w & 255):
+                        if not c:
+                            return out.decode()
+                        out.append(c)
+            vm, lines = KiwiVM(final), []
+            numbers = {}
+            while True:
+                stop = vm.run()
+                if stop.kind == StopKind.HALT:
+                    return lines
+                args, result = stop.args, 0
+                if stop.yield_id in (44, 54):
+                    numbers[args[0]] = args[1]
+                elif stop.yield_id in (45, 55):
+                    result = numbers.get(args[0], 0)
+                elif stop.yield_id == 73:
+                    result = 27000
+                elif stop.yield_id == 13:
+                    lines.append((args[0], read(args[1])) if args[0] < 0 else ('line', read(args[0]), args[1]))
+                vm.resume(result)
+        narrated = said(-1)
+        self.assertEqual(narrated, [('line', 'Thinking.', self.brew.NARRATOR), ('line', '(One.) Two (three.)', self.brew.NARRATOR)])
+        spoken = said(2)
+        self.assertEqual(spoken, [(-2, 'Thinking.'), ('line', '(One.) Two (three.)', 2)])
+
+    def word_game_run(self, scores, result, rounds=4):
+        """An authored routine like the games', called with a word list and scores; (service 71's arguments as text, what it returned)."""
+        names = ['Good', 'Fine', '(Bad)', 'Worse']
+        words, addresses = [], []
+        for name in names:
+            addresses.append(len(words))
+            words += text_words(name)
+        word_list, score_list, title, options = len(words), len(words) + 4, len(words) + 8, len(words) + 20
+        words += addresses + [s & 0xffff for s in scores] + text_words('Move %d/%d') + [0] * 40
+        routine = 14
+        code = [(0x1A, options), (0x1A, word_list), (0x1A, score_list), (0x1A, 4), (0x1A, 4), (0x1A, -1), (0x1A, rounds), (0x1A, title),
+                (0x1A, 500), (0x1A, 4000), 0x5B, 0x42, (0x29, routine), 0x33][:-1]
+        # the routine: its first instructions are replaced; what matters is that it holds the usual calls.
+        code += [0x33, 0x48, 0x4A, (0x40, options), (0x40, options), (0x1A, 500), call(30, 3), (0x1A, 4000), call(31, 1), call(32, 0), call(74, 0), 0x22, 0x43]
+        prog = program(*code, words=words)
+        start = next(i.pc for i in prog.instructions if i.opcode == 0x48)
+        rewriter = Rewriter(prog)
+        # (The real routine is told by its opcodes' fingerprint, ROUTINE_SHAPE; this authored one has its own.)
+        from unittest import mock
+        with mock.patch.object(self.brew, 'ROUTINE_SHAPE', self.brew.routine_shape(prog.instructions, start)):
+            context = self.context(rewriter)
+        self.assertEqual(context['routine'], start)
+        self.brew.word_game(rewriter, start, context)
+        final = rewriter.finish()
+        vm, game = KiwiVM(final), None
+        def read(address):
+            out = bytearray()
+            for w in vm.data[address:]:
+                w &= 0xffff
+                for c in (w >> 8, w & 255):
+                    if not c:
+                        return out.decode()
+                    out.append(c)
+        store = {}
+        for _ in range(4000):
+            stop = vm.run()
+            if stop.kind == StopKind.HALT:
+                return game, vm.b
+            args, answer = stop.args, 0
+            if stop.yield_id == 25:
+                vm.data_text = None
+                self.brew_append(vm, args)
+            elif stop.yield_id == 71:
+                game = (read(args[2]), read(args[3]))
+                answer = result
+            elif stop.yield_id == 53:
+                answer = store.get((args[0], args[1]), 0)
+            vm.resume(answer)
+        self.fail('did not halt')
+
+    @staticmethod
+    def brew_append(vm, args):
+        def read(address):
+            out = bytearray()
+            for w in vm.data[address:]:
+                w &= 0xffff
+                for c in (w >> 8, w & 255):
+                    if not c:
+                        return bytes(out)
+                    out.append(c)
+        text = read(args[0]) + read(args[1]) + b'\0'
+        text += b'\0' * (len(text) % 2)
+        for i in range(0, len(text), 2):
+            value = text[i] << 8 | text[i + 1]
+            vm.data[args[0] + i // 2] = value - 65536 if value > 32767 else value
+
+    def test_a_spinning_menu_routine_plays_as_a_word_game_on_its_scores(self):
+        game, total = self.word_game_run([1, 1, 0, 0], 6)
+        # Bad words lose their brackets.
+        self.assertEqual(game, ('Good|Fine', 'Bad|Worse'))
+        self.assertEqual(total, 4)                          # the pass mark is every round's best score
+        self.assertEqual(self.word_game_run([1, 1, 0, 0], 3)[1], 2)
+        self.assertEqual(self.word_game_run([1, 1, 0, 0], 0)[1], 0)
+        self.assertEqual(self.word_game_run([1, 1, 0, 0], 20)[1], 4)        # no more than the best total
+        self.assertEqual(self.word_game_run([2, 1, 0, 0], 32767)[1], 8)     # the skip prompt's Win, which once overflowed into a loss
+        self.assertEqual(self.word_game_run([2, 1, 0, 0], 6)[1], 8)         # a word worth 2
+
+    def test_cues_play_as_sound_or_music_and_the_chimes_are_answer_hints(self):
+        from exp_runtime.shs import profile
+        for cue, service, args in ((8011, 79, (self.brew.MUSIC_BASE + 11,)), (8000, 80, (self.brew.MUSIC_BASE, 0)), (8003, 80, (self.brew.MUSIC_BASE + 3, 0))):
+            calls, _ = self.run_script(program((0x1A, cue), call(9, 1), 0x33), {9: self.brew.music})
+            self.assertEqual(calls, [(service, args)])
+        self.assertEqual(profile.TRANSLATED_FEEDBACK_MUSIC[31000],
+                         {self.brew.MUSIC_BASE + track: feedback for track, feedback in self.brew.FEEDBACK_TRACKS.items()})
+        self.assertLessEqual(set(self.brew.FEEDBACK_TRACKS), self.brew.SOUND_TRACKS)
+
+    def test_a_word_game_with_two_bad_words_shows_two_of_each(self):
+        from exp_runtime.minigames import WordGame
+
+        class Draws:
+            state = 7
+
+            def next(self):
+                self.state = (self.state * 1103515245 + 12345) & 0x7fffffff
+                return self.state >> 8
+
+            def below(self, n):
+                return self.next() % n
+        draws = Draws()
+        game = WordGame(['Move', 'Groove'], ['Fall', 'Trip'], 20000, 3000, 20000, 3000)
+        for _ in range(40):
+            game.deal(draws)
+            self.assertEqual(sorted(game.options), ['Fall', 'Groove', 'Move', 'Trip'])
+            self.assertEqual(sorted(game.weights), [-1, -1, 1, 1])
+            game.validate()                         # and a save of it loads (Undo, the autosave), 2026-11-06
+
+    def test_a_word_game_of_one_good_word_and_two_bad_shows_all_three(self):
+        # Stage 5: Skating Dating's spinning menu has three words; native's word game needs two of each.
+        from exp_runtime.minigames import WordGame
+
+        class Draws:
+            state = 3
+
+            def below(self, n):
+                self.state = (self.state * 1103515245 + 12345) & 0x7fffffff
+                return (self.state >> 8) % n
+        game = WordGame(['Skate'], ['Fall', 'Trip'], 20000, 3000, 20000, 3000)
+        self.assertTrue(game.three_words)
+        for _ in range(20):
+            game.deal(Draws())
+            self.assertEqual(sorted(game.options), ['Fall', 'Skate', 'Trip'])
+            self.assertEqual(game.weights[game.options.index('Skate')], 1)
+            game.validate()
+        game.pick(2, Draws())
+        with self.assertRaises(ValueError):
+            game.pick(3, Draws())
+        self.assertFalse(WordGame(['A', 'B'], ['C', 'D'], 20000, 3000, 20000, 3000).three_words)
+        # Artistic Differences: two good and one bad.
+        drops = WordGame(['1 drop', '2 drops'], ['0 drops'], 20000, 3000, 20000, 3000)
+        drops.deal(Draws())
+        self.assertEqual(sorted(drops.weights), [-1, 1, 1])
+        self.assertEqual(drops.weights[drops.options.index('0 drops')], -1)
+        drops.validate()
+
+    def test_a_weekday_list_is_told_from_other_strings(self):
+        # Stage 6: Fall '06's weekly calls build their other arguments from tables; the weekdays are the one weekday string pushed.
+        is_list = self.brew.is_weekday_list
+        for text in (b'Mo,We,Fr', b'Fr', b'Friday', b'Mon|Wed'):
+            self.assertTrue(is_list(text), text)
+        for text in (b'Free Time', b'Monday Planner', b'French', b'', b'Mo,Lunch'):
+            self.assertFalse(is_list(text), text)
+
+    def test_weekly_events_name_their_weekdays_by_two_letters(self):
+        # 34 (CS Idol's school days): brew-calendar.js weekdaysBetween reads each day's first two letters.
+        mask = self.brew.weekday_mask
+        self.assertEqual(mask('Mo,We,Fr'), 0b0101010)
+        self.assertEqual(mask('Tue|Thu'), 0b0010100)
+        self.assertEqual(mask('Sunday|sa'), 0b1000001)
+        self.assertEqual(mask(''), 0)
+
+    def test_a_storys_own_catch_picture_is_the_addons_only_when_it_is_the_same_picture(self):
+        # Stage 5: Invisible Man and Skating Dating catch their own 26501, in their 26500 bundle; other stories' 26501 differs.
+        import hashlib
+        from unittest import mock
+
+        def bundle(payload):
+            return b'CMB0\x01' + struct.pack('>I', 9) + payload
+        picture = b'BM' + bytes(range(40))
+        with mock.patch.dict(self.brew.OWN_CATCH_PICTURES, {26501: hashlib.sha1(picture).hexdigest()}, clear=True):
+            missing = self.brew.missing_own_pictures
+            self.assertEqual(missing({26500: bundle(picture)}), set())
+            self.assertEqual(missing({26500: bundle(b'BM' + bytes(40))}), {26501})
+            self.assertEqual(missing({1: b'kiwi'}), {26501})
+
+    def test_a_quiz_asks_in_the_narrators_gold(self):
+        options = text_words('A|B')
+        rewriter = Rewriter(program(0x5A, 0x5A, call(28, 2), call(74, 0), 0x33, words=options))
+        context = self.context(rewriter, player=False)
+        self.brew.menu(rewriter, 2, 2, context)
+        self.brew.wait(rewriter, 3, 0, context)
+        vm = KiwiVM(rewriter.finish())
+        for _ in range(20):
+            stop = vm.run()
+            if stop.yield_id == 1:
+                self.assertEqual(stop.args[5], self.brew.NARRATOR)
+                return
+            vm.resume(0)
+        self.fail('no choice')
+
+    def test_relationship_icons_follow_brews_value(self):
+        for value, icons in ((0, -3), (19, -3), (20, -2), (30, -1), (40, 0), (65, 0), (66, 1), (76, 2), (100, 2)):
+            calls, numbers = self.run_script(program((0x1A, 2), (0x1A, 407), (0x1A, value), call(58, 3), 0x33), {58: self.brew.owned_set})
+            self.assertEqual((numbers[2, 407], numbers[2, self.brew.RELATIONSHIP_BREW]), (icons, value))
+        # Other keys pass through, and a read of 407 is BREW's own value.
+        _, numbers = self.run_script(program((0x1A, 2), (0x1A, 406), (0x1A, 50), call(58, 3), 0x33), {58: self.brew.owned_set})
+        self.assertEqual(numbers, {(2, 406): 50})
+        prog = program((0x1A, 2), (0x1A, 407), call(59, 2), 0x21, (0x1A, 9), 0x50, 0x04, 0x33)
+        rewriter = Rewriter(prog)
+        self.brew.owned_get(rewriter, 2, 2, self.context(rewriter))
+        vm = KiwiVM(rewriter.finish())
+        stop = vm.run()
+        self.assertEqual((stop.yield_id, stop.args), (53, (2, self.brew.RELATIONSHIP_BREW)))
+
+    def test_a_line_needs_an_open_scene_and_scenes_stack(self):
+        text = text_words('Hello')
+        line = [(0x1A, 2), (0x1A, 0), (0x1A, 3), call(72, 3)]
+        handlers = {72: self.brew.line, 13: self.brew.scene_open, 18: self.brew.scene_close}
+        calls, _ = self.run_script(program(*line, 0x33, words=text), handlers)
+        self.assertEqual(calls, [])
+        scenes = [0x5A, (0x1A, 1000), call(13, 2), (0x1A, 2), (0x1A, 1005), call(13, 2), *line, call(18, 0), 0x33]
+        calls, _ = self.run_script(program(*scenes, words=text), handlers)
+        base, sky = self.brew.BACKGROUND_BASE, self.brew.SKY_MODES
+        self.assertEqual([c for c in calls if c[0] == 11],
+                         [(11, (0, base)), (11, (0, base + sky * 5 + 2)), (11, (0, base))])
+        self.assertIn((73, (2,)), calls)
+
+    def test_build_query_answers_as_08(self):
+        for selector, answer in ((1, 2), (2, 1), (3, 5), (4, 0)):
+            prog = program((0x1A, selector), call(80, 1), 0x21, 0x04, 0x33)
+            rewriter = Rewriter(prog)
+            self.brew.build_query(rewriter, 1, 1, self.context(rewriter))
+            vm = KiwiVM(rewriter.finish())
+            self.assertEqual(vm.run().kind, StopKind.HALT)
+            self.assertEqual(vm.b, answer)
+
+    def test_name_marks_come_off_only_ends_of_short_strings(self):
+        words = text_words('Girl~~') + text_words('$USR~') + text_words('a~b')
+        stripped = self.brew.strip_name_marks(program(0x33, words=words))
+        self.assertEqual(list(stripped.main_words), text_words('Girl') + [0] + text_words('$USR') + text_words('a~b'))
+
+    def test_a_portrait_bank_fits_the_players_mask_exactly(self):
+        """The player reads art up to twice its 128 x 150 mask as 2x; anything larger is squeezed out of proportion."""
+        from PIL import Image
+        left, top, right, bottom = self.brew.portrait_box((200, 240))
+        width, height = self.brew.portrait_picture(Image.new('RGBA', (right - left, bottom - top))).size
+        self.assertLessEqual(width, 256)
+        self.assertLessEqual(height, 300)
+
+    def test_campaign_numbers(self):
+        for name, number in (('shs085_01_02_shs08.exp', 102), ('shs085_shs08_pt1.pud', 101), ('shs085_12_12_shs08.exp', 1212),
+                             ('shs085_quiz_3.exp', 9003), ('shs085_SP1_shs08.exp', 9101)):
+            self.assertEqual(self.brew.campaign_number(name), number)
+
+    def test_classic_numbers_include_the_unnumbered_files(self):
+        # Stage 3b: Trick or Treat is clsc_halloween.exp; French Connection's number ends its name; the rest follow 73.
+        for name, number in (('clsc_034_Hooky.exp', 34), ('clsc_061_BREW_Spreading_Rumors.exp', 61), ('clsc_fr_conn_014.exp', 14),
+                             ('clsc_cs_idol.exp', 74), ('clsc_halloween.exp', 75), ('clsc_mash01.exp', 76), ('clsc_mash06.exp', 81),
+                             ('clsc_winter_love_day.exp', 82)):
+            self.assertEqual(self.brew.classic_number(name), number)
+        with self.assertRaises(self.brew.StoryError):
+            self.brew.classic_number('meatloaf.exp')            # an '07 copy needs the Classic folder, to find it by title
+
+
+CLASSIC_07 = (Path(__file__).resolve().parents[2] / 'reference' / 'Other Games' / "Surviving High School '07 (BREW)" / 'VX9800-backup-complete'
+              / 'brew' / 'mod' / '32411')
+BREW_08 = Path(__file__).resolve().parents[2] / 'reference' / 'Other Games' / "Surviving High School '08 (BREW)"
+
+
+@unittest.skipUnless(importlib.util.find_spec('PIL') and (CLASSIC_07 / 'detention.exp').is_file() and BREW_08.is_dir(),
+                     "needs Pillow and the player's own BREW game files")
+class BrewCalendarTests(unittest.TestCase):
+    """A Classic story on the calendar (Stage 3a): Detention to the Rescue runs over two days, as on BREW."""
+
+    def test_its_events_run_in_order_under_a_card_for_each_date_and_a_badge_for_each_event(self):
+        import brew
+        from exp_runtime.exp import ExpArchive
+        spec = None                     # the BREW addon in the player's test library (read only)
+        for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp')):
+            archive = ExpArchive(path.read_bytes())
+            if brew.SPEC in archive.entries and archive.read(4).find(b'shsbrew') >= 0:
+                spec, addon_path = archive, path
+                break
+        if spec is None:
+            self.skipTest('needs the BREW addon in the test library')
+        name, data = brew.build_classic(CLASSIC_07 / 'detention.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        self.assertEqual(name, 'Detention_to_the_Rescue_SHS07.exp')
+        import playthrough as pt
+        session = pt.session(data, addons=[spec])
+        session.engine.random.state = 1
+        cards, badges = [], []
+        session.advance()
+        for _ in range(6000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            badge = session.engine.scene_badge
+            if badge is not None and (not badges or badges[-1] != badge.text):
+                badges.append(badge.text)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished'):
+                break
+            if action.name == 'presentation':
+                cards.append(action.details.get('subtitle'))
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == 'presentation':
+                    session.answer()
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'choice':
+                if not session.choice_ready:
+                    session.tick(250)
+                session.answer(0)
+            elif action.name in ('message_panel', 'loading'):
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            else:
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+        self.assertEqual(cards, ['Monday, April 10', 'Wednesday, April 12'])
+        # Each badge has the time the planner jumps to (owner, 2026-11-07).
+        self.assertEqual([b.strip() for b in badges], ['10:30 AM - Computer Class', '3:00 PM - Detention', '9:00 AM - Extra! Extra!'])
+
+    def play_cards(self, data, addon):
+        """A Classic build's date cards and badges, on first answers with games won."""
+        import playthrough as pt
+        session = pt.session(data, addons=[addon])
+        session.engine.random.state = 1
+        cards, badges = [], []
+        session.advance()
+        for _ in range(8000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            badge = session.engine.scene_badge
+            if badge is not None and (not badges or badges[-1] != badge.text):
+                badges.append(badge.text)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished'):
+                return cards, [b.strip() for b in badges], action and action.name
+            if action.name == 'presentation':
+                cards.append(action.details.get('subtitle'))
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == 'presentation':
+                    session.answer()
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'choice':
+                if not session.choice_ready:
+                    session.tick(250)
+                session.answer(0)
+            elif action.name in ('message_panel', 'loading'):
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            elif action.name == 'brew_catch':
+                session._complete_minigame(result=session.engine.brew_catch.target)
+            else:
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+        self.fail('the story did not end')
+
+    def test_weekly_school_days_run_on_their_weekdays_from_the_first_events_day(self):
+        # Stage 5: CS Idol's school (34, Mo,We,Fr, its own script) runs on each of them; the setup schedules March 10 last, but the
+        # title card has March 1, the first event's day, as Tardy-Slip's calendar runs; its nameless lunchtimes have no badge;
+        # a badge goes after its first message in any of the story's scripts.
+        import brew
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+        import json
+        if '26501' not in json.loads(ExpArchive(addon_path.read_bytes()).read(brew.SPEC))['catch']['pictures']:
+            self.skipTest("needs the BREW addon's revision 6 (its catch game catches the yawning face)")
+        name, data = brew.build_classic(BREW_08 / 'addons' / 'Classic' / 'clsc_cs_idol.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        self.assertEqual(name, 'CS_Idol_SHS07.exp')
+        cards, badges, end = self.play_cards(data, ExpArchive(addon_path.read_bytes()))
+        self.assertEqual(end, 'episode_exit')
+        self.assertEqual(cards, ['Monday, March 1', 'Wednesday, March 3', 'Friday, March 5', 'Monday, March 8', 'Wednesday, March 10',
+                                 'Friday, March 12', 'Monday, March 15'])
+        # Each school day's caption (`School / March %d`, narration in BREW) is its badge, and every badge shows the time the planner
+        # jumps to, not a date, which the cards have (owner, 2026-11-07); a nameless event (March 5's breakfast) shows just its time. March
+        # 12 and 15 say nothing at school, so Practice and CS Idol come straight after.
+        self.assertEqual(badges, ['9:00 AM - School', "4:30 PM - Dad's Suprise", '9:00 AM - School', '3:00 PM - Audition', '7:30 AM',
+                                  '9:00 AM - School', '3:00 PM - At Home', '9:00 AM - School', '3:00 PM - Practice', '9:00 AM - School', '3:00 PM - Practice',
+                                  '3:00 PM - CS Idol'])
+
+    def test_fall_06_runs_its_term_on_the_season_driver(self):
+        # Stage 6a: '07's built-in season, on the season driver (events kept once, a list per day), runs its first school week
+        # Monday to Friday with time badges, its spinning menus outside the word-game routine as questions. Stage 6c (owner,
+        # 2026-11-07): a card each week, `Week 1 of 13` over its school days' dates, and a narration line naming each new day.
+        import brew
+        from exp_runtime.exp import ExpArchive
+        pud = CLASSIC_07 / 'res_xlarge.pud'
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None or not pud.is_file():
+            self.skipTest("needs the BREW addon in the test library and '07's base pack")
+        name, data = brew.build_season(pud, addon_path)
+        self.assertEqual(name, 'Fall_06_Football_Season_SHS07.exp')
+        archive = ExpArchive(data)
+        self.assertEqual((archive.metadata().pack_id, archive.metadata().episode_id), (brew.PACK_SEASON, brew.SEASON_EPISODE))
+        self.assertIn(brew.DRIVER_SCRIPT, archive.entries)
+        import playthrough as pt
+        session = pt.session(data, addons=[ExpArchive(addon_path.read_bytes())])
+        session.engine.random.state = 1
+        cards, badges, seen, nested, days, classes, menus = [], [], Counter(), Counter(), [], [], set()
+        session.advance()
+        for _ in range(3000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            nested[(session.scene, len(session.nest_stack))] += session.scene in (25039, 25040)
+            badge = session.engine.scene_badge
+            if badge is not None and (not badges or badges[-1] != badge.text):
+                badges.append(badge.text)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished') or len(days) > 3:
+                break
+            if action.name == 'dialogue' and re.fullmatch(r'\w+day, \w+ \d+\.', action.details.get('text') or ''):
+                days.append((len(cards), action.details['text']))
+            if action.name == 'dialogue' and re.fullmatch(r'\w+ class\.+', action.details.get('text') or ''):
+                classes.append((action.details.get('speaker') or '', action.details['text']))
+            if action.name == 'presentation':
+                cards.append((action.details.get('title'), action.details.get('subtitle')))
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == 'presentation':
+                    session.answer()
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'choice':
+                menus.add((action.details.get('title'), action.details.get('text')))
+                if not session.choice_ready:
+                    session.tick(250)
+                options = action.details.get('options') or ['']
+                key = tuple(options)
+                session.answer(seen[key] % len(options))      # (a menu that comes back moves on: the tutorial asks till it's right)
+                seen[key] += 1
+            elif action.name == 'character_picker':
+                session.answer(0); session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            elif action.name == 'brew_catch':
+                session._complete_minigame(result=session.engine.brew_catch.target)
+            elif action.name == 'word_game':
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+            else:
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+        self.assertEqual(cards, [('Week 1 of 13', 'September 13-17'), ('Week 2 of 13', 'September 20-24')])
+        self.assertEqual(days, [(1, 'Monday, September 13.'), (1, 'Wednesday, September 15.'), (1, 'Friday, September 17.'),
+                                (2, 'Monday, September 20.')])
+        # Owner, 2026-11-08: a class's plate (`Art` over `Art class.`) adds nothing, so the line is the narrator's.
+        self.assertTrue(classes)
+        self.assertEqual({speaker for speaker, _ in classes}, {''})
+        # Owner, 2026-11-11: a menu with a title of its own and nothing under it says `Make your choice!` over that title.
+        self.assertIn((brew.CHOICE_TITLE, 'Which class?'), menus)
+        self.assertFalse({title for title, _ in menus} & {'Which class?', 'Action?', 'Eavesdrop?', brew.YOU_TITLE})
+        self.assertIn('3:00 PM - Free Time', [b.strip() for b in badges])     # (the weekly Free Time; classes follow the answers)
+        # Stage 6b: a class's due events (37) run inside it at its next wait, through the nest runner, one level deep: the native
+        # engine runs them one after another, each to its end, never one inside another (FUN_0000af08).
+        self.assertTrue(sum(nested.values()), 'no class event ran')
+        self.assertEqual({depth for (scene, depth), count in nested.items() if count}, {2})
+
+    def test_07_funky_monkey_takes_08s_ending_scenes(self):
+        # Owner, 2026-11-07: Funky Monkey's '07 entry keeps its writing but takes '08's code fixes: five endings open on its own
+        # scene (14 to 26505), where '07's kept whatever was showing.
+        import brew
+        from unittest import mock
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+
+        def scenes():
+            _, data = brew.build_classic(CLASSIC_07 / 'monkey.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+            story = brew.decode_program(ExpArchive(data).read(brew.STORY_SCRIPT))
+            return sum(1 for i in story.instructions if (i.opcode, i.operand) == (0x1a, brew.OWN_SCENE_26505))
+        fixed = scenes()
+        with mock.patch.dict(brew.CONTEXT_FIXES, {}, clear=True):
+            plain = scenes()
+        self.assertEqual((fixed - plain) % len(brew.FUNKY_MONKEY_ENDINGS), 0)       # (each the same scene change, inserted once)
+        self.assertGreater(fixed, plain)
+
+    def test_an_08_classic_copy_is_a_campaign_episode_on_the_calendar(self):
+        # Stage 3b: Funky Monkey's '08 file, which really differs from '07's, is its own `(Classic)` entry under '08.
+        import brew
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+        name, data = brew.build_classic_copy(BREW_08 / 'addons' / 'Classic' / 'clsc_038_Monkey.exp', addon_path)
+        self.assertEqual(name, 'Funky_Monkey_Classic_SHS08.exp')
+        metadata = ExpArchive(data).metadata()
+        self.assertEqual((metadata.pack_id, metadata.episode_id, metadata.title),
+                         (brew.PACK_CAMPAIGN, 9238, 'Funky Monkey (Classic) (SHS08)'))
+        # The calendar's driver is the story script's prologue: the setup queues it.
+        story = brew.decode_program(ExpArchive(data).read(brew.STORY_SCRIPT))
+        self.assertIn(brew.EVENTS_KEY, [i.operand for i in story.instructions if i.opcode == 0x1a])
+
+    def test_a_menu_titled_you_says_make_your_choice(self):
+        # Owner, 2026-11-11: BREW's `You` (967 menus in 120 stories) is the smartphone's `Make your choice!`.
+        import brew
+        import playthrough as pt
+        from collections import Counter
+        from exp_runtime.exp import ExpArchive
+        addon_path = next((path for path in sorted((Path(__file__).resolve().parents[2] / 'test-library' / 'content').glob('*.exp'))
+                           if brew.SPEC in (archive := ExpArchive(path.read_bytes())).entries
+                           and archive.read(4).find(b'shsbrew') >= 0), None)
+        if addon_path is None:
+            self.skipTest('needs the BREW addon in the test library')
+        _, data = brew.build_classic(CLASSIC_07 / 'detention.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        session = pt.session(data, addons=[ExpArchive(addon_path.read_bytes())])
+        session.engine.random.state = 1
+        titles = Counter()
+        session.advance()
+        for _ in range(3000):
+            while session.transitioning:
+                session.tick(session.engine.scene_transition.duration_ms)
+            action = session.pending
+            if action is None or action.name in ('episode_exit', 'finished'):
+                break
+            if action.name == 'choice':
+                titles[action.details.get('title')] += 1
+                if not session.choice_ready:
+                    session.tick(250)
+                session.answer(0)
+            elif action.name == 'dialogue':
+                if not session.engine.dialogue_animation.complete:
+                    session.answer(); session.tick(2000)
+                session.answer()
+            elif action.name == 'text_input':
+                session.answer('Matt')
+            elif action.name == 'word_game':
+                session.engine.word_game.score = 6
+                session._complete_minigame()
+            elif action.name == 'brew_catch':
+                session._complete_minigame(result=session.engine.brew_catch.target)
+            else:
+                session.tick(4000)
+                if session.pending is not None and session.pending.name == action.name:
+                    session.answer()
+        self.assertTrue(titles[brew.CHOICE_TITLE])
+        self.assertNotIn(brew.YOU_TITLE, titles)
+
+
+class CasingEvidenceTests(unittest.TestCase):
+    def test_translations_in_a_library_are_never_read_as_smartphone_text(self):
+        # Casing learns capitals from the library's own episodes; this fork's translations (BREW's "Mathematics" class
+        # among them) would teach it wrongly (2026-11-06).
+        import json
+        import tempfile
+        import pairs
+        from test_content import archive
+        from test_vm import program
+        from exp_runtime.exp import Metadata
+        with tempfile.TemporaryDirectory() as folder:
+            library = Path(folder)
+            (library / 'content').mkdir()
+            records = []
+            for pack in (7, 31000, 31300, 31600):
+                name = f'content/{pack}.exp'
+                (library / name).write_bytes(archive({1: Metadata(pack, 1, ('x',) * 5).to_bytes(),
+                                                      25001: program(0x33).to_bytes()}))
+                records.append(dict(id=str(pack), pack_id=pack, episode_id=1, file=name, titles=['x']))
+            (library / 'library.json').write_text(json.dumps(dict(episodes=records)), encoding='utf-8')
+            self.assertEqual([record['pack_id'] for record, _ in pairs.library_episodes(library)], [7])
 
 
 if __name__ == '__main__':

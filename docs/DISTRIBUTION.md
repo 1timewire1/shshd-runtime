@@ -14,7 +14,8 @@ System-font fallback and current limits are in [IPA.md](IPA.md) and [COD.md](COD
 pull requests, version tags beginning with `v`, and manual **Run workflow**
 requests. It installs locked dependencies with uv and Python 3.14, runs the
 tests without game content, builds the player, audits its bundle
-and tests the extracted desktop downloads. It also calls the reusable
+and tests the extracted desktop downloads. On the `ios-port` branch and manual
+runs it also calls the reusable
 [iOS workflow](../.github/workflows/ios-builds.yml), which verifies the shared
 engine and native presentation in a simulator before packaging the unsigned
 device app. Third-party actions are pinned to verified commit hashes.

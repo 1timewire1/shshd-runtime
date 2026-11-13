@@ -33,6 +33,19 @@ JINGLE = 8005
 
 class HdBootScreen(HdUi):
     hd_layer = True
+    # shshd-runtime (General's Aspect Ratio): drawn at the menu frame's height (the shell sets it), the gray filling it
+    # and HD's composition (the disc, the title, the flare) centred in it, `dy` points down.
+    grows = True
+    height = FRAME[1]
+
+    @property
+    def dy(self):
+        return (self.height - FRAME[1]) / 2
+
+    def fit_canvas(self):
+        size = (FRAME[0] * S, round(self.height * S))
+        if self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
 
     def __init__(self, library):
         super().__init__(library)
@@ -51,14 +64,15 @@ class HdBootScreen(HdUi):
         return self.scaled(self.resource(resource_id), S)
 
     def blit_centered(self, image, center, clip=None):
-        rect = image.get_rect(center=(round(center[0] * S), round(center[1] * S)))
+        rect = image.get_rect(center=(round(center[0] * S), round((center[1] + self.dy) * S)))
         if clip is not None:
-            self.canvas.set_clip(pygame.Rect(clip[0] * S, clip[1] * S, clip[2] * S, clip[3] * S))
+            self.canvas.set_clip(pygame.Rect(clip[0] * S, 0, clip[2] * S, round(self.height * S)))
         self.canvas.blit(image, rect)
         self.canvas.set_clip(None)
 
     def draw_loading(self, phase):
         """The loading screen at `phase` (0..1)."""
+        self.fit_canvas()
         self.canvas.fill(GRAY)
         self.blit_centered(self.art(1), DISC_CENTER)
         self.blit_centered(self.art(2), TITLE_CENTER)
@@ -72,6 +86,7 @@ class HdBootScreen(HdUi):
         """The EA flash `seconds` after the answer; `done` once fully white. `over_black`: after a game switch, over
         the black the old game faded to instead of the loading screen."""
         if over_black:
+            self.fit_canvas()
             self.canvas.fill((0, 0, 0))
         else:
             self.draw_loading(1.0)

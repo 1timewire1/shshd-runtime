@@ -45,6 +45,11 @@ DUET_NAME_MARGIN = 2                    # a two-speaker title's room either side
 # Its most lines: smaller until it wraps to two (owner: three-line names do not look good). Every name a two-speaker
 # line has fits at 57% or more between 80% rings.
 DUET_TITLE_LINES = 2
+# shshd-runtime: the room a bubble keeps above it in the column when it moves up (DialogueLayout.page `dialogue_offset`).
+# Its border art sits outside the box (desktop_dialogue's `box`: a 10-unit strip above it, its line near the outer edge),
+# so the room is that strip and 2 units more; 8 cut a narrator bubble's top line at the layer's top (owner, 2026-11-12,
+# the g54 at 20:9).
+DIALOGUE_TOP_ROOM = 12
 
 
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
@@ -147,6 +152,9 @@ class DialoguePage:
     note_frame: int | None = None  # pack 155's frame drawn for '{' (NOTE_FRAMES), when HD's fonts give it one
     note_tint: tuple | None = None  # the color it is drawn in instead of its own (the gold fonts' note, this fork's)
     theme: int | None = None        # the box's theme when it is not the line's own (a two-speaker line's)
+    # shshd-runtime (General's Aspect Ratio): how far the whole bubble (box, text, title, portrait) was moved up for the
+    # rows it holds past HD's own (DialogueLayout.page's `extra_rows`), so its bottom stays where HD's is.
+    lift: float = 0
 
 
 class DialogueLayout:
@@ -234,13 +242,21 @@ class DialogueLayout:
         return label.text
 
     def page(self, details, start=0, *, names: SpeakerNames | None = None, text_history=None, duet=None,
-             partner_name=None, narration_theme=None):
+             partner_name=None, narration_theme=None, extra_rows=0, dialogue_offset=(0, 0)):
         """`duet` (shshd-runtime, Session.dialogue_duet): a second speaker's portrait, `partner_name` its name. The
         line is then laid out with a portrait on each side, its name centered between them and its first lines clear
         of both rings. Two speakers of one color (both blue, both pink) take that color for the box, the name and
         the text; otherwise the box is gray and each speaker's name in the title takes its own color (owner,
         2026-10-25). `narration_theme` (shshd-runtime, Session.narration_theme): a named line without a portrait
-        (mode 3) drawn in that theme's box, name and text (1 blue, 2 pink, 3 gray) instead of its own."""
+        (mode 3) drawn in that theme's box, name and text (1 blue, 2 pink, 3 gray) instead of its own. `extra_rows`
+        (shshd-runtime, Session.dialogue_extra_rows: a frame taller than HD's 3:4, owner 2026-11-11): a speaker's
+        bubble may hold that many rows more than HD's, so a long line takes fewer bubbles; the bubble then grows
+        upward (DialoguePage.lift) and its bottom stays where HD's is. A line HD fits in one bubble is unchanged.
+        `dialogue_offset` (shshd-runtime, Session.dialogue_offset: the same frames), (right, up) in units: a narrator's
+        bubble moves right so it stays in a narrower frame as far from its edge as HD's from the iPad's; every bubble
+        (speaker or narrator) moves up by `up`, so in a taller frame it sits nearer the middle as the choice does (owner,
+        2026-11-11), as far as the room above it in the column allows (DIALOGUE_TOP_ROOM). Only where it is drawn: the
+        page's text is the same."""
         colors = None
         if narration_theme in (1, 2, 3) and duet is None and details['presentation_mode'] == 3:
             details = dict(details, theme=narration_theme)
@@ -265,6 +281,7 @@ class DialogueLayout:
         sizing_text = details['text']  # Page turns keep the original box size.
         portrait = name_bounds = None
         body_width = body_height = None
+        lift = 0
         cod = game_id(self.resources) == 'cod'
         note_tint = None
         if not cod and getattr(font, 'source', None) is not None:
@@ -300,6 +317,12 @@ class DialogueLayout:
             origin = (30, top)
             body_width = width
         elif mode == 4:
+            if cap_height is not None or getattr(font, 'source', None) is not None:
+                # The iOS builds' outline text switches to a stroked twin in the same colour (shs/profile.py).
+                emphasis = GAMES[game_id(self.resources)].NARRATION_EMPHASIS_FONT
+                face = self.font(emphasis)
+                switch_fonts = {'`': (emphasis, with_note(face) if note_frame is not None else face)}
+                body_style = replace(body_style, markers=(('`', body_style.color),))
             name = layout_text(self.font(name_font), '', 1, name_style)
             name_origin, name_scale = (0, 0), .9
             # FUN_000858cc configures state+0xd180 with registry font 5,
@@ -318,8 +341,9 @@ class DialogueLayout:
                 body_style = replace(body_style, gap=HD_NARRATOR_GAP)
                 measured = layout_text(font, sizing_text, HD_NARRATOR_WRAP, body_style)
                 lines = max(1, len(measured.lines))
-                box = Rect(-6, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
-                origin = (0, HD_NARRATOR_TOP)
+                right = dialogue_offset[0]
+                box = Rect(-6 + right, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
+                origin = (right, HD_NARRATOR_TOP)
         else:
             hd_label = self.hd_label(details, between_rings=duet is not None)
             label = hd_label or preview_speaker(
@@ -367,7 +391,9 @@ class DialogueLayout:
                 body_style = replace(body_style, indents=tuple(2 * n for n in insets))
             measured = layout_text(font, sizing_text, rect.width, body_style, switch_fonts=switch_fonts)
             capacity = int((rect.height + body_style.gap) / (body_style.height + body_style.gap))
-            count = min(capacity, max(3, len(measured.lines)))
+            count = min(capacity + max(0, extra_rows), max(3, len(measured.lines)))
+            # Rows past HD's own: the bubble grows that much upward (the whole of it is moved up below).
+            lift = max(0, count - capacity) * (body_style.height + body_style.gap)
             height = int(count * (body_style.height + body_style.gap) - body_style.gap + 7) if count else 8
             height += height % 2
             box = Rect(rect.x - 7, rect.y - extra, rect.width + 14, height + extra)
@@ -480,6 +506,17 @@ class DialogueLayout:
                 name_origin = (middle - (ink[0] + ink[1]) / 2 * name_scale, name_origin[1])
                 if colors is not None:
                     name = _speaker_colors(name, partner_name or '', *colors)
+        up = dialogue_offset[1]
+        if up:
+            # Centred in a taller frame, as far as the bubble's top (its box, its title, its portrait) has room.
+            tops = [box.y] + [r.y for r in (portrait, name_bounds) if r is not None]
+            lift += max(0., min(up, min(tops) - lift - DIALOGUE_TOP_ROOM))
+        if lift:
+            box = replace(box, y=box.y - lift)
+            drawn_origin = (drawn_origin[0], drawn_origin[1] - lift)
+            name_origin = (name_origin[0], name_origin[1] - lift)
+            portrait = None if portrait is None else replace(portrait, y=portrait.y - lift)
+            name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
-                            theme=details['theme'] if duet is not None or narration_theme else None)
+                            theme=details['theme'] if duet is not None or narration_theme else None, lift=lift)

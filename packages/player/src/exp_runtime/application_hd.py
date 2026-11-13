@@ -24,7 +24,10 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, focus_step, place_controls
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+                               focus_step, place_controls)
+from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
+from .settings import START_IN
 from .hd_ui import S, FRAME
 from .languages import TITLE_LANGUAGES
 from .pointer import step_focus
@@ -42,6 +45,33 @@ SOUND_MENU, MUSIC_MENU = 7, 8
 PRIVACY_MENU, LEAVE_MENU, DISABLE_MENU, ENABLE_MENU = 16, 17, 19, 20
 DELETE_MENU, CONNECTION_MENU = 12, 41
 END_MENU, MISS_MENU = 23, 24
+# Data Management's confirmations (title, message, the Yes button's verb); `~game~` is the game's title.
+DATA_CONFIRMATIONS = {
+    'reset_names': ('Reset Names?', 'The names you typed in ~game~ will be forgotten: new games ask for them again '
+                    '(or take their defaults). Saved games keep the names they were saved with.', 'Reset'),
+    'delete_saves': ('Delete All Saves?', 'Every saved game of ~game~ will be deleted, with the Decision Tree\'s '
+                     'saved scenes. Episodes, names and settings stay.', 'Delete'),
+    'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
+                       'Check for Updates and the chosen folders too. Saves and names stay.', 'Reset'),
+    'verify_library': ('Verify Library?', 'Every file of ~game~ is checked against its checksum, which can take a few '
+                       'minutes. A damaged episode\'s file is removed: adding the episode again restores it.', 'Verify'),
+    'rebuild_previews': ('Rebuild Previews?', 'Every episode preview of ~game~ is drawn again from its title card, '
+                         'which can take a few minutes.', 'Rebuild'),
+    'rebuild_hd_art': ('Rebuild HD Art?', 'The HD pictures ~game~ shows in standard episodes are found again in your '
+                       'HD files, which can take a few minutes.', 'Rebuild'),
+}
+# The Episodes page's rows that open an episode list to choose from (application.EPISODE_CHOICES).
+EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees')
+# The confirmations above that run as a background job: (the busy card's title, the Application method given the result).
+DATA_JOBS = {
+    'verify_library': ('Verifying library', 'verify_report'),
+    'rebuild_previews': ('Drawing previews', 'previews_rebuilt'),
+    'rebuild_hd_art': ('Building HD art', 'hd_art_rebuilt'),
+}
+# "Options Unlocked" / "Warping feature has been unlocked for Football Season Mega Pack!" (strings 115 / 272): shown by
+# `SHSEngine::setAppMode` on the main menu after Football Season clears the warp lock (its flag +0x6490b), and by
+# Extras' Unlock Warping.
+WARP_UNLOCKED_MENU = 29
 SOUND_DELAY = 0.3                 # seconds the finished loading screen shows before the question
 # Starting an episode (owner, from the original games and a photo of SHS on an iPod touch, 2026-10-22): the story's
 # "Loading / Please wait..." overlay with its running man over the main menu's art (without its buttons); the art fades
@@ -117,7 +147,7 @@ class HdShell:
         self.main.start(intro=intro)
 
     def zoom_out(self, box):
-        self.leaving = (pygame.transform.smoothscale(box, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+        self.leaving = (pygame.transform.smoothscale(box, (FRAME[0] * S, FRAME[1] * S)), 0.0)   # (HD's 3:4 card: centred)
         self.replay_launch()
 
     def replay_launch(self):
@@ -128,7 +158,7 @@ class HdShell:
     def show_end_menu(self, backdrop, football):
         """The menu shown when an episode ends, over `backdrop` (the last frame, already sepia, as a 768 x 1024 surface)."""
         self.stage = 'end'
-        self.end_backdrop = pygame.transform.smoothscale(backdrop, (FRAME[0] * S, FRAME[1] * S))
+        self.end_backdrop = self.frame_wide(backdrop)
         self.stack.clear()
         self.stack.queue(self.END_MENU if football else self.MISS_MENU)
         self.window_ms = 0                                  # it pops up (zooms in) like the other windows
@@ -164,8 +194,7 @@ class HdShell:
         self.pressed = self.drag = self.focus = None
         self.main.start(intro=False)
         self.stage, self.episode_age, self.episode_then = 'episode', 0.0, then
-        self.leaving = None if picture is None else (
-            pygame.transform.smoothscale(picture, (FRAME[0] * S, FRAME[1] * S)), 0.0)
+        self.leaving = None if picture is None else (self.frame_wide(picture), 0.0)
 
     def tick_episode(self, seconds):
         self.episode_age += seconds
@@ -213,14 +242,16 @@ class HdShell:
             return None
         width = FRAME[0] * S
         height = round(panel.get_height() * width / panel.get_width())
-        layer = pygame.Surface((width, FRAME[1] * S), pygame.SRCALPHA).convert_alpha()
+        tall = self.main.height if getattr(self.main, 'grows', False) else FRAME[1]
+        layer = pygame.Surface((width, round(tall * S)), pygame.SRCALPHA).convert_alpha()
         layer.blit(pygame.transform.smoothscale(panel, (width, height)), (0, (layer.get_height() - height) // 2))
         return layer
 
     def draw_episode_loading(self):
         canvas = self.episode_canvas
-        if canvas is None:
-            canvas = self.episode_canvas = pygame.Surface((FRAME[0] * S, FRAME[1] * S)).convert()
+        size = (FRAME[0] * S, round((self.main.height if getattr(self.main, 'grows', False) else FRAME[1]) * S))
+        if canvas is None or canvas.get_size() != size:
+            canvas = self.episode_canvas = pygame.Surface(size).convert()
         canvas.fill((0, 0, 0))
         # The art fades out from the start; the overlay stays over it throughout.
         fade = max(0.0, min(1.0, 1 - self.episode_age / EPISODE_FADE))
@@ -231,7 +262,7 @@ class HdShell:
             canvas.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)
         band = self.loading_band(23 + int(self.episode_age / RUNNER_FRAME) % 5)
         if band is not None:
-            canvas.blit(band, (0, 0))
+            canvas.blit(band, (0, (canvas.get_height() - band.get_height()) // 2))
         self.draw_leaving(canvas)
         return canvas
 
@@ -277,8 +308,13 @@ class HdShell:
         if (self.stage == 'loading' and self.age >= LOADING_TIME + SOUND_DELAY
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
             self.stage = 'sound'
-            self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
-            self.window_ms = 0
+            if getattr(self.app.state, 'skip_sound_prompt', False):
+                # Sound's Skip Sound Prompt: on as "Play with sound?" answered goes (action 1: SHS HD's EA flash, CoD's
+                # fade through black), Music and Sound as set.
+                self.perform(1)
+            else:
+                self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
+                self.window_ms = 0
         elif self.stage == 'flash':
             self.flash_age += seconds
             if self.boot.flash_done(self.flash_age):
@@ -299,14 +335,67 @@ class HdShell:
                         autoplay=state.autoplay, disable_choice_timer=state.disable_choice_timer)
         if graphics.supports_vibration():
             settings['device_vibration'] = state.device_vibration   # General's Vibration: a device that has one
+        settings['side_panels'] = state.side_panels     # (saved since 2026-11-12: Desktop.panels_wanted)
         if self.backdrop_available():
             settings['hd_backdrop'] = state.hd_backdrop
         if self.app.hires_portraits_offered():
             settings['hires_portraits'] = state.hires_portraits
+        if self.app.ms3_characters_offered():
+            settings['ms3_characters'] = state.ms3_characters
+        if self.app.java_look_offered():
+            settings['java_look'] = state.java_look
+        if self.app.brew_08_backgrounds_offered():
+            settings['brew_08_backgrounds'] = state.brew_08_backgrounds
+        if self.app.smartphone_music_offered():
+            settings['smartphone_music'] = state.smartphone_music
+        if self.app.portrait_addon_offered():
+            settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
+        if self.app.minigames_offered():
+            settings['arena_minigames'] = state.arena_minigames
+        settings['skip_ahead'] = state.skip_ahead
+        settings['undo'] = state.undo
+        if self.app.grids_as_memory_offered():
+            settings['grids_as_memory'] = state.grids_as_memory     # ...with SHS '11's addon
+        if self.app.word_grid_skin_offered() and state.arena_minigames:
+            settings['word_grid_skin'] = state.word_grid_skin       # ...with the HD bundle's word game art
+        if self.app.arena_skin_offered() and state.arena_minigames:
+            settings['arena_skin'] = state.arena_skin               # ...with the X360 addon
         if self.translated_titles():
             settings['title_language'] = self.language_name(state.title_language)
-        settings['add_episodes'] = settings['open_library'] = True
+            settings['title_language_names'] = {language: self.language_name(language) for language in TITLE_LANGUAGES}
+        offered = self.app.title_music_offered()
+        if len(offered) > 2:                            # (Default and Auto alone choose nothing)
+            from .desktop_pause_hd import TITLE_MUSIC_NAMES
+            settings['title_music'] = TITLE_MUSIC_NAMES[state.title_music]
+            settings['title_music_names'] = {key: TITLE_MUSIC_NAMES[key] for key in offered}
+        # Data Management's rows (main menu only).
+        if self.app.library.addons:
+            settings['manage_addons'] = True
+        for key in ('add_episodes', 'open_library', 'library_info', 'storage', 'verify_library', 'reset_names',
+                    'delete_saves', 'reset_settings', 'back_up', 'restore', 'sync_send', 'sync_receive',
+                    'delete_library') + EPISODE_LISTS:
+            settings[key] = True
+        sync = getattr(self.app, 'sync', None)
+        if sync is not None:
+            settings.update(sync.switches())            # Sync's send page
+        if self.app.picker_available():
+            settings['rebuild_previews'] = True
+        if self.app.hd_art_offered():
+            settings['rebuild_hd_art'] = True
+        if getattr(self.app, 'file_picker', None) is None:
+            # A computer's own file browser chooses them; a phone's backups and exports stay in Downloads.
+            for key in ('backup_folder', 'export_folder'):
+                settings[key] = self.app.folder_label(key)
         settings['check_updates'] = self.app.settings.check_for_updates
+        settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
+        settings['aspect_ratio'] = ASPECT_NAMES[self.app.settings.aspect(self.app.fixed_window)]
+        settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
+        if graphics.controller_connected():
+            settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
+            settings['grid_controls'] = GRID_CONTROLS_NAMES[state.grid_controls]
+            settings['controller_vibration'] = graphics.vibration_source() == 'controller'
+        if self.app.warp_lock_offered():
+            settings['unlock_warp'] = True
         return settings
 
     def translated_titles(self):
@@ -343,7 +432,32 @@ class HdShell:
             elif which != 'music':
                 self.app.ui_sound('SOUND_SLIDER_SOUND', when_idle=True)
 
+    def choose(self, key, value):
+        """A value picked on an option's choice page (desktop_pause_hd.CHOICE_NAMES)."""
+        state = self.app.state
+        if key == 'start_in':
+            self.app._attempt(lambda: self.app.settings.set_start_in(value))
+        elif key == 'aspect_ratio':
+            self.app._attempt(lambda: self.app.set_aspect_ratio(value))
+        elif key == 'title_language':
+            state.title_language = value
+            state.persist()
+            self.app.picker = None                      # the pickers' captions follow the language
+        elif key in ('controller_confirm', 'grid_controls'):
+            setattr(state, key, value)
+            self.app._attempt(state.persist)
+            if key == 'controller_confirm':
+                self.app.sync_controller()
+        elif key == 'title_music':
+            state.title_music = value
+            self.app._attempt(state.persist)
+            self.app.play_menu_music()                  # the new tune at once, from its start
+
     def toggle(self, which):
+        if which.startswith('sync_'):
+            self.app.sync_flow().toggle(which)          # Sync's send page: what goes (not a saved option)
+            self.app.ui_sound('CLICK_SOUND')
+            return
         if which == 'check_updates':
             self.app.set_update_check(not self.app.settings.check_for_updates)
             self.app.ui_sound('CLICK_SOUND')
@@ -353,6 +467,24 @@ class HdShell:
         state.persist()
         if which == 'hires_portraits':
             self.app.apply_hires_portraits()
+        if which == 'ms3_characters':
+            self.app.apply_ms3_characters()
+        if which == 'java_look':
+            self.app.apply_java_look()
+        if which == 'brew_08_backgrounds':
+            self.app.apply_brew_08_backgrounds()
+        if which == 'smartphone_music':
+            self.app.apply_smartphone_music()
+        if which == 'word_grid_skin':
+            self.app.apply_word_grid_skin()
+        if which == 'grids_as_memory':
+            self.app.apply_grids_as_memory()
+        if which == 'skip_ahead':
+            self.app.apply_skip_ahead()
+        if which == 'undo':
+            self.app.apply_undo()
+        if which == 'ch_portraits':
+            self.app.apply_ch_portraits()
         self.app.menu_music_changed(switched=which == 'music')
         if which == 'vibration' and state.vibration:
             self.app.play_buzz()        # SHSEngine::setVibrationEnabled vibrates once when it is switched on
@@ -369,9 +501,27 @@ class HdShell:
 
     # ------------------------------------------------------------ rendering
 
+    def sync_height(self):
+        """shshd-runtime (General's Aspect Ratio): the menu frame's height (Application.menu_frame) for the screens drawn
+        at it (`grows`: SHS HD's main menu and boot screens; Cause of Death's stay 3:4 for now), and for the main menu's
+        Options and Help pages over them (their text pages run its height)."""
+        height = self.app.menu_frame()[1] if hasattr(self.app, 'menu_frame') else FRAME[1]
+        for part in (getattr(self, 'main', None), getattr(self, 'boot', None)):
+            if getattr(part, 'grows', False):
+                part.height = height
+        if hasattr(self, 'pause'):
+            self.pause.frame_height = height if getattr(getattr(self, 'main', None), 'grows', False) else FRAME[1]
+
+    @staticmethod
+    def frame_wide(picture):
+        """`picture` at the frame's width in pixels, its own shape kept (a 3:4 one, or a taller frame's)."""
+        width = FRAME[0] * S
+        return pygame.transform.smoothscale(picture, (width, round(picture.get_height() * width / picture.get_width())))
+
     def render(self, *, overlay=True, buttons=True):
         """The current screen as a 2x canvas (without the open window when `overlay` is off, and without the main
         menu's buttons when `buttons` is off)."""
+        self.sync_height()
         if self.stage == 'episode':
             return self.draw_episode_loading()
         if self.stage in ('loading', 'sound'):
@@ -382,7 +532,9 @@ class HdShell:
             self.draw_fade(canvas)
             return canvas
         elif self.stage == 'end':
-            canvas = self.boot.canvas
+            canvas = self.__dict__.get('end_canvas')
+            if canvas is None or canvas.get_size() != self.end_backdrop.get_size():
+                canvas = self.end_canvas = pygame.Surface(self.end_backdrop.get_size()).convert()
             canvas.blit(self.end_backdrop, (0, 0))
         else:
             shown = self.pressed or self.focus
@@ -533,9 +685,11 @@ class HdShell:
         focus = self.focus if self.focus in targets else None
         if focus_step(key):
             self.focus = step_focus(targets, focus, focus_step(key))
-        elif key in KEYS_ACTIVATE and focus is not None:
-            self.activate(focus)
-            return focus
+        elif key in KEYS_ACTIVATE and (focus is not None or len(targets) == 1):
+            self.activate(focus or targets[0])
+            return focus or targets[0]
+        elif key in KEYS_ACTIVATE and targets:
+            self.focus = targets[0]         # nothing highlighted: Enter (a controller's confirm) shows where it is
         return None
 
     def wheel(self, dy):
@@ -599,12 +753,73 @@ class HdShell:
                 self.pause_open = False
         elif kind == 'pause_toggle':
             self.toggle(command[1])
+        elif kind == 'pause_cycle' and len(command) > 2:
+            self.choose(command[1], command[2])
+            self.pause.back()                           # a choice page: back to its option's page
         elif kind == 'pause_cycle' and command[1] == 'title_language':
             state = self.app.state
             state.title_language = TITLE_LANGUAGES[(TITLE_LANGUAGES.index(state.title_language) + 1)
                                                    % len(TITLE_LANGUAGES)]
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
+        elif kind == 'pause_cycle' and command[1] == 'controller_confirm':
+            state = self.app.state
+            state.controller_confirm = 'east' if state.controller_confirm == 'south' else 'south'
+            self.app._attempt(state.persist)
+            self.app.sync_controller()
+        elif kind == 'pause_cycle' and command[1] == 'grid_controls':
+            state = self.app.state
+            state.grid_controls = 'hold' if state.grid_controls == 'tap' else 'tap'
+            self.app._attempt(state.persist)
+        elif kind == 'pause_cycle' and command[1] in ('backup_folder', 'export_folder'):
+            self.app.choose_folder(command[1])
+        elif kind == 'pause_cycle' and command[1] == 'aspect_ratio':
+            self.app._attempt(lambda: self.app.set_aspect_ratio(self.app.next_aspect_ratio()))
+        elif kind == 'pause_cycle' and command[1] == 'start_in':
+            choices = START_IN
+            self.app._attempt(lambda: self.app.settings.set_start_in(
+                choices[(choices.index(self.app.settings.start_in) + 1) % len(choices)]))
+        elif kind == 'pause_action' and command[1] == 'unlock_warp':
+            if self.app.unlock_warp():
+                self.open_window(WARP_UNLOCKED_MENU)
+        elif kind == 'pause_action' and command[1] == 'library_info':
+            self.pause.show_text('data:info', 'Library Info', self.app.library_info(), 'data:library')
+        elif kind == 'pause_action' and command[1] in EPISODE_LISTS:
+            self.app.open_choice(command[1])
+        elif kind == 'pause_action' and command[1] == 'manage_addons':
+            self.app.addon_pages().open()
+        elif kind == 'pause_action' and command[1].startswith('addon'):
+            self.app.addon_pages().command(command[1])
+        elif kind == 'pause_action' and command[1] == 'sync_send':
+            self.app.sync_flow().show_send_page()
+        elif kind == 'pause_action' and command[1] == 'sync_receive':
+            self.app.sync_flow().receive()
+        elif kind == 'pause_action' and command[1] == 'sync_find':
+            self.app.sync_flow().find()
+        elif kind == 'pause_action' and command[1].startswith('sync_device:'):
+            self.app.sync_flow().choose(command[1])
+        elif kind == 'pause_action' and command[1] == 'sync_none':
+            pass                                        # "Looking for receivers...": nothing to press yet
+        elif kind == 'pause_action' and command[1] == 'delete_library':
+            self.app.confirm_delete_library()
+        elif kind == 'pause_action' and command[1] == 'back_up':
+            self.app.start_back_up()
+        elif kind == 'pause_action' and command[1] == 'restore':
+            self.app.show_backups()
+        elif kind == 'pause_action' and command[1].startswith('restore:'):
+            self.app.restore_progress(command[1])
+        elif kind == 'pause_action' and command[1] == 'storage':
+            self.app.start_data_job('Measuring storage', self.app.storage_text, lambda text: self.pause.show_text(
+                'data:storage', 'Storage', text, 'data:library'))
+        elif kind == 'pause_action' and command[1] in DATA_CONFIRMATIONS:
+            title, message, verb = DATA_CONFIRMATIONS[command[1]]
+            action = getattr(self.app, command[1])
+            if command[1] in DATA_JOBS:
+                busy, done = DATA_JOBS[command[1]]
+                run = lambda: self.app.start_data_job(busy, action, getattr(self.app, done))
+            else:
+                run = lambda: self.notify(*action())
+            self.confirm(title, message.replace('~game~', self.app.game_title), verb, run)
         elif kind == 'pause_action' and command[1] == 'add_episodes':
             self.app.command(('browse', 'episodes'))
         elif kind == 'pause_action' and command[1] == 'open_library':
@@ -620,6 +835,13 @@ class HdShell:
     def perform(self, number):
         """`SHSEngine::doMenuEngineAction` for the actions the menus of this shell use."""
         state = self.app.state
+        if number in (self.CONFIRM_ACTION, self.DECLINE_ACTION):    # a Data Management confirmation's Yes (or its No)
+            self.stack.clear()
+            action = self.confirmed if number == self.CONFIRM_ACTION else self.declined
+            self.confirmed = self.declined = None
+            if action is not None:
+                self.app._attempt(action)
+            return
         if number == 0:                                   # "Play with sound?" -> No
             state.music = state.sound = False
             state.persist()
@@ -664,6 +886,32 @@ class HdShell:
             callback, self.pending_yes = self.pending_yes, None
             self.stack.clear()
             callback()
+
+    # Data Management's confirmations and notices: windows of this player's own in the shell's menu engine
+    # (menu_engine.MenuEngineData.add_window), drawn as "Delete Saved Game?" is.
+    CONFIRM_MENU, NOTICE_MENU, CONFIRM_ACTION = CUSTOM_MENUS, CUSTOM_MENUS + 1, CUSTOM_MENUS
+    DECLINE_ACTION = CUSTOM_MENUS + 1   # (an action number: its own namespace, apart from the menus')
+    confirmed = None                # what the confirmation window's Yes does
+    declined = None                 # what its No does, when it does something (else it only closes)
+
+    def confirm(self, title, message, verb, action, cancel=None):
+        """Ask before a Data Management action: `title` and `message`, No and `verb` (orange, as a Yes is); `verb`
+        runs `action`, No runs `cancel` if given (Add Episodes' question goes on either way)."""
+        no = ((ENGINE, self.DECLINE_ACTION),) if cancel is not None else ((BACK, 0),)
+        self.data.add_window(self.CONFIRM_MENU, title, message, (('No', no),
+                                                                (verb, ((ENGINE, self.CONFIRM_ACTION),))))
+        self.confirmed, self.declined = action, cancel
+        self.open_window(self.CONFIRM_MENU)
+
+    def notify(self, title, message):
+        """A notice with an OK (what a Data Management action did)."""
+        self.data.add_window(self.NOTICE_MENU, title, message, (('OK', ((BACK, 0),)),))
+        self.open_window(self.NOTICE_MENU)
+
+    def open_window(self, menu):
+        """Open menu-engine window `menu` with its entrance (it zooms in, as `showInter`'s windows do)."""
+        self.stack.queue(menu)
+        self.window_ms = 0
 
     def confirm_new_game(self, title, callback):
         """Ask "Delete Saved Game?" before starting over an episode that has a save."""

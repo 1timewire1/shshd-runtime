@@ -59,11 +59,14 @@ PANEL_ALPHA = 248
 TITLE_HEIGHT = 76
 TITLE_POINTS = 34
 
-HEADER_HEIGHT = 46
-ROW_HEIGHT = 72
-TITLE_SIZE = 19
-SUBTITLE_SIZE = 13
+# Sized as the other menus' rows read (owner, 2026-11-12: the text was smaller than every other menu's; it was 46 /
+# 72 points with a 19 / 13 point title and subtitle, and 16 / 14 in a group's strip).
+HEADER_HEIGHT = 54
+ROW_HEIGHT = 86
+TITLE_SIZE = 25
+SUBTITLE_SIZE = 17
 SUBTITLE_GAP = 4
+HEADER_TEXT, COUNT_TEXT = 20, 18
 BLUE_HEADER = (41, 104, 221)
 ORANGE_HEADER = (213, 138, 58)
 ROW_WHITE = (255, 255, 255)
@@ -79,6 +82,23 @@ ICON_RING = (60, 157, 255)
 ICON_GLYPH = (10, 133, 255)
 
 
+TICK_SIZE = 30                  # a choice row's tick box, in the play / pause icon's place
+CHOICE_ACT = ('act',)           # the choice footer's verb button
+
+
+class EpisodeChoice:
+    """Data Management's episode multi-select (owner, 2026-10-29): the list shows only the episodes `allowed`, each
+    with a tick box, and `verb` is the footer button that acts on the ticked ones (`chosen`)."""
+
+    def __init__(self, title, verb, allowed):
+        self.title, self.verb, self.allowed = title, verb, set(allowed)
+        self.chosen = set()
+
+    def toggle(self, record_id):
+        if record_id in self.allowed:
+            self.chosen.symmetric_difference_update({record_id})
+
+
 class HdEpisodeList(HdEpisodePicker):
     # Style, overridable like the tile grid's (desktop_cod_episodes.CodEpisodeList).
     TITLES = (STRING_DEMAND, STRING_AIRING)            # the card's title: by category / by airdate
@@ -90,18 +110,28 @@ class HdEpisodeList(HdEpisodePicker):
     RING_ALPHA, PLAY_ALPHA, PAUSE_ALPHA = 140, 220, 220
 
     card = None                     # the game's menu card renderer (HdPauseMenu / CodPauseMenu), set by the app
+    choosing = None                 # an EpisodeChoice while the list is Data Management's multi-select
+    act_focus = False               # the keyboard is on the choice footer's verb button
 
     def __init__(self, library, model, shots):
         super().__init__(library, model, shots)
         self.expanded = {row.key for row in model.rows}
 
     def title_text(self):
+        if self.choosing is not None:
+            return self.choosing.title
         return self.strings()[self.TITLES[1 if self.model.chronological else 0]]
+
+    def row_episodes(self, row):
+        """A group's episodes as the list shows them: while choosing, only those the choice allows."""
+        if self.choosing is None:
+            return row.episodes
+        return [record for record in row.episodes if record['id'] in self.choosing.allowed]
 
     def card_layout(self):
         """(top, header, bottom) of the menu card, in frame points."""
         from .desktop_pause_hd import HEADER, TALL
-        top, bottom = TALL
+        top, bottom = TALL[0], TALL[1] + self.extra
         header = HEADER + 40 if len(self.card.title_lines(self.title_text())) > 1 else HEADER
         return top, header, bottom
 
@@ -113,7 +143,8 @@ class HdEpisodeList(HdEpisodePicker):
             return pygame.Rect(PANEL_X + BORDER, top + header + 1, PANEL_W - 2 * BORDER, bottom - FOOT - top - header - 1)
         divider_y = PANEL_TOP + TITLE_HEIGHT
         return pygame.Rect(PANEL_MARGIN_X + PANEL_BORDER, divider_y + 2,
-                           FRAME[0] - 2 * PANEL_MARGIN_X - 2 * PANEL_BORDER, PANEL_BOTTOM - divider_y - 2 - PANEL_RADIUS)
+                           FRAME[0] - 2 * PANEL_MARGIN_X - 2 * PANEL_BORDER,
+                           PANEL_BOTTOM + self.extra - divider_y - 2 - PANEL_RADIUS)
 
     # ------------------------------------------------------------ layout
 
@@ -121,10 +152,13 @@ class HdEpisodeList(HdEpisodePicker):
         """[(top, height, row, record_or_None)] for every header and, if its row is expanded, its episodes."""
         result, y = [], 0
         for row in self.model.rows:
+            episodes = self.row_episodes(row)
+            if not episodes:
+                continue                # (only while choosing: a group with nothing to choose)
             result.append((y, HEADER_HEIGHT, row, None))
             y += HEADER_HEIGHT
             if row.key in self.expanded:
-                for record in row.episodes:
+                for record in episodes:
                     result.append((y, ROW_HEIGHT, row, record))
                     y += ROW_HEIGHT
         return result, y
@@ -164,6 +198,9 @@ class HdEpisodeList(HdEpisodePicker):
             self.expanded.symmetric_difference_update({command[1]})
             self.clamp()
             return None
+        if command is not None and command[0] == 'pick':
+            self.choosing.toggle(command[1])
+            return None
         return command
 
     def key(self, key):
@@ -171,11 +208,18 @@ class HdEpisodeList(HdEpisodePicker):
             return ('dismiss',) if key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE) else None
         if self.popup:
             return self.popup_key(key)
-        if key == self.INFO_KEY:
+        if key == self.INFO_KEY and self.choosing is None:
             return self.info_key()
         if key not in (pygame.K_UP, pygame.K_DOWN, pygame.K_RETURN, pygame.K_SPACE):
             return None
-        episodes = [record for row in self.model.rows if row.key in self.expanded for record in row.episodes]
+        episodes = [record for row in self.model.rows if row.key in self.expanded for record in self.row_episodes(row)]
+        if self.choosing is not None and self.act_focus:
+            # On the verb button: Enter presses it (once something is ticked), Up goes back to the last row.
+            if key in (pygame.K_RETURN, pygame.K_SPACE):
+                return CHOICE_ACT if self.choosing.chosen else None
+            if key == pygame.K_UP:
+                self.act_focus = False
+            return None
         if not episodes:
             return None
         ids = {record['id'] for record in episodes}
@@ -186,8 +230,14 @@ class HdEpisodeList(HdEpisodePicker):
             self.reveal(self.selected)
             return None
         if key in (pygame.K_RETURN, pygame.K_SPACE):
+            if self.choosing is not None:
+                self.choosing.toggle(self.selected)
+                return None
             return ('tile', self.selected)
         index = next(i for i, record in enumerate(episodes) if record['id'] == self.selected)
+        if self.choosing is not None and key == pygame.K_DOWN and index == len(episodes) - 1:
+            self.act_focus = True                       # past the last row: the verb button
+            return None
         index = max(0, min(len(episodes) - 1, index + (1 if key == pygame.K_DOWN else -1)))
         self.selected = episodes[index]['id']
         self.reveal(self.selected)
@@ -215,12 +265,48 @@ class HdEpisodeList(HdEpisodePicker):
             pygame.draw.polygon(surface, (*self.PLAY_COLOR, self.PLAY_ALPHA), points)
         layer.blit(surface, (round(cx * S - size / 2), round(cy * S - size / 2)))
 
+    def draw_tick(self, layer, cx, cy, ticked):
+        """A choice row's tick box: a rounded square in the icon ring's blue, filled with a white tick when ticked."""
+        size = TICK_SIZE * S
+        surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        box = surface.get_rect()
+        if ticked:
+            pygame.draw.rect(surface, self.ICON_RING_COLOR, box, border_radius=7 * S)
+            points = [(box.w * .24, box.h * .52), (box.w * .42, box.h * .70), (box.w * .76, box.h * .32)]
+            pygame.draw.lines(surface, (255, 255, 255), False, points, 4 * S)
+        else:
+            pygame.draw.rect(surface, (255, 255, 255), box, border_radius=7 * S)
+            pygame.draw.rect(surface, (*self.ICON_RING_COLOR, self.RING_ALPHA + 60), box, 2 * S, border_radius=7 * S)
+        layer.blit(surface, (round(cx * S - size / 2), round(cy * S - size / 2)))
+
+    def draw_choice_footer(self, layer, back, act):
+        """The choice's footer: how many are ticked between the back button and the verb button (dimmed and inert
+        until something is ticked)."""
+        chosen = len(self.choosing.chosen)
+        button = pygame.Surface((BUTTON_SIZE[0] * S, BUTTON_SIZE[1] * S), pygame.SRCALPHA)
+        self.draw_button(button, 0, 0, orange=True, label=self.choosing.verb,
+                         pressed=self.pressed == CHOICE_ACT or (self.act_focus and chosen > 0))
+        if not chosen:
+            button.set_alpha(110)
+        layer.blit(button, (act.x * S, act.y * S))
+        text = f'{chosen} selected'
+        size = 18
+        width = act.left - back.right
+        self.text(layer, text, size, back.right, back.centery - self.font(size).get_height() / S / 2,
+                  color=self.TEXT_ROW_COLOR, outline=False, width=width)
+        if chosen and not (self.popup or self.alert):
+            self.hits.append((act, CHOICE_ACT))
+
+    def mark_width(self, mark):
+        """The tag plate's width in points: 32, wider for a tag that needs it (the X360 translations' "X360")."""
+        return max(32, -(-self.font(11).size(mark)[0] // S) + 10)
+
     def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
         """A small "SD" tag on episodes that come from the standard (non-HD) release; this player's own addition,
         restyled from the tile grid's dark plate to sit on this screen's white rows. Gray, so that blue is New
         Rules' own: an episode translated from another SHS game shows its game's tag ("NR") in its game's colour
         (owner, 2026-10-25)."""
-        width, height = 32, 18
+        width, height = self.mark_width(mark), 18
         color = STANDARD_MARK_COLOR if color is None else color
         plate = pygame.Surface((width * S, height * S), pygame.SRCALPHA)
         pygame.draw.rect(plate, (*color, 30), plate.get_rect(), border_radius=6 * S)
@@ -241,11 +327,11 @@ class HdEpisodeList(HdEpisodePicker):
         points = ([(cx - 5, cy - 3), (cx + 5, cy - 3), (cx, cy + 4)] if row.key in self.expanded
                   else [(cx - 4, cy - 5), (cx - 4, cy + 5), (cx + 5, cy)])
         pygame.draw.polygon(layer, (255, 255, 255), [(round(px * S), round(py * S)) for px, py in points])
-        self.text(layer, row.title.upper(), 16, rect.x, rect.y + (rect.height - 20) / 2, color=(255, 255, 255),
-                 width=rect.width, outline=False)
-        count = str(len(row.episodes))
-        width = self.measure(count, 14)
-        self.text(layer, count, 14, rect.right - 16 - width, rect.y + (rect.height - 18) / 2,
+        self.text(layer, row.title.upper(), HEADER_TEXT, rect.x, rect.y + (rect.height - HEADER_TEXT - 4) / 2,
+                  color=(255, 255, 255), width=rect.width, outline=False)
+        count = str(len(self.row_episodes(row)))
+        width = self.measure(count, COUNT_TEXT)
+        self.text(layer, count, COUNT_TEXT, rect.right - 16 - width, rect.y + (rect.height - COUNT_TEXT - 4) / 2,
                   color=(255, 255, 255), outline=False)
         self.hits.append((rect, ('toggle', row.key)))
 
@@ -257,10 +343,13 @@ class HdEpisodeList(HdEpisodePicker):
                          (rect.right * S, (rect.bottom - 1) * S), max(1, S))
         right = rect.right - 16
         icon_cx = right - ICON_SIZE / 2
-        self.draw_icon(layer, icon_cx, rect.centery, record['id'] in self.saved)
+        if self.choosing is not None:
+            self.draw_tick(layer, icon_cx, rect.centery, record['id'] in self.choosing.chosen)
+        else:
+            self.draw_icon(layer, icon_cx, rect.centery, record['id'] in self.saved)
         right = icon_cx - ICON_SIZE / 2 - 10
         info = None
-        if self.model.has_info(record):
+        if self.model.has_info(record) and self.choosing is None:
             # The info button (this fork), left of the play / pause icon.
             info = pygame.Rect(0, 0, ICON_SIZE, ICON_SIZE)
             info.center = (round(right - ICON_SIZE / 2), rect.centery)
@@ -268,7 +357,7 @@ class HdEpisodeList(HdEpisodePicker):
             right -= ICON_SIZE + 10
         mark = self.model.mark(record)
         if mark is not None:
-            right -= 32
+            right -= self.mark_width(mark)
             self.draw_standard_mark(layer, right, rect.y + (rect.height - 18) / 2, mark, self.model.mark_color(record))
             right -= 8
         text_width = right - rect.x - 18
@@ -285,7 +374,7 @@ class HdEpisodeList(HdEpisodePicker):
         else:
             self.text(layer, title, TITLE_SIZE, rect.x + 18, rect.y + (rect.height - title_height) / 2,
                      color=self.TEXT_ROW_COLOR, outline=False)
-        self.hits.append((rect, ('tile', record['id'])))
+        self.hits.append((rect, ('tile' if self.choosing is None else 'pick', record['id'])))
         if info is not None:                  # after the row's own hit, so it wins
             self.hits.append((info.inflate(8, 8), ('info', record['id'])))
 
@@ -314,7 +403,7 @@ class HdEpisodeList(HdEpisodePicker):
             for rule in (top + header, bottom - FOOT):
                 self.card.rect(layer, self.card.SEPARATOR_COLOR, (PANEL_X + BORDER, rule, PANEL_W - 2 * BORDER, 1))
         else:
-            panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM - PANEL_TOP)
+            panel = pygame.Rect(PANEL_MARGIN_X, PANEL_TOP, FRAME[0] - 2 * PANEL_MARGIN_X, PANEL_BOTTOM + self.extra - PANEL_TOP)
             self.draw_panel(layer, panel)
             self.text(layer, title, TITLE_POINTS, panel.x, panel.y + (TITLE_HEIGHT - TITLE_POINTS - 6) / 2,
                      color=self.TITLE_COLOR, width=panel.width, outline=False)
@@ -346,10 +435,12 @@ class HdEpisodeList(HdEpisodePicker):
             restore = pygame.Rect(0, 0, *BUTTON_SIZE)
             restore.bottomright = (PANEL_X + PANEL_W - 14, bottom - 13)
         else:
-            back = pygame.Rect(BACK_X, BUTTON_Y, *BUTTON_SIZE)
-            restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], BUTTON_Y, *BUTTON_SIZE)
+            back = pygame.Rect(BACK_X, self.button_y, *BUTTON_SIZE)
+            restore = pygame.Rect(FRAME[0] - BACK_X - BUTTON_SIZE[0], self.button_y, *BUTTON_SIZE)
             self.draw_button(layer, back.x, back.y, pressed=self.pressed == ('back',))
-        if self.show_restore:
+        if self.choosing is not None:
+            self.draw_choice_footer(layer, back, restore)
+        elif self.show_restore:
             self.draw_button(layer, restore.x, restore.y, orange=True, label=strings[self.RESTORE],
                              pressed=self.pressed == ('restore',))
         if not dim:

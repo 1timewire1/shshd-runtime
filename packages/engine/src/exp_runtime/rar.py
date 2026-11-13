@@ -1,7 +1,7 @@
 """Bounded RAR4/RAR5 reading through libarchive, without external commands.
 
-Apple platforms use the OS library. Desktop builds for Windows/Linux bundle
-libarchive; source checkouts can use a locally installed copy. Only the RAR
+Apple platforms use the OS library. Desktop builds for Windows/Linux and the
+Android APK bundle libarchive; source checkouts can use a locally installed copy. Only the RAR
 decoders are enabled, and archive member paths are never used as output paths.
 """
 import ctypes as c
@@ -18,6 +18,10 @@ class RarError(ValueError):
 def _library_candidates():
     if sys.platform in ('darwin', 'ios'):
         yield '/usr/lib/libarchive.2.dylib'
+        return
+    if sys.platform == 'android' or hasattr(sys, 'getandroidapilevel'):
+        # The APK's own build (android/recipes/libarchive): an app library, found by name, without a version suffix.
+        yield 'libarchive.so'
         return
     name = 'archive.dll' if sys.platform == 'win32' else 'libarchive.so.13'
     if bundle := getattr(sys, '_MEIPASS', None):
