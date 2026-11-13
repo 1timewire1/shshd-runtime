@@ -506,6 +506,22 @@ class Surface:
         x, y = map(int, position)
         self.fill(color if len(color) == 4 else (*color, 255), Rect(x, y, 1, 1))
 
+    def min_alpha(self, least=None):
+        """The lowest alpha of any pixel (`least`: enough to know whether it is at least that): an opaque surface is 255,
+        a picture's own is read once, and a stretch or a piece of one picture is no less see-through than it. The iOS
+        story asked this of its background each frame of a location change or pan (desktop.opaque_enough), and
+        reading the whole raster back took 105 ms a frame on a PC."""
+        if self.opaque:
+            return 255
+        node = self.snapshot()
+        bound = _alpha_bound(node)
+        if least is not None and bound >= least:
+            return bound
+        exact = node.__dict__.get('_min_alpha')
+        if exact is None:
+            exact = node._min_alpha = raster(node).getchannel('A').getextrema()[0]
+        return exact
+
     def blank(self):
         """Nothing drawn since it was cleared: only fills of transparent black (Desktop._canvas_empty, which reads a
         pygame surface's pixel buffer for the same answer; this one keeps no pixels)."""
@@ -782,6 +798,27 @@ class Transform:
         return cls._rotate(surface, angle, scale, True)
 
 
+def _alpha_bound(node):
+    """A lower bound of `node`'s pixels' alpha without drawing it (0 when it can't be told)."""
+    kept = node.__dict__.get('_alpha_bound')
+    if kept is not None:
+        return kept
+    if node.pixels is not None:
+        bound = node.pixels.getextrema()[3][0] if node.pixels.mode == 'RGBA' else 255
+    elif len(node.ops) == 1 and node.ops[0].get('kind') == 'scale':
+        bound = _alpha_bound(node.ops[0]['source'])          # (a resampling stays within its source's alphas)
+    elif (len(node.ops) == 1 and node.ops[0].get('kind') == 'blit' and node.ops[0].get('alpha', 255) == 255
+          and not node.ops[0].get('blend')):
+        op, source = node.ops[0], node.ops[0]['source']
+        x, y = op['at']
+        covered = x <= 0 and y <= 0 and x + source.size[0] >= node.size[0] and y + source.size[1] >= node.size[1]
+        bound = _alpha_bound(source) if covered else 0       # (a piece of one picture: as see-through at most)
+    else:
+        bound = 0
+    node._alpha_bound = bound
+    return bound
+
+
 RASTER_KEPT_PIXELS = 300_000        # a drawn node this small keeps its raster (it never changes)
 
 
@@ -966,31 +1003,55 @@ class FrameEncoder:
         self.drawn = {}             # an op node's drawing (size, ops with its sources' identifiers) -> its identifier
         self.kept = OrderedDict()   # pictures not shown in the last frame -> their pixels, least recently shown first
         self.pictures = {}          # every picture the host holds -> its pixels
+        self.token = object()
 
     def encode(self, surface):
         nodes, visited, drawn, same = [], set(), {}, {}
+        token = self.token                  # (this encoder's own: what another sent says nothing of this host)
 
         def visit(node):
+            """(this node's identifier for the host, every identifier it draws from, itself included)."""
             if node.identifier in same:
                 return same[node.identifier]
+            # A node the host still holds with everything it draws from (the same Python object: a layer left as it
+            # was) is not gone through again: building its key, a repr of its ops, each frame cost the choice screen
+            # 30 ms on a PC (about 100 on the iPad).
+            known = node.__dict__.get('_encoded')
+            if known is not None and known[0] is token and known[2] <= self.previous:
+                _token, identifier, ids, key = known
+                if key is not None:
+                    drawn[key] = identifier
+                visited.update(ids)
+                same[node.identifier] = identifier, ids
+                return identifier, ids
             if node.pixels is not None:
-                identifier, record = node.identifier, None
+                identifier, record, key, ids = node.identifier, None, None, {node.identifier}
                 self.pictures[identifier] = node.size[0] * node.size[1]
-                self.kept.pop(identifier, None)
             else:
-                ops = [dict(op, source=visit(op['source'])) if 'source' in op else op for op in node.ops]
+                ids, ops = set(), []
+                for op in node.ops:
+                    if 'source' in op:
+                        source, below = visit(op['source'])
+                        ids |= below
+                        op = dict(op, source=source)
+                    ops.append(op)
                 key = repr((node.size, ops))
                 identifier = drawn.get(key) or self.drawn.get(key) or node.identifier
                 drawn[key] = identifier
                 record = dict(id=identifier, size=node.size, ops=ops)
-            same[node.identifier] = identifier
+                ids.add(identifier)
+            ids = frozenset(ids)
+            same[node.identifier] = identifier, ids
+            node._encoded = token, identifier, ids, key
             if identifier not in visited:
                 visited.add(identifier)
                 if identifier not in self.previous:
                     nodes.append(record if record is not None else node.record())
-            return identifier
+            return identifier, ids
 
-        root = visit(surface.snapshot())
+        root = visit(surface.snapshot())[0]
+        for identifier in [identifier for identifier in self.kept if identifier in visited]:
+            del self.kept[identifier]           # (shown again: no longer only kept)
         released = []
         for identifier in sorted(self.previous - visited):
             if identifier in self.pictures and identifier not in self.kept:

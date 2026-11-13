@@ -125,6 +125,9 @@ def opaque_enough(surface, least=OPAQUE_ENOUGH):
     on every new location and every frame of a location pan."""
     if not surface.get_masks()[3]:
         return True
+    min_alpha = getattr(surface, 'min_alpha', None)
+    if min_alpha is not None:                   # (the iOS backend's: from what the surface is made of)
+        return min_alpha(least) >= least
     mask = getattr(pygame, 'mask', None)
     if mask is None:
         return min(pygame.image.tobytes(surface, 'RGBA')[3::4]) >= least

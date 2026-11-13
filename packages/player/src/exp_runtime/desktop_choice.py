@@ -398,14 +398,34 @@ class ChoiceRenderer:
         return pygame.transform.smoothscale(image, (max(1, round(image.get_width() * k)),
                                                     max(1, round(image.get_height() * k))))
 
+    TILED_KEPT = 96
+
     def tile(self, image, rect):
-        """`CSMasterImage::drawTiledNoCP`: the image repeated from the rectangle's top-left, clipped to it."""
+        """`CSMasterImage::drawTiledNoCP`: the image repeated from the rectangle's top-left, clipped to it. A run of
+        repeats is one sheet, made once (the panel's edge strips were hundreds of blits a frame: 15 ms of the choice
+        screen's frame on a PC, three times that on the iPad)."""
         clip = self.canvas.get_clip()
         self.canvas.set_clip(rect.clip(clip))
         w, h = image.get_size()
-        for y in range(rect.y, rect.bottom, h):
-            for x in range(rect.x, rect.right, w):
-                self.canvas.blit(image, (x, y))
+        columns, rows = -(-rect.width // w), -(-rect.height // h)
+        if columns * rows <= 2:
+            for y in range(rect.y, rect.bottom, h):
+                for x in range(rect.x, rect.right, w):
+                    self.canvas.blit(image, (x, y))
+        else:
+            tiled = self.__dict__.setdefault('_tiled', {})
+            key = (id(image), columns, rows)
+            found = tiled.pop(key, None)
+            if found is None or found[0] is not image:
+                sheet = pygame.Surface((columns * w, rows * h), pygame.SRCALPHA)
+                for y in range(rows):
+                    for x in range(columns):
+                        sheet.blit(image, (x * w, y * h))
+                found = image, sheet
+            tiled[key] = found                  # (most recently used last)
+            while len(tiled) > self.TILED_KEPT:
+                del tiled[next(iter(tiled))]
+            self.canvas.blit(found[1], rect.topleft)
         self.canvas.set_clip(clip)
 
     def panel_layouts(self, geometry):

@@ -244,6 +244,48 @@ class NativeDrawingTests(unittest.TestCase):
         encoder.encode(canvas)
         self.assertLessEqual(len(encoder.previous), 3)
 
+    def test_how_see_through_a_surface_is_comes_from_what_it_is_made_of(self):
+        """desktop.opaque_enough asked this of the story's background each frame of a location change or pan: a stretch
+        or a piece of a picture is told without drawing it; anything else is drawn once."""
+        art = d.Surface.from_pixels(Image.new('RGBA', (40, 30), (10, 20, 30, 252)))
+        piece = art.subsurface((5, 5, 20, 10))
+        with patch.object(d, 'raster', side_effect=AssertionError('drawn')):
+            self.assertEqual(d.Transform.smoothscale(art, (80, 60)).min_alpha(250), 252)
+            self.assertEqual(d.Transform.smoothscale(piece, (80, 60)).min_alpha(250), 252)
+        faint = d.Surface((10, 10), d.SRCALPHA)
+        faint.fill((0, 0, 0, 0))
+        faint.fill((1, 2, 3, 200), (0, 0, 10, 5))
+        self.assertEqual(faint.min_alpha(250), 0)                 # the clear half
+        self.assertEqual(d.Surface((4, 4)).min_alpha(), 255)
+
+    def test_an_unchanged_layer_is_not_gone_through_again(self):
+        """A layer left as it was (the same node) is passed over: building its key each frame cost the choice screen
+        30 ms on a PC. What it draws from stays held, a changed layer is sent, and another encoder sends it all."""
+        glyph = d.Surface.from_pixels(Image.new('RGBA', (3, 3), (9, 9, 9, 255)))
+        text = d.Surface((40, 20), d.SRCALPHA)
+        for x in range(0, 36, 4):
+            text.blit(glyph, (x, 2))
+        window = d.Surface((64, 64))
+        encoder = d.FrameEncoder()
+        def frame(y):
+            window.fill((0, 0, 0))
+            window.blit(text, (4, y))
+            return encoder.encode(window)
+        first = frame(10)
+        self.assertEqual({n['id'] for n in first['nodes'] if 'png' in n}, {glyph.snapshot().identifier})
+        calls = []
+        real_repr = repr
+        with patch('builtins.repr', side_effect=lambda value: calls.append(1) or real_repr(value)):
+            second = frame(30)
+        self.assertEqual(len(calls), 1)                         # the window only: the text layer was passed over
+        self.assertEqual([n['id'] for n in second['nodes']], [second['root']])
+        self.assertFalse({glyph.snapshot().identifier, text.snapshot().identifier} & set(second['release']))
+        text.blit(glyph, (36, 2))                               # changed: a new node, sent
+        third = frame(30)
+        self.assertIn(text.snapshot().identifier, {n['id'] for n in third['nodes']} | {third['root']})
+        fresh = d.FrameEncoder().encode(window)                 # another host knows nothing
+        self.assertIn(glyph.snapshot().identifier, {n['id'] for n in fresh['nodes'] if 'png' in n})
+
     def test_an_additive_effect_blends_its_region_only_and_matches_the_whole(self):
         """The X360 puzzle adds sparks and a sheen into a see-through canvas (the host's add would turn its clear
         pixels black): the blend is worked out for the effect's region alone and put back as ops, not by drawing the
