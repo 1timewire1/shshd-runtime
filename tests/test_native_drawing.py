@@ -244,6 +244,29 @@ class NativeDrawingTests(unittest.TestCase):
         encoder.encode(canvas)
         self.assertLessEqual(len(encoder.previous), 3)
 
+    def test_an_animations_frames_are_sent_once_and_old_pictures_go_past_the_budget(self):
+        """The X360 puzzle's gems cycle through their frames: a picture a frame stops showing stays on the host, so
+        its PNG isn't sent (and decoded on the iPad) again when it comes round; past KEEP_PIXELS the least recently
+        shown go."""
+        encoder, canvas = d.FrameEncoder(), d.Surface((64, 64))
+        frames = [d.Surface.from_pixels(Image.new('RGBA', (10, 10), (k * 40, 0, 0, 255))) for k in range(4)]
+        sent = []
+        for step in range(12):
+            canvas.fill((0, 0, 0))
+            canvas.blit(frames[step % 4], (5, 5))
+            packet = json.loads(json.dumps(encoder.encode(canvas)))
+            sent += [node['id'] for node in packet['nodes'] if 'png' in node]
+            self.assertFalse({frame.snapshot().identifier for frame in frames} & set(packet['release']))
+        self.assertEqual(sorted(sent), sorted(frame.snapshot().identifier for frame in frames))     # once each
+        with patch.object(d.FrameEncoder, "KEEP_PIXELS", 250):     # room for two unshown 10 x 10 pictures
+            canvas.fill((0, 0, 0))
+            canvas.blit(frames[0], (5, 5))
+            packet = encoder.encode(canvas)
+            gone = {frames[k].snapshot().identifier for k in (1, 2, 3)} & set(packet['release'])
+            self.assertEqual(len(gone), 1)                              # the least recently shown of the three
+            self.assertIn(frames[1].snapshot().identifier, gone)
+            self.assertNotIn(frames[0].snapshot().identifier, packet['release'])
+
     def test_animated_sprite_scaling_sends_commands_and_reuses_source_pixels(self):
         encoder = d.FrameEncoder()
         image = d.Surface.from_pixels(Image.new('RGBA', (80, 120), (70, 130, 190, 255)))

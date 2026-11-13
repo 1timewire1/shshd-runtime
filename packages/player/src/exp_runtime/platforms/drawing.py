@@ -6,6 +6,7 @@ of later writes. Native hosts rasterize commands; Pillow decodes source images
 and performs the small, byte-exact asset operations used by masks and atlases.
 """
 import base64
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from functools import lru_cache
 from hashlib import sha256
@@ -852,9 +853,16 @@ class FrameEncoder:
     The shared app redraws its layers every frame, so a surface drawn the same way as last frame (the same ops over
     the same sources) is a new node with last frame's content: it is sent as last frame's node, and the host does not
     raster it again (an idle menu, every layer but the one a typing line changes)."""
+    # Pictures (PNG nodes) the host keeps after a frame stops showing them, up to this many pixels, the least recently
+    # shown going first: an animation's frames come round again (the X360 puzzle's gems sent 111 KB of PNG again each
+    # time they moved, decoded again on the iPad). About 48 MB of decoded RGBA on the host.
+    KEEP_PIXELS = 12_000_000
+
     def __init__(self):
-        self.previous = set()
+        self.previous = set()       # what the host holds: this frame's nodes and the pictures kept
         self.drawn = {}             # an op node's drawing (size, ops with its sources' identifiers) -> its identifier
+        self.kept = OrderedDict()   # pictures not shown in the last frame -> their pixels, least recently shown first
+        self.pictures = {}          # every picture the host holds -> its pixels
 
     def encode(self, surface):
         nodes, visited, drawn, same = [], set(), {}, {}
@@ -864,6 +872,8 @@ class FrameEncoder:
                 return same[node.identifier]
             if node.pixels is not None:
                 identifier, record = node.identifier, None
+                self.pictures[identifier] = node.size[0] * node.size[1]
+                self.kept.pop(identifier, None)
             else:
                 ops = [dict(op, source=visit(op['source'])) if 'source' in op else op for op in node.ops]
                 key = repr((node.size, ops))
@@ -878,9 +888,20 @@ class FrameEncoder:
             return identifier
 
         root = visit(surface.snapshot())
-        released = sorted(self.previous - visited)
-        self.previous, self.drawn = visited, drawn
-        return dict(root=root, nodes=nodes, release=released)
+        released = []
+        for identifier in sorted(self.previous - visited):
+            if identifier in self.pictures and identifier not in self.kept:
+                self.kept[identifier] = self.pictures[identifier]
+            elif identifier not in self.kept:
+                released.append(identifier)
+        held = sum(self.kept.values())
+        while held > self.KEEP_PIXELS:
+            identifier, pixels = self.kept.popitem(last=False)
+            held -= pixels
+            released.append(identifier)
+            del self.pictures[identifier]
+        self.previous, self.drawn = visited | set(self.kept), drawn
+        return dict(root=root, nodes=nodes, release=sorted(released))
 
 
 class PlatformFont:
