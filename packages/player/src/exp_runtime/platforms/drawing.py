@@ -264,7 +264,10 @@ class Surface:
                 self._ops = [dict(kind='blit', source=self._node, at=(0, 0), alpha=255,
                                   clip=(0, 0, *self._size))]
         self._node = None
-        if cover is not None and len(self._ops) > 1:
+        if (cover is not None and len(self._ops) > 1
+                and cover.width * cover.height * 16 >= self._size[0] * self._size[1]):
+            # (Big covers only: every fill is one, and a scan for each small one, text drawn a letter a box, made
+            # drawing several times slower. What a big part covers is what piles up: a canvas's parts put back.)
             self._drop_inside(Rect(cover))
         self._ops.append(dict(op, clip=tuple(self._clip)))
         if cover is not None:
