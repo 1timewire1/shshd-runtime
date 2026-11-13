@@ -581,6 +581,13 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var firstFrameAt: CFTimeInterval?
     private var lastReport: CFTimeInterval = 0
     private var reportNext = true
+    private var startupLogo: UIView?            // the kiwi until the first frame (viewDidLoad)
+
+    private func firstFrameShown() {
+        guard let logo = startupLogo else { return }
+        startupLogo = nil
+        UIView.animate(withDuration: 0.2, animations: { logo.alpha = 0 }, completion: { _ in logo.removeFromSuperview() })
+    }
     private var activityGeneration = 0
     private var failed = false
     private var lastFrame = CACurrentMediaTime()
@@ -645,6 +652,19 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             canvas.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         canvas.send = { [weak self] event in self?.events.append(event) }
+        // The kiwi while Python starts (its modules, the host, the first frame: 3-5 s of black on the iPad mini before
+        // the game picker, 2026-11-13), gone with the first frame.
+        if let path = Bundle.main.path(forResource: "kiwi", ofType: "png"), let kiwi = UIImage(contentsOfFile: path) {
+            let logo = UIImageView(image: kiwi)
+            logo.contentMode = .scaleAspectFit
+            logo.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(logo)
+            NSLayoutConstraint.activate([
+                logo.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                logo.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                logo.widthAnchor.constraint(equalToConstant: 120), logo.heightAnchor.constraint(equalToConstant: 120)])
+            startupLogo = logo
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(suspend), name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(resume), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(audioInterrupted(_:)), name: AVAudioSession.interruptionNotification, object: nil)
@@ -780,7 +800,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                 if operation["operation"] as? String == "active", operation["active"] as? Bool == false { self.finishBackgroundTask() }
                 switch response {
                 case .success(let (result, image)):
-                    if let image = image { self.canvas.image = image }
+                    if let image = image { self.canvas.image = image; self.firstFrameShown() }
                     self.canvas.generation = result["generation"] as? Int ?? 0
                     self.canvas.scrollable = result["scrollable"] as? Bool ?? false
                     if drawn == nil, let placed = result["controls"] as? [[String: Any]] { self.canvas.placeControls(placed) }
@@ -874,6 +894,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     switch rendered {
                     case .success(let composed):
                         self.canvas.show(composed)
+                        self.firstFrameShown()
                         if let placed = controls { self.canvas.placeControls(placed) }
                     case .failure(let error): self.showError(error.localizedDescription, fatal: true)
                     }

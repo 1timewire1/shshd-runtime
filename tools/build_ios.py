@@ -152,6 +152,26 @@ def _frameworks(bundle, base):
             shutil.copy2(privacy, framework / 'PrivacyInfo.xcprivacy')
 
 
+def compile_bundle(bundle):
+    """The bundle's Python compiled ahead: an app's bundle is read-only, so the iPad compiled every module it imported
+    on every launch (part of the 3-5 s of black before the first frame, 2026-11-13). Unchecked-hash pycs: the bundle
+    never changes, so they aren't checked against their sources. Only with the embedded Python's own version, whose
+    bytecode they are; the build machine's path is left out of them."""
+    import compileall
+    import py_compile
+    embedded = json.loads((ROOT / 'ios/dependencies.json').read_text(encoding='utf-8'))['python']['version']
+    if tuple(map(int, embedded.split('.')[:2])) != sys.version_info[:2]:
+        print(f'Python {embedded} is embedded but {sys.version.split()[0]} builds: its modules stay uncompiled')
+        return False
+    for name in ('python/lib', 'app', 'app_packages'):
+        folder = bundle / name
+        if folder.is_dir():
+            # (A few standard modules don't compile, being samples or for other versions: they stay as source.)
+            compileall.compile_dir(folder, quiet=2, stripdir=str(bundle), workers=1,
+                                   invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH)
+    return True
+
+
 def stage(bundle, sdk):
     wheel = prepare(sdk, offline=True)
     bundle.mkdir(parents=True, exist_ok=True)
@@ -176,6 +196,7 @@ def stage(bundle, sdk):
     shutil.copy2(ROOT / 'LICENSE', bundle / 'LICENSE')
     shutil.copy2(ROOT / 'ios/dependencies.json', bundle / 'runtime-dependencies.json')
     shutil.copy2(LOGO, bundle / 'kiwi.png')
+    compile_bundle(bundle)
     # Strip upstream ad-hoc signatures for the unsigned device artifact. The
     # simulator instead needs all nested binaries to be ad-hoc signed locally.
     for framework in sorted((bundle / 'Frameworks').glob('*.framework')):

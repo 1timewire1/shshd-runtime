@@ -7,6 +7,7 @@ from pathlib import Path
 import plistlib
 import stat
 import struct
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -85,6 +86,24 @@ class IOSPrototypeTests(unittest.TestCase):
                             for n in sources))                                                            # nesting
         self.assertTrue(any('ops' in n and not composable(n) for n in sources))                          # CPU
         self.assertGreater(len(fixture['samples']), 20)
+
+    def test_the_bundles_python_is_compiled_ahead_for_the_embedded_version(self):
+        """An iOS app's bundle is read-only: without pycs in it the iPad compiled every module on every launch."""
+        import importlib.util as util
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary)
+            (bundle / 'app/exp_runtime').mkdir(parents=True)
+            (bundle / 'app/exp_runtime/probe_mod.py').write_text('VALUE = 7\n', encoding='utf-8')
+            version = '.'.join(map(str, sys.version_info[:2])) + '.0'
+            with patch.object(Path, 'read_text', return_value=json.dumps(dict(python=dict(version=version)))):
+                self.assertTrue(build_ios.compile_bundle(bundle))
+            cached = Path(util.cache_from_source(str(bundle / 'app/exp_runtime/probe_mod.py')))
+            self.assertTrue(cached.is_file())
+            flags = int.from_bytes(cached.read_bytes()[4:8], 'little')
+            self.assertEqual(flags, 0b01)                          # hash-based, unchecked
+            self.assertNotIn(str(bundle).encode(), cached.read_bytes())
+            with patch.object(Path, 'read_text', return_value=json.dumps(dict(python=dict(version='2.7.18')))):
+                self.assertFalse(build_ios.compile_bundle(bundle))
 
     def test_dependency_cache_requires_the_recorded_digest(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(build_ios, 'DEPENDENCIES', Path(temporary)):
