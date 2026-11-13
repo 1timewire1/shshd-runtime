@@ -23,9 +23,40 @@ final class GameCanvasView: UIView, UIKeyInput {
     var image: CGImage? {
         didSet {
             guard image !== oldValue else { return }
+            if image != nil, composedRoot != nil {        // a drawn picture again (the simulator check)
+                composedRoot?.removeFromSuperlayer()
+                composedRoot = nil
+                shownSize = nil
+                compositor.clear()
+            }
             frameLayer.contents = image
             frameLayer.frame = viewport
         }
+    }
+    // Phase 4: the frame as Core Animation layers (NativeCanvas.compose, LayerCompositor), in the frame's pixels,
+    // scaled into the viewport as the picture was.
+    private let compositor = LayerCompositor()
+    private var composedRoot: CALayer?
+    private var shownSize: CGSize?
+    func show(_ frame: ComposedFrame) {
+        let root = compositor.update(frame)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        shownSize = frame.root.size
+        if image != nil { image = nil }
+        if composedRoot !== root {
+            composedRoot?.removeFromSuperlayer()
+            frameLayer.addSublayer(root)
+            composedRoot = root
+        }
+        frameLayer.frame = viewport
+        fitComposed()
+        CATransaction.commit()
+    }
+    private func fitComposed() {
+        guard let root = composedRoot, let size = shownSize, size.width > 0, size.height > 0 else { return }
+        let v = viewport
+        root.transform = CATransform3DMakeScale(v.width / size.width, v.height / size.height, 1)
     }
     private let frameLayer: CALayer = {
         let layer = CALayer()
@@ -64,6 +95,7 @@ final class GameCanvasView: UIView, UIKeyInput {
     override func layoutSubviews() {
         super.layoutSubviews()
         frameLayer.frame = viewport
+        fitComposed()
     }
     // A view that does not draw itself keeps a content scale of 1, which made `pixelSize` the view's points: the app
     // drew a 768 x 992 frame for the iPad mini's 1536 x 2048 screen, and everything looked soft. The screen's own
@@ -177,7 +209,9 @@ final class GameCanvasView: UIView, UIKeyInput {
 
     // The app's window in pixels: the frame Python draws. Normally the view's own pixel size (`pixelSize`), so the
     // frame fills the view one pixel per pixel; the simulator check keeps the app's default window.
-    private var frameSize: CGSize { image.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 540, height: 720) }
+    private var frameSize: CGSize {
+        shownSize ?? image.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 540, height: 720)
+    }
 
     var pixelSize: CGSize {
         CGSize(width: (bounds.width * contentScaleFactor).rounded(), height: (bounds.height * contentScaleFactor).rounded())
@@ -652,6 +686,10 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     throw CanvasError(message: "Invalid runtime response")
                 }
                 if let fixture = result["drawing_test"] as? [String: Any] { try NativeCanvas.verify(fixture) }
+                // A frame of layers composited as a device shows them (phase 4), on the main thread as layers are.
+                if let fixture = result["composite_test"] as? [String: Any] {
+                    try DispatchQueue.main.sync { try NativeCanvas.verifyComposed(fixture) }
+                }
                 if drawsInline {
                     let image = try (result["frame"] as? [String: Any]).map { try renderer.render($0) }
                     response = .success((result, image))
@@ -763,14 +801,14 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
             guard let drawn = drawn else { return }
             self.renderQueue.async {
                 let began = CACurrentMediaTime()
-                let rendered = Result { try renderer.render(drawn) }
+                let rendered = Result { try renderer.compose(drawn) }
                 let spent = (CACurrentMediaTime() - began) * 1000
                 DispatchQueue.main.async {
                     self.rendering -= 1
                     self.renderMs = spent
                     switch rendered {
-                    case .success(let image):
-                        self.canvas.image = image
+                    case .success(let composed):
+                        self.canvas.show(composed)
                         if let placed = controls { self.canvas.placeControls(placed) }
                     case .failure(let error): self.showError(error.localizedDescription, fatal: true)
                     }
@@ -879,7 +917,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
 
     private func verifyPresentation(_ core: [String: Any]) {
         verificationReport = core
-        verificationChecks = (core["checks"] as? [String] ?? []) + ["Native CoreGraphics pixels: orientation, clipping, scale, rotation, alpha, background panning, dialogue-box growth, portrait housing, expression fades, intersecting depth and pause sepia"]
+        verificationChecks = (core["checks"] as? [String] ?? []) + ["Native CoreGraphics pixels: orientation, clipping, scale, rotation, alpha, background panning, dialogue-box growth, portrait housing, expression fades, intersecting depth and pause sepia", "Composited layers: fills, blits, alpha, stretching, clipping and nesting match the drawn pixels"]
         requests.append(["operation": "verify_start"])
     }
 }

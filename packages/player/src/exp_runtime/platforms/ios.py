@@ -378,6 +378,7 @@ class Host:
             if operation == 'verify_start':
                 self.test_steps = exp_ios_probe.presentation_steps(self)
                 verification['drawing_test'] = exp_ios_probe.drawing_fixture()
+                verification['composite_test'] = exp_ios_probe.composite_fixture()
                 verification['audio_test'] = exp_ios_probe.audio_fixture()
                 verification['vibration_test'] = True
             try:

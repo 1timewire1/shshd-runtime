@@ -52,6 +52,38 @@ class IOSPrototypeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 probe.request('{"operation":"eval"}', temporary)
 
+    def test_the_composite_fixture_exercises_every_kind_of_layer(self):
+        """Phase 4's simulator check (NativeCanvas.verifyComposed) only means something if its frame has what
+        LayerCompositor builds: opaque fills, blits plain and faded, a stretch, a clip that cuts, nesting, and a node
+        left to the CPU (a part-transparent fill). The rules here are NativeCanvas.composedParts'."""
+        spec = importlib.util.spec_from_file_location('exp_ios_probe', ROOT / 'ios/probe/exp_ios_probe.py')
+        probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe)
+        fixture = probe.composite_fixture()
+        nodes = {node['id']: node for node in fixture['frame']['nodes']}
+
+        def composable(node):
+            if 'ops' not in node:
+                return False
+            for index, op in enumerate(node['ops']):
+                if op.get('blend') or op['kind'] not in ('fill', 'blit', 'scale'):
+                    return False
+                if op['kind'] == 'fill' and op['color'][3] != 255 and not (op['color'][3] == 0 and index == 0):
+                    return False
+            return True
+        root = nodes[fixture['frame']['root']]
+        self.assertTrue(composable(root))
+        ops = root['ops']
+        self.assertTrue(any(op['kind'] == 'fill' for op in ops))
+        self.assertTrue(any(op['kind'] == 'blit' and op['alpha'] < 255 for op in ops))
+        self.assertTrue(any(op['kind'] == 'blit' and tuple(op['clip']) != (0, 0, *root['size']) for op in ops))
+        sources = [nodes[op['source']] for op in ops if 'source' in op and op['source'] in nodes]
+        self.assertTrue(any('ops' in n and [o['kind'] for o in n['ops']] == ['scale'] for n in sources))     # a stretch
+        self.assertTrue(any(composable(n) and any(nodes.get(o.get('source'), {}).get('ops') for o in n['ops'])
+                            for n in sources))                                                            # nesting
+        self.assertTrue(any('ops' in n and not composable(n) for n in sources))                          # CPU
+        self.assertGreater(len(fixture['samples']), 20)
+
     def test_dependency_cache_requires_the_recorded_digest(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(build_ios, 'DEPENDENCIES', Path(temporary)):
             spec = dict(url='https://example.invalid/authored.whl', sha256=hashlib.sha256(b'authored').hexdigest())

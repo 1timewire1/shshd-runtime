@@ -274,6 +274,41 @@ def drawing_fixture():
     return dict(frame=FrameEncoder().encode(target), samples=[dict(at=p, rgba=expected.getpixel(p)) for p in points])
 
 
+def composite_fixture():
+    """A frame the device composites as layers (phase 4: NativeCanvas.compose, LayerCompositor): opaque fills, plain
+    and translucent blits, a stretched picture (nearest), a clipped blit and a stack two deep, sampled from the shared
+    raster. Every node is big enough to composite (the check lowers the floor to nothing)."""
+    from PIL import Image
+    from exp_runtime.platforms.drawing import FrameEncoder, Surface, Transform, raster, SRCALPHA
+    target = Surface((96, 64))
+    target.fill((10, 20, 30))
+    target.fill((200, 40, 40), (4, 4, 10, 10))
+    tile = Surface.from_pixels(Image.new('RGBA', (4, 6), (240, 10, 20, 255)))
+    tile.fill((10, 230, 20), (0, 0, 4, 2))
+    target.blit(tile, (20, 4))
+    target.blit(Transform.scale(tile, (8, 12)), (28, 4))
+    translucent = Surface((6, 6), SRCALPHA)
+    translucent.fill((200, 100, 50, 128))
+    target.blit(translucent, (40, 4))
+    faded = Surface.from_pixels(Image.new('RGBA', (6, 6), (20, 200, 220, 255)))
+    faded.set_alpha(128)
+    target.blit(faded, (50, 4))
+    target.set_clip((60, 4, 4, 4))
+    target.blit(tile, (58, 2))
+    target.set_clip(None)
+    inner = Surface((30, 30))
+    inner.fill((90, 90, 200))
+    inner.blit(tile, (2, 2))
+    middle = Surface((40, 40), SRCALPHA)
+    middle.blit(inner, (5, 5))
+    target.blit(middle, (4, 20))
+    expected = raster(target.snapshot()).convert('RGBA')
+    points = [(0, 0), (5, 5), (13, 13), (14, 14), (20, 4), (20, 6), (23, 9), (28, 4), (35, 15), (36, 16),
+              (40, 4), (45, 9), (50, 4), (55, 9), (60, 4), (61, 5), (63, 7), (59, 3), (64, 4),
+              (9, 25), (11, 27), (11, 29), (20, 40), (34, 54), (4, 20), (3, 19)]
+    return dict(frame=FrameEncoder().encode(target), samples=[dict(at=p, rgba=expected.getpixel(p)) for p in points])
+
+
 def _authored_vibration():
     """Two nonblocking service-82 requests followed by ordinary script exit."""
     return decode_program(b'kiwi\x02\0\0' + struct.pack('>4H', 0, 0, 0, 3)

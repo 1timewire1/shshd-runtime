@@ -318,10 +318,20 @@ the window's own area: every changed layer is rasterised into its own
 full-size bitmap and then composited into the frame. Busy screens therefore run
 at about 12–30 fps. Screen changes that load new art take 0.4–0.8 s once.
 
-The planned fix is to composite on the GPU. Each of a frame's top-level layers
-would become a Core Animation layer, positioned, scaled and faded by Core
-Animation, instead of being drawn into one bitmap by the CPU each frame. Cheaper
-options were checked and set aside:
+The minigames measured worse in November (2026-11-12, after master's merge):
+the New Rules arena about 10 fps (21.6 Mpx drawn a frame), the catch game about
+6, the jewel puzzle and Diss Practice 10–12, with Python at 2–10 ms.
+
+Frames are now composited on the GPU (`NativeCanvas.compose`,
+`LayerCompositor`). A big node whose ops only stack pictures (blits, stretches,
+opaque fills) becomes a Core Animation layer, and its pieces become sublayers:
+positioned, stretched, faded and clipped by Core Animation. Everything else
+(text, shapes, blends, part-transparent fills, colour matrices, projected
+quads) is still drawn by CoreGraphics into a picture, which that layer shows.
+Layers are kept by node, so an unchanged subtree costs nothing, and a moving
+sprite no longer redraws every full-size layer above it. The simulator self-test
+checks a composited frame against the drawn pixels. Cheaper options were checked
+earlier and set aside:
 - The PNG encoding of Python's pictures is already at its fastest setting.
 - Using the iPad's native BGRA bitmap format would trade one conversion for
   another, since the PNG art would then be converted, and the self-test reads

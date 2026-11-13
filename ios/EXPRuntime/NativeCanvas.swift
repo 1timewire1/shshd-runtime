@@ -353,7 +353,7 @@ final class NativeCanvas {
         return image
     }
 
-    func render(_ frame: [String: Any]) throws -> CGImage {
+    private func register(_ frame: [String: Any]) throws -> Int {
         guard let nodes = frame["nodes"] as? [[String: Any]], let root = frame["root"] as? Int else {
             throw CanvasError(message: "Invalid drawing frame")
         }
@@ -361,13 +361,106 @@ final class NativeCanvas {
             guard let id = node["id"] as? Int else { throw CanvasError(message: "Invalid drawing identifier") }
             if node["png"] != nil { images[id] = try renderNode(node) } else { drawings[id] = node }
         }
-        let result = try image(root)
-        for id in frame["release"] as? [Int] ?? [] {
+        return root
+    }
+
+    private func release(_ frame: [String: Any]) -> [Int] {
+        let released = frame["release"] as? [Int] ?? []
+        for id in released {
             images.removeValue(forKey: id)
             drawings.removeValue(forKey: id)
             textures.removeValue(forKey: id)
+            composed.removeValue(forKey: id)
         }
+        return released
+    }
+
+    func render(_ frame: [String: Any]) throws -> CGImage {
+        let result = try image(try register(frame))
+        _ = release(frame)
         return result
+    }
+
+    // -- Compositing on the GPU (phase 4): the frame's big layers that only stack other pictures become Core Animation
+    // layers (LayerCompositor), so a moving piece no longer redraws every full-size layer above it on the CPU.
+
+    /// Nodes this big or bigger whose ops are only blits, stretches and plain fills are composited, not drawn. A small
+    /// one is cheaper as one picture, and so is one of many ops (a line of text is a blit a letter).
+    var composeMinimumPixels: CGFloat = 250_000
+    let composeMaximumOps = 64
+    private var composed: [Int: ComposedNode] = [:]
+
+    func compose(_ frame: [String: Any]) throws -> ComposedFrame {
+        let root = try composedNode(try register(frame))
+        return ComposedFrame(root: root, released: release(frame))
+    }
+
+    private func composedNode(_ id: Int) throws -> ComposedNode {
+        if let done = composed[id] { return done }
+        let result: ComposedNode
+        if let node = drawings[id], let parts = try composedParts(node) {
+            let size = try numbers(node["size"])
+            result = ComposedNode(id: id, size: CGSize(width: size[0], height: size[1]), picture: nil, parts: parts)
+        } else {
+            let picture = try image(id)
+            result = ComposedNode(id: id, size: CGSize(width: picture.width, height: picture.height), picture: picture, parts: [])
+        }
+        composed[id] = result
+        return result
+    }
+
+    /// A clip that cuts something off `frame`, or nil (every op carries one, mostly its whole surface).
+    private func cutting(_ clip: CGRect?, _ frame: CGRect) -> CGRect? {
+        guard let clip = clip, !clip.contains(frame) else { return nil }
+        return clip
+    }
+
+    /// The node's ops as layers, or nil when one needs CoreGraphics (a blend, text, a shape, a part-transparent fill,
+    /// which replaces what is under it: CGBlendMode.copy).
+    private func composedParts(_ node: [String: Any]) throws -> [ComposedPart]? {
+        guard let ops = node["ops"] as? [[String: Any]], ops.count <= composeMaximumOps else { return nil }
+        let size = try numbers(node["size"])
+        guard size.count == 2, size[0] * size[1] >= composeMinimumPixels else { return nil }
+        var parts: [ComposedPart] = []
+        for op in ops {
+            guard op["blend"] == nil, let kind = op["kind"] as? String else { return nil }
+            let clip = try op["clip"].map { try rect($0) }
+            switch kind {
+            case "fill":
+                let values = try numbers(op["color"]).map { $0 / 255 }
+                guard values.count == 4 else { return nil }
+                var area = try rect(op["rect"])
+                if let clip = clip { area = area.intersection(clip) }
+                if values[3] == 0 && parts.isEmpty { continue }        // the clear a new surface starts with
+                guard values[3] == 1, !area.isNull, let color = CGColor(colorSpace: space, components: values) else {
+                    return nil
+                }
+                parts.append(ComposedPart(content: .color(color), frame: area, alpha: 1, clip: nil))
+            case "blit":
+                let at = try numbers(op["at"])
+                guard at.count == 2, op["source"] is Int else { return nil }
+                let alpha = Float((op["alpha"] as? NSNumber)?.doubleValue ?? 255) / 255
+                let origin = CGPoint(x: at[0], y: at[1])
+                if let scaled = scaling(op) {
+                    let picture = try image(scaled.source)
+                    let frame = CGRect(origin: origin, size: scaled.size)
+                    parts.append(ComposedPart(content: .stretched(picture, smooth: (scaled.source["smooth"] as? Bool) == true),
+                                              frame: frame, alpha: alpha, clip: cutting(clip, frame)))
+                } else {
+                    let child = try composedNode(op["source"] as! Int)
+                    let frame = CGRect(origin: origin, size: child.size)
+                    parts.append(ComposedPart(content: .node(child), frame: frame, alpha: alpha, clip: cutting(clip, frame)))
+                }
+            case "scale":
+                let picture = try image(op)
+                let frame = CGRect(x: 0, y: 0, width: size[0], height: size[1])
+                parts.append(ComposedPart(content: .stretched(picture, smooth: (op["smooth"] as? Bool) == true),
+                                          frame: frame, alpha: 1, clip: cutting(clip, frame)))
+            default:
+                return nil
+            }
+        }
+        return parts
     }
 
     static func verify(_ fixture: [String: Any]) throws {
@@ -386,6 +479,158 @@ final class NativeCanvas {
             let actual = (0..<4).map { Int(bytes[offset + $0]) }
             guard zip(actual, expected).allSatisfy({ abs($0 - $1) <= 1 }) else {
                 throw CanvasError(message: "Native drawing mismatch at \(point): \(actual), expected \(expected)")
+            }
+        }
+    }
+}
+
+/// A frame node as the GPU composites it: a picture drawn on the CPU, or parts Core Animation stacks.
+final class ComposedNode {
+    let id: Int
+    let size: CGSize
+    let picture: CGImage?
+    let parts: [ComposedPart]
+    init(id: Int, size: CGSize, picture: CGImage?, parts: [ComposedPart]) {
+        self.id = id
+        self.size = size
+        self.picture = picture
+        self.parts = parts
+    }
+}
+
+struct ComposedPart {
+    enum Content {
+        case node(ComposedNode)                       // a blit of another node, at its own size
+        case stretched(CGImage, smooth: Bool)         // a picture scaled to `frame`
+        case color(CGColor)                           // an opaque fill
+    }
+    let content: Content
+    let frame: CGRect                                 // in the parent node's pixels
+    let alpha: Float
+    let clip: CGRect?                                 // in the parent node's pixels
+}
+
+struct ComposedFrame {
+    let root: ComposedNode
+    let released: [Int]
+}
+
+/// Keeps a CALayer per composed node and part, by the node's identifier and how many times this frame has used it
+/// already (a layer has one parent), so an unchanged subtree keeps its layers and Core Animation its textures. Main
+/// thread only. Layers not used by a frame are dropped.
+final class LayerCompositor {
+    private struct Key: Hashable {
+        let id: Int, use: Int, part: Int
+    }
+    private var layers: [Key: CALayer] = [:]
+    private static let still: [String: CAAction] = [
+        "contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "opacity": NSNull(),
+        "backgroundColor": NSNull(), "sublayers": NSNull(), "transform": NSNull(), "hidden": NSNull()]
+
+    func update(_ frame: ComposedFrame) -> CALayer {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        var uses: [Int: Int] = [:]
+        var kept: [Key: CALayer] = [:]
+        func take(_ key: Key) -> CALayer {
+            if let layer = kept[key] { return layer }
+            let layer = layers[key] ?? {
+                let made = CALayer()
+                made.actions = LayerCompositor.still
+                made.anchorPoint = .zero
+                return made
+            }()
+            kept[key] = layer
+            return layer
+        }
+        func place(_ layer: CALayer, _ frame: CGRect) {
+            if layer.position != frame.origin { layer.position = frame.origin }
+            let bounds = CGRect(origin: .zero, size: frame.size)
+            if layer.bounds != bounds { layer.bounds = bounds }
+        }
+        func build(_ node: ComposedNode) -> CALayer {
+            let use = uses[node.id, default: 0]
+            uses[node.id] = use + 1
+            let layer = take(Key(id: node.id, use: use, part: -1))
+            place(layer, CGRect(origin: layer.position, size: node.size))
+            if let picture = node.picture {
+                if (layer.contents as AnyObject?) !== picture { layer.contents = picture }
+                if layer.sublayers != nil { layer.sublayers = nil }
+                return layer
+            }
+            if layer.contents != nil { layer.contents = nil }
+            var children: [CALayer] = []
+            for (index, part) in node.parts.enumerated() {
+                let piece: CALayer
+                switch part.content {
+                case .node(let child):
+                    piece = build(child)
+                case .stretched(let picture, let smooth):
+                    piece = take(Key(id: node.id, use: use, part: index))
+                    if (piece.contents as AnyObject?) !== picture { piece.contents = picture }
+                    let filter: CALayerContentsFilter = smooth ? .linear : .nearest
+                    if piece.magnificationFilter != filter { piece.magnificationFilter = filter; piece.minificationFilter = filter }
+                case .color(let color):
+                    piece = take(Key(id: node.id, use: use, part: index))
+                    piece.backgroundColor = color
+                }
+                if piece.opacity != part.alpha { piece.opacity = part.alpha }
+                if let clip = part.clip {
+                    let wrapper = take(Key(id: node.id, use: use, part: 1_000_000 + index))
+                    if !wrapper.masksToBounds { wrapper.masksToBounds = true }
+                    place(wrapper, clip)
+                    place(piece, part.frame.offsetBy(dx: -clip.minX, dy: -clip.minY))
+                    if !(wrapper.sublayers ?? []).elementsEqual([piece], by: ===) { wrapper.sublayers = [piece] }
+                    children.append(wrapper)
+                } else {
+                    place(piece, part.frame)
+                    children.append(piece)
+                }
+            }
+            if !(layer.sublayers ?? []).elementsEqual(children, by: ===) { layer.sublayers = children }
+            return layer
+        }
+        let root = build(frame.root)
+        if root.position != .zero { root.position = .zero }
+        layers = kept
+        return root
+    }
+
+    func clear() { layers.removeAll() }
+}
+
+extension NativeCanvas {
+    /// The simulator check: the fixture frame composited as the device composites it, sampled as the CPU's picture
+    /// is (`verify`), every node composited that can be.
+    static func verifyComposed(_ fixture: [String: Any]) throws {
+        guard let frame = fixture["frame"] as? [String: Any], let samples = fixture["samples"] as? [[String: Any]] else {
+            throw CanvasError(message: "Missing authored drawing fixture")
+        }
+        let canvas = NativeCanvas()
+        canvas.composeMinimumPixels = 0
+        let composed = try canvas.compose(frame)
+        let root = LayerCompositor().update(composed)
+        let width = Int(composed.root.size.width), height = Int(composed.root.size.height)
+        guard width > 0, height > 0,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+              let data = context.data else {
+            throw CanvasError(message: "Cannot inspect composited pixels")
+        }
+        context.translateBy(x: 0, y: CGFloat(height))      // layers draw top-down, as UIKit's contexts are
+        context.scaleBy(x: 1, y: -1)
+        root.render(in: context)
+        let bytes = data.assumingMemoryBound(to: UInt8.self)
+        for sample in samples {
+            guard let point = sample["at"] as? [Int], let expected = sample["rgba"] as? [Int], point.count == 2, expected.count == 4 else {
+                throw CanvasError(message: "Invalid authored drawing sample")
+            }
+            let offset = point[1] * context.bytesPerRow + point[0] * 4
+            let actual = (0..<4).map { Int(bytes[offset + $0]) }
+            guard zip(actual, expected).allSatisfy({ abs($0 - $1) <= 3 }) else {
+                throw CanvasError(message: "Composited drawing mismatch at \(point): \(actual), expected \(expected)")
             }
         }
     }
