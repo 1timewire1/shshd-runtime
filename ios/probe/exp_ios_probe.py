@@ -619,13 +619,25 @@ def presentation_steps(host):
         # shshd-runtime: an iOS app cannot update itself, so its offer only informs (one OK, `update_no`).
         expected = [('update_no',), ('update_yes',)] if app.can_quit else [('update_no',)]
         assert [command for _, command in app.buttons] == expected, app.buttons
+    # The chooser's Options are the HD app screens' (desktop_app_hd.AppOptions): Check for Updates is on General.
     app.command(('options',)); app.tick(200); app.render()
-    assert ('toggle_updates',) in [command for _, command in app.buttons]
-    app.command(('toggle_updates',))
+    options = app.app_screens.options
+    options.activate(('pause_open', 'options:general'))
+    for _ in range(200):                # (frames run while the page slides in: its rows take taps once it's there)
+        app.render()
+        if ('pause_toggle', 'check_updates') in [command for _, command in options.buttons]:
+            break
+        yield None
+    assert ('pause_toggle', 'check_updates') in [command for _, command in options.buttons], options.buttons
+    options.activate(('pause_toggle', 'check_updates'))
     assert not AppSettings(app.settings.path).check_for_updates
-    app.command(('toggle_updates',))
+    options.activate(('pause_toggle', 'check_updates'))
     assert AppSettings(app.settings.path).check_for_updates
-    app.command(('back',)); app.tick(200)
+    for _ in range(4):                  # General, then Options, back to the chooser
+        if app.screen == 'games':
+            break
+        app.command(('back',)); app.tick(200); app.render()
+    assert app.screen == 'games', app.screen
     offer_update()
     app.command(('update_no',))
     app.tick(20)
@@ -634,10 +646,17 @@ def presentation_steps(host):
     yield 'Shared launch update prompt, persistent opt-out and No dismissal (authored metadata, offline)'
     # Input uses the real shared hit regions, not a test-only game-selection API.
     for key in ('shs', 'cod'):
+        for _ in range(200):            # (the chooser slides back in before its rows take taps)
+            app.render()
+            if ('choose_game', key) in [command for _, command in app.buttons]:
+                break
+            yield None
         rect = next(rect for rect, command in app.buttons if command == ('choose_game', key))
-        x, y = rect.center
-        host._event(dict(kind='down', point=(x * 1.5, y * 1.5)))
-        host._event(dict(kind='up', point=(x * 1.5, y * 1.5)))
+        # (an HD app screen's button, in frame points: through the frame's place in the window)
+        v, points = app.viewport, app.frame_points
+        x, y = v.x + rect.centerx * v.width / points[0], v.y + rect.centery * v.height / points[1]
+        host._event(dict(kind='down', point=(x, y)))
+        host._event(dict(kind='up', point=(x, y)))
         assert app.selected_game == key and app.screen == 'setup'
         yield f'{key}: shared touch hit testing and asset setup'
         app.command(('browse', 'apk'))
