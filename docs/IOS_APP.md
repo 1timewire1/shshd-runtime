@@ -188,7 +188,11 @@ Successful words scatter the supplied fragments and pop the tiles back in;
 these effects pause and save with the game. Timed word
 choices use the same cached sprite scales and glyph rounding as ordinary choices.
 
-The game's surrounding safe areas and letterboxing are black. CoD menu clicks
+The game runs edge to edge at the top and bottom, under the status bar and the
+home indicator, as on Android: the runtime keeps its buttons and text clear of
+them. The sides keep the safe area (an iPhone's notch in landscape), and any
+letterboxing is black. The app turns with the device on iPad and iPhone and
+runs in Split View and Stage Manager windows. CoD menu clicks
 use its original sound, controlled by Sound separately from Music. The main
 menu's fourth button is **Switch Game**, in the original lettering and style;
 it checkpoints progress and opens the other imported game, or the chooser if

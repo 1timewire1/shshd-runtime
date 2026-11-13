@@ -348,10 +348,24 @@ class Host:
                     return self.app.state.checkpoint(self.app.game.session)
                 self.app._attempt(checkpoint)
 
+    def set_insets(self, insets):
+        """The status bar's and the home indicator's share of the window's height (Swift's safe area: the game view runs
+        under both, edge to edge as Android's does), so what hangs from the frame's top stays below the one and the side
+        panels' close strip above the other (Desktop.top_inset / bottom_inset)."""
+        def share(key):
+            value = insets.get(key)
+            return min(.25, max(0., float(value))) if isinstance(value, (int, float)) else 0.
+        self.app.top_inset, self.app.bottom_inset = share('top'), share('bottom')
+        if self.app.game is not None:
+            self.app.game.top_inset = self.app.top_inset
+            self.app.game.bottom_inset = self.app.bottom_inset
+
     def request(self, message):
         operation = message.get('operation', 'frame')
         if message.get('size'):
             self.resize(message['size'])
+        if isinstance(message.get('insets'), dict):
+            self.set_insets(message['insets'])
         if 'vibration_available' in message:
             self.backend.vibration_available = message['vibration_available'] is True
         if 'audio_playing' in message:

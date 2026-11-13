@@ -57,6 +57,19 @@ class IosWindowTests(unittest.TestCase):
         host.request(dict(operation='frame', elapsed=16, size=[2048, 1536]))   # turned to landscape
         self.assertEqual(host.app.window.get_size(), (2048, 1536))
 
+    def test_the_safe_areas_insets_reach_the_app_and_its_game(self):
+        """The game view runs under the status bar and home indicator (edge to edge, as Android's): Swift sends their
+        shares of its height with each frame, as Android's Host.top_inset / bottom_inset."""
+        host = self.host()
+        host.request(dict(operation='frame', elapsed=16, size=[1179, 2556], insets=dict(top=0.0692, bottom=0.0399)))
+        self.assertEqual((host.app.top_inset, host.app.bottom_inset), (0.0692, 0.0399))
+        host.app.game = SimpleNamespace(top_inset=0., bottom_inset=0.)
+        host.request(dict(operation='frame', elapsed=16, insets=dict(top=0.03125, bottom=0)))
+        self.assertEqual((host.app.game.top_inset, host.app.game.bottom_inset), (0.03125, 0.))
+        host.request(dict(operation='frame', elapsed=16, insets=dict(top='x', bottom=3)))     # nonsense: none, at most 1/4
+        self.assertEqual((host.app.game.top_inset, host.app.game.bottom_inset), (0., .25))
+        host.app.game = None
+
     def test_the_hd_menus_draw_at_the_screens_resolution(self):
         """The window is the view's pixel size (Swift's first frame sends it): the HD menus' layers are 2x where the
         frame is shown well over its 768 x 1024 points (a Retina iPad, either way up; a phone), 1x where it is not."""

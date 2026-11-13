@@ -3,21 +3,12 @@ import UniformTypeIdentifiers
 import AVFAudio
 import AudioToolbox
 
-// The orientations the app allows. A SwiftUI app's own view controller is not the window's root, so its
-// supportedInterfaceOrientations is never asked: the app delegate's answer is (RuntimeController.requestLandscape).
-final class AppDelegate: NSObject, UIApplicationDelegate {
-    static var orientations: UIInterfaceOrientationMask = .all
-    func application(_ application: UIApplication,
-                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        AppDelegate.orientations
-    }
-}
-
 @main
 struct EXPRuntimeApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene {
-        WindowGroup { RuntimeView().background(Color.black.ignoresSafeArea()).ignoresSafeArea(.keyboard) }
+        // Every safe area ignored: the game view runs under the status bar and home indicator (its runtime keeps clear
+        // of them, RuntimeController.frame's `insets`) and the keyboard is drawn over it.
+        WindowGroup { RuntimeView().background(Color.black.ignoresSafeArea()).ignoresSafeArea() }
     }
 }
 
@@ -539,10 +530,20 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         alert = shown
         present(shown, animated: true)
     }
-    private var holdingLandscape = false    // the side panels' landscape, held until the iPad is turned (requestLandscape)
     // The last frame's whole engine call and its drawing (ms), sent with the next frame for the runtime log's timings.
     private var engineMs = 0.0
     private var renderMs = 0.0
+
+    // The canvas's sides, inset by the window's safe area (the hosted view ignores its own): an iPhone's notch.
+    private var leadingEdge = NSLayoutConstraint()
+    private var trailingEdge = NSLayoutConstraint()
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let safe = view.window?.safeAreaInsets ?? .zero
+        if leadingEdge.constant != safe.left { leadingEdge.constant = safe.left }
+        if trailingEdge.constant != -safe.right { trailingEdge.constant = -safe.right }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -551,13 +552,17 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         canvas.isMultipleTouchEnabled = true     // the pinch's second finger (GameCanvasView follows only one)
         canvas.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(canvas)
+        leadingEdge = canvas.leadingAnchor.constraint(equalTo: view.leadingAnchor)
+        trailingEdge = canvas.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        // Edge to edge at the top and bottom, as Android's: the art runs under the status bar and the home indicator,
+        // and the runtime keeps what matters clear of them (each frame's `insets`, ios.Host.set_insets). The sides keep
+        // the safe area (an iPhone's notch in landscape).
         NSLayoutConstraint.activate([
-            canvas.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            canvas.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-            canvas.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            canvas.topAnchor.constraint(equalTo: view.topAnchor),
+            leadingEdge, trailingEdge,
             // The keyboard is drawn over the game, as HD's is (its name entry sits above it); tied to the keyboard's
             // top, the whole frame shrank into the space left above it.
-            canvas.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            canvas.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         canvas.send = { [weak self] event in self?.events.append(event) }
         NotificationCenter.default.addObserver(self, selector: #selector(suspend), name: UIApplication.willResignActiveNotification, object: nil)
@@ -618,6 +623,11 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                                       "vibration_available": NativeVibration.available]) { _, value in value }
         body["timing"] = ["engine_ms": engineMs, "render_ms": renderMs]
         body["now"] = now * 1000         // the touches' clock (their `time`), for momentum.py
+        // The window's own safe area (the hosted view ignores it, so its own insets are zero).
+        let tall = canvas.bounds.height, safe = view.window?.safeAreaInsets ?? .zero
+        if tall > 0 {
+            body["insets"] = ["top": Double(safe.top / tall), "bottom": Double(safe.bottom / tall)]
+        }
         // The app draws at the view's own pixel size (the iPad mini's 1536 x 2048), not a stretched 540 x 720 frame.
         // The simulator check keeps the app's default window: its taps are placed for that size.
         let pixels = canvas.pixelSize
@@ -705,11 +715,6 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if let link = result["open_url"] as? String, let url = URL(string: link) {
                         UIApplication.shared.open(url)
                     }
-                    switch result["orientation"] as? String {
-                    case "landscape": self.requestLandscape()
-                    case "release": self.releaseOrientation()
-                    default: break
-                    }
                     if let request = result["update_request"] as? [String: Any] {
                         self.fetchRelease(request)
                     }
@@ -772,49 +777,6 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
                     if !self.requests.isEmpty { self.frame() }
                 }
             }
-        }
-    }
-
-    // The side panels were turned on in portrait: the interface turns to landscape and stays there (only landscape is
-    // allowed) until the iPad itself is held sideways; from then it follows the device again, so turning it back to
-    // portrait is how the panels go off (ios.Host). A request with every orientation allowed was ignored: the iPad
-    // was still held upright. iPadOS only turns a full-screen app (Info.plist UIRequiresFullScreen).
-    private func requestLandscape() {
-        guard !holdingLandscape, let scene = view.window?.windowScene else { return }
-        holdingLandscape = true
-        AppDelegate.orientations = .landscape
-        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-        NotificationCenter.default.addObserver(self, selector: #selector(deviceTurned),
-                                               name: UIDevice.orientationDidChangeNotification, object: nil)
-        if #available(iOS 16.0, *) {
-            view.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { [weak self] error in
-                DispatchQueue.main.async {
-                    self?.requests.append(["operation": "message",
-                                           "text": "Side panels could not turn to landscape: \(error.localizedDescription)"])
-                }
-            }
-        } else {
-            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
-            UIViewController.attemptRotationToDeviceOrientation()
-        }
-    }
-
-    @objc private func deviceTurned() {
-        if UIDevice.current.orientation.isLandscape { releaseOrientation() }
-    }
-
-    // The iPad was turned to landscape, or the panels went off: every orientation is allowed again.
-    private func releaseOrientation() {
-        guard holdingLandscape else { return }
-        holdingLandscape = false
-        NotificationCenter.default.removeObserver(self, name: UIDevice.orientationDidChangeNotification, object: nil)
-        UIDevice.current.endGeneratingDeviceOrientationNotifications()
-        AppDelegate.orientations = .all
-        if #available(iOS 16.0, *) {
-            view.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        } else {
-            UIViewController.attemptRotationToDeviceOrientation()
         }
     }
 
