@@ -964,6 +964,41 @@ class DesktopTests(unittest.TestCase):
             ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
             self.assertFalse(ui.panels_open)
 
+    def test_the_panels_over_a_tablets_screen_are_no_bigger_than_a_point_a_point(self):
+        # Owner, 2026-11-13 (iPad mini, portrait): half the screen a panel drew everything 1.7 times HD's size. With the
+        # host's pixels a point known, the panels keep HD's size: the wall at its own width, the tree in the rest.
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        from exp_runtime.desktop import Desktop
+        import pygame
+
+        self.addCleanup(pygame.quit)
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Resources(branching_program())
+            resources.library.directory = Path(temporary)
+            ui = Desktop(Session(resources), audio=False)
+            ui.window = pygame.display.set_mode((1536, 2048), pygame.RESIZABLE)
+            self.assertAlmostEqual(ui._overlay_geometry()[0], 1536 / 2 / 224)       # unknown: half the screen each
+            ui.pixels_per_point = 2.
+            self.assertEqual(ui._overlay_geometry()[0], 2.)
+            ui.pixels_per_point = 4.                                              # (more than half a screen: as before)
+            self.assertAlmostEqual(ui._overlay_geometry()[0], 1536 / 2 / 224)
+            ui.pixels_per_point = 2.
+            ui.session.engine.dt_view.enabled = ui.session.engine.faceplace.enabled = True
+            ui.panels_room = lambda: False
+            ui.side_panels.available = lambda: True
+            ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_TAB))
+            ui.tick(1000)
+            drawn = {}
+            with patch.object(ui.side_panels, 'draw_tree', lambda window, session, alpha, rect: drawn.update(tree=rect)), \
+                    patch.object(ui.side_panels, 'draw_wall', lambda window, session, alpha, rect: drawn.update(wall=rect)), \
+                    patch.object(ui, 'panels_used', lambda: (True, True)), \
+                    patch.object(ui.side_panels, 'frame', lambda index, size, flip=False: pygame.Surface(size)), \
+                    patch.object(ui.side_panels, 'centered', lambda *args: None):
+                ui._draw_panels_overlay()
+            self.assertEqual((drawn['wall'].x, drawn['wall'].width), (1536 - 448, 448))
+            self.assertEqual((drawn['tree'].x, drawn['tree'].width), (0, 1536 - 448))
+
     def test_arrow_keys_highlight_the_pause_menus_rows_and_enter_taps_them(self):
         os.environ['SDL_VIDEODRIVER'] = 'dummy'
         os.environ['SDL_AUDIODRIVER'] = 'dummy'

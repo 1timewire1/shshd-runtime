@@ -765,6 +765,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         if tall > 0 {
             body["insets"] = ["top": Double(safe.top / tall), "bottom": Double(safe.bottom / tall)]
         }
+        body["pixels_per_point"] = Double(canvas.contentScaleFactor)
         // The app draws at the view's own pixel size (the iPad mini's 1536 x 2048), not a stretched 540 x 720 frame.
         // The simulator check keeps the app's default window: its taps are placed for that size.
         let pixels = canvas.pixelSize

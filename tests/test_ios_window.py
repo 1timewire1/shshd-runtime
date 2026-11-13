@@ -177,27 +177,32 @@ class IosWindowTests(unittest.TestCase):
         self.assertIsNone(momentum.EVENT_TIME)                          # the frame's own clock again afterwards
 
     def test_a_pinch_begun_on_the_tree_zooms_it_about_the_fingers_and_carries_it(self):
-        """UIKit's pinch (HD's tree is a UIScrollView): each step zooms by its factor about the midpoint, which then
-        drags the tree; a pinch begun off the tree leaves it alone."""
-        import math
+        """UIKit's pinch (HD's tree is a UIScrollView), beside the game or in the panels over the screen: anchored where
+        it began, it zooms by the steps' factors multiplied (Swift sends each step's own) about the point between the
+        fingers now, as Android's pinch; a pinch begun off the tree leaves it alone."""
         from types import SimpleNamespace
         from exp_runtime.platforms.drawing import Rect
         host = self.host()
         calls = []
-        panels = SimpleNamespace(tree_rect=Rect(0, 0, 200, 700), tree_scale=2.0, ZOOM_STEP=1.15,
-                                 zoom_tree=lambda notches, at: calls.append(('zoom', round(notches, 6), at)),
-                                 scroll_tree=lambda down, across=0.0: calls.append(('scroll', down, across)))
-        game = SimpleNamespace(panels_open=True, side_panels=panels, tree_drag=['held'],
-                               tree_fling=SimpleNamespace(stop=lambda: calls.append(('stop',))))
-        host.app.game, host.app.screen = game, 'game'
+        panels = SimpleNamespace(tree_rect=Rect(0, 0, 200, 700), tree_pinching=False,
+                                 pinch_anchor=lambda at: ('anchor', at),
+                                 pinch_tree=lambda anchor, factor, at: calls.append((anchor, round(factor, 6), at)))
+        for opened in (dict(panels_open=True, panels_overlay=False), dict(panels_open=False, panels_overlay=True)):
+            calls.clear()
+            game = SimpleNamespace(side_panels=panels, tree_drag=['held'], **opened,
+                                   tree_fling=SimpleNamespace(stop=lambda: calls.append(('stop',))))
+            host.app.game, host.app.screen = game, 'game'
+            host._event(dict(kind='pinch', phase='began', scale=1.0, point=[100, 300]))
+            self.assertIsNone(game.tree_drag)
+            self.assertTrue(panels.tree_pinching)
+            host._event(dict(kind='pinch', phase='changed', scale=1.5, point=[110, 320]))
+            host._event(dict(kind='pinch', phase='changed', scale=2.0, point=[120, 330]))
+            host._event(dict(kind='pinch', phase='ended', scale=1.0, point=[120, 330]))
+            self.assertFalse(panels.tree_pinching)
+            host._event(dict(kind='pinch', phase='changed', scale=2.0, point=[110, 320]))     # over: nothing
+            self.assertEqual(calls, [('stop',), (('anchor', (100, 300)), 1.5, (110, 320)),
+                                     (('anchor', (100, 300)), 3.0, (120, 330))])
         self.addCleanup(setattr, host.app, 'game', None)
-        host._event(dict(kind='pinch', phase='began', scale=1.0, point=[100, 300]))
-        self.assertIsNone(game.tree_drag)
-        host._event(dict(kind='pinch', phase='changed', scale=1.15, point=[110, 320]))
-        host._event(dict(kind='pinch', phase='ended', scale=1.0, point=[110, 320]))
-        host._event(dict(kind='pinch', phase='changed', scale=2.0, point=[110, 320]))     # over: nothing
-        self.assertEqual(calls, [('stop',), ('zoom', round(math.log(1.15) / math.log(1.15), 6), (110, 320)),
-                                 ('scroll', -10.0, -5.0)])
         calls.clear()
         host._event(dict(kind='pinch', phase='began', scale=1.0, point=[500, 300]))       # beside the tree
         host._event(dict(kind='pinch', phase='changed', scale=1.5, point=[500, 300]))

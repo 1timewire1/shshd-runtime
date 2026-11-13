@@ -309,30 +309,32 @@ class Host:
         return shown
 
     def pinch(self, event):
-        """UIKit's pinch (Swift's recognizer; HD's story tree is a UIScrollView zoomed by one): begun on the tree, it
-        zooms about the fingers' midpoint (SidePanels.zoom_tree, desktop's wheel) by each step's factor, and that point
-        carries the tree along, wherever the fingers go after. Android's two-finger pinch does the same."""
-        import math
+        """UIKit's pinch (Swift's recognizer; HD's story tree is a UIScrollView zoomed by one): begun on the tree, beside
+        the game or in the panels over the screen, it zooms by how far the fingers have parted since they landed, with
+        the point that was between them then kept under them (SidePanels.pinch_tree, as Android's pinch does). Swift
+        sends each step's own factor (it sets the recognizer's back to 1), so they are multiplied here. In the portrait
+        overlay it did nothing: only the panels beside the game were asked (owner, 2026-11-13)."""
         game = self.app.game if self.app.screen == 'game' else None
-        panels = getattr(game, 'side_panels', None) if game is not None and game.panels_open else None
+        panels = (getattr(game, 'side_panels', None)
+                  if game is not None and (game.panels_open or game.panels_overlay) else None)
         centre = tuple(event['point'])
         if event['phase'] == 'began':
             self.pinch_at = None
             if panels is not None and panels.tree_rect is not None and panels.tree_rect.collidepoint(centre):
                 game.tree_drag = None           # the first finger's drag ends once the second lands
                 game.tree_fling.stop()
-                self.pinch_at = centre
+                self.pinch_at = [panels.pinch_anchor(centre), 1.0]
+                panels.tree_pinching = True
             return
         if event['phase'] == 'ended' or self.pinch_at is None or panels is None or panels.tree_rect is None:
             self.pinch_at = None
+            if panels is not None:
+                panels.tree_pinching = False    # (the tree is painted in full again: SidePanels.draw_tree)
             return
         scale = float(event['scale'])
         if scale > 0:
-            panels.zoom_tree(math.log(scale) / math.log(panels.ZOOM_STEP), centre)
-        s = panels.tree_scale or 1.0
-        cx, cy = self.pinch_at
-        panels.scroll_tree(-(centre[1] - cy) / s, -(centre[0] - cx) / s)
-        self.pinch_at = centre
+            self.pinch_at[1] *= scale
+        panels.pinch_tree(self.pinch_at[0], self.pinch_at[1], centre)
 
     def active(self, value):
         if value == self.last_active:
@@ -366,6 +368,11 @@ class Host:
             self.resize(message['size'])
         if isinstance(message.get('insets'), dict):
             self.set_insets(message['insets'])
+        if isinstance(message.get('pixels_per_point'), (int, float)) and message['pixels_per_point'] > 0:
+            # (the panels over the screen are drawn no bigger than a point a point: Desktop._overlay_geometry)
+            self.app.pixels_per_point = float(message['pixels_per_point'])
+            if self.app.game is not None:
+                self.app.game.pixels_per_point = self.app.pixels_per_point
         if isinstance(message.get('view_report'), dict):
             # Swift's view and layers as they are (the black screen after a launch, 2026-11-13): a few at launch, one
             # every five seconds, one at each activation change.

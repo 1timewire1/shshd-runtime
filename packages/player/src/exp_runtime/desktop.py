@@ -2848,6 +2848,7 @@ class Desktop:
     _edge_units = 32                # the frame's margin each side of the column (_sync_story_scale)
     top_inset = 0.                  # the share of the window's height a phone's status bar covers (platforms/android.py)
     bottom_inset = 0.               # ...and its navigation or gesture bar, at the bottom
+    pixels_per_point = None         # the screen's pixels a point (an iPad mini's 2), where the host knows it
     STRIP_PAD = 8                   # panel points kept under the close strip besides (owner, 2026-11-12: to be safe)
     _top_pad = 0.                   # units of the frame's top under it (_sync_story_scale)
 
@@ -5299,10 +5300,15 @@ class Desktop:
 
     def _overlay_geometry(self):
         """(scale, top, body height, strip height): the panels over the whole window at HD's panel scale for half its
-        width, below a phone's status bar, above the close strip."""
+        width (no more than the screen's pixels a point, where the host knows them), below a phone's status bar, above
+        the close strip."""
         from .desktop_side_panels import BAR
         width, height = self.window.get_size()
         s = width / 2 / 224
+        # No bigger than a point a point, as HD drew its panels: half a tablet's width is more than a panel, and filling
+        # it drew everything 1.7 times HD's size on an iPad mini (owner, 2026-11-13). A phone's half is less: as before.
+        if self.pixels_per_point:
+            s = min(s, self.pixels_per_point)
         frame = getattr(self, 'bg_viewport', None)
         top = round(self.top_inset * height) if frame is None or frame.y <= 0 else 0
         strip = round(BAR * 1.25 * s)
@@ -5311,9 +5317,9 @@ class Desktop:
         return s, top, height - top - strip - below, strip
 
     def _draw_panels_overlay(self):
-        """The panels over the whole screen, sliding down from its top as they open: the tree in the left half and the
-        wall in the right (one alone across the screen), each laid out at HD's scale in its half's taller shape, and the
-        close strip across the bottom, rising into place (owner, 2026-11-12)."""
+        """The panels over the whole screen, sliding down from its top as they open: the wall on the right at its own
+        width and the tree in the rest (halves on a phone; one alone across the screen), each laid out at HD's scale in
+        its taller shape, and the close strip across the bottom, rising into place (owner, 2026-11-12)."""
         from .desktop_side_panels import DARK_BAR
         panels, window = self.side_panels, self.window
         width, height = window.get_size()
@@ -5321,7 +5327,8 @@ class Desktop:
         eased = ease_in_out(self.overlay_progress)
         drop = round((1 - eased) * (top + body))
         tree, wall = self.panels_used()
-        half = width // 2
+        # The wall at its own width on the right, the tree in the rest (half each where a panel fills its half).
+        half = width - round(224 * s) if tree and wall else width // 2
         if top:
             window.fill((0, 0, 0), pygame.Rect(0, -drop, width, top))
         if tree:
