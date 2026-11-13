@@ -141,7 +141,11 @@ _ids = count(1)
 SRCALPHA, BLEND_RGBA_MULT, RESIZABLE = 1, 2, 4
 # The other blends the HD and CoD screens use (values private to this backend, as pygame's are to it).
 BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT = 8, 16, 32, 64
-BLENDS = (BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT)
+# The X360 arena's tinted glyphs (an add on all four channels) and the New Rules arena's premultiplied sprites (a 1x
+# window's one pass: desktop_nr_arena).
+BLEND_RGBA_ADD, BLEND_PREMULTIPLIED = 128, 256
+BLENDS = (BLEND_RGBA_MULT, BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT, BLEND_RGBA_ADD,
+          BLEND_PREMULTIPLIED)
 
 
 def rgba(color):
@@ -165,6 +169,15 @@ def blend(destination, source, flags):
         return ImageChops.darker(destination, source)
     if flags == BLEND_RGBA_MAX:
         return ImageChops.lighter(destination, source)
+    if flags == BLEND_RGBA_ADD:
+        return ImageChops.add(destination, source)
+    if flags == BLEND_PREMULTIPLIED:
+        # SDL's: the source's colour already carries its alpha, so out = source + destination * (1 - source alpha).
+        rest = ImageChops.invert(source.getchannel('A'))
+        bands = [ImageMath.lambda_eval(lambda v: v['s'] + ((v['d'] * (v['r'] + 1)) >> 8), s=s.convert('I'),
+                                       d=d.convert('I'), r=rest.convert('I')).convert('L')
+                 for s, d in zip(source.split(), destination.split())]
+        return Image.merge('RGBA', bands)
     rgb = (_multiply(destination.convert('RGB'), source.convert('RGB')) if flags == BLEND_RGB_MULT
            else ImageChops.add(destination.convert('RGB'), source.convert('RGB')))
     rgb.putalpha(destination.getchannel('A'))
@@ -282,6 +295,14 @@ class Surface:
         result._alpha, result.opaque = self._alpha, self.opaque
         result._clip = Rect(self._clip)
         return result
+
+    def premul_alpha(self):
+        """pygame's: a copy with each colour multiplied by its alpha (for BLEND_PREMULTIPLIED)."""
+        pixels = raster(self.snapshot()).convert('RGBA')
+        alpha = pixels.getchannel('A').convert('I')
+        bands = [ImageMath.lambda_eval(lambda v: (v['c'] * (v['a'] + 1)) >> 8, c=band.convert('I'), a=alpha).convert('L')
+                 for band in pixels.split()[:3]]
+        return Surface.from_pixels(Image.merge('RGBA', (*bands, pixels.getchannel('A'))))
 
     def convert(self, depth=32):
         return self
@@ -520,6 +541,21 @@ class Draw:
     def ellipse(surface, color, rect, width=0):
         surface._append(dict(kind='ellipse', color=rgba(color), rect=tuple(Rect(rect)), width=width))
 
+    @classmethod
+    def arc(cls, surface, color, rect, start_angle, stop_angle, width=1):
+        """pygame's arc (radians, anticlockwise from 3 o'clock, y up) on the host's line path: a polyline along the
+        ellipse in `rect` (the chooser's add icon's ring)."""
+        import math
+        rect = Rect(rect)
+        rx, ry = rect.width / 2, rect.height / 2
+        cx, cy = rect.x + rx, rect.y + ry
+        if stop_angle < start_angle:
+            stop_angle += 2 * math.pi
+        steps = max(4, int((stop_angle - start_angle) / (math.pi / 32)))
+        points = [(cx + rx * math.cos(start_angle + (stop_angle - start_angle) * i / steps),
+                   cy - ry * math.sin(start_angle + (stop_angle - start_angle) * i / steps)) for i in range(steps + 1)]
+        cls.lines(surface, color, False, points, max(1, width))
+
 
 class Transform:
     @staticmethod
@@ -547,12 +583,22 @@ class Transform:
         return result
 
     @classmethod
-    def scale(cls, surface, size):
-        return cls._scale(surface, size, False)
+    def scale(cls, surface, size, dest_surface=None):
+        return cls._into(cls._scale(surface, size, False), dest_surface)
 
     @classmethod
-    def smoothscale(cls, surface, size):
-        return cls._scale(surface, size, True)
+    def smoothscale(cls, surface, size, dest_surface=None):
+        return cls._into(cls._scale(surface, size, True), dest_surface)
+
+    @staticmethod
+    def _into(result, dest_surface):
+        """pygame's `dest_surface`: the result drawn into that surface, which it then is (the New Rules arena scales
+        its frame into a kept canvas)."""
+        if dest_surface is None:
+            return result
+        dest_surface.fill((0, 0, 0, 0))
+        dest_surface.blit(result, (0, 0))
+        return dest_surface
 
     @staticmethod
     def flip(surface, horizontal, vertical):
@@ -676,9 +722,13 @@ def raster(node):
             color, width = op['color'], op.get('width', 0)
             if kind in ('fill', 'rect'):
                 x, y, w, h = op['rect']
-                if w > 0 and h > 0:
-                    draw.rounded_rectangle((x, y, x + w - 1, y + h - 1), radius=op.get('radius', 0),
+                if w > 0 and h > 0 and op.get('radius', 0):
+                    draw.rounded_rectangle((x, y, x + w - 1, y + h - 1), radius=op['radius'],
                                            fill=None if width else color, outline=color, width=width)
+                elif w > 0 and h > 0:
+                    # (Pillow's rounded_rectangle draws nothing for a box one pixel across: a 1 x 1 fill came out empty)
+                    draw.rectangle((x, y, x + w - 1, y + h - 1), fill=None if width else color, outline=color,
+                                   width=width or 1)
             elif kind == 'line':
                 draw.line(op['points'], fill=color, width=width)
             elif kind == 'polygon':
@@ -1046,6 +1096,7 @@ class Backend:
     error, Rect, FRect, Surface = DrawingError, Rect, FRect, Surface
     SRCALPHA, BLEND_RGBA_MULT, RESIZABLE = SRCALPHA, BLEND_RGBA_MULT, RESIZABLE
     BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT = BLEND_RGBA_MIN, BLEND_RGBA_MAX, BLEND_RGB_ADD, BLEND_RGB_MULT
+    BLEND_RGBA_ADD, BLEND_PREMULTIPLIED = BLEND_RGBA_ADD, BLEND_PREMULTIPLIED
     # Event values are private to this host. Keyboard digit ordering is used by
     # the shared accessibility/shortcut path, so keep ASCII digits contiguous.
     QUIT, WINDOWFOCUSLOST, WINDOWFOCUSGAINED, DROPBEGIN, DROPFILE, DROPCOMPLETE = range(1, 7)

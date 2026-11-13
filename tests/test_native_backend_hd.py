@@ -133,6 +133,34 @@ class DrawingTests(unittest.TestCase):
         self.assertEqual(pixel(surface, (5, 15)), (0, 0, 255, 255))
         self.assertEqual(surface.snapshot().ops[-1]['kind'], 'ellipse')
 
+    def test_arcs_scaling_into_a_surface_and_the_arenas_blends(self):
+        """What master's screens added (2026-11-12): the chooser's arc, the New Rules arena's scale into a kept canvas
+        and its premultiplied sprites, the X360 arena's tinted glyphs (an add on all four channels)."""
+        import math
+        from exp_runtime.platforms.drawing import BLEND_PREMULTIPLIED, BLEND_RGBA_ADD, Transform
+        surface = Surface((40, 40), SRCALPHA)
+        Draw.arc(surface, (255, 0, 0), (0, 0, 40, 40), -math.pi / 4, math.pi / 4, 2)
+        self.assertEqual(surface.snapshot().ops[-1]['kind'], 'line')
+        self.assertEqual(pixel(surface, (39, 20))[:3], (255, 0, 0))          # the right of the ring
+        self.assertEqual(pixel(surface, (1, 20))[3], 0)                        # the left isn't in the arc
+        source = Surface((2, 2), SRCALPHA)
+        source.fill((0, 0, 255, 255))
+        canvas = Surface((4, 4), SRCALPHA)
+        canvas.fill((255, 0, 0, 255))
+        self.assertIs(Transform.scale(source, (4, 4), canvas), canvas)
+        self.assertEqual(pixel(canvas, (3, 3)), (0, 0, 255, 255))             # replaced, as pygame's dest_surface
+        half = Surface((1, 1), SRCALPHA)
+        half.fill((200, 100, 50, 128))
+        self.assertEqual(pixel(half.premul_alpha(), (0, 0)), (100, 50, 25, 128))
+        under = Surface((1, 1), SRCALPHA)
+        under.fill((0, 0, 200, 255))
+        under.blit(half.premul_alpha(), (0, 0), special_flags=BLEND_PREMULTIPLIED)
+        self.assertEqual(pixel(under, (0, 0)), (100, 50, 25 + 100, 255))      # src + dst * (1 - src alpha)
+        glyph = Surface((1, 1), SRCALPHA)
+        glyph.fill((10, 20, 30, 40))
+        glyph.fill((100, 0, 250, 0), special_flags=BLEND_RGBA_ADD)
+        self.assertEqual(pixel(glyph, (0, 0)), (110, 20, 255, 40))
+
     def test_image_save_writes_the_named_format(self):
         surface = Surface((3, 2))
         surface.fill((10, 200, 30))
