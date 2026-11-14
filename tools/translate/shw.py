@@ -43,8 +43,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # 2: portraits at 3.5 times, their turned copies, the frame and the music (owner, 2026-11-13)
 # 3: the catch game's skin (its board, score, bar, star and icons) and the status bar's moon as a time badge icon (owner, 2026-11-13)
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 3
-PACK_ID = 31700                         # its metadata's pack: the demo's chapters, when a later phase brings them
+# 4: the star the catch game's player steers also as a numbered picture (CATCH_STAR_PICTURE) and as a badge icon (STAR_BADGE),
+#    for the lite Chapter 1 (shw_lite.py; owner, 2026-11-14)
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 4
+PACK_ID = 31700                         # its metadata's pack: the demo's chapters (shw_lite.py, Phase 2)
 SPEC = 26998                            # what the addon holds, JSON
 SPEC_FORMAT, SPEC_VERSION = 'shshw', 1
 PORTRAIT_BASE, FLIPPED_BASE = 27000, 27100      # + the demo's portrait ID - 2000
@@ -67,6 +69,11 @@ CATCH_LABEL, CATCH_CLOSING = 44, (47, 48)    # UI strings: "Score"; "Time is up!
 ICONS = range(2501, 2546)
 # The status bar's night icon (sprite 43; its day one is 67), as a time badge's icon: brew.event_icons' size and treatment.
 MOON, MOON_SPRITE = 26631, 43
+# The demo's star (sprite 59, the one its catch game's player steers), as a place badge's icon the same way (shw_lite.py's
+# travel cards). The catch star also by a number of its own, as an episode's catch list names its pictures (BREW's service
+# 221): no demo resource has it.
+STAR_BADGE, STAR_SPRITE = 26632, CATCH_STAR_SPRITE
+CATCH_STAR_PICTURE = 2499
 BACKGROUND_BASE, SKY_MODES = 26000, 3   # + SKY_MODES x (the demo's background ID - 1500) + BREW's sky mode
 BACKGROUNDS = range(1504, 1537)
 BACKGROUND_SCALE = 6
@@ -238,6 +245,7 @@ def catch_art(found, sprites, comps):
     for n, string in enumerate(CATCH_CLOSING):
         resources[CATCH_CAPTIONS + n] = png(scaled(font.image(words[string])))
     pictures = {'star': [CATCH_STAR, *sprites[CATCH_STAR_SPRITE].size]}
+    pictures[str(CATCH_STAR_PICTURE)] = pictures['star']
     for number in ICONS:
         icon = picture(found.get(number, b''))
         if icon is not None:
@@ -250,11 +258,11 @@ def catch_art(found, sprites, comps):
     return resources, spec
 
 
-def moon_icon(sprites):
-    """The status bar's moon as a time badge icon, as brew.event_icons makes BREW's: 8 times with no smoothing, then fitted to
-    brew.EVENT_ICON_SIZE."""
+def moon_icon(sprites, sprite=MOON_SPRITE):
+    """The status bar's moon (or another sprite) as a badge icon, as brew.event_icons makes BREW's: 8 times with no smoothing,
+    then fitted to brew.EVENT_ICON_SIZE."""
     import brew
-    image = sprites[MOON_SPRITE]
+    image = sprites[sprite]
     big = image.resize((image.width * 8, image.height * 8), Image.NEAREST)
     k = brew.EVENT_ICON_SIZE / max(big.size)
     return big.resize((max(1, round(big.width * k)), max(1, round(big.height * k))), Image.LANCZOS)
@@ -318,6 +326,8 @@ def build_addon(jar, music=True):
     resources.update(catch_resources)
     resources[MOON] = png(moon_icon(sprites))
     spec['moon'] = MOON
+    resources[STAR_BADGE] = png(moon_icon(sprites, STAR_SPRITE))
+    spec['star_badge'] = STAR_BADGE
     for number in MUSIC if music else ():
         resources[MUSIC_BASE + number - 3000] = render_music(found[number])
         spec['music'][str(number)] = MUSIC_BASE + number - 3000

@@ -146,7 +146,7 @@ LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'D
 # game's from its addon, or Auto (the game last played). The host offers those whose addon it has (`title_music_names`).
 TITLE_MUSIC_LABEL = 'Title Screen Music'
 TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'nr': 'New Rules', 'x360': 'X360',
-                     'shs11': "'11"}
+                     'shs11': "'11", 'shw': 'Surviving Hollywood'}
 # On the main menu, Add-Ons keeps Use Translated Mini-Games and Title Screen Music, and the other add-on switches go one page
 # further in, Per-Game Settings (owner, 2026-11-09); the pause menu lists them all on Add-Ons, as before.
 PER_GAME_LABEL = 'Per-Game Settings'

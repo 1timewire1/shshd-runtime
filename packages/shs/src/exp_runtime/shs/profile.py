@@ -83,7 +83,8 @@ TRANSLATED_FEEDBACK_MUSIC = {31300: {26980 + 13: 1, 26980 + 1: -1}, 31600: {2698
 # where SHS leaves black (desktop.py _draw_background_layer). New Rules' location strips are 3:1, so they leave bands
 # above and below; the translator stores New Rules' UI backdrop at its FRAME_BACKDROP (26999). Pack -> resource ID.
 # The X360 prototype's translations (31400) show the same strips, so they carry the same backdrop.
-TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999, 31000: 26999, 31100: 26999, 31200: 26999}
+TRANSLATED_FRAME_BACKDROP = {31300: 26999, 31400: 26999, 31000: 26999, 31100: 26999, 31200: 26999,
+                             31700: 26990}       # Surviving Hollywood: the demo's own panel (shshw, tools/translate shw.py)
 # shshd-runtime: a pack's backdrop for a speaker's box colour (key 651), in place of the one above: pack -> {theme: resource}.
 # BREW's dialogue panel turns pink behind a pink box and back for anyone else (screens.js DialogueScreen, seen in the real game).
 TRANSLATED_THEME_BACKDROP = {pack: {2: 26991} for pack in (31000, 31100, 31200)}
@@ -102,6 +103,10 @@ BREW_08_BACKGROUNDS = {pack: ((26000 + 3 * 40, 26000 + 3 * 68, -3 * 40), (29000,
 # library switch that turns it on: switch -> add-on. "Hollywood Art" (owner, 2026-11-13): the Surviving Hollywood demo's
 # portraits and backgrounds in the BREW Surviving Hollywood Preview (Classic 73), from `shshw` (tools/translate shw.py).
 OPTIONAL_ART = {'hollywood_art': 'shshw'}
+# shshd-runtime: a translated pack whose catch game (BREW's service 221) wears an add-on's own catch skin (spec `catch`), with
+# its pictures by number, in place of the BREW add-on's (desktop_brew_catch): pack -> add-on. Surviving Hollywood's lite Chapter
+# 1 (tools/translate shw_lite.py) uses nothing from the BREW add-on (owner, 2026-11-14).
+TRANSLATED_CATCH_ADDON = {31700: 'shshw'}
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.
@@ -175,14 +180,15 @@ TRANSLATED_ONE_SOUND_CHANNEL = {31600: range(26980, 26992)}
 SMARTPHONE_MUSIC_PACKS = (31600,)
 # shshd-runtime: where the "Use Translated Mini-Games" switch changes something: pack -> its episodes, or None for all of
 # them. Day of Diss (31400's episode 1) has no minigame.
-TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None, 31000: None, 31100: None, 31200: None}
+TRANSLATED_MINIGAMES = {31300: None, 31400: (2, 3, 4), 31600: None, 31000: None, 31100: None, 31200: None, 31700: None}
 # shshd-runtime: a translated game's own name-replacement table (MenuState.names_for): pack -> its set's key in
 # player.json `name_sets`. New Rules' stories share theirs, never the smartphone stories' (`$Emily`, `$Kenji` and
 # `$Date` are in both Dancing Queen and Homecoming Queen).
 # SHS '11's (31600) share theirs too: its `$ZOE` is another playthrough's, kept apart from the smartphone stories'.
 # '07 and '08 were separate apps, each with its own prefs.sav, so each keeps its own table (owner, 2026-11-06): a name typed in an
 # '07 story never reaches an '08 one, whose stories set `$USR` to Jenny when it's empty.
-TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11', 31000: 'brew', 31100: 'brew07', 31200: 'brew07'}
+# Surviving Hollywood (31700) keeps its own too (owner, 2026-11-14): its `$USR` is the actress's, not a student's.
+TRANSLATED_NAME_SETS = {31300: 'new_rules', 31600: 'shs11', 31000: 'brew', 31100: 'brew07', 31200: 'brew07', 31700: 'shw'}
 # shshd-runtime: two-speaker lines in a translated pack (Session.dialogue_duet): pack -> (partner key, expression
 # key), global numbers the translator sets around a line two characters say together ("Both", "Andy and Laura"),
 # the partner as its ID + 1 (0: none). The line shows the gray box with a portrait on each side and the name
@@ -218,10 +224,12 @@ ADDON_FEATURE_PACKS = {('shsbrew', '08'): 31000, ('shsbrew', '07'): 31100, ('shs
 # 8006); New Rules' is its track 8 and '11's its track 1, the main menu's only full tune; the X360 prototype's is its
 # `music/main_menu`, which its addon carries from revision 15 (tools/translate x360.MENU_MUSIC). A third number starts the tune
 # that far in (ms, audio.mp3_from): '11's opens with 0.92 s of silence, which the menu skips (owner, 2026-11-09).
-TITLE_MUSIC = {'brew': ('shsbrew', 26906), 'nr': ('shsnr', 26988), 'x360': ('shsx360', 26996), 'shs11': ('shs11', 26981, 900)}
+# Surviving Hollywood's is the demo's main-menu cue (3007; shshw's 26907, owner 2026-11-14).
+TITLE_MUSIC = {'brew': ('shsbrew', 26906), 'nr': ('shsnr', 26988), 'x360': ('shsx360', 26996), 'shs11': ('shs11', 26981, 900),
+               'shw': ('shshw', 26907)}
 # ...and which game an episode is, for Auto: its pack, or for an episode made in the Creator its primary add-on's
 # (content.feature_pack). Anything else is the smartphone's, 'default'.
-TITLE_MUSIC_PACKS = {31000: 'brew', 31100: 'brew', 31200: 'brew', 31300: 'nr', 31400: 'x360', 31600: 'shs11'}
+TITLE_MUSIC_PACKS = {31000: 'brew', 31100: 'brew', 31200: 'brew', 31300: 'nr', 31400: 'x360', 31600: 'shs11', 31700: 'shw'}
 # The names table every episode made in the Creator shares (presentation `creator`; player.json `name_sets`), apart from the
 # smartphone stories' and each translation's (owner, 2026-11-09).
 CREATOR_NAME_SET = 'creator'
@@ -244,7 +252,10 @@ LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Ru
                 # '07 above '08 in the episode list (`section`: where its section sorts, before the Campaign's pack 31000; owner, 2026-11-06).
                 'SHS07': dict(badge="'07", color=(17, 77, 0), category="SHS '07", section=30999),
                 'SHS08': dict(badge="'08", color=(132, 44, 173), category="SHS '08",
-                              order={9001: 302.5, 9002: 303.5, 9003: 401.5, 9101: 707.5})}
+                              order={9001: 302.5, 9002: 303.5, 9003: 401.5, 9101: 707.5}),
+                # Surviving Hollywood's chapters (tools/translate shw_lite.py), in its logo's gold ring (owner, 2026-11-14: a colour
+                # from the logo; its cream lettering is too pale for a menu's rows).
+                'SHW': dict(badge='SHW', color=(180, 140, 57), category='Surviving Hollywood')}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.
 IOS_ACTION_MENU = False
 WORD_GAME_SOUNDS = (8001, 8002)

@@ -176,6 +176,39 @@ class OptionalArtTests(unittest.TestCase):
         self.assertFalse(library_has_optional_art(self.resources(held=()).library, 'hollywood_art'))
 
 
+class SurvivingHollywoodPackTests(unittest.TestCase):
+    """Surviving Hollywood's chapters (pack 31700, tools/translate shw_lite.py; owner, 2026-11-14): the demo's own frame, catch
+    game and title tune from `shshw`, nothing from the BREW add-on, and a names table of their own."""
+
+    def test_its_settings_come_from_its_own_add_on(self):
+        lite = episode(31700)
+        self.assertEqual(pack_setting(lite, 'TRANSLATED_FRAME_BACKDROP'), 26990)
+        self.assertEqual(pack_setting(lite, 'TRANSLATED_CATCH_ADDON'), 'shshw')
+        self.assertIsNone(pack_setting(episode(31100), 'TRANSLATED_CATCH_ADDON'))     # the Preview keeps BREW's
+        self.assertTrue(has_translated_minigames(GAMES['shs'], lite.record))
+        self.assertEqual(GAMES['shs'].TITLE_MUSIC['shw'], ('shshw', 26907))
+
+    def test_it_keeps_a_names_table_of_its_own(self):
+        tables = GAMES['shs'].TRANSLATED_NAME_SETS
+        self.assertEqual(tables[31700], 'shw')
+        self.assertEqual(list(tables.values()).count('shw'), 1)
+
+    def test_the_catch_game_reads_the_hollywood_spec(self):
+        import json
+        from exp_runtime.desktop_brew_catch import catch_addon, catch_spec
+        archives = {'shsbrew': Archive({26998: json.dumps(dict(catch=dict(board=1))).encode()}),
+                    'shshw': Archive({26998: json.dumps(dict(catch=dict(board=26600))).encode()})}
+        library = SimpleNamespace(game_id='shs', addon=lambda name: (dict(revision=4), archives[name]))
+        lite = SimpleNamespace(record=dict(pack_id=31700, episode_id=1), library=library, presentation={})
+        preview = SimpleNamespace(record=dict(pack_id=31100, episode_id=73), library=library, presentation={})
+        self.assertEqual(catch_addon(lite), 'shshw')
+        self.assertEqual(catch_spec(lite)[0]['board'], 26600)
+        self.assertEqual(catch_spec(preview)[0]['board'], 1)
+
+    def test_it_is_badged_and_filed_as_its_own_game(self):
+        self.assertEqual(GAMES['shs'].LEGACY_GAMES['SHW'], dict(badge='SHW', color=(180, 140, 57), category='Surviving Hollywood'))
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -206,9 +239,22 @@ class TitleMusicTests(unittest.TestCase):
         self.assertIsNone(self.app('auto', last='default').title_music())
         self.assertEqual(self.app('default').title_music_offered(), ['default', 'auto', 'brew', 'shs11'])
 
+    def test_surviving_hollywoods_tune_is_offered_with_its_add_on(self):
+        # The demo's main-menu cue (3007), shshw's 26907 (owner, 2026-11-14).
+        app = self.app('shw', addons=('shsbrew',))
+        self.assertIsNone(app.title_music())
+        from exp_runtime.application import Application
+        held = Archive({26907: b'hollywood'})
+        library = SimpleNamespace(game_id='shs', addon_has=lambda name, resource: name == 'shshw' and resource in held.entries,
+                                  addon_resource=lambda name, resource: held.read(resource) if name == 'shshw' else None,
+                                  addon=lambda name: (dict(revision=4), held) if name == 'shshw' else None)
+        app.library = library
+        self.assertEqual(Application.title_music_offered(app), ['default', 'auto', 'shw'])
+        self.assertEqual(app.title_music(), b'hollywood')
+
     def test_auto_follows_the_game_last_played(self):
         app = self.app('auto')
-        for presentation, pack, expected in (({}, 31100, 'brew'), ({}, 31300, 'nr'), ({}, 5, 'default'),
+        for presentation, pack, expected in (({}, 31100, 'brew'), ({}, 31300, 'nr'), ({}, 5, 'default'), ({}, 31700, 'shw'),
                                              ({'addons': ('shs11', '')}, 30000, 'shs11')):
             with self.subTest(pack=pack):
                 app.remember_title_game(episode(pack, presentation))

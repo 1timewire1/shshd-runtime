@@ -179,12 +179,13 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 
 ### `shshw`: Surviving Hollywood
 
-Optional, for the BREW Classic *Surviving Hollywood Preview* (31100, 73). Revision 3, about 3.6 MB. Built from the Surviving
+Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required (revision 4) by Surviving Hollywood's own
+chapters (pack 31700, below). Revision 4, about 3.6 MB. Built from the Surviving
 Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, its music, its
 catch game's look and its status bar's moon.
 Phase 1 of the owner's three-phase plan (`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's
 chapters, if translated, will require it at later revisions, so its numbers stay as they are. Revision 1 had the portraits at 4
-times and no frame, music or turned faces; revision 2 had no catch skin or moon.
+times and no frame, music or turned faces; revision 2 had no catch skin or moon; revision 3 had no numbered star or star badge.
 
 | Resources | What |
 | --- | --- |
@@ -192,11 +193,12 @@ times and no frame, music or turned faces; revision 2 had no catch skin or moon.
 | 26601, 26610-26619, 26620-26621 | `Score: ` and the digits in its main font, and its closing lines `Time is up!` and `Max Points!` (strings 47, 48), at 3 times |
 | 26630 | The star the demo's player steers (sprite 59), at 3 times |
 | 26631 | Its status bar's moon (sprite 43) as a time badge icon, BREW's icons' size |
+| 26632 | The star (sprite 59) as a badge icon, the same way: the lite chapter's place badges |
 | 26701-26745 | Its 45 icons (2501-2545) as catch pictures, at 3 times |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
 | 26901-26914 | Music, the demo's cues 3001-3014 (city noise, club, comic, exciting, failure, fail tone, main menu, map day, map night, ringtone, sentimental, stressed, success, success tone), at 26900 + (cue − 3000), rendered through Java's synthesizer as BREW's are |
 | 26990 | The frame backdrop: the demo's orange panel (sprites 4 and 5 of its resource 16, `tools/translate/shw_sprites.py`) with its copper rim along each edge of the strip, in the shape of BREW's (26999) |
-| 26998 | The spec, JSON |
+| 26998 | The spec, JSON. Its catch pictures also list the star under 2499, a number no demo resource has, so an episode's catch list can name it |
 | 27001-27052 | Portraits 2001-2052, at 27000 + (picture − 2000): 3.5 times their pixels, as BREW's portraits are, on a 256 × 300 picture, standing 7 art pixels above its foot |
 | 27101-27152 | The same portraits turned the other way. The player mirrors a right-hand portrait, so a face the demo drew turned to its left looks away from the middle there |
 
@@ -225,6 +227,17 @@ the library holds `shshw`.
 
 ```sh
 python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR --out OUT_DIR
+```
+
+**Surviving Hollywood's chapters** (pack 31700, badge SHW in the logo's gold, filed under Surviving Hollywood; owner,
+2026-11-14). Phase 2 is *The Bright Lights (Lite)*, the 1.0.4 demo's retelling of Chapter 1
+(`tools/translate/shw_lite.py`). It requires `shshw` only, never the BREW add-on, and takes from it, through the profile's
+pack tables: the frame (26990), the catch game's skin with its pictures by number (`TRANSLATED_CATCH_ADDON`, so
+`desktop_brew_catch` reads this spec instead of BREW's), the demo's main-menu tune for Title Screen Music (`shw`, 26907),
+and Use Translated Mini-Games. Its names (`$USR`) are a table of their own (`shw`), apart from every other game's.
+
+```sh
+python tools/translate/shw_lite.py --jar LITE_DEMO_JAR --addon shshw.exp --out OUT_DIR
 ```
 
 ### `chslim`: Claire Hart (Slim)

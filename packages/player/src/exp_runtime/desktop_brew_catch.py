@@ -12,7 +12,11 @@ Where the episode maps BREW's board to an optional add-on's (presentation `optio
 Hollywood Preview with `shshw` and "Hollywood Art"; owner, 2026-11-13), that add-on's skin instead (its spec `catch`; tools/translate
 shw.py catch_art): the Surviving Hollywood demo's board (its header and lavender field), `Score: n` centred in the header's left box
 in its letters, the bar of items still to come in the right, its pictures for the ones the episode maps (centred on BREW's places,
-as the Java skin's are), and its closing line (`Time is up!`, `Max Points!`)."""
+as the Java skin's are), and its closing line (`Time is up!`, `Max Points!`).
+
+A translated pack whose catch game is another add-on's own (the profile's TRANSLATED_CATCH_ADDON: Surviving Hollywood's lite
+Chapter 1, 31700, with `shshw`; owner, 2026-11-14: nothing from the BREW add-on) reads that add-on's spec in place of the BREW one's
+and always wears its skin, the pictures its catch list names being the skin's own by number."""
 import io
 import json
 
@@ -38,12 +42,20 @@ HW_BAR_BACK, HW_BAR_FILL, HW_BAR_END, HW_CORNER, HW_LINE = (255, 255, 255), (248
 HW_SPEC = 26998
 
 
+def catch_addon(resources):
+    """The add-on whose catch game the episode plays: its pack's own (TRANSLATED_CATCH_ADDON), else None (the BREW add-on)."""
+    if getattr(resources, 'record', None) is None:
+        return None
+    from .content import pack_setting
+    return pack_setting(resources, 'TRANSLATED_CATCH_ADDON')
+
+
 def catch_spec(resources):
     """(The addon's catch spec, an archive to read it from), or None, from the library the episode came from."""
     library = getattr(resources, 'library', None)
     if library is None or not hasattr(library, 'addon'):
         return None
-    found = library.addon(ADDON)
+    found = library.addon(catch_addon(resources) or ADDON)
     if found is None or SPEC not in found[1].entries:
         return None
     spec = json.loads(found[1].read(SPEC)).get('catch')
@@ -84,7 +96,7 @@ class BrewCatchRenderer:
         if self._found is None:
             found = catch_spec(self.resources)
             if found is None:
-                raise ValueError("The BREW games' addon has no catch game art: import its latest build")
+                raise ValueError(f"The {catch_addon(self.resources) or ADDON} add-on has no catch game art: import its latest build")
             self._found = found
         return self._found
 
@@ -141,7 +153,10 @@ class BrewCatchRenderer:
         """(the optional add-on's archive, its catch spec) when the episode maps BREW's board to it (optional_art_source), else
         None."""
         if self._skin is False:
-            self._skin = None
+            self._skin, self._own_skin = None, False
+            if catch_addon(self.resources) is not None:
+                self._skin, self._own_skin = (self._spec()[1], spec), True
+                return self._skin
             source = getattr(self.resources, 'optional_art_source', None)
             found = source(spec['frame']) if source is not None else None
             if found is not None and HW_SPEC in found[0].entries:
@@ -218,8 +233,12 @@ class BrewCatchRenderer:
         surface.set_clip(shown)
         mapped = self.__dict__.setdefault('_skin_pictures', {})
 
+        own = getattr(self, '_own_skin', False)
+
         def picture(number, x, y, width, height):
             ours = spec['pictures'][str(number)][0]
+            if own:
+                mapped.setdefault(ours, (archive, ours))
             if ours not in mapped:
                 mapped[ours] = self.resources.optional_art_source(ours)
             source = mapped[ours]
