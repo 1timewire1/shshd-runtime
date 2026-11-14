@@ -2645,7 +2645,16 @@ def schedule(rewriter, pc, argc, context):
 
 
 def music(rewriter, pc, argc, context):
-    """9: (track) plays once: SHS 79 for SOUND_TRACKS, which leaves any music playing, or 80 for the rest."""
+    """9: (track) plays once: SHS 79 for SOUND_TRACKS, which leaves any music playing, or 80 for the rest. A call the story
+    gives a number of its own (context `music_swaps`: pc -> (number, track); fix_hollywood_preview) plays that number instead,
+    as the track's kind."""
+    swap = context.get('music_swaps', {}).get(pc)
+    if swap is not None:
+        number, track = swap
+        call = (lambda s: s.call(79, 1)) if track - 8000 in SOUND_TRACKS else (lambda s: (s.push(0), s.call(80, 2)))
+        rewriter.redirect(pc, ('music', number), lambda s: (s.push(number), call(s), s.result(0)))
+        return
+
     def build(s):
         def resource():
             s.arg(1); s.push(8000); s.emit(0x51); s.push(MUSIC_BASE); s.emit(0x50)
@@ -3099,7 +3108,8 @@ def fix_hollywood_preview(rewriter, context):
     """The Surviving Hollywood Preview's welcome and red-carpet dream show '07's dance floor (1023), as its club does. With the
     `shshw` addon's "Hollywood Art" on, the dream is the demo's red carpet and the club its club floor (owner, 2026-11-13), so the
     dream's scene changes name a location of its own (shw.DREAM_LOCATION), drawn under numbers of its own that alias the dance
-    floor (shw.preview_art)."""
+    floor (shw.preview_art). Its music calls likewise play numbers of their own by role (shw.PREVIEW_MUSIC), so the welcome, the
+    club and the chase, all BREW's `action`, can each be a different cue of the demo's."""
     import shw
     code, program = rewriter.code, context['program']
     for pc in shw.DREAM_SITES:
@@ -3108,6 +3118,18 @@ def fix_hollywood_preview(rewriter, context):
             raise StoryError(f'Surviving Hollywood Preview: no scene change to {shw.DREAM_SHOWN_AS} at {pc}')
     context['location_swaps'] = {pc: shw.DREAM_LOCATION for pc in shw.DREAM_SITES}
     context['own_backgrounds'] = sorted([*context['own_backgrounds'], (shw.DREAM_LOCATION, shw.DREAM_INDEX)])
+    # Its music by role (shw.PREVIEW_MUSIC): each call plays a number of its own, an alias of its BREW cue.
+    swaps = {}
+    for n, (sites, track, _) in enumerate(shw.PREVIEW_MUSIC):
+        for pc in sites:
+            values = newrules.pushed_values(program, pc, 1) if code[pc] == (0x1f, 9 << 8 | 1) else None
+            if not values or values[0] != track:
+                raise StoryError(f'Surviving Hollywood Preview: no music {track} at {pc}')
+            swaps[pc] = (shw.PREVIEW_MUSIC_BASE + n, track)
+    calls = {pc for pc, service, _ in rewriter.calls() if service == 9}
+    if calls != set(swaps):
+        raise StoryError(f'Surviving Hollywood Preview: music calls {sorted(calls ^ set(swaps))} not in shw.PREVIEW_MUSIC')
+    context['music_swaps'] = swaps
 
 
 CONTEXT_FIXES = {'monkey.exp': fix_funky_monkey_07,       # story fixes that need the script's context (its own pictures)

@@ -179,22 +179,34 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 
 ### `shshw`: Surviving Hollywood
 
-Optional, for the BREW Classic *Surviving Hollywood Preview* (31100, 73). Revision 1, about 0.9 MB. Built from the Surviving
-Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits and its backgrounds. Phase 1 of the owner's three-phase plan
-(`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's chapters, if translated, will require
-it at later revisions, so its numbers stay as they are.
+Optional, for the BREW Classic *Surviving Hollywood Preview* (31100, 73). Revision 2, about 3.5 MB. Built from the Surviving
+Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, and its music.
+Phase 1 of the owner's three-phase plan (`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's
+chapters, if translated, will require it at later revisions, so its numbers stay as they are. Revision 1 had the portraits at 4
+times and no frame, music or turned faces.
 
 | Resources | What |
 | --- | --- |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
+| 26901-26914 | Music, the demo's cues 3001-3014 (city noise, club, comic, exciting, failure, fail tone, main menu, map day, map night, ringtone, sentimental, stressed, success, success tone), at 26900 + (cue − 3000), rendered through Java's synthesizer as BREW's are |
+| 26990 | The frame backdrop: the demo's orange panel (sprites 4 and 5 of its resource 16, `tools/translate/shw_sprites.py`) with its copper rim along each edge of the strip, in the shape of BREW's (26999) |
 | 26998 | The spec, JSON |
-| 27001-27052 | Portraits 2001-2052, at 27000 + (picture − 2000): 4 times their pixels on a 256 × 300 picture, standing 7 art pixels above its foot as BREW's portraits do |
+| 27001-27052 | Portraits 2001-2052, at 27000 + (picture − 2000): 3.5 times their pixels, as BREW's portraits are, on a 256 × 300 picture, standing 7 art pixels above its foot |
+| 27101-27152 | The same portraits turned the other way. The player mirrors a right-hand portrait, so a face the demo drew turned to its left looks away from the middle there |
 
-**The Preview names them itself.** Its presentation record maps the BREW add-on's pictures to these (`optional_art`), and the
-runtime serves them while `shshw` is imported and the **Hollywood Art** switch is on (`EpisodeResources._optional_art`). The
-mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`; owner's picks). The Preview's welcome and red-carpet
-dream showed '07's dance floor, as its club does, so those two scene changes name a location of their own (30002-30004), an
-alias of the dance floor (`aliases`), which the map draws as the red carpet. The Preview is version 2 from this change.
+**The Preview names them itself.** Its presentation record maps the BREW add-on's pictures and music to these (`optional_art`),
+and the runtime serves them while `shshw` is imported and the **Hollywood Art** switch is on (`EpisodeResources._optional_art`).
+The mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`, `shw.PREVIEW_MUSIC`; owner's picks):
+- **Faces:** four of the Preview's speakers (Chelsea, The Jeff, Milan, Donny) take the turned copy, decided one by one with the
+  owner; the rest face front or toward the middle as drawn.
+- **The dream:** the welcome and red-carpet dream showed '07's dance floor, as the club does, so those two scene changes name a
+  location of their own (30002-30004), an alias of the dance floor (`aliases`), which the map draws as the red carpet.
+- **Music by role:** each of the Preview's 18 music calls plays one of nine numbers of its own (30010-30018), an alias of the
+  BREW cue it had, which the map draws as a demo cue: the welcome is the main menu's tune, the club `club`, the chase `exciting`,
+  though all three were BREW's `action`.
+- **The frame** takes the place of BREW's (26999) and of its pink copy (26991): the demo's panel never turns pink.
+
+The Preview is version 3 from this change (2 had only the portraits and backgrounds).
 
 **Switch:** "Hollywood Art", with the '07 tag, on by default: on the Add-Ons page in the Preview, and on Per-Game Settings when
 the library holds `shshw`.

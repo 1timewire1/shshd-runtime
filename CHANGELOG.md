@@ -18,8 +18,9 @@
   - **Title cards** show SHS pictures picked for the location and sky each story opens on (HD in SHS HD).
 - **Hollywood Art** for the BREW *Surviving Hollywood Preview* (owner, 2026-11-13): with the optional `shshw` add-on
   (`tools/translate/shw.py`, built from the Surviving Hollywood demo's jar), the Preview shows that game's own painted
-  portraits and backgrounds, the dream on its red carpet and the club on its club floor. A switch with the '07 tag, on
-  by default. The Preview is rebuilt at version 2; episodes can name an optional add-on's pictures (`optional_art`).
+  portraits and backgrounds, its dialogue panel as the frame and its music by scene, the dream on its red carpet and the
+  club on its club floor. A switch with the '07 tag, on by default. The Preview is rebuilt at version 3; episodes can name
+  an optional add-on's pictures and music (`optional_art`).
 - **Title cards for the translated stories that opened without one:** New Rules' Dancing Queen (the smartphone
   Homecoming Queen's card under its own name) and King of Diss, and X360's Dating Beth and Monday Planner.
 - **Undo** (Options -> Extras -> Allow Undo, off by default): a save at every stop Skip Ahead makes; the pause menu's

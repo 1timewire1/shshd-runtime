@@ -68,7 +68,7 @@ March %d` filled in with today's date (CS Idol), is said in BREW; here it's that
 
 ## Art and music
 
-**The Surviving Hollywood Preview** (Classic 73) can draw the Surviving Hollywood demo's own portraits and backgrounds instead, from the optional `shshw` add-on, with the **Hollywood Art** switch (owner, 2026-11-13; [ADDONS.md](ADDONS.md#shshw-surviving-hollywood)). Its presentation record names them (`shw.preview_art`), and its welcome and dream scenes have a location of their own (`fix_hollywood_preview`), so the dream can be the red carpet while the club is the club floor. Version 2; its lines are the same as version 1's on 85 answer paths (13,579 lines, choices and cards), only the dream's picture number different.
+**The Surviving Hollywood Preview** (Classic 73) can draw the Surviving Hollywood demo's own portraits, backgrounds, frame and music instead, from the optional `shshw` add-on, with the **Hollywood Art** switch (owner, 2026-11-13; [ADDONS.md](ADDONS.md#shshw-surviving-hollywood)). Its presentation record names them (`shw.preview_art`). Its welcome and dream scenes have a location of their own, and its music calls numbers of their own by role (`fix_hollywood_preview`), so the dream can be the red carpet while the club is the club floor, and BREW's one `action` cue can be three of the demo's. Version 3; its lines are the same as version 1's on 85 answer paths (13,579 lines, choices and cards), only the dream's picture and the music numbers different.
 
 All of it is in the addon, and stories hold only their scripts ([ADDONS.md](ADDONS.md#shsbrew-the-brew-games)).
 

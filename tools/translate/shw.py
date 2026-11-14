@@ -9,9 +9,16 @@ built here by `preview_art`), and no episode requires the addon yet. Later phase
 revisions: every resource keeps its ID once shipped.
 
 The art comes from the 240 x 320 build (the Nokia 5610's 1.0.2, `560_ver1.0_b2_hs92_english.jar`), the largest of the six:
-- **Portraits** (2001-2052): painted busts, 64 x 64 or narrower, one face per character. Each is drawn at 4 times its pixels with
-  no smoothing, standing PORTRAIT_LIFT art pixels above the foot of a 256 x 300 picture (twice the player's portrait mask), as
-  brew.py's paper dolls do, so the ring hides none of it. PORTRAIT_BASE + (id - 2000).
+- **Portraits** (2001-2052): painted busts, 64 x 64 or narrower, one face per character. Each is drawn at 3.5 times its pixels,
+  as brew.py's paper dolls are (7 times with no smoothing, then halved; owner, 2026-11-13: 4 times filled the ring too much),
+  standing PORTRAIT_LIFT art pixels above the foot of a 256 x 300 picture (twice the player's portrait mask), so the ring hides
+  none of it. PORTRAIT_BASE + (id - 2000), and the same turned the other way at FLIPPED_BASE + (id - 2000): the player mirrors a
+  right-hand portrait, so a face the demo drew turned to its left would look away from the middle there (case by case, owner).
+- **The frame** (FRAME): the demo's dialogue panel around the strip, in the shape of brew.py's frame backdrop: its orange panel
+  (sprites 4 and 5 of resource 16, shw_sprites.py) away from the strip and its copper rim (sprites 20 and 22 over 9 and 11) along
+  each edge, at 6 times. The demo's panel never turns pink, so the Preview shows it behind both box colours.
+- **Music** (3001-3014): the demo's 14 MIDI cues, rendered through Java's built-in synthesizer as brew.py's are (midi_render),
+  at MUSIC_BASE + (id - 3000).
 - **Backgrounds** (1504-1536, 28 pictures): 240 x 80 strips whose magenta is a window onto one of three 386 x 66 sky strips (day
   1501, sunset 1502, night 1503), centred as the demo's dialogue screen draws it (Tardy-Slip `web/shw/screens.js`). Each is drawn
   at each of BREW's sky modes (0 day, 1 night, 2 sunset) at 6 times with no smoothing, as brew.py's locations are:
@@ -34,13 +41,18 @@ from exp_runtime.exp import Metadata, encode_exp
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 1
+# 2: portraits at 3.5 times, their turned copies, the frame and the music (owner, 2026-11-13)
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 2
 PACK_ID = 31700                         # its metadata's pack: the demo's chapters, when a later phase brings them
 SPEC = 26998                            # what the addon holds, JSON
 SPEC_FORMAT, SPEC_VERSION = 'shshw', 1
-PORTRAIT_BASE = 27000                   # + the demo's portrait ID - 2000
+PORTRAIT_BASE, FLIPPED_BASE = 27000, 27100      # + the demo's portrait ID - 2000
 PORTRAITS = range(2001, 2053)
-PORTRAIT_SCALE, PORTRAIT_CANVAS, PORTRAIT_LIFT = 4, (256, 300), 7
+PORTRAIT_CANVAS, PORTRAIT_LIFT = (256, 300), 7
+FRAME = 26990
+FRAME_SIZE, STRIP_TOP, STRIP_BOTTOM, FRAME_SCALE = (1152, 1536), 334, 814, 6    # as brew.frame_backdrop's: the strip's band
+MUSIC_BASE = 26900                      # + the demo's cue ID - 3000
+MUSIC = range(3001, 3015)
 BACKGROUND_BASE, SKY_MODES = 26000, 3   # + SKY_MODES x (the demo's background ID - 1500) + BREW's sky mode
 BACKGROUNDS = range(1504, 1537)
 BACKGROUND_SCALE = 6
@@ -49,24 +61,41 @@ MAGENTA = (255, 0, 255)
 
 # -- the Preview (owner's picks, 2026-11-13: reference/screenshots/verify/surviving_hollywood/addon_phase1/) -------------------
 PREVIEW_FILE = 'clsc_073_Hollywood.exp'     # brew.build_classic's name for it
-PREVIEW_VERSION = 2                     # 1 had no Hollywood art
-# Each speaker's look, by a hash of the look's list (brew.py's spec key: its 23 entries, comma-joined), to the demo's portrait.
-# Every speaker in the Preview has one look. Event (the narrator) has no picture.
+PREVIEW_VERSION = 3                     # 1 had no Hollywood art; 3 adds the frame and music, portraits turned case by case
+# Each speaker's look, by a hash of the look's list (brew.py's spec key: its 23 entries, comma-joined), to the demo's portrait and
+# whether it's turned: every one but the player speaks on the right, where the player mirrors it, so a face drawn turned to its
+# left would look away from the middle (owner, 2026-11-13, case by case). Every speaker in the Preview has one look. Event (the
+# narrator) has no picture.
 PREVIEW_FACES = {
-    '3fb0f4669b3c': 2015,   # You (Kate): New Game's photo 1
-    'b63268b6a528': 2049,   # Tony
-    '9ec86a720706': 2006,   # Chelsea
-    '0194a386edcc': 2048,   # The Jeff
-    'f317d0377f98': 2043,   # Sergei
-    '07da36ebe57c': 2034,   # Milan
-    '01dae5f47cc8': 2047,   # Tad Small
-    'dc6071a8749e': 2016,   # Director
-    '32201fc04e25': 2003,   # Bouncer (Bobo, the shot-putter in both games)
-    'a5a23103ed3a': 2003,   # Club Bouncer (the VIP door): Bobo too
-    'b104a25a2068': 2025,   # Donny Stepp (a face no demo character uses)
-    '25c6bd5df2e1': 2038,   # Mrs. Stepp (likewise)
-    '855a233a0f23': 2046,   # Guard, the jail ending (likewise)
+    '3fb0f4669b3c': (2015, False),  # You (Kate): New Game's photo 1; on the left, as drawn
+    'b63268b6a528': (2049, False),  # Tony: faces front
+    '9ec86a720706': (2006, True),   # Chelsea
+    '0194a386edcc': (2048, True),   # The Jeff
+    'f317d0377f98': (2043, False),  # Sergei: as drawn (owner, 2026-11-13: turned, he looked away)
+    '07da36ebe57c': (2034, True),   # Milan
+    '01dae5f47cc8': (2047, False),  # Tad Small: already turned toward the middle
+    'dc6071a8749e': (2016, False),  # Director: as drawn (owner, 2026-11-13: turned, he looked away)
+    '32201fc04e25': (2003, False),  # Bouncer (Bobo, the shot-putter in both games): faces front
+    'a5a23103ed3a': (2003, False),  # Club Bouncer (the VIP door): Bobo too
+    'b104a25a2068': (2025, True),   # Donny Stepp (a face no demo character uses)
+    '25c6bd5df2e1': (2038, False),  # Mrs. Stepp (likewise): faces front
+    '855a233a0f23': (2046, False),  # Guard, the jail ending (likewise): faces front
 }
+# The Preview's music by role (shw: the plan's table, owner to judge by ear, 2026-11-13): (the pcs of its 9s in 26000, the BREW
+# track there, the demo's cue). Each role plays under a number of its own (PREVIEW_MUSIC_BASE + n), an alias of the BREW cue, which
+# the map draws as the demo's: so the welcome, the club and the chase, all BREW's `action`, can each have their own.
+PREVIEW_MUSIC = (
+    ((2690,), 8000, 3007),                  # the welcome: the main menu's tune
+    ((440,), 8007, 3013),                   # the red-carpet dream: success
+    ((656, 1307), 8013, 3012),              # the audition, "Sorry. VIPs only.": stressed
+    ((786,), 8007, 3003),                   # Excess Hollywood on TV: comic
+    ((1079, 1179, 1453), 8000, 3002),       # the club: The Jeff, Sergei, Chelsea: club
+    ((1124, 1206, 1667), 8008, 3006),       # BREW's ominous sting (a sound): the fail tone
+    ((1246, 1808), 8010, 3011),             # Sergei's "transience", the drive to the Sign: sentimental
+    ((1937, 2007, 2477), 8000, 3004),       # the Sign climb, the chase, Donny's "Lonnie" talk: exciting
+    ((2572, 2637), 8005, 3005),             # the mega-ouch and jail endings: failure
+)
+PREVIEW_MUSIC_BASE = 30010              # free in the BREW addon, under 32768
 # The Preview's scenes by the location its scripts name (13, 14) to the demo's background. '07's shared locations (1000-1027) and
 # the story's own pictures (26518-26520), each at whatever sky the scene has.
 PREVIEW_SCENES = {
@@ -123,13 +152,52 @@ def picture(data):
 
 
 def portrait(face):
-    """A demo portrait at PORTRAIT_SCALE on the PORTRAIT_CANVAS, centred, its foot PORTRAIT_LIFT art pixels above the bottom."""
+    """A demo portrait at 3.5 times (7 with no smoothing, then halved, so every art pixel is the same size) on the PORTRAIT_CANVAS,
+    centred, its foot PORTRAIT_LIFT art pixels above the bottom."""
     face = face.convert('RGBA')
-    big = face.resize((face.width * PORTRAIT_SCALE, face.height * PORTRAIT_SCALE), Image.NEAREST)
+    big = face.resize((face.width * 7, face.height * 7), Image.NEAREST)
+    big = big.resize((big.width // 2, big.height // 2), Image.BOX)
     canvas = Image.new('RGBA', PORTRAIT_CANVAS, (0, 0, 0, 0))
-    bottom = PORTRAIT_CANVAS[1] - PORTRAIT_LIFT * PORTRAIT_SCALE
+    bottom = PORTRAIT_CANVAS[1] - PORTRAIT_LIFT * 7 // 2
     canvas.paste(big, ((PORTRAIT_CANVAS[0] - big.width) // 2, bottom - big.height))
     return canvas
+
+
+def frame(sprites):
+    """The frame backdrop (FRAME): the demo's panel (sprites 4 | 5: 240 x 133) with its copper rim (20 | 22 over 9 | 11: 240 x 14)
+    along each edge of the strip's band, the middle 192 art pixels across, at FRAME_SCALE; the upper half is the lower turned over,
+    as the demo's own title bar has the rim's mirror image. The band itself stays black (the strip covers it)."""
+    def pair(left, right):
+        a, b = sprites[left], sprites[right]
+        out = Image.new('RGBA', (a.width + b.width, max(a.height, b.height)), (0, 0, 0, 255))
+        out.alpha_composite(a, (0, 0))
+        out.alpha_composite(b, (a.width, 0))
+        return out
+    panel = pair(4, 5)
+    rim = Image.new('RGBA', (panel.width, 14), (0, 0, 0, 255))
+    rim.alpha_composite(pair(20, 22), (0, 0))
+    rim.alpha_composite(pair(9, 11), (0, 7))
+    art_width = FRAME_SIZE[0] // FRAME_SCALE
+
+    def crop(image):
+        return image.crop(((image.width - art_width) // 2, 0, (image.width + art_width) // 2, image.height))
+    below = Image.new('RGBA', (art_width, rim.height + panel.height), (0, 0, 0, 255))
+    below.alpha_composite(crop(rim), (0, 0))
+    below.alpha_composite(crop(panel), (0, rim.height))
+    below = below.convert('RGB').resize((below.width * FRAME_SCALE, below.height * FRAME_SCALE), Image.NEAREST)
+    bottom_colour = sprites[4].getpixel((sprites[4].width // 2, sprites[4].height - 1))[:3]
+    out = Image.new('RGB', FRAME_SIZE, bottom_colour)
+    out.paste(Image.new('RGB', (FRAME_SIZE[0], STRIP_BOTTOM - STRIP_TOP), (0, 0, 0)), (0, STRIP_TOP))
+    out.paste(below, (0, STRIP_BOTTOM))
+    above = below.transpose(Image.FLIP_TOP_BOTTOM)
+    out.paste(above.crop((0, max(0, above.height - STRIP_TOP), above.width, above.height)), (0, max(0, STRIP_TOP - above.height)))
+    return out.quantize(255)
+
+
+def render_music(data):
+    """MP3 bytes for a MIDI cue, through Java's synthesizer (midi_render.render_java; needs java and ffmpeg on PATH)."""
+    import midi_render
+    return midi_render.mp3(midi_render.render_java(data))
 
 
 def has_window(strip):
@@ -151,16 +219,20 @@ def strip_png(scene):
     return png(scene.resize((scene.width * BACKGROUND_SCALE, scene.height * BACKGROUND_SCALE), Image.NEAREST).quantize(255))
 
 
-def build_addon(jar):
-    """(addon bytes, spec) from the demo's jar."""
+def build_addon(jar, music=True):
+    """(addon bytes, spec) from the demo's jar. `music` False leaves the cues out (no java to render them)."""
+    import shw_sprites
     found = jar_resources(jar)
-    resources, spec = {}, dict(format=SPEC_FORMAT, version=SPEC_VERSION, portraits={}, backgrounds={})
+    resources, spec = {}, dict(format=SPEC_FORMAT, version=SPEC_VERSION, portraits={}, flipped={}, backgrounds={}, music={})
     for number in PORTRAITS:
         face = picture(found.get(number, b''))
         if face is None:
             continue
-        resources[PORTRAIT_BASE + number - 2000] = png(portrait(face))
+        drawn = portrait(face)
+        resources[PORTRAIT_BASE + number - 2000] = png(drawn)
+        resources[FLIPPED_BASE + number - 2000] = png(drawn.transpose(Image.FLIP_LEFT_RIGHT))
         spec['portraits'][str(number)] = PORTRAIT_BASE + number - 2000
+        spec['flipped'][str(number)] = FLIPPED_BASE + number - 2000
     skies = {mode: picture(found[number]) for mode, number in SKY_STRIPS.items()}
     for number in BACKGROUNDS:
         strip = picture(found.get(number, b''))
@@ -173,6 +245,12 @@ def build_addon(jar):
         spec['backgrounds'][str(number)] = [base + mode for mode in range(SKY_MODES)]
     if len(spec['portraits']) < 50 or len(spec['backgrounds']) < 28:
         raise ValueError(f'{jar}: not the 240 x 320 demo ({len(spec["portraits"])} portraits, {len(spec["backgrounds"])} backgrounds)')
+    sprites, _, _ = shw_sprites.parse(found[16])
+    resources[FRAME] = png(frame(sprites))
+    spec['frame'] = FRAME
+    for number in MUSIC if music else ():
+        resources[MUSIC_BASE + number - 3000] = render_music(found[number])
+        spec['music'][str(number)] = MUSIC_BASE + number - 3000
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_ID, 0, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
@@ -186,7 +264,7 @@ def look_key_hash(key):
 def preview_art(brew_spec, shw_spec=None):
     """The Preview's presentation members: `aliases` for the dream's own location (the BREW addon's dance floor), and
     `optional_art` {shshw: {BREW addon picture: shshw picture}} for every portrait and background PREVIEW_FACES and
-    PREVIEW_SCENES name. `shw_spec` is this addon's spec, else the fixed layout build_addon writes (every background at every
+    PREVIEW_SCENES name, the frame, and the music roles (PREVIEW_MUSIC, each an alias of the BREW cue it stands in for). `shw_spec` is this addon's spec, else the fixed layout build_addon writes (every background at every
     sky)."""
     import brew
     looks = brew_spec['stories'].get(PREVIEW_FILE)
@@ -195,8 +273,10 @@ def preview_art(brew_spec, shw_spec=None):
     own = brew_spec.get('backgrounds', {}).get(PREVIEW_FILE, {})
     if shw_spec is None:
         shw_spec = dict(portraits={str(n): PORTRAIT_BASE + n - 2000 for n in PORTRAITS},
+                        flipped={str(n): FLIPPED_BASE + n - 2000 for n in PORTRAITS},
                         backgrounds={str(n): [BACKGROUND_BASE + SKY_MODES * (n - 1500) + m for m in range(SKY_MODES)]
-                                     for n in BACKGROUNDS})
+                                     for n in BACKGROUNDS},
+                        music={str(n): MUSIC_BASE + n - 3000 for n in MUSIC}, frame=FRAME)
     art = {}
     for key, bank in looks.items():
         face = PREVIEW_FACES.get(look_key_hash(key))
@@ -204,8 +284,9 @@ def preview_art(brew_spec, shw_spec=None):
             continue
         if face is None:
             raise brew.StoryError(f'{PREVIEW_FILE}: a look with no Hollywood face ({look_key_hash(key)})')
+        number, turned = face
         for offset in range(brew.EXPRESSIONS):
-            art[bank + offset] = shw_spec['portraits'][str(face)]
+            art[bank + offset] = shw_spec['flipped' if turned else 'portraits'][str(number)]
 
     def scene(first, demo):
         for mode in range(SKY_MODES):
@@ -221,6 +302,11 @@ def preview_art(brew_spec, shw_spec=None):
     shown = brew.BACKGROUND_BASE + SKY_MODES * (brew.LOCATION_07_OFFSET + DREAM_SHOWN_AS - 1000)
     scene(dream, DREAM_PICTURE)
     aliases = {str(dream + mode): [brew.ADDON_ID, shown + mode] for mode in range(SKY_MODES)}
+    # The frame, behind both box colours; the music by role (PREVIEW_MUSIC)
+    art[brew.FRAME_BACKDROP] = art[brew.PINK_BACKDROP] = shw_spec['frame']
+    for n, (_, track, cue) in enumerate(PREVIEW_MUSIC):
+        aliases[str(PREVIEW_MUSIC_BASE + n)] = [brew.ADDON_ID, brew.MUSIC_BASE + track - 8000]
+        art[PREVIEW_MUSIC_BASE + n] = shw_spec['music'][str(cue)]
     return dict(aliases=aliases, optional_art={ADDON_ID: {str(k): v for k, v in sorted(art.items())}})
 
 
