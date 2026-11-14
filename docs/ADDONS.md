@@ -179,14 +179,20 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 
 ### `shshw`: Surviving Hollywood
 
-Optional, for the BREW Classic *Surviving Hollywood Preview* (31100, 73). Revision 2, about 3.5 MB. Built from the Surviving
-Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, and its music.
+Optional, for the BREW Classic *Surviving Hollywood Preview* (31100, 73). Revision 3, about 3.6 MB. Built from the Surviving
+Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, its music, its
+catch game's look and its status bar's moon.
 Phase 1 of the owner's three-phase plan (`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's
 chapters, if translated, will require it at later revisions, so its numbers stay as they are. Revision 1 had the portraits at 4
-times and no frame, music or turned faces.
+times and no frame, music or turned faces; revision 2 had no catch skin or moon.
 
 | Resources | What |
 | --- | --- |
+| 26600 | The catch game's board: the demo's layouts 4 and 44 (its header with two boxes, copper rims) drawn as its code does (`tools/translate/shw_ui.py`), the field filled with its 0x9198FE from y 39, at 3 times |
+| 26601, 26610-26619, 26620-26621 | `Score: ` and the digits in its main font, and its closing lines `Time is up!` and `Max Points!` (strings 47, 48), at 3 times |
+| 26630 | The star the demo's player steers (sprite 59), at 3 times |
+| 26631 | Its status bar's moon (sprite 43) as a time badge icon, BREW's icons' size |
+| 26701-26745 | Its 45 icons (2501-2545) as catch pictures, at 3 times |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
 | 26901-26914 | Music, the demo's cues 3001-3014 (city noise, club, comic, exciting, failure, fail tone, main menu, map day, map night, ringtone, sentimental, stressed, success, success tone), at 26900 + (cue − 3000), rendered through Java's synthesizer as BREW's are |
 | 26990 | The frame backdrop: the demo's orange panel (sprites 4 and 5 of its resource 16, `tools/translate/shw_sprites.py`) with its copper rim along each edge of the strip, in the shape of BREW's (26999) |
@@ -205,8 +211,14 @@ The mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`, `shw
   BREW cue it had, which the map draws as a demo cue: the welcome is the main menu's tune, the club `club`, the chase `exciting`,
   though all three were BREW's `action`.
 - **The frame** takes the place of BREW's (26999) and of its pink copy (26991): the demo's panel never turns pink.
+- **The time badge** (`7:30 PM - Pheno what?`) shows the demo's moon for BREW's (event icon 139).
+- **The catch game** ("Be cool!"): the Preview maps BREW's board (26300) to the demo's, which tells the catch renderer to
+  draw the demo's skin (`desktop_brew_catch.draw_skin`, with `EpisodeResources.optional_art_source`): the board, `Score: n`
+  centred in its left box, the bar of items still to come in its right box, its closing line. Its pictures by BREW number
+  (owner, 2026-11-13): the player's face (151) is the star, the smile (152) 2522, the laughing face (128) 2525, the lightning
+  (130) 2534's "pow", each centred on BREW's place. The game itself is BREW's: the demo's catch game is the same one.
 
-The Preview is version 3 from this change (2 had only the portraits and backgrounds).
+The Preview is version 4 from this change (3 had no catch skin or moon; 2 only the portraits and backgrounds).
 
 **Switch:** "Hollywood Art", with the '07 tag, on by default: on the Add-Ons page in the Preview, and on Per-Game Settings when
 the library holds `shshw`.

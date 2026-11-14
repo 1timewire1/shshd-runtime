@@ -42,7 +42,8 @@ from exp_runtime.exp import Metadata, encode_exp
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # 2: portraits at 3.5 times, their turned copies, the frame and the music (owner, 2026-11-13)
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 2
+# 3: the catch game's skin (its board, score, bar, star and icons) and the status bar's moon as a time badge icon (owner, 2026-11-13)
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 3
 PACK_ID = 31700                         # its metadata's pack: the demo's chapters, when a later phase brings them
 SPEC = 26998                            # what the addon holds, JSON
 SPEC_FORMAT, SPEC_VERSION = 'shshw', 1
@@ -53,6 +54,19 @@ FRAME = 26990
 FRAME_SIZE, STRIP_TOP, STRIP_BOTTOM, FRAME_SCALE = (1152, 1536), 334, 814, 6    # as brew.frame_backdrop's: the strip's band
 MUSIC_BASE = 26900                      # + the demo's cue ID - 3000
 MUSIC = range(3001, 3015)
+# The catch game (i.b / i.e, layout 44; Tardy-Slip web/shw/screens.js Catch), at CATCH_SCALE as brew.py's catch art: the board (layouts
+# 4 and 44 drawn as the demo does, its field filled with i.java's 0x9198FE from y 39 down), "Score: " and the digits in its main font
+# (8), its two closing lines (strings 47 and 48), the star the player steers (sprite 59, the code's drawable 75) and its 45 icons
+# (2501-2545) as catch pictures. Where the score and bar go is layout 44's (children 29 and 25), kept in the spec.
+CATCH_SCALE = 3
+CATCH_BOARD, CATCH_PREFIX, CATCH_DIGITS, CATCH_CAPTIONS, CATCH_STAR = 26600, 26601, 26610, 26620, 26630
+CATCH_ICON_BASE = 26700                 # + the icon's ID - 2500
+CATCH_FIELD_COLOUR, CATCH_FIELD_TOP = (0x91, 0x98, 0xFE), 39
+CATCH_STAR_SPRITE, CATCH_LABEL_RECT, CATCH_BAR_RECT, CATCH_LAYOUTS = 59, 29, 25, (4, 44)
+CATCH_LABEL, CATCH_CLOSING = 44, (47, 48)    # UI strings: "Score"; "Time is up!" (out of items), "Max Points!"
+ICONS = range(2501, 2546)
+# The status bar's night icon (sprite 43; its day one is 67), as a time badge's icon: brew.event_icons' size and treatment.
+MOON, MOON_SPRITE = 26631, 43
 BACKGROUND_BASE, SKY_MODES = 26000, 3   # + SKY_MODES x (the demo's background ID - 1500) + BREW's sky mode
 BACKGROUNDS = range(1504, 1537)
 BACKGROUND_SCALE = 6
@@ -61,7 +75,8 @@ MAGENTA = (255, 0, 255)
 
 # -- the Preview (owner's picks, 2026-11-13: reference/screenshots/verify/surviving_hollywood/addon_phase1/) -------------------
 PREVIEW_FILE = 'clsc_073_Hollywood.exp'     # brew.build_classic's name for it
-PREVIEW_VERSION = 3                     # 1 had no Hollywood art; 3 adds the frame and music, portraits turned case by case
+PREVIEW_VERSION = 4                     # 1 had no Hollywood art; 3 added the frame and music, portraits turned case by case; 4 the
+                                        # catch game's skin and the moon
 # Each speaker's look, by a hash of the look's list (brew.py's spec key: its 23 entries, comma-joined), to the demo's portrait and
 # whether it's turned: every one but the player speaks on the right, where the player mirrors it, so a face drawn turned to its
 # left would look away from the middle (owner, 2026-11-13, case by case). Every speaker in the Preview has one look. Event (the
@@ -96,6 +111,12 @@ PREVIEW_MUSIC = (
     ((2572, 2637), 8005, 3005),             # the mega-ouch and jail endings: failure
 )
 PREVIEW_MUSIC_BASE = 30010              # free in the BREW addon, under 32768
+# The catch game ("Be cool!", BREW's angled kind; owner, 2026-11-13): BREW's board becomes the demo's, and its pictures the demo's
+# by BREW picture number: the player's face (151) the star the demo's player steers, the smile (152) 2522, the laughing face (128)
+# 2525, the lightning (130) 2534's "pow".
+PREVIEW_CATCH = {'151': 'star', '152': '2522', '128': '2525', '130': '2534'}
+# The time badge (`7:30 PM - Pheno what?`): BREW's moon (event icon 139) becomes the demo's status bar moon.
+PREVIEW_BADGE_ICONS = {139: 'moon'}
 # The Preview's scenes by the location its scripts name (13, 14) to the demo's background. '07's shared locations (1000-1027) and
 # the story's own pictures (26518-26520), each at whatever sky the scene has.
 PREVIEW_SCENES = {
@@ -194,6 +215,51 @@ def frame(sprites):
     return out.quantize(255)
 
 
+def scaled(image, k=CATCH_SCALE):
+    return image.resize((image.width * k, image.height * k), Image.NEAREST)
+
+
+def catch_art(found, sprites, comps):
+    """{resource: PNG} and the spec's `catch` member: the catch game's skin (CATCH_*)."""
+    import shw_ui
+    slots = {0: picture(found[1001]).convert('RGBA'), 1: picture(found[1002]).convert('RGBA')}
+    layouts = shw_ui.Layouts(found[15], sprites, comps, slots)
+    board = Image.new('RGBA', (shw_ui.W, shw_ui.H), (0, 0, 0, 255))
+    for layout in CATCH_LAYOUTS:
+        layouts.paint(board, layout)
+    board.paste(CATCH_FIELD_COLOUR + (255,), (0, CATCH_FIELD_TOP, shw_ui.W, shw_ui.H))
+    font, words = shw_ui.Font(found[8]), shw_ui.strings(found[14])
+    prefix = words[CATCH_LABEL] + ': '
+    resources = {CATCH_BOARD: png(scaled(board.convert('RGB')).quantize(255)),
+                 CATCH_PREFIX: png(scaled(font.image(prefix))),
+                 CATCH_STAR: png(scaled(sprites[CATCH_STAR_SPRITE]))}
+    for d in range(10):
+        resources[CATCH_DIGITS + d] = png(scaled(font.image(str(d))))
+    for n, string in enumerate(CATCH_CLOSING):
+        resources[CATCH_CAPTIONS + n] = png(scaled(font.image(words[string])))
+    pictures = {'star': [CATCH_STAR, *sprites[CATCH_STAR_SPRITE].size]}
+    for number in ICONS:
+        icon = picture(found.get(number, b''))
+        if icon is not None:
+            resources[CATCH_ICON_BASE + number - 2500] = png(scaled(icon.convert('RGBA')))
+            pictures[str(number)] = [CATCH_ICON_BASE + number - 2500, *icon.size]
+    spec = dict(board=CATCH_BOARD, field_top=CATCH_FIELD_TOP, label=list(layouts.rect(44, CATCH_LABEL_RECT)),
+                bar=list(layouts.rect(44, CATCH_BAR_RECT)), prefix=CATCH_PREFIX, prefix_width=font.width(prefix) + font.tracking,
+                digits=[CATCH_DIGITS + d for d in range(10)], digit_widths=[font.width(str(d)) for d in range(10)],
+                tracking=font.tracking, height=font.height, captions=[CATCH_CAPTIONS, CATCH_CAPTIONS + 1], pictures=pictures)
+    return resources, spec
+
+
+def moon_icon(sprites):
+    """The status bar's moon as a time badge icon, as brew.event_icons makes BREW's: 8 times with no smoothing, then fitted to
+    brew.EVENT_ICON_SIZE."""
+    import brew
+    image = sprites[MOON_SPRITE]
+    big = image.resize((image.width * 8, image.height * 8), Image.NEAREST)
+    k = brew.EVENT_ICON_SIZE / max(big.size)
+    return big.resize((max(1, round(big.width * k)), max(1, round(big.height * k))), Image.LANCZOS)
+
+
 def render_music(data):
     """MP3 bytes for a MIDI cue, through Java's synthesizer (midi_render.render_java; needs java and ffmpeg on PATH)."""
     import midi_render
@@ -245,9 +311,13 @@ def build_addon(jar, music=True):
         spec['backgrounds'][str(number)] = [base + mode for mode in range(SKY_MODES)]
     if len(spec['portraits']) < 50 or len(spec['backgrounds']) < 28:
         raise ValueError(f'{jar}: not the 240 x 320 demo ({len(spec["portraits"])} portraits, {len(spec["backgrounds"])} backgrounds)')
-    sprites, _, _ = shw_sprites.parse(found[16])
+    sprites, _, comps = shw_sprites.parse(found[16])
     resources[FRAME] = png(frame(sprites))
     spec['frame'] = FRAME
+    catch_resources, spec['catch'] = catch_art(found, sprites, comps)
+    resources.update(catch_resources)
+    resources[MOON] = png(moon_icon(sprites))
+    spec['moon'] = MOON
     for number in MUSIC if music else ():
         resources[MUSIC_BASE + number - 3000] = render_music(found[number])
         spec['music'][str(number)] = MUSIC_BASE + number - 3000
@@ -276,7 +346,9 @@ def preview_art(brew_spec, shw_spec=None):
                         flipped={str(n): FLIPPED_BASE + n - 2000 for n in PORTRAITS},
                         backgrounds={str(n): [BACKGROUND_BASE + SKY_MODES * (n - 1500) + m for m in range(SKY_MODES)]
                                      for n in BACKGROUNDS},
-                        music={str(n): MUSIC_BASE + n - 3000 for n in MUSIC}, frame=FRAME)
+                        music={str(n): MUSIC_BASE + n - 3000 for n in MUSIC}, frame=FRAME, moon=MOON,
+                        catch=dict(board=CATCH_BOARD, pictures={'star': [CATCH_STAR], **{str(n): [CATCH_ICON_BASE + n - 2500]
+                                                                                          for n in ICONS}}))
     art = {}
     for key, bank in looks.items():
         face = PREVIEW_FACES.get(look_key_hash(key))
@@ -304,6 +376,15 @@ def preview_art(brew_spec, shw_spec=None):
     aliases = {str(dream + mode): [brew.ADDON_ID, shown + mode] for mode in range(SKY_MODES)}
     # The frame, behind both box colours; the music by role (PREVIEW_MUSIC)
     art[brew.FRAME_BACKDROP] = art[brew.PINK_BACKDROP] = shw_spec['frame']
+    # The time badge's icon, and the catch game's board and pictures (desktop_brew_catch draws the skin where the board is mapped)
+    for icon, name in PREVIEW_BADGE_ICONS.items():
+        art[brew.EVENT_ICON_BASE + icon] = shw_spec[name]
+    catch = brew_spec.get('catch')
+    if catch is None:
+        raise brew.StoryError('the BREW addon has no catch game art')
+    art[catch['frame']] = shw_spec['catch']['board']
+    for number, ours in PREVIEW_CATCH.items():
+        art[catch['pictures'][number][0]] = shw_spec['catch']['pictures'][ours][0]
     for n, (_, track, cue) in enumerate(PREVIEW_MUSIC):
         aliases[str(PREVIEW_MUSIC_BASE + n)] = [brew.ADDON_ID, brew.MUSIC_BASE + track - 8000]
         art[PREVIEW_MUSIC_BASE + n] = shw_spec['music'][str(cue)]

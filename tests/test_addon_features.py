@@ -152,6 +152,14 @@ class OptionalArtTests(unittest.TestCase):
             with self.subTest(off=off.library.hollywood_art):
                 self.assertEqual([off.read_asset(r) for r in (26189, 30002, 28555)], [b'07 dance', b'07 dance', b'tony doll'])
 
+    def test_the_catch_game_finds_where_a_mapped_picture_lives(self):
+        # desktop_brew_catch reads its art from its add-on directly, so it asks for the source, not the bytes.
+        on = self.resources()
+        archive, target = on.optional_art_source(28555)
+        self.assertEqual((target, archive.read(target)), (27049, b'tony painted'))
+        self.assertIsNone(on.optional_art_source(26300))                          # not mapped
+        self.assertIsNone(self.resources(art=False).optional_art_source(28555))   # switched off
+
     def test_a_number_aliased_to_the_main_add_on_moves_with_its_switches(self):
         # The dream's own number is '07's dance floor, so "'08 Backgrounds" shows '08's for it as for the club.
         moved = self.resources(art=False, brew_08=True)

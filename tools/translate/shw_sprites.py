@@ -56,20 +56,38 @@ def parse(data):
         n = r.u8()
         comps.append([((r.s16() if wide_frames else r.s8()), (r.s16() if wide_offsets else r.s8()),
                        (r.s16() if wide_offsets else r.s8())) for _ in range(n)])
+    images, end = glyph_strip(r.data, r.pos)
+    if len(images) != count:
+        raise ValueError(f'sprite set: {len(images)} images, header says {count}')
+    return images, anims, comps
+
+
+def glyph_strip(data, pos):
+    """(images, end): a glyph strip at `pos` (GameMidlet.a(InputStream...)), its images as RGBA PIL images."""
+    r = _Reader(data)
+    r.pos = pos
     palette_size = r.s16()
     palette = [(r.u8(), r.u8(), r.u8()) for _ in range(palette_size)]
-    image_count = r.s16()
-    if image_count != count:
-        raise ValueError(f'sprite set: {image_count} images, header says {count}')
     images = []
-    for _ in range(image_count):
+    for _ in range(r.s16()):
         w, h = r.u8(), r.u8()
         pixels = r.data[r.pos:r.pos + w * h]
         r.pos += w * h
         image = Image.new('RGBA', (w, h), (0, 0, 0, 0))
-        image.putdata([(0, 0, 0, 0) if k == 0 else (*palette[k], 255) for k in pixels] if w * h else [])
+        if w * h:
+            image.putdata([(0, 0, 0, 0) if k == 0 else (*palette[k], 255) for k in pixels])
         images.append(image)
-    return images, anims, comps
+    return images, r.pos
+
+
+def put(canvas, image, x, y):
+    """Alpha-composite `image` onto `canvas` at (x, y), any part off the canvas left out."""
+    left, top = max(0, -x), max(0, -y)
+    if left >= image.width or top >= image.height:
+        return
+    part = image.crop((left, top, image.width, image.height)) if left or top else image
+    if x + left < canvas.width and y + top < canvas.height:
+        canvas.alpha_composite(part, (x + left, y + top))
 
 
 def sheet(images, scale=3):

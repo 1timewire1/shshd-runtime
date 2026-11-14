@@ -6,7 +6,13 @@ decides anything in the game.
 With the "Java '08 Look" switch (library.java_look) and an addon that has it (spec `catch.java`, brew.java_look), the Java '08
 demo's skin instead (l.java d(Graphics)): its cream-bordered screen with a blue header, `SCORE: n` in its outlined letters, a bar of
 the items still to come, a cream guide line, its own pictures centred on BREW's (the game's sizes and places stay BREW's), and
-`Minigame finished!` on its panel at the end."""
+`Minigame finished!` on its panel at the end.
+
+Where the episode maps BREW's board to an optional add-on's (presentation `optional_art`, with its switch on: the Surviving
+Hollywood Preview with `shshw` and "Hollywood Art"; owner, 2026-11-13), that add-on's skin instead (its spec `catch`; tools/translate
+shw.py catch_art): the Surviving Hollywood demo's board (its header and lavender field), `Score: n` centred in the header's left box
+in its letters, the bar of items still to come in the right, its pictures for the ones the episode maps (centred on BREW's places,
+as the Java skin's are), and its closing line (`Time is up!`, `Max Points!`)."""
 import io
 import json
 
@@ -26,6 +32,10 @@ FILL_COLOUR, LINE_COLOUR = (255, 255, 0), (255, 255, 255)
 JAVA_LABEL = (12, 10)
 JAVA_BAR = (112, 9, 112, 12)
 JAVA_LINE, JAVA_BAR_BACK, JAVA_BAR_FILL, JAVA_BAR_END = (255, 235, 211), (255, 255, 255), (248, 200, 0), (232, 120, 16)
+# The Surviving Hollywood skin's bar (screens.js bar(): white, filled yellow, a darker mark at the fill's end, its corners black)
+# and guide line.
+HW_BAR_BACK, HW_BAR_FILL, HW_BAR_END, HW_CORNER, HW_LINE = (255, 255, 255), (248, 200, 0), (216, 112, 64), (0, 0, 0), (255, 255, 255)
+HW_SPEC = 26998
 
 
 def catch_spec(resources):
@@ -118,14 +128,41 @@ class BrewCatchRenderer:
         return pack_setting(self.resources, 'JAVA_LOOK_ART') is not None
 
     def drop_images(self):
-        """Forget the pictures loaded so far (the "Java '08 Look" switch changed)."""
+        """Forget the pictures loaded so far (the "Java '08 Look" or "Hollywood Art" switch changed)."""
         self._images.clear()
         self._bases.clear()
         self.canvas = self._drawn = None
+        self._skin = False
+        self.__dict__.pop('_skin_pictures', None)
+
+    _skin = False                           # (the optional skin found for this episode, or None; False not yet asked)
+
+    def skin(self, spec):
+        """(the optional add-on's archive, its catch spec) when the episode maps BREW's board to it (optional_art_source), else
+        None."""
+        if self._skin is False:
+            self._skin = None
+            source = getattr(self.resources, 'optional_art_source', None)
+            found = source(spec['frame']) if source is not None else None
+            if found is not None and HW_SPEC in found[0].entries:
+                catch = json.loads(found[0].read(HW_SPEC)).get('catch')
+                if catch is not None and catch.get('board') == found[1]:
+                    self._skin = (found[0], catch)
+        return self._skin
+
+    def skin_image(self, archive, resource):
+        key = ('skin', resource)
+        found = self._images.get(key)
+        if found is None:
+            found = self._images[key] = pygame.image.load(io.BytesIO(archive.read(resource)), 'catch.png').convert_alpha()
+        return found
 
     def draw(self, session):
         game = session.engine.brew_catch
         spec = self._spec()[0]
+        skin = self.skin(spec)
+        if skin is not None:
+            return self.draw_skin(game, spec, *skin)
         if self.java_look() and 'java' in spec:
             return self.draw_java(game, spec)
         surface = self._start(spec['frame'])
@@ -150,6 +187,75 @@ class BrewCatchRenderer:
         if game.over:
             caption = self.image(spec['captions'][0 if game.out_of_items else 1])
             surface.blit(caption, caption.get_rect(center=(FRAME[0] // 2, 320 * SCALE // 2)))
+
+    def _start_skin(self, archive, board, field_top):
+        """The canvas with the skin's board on it, as _start: the header put back from the board each frame, the field filled."""
+        key = ('skin', board)
+        base = self._bases.get(key)
+        if base is None:
+            picture = pygame.Surface(FRAME, pygame.SRCALPHA)
+            picture.fill((0, 0, 0, 0))
+            picture.blit(self.skin_image(archive, board), (LEFT, 0))
+            field = pygame.Rect(LEFT, field_top * SCALE, FIELD_WIDTH * SCALE + 2 * FIELD_X * SCALE, self.SCREEN_HEIGHT - field_top * SCALE)
+            base = self._bases[key] = (picture, picture.get_at(field.center), field)
+        picture, colour, field = base
+        if self.canvas is None or self._drawn != key:
+            self.canvas, self._drawn = picture.copy(), key
+        header = pygame.Rect(0, 0, FRAME[0], field.y)
+        self.canvas.fill((0, 0, 0, 0), header)
+        self.canvas.blit(picture, header, header)
+        self.canvas.fill(colour, field)
+        return self.canvas, field
+
+    def draw_skin(self, game, spec, archive, catch):
+        """The optional add-on's skin over the same game: BREW's places and sizes, its pictures centred on them."""
+        surface, shown = self._start_skin(archive, catch['board'], catch['field_top'])
+        field = pygame.Rect(LEFT + FIELD_X * SCALE, FIELD_Y * SCALE, FIELD_WIDTH * SCALE, FIELD_HEIGHT * SCALE)
+        if game.mode == ANGLED:
+            surface.fill(HW_LINE, pygame.Rect(shown.x, field.y + ((game.y >> 8) + game.height // 2 - 1) * SCALE, shown.width, 2 * SCALE))
+        elif game.mode == SIDEWAYS:
+            surface.fill(HW_LINE, pygame.Rect(field.x + (FIELD_WIDTH // 2 - 1) * SCALE, shown.y, 2 * SCALE, shown.height))
+        surface.set_clip(shown)
+        mapped = self.__dict__.setdefault('_skin_pictures', {})
+
+        def picture(number, x, y, width, height):
+            ours = spec['pictures'][str(number)][0]
+            if ours not in mapped:
+                mapped[ours] = self.resources.optional_art_source(ours)
+            source = mapped[ours]
+            if source is None:                              # a picture the episode doesn't map stays BREW's
+                surface.blit(self.image(ours), (field.x + x * SCALE, field.y + y * SCALE))
+                return
+            image = self.skin_image(*source)
+            surface.blit(image, (field.x + x * SCALE + (width * SCALE - image.get_width()) // 2,
+                                 field.y + y * SCALE + (height * SCALE - image.get_height()) // 2))
+        picture(game.sprite, game.x >> 8, game.y >> 8, game.width, game.height)
+        for item in game.objects:
+            template = game.templates[item[4]]
+            picture(template[PICTURE], item[0] >> 8, item[1] >> 8, template[WIDTH], template[HEIGHT])
+        surface.set_clip(None)
+        lx, ly, lw, lh = catch['label']
+        digits = [int(c) for c in str(max(0, game.score))]
+        total = catch['prefix_width'] + sum(catch['digit_widths'][d] + catch['tracking'] for d in digits) - catch['tracking']
+        x, y = lx + (lw - total) // 2, ly + (lh - catch['height']) // 2
+        surface.blit(self.skin_image(archive, catch['prefix']), (LEFT + x * SCALE, y * SCALE))
+        x += catch['prefix_width']
+        for d in digits:
+            surface.blit(self.skin_image(archive, catch['digits'][d]), (LEFT + x * SCALE, y * SCALE))
+            x += catch['digit_widths'][d] + catch['tracking']
+        bx, by, bw, bh = catch['bar']
+        rect = lambda x0, y0, w, h: pygame.Rect(LEFT + x0 * SCALE, y0 * SCALE, w * SCALE, h * SCALE)
+        surface.fill(HW_BAR_BACK, rect(bx, by, bw, bh))
+        left = (game.remaining + len(game.objects)) * bw // max(1, game.total)
+        if left > 0:
+            surface.fill(HW_BAR_FILL, rect(bx, by, min(left, bw), bh))
+            if left < bw:
+                surface.fill(HW_BAR_END, rect(bx + left, by, 1, bh))
+        for cx, cy in ((bx, by), (bx + bw - 1, by), (bx, by + bh - 1), (bx + bw - 1, by + bh - 1)):
+            surface.fill(HW_CORNER, rect(cx, cy, 1, 1))
+        if game.over:
+            caption = self.skin_image(archive, catch['captions'][0 if game.out_of_items else 1])
+            surface.blit(caption, caption.get_rect(center=(LEFT + 120 * SCALE, 320 * SCALE // 2)))
 
     def draw_java(self, game, spec):
         """The Java '08 demo's skin over the same game: BREW's places and sizes, Java's pictures centred on them."""

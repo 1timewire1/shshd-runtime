@@ -2435,12 +2435,17 @@ class Desktop:
 
     def set_hollywood_art(self, enabled):
         """shshd-runtime: the "Hollywood Art" switch: the library serves `shshw`'s pictures from the next one drawn
-        (EpisodeResources._optional_art), so cached pictures are dropped. Saves name the BREW addon's, so they need nothing."""
+        (EpisodeResources._optional_art), so cached pictures are dropped: portraits and backgrounds, the frame's backdrop, a time
+        badge's icon, relationship icons and the catch game's skin. Saves name the BREW addon's, so they need nothing."""
         self.hollywood_art = enabled
         library = getattr(self.session.resources, 'library', None)
         if library is not None:
             library.hollywood_art = enabled
         self._drop_portraits()
+        self.dialogue_renderer.drop_translated_badges()
+        self.brew_catch_renderer.drop_images()
+        self._frame_backdrop_cache = (None, {})
+        self.badge_hd._tab_cache = None
 
     def set_ch_portraits(self, enabled):
         """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""

@@ -1907,6 +1907,13 @@ class EpisodeResources:
         """shshd-runtime: the picture an optional add-on draws for this one (presentation `optional_art`), while its switch is
         on (the profile's OPTIONAL_ART: switch -> add-on) and the library holds it; else None. The BREW Surviving Hollywood
         Preview's portraits and backgrounds from `shshw` (owner, 2026-11-13)."""
+        source = self.optional_art_source(resource_id)
+        return None if source is None else source[0].read(source[1])
+
+    def optional_art_source(self, resource_id):
+        """shshd-runtime: (the optional add-on's archive, its resource) that draws this picture instead (presentation
+        `optional_art`), while its switch is on and the library holds it; else None. The BREW catch game asks it for its board
+        and pictures, which it reads from its add-on directly (desktop_brew_catch)."""
         tables = declared(self, 'optional_art')
         if not tables or resource_id < 26000 or not hasattr(self.library, 'addon'):
             return None
@@ -1916,7 +1923,7 @@ class EpisodeResources:
                 continue
             found = self.library.addon(addon)
             if found is not None and target in found[1].entries:
-                return found[1].read(target)
+                return found[1], target
         return None
 
     def _primary_alias(self, resource_id):
