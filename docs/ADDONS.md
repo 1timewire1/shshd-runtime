@@ -234,7 +234,10 @@ python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR --out OUT_
 (`tools/translate/shw_lite.py`). It requires `shshw` only, never the BREW add-on, and takes from it, through the profile's
 pack tables: the frame (26990), the catch game's skin with its pictures by number (`TRANSLATED_CATCH_ADDON`, so
 `desktop_brew_catch` reads this spec instead of BREW's), the demo's main-menu tune for Title Screen Music (`shw`, 26907),
-and Use Translated Mini-Games. Its names (`$USR`) are a table of their own (`shw`), apart from every other game's.
+and Use Translated Mini-Games. Its names (`$USR`) are a table of their own (`shw`), apart from every other game's. The
+catch game's Instructions line becomes the page it opens with (as BREW's catch pages), and the fight's four action-menu
+rounds become SHS's timed word game (71), as BREW's spinning-menu routine does. 1.0.4 keeps no clock, so its place badges
+carry no time.
 
 ```sh
 python tools/translate/shw_lite.py --jar LITE_DEMO_JAR --addon shshw.exp --out OUT_DIR

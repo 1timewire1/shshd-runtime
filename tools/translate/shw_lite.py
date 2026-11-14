@@ -20,11 +20,19 @@ episode requires (revision ADDON_REQUIRED). Its names (`$USR`) are its own table
 - **Lines** (16): Event's are the narrator's, without their brackets; anyone else's line wholly in brackets is a thought (13's
   -2 mode); Instructions speaks in the named box (76). The emoticon glyphs `{ } [ ]` are left out (SHS has none).
 - **Places** (45): the 1.0.2 painted backgrounds (LOCATIONS) at each scene's time of day (SITE_SKY); a travel card (45's second
-  argument) is a badge with the place's name and the demo's map star, cleared after the next line.
-- **Choices**: 18 is SHS's choice (1), 20 a timed "Think fast!" one with its own title under it, 19 the name entry (17).
+  argument) is a badge with the place's name and the demo's map star, cleared after the next line. 1.0.4 keeps no clock: its
+  travel card (mode 4 in h.java) draws the place's picture and name only, and the script never sets the time (42/44), so the
+  badges carry no time, unlike 1.0.2's.
+- **Choices**: 18 is SHS's choice (1), 19 the name entry (17).
+- **The fight** (the function holding the one action menu, 20): four rounds of `Punch!`, `Be cool`, `Be good` and `Smack!` jumping
+  under `n/4: Don't get riled.`, each word's score (1 for the calm ones) added up and passed at 3. It's SHS's timed word game
+  (71) instead, as brew.word_game makes BREW's spinning-menu routine (owner, 2026-11-14): the words scoring above 0 are good, the
+  rest bad; a pass is the best total, less its share.
 - **The catch game** (63, peanut butter at the gym): BREW's catch game (service 221, its orbit kind) in the demo's skin from
   `shshw` (desktop_brew_catch, the profile's TRANSLATED_CATCH_ADDON), the jar (2531) for 1.0.4's peanut butter and the demo's
-  star for the player. Its score is the hits, as 1.0.4's. With "Use Translated Mini-Games" off, a word game: a pass is no hits.
+  star for the player. Its score is the hits, as 1.0.4's. The Instructions line just before it is the page BREW's catch games
+  open with (33, titled `Instructions`), not a line (owner, 2026-11-14). With "Use Translated Mini-Games" off, a word game under
+  its own title and text: a pass is no hits.
 - **Sounds** (10): 1.0.4 plays only two tones (45 success, 14 fail), the demo's cues 3014 and 3006 here.
 - **The end** (34): the smartphone's closing message and the episode's exit.
 """
@@ -40,7 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import brew  # noqa: E402
 import newrules  # noqa: E402
 import shw  # noqa: E402
-from brew import get_global, set_global  # noqa: E402
+from brew import get_global, set_global, set_word  # noqa: E402
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, requires_bytes  # noqa: E402
 from exp_runtime.brew_services import BREW_CATCH, BREW_MINIGAMES_QUERY, ORBIT  # noqa: E402
 from exp_runtime.decode.bytecode import decode_program  # noqa: E402
@@ -84,6 +92,10 @@ CATCH_COUNTS = (15, 25)
 CATCH_TITLE = 'Dodge the peanut butter!'
 CATCH_TEXT = 'Pick the moves that keep you clean.'
 CATCH_GOOD, CATCH_BAD = 'Dodge|Duck|Spin|Twirl', 'Catch|Grab|Taste|Snack'
+PAGE_TITLE = brew.CATCH_GENERIC_TITLE.decode('latin-1')      # the catch page's title, as BREW's
+# The fight's routine: (options buffer, words, scores, count, shown, -1, rounds, question, jump ms, timer ms, numbered, speaker).
+QUIZ_ARGS = 12
+QUIZ_LIST_WORDS = 40                    # each of the word game's lists: the routine's four words, `|` between
 EMOTICONS = re.compile(rb' ?[{}\[\]]')
 DEFAULT_NAME = 'Kate'                   # 1.0.4's own (`$usr` is "kate" in 10002), as the Preview's
 
@@ -115,6 +127,18 @@ class Lite:
         self.spec = shw_spec
         self.program = brew.rewrite_strings(decode_program(brew.upgrade(raw)), tidy)
         self.r = Rewriter(self.program, zero_gap=True)
+        self.page_line, self.page_text = self.catch_page()
+
+    def catch_page(self):
+        """(pc, text) of the Instructions line that comes just before the catch game (the host call before 63), or (None, None)."""
+        ins = self.program.instructions
+        hosts = [i for i in ins if i.opcode == 0x1f]
+        for before, call in zip(hosts, hosts[1:]):
+            if call.operand >> 8 == 63 and before.operand >> 8 == 16:
+                speaker, address = newrules.pushed_values(self.program, before.pc, 2)
+                if speaker == INSTRUCTIONS and address is not None:
+                    return before.pc, self.r.text(string_at(self.program, address).decode('cp1252'))
+        return None, None
 
     def face(self, s, entry):
         """Push the shshw portrait of the cast entry `entry()` pushes: CAST_FACES, else -1 (none)."""
@@ -143,7 +167,11 @@ class Lite:
         text = string_at(self.program, address)
         whole = text.startswith(b'(') and text.endswith(b')') and text.count(b'(') == 1
         bare = self.r.text(text[1:-1].decode('cp1252')) if whole else None
-        if speaker == EVENT:
+        if pc == self.page_line:
+            def build(s):                                   # (the catch game's page: catch)
+                self.clear_badge(s); s.result(0)
+            key = 'catch_page'
+        elif speaker == EVENT:
             def build(s):
                 (s.push(bare) if whole else s.arg(2)); s.push(NARRATOR); s.call(13, 2)
                 self.clear_badge(s); s.result(0)
@@ -178,14 +206,6 @@ class Lite:
             s.arg(2); s.push(-1); s.arg(4); s.push(0); s.arg(3); s.push(-1); s.push(brew.CHOICE_PORTRAIT)
             s.call(1, 8)
         self.r.redirect(pc, 'menu', build)
-
-    def action_menu(self, pc, argc):
-        """20: (title, `a|b|c`, interval ms, timer ms, speaker): the cursor jumps between the options until OK takes one; SHS's
-        timed "Think fast!" choice, the title under it; time running out takes the first."""
-        def build(s):
-            s.text(brew.TIMED_TITLE); s.arg(2); s.arg(1); s.arg(4); s.push(0); s.arg(5); s.push(-1); s.push(brew.CHOICE_PORTRAIT)
-            s.call(1, 8)
-        self.r.redirect(pc, 'action_menu', build)
 
     def name_entry(self, pc, argc):
         """19: (title, initial): SHS's text entry (17), the answer kept under ENTRY_TEXT for 7 (as brew.text_entry)."""
@@ -329,11 +349,74 @@ class Lite:
             s.label(passed)
             s.result(0); s.jump(done)
             s.label(real)
+            if self.page_text is not None:
+                s.text(PAGE_TITLE); s.push(self.page_text); s.push(0); s.call(33, 3)
             s.push(ORBIT); s.arg(1); s.arg(2); s.arg(3); s.arg(4); s.push(0); s.push(0)
             s.push(shw.CATCH_STAR_PICTURE); s.arg(5); s.push(table); s.push(len(numbers)); s.push(cut_table)
             s.call(BREW_CATCH, 12)
             s.label(done)
         self.r.redirect(pc, 'catch', build)
+
+    def quiz_routine(self):
+        """Where the fight's routine starts: the function holding the one action menu (20), whose callers drop QUIZ_ARGS."""
+        ins = self.program.instructions
+        sites = [i.pc for i in ins if i.opcode == 0x1f and i.operand >> 8 == 20]
+        if len(sites) != 1:
+            raise brew.StoryError(f'the lite fight: {len(sites)} action menus, 1 expected')
+        start = max(i.pc for i in ins if i.opcode == 0x48 and i.pc <= sites[0])
+        callers = [k for k in range(len(ins) - 2) if ins[k].opcode == 0x42 and ins[k + 1].opcode == 0x29 and ins[k + 1].operand == start]
+        if not callers or any(ins[k + 2].opcode != 0x19 or ins[k + 2].operand != QUIZ_ARGS for k in callers):
+            raise brew.StoryError(f'the lite fight: the routine at {start} is not called with {QUIZ_ARGS} arguments')
+        return start
+
+    def quiz(self, start):
+        """The fight's routine as SHS's timed word game (71) under `Think fast!` and the routine's question: the words scoring above 0
+        good, the rest bad. It returns the total in B, as the routine does: a pass is the rounds times the best score, less that
+        share (compared before multiplying, as brew.word_game, since the skip prompt's Win is 32767)."""
+        good, bad = self.r.words([0] * QUIZ_LIST_WORDS), self.r.words([0] * QUIZ_LIST_WORDS)
+
+        def build(s):
+            words, scores, count, rounds = (lambda: s.arg(2)), (lambda: s.arg(3)), (lambda: s.arg(4)), (lambda: s.arg(7))
+            score = lambda: (scores(), s.emit(0x41, 0), s.emit(0x50), s.emit(0x3f))         # noqa: E731
+            for buffer in (good, bad):
+                set_word(s, buffer, lambda: s.push(0))
+            s.push(0)                                       # local 0: the word
+            s.push(1)                                       # local 1: the best score
+            top, end = s.label(), s.label()
+            s.label(top)
+            s.emit(0x41, 0); count(); s.emit(0x0e); s.jump_if_zero(end)
+
+            def append(buffer):
+                first = s.label()
+                s.emit(0x40, buffer); s.jump_if_zero(first)
+                s.push(buffer); s.text('|'); s.call(25, 2)
+                s.label(first)
+                s.push(buffer); words(); s.emit(0x41, 0); s.emit(0x50); s.emit(0x3f); s.call(25, 2)
+            worse, kept, following = s.label(), s.label(), s.label()
+            score(); s.push(0); s.emit(0x0c); s.jump_if_zero(worse)
+            score(); s.emit(0x41, 1); s.emit(0x0c); s.jump_if_zero(kept)
+            s.emit(0x23, 1); score(); s.emit(0x3e); s.emit(0x15)
+            s.label(kept)
+            append(good)
+            s.jump(following)
+            s.label(worse)
+            append(bad)
+            s.label(following)
+            s.emit(0x23, 0); s.emit(0x41, 0); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+            s.jump(top)
+            s.label(end)
+            s.text(brew.TIMED_TITLE); s.arg(8); s.push(good); s.push(bad)
+            s.push(brew.WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS)
+            s.call(71, 8)
+            s.push_result()                                 # local 2: the result
+            short, returned = s.label(), s.label()
+            s.emit(0x41, 2); s.push(brew.WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
+            rounds(); s.emit(0x41, 1); s.emit(0x52); s.jump(returned)
+            s.label(short)
+            s.emit(0x41, 2); rounds(); s.emit(0x52); s.emit(0x41, 1); s.emit(0x52); s.push(brew.WORD_GAME_PASS); s.emit(0x53)
+            s.label(returned)
+            s.emit(0x04)
+        self.r.replace_function(start, 'quiz', build, QUIZ_ARGS)
 
     def catch_list(self):
         """Where the catch list's pictures are (its address is in word 5874 at run time, so it's found by its shape)."""
@@ -345,14 +428,16 @@ class Lite:
             raise brew.StoryError(f'the lite catch list: {len(found)} pictures found, {len(CATCH_COUNTS)} expected')
         return found
 
-    HANDLERS = {16: line, 18: menu, 19: name_entry, 20: action_menu, 21: photo, 7: entry_text, 25: token_get, 30: cast_picture,
+    HANDLERS = {16: line, 18: menu, 19: name_entry, 21: photo, 7: entry_text, 25: token_get, 30: cast_picture,
                 31: set_picture, 87: colours, 26: cast_name, 45: goto, 73: chapter, 10: sound, 9: entry, 78: chain, 34: the_end,
                 63: catch}
     RENAME = {1: 22, 4: 25, 6: 27, 22: 54, 23: 55, 24: 46}
-    # The debug print, the places' and cast's setup (the background is 45's), the status flash and the calendar.
-    DROPPED = {0, 36, 37, 38, 70, 80, 81, 82, 86}
+    # The debug print, the places' and cast's setup (the background is 45's), the status flash and the calendar; the action menu
+    # (20), inside the fight's routine, which quiz replaces whole, so it's never reached.
+    DROPPED = {0, 20, 36, 37, 38, 70, 80, 81, 82, 86}
 
     def translate(self):
+        self.quiz(self.quiz_routine())
         for pc, service, argc in self.r.calls():
             if service in self.HANDLERS:
                 self.HANDLERS[service](self, pc, argc)

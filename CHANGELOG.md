@@ -24,9 +24,10 @@
   and music (`optional_art`), and the BREW catch game wears an add-on's skin where the episode maps its board to one.
 - **Surviving Hollywood: The Bright Lights (Lite)** (owner, 2026-11-14; `tools/translate/shw_lite.py`): the 1.0.4 demo's
   Chapter 1 as an episode under its own SHW badge and Surviving Hollywood group, in the demo's painted art, frame, sounds
-  and catch game (the peanut-butter dodge, behind Use Translated Mini-Games, else a word game), with place badges, a title
-  card and its own names table. It needs only `shshw` (revision 4), never the BREW add-on, and matches the untranslated
-  script line for line on all 112 of its answer paths. Title Screen Music offers its main-menu tune.
+  and catch game (the peanut-butter dodge, behind Use Translated Mini-Games, else a word game; its instructions open it as
+  a page, as BREW's do), with place badges, a title card and its own names table. The fight with Chelsea is a timed word
+  game (keep calm: `Be cool`, `Be good`). It needs only `shshw` (revision 4), never the BREW add-on, and matches the
+  untranslated script line for line on all 112 of its answer paths. Title Screen Music offers its main-menu tune.
 - **Title cards for the translated stories that opened without one:** New Rules' Dancing Queen (the smartphone
   Homecoming Queen's card under its own name) and King of Diss, and X360's Dating Beth and Monday Planner.
 - **Undo** (Options -> Extras -> Allow Undo, off by default): a save at every stop Skip Ahead makes; the pause menu's
