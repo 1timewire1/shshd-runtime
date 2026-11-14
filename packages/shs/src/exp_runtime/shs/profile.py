@@ -98,6 +98,10 @@ JAVA_LOOK_ART = {31000: 10000}
 # keeps 40 locations x 3 skies below them. pack -> (first, end, offset).
 # A Classic story's own pictures (29000 up) move to '08's redraws, 500 above them, where the addon has one (brew.OWN_08_REDRAWS).
 BREW_08_BACKGROUNDS = {pack: ((26000 + 3 * 40, 26000 + 3 * 68, -3 * 40), (29000, 29500, 500)) for pack in (31100, 31200)}
+# shshd-runtime: optional add-ons whose art an episode can name in its presentation record (`optional_art`), each with the
+# library switch that turns it on: switch -> add-on. "Hollywood Art" (owner, 2026-11-13): the Surviving Hollywood demo's
+# portraits and backgrounds in the BREW Surviving Hollywood Preview (Classic 73), from `shshw` (tools/translate shw.py).
+OPTIONAL_ART = {'hollywood_art': 'shshw'}
 # shshd-runtime: where a translated pack's portrait picker (service 78) puts its portraits, by how many there are, in
 # place of the native slots (character_picker.POSITIONS), which leave one side empty for four. King of Diss offers four
 # faces: the chosen one in the middle, one above it, one either side. Pack -> {count: [(x, y) per slot]}.

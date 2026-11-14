@@ -21,7 +21,7 @@ as a minigame library, a renderer's skin or an optional art pack.
 | Kind | Who asks for it | Without it | Examples |
 | --- | --- | --- | --- |
 | **Required** | The episode, in its `requires` record | The episode opens for indexing and previews, but starting it shows a message naming the addon | `shsnr` and `shsx360` for their own stories |
-| **Optional** | The player, through `ContentLibrary.addon(id)` | Everything works, and the addon's switches aren't offered | `shsx360` as New Rules' arena skin; `chslim` in Cause of Death |
+| **Optional** | The player, through `ContentLibrary.addon(id)` | Everything works, and the addon's switches aren't offered | `shsx360` as New Rules' arena skin; `chslim` in Cause of Death; `shshw` in the Surviving Hollywood Preview |
 
 An addon can be both: New Rules' stories never declare `shsx360`, but the X360 Arena Skin reads it when it's there, and the X360
 stories require it.
@@ -177,6 +177,32 @@ the middle; 9 the Kid lowered onto the ring; 10 the badge icons at the smartphon
 python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --out OUT_DIR
 ```
 
+### `shshw`: Surviving Hollywood
+
+Optional, for the BREW Classic *Surviving Hollywood Preview* (31100, 73). Revision 1, about 0.9 MB. Built from the Surviving
+Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits and its backgrounds. Phase 1 of the owner's three-phase plan
+(`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's chapters, if translated, will require
+it at later revisions, so its numbers stay as they are.
+
+| Resources | What |
+| --- | --- |
+| 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
+| 26998 | The spec, JSON |
+| 27001-27052 | Portraits 2001-2052, at 27000 + (picture − 2000): 4 times their pixels on a 256 × 300 picture, standing 7 art pixels above its foot as BREW's portraits do |
+
+**The Preview names them itself.** Its presentation record maps the BREW add-on's pictures to these (`optional_art`), and the
+runtime serves them while `shshw` is imported and the **Hollywood Art** switch is on (`EpisodeResources._optional_art`). The
+mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`; owner's picks). The Preview's welcome and red-carpet
+dream showed '07's dance floor, as its club does, so those two scene changes name a location of their own (30002-30004), an
+alias of the dance floor (`aliases`), which the map draws as the red carpet. The Preview is version 2 from this change.
+
+**Switch:** "Hollywood Art", with the '07 tag, on by default: on the Add-Ons page in the Preview, and on Per-Game Settings when
+the library holds `shshw`.
+
+```sh
+python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR --out OUT_DIR
+```
+
 ### `chslim`: Claire Hart (Slim)
 
 Optional, for Cause of Death. Revision 1, about 21 MB.
@@ -238,6 +264,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
 | Java '08 Look | '08 | '08 BREW episodes, with an addon built with the Java demo |
 | '08 Backgrounds | '07 | '07 BREW episodes |
+| Hollywood Art | '07 | The Surviving Hollywood Preview, with `shshw` imported |
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

@@ -33,6 +33,7 @@ from PIL import Image, ImageDraw
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
+from exp_runtime.presentation import RESOURCE as PRESENTATION_RECORD, presentation_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.vm import KiwiVM, StopKind, signed16
@@ -562,6 +563,9 @@ def scene_open(rewriter, pc, argc, context):
 def scene_change(rewriter, pc, argc, context):
     """14: (speaker, sky mode, location, expression): speaker -1 keeps the speaker, -2 clears it, and an expression only comes with a
     speaker, where -1 means the default face. Sky and location -1 keep theirs."""
+    swap = context.get('location_swaps', {}).get(pc)      # a location of the story's own for this scene (fix_hollywood_preview)
+    location = (lambda s: s.push(swap)) if swap is not None else (lambda s: s.arg(3))
+
     def build(s):
         keep, shown, change = s.label(), s.label(), s.label()
         depth = lambda: (s.push(DEPTH_KEY), s.call(55, 1), s.push_result())
@@ -574,7 +578,7 @@ def scene_change(rewriter, pc, argc, context):
         s.push(_SCENE_LAYOUT['sky']); depth(); s.emit(0x50); s.arg(2); s.call(54, 2)
         s.label(no_sky)
         s.arg(3); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(no_location)
-        s.push(_SCENE_LAYOUT['location']); depth(); s.emit(0x50); s.arg(3); s.call(54, 2)
+        s.push(_SCENE_LAYOUT['location']); depth(); s.emit(0x50); location(s); s.call(54, 2)
         s.label(no_location)
         s.arg(2); s.push(-1); s.emit(0x0a); s.jump_if_zero(change)
         s.arg(3); s.push(-1); s.emit(0x0a); s.jump_if_nonzero(shown)
@@ -582,7 +586,7 @@ def scene_change(rewriter, pc, argc, context):
         show_top_scene(s, context)
         s.label(shown)
         s.result(0)
-    rewriter.redirect(pc, 'scene_change', build)
+    rewriter.redirect(pc, 'scene_change' if swap is None else ('scene_change', swap), build)
 
 
 def scene_close(rewriter, pc, argc, context):
@@ -3091,7 +3095,26 @@ def fix_funky_monkey_07(rewriter, context):
         rewriter.insert(pc, build)
 
 
-CONTEXT_FIXES = {'monkey.exp': fix_funky_monkey_07}     # story fixes that need the script's context (its own pictures)
+def fix_hollywood_preview(rewriter, context):
+    """The Surviving Hollywood Preview's welcome and red-carpet dream show '07's dance floor (1023), as its club does. With the
+    `shshw` addon's "Hollywood Art" on, the dream is the demo's red carpet and the club its club floor (owner, 2026-11-13), so the
+    dream's scene changes name a location of its own (shw.DREAM_LOCATION), drawn under numbers of its own that alias the dance
+    floor (shw.preview_art)."""
+    import shw
+    code, program = rewriter.code, context['program']
+    for pc in shw.DREAM_SITES:
+        values = newrules.pushed_values(program, pc, 4) if code[pc] == (0x1f, 14 << 8 | 4) else None
+        if not values or values[2] != shw.DREAM_SHOWN_AS:
+            raise StoryError(f'Surviving Hollywood Preview: no scene change to {shw.DREAM_SHOWN_AS} at {pc}')
+    context['location_swaps'] = {pc: shw.DREAM_LOCATION for pc in shw.DREAM_SITES}
+    context['own_backgrounds'] = sorted([*context['own_backgrounds'], (shw.DREAM_LOCATION, shw.DREAM_INDEX)])
+
+
+CONTEXT_FIXES = {'monkey.exp': fix_funky_monkey_07,       # story fixes that need the script's context (its own pictures)
+                 'clsc_073_Hollywood.exp': fix_hollywood_preview}
+# A location of a story's own that is drawn as one of the shared ones (fix_hollywood_preview), for the title and date cards'
+# picks: (its index, the shared location's index).
+CARD_SAME_AS = {1334: LOCATION_07_OFFSET + 23}           # shw.DREAM_INDEX: '07's dance floor
 
 
 def catch_pages(program):
@@ -3204,8 +3227,8 @@ def title_card(card, title, spec):
     """The picture a story's title card (and its week cards, and a date card whose day has no pick of its own) shows: the
     owner's pick for the add-on strip it opens on (CARD_BANK) or for the story (CARD_BY_TITLE), or for the story's own picture
     (CARD_OWN), else `card` itself."""
-    if BACKGROUND_BASE <= card < CATCH_BASE:
-        picked = CARD_BANK.get(divmod(card - BACKGROUND_BASE, SKY_MODES))
+    if BACKGROUND_BASE <= card < CATCH_BASE or card_same_as(card) is not None:
+        picked = CARD_BANK.get(card_same_as(card) or divmod(card - BACKGROUND_BASE, SKY_MODES))
     else:
         picked = CARD_BY_TITLE.get(title, CARD_OWN.get(card))
     if isinstance(picked, str):
@@ -3213,10 +3236,16 @@ def title_card(card, title, spec):
     return card if picked is None else picked
 
 
+def card_same_as(picture):
+    """(location index, sky) of the shared location a story's own location is drawn as (CARD_SAME_AS), or None."""
+    index, sky = divmod(picture - BACKGROUND_BASE, SKY_MODES)
+    return (CARD_SAME_AS[index], sky) if picture >= BACKGROUND_BASE and index in CARD_SAME_AS else None
+
+
 def scene_card(picture):
     """The owner's pick for a scene a calendar day opens on (CARD_BANK, CARD_OWN), or None."""
-    if BACKGROUND_BASE <= picture < CATCH_BASE:
-        return CARD_BANK.get(divmod(picture - BACKGROUND_BASE, SKY_MODES))
+    if BACKGROUND_BASE <= picture < CATCH_BASE or card_same_as(picture) is not None:
+        return CARD_BANK.get(card_same_as(picture) or divmod(picture - BACKGROUND_BASE, SKY_MODES))
     return CARD_OWN.get(picture)
 
 
@@ -3423,6 +3452,11 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, CARD_PICTURES_REVISION if card in {r for r, _, _ in CARD_PICTURES.values()}
                                                          else ADDON_REQUIRED)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
+    if name == 'clsc_073_Hollywood.exp':
+        # The Surviving Hollywood demo's art, while `shshw` is there and "Hollywood Art" is on (shw.py; owner, 2026-11-13)
+        import shw
+        resources[PRESENTATION_RECORD] = presentation_bytes(shw.preview_art(spec))
+        resources[VERSION_RECORD] = version_bytes(shw.PREVIEW_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
 

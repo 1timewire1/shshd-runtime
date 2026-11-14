@@ -381,7 +381,8 @@ exp-runtime never read 3. Every member is optional:
 | `three_word_games` | `true` | A word game (71) may have three words, one or two of them good |
 | `big_pickers` | `true` | A portrait picker (78) may offer up to ten photos |
 | `minigames` | `true` | The episode plays translated mini-games, so the player offers their switch for it |
-| `aliases` | `{"resource": [addon, resource]}` | A picture or sound taken from an extra add-on, under one of the episode's numbers |
+| `aliases` | `{"resource": [addon, resource]}` | A picture or sound taken from an extra add-on, under one of the episode's numbers. One aliased to the episode's first required add-on counts as that add-on's own number for its switches ("'08 Backgrounds") |
+| `optional_art` | `{addon: {"resource": addon resource}}` | Pictures an optional add-on draws instead of the episode's own while it's imported and its switch is on (the profile's `OPTIONAL_ART`): the BREW Surviving Hollywood Preview with `shshw` and "Hollywood Art" |
 
 Keys are SHS global numbers (owner 0, service 54) that the script sets around
 the line and clears after it: the duet partner as its character ID + 1 (0

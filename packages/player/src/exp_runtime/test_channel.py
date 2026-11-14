@@ -311,7 +311,7 @@ class Commands:
             out['prompt'] = dict(title=game.host_prompt['session'].pending.details['title'],
                                  text=game.host_prompt['session'].pending.details['text'],
                                  options=list(game.host_prompt['options']))
-        out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'skip_minigames',
+        out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'hollywood_art', 'skip_minigames',
                                                                 'choice_hints', 'autoplay') if hasattr(game, key)}
         chain = game._undo_for(session)
         out['undo_saves'] = chain.numbers() if chain is not None else None

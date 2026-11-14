@@ -68,6 +68,8 @@ March %d` filled in with today's date (CS Idol), is said in BREW; here it's that
 
 ## Art and music
 
+**The Surviving Hollywood Preview** (Classic 73) can draw the Surviving Hollywood demo's own portraits and backgrounds instead, from the optional `shshw` add-on, with the **Hollywood Art** switch (owner, 2026-11-13; [ADDONS.md](ADDONS.md#shshw-surviving-hollywood)). Its presentation record names them (`shw.preview_art`), and its welcome and dream scenes have a location of their own (`fix_hollywood_preview`), so the dream can be the red carpet while the club is the club floor. Version 2; its lines are the same as version 1's on 85 answer paths (13,579 lines, choices and cards), only the dream's picture number different.
+
 All of it is in the addon, and stories hold only their scripts ([ADDONS.md](ADDONS.md#shsbrew-the-brew-games)).
 
 - **Locations** are 240 × 80 strips over a sky drawn in code, so each is rendered at each of its three skies, at six times size with no smoothing. '07-badged stories show '07's copies of the 28 shared locations (decision 7B); **'08 Backgrounds** (a switch, off by default) shows '08's instead (profile `BREW_08_BACKGROUNDS`). Every other graphic a story uses is the same in both games' base packs (checked 2026-11-06); only the publisher splash (8) and the title screen (47) differ, and neither is used.

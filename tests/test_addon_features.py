@@ -118,6 +118,56 @@ class AliasTests(unittest.TestCase):
         self.assertEqual(declared(resources, 'aliases')[28000], ('shsbrew', 26500))
 
 
+class OptionalArtTests(unittest.TestCase):
+    """The "Hollywood Art" switch (owner, 2026-11-13; SURVIVING_HOLLYWOOD_ADDON_PLAN.md): an episode names pictures of an optional
+    add-on (presentation `optional_art`) that are drawn instead of its own while the add-on is there and its switch is on."""
+
+    def resources(self, held=('shshw',), art=True, brew_08=False):
+        brew = Archive({26189: b'07 dance', 26069: b'08 dance', 28555: b'tony doll'})
+        hollywood = Archive({26054: b'club floor', 26102: b'red carpet', 27049: b'tony painted'})
+        archives = {'shsbrew': brew, 'shshw': hollywood}
+        library = SimpleNamespace(game_id='shs', hd_art_mode='off', hollywood_art=art, brew_08_backgrounds=brew_08,
+                                  addon=lambda name: (dict(revision=1), archives[name]) if name in archives and
+                                  (name == 'shsbrew' or name in held) else None)
+        resources = object.__new__(EpisodeResources)
+        resources.library, resources.record = library, dict(pack_id=31100, episode_id=73, name='preview')
+        resources.archive = Archive({})
+        resources._presentation = normalize(dict(
+            format='shshd-presentation', version=1, aliases={'30002': ['shsbrew', 26189]},
+            optional_art={'shshw': {'26189': 26054, '30002': 26102, '28555': 27049}}))
+        resources._required_addons, resources._addon_archives = (('shsbrew', 7),), [brew]
+        return resources
+
+    def test_the_record_member_normalizes_and_bad_ones_are_refused(self):
+        self.assertEqual(self.resources()._presentation['optional_art'], {'shshw': {26189: 26054, 30002: 26102, 28555: 27049}})
+        for bad in (dict(optional_art=[1]), dict(optional_art={'': {}}), dict(optional_art={'shshw': [1]}),
+                    dict(optional_art={'shshw': {'26189': 'x'}})):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                normalize(dict(format='shshd-presentation', version=1, **bad))
+
+    def test_the_add_ons_pictures_are_drawn_while_it_is_there_and_switched_on(self):
+        on = self.resources()
+        self.assertEqual([on.read_asset(r) for r in (26189, 30002, 28555)], [b'club floor', b'red carpet', b'tony painted'])
+        for off in (self.resources(art=False), self.resources(held=())):
+            with self.subTest(off=off.library.hollywood_art):
+                self.assertEqual([off.read_asset(r) for r in (26189, 30002, 28555)], [b'07 dance', b'07 dance', b'tony doll'])
+
+    def test_a_number_aliased_to_the_main_add_on_moves_with_its_switches(self):
+        # The dream's own number is '07's dance floor, so "'08 Backgrounds" shows '08's for it as for the club.
+        moved = self.resources(art=False, brew_08=True)
+        self.assertEqual((moved.read_asset(30002), moved.read_asset(26189)), (b'08 dance', b'08 dance'))
+        self.assertTrue(moved.exists(30002))
+
+    def test_the_switch_is_offered_with_the_add_on(self):
+        from exp_runtime.content import library_has_optional_art, optional_art_offered
+        self.assertEqual(GAMES['shs'].OPTIONAL_ART, {'hollywood_art': 'shshw'})
+        self.assertTrue(optional_art_offered(self.resources(), 'hollywood_art'))
+        self.assertFalse(optional_art_offered(self.resources(held=()), 'hollywood_art'))
+        self.assertFalse(optional_art_offered(episode(31100), 'hollywood_art'))                      # names none
+        self.assertTrue(library_has_optional_art(self.resources().library, 'hollywood_art'))
+        self.assertFalse(library_has_optional_art(self.resources(held=()).library, 'hollywood_art'))
+
+
 if __name__ == '__main__':
     unittest.main()
 

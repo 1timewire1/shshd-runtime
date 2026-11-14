@@ -446,6 +446,7 @@ class Application:
         self.apply_ms3_characters()
         self.apply_java_look()
         self.apply_brew_08_backgrounds()
+        self.apply_hollywood_art()
         self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
@@ -1034,6 +1035,7 @@ class Application:
         self.apply_ms3_characters()
         self.apply_java_look()
         self.apply_brew_08_backgrounds()
+        self.apply_hollywood_art()
         self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
@@ -1159,6 +1161,13 @@ class Application:
         return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
     @library_answer
+    def hollywood_art_offered(self):
+        """Whether the library holds the add-on behind the "Hollywood Art" switch (`shshw`; the profile's OPTIONAL_ART), whose
+        pictures the BREW Surviving Hollywood Preview draws."""
+        from .content import library_has_optional_art
+        return library_has_optional_art(self.library, 'hollywood_art')
+
+    @library_answer
     def smartphone_music_offered(self):
         """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
         SHS '11 episodes)."""
@@ -1218,6 +1227,12 @@ class Application:
         self.library.brew_08_backgrounds = self.state.brew_08_backgrounds
         if self.game:
             self.game.set_brew_08_backgrounds(self.state.brew_08_backgrounds)
+
+    def apply_hollywood_art(self):
+        """The "Hollywood Art" switch reaches the library; a paused episode draws its pictures afresh."""
+        self.library.hollywood_art = self.state.hollywood_art
+        if self.game:
+            self.game.set_hollywood_art(self.state.hollywood_art)
 
     def apply_smartphone_music(self):
         """The "Smartphone Music" switch reaches a paused episode."""
@@ -1467,6 +1482,7 @@ class Application:
         library.ms3_characters = state.ms3_characters
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
+        library.hollywood_art = state.hollywood_art
         library.ch_portraits = state.ch_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
@@ -2172,6 +2188,7 @@ class Application:
         self.game.ms3_characters = self.state.ms3_characters
         self.game.java_look = self.state.java_look
         self.game.brew_08_backgrounds = self.state.brew_08_backgrounds
+        self.game.hollywood_art = self.state.hollywood_art
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
@@ -2283,6 +2300,7 @@ class Application:
         self.state.ms3_characters = self.game.ms3_characters
         self.state.java_look = self.game.java_look
         self.state.brew_08_backgrounds = self.game.brew_08_backgrounds
+        self.state.hollywood_art = self.game.hollywood_art
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory
@@ -2548,7 +2566,7 @@ class Application:
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
-                               'arena_minigames', 'brew_08_backgrounds',
+                               'arena_minigames', 'brew_08_backgrounds', 'hollywood_art',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
@@ -2566,6 +2584,8 @@ class Application:
                     self.apply_java_look()
                 if key == 'brew_08_backgrounds':
                     self.apply_brew_08_backgrounds()
+                if key == 'hollywood_art':
+                    self.apply_hollywood_art()
                 if key == 'smartphone_music':
                     self.apply_smartphone_music()
                 if key == 'word_grid_skin':

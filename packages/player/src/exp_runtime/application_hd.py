@@ -346,6 +346,8 @@ class HdShell:
             settings['java_look'] = state.java_look
         if self.app.brew_08_backgrounds_offered():
             settings['brew_08_backgrounds'] = state.brew_08_backgrounds
+        if self.app.hollywood_art_offered():
+            settings['hollywood_art'] = state.hollywood_art
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
@@ -473,6 +475,8 @@ class HdShell:
             self.app.apply_java_look()
         if which == 'brew_08_backgrounds':
             self.app.apply_brew_08_backgrounds()
+        if which == 'hollywood_art':
+            self.app.apply_hollywood_art()
         if which == 'smartphone_music':
             self.app.apply_smartphone_music()
         if which == 'word_grid_skin':

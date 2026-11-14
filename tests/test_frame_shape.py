@@ -109,7 +109,7 @@ class AppAspectTests(unittest.TestCase):
         for key in ('music_enabled', 'sound_enabled', 'controller_confirm', 'grid_controls', 'vibration_enabled',
                     'device_vibration_enabled', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'autoplay',
                     'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look',
-                    'brew_08_backgrounds', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo',
+                    'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo',
                     'ch_portraits', 'ch_backdrop', 'arena_minigames', 'arena_skin'):
             setattr(game, key, False)
         game.music_volume = game.sound_volume = .5

@@ -25,6 +25,12 @@ Members for episodes made in the Creator (owner, 2026-11-09; CREATOR_ADDONS_PLAN
 - `aliases`: {episode resource: [add-on, its resource]}: a picture or sound taken from an extra add-on (not the primary),
   under a number of the episode's own. The add-ons reuse numbers, and an episode reads a number from the first add-on it
   lists that has it, which is the primary; an alias always reaches the add-on it names.
+
+For a translated episode (owner, 2026-11-13; SURVIVING_HOLLYWOOD_ADDON_PLAN.md):
+
+- `optional_art`: {add-on: {episode resource: add-on resource}}: pictures an optional add-on (one the episode doesn't
+  require) draws instead of the episode's own while that add-on's switch is on (the profile's OPTIONAL_ART): the BREW
+  Surviving Hollywood Preview's portraits and backgrounds from `shshw`.
 """
 import json
 
@@ -36,7 +42,7 @@ FORMAT = 'shshd-presentation'
 VERSION = 1
 EFFECTS = 6
 MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creator', 'addons', 'word_forms', 'date_first',
-           'three_word_games', 'big_pickers', 'minigames', 'aliases')
+           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art')
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
 # 31500, SHS '11 31600): their episodes take their game's settings from the profile's tables and declare none of the members
 # above for an episode made in the Creator.
@@ -97,6 +103,13 @@ def normalize(record):
             if (not isinstance(target, list) or len(target) != 2 or not isinstance(target[0], str) or not target[0]):
                 raise ValueError('an alias must be [add-on, resource]')
             result['aliases'][_number(int(resource), 'an aliased resource')] = (target[0], _number(target[1], 'a resource'))
+    if 'optional_art' in record:
+        art = record['optional_art']
+        if not isinstance(art, dict) or not all(isinstance(addon, str) and addon and isinstance(table, dict)
+                                                for addon, table in art.items()):
+            raise ValueError('optional_art must be {add-on: {episode resource: add-on resource}}')
+        result['optional_art'] = {addon: {_number(int(resource), 'a resource'): _number(target, 'an add-on resource')
+                                          for resource, target in table.items()} for addon, table in art.items()}
     if 'addons' in record:
         addons = record['addons']
         if (not isinstance(addons, dict) or set(addons) != {'primary', 'edition'} or not isinstance(addons['primary'], str)

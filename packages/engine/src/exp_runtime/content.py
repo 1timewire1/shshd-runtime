@@ -824,6 +824,7 @@ class ContentLibrary:
         self.java_look = False          # translated BREW episodes: the Java '08 demo's look (JAVA_LOOK_ART)
         self.brew_08_backgrounds = False    # '07-badged BREW episodes: '08's shared locations (BREW_08_BACKGROUNDS)
         self.ch_portraits = True        # CoD with its portrait addon (PORTRAIT_ADDON): Claire Hart's sharper originals
+        self.hollywood_art = True       # the BREW Surviving Hollywood Preview with `shshw`: the demo's own art (OPTIONAL_ART)
         self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
@@ -1651,6 +1652,22 @@ def declared(resources, name):
     return (getattr(resources, 'presentation', None) or {}).get(name)
 
 
+def optional_art_offered(resources, switch):
+    """shshd-runtime: whether an episode names pictures of the optional add-on behind `switch` (presentation `optional_art`;
+    the profile's OPTIONAL_ART: switch -> add-on) and its library holds that add-on, so the switch changes something."""
+    addon = getattr(GAMES.get(game_id(resources)), 'OPTIONAL_ART', {}).get(switch)
+    library = getattr(resources, 'library', None)
+    return (addon is not None and bool((declared(resources, 'optional_art') or {}).get(addon))
+            and hasattr(library, 'addon') and library.addon(addon) is not None)
+
+
+def library_has_optional_art(library, switch):
+    """shshd-runtime: whether a library holds the optional add-on behind `switch` (the profile's OPTIONAL_ART), for the
+    menus' Per-Game Settings. Only the episodes that name its pictures change with it."""
+    addon = getattr(GAMES.get(getattr(library, 'game_id', None)), 'OPTIONAL_ART', {}).get(switch)
+    return addon is not None and hasattr(library, 'addon') and library.addon(addon) is not None
+
+
 def feature_pack(resources):
     """shshd-runtime: the pack whose settings that need an add-on's pictures and sounds an episode has (the profile's tables
     of translated packs: frame backdrop, relationship icons, answer-feedback music, the add-ons' switches): an episode made
@@ -1825,7 +1842,10 @@ class EpisodeResources:
         return resource_id in self.library.base_members or resource_id in self.library.music_members
 
     def read_asset(self, resource_id: int) -> bytes:
-        resource_id = self._brew_08_background(resource_id)
+        optional = self._optional_art(resource_id)
+        if optional is not None:
+            return optional
+        resource_id = self._brew_08_background(self._primary_alias(resource_id))
         java = self._java_look(resource_id)
         if java is not None:
             return self._bank_read(java)
@@ -1882,6 +1902,33 @@ class EpisodeResources:
             self._addon_pictures[resource_id] = spec['resources'].get(f'{key}:{resource_id}', spec['portraits'].get(key))
         target = self._addon_pictures[resource_id]
         return None if target is None else found[1].read(target)
+
+    def _optional_art(self, resource_id):
+        """shshd-runtime: the picture an optional add-on draws for this one (presentation `optional_art`), while its switch is
+        on (the profile's OPTIONAL_ART: switch -> add-on) and the library holds it; else None. The BREW Surviving Hollywood
+        Preview's portraits and backgrounds from `shshw` (owner, 2026-11-13)."""
+        tables = declared(self, 'optional_art')
+        if not tables or resource_id < 26000 or not hasattr(self.library, 'addon'):
+            return None
+        for switch, addon in getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'OPTIONAL_ART', {}).items():
+            target = tables.get(addon, {}).get(resource_id)
+            if target is None or not getattr(self.library, switch, False):
+                continue
+            found = self.library.addon(addon)
+            if found is not None and target in found[1].entries:
+                return found[1].read(target)
+        return None
+
+    def _primary_alias(self, resource_id):
+        """shshd-runtime: a number the episode aliases to its first required add-on (presentation `aliases`), as that
+        add-on's own, so the switches that move its pictures ("'08 Backgrounds") move it too: the Surviving Hollywood
+        Preview's dream shows '07's dance floor under a number of its own, which `optional_art` maps to the red carpet.
+        Any other number is itself."""
+        alias = (declared(self, 'aliases') or {}).get(resource_id)
+        if alias is None or resource_id in getattr(self.archive, 'entries', ()) or not self.required_addons \
+                or alias[0] != self.required_addons[0][0]:
+            return resource_id
+        return alias[1]
 
     def _own_picture(self, resource_id):
         """shshd-runtime: whether an episode made in the Creator holds this picture itself: its primary add-on's switches move
