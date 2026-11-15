@@ -43,6 +43,10 @@
   sun (`shshw` revision 5);
   the reminder now says to pause. Its speakers' boxes take the lite's colours (they had none: a blue plate, yellow text),
   the portrait-less walk-ons and system voices too.
+- **Silhouettes for *The Bright Lights*' faceless people** (owner, 2026-11-15): the 21 speakers the demo gives no
+  portrait (Mom, Dad, the cop, the kid, Myra, the telemarketer...) now wear one of the low-end 1.0.4 demo's eight
+  silhouettes in their portrait ring, matched by the owner (`shshw` revision 6, built with that demo's jar too); the
+  voices with no one behind them (Phone, Advice Column, Reel Times, Instructions) keep the named box.
 - **Surviving Hollywood: The Bright Lights (Lite)** (owner, 2026-11-14; `tools/translate/shw_lite.py`): the 1.0.4 demo's
   Chapter 1 as an episode under its own SHW badge and Surviving Hollywood group, in the demo's painted art, frame, sounds
   and catch game (the peanut-butter dodge, behind Use Translated Mini-Games, else a word game; its instructions open it as

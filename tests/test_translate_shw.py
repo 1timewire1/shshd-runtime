@@ -1,8 +1,8 @@
 """Surviving Hollywood's full chapter (tools/translate shw_full.py; SURVIVING_HOLLYWOOD_ADDON_PLAN.md phase 3).
 
-The translator's own rules run on authored text. The whole chapter is built and played only where the player's copy of the
-demo's 240 x 320 jar is named by SHSHD_SHW_JAR (no original content is kept here): New Game to the month's end, with Where to?,
-the quest journal, minigames and the exit. Line-for-line agreement with Tardy-Slip's engine is checked outside the suite
+The translator's own rules run on authored text. The whole chapter is built and played only where the player's copies of the
+demo's 240 x 320 jar and of the 1.0.4 (88K) demo's jar (its silhouettes) are named by SHSHD_SHW_JAR and SHSHD_SHW_LITE_JAR (no
+original content is kept here): New Game to the month's end, with Where to?, the quest journal, minigames and the exit. Line-for-line agreement with Tardy-Slip's engine is checked outside the suite
 (reference/Other Games/tools/shw_ref.mjs and shw_compare.py)."""
 import importlib.util
 import os
@@ -14,6 +14,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translate'))
 HAS_PIL = importlib.util.find_spec('PIL') is not None
 JAR = os.environ.get('SHSHD_SHW_JAR')
+LITE_JAR = os.environ.get('SHSHD_SHW_LITE_JAR')
 
 
 @unittest.skipUnless(HAS_PIL, 'needs Pillow')
@@ -94,9 +95,10 @@ class OptionDetailTests(unittest.TestCase):
         self.assertEqual(restored.pending.details['details'], details['details'])
 
 
-@unittest.skipUnless(HAS_PIL and JAR and Path(JAR or '.').exists(), 'SHSHD_SHW_JAR (the demo\'s 1.0.2 jar) is not set')
+@unittest.skipUnless(HAS_PIL and JAR and Path(JAR or '.').exists() and LITE_JAR and Path(LITE_JAR or '.').exists(),
+                     'SHSHD_SHW_JAR and SHSHD_SHW_LITE_JAR (the 1.0.2 and 1.0.4 demos\' jars) are not set')
 class FullChapterTests(unittest.TestCase):
-    """The chapter built from the player's jar (and the add-on, without its music) and played to its end."""
+    """The chapter built from the player's jars (and the add-on, without its music) and played to its end."""
 
     @classmethod
     def setUpClass(cls):
@@ -104,7 +106,7 @@ class FullChapterTests(unittest.TestCase):
         import shw
         import shw_full
         cls.folder = tempfile.TemporaryDirectory()
-        addon, _ = shw.build_addon(JAR, music=False)
+        addon, cls.spec = shw.build_addon(JAR, music=False, lite_jar=LITE_JAR)
         addon_path = Path(cls.folder.name) / 'shshw.exp'
         addon_path.write_bytes(addon)
         cls.name, cls.data = shw_full.build_story(JAR, addon_path)
@@ -150,6 +152,48 @@ class FullChapterTests(unittest.TestCase):
         self.assertIn('Quest Journal', wheres[0]['options'])
         self.assertGreater(max(journal), 3)                                     # the pause menu's journal fills in
         self.assertTrue(any(r['kind'] == 'message' and r['title'] == 'Stat changes' for r in record))
+
+    def test_every_person_without_a_portrait_wears_a_silhouette(self):
+        import shw
+        import shw_full
+        setup = shw_full.setup_tables(shw.jar_resources(JAR)[shw_full.SETUP_SCRIPT])
+        faceless = {e for e in setup['cast'] if setup['portraits'].get(e, -1) < 0}
+        voices = {shw_full.EVENT, *shw_full.NAMED}
+        self.assertEqual(set(shw_full.SILHOUETTES), faceless - voices)
+        self.assertEqual(len(self.spec['silhouettes']), shw.SILHOUETTES)
+        from exp_runtime.exp import ExpArchive
+        for k, rid in enumerate(self.spec['silhouettes']):
+            self.assertEqual(rid, shw.SILHOUETTE_BASE + k)
+            self.assertIn(rid, self.addon.entries)
+
+    def test_a_silhouetted_speaker_talks_in_their_own_line(self):
+        import playthrough
+        import shw
+        import shw_full
+        session = playthrough.session(self.data, addons=[self.addon])
+        session.engine.random.state = 3
+        rng = random.Random(3)
+        record = []
+
+        class Answers:
+            def __len__(self):
+                return 1
+
+            def pop(self, _):
+                return rng.randrange(len(record[-1].get('options') or ['']))
+        playthrough.steps(session, Answers(), 'Kate', 6000, record)
+        names = {casing_name(n) for n in ('mom', 'dad', 'cop', 'telemarketer', 'kid', 'vendor', 'girl', 'guy')}
+        lines = [r for r in record if r['kind'] == 'line' and r.get('speaker') in names]
+        self.assertTrue(lines)
+        pictures = {shw.SILHOUETTE_BASE + k for k in range(shw.SILHOUETTES)}
+        for r in lines:
+            self.assertIn(session.engine.character_art_bases.get(r['character']), pictures, r)
+            self.assertEqual(r['expression'], 0)                    # the next silhouette is no expression of this one
+
+
+def casing_name(name):
+    import casing
+    return casing.title_case(name)
 
 
 if __name__ == '__main__':

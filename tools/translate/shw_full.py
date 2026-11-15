@@ -34,7 +34,9 @@ dropped; options the demo greys out (17) are left off the menu. The demo's numbe
 catch games (63-65) as BREW's catch (221), spelling (62) as SHS's word grid (96). **Text**: every full build is lowercase, so
 capitals come back by rule and word lists (`recase`; reference/Other Games/docs/SURVIVING_HOLLYWOOD_CASING.md for the owner).
 
-**Not yet** (later Phase 3 steps): the line-by-line check against Tardy-Slip's engine; the add-on's sun icon.
+**Faces**: the cast's painted portraits (30, 31), some turned (TURNED). The 21 people the demo gives no portrait (Mom, Dad, the
+cop...) wear one of the 1.0.4 demo's eight silhouettes instead (SILHOUETTES: shshw revision 6; owner, 2026-11-15); the voices
+with no one behind them (Phone, Advice Column, Reel Times, Instructions) speak in SHS's named box (76).
 """
 import argparse
 from collections import Counter
@@ -62,7 +64,7 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 
 PACK, EPISODE, VERSION = 31700, 1, 1    # episode 1: the lite moves to 2 (owner, 2026-11-14)
 TITLE, SUFFIX = 'The Bright Lights', ' (SHW)'
-ADDON_REQUIRED = 5                      # shshw: the sun as the daytime badge's icon
+ADDON_REQUIRED = 6                      # shshw: the sun as the daytime badge's icon (5), the silhouettes (6)
 DRIVER = 25001
 SETUP_SCRIPT, SETUP_ENTRY, SCHEDULE = 10002, 32001, 10000
 SLEEP_SCRIPT, QUEST_SCRIPT = 10007, 10005           # 49's, as 10002 names them (checked in setup_tables)
@@ -89,6 +91,18 @@ TURNED = frozenset({2006, 2034, 2042, 2048,         # Chelsea, Milan, the Secret
 # The cast entries New Game's photo choice offers (21: entries 20, 18 and 0, portraits 2015, 2013 and 2037; the demo names the
 # first two `director` and `denni`, and neither ever speaks) and the player: shown on the left and in the picker, never turned.
 PHOTO_ENTRIES = frozenset({0, 18, 20})
+# The people with no portrait (setup: -1), each as one of the 1.0.4 demo's silhouettes (shw.SILHOUETTE_BASE + the sprite: 0 a
+# waving boy, 1 a small girl, 2 a man in a cap, 3 a broad man, 4 a heavy man, 5 a rocker with a guitar, 6 a posing woman, 7 a
+# woman in a dress). Owner's table, 2026-11-15 (reference/screenshots/verify/surviving_hollywood/addon_phase3/silhouettes/):
+# speakers met together (the girls, the guys) differ. In 1.0.4 itself, 3 was Mike and The Jeff, 4 Tony and Lou, 5 the player,
+# 6 Chelsea, 7 the Secretary.
+SILHOUETTES = {38: 0,                                          # the Kid
+               15: 2, 54: 2, 34: 2, 51: 2, 75: 2,              # the Cop, the Rapper, Guy 2, the Paparazzi, the Worker
+               32: 3, 33: 3, 36: 3, 42: 3,                     # Gregor, Guy, Jeremy, the Magician
+               16: 4, 69: 4, 22: 4, 65: 4,                     # Dad, the Vendor, the Prophet, the Telemarketer
+               47: 5,                                          # the Musician
+               48: 6, 3: 6, 29: 6,                             # Myra, April, Girl
+               46: 7, 59: 7, 30: 7}                            # Mom, Sandra, Girl 2
 NO_BADGE = 629                                       # SHS character key: 1 hides the relationship icon (owner: hidden)
 THEME = 651                                          # SHS character key: the box's colours (unset, a broken mix: owner, 2026-11-14)
 BLUE, PINK, GREY = 1, 2, 3                           # as the lite's (shw_lite.CAST_THEMES)
@@ -477,7 +491,8 @@ def clear_badge(s):
 
 def push_face(s, portrait, entry):
     """Push the shshw picture for the demo portrait `portrait()` pushes, for the cast entry `entry()` pushes: turned for TURNED
-    unless the entry is the player or one of New Game's photos (PHOTO_ENTRIES, never turned), -1 for none (negative)."""
+    unless the entry is the player or one of New Game's photos (PHOTO_ENTRIES, never turned); for none (negative), the entry's
+    silhouette (SILHOUETTES), else -1."""
     end, none, plain = s.label(), s.label(), s.label()
     portrait(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(none)
     for e in sorted(PHOTO_ENTRIES):
@@ -490,6 +505,11 @@ def push_face(s, portrait, entry):
     s.label(plain)
     portrait(); s.push(shw.PORTRAIT_BASE - 2000); s.emit(0x50); s.jump(end)
     s.label(none)
+    for e, sprite in sorted(SILHOUETTES.items()):
+        other = s.label()
+        entry(); s.push(e); s.emit(0x0a); s.jump_if_zero(other)
+        s.push(shw.SILHOUETTE_BASE + sprite); s.jump(end)
+        s.label(other)
     s.push(-1)
     s.label(end)
 
@@ -738,7 +758,7 @@ class Script:
                 s.text(NAMED[speaker]); s.arg(2); s.call(76, 2)
                 clear_badge(s); s.result(0)
             key = ('named', speaker)
-        elif whole and speaker is not None and self.story.setup['portraits'].get(speaker, -1) < 0:
+        elif whole and speaker is not None and self.story.setup['portraits'].get(speaker, -1) < 0 and speaker not in SILHOUETTES:
             # A thought by a speaker with no portrait (their speaker is a constant, so known here): the named box, bare.
             name = self.r.text(casing.title_case(self.story.setup['cast'].get(speaker, '')))
 
@@ -772,9 +792,12 @@ class Script:
         self.r.redirect(pc, key, build)
 
     def faceless(self, s, text, done):
-        """A speaker with no portrait (the demo's -2: Mom, Dad, a cop, the telemarketer...) says `text()` in SHS's named box with
-        no portrait (76), under their name, and jumps to `done`; SHS's own line (13) would show some other speaker's name."""
+        """A speaker with no portrait and no silhouette (the demo's -2, a voice: none speak through here today) says `text()` in
+        SHS's named box with no portrait (76), under their name, and jumps to `done`; SHS's own line (13) would show some other
+        speaker's name. Anyone with a portrait or a silhouette (SILHOUETTES) speaks in SHS's own line."""
         has_face = s.label()
+        for e in sorted(SILHOUETTES):
+            s.arg(1); s.push(e); s.emit(0x0a); s.jump_if_nonzero(has_face)
         dyn_get(s, PORTRAIT_KEY, lambda: s.arg(1)); s.push(0); s.emit(0x0e); s.jump_if_zero(has_face)
         name = self.t.name()
         s.arg(1); s.push(name); s.call(61, 2)
@@ -1790,6 +1813,8 @@ def build_story(jar, addon_path):
     spec = json.loads(ExpArchive(Path(addon_path).read_bytes()).read(shw.SPEC))
     if 'sun' not in spec:
         raise brew.StoryError(f'the shshw add-on is too old: build revision {ADDON_REQUIRED} or later')
+    if 'silhouettes' not in spec:
+        raise brew.StoryError('the shshw add-on has no silhouettes: build it with the 1.0.4 demo too (shw.py --lite-demo-jar)')
     story = Story(found, spec)
     resources = {DRIVER: Driver(story).build()}
     for rid in SCRIPTS:

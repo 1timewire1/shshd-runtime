@@ -1,6 +1,6 @@
 """The `shshw` addon, "Surviving Hollywood": the Surviving Hollywood demo's own art, built from the player's copy of its jar.
 
-    python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR --out DIR
+    python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR [--lite-demo-jar THE_1_0_4_DEMO_JAR] --out DIR
 
 Phase 1 of the owner's plan (reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md, 2026-11-13): an optional addon whose
 portraits and backgrounds the BREW Classic *Surviving Hollywood Preview* (31100, 73; brew.py) draws instead of SHS's paper dolls
@@ -24,6 +24,8 @@ The art comes from the 240 x 320 build (the Nokia 5610's 1.0.2, `560_ver1.0_b2_h
   at each of BREW's sky modes (0 day, 1 night, 2 sunset) at 6 times with no smoothing, as brew.py's locations are:
   BACKGROUND_BASE + SKY_MODES x (id - 1500) + mode. A strip with no window is the same picture under all three, so an episode
   can name any background at any sky without reading the addon.
+- **Silhouettes** (revision 6, from the 128 x 160 1.0.4 demo's jar when given): its eight people as portraits
+  (SILHOUETTE_BASE + 0-7, `silhouette`), worn by the full chapter's speakers with no portrait of their own.
 """
 import argparse
 import hashlib
@@ -46,13 +48,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 4: the star the catch game's player steers also as a numbered picture (CATCH_STAR_PICTURE) and as a badge icon (STAR_BADGE),
 #    for the lite Chapter 1 (shw_lite.py; owner, 2026-11-14)
 # 5: the status bar's sun as the full chapter's daytime time badge icon (SUN; shw_full.py; owner, 2026-11-14)
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 5
+# 6: the 1.0.4 (88K) demo's eight silhouettes as portraits (SILHOUETTE_BASE), for the full chapter's speakers with no face of
+#    their own (shw_full.SILHOUETTES; owner, 2026-11-15); built only when that demo's jar is given (build_addon lite_jar)
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 6
 PACK_ID = 31700                         # its metadata's pack: the demo's chapters (shw_lite.py, Phase 2)
 SPEC = 26998                            # what the addon holds, JSON
 SPEC_FORMAT, SPEC_VERSION = 'shshw', 1
 PORTRAIT_BASE, FLIPPED_BASE = 27000, 27100      # + the demo's portrait ID - 2000
 PORTRAITS = range(2001, 2053)
 PORTRAIT_CANVAS, PORTRAIT_LIFT = (256, 300), 7
+# The 1.0.4 demo's people: one sprite sheet (resource 3000) of eight full-length black silhouettes outlined in yellow, each on a
+# grey pedestal shadow (palette entries SHADOW). As portraits (owner, 2026-11-15: between whole and head-and-shoulders): the
+# shadow left off, at 6 times (12 with no smoothing, then halved), the head where the whole figure at 4.5 times would put it, and
+# the rest running down past the ring, which cuts it as it does a painted bust. SILHOUETTE_BASE + the sprite (0-7).
+SILHOUETTE_SHEET, SILHOUETTE_BASE, SILHOUETTES = 3000, 27200, 8
+SILHOUETTE_SCALE2, SILHOUETTE_PLACE2 = 12, 9
+SHADOW = frozenset({5, 6, 7})
 FRAME = 26990
 FRAME_SIZE, STRIP_TOP, STRIP_BOTTOM, FRAME_SCALE = (1152, 1536), 334, 814, 6    # as brew.frame_backdrop's: the strip's band
 MUSIC_BASE = 26900                      # + the demo's cue ID - 3000
@@ -193,6 +204,48 @@ def portrait(face):
     return canvas
 
 
+def sheet_pictures(data, drop=frozenset()):
+    """The pictures of a 1.0.4 sprite sheet (its t.java reads them as the Java SHS '08 demo does: SURVIVING_HOLLYWOOD_ENGINE.md
+    section 9): a header (u8 flags, s16 frames, u8 animations, s16 composites and parts, each composite u8 n + n (part, x, y)),
+    then u16 palette size, RGB entries, u16 picture count and each picture's u8 width, u8 height and one palette index a pixel,
+    row by row; index 0 is clear, and so is every index in `drop`."""
+    flags, animations = data[0], data[3]
+    if flags or animations:
+        raise ValueError('a sprite sheet with wide fields or animations')
+    composites = struct.unpack_from('>h', data, 4)[0]
+    o = 8
+    for _ in range(composites):
+        o += 1 + data[o] * 3
+    count = struct.unpack_from('>H', data, o)[0]
+    palette = [tuple(data[o + 2 + 3 * k:o + 5 + 3 * k]) + (255,) for k in range(count)]
+    o += 2 + 3 * count
+    pictures, total = [], struct.unpack_from('>H', data, o)[0]
+    o += 2
+    for _ in range(total):
+        width, height = data[o], data[o + 1]
+        o += 2
+        image = Image.new('RGBA', (width, height))
+        image.putdata([(0, 0, 0, 0) if c == 0 or c in drop else palette[c] for c in data[o:o + width * height]])
+        pictures.append(image)
+        o += width * height
+    if o != len(data):
+        raise ValueError('not a sprite sheet')
+    return pictures
+
+
+def silhouette(figure):
+    """A 1.0.4 silhouette (its shadow already left off) as a portrait on the PORTRAIT_CANVAS (SILHOUETTE_SCALE2 / 2 times), its
+    head where the whole figure at SILHOUETTE_PLACE2 / 2 times, standing where a painted bust's foot is, would have it."""
+    figure = figure.crop(figure.getbbox())
+    big = figure.resize((figure.width * SILHOUETTE_SCALE2, figure.height * SILHOUETTE_SCALE2), Image.NEAREST)
+    big = big.resize((big.width // 2, big.height // 2), Image.BOX)
+    canvas = Image.new('RGBA', PORTRAIT_CANVAS, (0, 0, 0, 0))
+    foot = PORTRAIT_CANVAS[1] - PORTRAIT_LIFT * 7 // 2
+    top = foot - figure.height * SILHOUETTE_PLACE2 // 2
+    canvas.alpha_composite(big.crop((0, 0, big.width, PORTRAIT_CANVAS[1] - top)), ((PORTRAIT_CANVAS[0] - big.width) // 2, top))
+    return canvas
+
+
 def frame(sprites):
     """The frame backdrop (FRAME): the demo's panel (sprites 4 | 5: 240 x 133) with its copper rim (20 | 22 over 9 | 11: 240 x 14)
     along each edge of the strip's band, the middle 192 art pixels across, at FRAME_SCALE; the upper half is the lower turned over,
@@ -295,8 +348,9 @@ def strip_png(scene):
     return png(scene.resize((scene.width * BACKGROUND_SCALE, scene.height * BACKGROUND_SCALE), Image.NEAREST).quantize(255))
 
 
-def build_addon(jar, music=True):
-    """(addon bytes, spec) from the demo's jar. `music` False leaves the cues out (no java to render them)."""
+def build_addon(jar, music=True, lite_jar=None):
+    """(addon bytes, spec) from the demo's jar, and the 1.0.4 (88K) demo's for its silhouettes (`lite_jar`; without it the spec
+    has none, and the full chapter can't be built against it). `music` False leaves the cues out (no java to render them)."""
     import shw_sprites
     found = jar_resources(jar)
     resources, spec = {}, dict(format=SPEC_FORMAT, version=SPEC_VERSION, portraits={}, flipped={}, backgrounds={}, music={})
@@ -332,6 +386,13 @@ def build_addon(jar, music=True):
     spec['star_badge'] = STAR_BADGE
     resources[SUN] = png(moon_icon(sprites, SUN_SPRITE))
     spec['sun'] = SUN
+    if lite_jar is not None:
+        figures = sheet_pictures(jar_resources(lite_jar).get(SILHOUETTE_SHEET, b''), SHADOW)
+        if len(figures) != SILHOUETTES:
+            raise ValueError(f'{lite_jar}: not the 1.0.4 (88K) demo ({len(figures)} silhouettes)')
+        for k, figure in enumerate(figures):
+            resources[SILHOUETTE_BASE + k] = png(silhouette(figure))
+        spec['silhouettes'] = [SILHOUETTE_BASE + k for k in range(SILHOUETTES)]
     for number in MUSIC if music else ():
         resources[MUSIC_BASE + number - 3000] = render_music(found[number])
         spec['music'][str(number)] = MUSIC_BASE + number - 3000
@@ -408,9 +469,10 @@ def preview_art(brew_spec, shw_spec=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--demo-jar', required=True, help="the 240 x 320 demo's jar (1.0.2)")
+    parser.add_argument('--lite-demo-jar', help="the 128 x 160 1.0.4 (88K) demo's jar, for its silhouettes (the full chapter's)")
     parser.add_argument('--out', required=True)
     args = parser.parse_args(argv)
-    data, spec = build_addon(args.demo_jar)
+    data, spec = build_addon(args.demo_jar, lite_jar=args.lite_demo_jar)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / f'{ADDON_ID}.exp').write_bytes(data)

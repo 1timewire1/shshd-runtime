@@ -180,12 +180,14 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 ### `shshw`: Surviving Hollywood
 
 Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required by Surviving Hollywood's own chapters
-(pack 31700, below: the lite revision 4, the full chapter revision 5). Revision 5, about 3.6 MB. Built from the Surviving
+(pack 31700, below: the lite revision 4, the full chapter revision 6). Revision 6, about 3.6 MB. Built from the Surviving
 Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, its music, its
-catch game's look and its status bar's moon and sun (revision 5: the full chapter's daytime badges).
+catch game's look and its status bar's moon and sun (revision 5: the full chapter's daytime badges); and from the low-end
+1.0.4 (88K) demo's jar, its eight silhouettes (revision 6: the full chapter's people with no portrait).
 Phase 1 of the owner's three-phase plan (`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's
 chapters, if translated, will require it at later revisions, so its numbers stay as they are. Revision 1 had the portraits at 4
-times and no frame, music or turned faces; revision 2 had no catch skin or moon; revision 3 had no numbered star or star badge.
+times and no frame, music or turned faces; revision 2 had no catch skin or moon; revision 3 had no numbered star or star badge;
+revision 4 no sun; revision 5 no silhouettes.
 
 | Resources | What |
 | --- | --- |
@@ -193,6 +195,8 @@ times and no frame, music or turned faces; revision 2 had no catch skin or moon;
 | 26601, 26610-26619, 26620-26621 | `Score: ` and the digits in its main font, and its closing lines `Time is up!` and `Max Points!` (strings 47, 48), at 3 times |
 | 26630 | The star the demo's player steers (sprite 59), at 3 times |
 | 26631 | Its status bar's moon (sprite 43) as a time badge icon, BREW's icons' size |
+| 26633 | Its status bar's sun (sprite 67), the same way: the full chapter's daytime badges |
+| 27200-27207 | The 1.0.4 demo's eight silhouettes (its sprite sheet 3000: a waving boy, a small girl, a man in a cap, a broad man, a heavy man, a rocker with a guitar, a posing woman, a woman in a dress) as portraits: their pedestal shadow left off, at 6 times, the head where the whole figure at 4.5 times would put it, the rest running down past the ring. Built only when that jar is given (`--lite-demo-jar`) |
 | 26632 | The star (sprite 59) as a badge icon, the same way: the lite chapter's place badges |
 | 26701-26745 | Its 45 icons (2501-2545) as catch pictures, at 3 times |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
@@ -238,12 +242,14 @@ and Use Translated Mini-Games. Its names (`$USR`) are a table of their own (`shw
 catch game's Instructions line becomes the page it opens with (as BREW's catch pages), and the fight's four action-menu
 rounds become SHS's timed word game (71), as BREW's spinning-menu routine does. 1.0.4 keeps no clock, so its place badges
 carry no time. It is episode 2; Phase 3, *The Bright Lights* (`tools/translate/shw_full.py`, the 1.0.2 demo's full
-month), is episode 1 and takes the same from `shshw`, plus the star and moon as its time badges' icons. Its quest journal shows in the pause menu (`TRANSLATED_JOURNALS`) and its named lines without a portrait take
+month), is episode 1 and takes the same from `shshw`, plus the sun and moon as its time badges' icons and the
+silhouettes for its 21 people with no portrait (`shw_full.SILHOUETTES`). Its quest journal shows in the pause menu (`TRANSLATED_JOURNALS`) and its named lines without a portrait take
 colours (`TRANSLATED_NARRATION_THEMES`). Its `--library`
 option lists, beside the episode, the words its casing left lowercase that no SHS episode writes.
 
 ```sh
 python tools/translate/shw_lite.py --jar LITE_DEMO_JAR --addon shshw.exp --out OUT_DIR
+python tools/translate/shw.py --demo-jar DEMO_JAR --lite-demo-jar LITE_DEMO_JAR --out OUT_DIR
 python tools/translate/shw_full.py --jar DEMO_JAR --addon shshw.exp --out OUT_DIR [--library SHS_LIBRARY]
 ```
 
