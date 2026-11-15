@@ -143,6 +143,33 @@ class TestChannelTests(unittest.TestCase):
         logging.getLogger('probe').warning('a line for the log')
         self.assertIn('WARNING probe: a line for the log', commands.do_log('5')['lines'])
 
+    def test_a_dev_module_replaces_one_the_app_already_imported(self):
+        """A copy in dev-modules of a module imported before install_dev_modules ran (games.py's profiles) is loaded again
+        from the copy (2026-11-15: the iPad kept its own SHS profile)."""
+        import importlib
+        import sys
+        from exp_runtime import launcher
+        data = Path(self.temporary.name)
+        app = data / 'app'
+        (app / 'exp_runtime').mkdir(parents=True)
+        (app / 'exp_runtime' / 'probe_early.py').write_text('X = 1' + chr(10), encoding='utf-8')
+        before = list(sys.path)
+        self.addCleanup(lambda: sys.path.__setitem__(slice(None), before))
+        self.addCleanup(lambda: sys.modules.pop('exp_runtime.probe_early', None))
+        sys.path.append(str(app))
+        importlib.invalidate_caches()
+        early = importlib.import_module('exp_runtime.probe_early')
+        self.assertEqual(early.X, 1)
+        copy = data / 'dev-modules' / 'exp_runtime' / 'probe_early.py'
+        copy.parent.mkdir(parents=True)
+        copy.write_text('X = 2' + chr(10), encoding='utf-8')
+        (data / 'settings.json').write_text(json.dumps(dict(version=1, check_for_updates=False, test_channel=free_port())),
+                                            encoding='utf-8')
+        with mock.patch.object(launcher, 'user_data_directory', lambda: data):
+            self.assertTrue(launcher.install_dev_modules())
+        self.assertIs(sys.modules['exp_runtime.probe_early'], early)        # the same module object, as GAMES holds it
+        self.assertEqual(early.X, 2)
+
     def test_a_silent_app_thread_has_its_stacks_written(self):
         shots = Path(self.temporary.name) / 'test-shots'
         shots.mkdir()

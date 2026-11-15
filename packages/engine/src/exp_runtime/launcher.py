@@ -64,6 +64,19 @@ def install_dev_modules():
             overlay = folder.joinpath(*name.split('.'))
             if overlay.is_dir() and str(overlay) not in module.__path__:
                 module.__path__.insert(0, str(overlay))
+    # A module the app imported before this ran (games.py imports each game's profile.py when the launcher loads, 2026-11-15:
+    # the iPad kept its own SHS profile, so Surviving Hollywood lost its frame and its catch art) is loaded again from its
+    # copy, in the order the app first imported them. This module itself can't be: it is the one running.
+    import importlib
+    for name, module in list(sys.modules.items()):
+        if not name.startswith('exp_runtime.') or name == __name__ or getattr(module, '__path__', None) is not None:
+            continue
+        copy = folder.joinpath(*name.split('.')).with_suffix('.py')
+        if copy.is_file() and Path(getattr(module, '__file__', None) or '') != copy:
+            try:
+                importlib.reload(module)
+            except Exception as error:      # (its own copy stays loaded: as before this step)
+                logging.warning('dev-modules: %s not reloaded: %s', name, error)
     return True
 
 
