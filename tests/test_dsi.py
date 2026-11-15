@@ -169,6 +169,22 @@ class EligibilityTests(unittest.TestCase):
         self.assertEqual(dsi.episode_pictures(story), {1009: 'Backyard_Night'})
         self.assertEqual(dsi.picture_for(story, 1009), 'Backyard_Night')
 
+    def test_an_own_black_screen_needs_no_counterpart(self):
+        def picture(colour):
+            out = io.BytesIO()
+            Image.new('RGB', (96, 144), colour).save(out, 'JPEG')
+            return out.getvalue()
+        own = {26000: picture((0, 0, 0)), 26001: picture((40, 90, 160))}
+        found = resources(*host_call(11, 0, 1015), *host_call(11, 0, 26000))
+        found.raw_asset = own.__getitem__
+        self.assertEqual(dsi.episode_pictures(found), {1015: 'GuyBedRoom_Day'})
+        found = resources(*host_call(11, 0, 1015), *host_call(11, 0, 26001))
+        found.raw_asset = own.__getitem__
+        self.assertIsNone(dsi.episode_pictures(found))                    # a picture of its own, not a black one
+        found = resources(*host_call(11, 0, 1015), *host_call(11, 0, 26002))
+        found.raw_asset = own.__getitem__
+        self.assertIsNone(dsi.episode_pictures(found))                    # one it can't read
+
     def test_translations_and_add_on_episodes_keep_their_own_art(self):
         self.assertIsNone(dsi.episode_pictures(resources(*host_call(11, 0, 1015), pack=31300)))
         self.assertIsNone(dsi.episode_pictures(resources(*host_call(11, 0, 1015), requires=(('shsnr', 3),))))

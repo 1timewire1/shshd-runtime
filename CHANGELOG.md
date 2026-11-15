@@ -21,7 +21,8 @@
   imported and the switch on (DSi tag, off by default), an SHS episode whose every background the DSi drew shows the left
   screen while the speaker is on the left and the right one while they're on the right, crossfading between them;
   narration keeps the screen. The DSi's eight stories take whatever it showed, its stand-in times of day included; any
-  other episode only same-time pictures. **DSi Pixels** enlarges them Sharp (the default) or Smooth.
+  other episode only same-time pictures; an episode's own plain black screen needs no DSi picture. **DSi Pixels** enlarges
+  them Sharp (the default) or Smooth.
 - **DSi Language** (owner, 2026-11-15): the `shsdsi` add-on (revision 2, built with `--library`) also carries the DSiWare
   game's French, Italian, German and Spanish translations of the eight stories it ported (Football Star and Classics 1, 2,
   5, 7, 8, 10 and 12), read from its five compiled copies of each scene and matched to the smartphone's lines. In the HD

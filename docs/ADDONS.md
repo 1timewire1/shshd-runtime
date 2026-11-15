@@ -286,6 +286,9 @@ picture:
   showed, its stand-in times included (a night den is its day den);
 - any other episode only a picture of the same location at the same time.
 
+A picture of the episode's own that is plain black (a fade or flashback screen) needs no counterpart and shows as it is
+(owner, 2026-11-15): seven episodes were held back by nothing else.
+
 A background a script picks at run time is looked up the same way when it appears; one with no DSi picture shows as before.
 
 **In play** (`Desktop._dsi_screen`): the left screen while the location is aligned left (a speaker on the left), the right one

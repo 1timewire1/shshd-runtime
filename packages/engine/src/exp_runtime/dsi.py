@@ -6,6 +6,7 @@ add-on imported and DSi Backgrounds on, an episode shows them when every backgro
 (owner, 2026-11-15, reference/Other Games/docs/DSI_ADDON_SCOPE.md):
 - in the eight stories the DSi ported (`stories`), whatever the DSi showed for that picture, its stand-in times included;
 - in any other episode, only a picture of the same location at the same time of day (`exact`).
+An episode's own picture that is plain black (a fade or flashback screen) needs no counterpart: it shows as it is.
 The spec (resource SPEC) maps a smartphone bank picture to a DSi picture (`bank`: id -> [picture, exact]) and a DSi picture
 to its two screens (`screens`: picture -> [left resource, right resource]).
 
@@ -127,10 +128,30 @@ def episode_pictures(resources):
     pictures = {}
     for background in shown:
         entry = bank.get(str(background))
+        if entry is None and background >= OWN_ART and plain_black(resources, background):
+            continue                # its own black screen shows as it is, as it would beside the DSi's art
         if entry is None or not (story or entry[1]):
             return None
         pictures[background] = entry[0]
     return pictures or None
+
+
+OWN_ART = 26000         # an episode's own pictures, past the game's bank
+BLACK = 8               # the brightest a plain black picture's pixels get (a JPEG's noise)
+
+
+def plain_black(resources, background):
+    """Whether an episode's own picture is one flat black: a fade or flashback screen, which needs no DSi counterpart (owner,
+    2026-11-15: seven episodes were held back by nothing else). False when it can't be read (or Pillow is missing)."""
+    try:
+        import io
+        from PIL import Image
+        with Image.open(io.BytesIO(resources.raw_asset(background))) as image:
+            image.draft('RGB', (max(1, image.width // 8), max(1, image.height // 8)))     # (a JPEG decodes small)
+            return max(high for _, high in image.convert('RGB').getextrema()) <= BLACK
+    except Exception as error:       # (any picture it can't read counts as one the DSi has no counterpart for)
+        logging.debug('DSi: picture %s not read: %s', background, error)
+        return False
 
 
 def screens(resources, picture):
