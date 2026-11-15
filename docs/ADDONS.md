@@ -237,10 +237,13 @@ pack tables: the frame (26990), the catch game's skin with its pictures by numbe
 and Use Translated Mini-Games. Its names (`$USR`) are a table of their own (`shw`), apart from every other game's. The
 catch game's Instructions line becomes the page it opens with (as BREW's catch pages), and the fight's four action-menu
 rounds become SHS's timed word game (71), as BREW's spinning-menu routine does. 1.0.4 keeps no clock, so its place badges
-carry no time.
+carry no time. It is episode 2; Phase 3, *The Bright Lights* (`tools/translate/shw_full.py`, the 1.0.2 demo's full
+month), is episode 1 and takes the same from `shshw`, plus the star and moon as its time badges' icons. Its `--library`
+option lists, beside the episode, the words its casing left lowercase that no SHS episode writes.
 
 ```sh
 python tools/translate/shw_lite.py --jar LITE_DEMO_JAR --addon shshw.exp --out OUT_DIR
+python tools/translate/shw_full.py --jar DEMO_JAR --addon shshw.exp --out OUT_DIR [--library SHS_LIBRARY]
 ```
 
 ### `chslim`: Claire Hart (Slim)

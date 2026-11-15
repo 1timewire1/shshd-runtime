@@ -22,6 +22,14 @@
   board and score) and its moon on the time badge, the dream on its red carpet and the club on its club floor. A switch
   with the '07 tag, on by default. The Preview is rebuilt at version 4; episodes can name an optional add-on's pictures
   and music (`optional_art`), and the BREW catch game wears an add-on's skin where the episode maps its board to one.
+- **Surviving Hollywood: The Bright Lights** (owner, 2026-11-14; `tools/translate/shw_full.py`): the full 1.0.2 demo's
+  month-long Chapter 1 as episode 1 of pack 31700 (the lite moves to episode 2). The demo's 21 scripts run with the month
+  around them in KiWi: a **Where to?** choice of the places open now (`District: Place`, then Quest Journal and Stats), time
+  badges on arrival, a date card each morning, **Stat changes** pages, the quest journal's pages. Its minigames are SHS's:
+  the action menus and word association as the timed word game, the catch games as BREW's catch in the demo's skin, the
+  rehearsals' spelling as a one-word word grid. The demo's lowercase text gets its capitals back by rule and word list
+  (reference/Other Games/docs/SURVIVING_HOLLYWOOD_CASING.md). Replayed against Tardy-Slip's engine on 16 random months, it
+  says the same lines, runs the same scripts and holds the same numbers to the end.
 - **Surviving Hollywood: The Bright Lights (Lite)** (owner, 2026-11-14; `tools/translate/shw_lite.py`): the 1.0.4 demo's
   Chapter 1 as an episode under its own SHW badge and Surviving Hollywood group, in the demo's painted art, frame, sounds
   and catch game (the peanut-butter dodge, behind Use Translated Mini-Games, else a word game; its instructions open it as

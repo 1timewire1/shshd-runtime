@@ -56,7 +56,7 @@ from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_byte
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp  # noqa: E402
 from kiwi_rewrite import Rewriter  # noqa: E402
 
-PACK, EPISODE, VERSION = 31700, 1, 1
+PACK, EPISODE, VERSION = 31700, 2, 1      # episode 2: the full chapter (shw_full.py) is 1 (owner, 2026-11-14)
 TITLE, SUFFIX = 'The Bright Lights (Lite)', ' (SHW)'
 ADDON_REQUIRED = 4                      # shshw: the catch star by number and the map star badge
 SCRIPT, STORY = 10002, 25001
