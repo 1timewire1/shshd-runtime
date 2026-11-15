@@ -208,9 +208,11 @@ TRANSLATED_NARRATION_THEMES = {31300: 31312,
                                                  # colours, its system voices (Instructions, Phone) gray (tools/translate shw_full.py)
 # shshd-runtime: a translated pack's quest journal, shown by the pause menu's Quest Journal row while it holds a quest (owner,
 # 2026-11-14: Surviving Hollywood's key 1 and pause menu; tools/translate shw_full.py): pack -> (the global number holding how
-# many quests, the stored-text key of quest n's title as a %d form, its lines' key). The translation rebuilds them whenever
-# the demo's journal changes.
-TRANSLATED_JOURNALS = {31700: (31728, '$SHWQT%d', '$SHWQL%d')}
+# many quests, the stored-text key of quest n's title as a %d form, its lines' key, and the stats the journal shows first, each
+# (label, global number, prefix)). The translation rebuilds the quests whenever the demo's journal changes; the stats are
+# read as they stand (owner, 2026-11-14: Money, Looks, Body and Stress, as Where to?'s Stats page).
+TRANSLATED_JOURNALS = {31700: (31728, '$SHWQT%d', '$SHWQL%d',
+                               (('Money', 32000, '$'), ('Looks', 32001, ''), ('Body', 32002, ''), ('Stress', 32003, '')))}
 # shshd-runtime: a translated pack's music that is an intro running into a loop (music_stream.MusicStream.chain):
 # pack -> {intro resource: loop resource}. The intro plays once, then the loop repeats without a gap. The X360
 # prototype's Day of Diss plays `dont_trust_me` into `dont_trust_me_loop` (tools/translate/x360.py MUSIC_INTRO /

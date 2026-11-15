@@ -131,6 +131,15 @@ class QuestJournalTests(unittest.TestCase):
                          [('Find an agent', 'Day 2 of 29\nGo to All-Star Agents, Kate.'), ('Headshots', '')])
         self.assertEqual(quest_journal.quests(self.session(31700, 1, texts)), [('Find an agent', texts['$SHWQL0'].replace('$USR', 'Kate'))])
 
+    def test_the_journal_shows_the_stats_as_they_stand(self):
+        from exp_runtime import quest_journal
+        session = self.session(31700, 1, {'$SHWQT0': 'Find an agent'})
+        session.engine.numbers.update({(0, 32000): 55, (0, 32001): 15, (0, 32002): 12, (0, 32003): -2})
+        self.assertEqual(quest_journal.stats(session), 'Money: $55\nLooks: 15\nBody: 12\nStress: -2')
+        session.engine.numbers[(0, 32000)] = 0xfffb                     # a 16-bit -5, as a story can leave it
+        self.assertTrue(quest_journal.stats(session).startswith('Money: -$5\n'))
+        self.assertIsNone(quest_journal.stats(self.session(31300, 1, {})))
+
     def test_no_journal_without_a_quest_or_outside_the_pack(self):
         from exp_runtime import quest_journal
         self.assertEqual(quest_journal.quests(self.session(31700, 0, {})), [])     # the lite: its count is never set

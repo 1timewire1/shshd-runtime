@@ -3714,12 +3714,16 @@ class Desktop:
             self._menu_sound()
             return
         if kind == 'journal' or (kind == 'pause_action' and str(command[1]).startswith('quest:')):
-            # shshd-runtime: the story's quest journal (quest_journal.py; owner, 2026-11-14): its quests' titles, each opening
-            # its lines.
+            # shshd-runtime: the story's quest journal (quest_journal.py; owner, 2026-11-14): its stats first, where it has
+            # them, then its quests' titles, each opening its lines.
             journal = quest_journal.quests(self.session)
+            stats = quest_journal.stats(self.session)
             if kind == 'journal':
-                self.pause_hd.show_rows('journal', JOURNAL_LABEL, [(f'quest:{n}', title) for n, (title, _) in enumerate(journal)],
-                                        'pause')
+                rows = [('quest:stats', quest_journal.STATS_TITLE)] if stats is not None else []
+                rows += [(f'quest:{n}', title) for n, (title, _) in enumerate(journal)]
+                self.pause_hd.show_rows('journal', JOURNAL_LABEL, rows, 'pause')
+            elif command[1] == 'quest:stats':
+                self.pause_hd.show_text('journal:stats', quest_journal.STATS_TITLE, stats or ' ', 'journal')
             else:
                 n = int(command[1].split(':', 1)[1])
                 if n < len(journal):
