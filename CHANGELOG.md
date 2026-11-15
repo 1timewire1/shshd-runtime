@@ -33,7 +33,8 @@
 - **Quest Journal in the pause menu** for *The Bright Lights* (owner, 2026-11-14): the demo's journal (14 quests, about 25
   reminders a month, key 1 on the phone) lists its quests in the pause menu, each opening its lines, kept current mid-scene,
   with a Stats page first (Money, Looks, Body, Stress); Where to? shows each place's opening hours under its name in
-  smaller letters (a built choice option's detail line), and daytime badges the demo's sun (`shshw` revision 5);
+  smaller letters (a built choice option's detail line), and travel badges the time and place alone, by day with the demo's
+  sun (`shshw` revision 5);
   the reminder now says to pause. Its speakers' boxes take the lite's colours (they had none: a blue plate, yellow text),
   the portrait-less walk-ons and system voices too.
 - **Surviving Hollywood: The Bright Lights (Lite)** (owner, 2026-11-14; `tools/translate/shw_lite.py`): the 1.0.4 demo's

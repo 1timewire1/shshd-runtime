@@ -25,7 +25,7 @@ arithmetic (it has no bit instructions); places' listing (40, 41) and the cast's
 themselves (38: kind, background, district, name), the districts (37), the stats' names (58) and the schedule are the setup's
 constants, read here by running the setup (`setup_tables`) and kept as data. Quests (66-69) are stored texts.
 
-**Presentation** (the owner's decisions, 2026-11-14): a travel card is a time badge, `3:00 PM - The Flats: Home` (the status bar's
+**Presentation** (the owner's decisions, 2026-11-14): a travel card is a time badge, `3:00 PM - Home` (the place alone; the status bar's
 sun by day, its moon by night: shshw revision 5); each morning a date card, `Monday, February 2`; the stat-change panel (60) a `Stat changes` page that
 waits, as the demo's; Stats in Where to? shows money and the three stats; relationships stay hidden; the status bar (79, 80) is
 dropped; options the demo greys out (17) are left off the menu. The demo's numbers are kept.
@@ -424,10 +424,12 @@ class Story:
         self.setup = setup_tables(resources[SETUP_SCRIPT])
         places = self.setup['places']
         self.place_count = max(places) + 1
-        self.labels = {}
+        self.labels = {}                # Where to?'s `District: Place`
+        self.names = {}                 # a travel badge's place alone (owner, 2026-11-14: the district wrapped it to four lines)
         for i, place in places.items():
             district = self.setup['districts'][place['district']]
             self.labels[i] = f'{DISTRICT_NAMES[district]}: {PLACE_NAMES[place["name"]]}'
+            self.names[i] = PLACE_NAMES[place['name']]
         self.dates = date_texts(self.schedule)
         self.hours = {i: place_hours(self.setup['about'].get(i, '')) for i in places}
         sched = self.schedule
@@ -574,8 +576,9 @@ class Tables:
         return self._cache[name]
 
     def labels(self):
+        """Each place's name as its travel badge shows it (`3:00 PM - The Beanstalk`)."""
         st = self.story
-        return self._get('labels', lambda: self.r.words([self.r.text(st.labels.get(i, '')) for i in range(st.place_count)]))
+        return self._get('labels', lambda: self.r.words([self.r.text(st.names.get(i, '')) for i in range(st.place_count)]))
 
     def pictures(self):
         """Each place's background, at sky 0 (the sky mode is added)."""
@@ -645,8 +648,8 @@ def picture(s, tables, picture_id):
 
 
 def card(s, tables, place):
-    """The travel card: the place's background, and a badge `3:00 PM - The Flats: Home` (the status bar's sun by day, its moon
-    by night), cleared after the next line."""
+    """The travel card: the place's background, and a badge `3:00 PM - Home` (the status bar's sun by day, its moon by night),
+    cleared after the next line. The place alone: its district (Where to?'s) wrapped long ones to four lines (owner, 2026-11-14)."""
     background(s, tables, place)
     s.push(tables.badge()); s.text('%s - %s')
     table_get(s, tables.times(), lambda: get_global(s, SLOT_KEY))
