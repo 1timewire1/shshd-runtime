@@ -19,6 +19,7 @@ from .content import ContentError, presentation_feature
 from .audio import music_cue
 from .games import GAMES, game_id, has_translated_minigames
 from .content import feature_pack, free_setting, optional_art_offered, pack_setting
+from .dsi import picture_for as dsi_picture_for
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -47,7 +48,7 @@ from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -118,6 +119,8 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 
 
 OPAQUE_ENOUGH = 250
+# "DSi Pixels" (the DSiWare add-on's backgrounds): nearest neighbour, the DS's own pixels (the default), or smooth scaling.
+DSI_PIXELS = ('sharp', 'smooth')
 
 
 def opaque_enough(surface, least=OPAQUE_ENOUGH):
@@ -401,7 +404,9 @@ class Desktop:
     java_look = False               # translated BREW episodes: the "Java '08 Look" switch (set_java_look)
     brew_08_backgrounds = False     # '07-badged BREW episodes: the "'08 Backgrounds" switch (set_brew_08_backgrounds)
     hollywood_art = True            # the BREW Surviving Hollywood Preview with `shshw`: the "Hollywood Art" switch (set_hollywood_art)
-    smartphone_music = True         # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
+    dsi_backgrounds = False         # with `shsdsi`: the "DSi Backgrounds" switch (set_dsi_backgrounds; off by default, owner)
+    dsi_pixels = 'sharp'            # ...and "DSi Pixels" (set_dsi_pixels)
+    smartphone_music = True        # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
@@ -2448,6 +2453,70 @@ class Desktop:
         self._frame_backdrop_cache = (None, {})
         self.badge_hd._tab_cache = None
 
+    def dsi_switch(self):
+        """shshd-runtime: whether this episode shows the DSiWare add-on's backgrounds when "DSi Backgrounds" is on: the add-on
+        imported, and every background the episode can show drawn by the DSi (dsi.episode_pictures)."""
+        dsi_pictures = getattr(self.session.resources, 'dsi_pictures', None)
+        return dsi_pictures is not None and bool(dsi_pictures())
+
+    def set_dsi_backgrounds(self, enabled):
+        """shshd-runtime: the "DSi Backgrounds" switch. The DSi's screens are drawn in place of the picture the story set
+        (_dsi_screen), so nothing the story or a save holds changes; the new picture crossfades in."""
+        self.dsi_backgrounds = enabled
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.dsi_backgrounds = enabled
+
+    def set_dsi_pixels(self, value):
+        """shshd-runtime: "DSi Pixels", how the DSi's 192 x 256 screens are enlarged: 'sharp' (nearest neighbour, the DS's own
+        pixels) or 'smooth'."""
+        self.dsi_pixels = value if value in DSI_PIXELS else 'sharp'
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.dsi_pixels = self.dsi_pixels
+        self._background_layer_cache = None
+        self.__dict__.pop('_whole_arts', None)
+
+    def _dsi_screen(self, background):
+        """shshd-runtime: the DSi screen to draw in place of `background` (DSi Backgrounds), or None: the left screen while the
+        location is aligned left (a speaker on the left), the right one while it's aligned right, and the last one shown for
+        anything else (narration keeps it; owner, 2026-11-15)."""
+        if not self.dsi_backgrounds or background is None:
+            return None
+        resources = self.session.resources
+        if not getattr(resources, 'dsi_pictures', None) or not resources.dsi_pictures():
+            return None
+        background_id = next((key for key, surface in self.images.items() if surface is background), None)
+        picture = None if background_id is None else dsi_picture_for(resources, background_id)
+        if picture is None:
+            return None
+        align = self.session.engine.panel.location_align
+        side = 0 if align == 1 else 1 if align == 3 else self.__dict__.get('_dsi_side', 0)
+        self._dsi_side = side
+        screens = self.__dict__.setdefault('_dsi_screens', {})
+        key = (id(resources), picture)
+        if key not in screens:
+            try:
+                found = resources.dsi_screens(picture)
+                screens[key] = None if found is None else tuple(pygame.image.load(BytesIO(data)).convert()
+                                                                for data in found)
+            except (ContentError, KeyError, OSError, pygame.error) as error:
+                logging.warning('DSi screen %s cannot be displayed: %s', picture, error)
+                screens[key] = None
+            while len(screens) > 16:
+                screens.pop(next(iter(screens)))
+        pair = screens[key]
+        return None if pair is None else pair[side]
+
+    def _dsi_shown(self, background):
+        """Whether `background` is one of the DSi's screens: changing between them crossfades in either presentation."""
+        return background is not None and any(background is screen for pair in self.__dict__.get('_dsi_screens', {}).values()
+                                              if pair for screen in pair)
+
+    def _sharp_art(self, background):
+        """Whether `background` is a DSi screen to enlarge with nearest neighbour ("DSi Pixels: Sharp")."""
+        return self.dsi_pixels == 'sharp' and self._dsi_shown(background)
+
     def set_ch_portraits(self, enabled):
         """shshd-runtime: the CH "HD Portraits in CoD" switch, as set_hires_portraits."""
         self.ch_portraits = enabled
@@ -2897,7 +2966,18 @@ class Desktop:
         # The game view is black under its background: a scene with none (the Spirit Week and Series Finale intros
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
         background = self.pending_background
-        placement = None if background is None else self._background_placement(background, target_size)
+        dsi = self._dsi_screen(background)
+        if dsi is not None:
+            # A DSi screen is the frame's own 3:4: it fills HD's frame, and covers a taller one centred, its sides cut
+            # (owner, 2026-11-15); the speaker's side picks the screen rather than panning it.
+            background, origin = dsi, self.pending_background_origin
+            self.pending_background_origin = None
+            try:
+                placement = self._background_placement(background, target_size)
+            finally:
+                self.pending_background_origin = origin
+        else:
+            placement = None if background is None else self._background_placement(background, target_size)
         change = self._location_change(background, placement)
         # What is under an opaque picture that filled the frame last frame and does again needn't be drawn.
         hidden = (change is None and self.pending_background_alpha >= 255 and placement is not None
@@ -3009,7 +3089,8 @@ class Desktop:
         card = action is not None and action.name == 'presentation'
         previous, now = self.location_shown, pygame.time.get_ticks()
         self.location_shown = (background, placement, card) if background is not None else previous
-        animated = self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'
+        animated = (self.dialogue_renderer.has_hd_bundle() or self.dialogue_renderer.game_id() == 'cod'
+                    or self._dsi_shown(background) or self._dsi_shown(previous[0] if previous else None))
         if (background is None and previous is not None and previous[0] is not None and animated
                 and action is not None and action.name == 'message_panel'):
             # CoD's message panel stands on black: the owner's recording (60 fps) shows the scene picture fading out
@@ -3234,9 +3315,10 @@ class Desktop:
             scaled_bg = cached_surface
         else:
             source = background if crop is None else background.subsurface(crop)
-            if bw >= 2 * bh and shaped:
+            if (bw >= 2 * bh and shaped) or self._sharp_art(background):
                 # A strip (New Rules, BREW: pixel art the translators enlarged with nearest-neighbour) outside HD's
-                # frame: pixel-perfect, its pixels kept square-edged (owner, 2026-11-11).
+                # frame: pixel-perfect, its pixels kept square-edged (owner, 2026-11-11). So is a DSi screen with
+                # "DSi Pixels: Sharp".
                 scaled_bg = pygame.transform.scale(source, area.size)
             else:
                 scaled_bg = pygame.transform.smoothscale(source, area.size)
@@ -3272,7 +3354,7 @@ class Desktop:
         wholes = self.__dict__.setdefault('_whole_arts', OrderedDict())
         scaled = wholes.get(key)
         if scaled is None or scaled[0] is not background:
-            if bw >= 2 * bh:
+            if bw >= 2 * bh or self._sharp_art(background):
                 image = pygame.transform.scale(background, size)        # a strip: pixel-perfect (see _blit_art)
             else:
                 image = pygame.transform.smoothscale(background, size)
@@ -3561,6 +3643,8 @@ class Desktop:
                     **({'java_look': self.java_look} if self.java_look_switch() else {}),
                     **({'brew_08_backgrounds': self.brew_08_backgrounds} if self.brew_08_switch() else {}),
                     **({'hollywood_art': self.hollywood_art} if self.hollywood_switch() else {}),
+                    **(dict(dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=DSI_PIXELS_NAMES[self.dsi_pixels])
+                       if self.dsi_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
@@ -3742,6 +3826,15 @@ class Desktop:
                 self.pause_hd.back()
             self._menu_sound()
             return
+        if kind == 'pause_cycle' and command[1] == 'dsi_pixels':
+            # Add-Ons' DSi Pixels, picked on its choice page (or stepped to the other); the app keeps it (on_settings).
+            self.set_dsi_pixels(command[2] if len(command) > 2 else DSI_PIXELS[1 - DSI_PIXELS.index(self.dsi_pixels)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
         if kind == 'pause_cycle' and len(command) > 2 and command[1] in ('grid_controls', 'controller_confirm'):
             # A value picked on the option's choice page (desktop_pause_hd.CHOICE_NAMES): as a step to it, then back.
             if getattr(self, command[1]) != command[2]:
@@ -3809,6 +3902,8 @@ class Desktop:
                 self.set_brew_08_backgrounds(not self.brew_08_backgrounds)
             elif command[1] == 'hollywood_art':
                 self.set_hollywood_art(not self.hollywood_art)
+            elif command[1] == 'dsi_backgrounds':
+                self.set_dsi_backgrounds(not self.dsi_backgrounds)
             elif command[1] == 'smartphone_music':
                 self.smartphone_music = not self.smartphone_music
             elif command[1] == 'word_grid_skin':

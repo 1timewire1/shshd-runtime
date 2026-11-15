@@ -4,7 +4,7 @@ An addon is a pack of resources kept apart from the episodes that use them. It's
 same way an episode does, but no picker lists it. Addons are this fork's own feature: native players and upstream exp-runtime
 never read them.
 
-The record format is in [SCHEMA.md](SCHEMA.md#addon-extension-shshd-runtime). This page covers how they behave, what the three
+The record format is in [SCHEMA.md](SCHEMA.md#addon-extension-shshd-runtime). This page covers how they behave, what the
 current addons hold and how to build them.
 
 No addon ships with the runtime, and no game art belongs in the repository. Each is built from the player's own game files by
@@ -247,6 +247,46 @@ python tools/translate/shw_lite.py --jar LITE_DEMO_JAR --addon shshw.exp --out O
 python tools/translate/shw_full.py --jar DEMO_JAR --addon shshw.exp --out OUT_DIR [--library SHS_LIBRARY]
 ```
 
+### `shsdsi`: SHS DSiWare
+
+Optional, for SHS's own episodes. Revision 1, about 2.9 MB. Built from the player's own image of *Surviving High School*
+for DSiWare (2010, A2M; the EUR `.nds` or its CDN content file, the same bytes; USA has the same backgrounds), as the owner
+decided on 2026-11-15 (`reference/Other Games/docs/DSI_ADDON_SCOPE.md`). The DSi redrew the smartphone bank's locations as
+2D pictures, each two screens, a left and a right, where the smartphone pans one wide picture.
+
+| Resources | What |
+| --- | --- |
+| 26000 | The spec, JSON: `bank` (a smartphone picture: [DSi picture, same time of day]), `screens` (a DSi picture: [left, right]), `stories` |
+| 26001– | The screens, 192 × 256 PNGs upright: 26001 + 2 × the picture's place in `dsi.PICTURES`, its right screen after |
+
+**The map** (`tools/translate/dsi.py`). A DSi scene changes background with `table[location + time]`, a table of name hashes
+filled at start-up, in groups of three (day, night, sunset; the DSi repeats a time it didn't draw: `INDEX_GROUPS`). The
+smartphone's bank is laid out the same way, a location at 1000 + 3k and its night and sunset after it. Aligning the eight
+shared stories' background changes by the first line each shows paired the two (`BANK_GROUPS`); the rest were matched by
+eye. 1003 (the arcade's pool table), 1024 (bus stop), 1075 (music room), 1099 and 1102 (washrooms) have no DSi drawing, and
+the DSi drew the auto shop from outside where the bank's three pictures are inside (its own pairing, kept).
+
+**Which episodes** (`exp_runtime/dsi.py`): SHS's own (not a translation from another game, nor an episode on an add-on)
+whose every background, read from its scripts' constant arguments (services 11, 34, 35, 86 and title cards), has a DSi
+picture:
+- the eight stories the DSi ported (Football Star and Classics 1, 2, 5, 7, 8, 10 and 12, by title) take whatever the DSi
+  showed, its stand-in times included (a night den is its day den);
+- any other episode only a picture of the same location at the same time.
+
+A background a script picks at run time is looked up the same way when it appears; one with no DSi picture shows as before.
+
+**In play** (`Desktop._dsi_screen`): the left screen while the location is aligned left (a speaker on the left), the right one
+while it's aligned right, the last one for narration; a change crossfades over the location layer's 0.25 s in either
+presentation. A screen is the frame's own 3:4: it fills HD's frame and covers a taller one centred, its sides cut.
+
+**Switches:** "DSi Backgrounds" (DSi tag, off by default) and "DSi Pixels" (Sharp, nearest neighbour, the default; or
+Smooth), on the pause menu's Add-Ons and the main menu's Per-Game Settings, when the library holds `shsdsi` (in play: when
+the episode qualifies).
+
+```sh
+python tools/translate/dsi.py --nds DSI_IMAGE --out OUT_DIR
+```
+
 ### `chslim`: Claire Hart (Slim)
 
 Optional, for Cause of Death. Revision 1, about 21 MB.
@@ -309,6 +349,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Java '08 Look | '08 | '08 BREW episodes, with an addon built with the Java demo |
 | '08 Backgrounds | '07 | '07 BREW episodes |
 | Hollywood Art | '07 | The Surviving Hollywood Preview, with `shshw` imported |
+| DSi Backgrounds, DSi Pixels | DSi | With `shsdsi` imported; in play, an episode whose backgrounds the DSi drew |
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

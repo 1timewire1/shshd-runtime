@@ -825,6 +825,8 @@ class ContentLibrary:
         self.brew_08_backgrounds = False    # '07-badged BREW episodes: '08's shared locations (BREW_08_BACKGROUNDS)
         self.ch_portraits = True        # CoD with its portrait addon (PORTRAIT_ADDON): Claire Hart's sharper originals
         self.hollywood_art = True       # the BREW Surviving Hollywood Preview with `shshw`: the demo's own art (OPTIONAL_ART)
+        self.dsi_backgrounds = False    # with `shsdsi`: the DSiWare game's two screens for the backgrounds (dsi.py)
+        self.dsi_pixels = 'sharp'       # ...enlarged 'sharp' (nearest neighbour) or 'smooth'
         self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
@@ -1903,6 +1905,27 @@ class EpisodeResources:
             self._addon_pictures[resource_id] = spec['resources'].get(f'{key}:{resource_id}', spec['portraits'].get(key))
         target = self._addon_pictures[resource_id]
         return None if target is None else found[1].read(target)
+
+    def dsi_pictures(self):
+        """shshd-runtime: {background: DSi picture} when the library holds the DSiWare add-on and every background this
+        episode can show has a DSi counterpart (dsi.episode_pictures), else None. Read once per episode."""
+        if not hasattr(self, '_dsi_pictures'):
+            from .dsi import episode_pictures
+            try:
+                self._dsi_pictures = episode_pictures(self)
+            except (ContentError, KeyError, OSError, ValueError) as error:
+                logging.warning('DSi backgrounds unavailable: %s', error)
+                self._dsi_pictures = None
+        return self._dsi_pictures
+
+    def dsi_screens(self, picture):
+        """shshd-runtime: the (left, right) screens of a DSi picture, as PNG bytes, or None."""
+        from .dsi import ADDON, screens
+        ids = screens(self, picture)
+        found = self.library.addon(ADDON) if ids is not None else None
+        if found is None:
+            return None
+        return tuple(found[1].read(resource) for resource in ids)
 
     def _optional_art(self, resource_id):
         """shshd-runtime: the picture an optional add-on draws for this one (presentation `optional_art`), while its switch is

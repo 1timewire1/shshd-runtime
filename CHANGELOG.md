@@ -16,6 +16,12 @@
     art and a '08 Backgrounds switch; the Java '08 Look switch for '08; `a(n)` and plurals; BREW's menus.
   - **Runtime:** service 223 runs a script and comes back (save version 39); pickers of four, six and ten photos.
   - **Title cards** show SHS pictures picked for the location and sky each story opens on (HD in SHS HD).
+- **DSi Backgrounds** (owner, 2026-11-15; `tools/translate/dsi.py`): the optional `shsdsi` add-on, built from the player's
+  own SHS DSiWare image, holds the DSiWare game's redrawn backgrounds (60 locations, each two 192 × 256 screens). With it
+  imported and the switch on (DSi tag, off by default), an SHS episode whose every background the DSi drew shows the left
+  screen while the speaker is on the left and the right one while they're on the right, crossfading between them;
+  narration keeps the screen. The DSi's eight stories take whatever it showed, its stand-in times of day included; any
+  other episode only same-time pictures. **DSi Pixels** enlarges them Sharp (the default) or Smooth.
 - **Hollywood Art** for the BREW *Surviving Hollywood Preview* (owner, 2026-11-13): with the optional `shshw` add-on
   (`tools/translate/shw.py`, built from the Surviving Hollywood demo's jar), the Preview shows that game's own painted
   portraits and backgrounds, its dialogue panel as the frame, its music by scene, its catch game's look (the star, its

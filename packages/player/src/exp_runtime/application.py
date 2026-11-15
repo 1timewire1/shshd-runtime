@@ -447,6 +447,7 @@ class Application:
         self.apply_java_look()
         self.apply_brew_08_backgrounds()
         self.apply_hollywood_art()
+        self.apply_dsi()
         self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
@@ -1036,6 +1037,7 @@ class Application:
         self.apply_java_look()
         self.apply_brew_08_backgrounds()
         self.apply_hollywood_art()
+        self.apply_dsi()
         self.apply_ch_portraits()
         self.sync_controller()
         self.menu_music_changed()
@@ -1168,6 +1170,13 @@ class Application:
         return library_has_optional_art(self.library, 'hollywood_art')
 
     @library_answer
+    def dsi_offered(self):
+        """Whether the library holds the DSiWare add-on (`shsdsi`, dsi.py), whose backgrounds the "DSi Backgrounds" switch
+        shows in the episodes the DSi drew every background of."""
+        from .dsi import ADDON
+        return hasattr(self.library, 'addon') and self.library.addon(ADDON) is not None
+
+    @library_answer
     def smartphone_music_offered(self):
         """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
         SHS '11 episodes)."""
@@ -1233,6 +1242,16 @@ class Application:
         self.library.hollywood_art = self.state.hollywood_art
         if self.game:
             self.game.set_hollywood_art(self.state.hollywood_art)
+
+    def apply_dsi(self):
+        """"DSi Backgrounds" and "DSi Pixels" reach the library and a paused episode."""
+        self.library.dsi_backgrounds = self.state.dsi_backgrounds
+        self.library.dsi_pixels = self.state.dsi_pixels
+        if self.game:
+            self.game.set_dsi_backgrounds(self.state.dsi_backgrounds)
+            self.game.set_dsi_pixels(self.state.dsi_pixels)
+
+    apply_dsi_backgrounds = apply_dsi      # (the test channel's `set dsi_backgrounds`)
 
     def apply_smartphone_music(self):
         """The "Smartphone Music" switch reaches a paused episode."""
@@ -1483,6 +1502,7 @@ class Application:
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
         library.hollywood_art = state.hollywood_art
+        library.dsi_backgrounds, library.dsi_pixels = state.dsi_backgrounds, state.dsi_pixels
         library.ch_portraits = state.ch_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
@@ -2189,6 +2209,7 @@ class Application:
         self.game.java_look = self.state.java_look
         self.game.brew_08_backgrounds = self.state.brew_08_backgrounds
         self.game.hollywood_art = self.state.hollywood_art
+        self.game.dsi_backgrounds, self.game.dsi_pixels = self.state.dsi_backgrounds, self.state.dsi_pixels
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
@@ -2301,6 +2322,7 @@ class Application:
         self.state.java_look = self.game.java_look
         self.state.brew_08_backgrounds = self.game.brew_08_backgrounds
         self.state.hollywood_art = self.game.hollywood_art
+        self.state.dsi_backgrounds, self.state.dsi_pixels = self.game.dsi_backgrounds, self.game.dsi_pixels
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory
@@ -2566,7 +2588,7 @@ class Application:
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
-                               'arena_minigames', 'brew_08_backgrounds', 'hollywood_art',
+                               'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
@@ -2586,6 +2608,8 @@ class Application:
                     self.apply_brew_08_backgrounds()
                 if key == 'hollywood_art':
                     self.apply_hollywood_art()
+                if key == 'dsi_backgrounds':
+                    self.apply_dsi()
                 if key == 'smartphone_music':
                     self.apply_smartphone_music()
                 if key == 'word_grid_skin':
