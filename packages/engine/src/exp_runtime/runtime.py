@@ -119,7 +119,10 @@ def _validate_choice(details):
                 and type(details['timeout_result']) is int
                 and -32768 <= details['timeout_result'] <= 32767
                 and all(isinstance(details[k], str) for k in ('title', 'text'))
-                and all(type(details[k]) is int for k in ('character_id', 'portrait_mode'))):
+                and all(type(details[k]) is int for k in ('character_id', 'portrait_mode'))
+                and ('details' not in details or (isinstance(details['details'], list)
+                                                  and len(details['details']) == len(options)
+                                                  and all(isinstance(v, str) for v in details['details'])))):
             raise SaveError('Invalid choice data')
     except (KeyError, TypeError) as error:
         raise SaveError('Incomplete choice data') from error

@@ -490,6 +490,13 @@ single-option lists still draw once, and a zero flag consumes no randomness.
 `0004c1bc` calls `00122554` on the same application LCG used by service 27 and
 football/grid games, separate from the libc stream used by service 71. See
 [MINIGAMES.md](MINIGAMES.md#22-footballgrid-engine-stream) for the generator.
+
+shshd-runtime: an option built with service 3 may carry a **detail line** after the byte 0x1F (`engine.OPTION_DETAIL`):
+the label alone is the option (its text everywhere: hints, the test channel, saves' `options`), and the detail goes in
+the choice's `details` list, one string per option, moving with its label when the list is shuffled. The HD menu
+(`hd_choice.py`) draws it under the label in the option face at 11 points, lighter, as the settings show an option's value
+under its name; a row counts its lines. Surviving Hollywood's Where to? puts each place's opening hours there (owner,
+2026-11-14). Without one, a choice has no `details` and is as native; other menus show the label only.
 From saved state 1, four options end in original-index order `[2,1,3,0]`, with
 stored random state `0xc46b9b3d`; the next service-27 call with bound 100 gives 43.
 

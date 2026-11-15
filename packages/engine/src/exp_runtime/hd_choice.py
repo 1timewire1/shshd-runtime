@@ -40,6 +40,7 @@ PANEL_LIMIT = 964
 HD_BAR_TOP = int((480 - 72 + 48) * 1024 / 480)
 TABLE_INSET = 6
 LABEL_PADDING = (24, 12)
+DETAIL_GAP = 1.5                # shshd-runtime: column units between a label and its detail line (HdRow.detail)
 HEADER_NO_PORTRAIT, HEADER_LEFT, HEADER_RIGHT = 8, 7, 16
 TITLE_NORMAL_NODE, TITLE_TALL_NODE = 18, 9
 HEADER_TALL_ROOT, HEADER_NORMAL_ROOT = 1, 10
@@ -186,6 +187,8 @@ class HdRow:
     text: TextLayout
     origin: tuple[float, float]
     enabled: bool = True
+    detail: TextLayout | None = None    # shshd-runtime: the option's detail line, smaller, under its label (engine OPTION_DETAIL)
+    detail_origin: tuple[float, float] = (0, 0)
 
 
 @dataclass(frozen=True)
@@ -229,7 +232,7 @@ class HdChoicePage:
 
 def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics, title_font,
                    description: FontMetrics, description_font, option: FontMetrics, color, option_color,
-                   scored=False, geometry=HD_GEOMETRY):
+                   scored=False, geometry=HD_GEOMETRY, detail: FontMetrics | None = None, detail_color=None):
     """`layouts` holds the build's layout bank (hd_layout.HdLayouts for HD's, hd_layout.BankLayouts for an iPhone
     build's own); `details` the pending choice's; `geometry` the build's constants (HD_GEOMETRY, COD_GEOMETRY)."""
     g, d = geometry, geometry.density
@@ -285,8 +288,13 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     # label; a label of one or two lines keeps exactly that.
     pitch = round((option.cap + option.gap) * d)
     heights = []
-    for _, label in options:
+    details_text = details.get('details') or ()
+    for index, label in options:
         lines = len(text_in_region(option, label, Rect(0, 0, label_width, g.row_height / d), 0x19, None, (), d)[0].lines)
+        if detail is not None and index < len(details_text) and details_text[index]:
+            # shshd-runtime: its detail lines, each counted as a label line (a little room spare)
+            lines += len(text_in_region(detail, details_text[index], Rect(0, 0, label_width, g.row_height / d), 0x19, None,
+                                        (), d)[0].lines)
         heights.append(g.row_height + max(0, lines - 2) * pitch)
     rows_height, shown = sum(heights), len(heights)
     # shshd-runtime: the player's own prompts may ask for more room than the native limit (details' panel_limit: a skip
@@ -329,8 +337,24 @@ def hd_choice_page(layouts, details, *, theme, has_portrait, title: FontMetrics,
     for position, ((index, label), row_height) in enumerate(zip(options, heights)):
         _, cell_y = g.units(0, cell_top)
         region_rect = Rect(table_x + hx / d, cell_y + vy / d, label_width, (row_height - 2 * vy) / d)
-        layout, origin = text_in_region(option, label, region_rect, 0x19, option_color, (), d)
-        rows.append(HdRow(index, position, Rect(table_x, cell_y, table_width, row_height / d), layout, origin))
+        line = details_text[index] if index < len(details_text) else ''
+        detail_layout, detail_origin = None, (0, 0)
+        if line and detail is not None:
+            # shshd-runtime: the label in the cell's upper part, its detail line under it in the smaller face, the two centred
+            # together as the settings show an option's value under its name (desktop_pause_hd.row; owner, 2026-11-14).
+            lines = len(text_in_region(option, label, region_rect, 0x19, None, (), d)[0].lines)
+            detail_lines = len(text_in_region(detail, line, region_rect, 0x19, None, (), d)[0].lines)
+            label_height = lines * (option.cap + option.gap)                        # column units
+            detail_height = detail_lines * (detail.cap + detail.gap)
+            block_top = region_rect.y + (region_rect.height - label_height - DETAIL_GAP - detail_height) / 2
+            label_rect = Rect(region_rect.x, block_top, region_rect.width, label_height)
+            layout, origin = text_in_region(option, label, label_rect, 0x19, option_color, (), d)
+            detail_rect = Rect(region_rect.x, block_top + label_height + DETAIL_GAP, region_rect.width, detail_height)
+            detail_layout, detail_origin = text_in_region(detail, line, detail_rect, 0x19, detail_color or option_color, (), d)
+        else:
+            layout, origin = text_in_region(option, label, region_rect, 0x19, option_color, (), d)
+        rows.append(HdRow(index, position, Rect(table_x, cell_y, table_width, row_height / d), layout, origin,
+                          detail=detail_layout, detail_origin=detail_origin))
         cell_top += row_height
     _, table_y = g.units(0, rows_top)
     table = Rect(table_x, table_y, table_width, rows_height / d)

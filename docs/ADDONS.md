@@ -179,10 +179,10 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 
 ### `shshw`: Surviving Hollywood
 
-Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required (revision 4) by Surviving Hollywood's own
-chapters (pack 31700, below). Revision 4, about 3.6 MB. Built from the Surviving
+Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required by Surviving Hollywood's own chapters
+(pack 31700, below: the lite revision 4, the full chapter revision 5). Revision 5, about 3.6 MB. Built from the Surviving
 Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, its music, its
-catch game's look and its status bar's moon.
+catch game's look and its status bar's moon and sun (revision 5: the full chapter's daytime badges).
 Phase 1 of the owner's three-phase plan (`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's
 chapters, if translated, will require it at later revisions, so its numbers stay as they are. Revision 1 had the portraits at 4
 times and no frame, music or turned faces; revision 2 had no catch skin or moon; revision 3 had no numbered star or star badge.

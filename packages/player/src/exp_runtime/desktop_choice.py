@@ -141,6 +141,9 @@ class ChoiceRenderer:
         return self.cached_page
 
     OPTION_FONT = 'ArialRoundedMTBold16@15'     # SHSEngine::initFonts: the option labels are 30 points
+    # shshd-runtime: an option's detail line (a place's opening hours) in the option face, smaller and lighter, as the settings
+    # show an option's value under its name (owner, 2026-11-14).
+    DETAIL_FONT, DETAIL_SIZE, DETAIL_LIGHTEN = 'ArialRoundedMTBold16@11', 11, .35
 
     age_ms = 0          # since the current choice appeared (Desktop.tick), for its labels' fly-on and its fade-in
     overlay = None      # the HD timer layers (circle timer, running man), outside the menu view's fades
@@ -161,6 +164,11 @@ class ChoiceRenderer:
         if option is None or None in (cap_height(title), cap_height(body), cap_height(option), descent(title)):
             return None
         self.text.register(self.OPTION_FONT, option)
+        detail = load_font_sized(library, BODY_FONT, self.DETAIL_SIZE) if details.get('details') else None
+        if detail is not None and cap_height(detail) is not None:
+            self.text.register(self.DETAIL_FONT, detail)
+        else:
+            detail = None
         if not self.cod():
             # The menu's description and options are HD's dialogue body face, whose '{' is a song note (dialogue.py
             # NOTE_FRAMES): King of Diss's sung choices ("{ It looks like his father was a grizzly... {").
@@ -174,7 +182,9 @@ class ChoiceRenderer:
             title=FontMetrics(title, cap_height(title), TITLE_GAP / 2, descent(title)), title_font=title_font,
             description=FontMetrics(body, cap_height(body), DESCRIPTION_GAP / 2), description_font=BODY_FONT,
             option=FontMetrics(option, cap_height(option), OPTION_GAP / 2), color=color,
-            option_color=color, scored=scored)
+            option_color=color, scored=scored,
+            detail=None if detail is None else FontMetrics(detail, cap_height(detail), OPTION_GAP / 2),
+            detail_color=tuple(round(c + (255 - c) * self.DETAIL_LIGHTEN) for c in color))
 
     def cod(self):
         """Cause of Death: its iPhone SHSWidgetMenu, which is SHS HD's at half scale (hd_choice.COD_GEOMETRY)."""
@@ -613,7 +623,7 @@ class ChoiceRenderer:
         from .hd_choice import label_offsets
         k = self.scale
         width, height = round(rect.width * k), round(rect.height * k)
-        key = (row.text, width, height, theme)
+        key = (row.text, row.detail, width, height, theme)
         cache = self.__dict__.setdefault('_labels', {})
         if key not in cache:
             if len(cache) > 32:
@@ -622,6 +632,9 @@ class ChoiceRenderer:
             x, y = row.origin
             self.text.draw_layout(label, self.OPTION_FONT, row.text, (x - rect.x) * k, (y - row.rect.y) * k, scale=k,
                                   inline=self.hd_notes(theme), inline_density=2)
+            if row.detail is not None:
+                dx, dy = row.detail_origin
+                self.text.draw_layout(label, self.DETAIL_FONT, row.detail, (dx - rect.x) * k, (dy - row.rect.y) * k, scale=k)
             label = faded(label, 128)
             cache[key] = label
         density = geometry.density if geometry is not None else 2

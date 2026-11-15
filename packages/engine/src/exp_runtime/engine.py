@@ -41,6 +41,7 @@ from .vm import KiwiVM, StopKind, VMError, VMStop, signed16
 # How long the poll's "Loading / Please wait..." bar shows before the failed download returns 0 to the script (the app waits for the
 # network to fail, which takes as long as it takes; this is a fixed stand-in).
 POLL_WAIT_MS = 1000
+OPTION_DETAIL = '\x1f'      # shshd-runtime: separates a built choice option's label from its detail line (service 3)
 
 
 @dataclass(frozen=True)
@@ -1148,7 +1149,13 @@ class EngineState:
             if self.choice_builder is None:
                 raise VMError('Choice option without a choice builder')
             builder = self.choice_builder
-            builder['options'].append(self.resolve_text(vm, args[0]))
+            # shshd-runtime: an option may carry a line of detail after OPTION_DETAIL (a translated story's opening hours under
+            # a place: Surviving Hollywood's Where to?; owner, 2026-11-14), which the HD menu shows under its label in
+            # smaller letters; the label alone is the option everywhere else.
+            label, _, detail = self.resolve_text(vm, args[0]).partition(OPTION_DETAIL)
+            builder['options'].append(label)
+            if detail or builder.get('details'):
+                builder.setdefault('details', [''] * (len(builder['options']) - 1)).append(detail)
             builder['values'].append(len(builder['values']) if args[1] == -999 else args[1])
             builder['enabled'].append(args[2] != 0)
             return complete('add_choice_option')
@@ -1164,7 +1171,9 @@ class EngineState:
                 count = len(details['options'])
                 for index in range(count):
                     other = self.random.below(count)
-                    for key in ('options', 'values'):
+                    for key in ('options', 'values', 'details'):    # (shshd-runtime: a detail goes with its label)
+                        if key not in details:
+                            continue
                         items = details[key]
                         items[index], items[other] = items[other], items[index]
             self.choice_builder = None

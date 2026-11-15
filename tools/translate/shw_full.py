@@ -25,8 +25,8 @@ arithmetic (it has no bit instructions); places' listing (40, 41) and the cast's
 themselves (38: kind, background, district, name), the districts (37), the stats' names (58) and the schedule are the setup's
 constants, read here by running the setup (`setup_tables`) and kept as data. Quests (66-69) are stored texts.
 
-**Presentation** (the owner's decisions, 2026-11-14): a travel card is a time badge, `3:00 PM - The Flats: Home` (the demo's star
-by day, its moon by night); each morning a date card, `Monday, February 2`; the stat-change panel (60) a `Stat changes` page that
+**Presentation** (the owner's decisions, 2026-11-14): a travel card is a time badge, `3:00 PM - The Flats: Home` (the status bar's
+sun by day, its moon by night: shshw revision 5); each morning a date card, `Monday, February 2`; the stat-change panel (60) a `Stat changes` page that
 waits, as the demo's; Stats in Where to? shows money and the three stats; relationships stay hidden; the status bar (79, 80) is
 dropped; options the demo greys out (17) are left off the menu. The demo's numbers are kept.
 
@@ -62,10 +62,11 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 
 PACK, EPISODE, VERSION = 31700, 1, 1    # episode 1: the lite moves to 2 (owner, 2026-11-14)
 TITLE, SUFFIX = 'The Bright Lights', ' (SHW)'
-ADDON_REQUIRED = 4
+ADDON_REQUIRED = 5                      # shshw: the sun as the daytime badge's icon
 DRIVER = 25001
 SETUP_SCRIPT, SETUP_ENTRY, SCHEDULE = 10002, 32001, 10000
 SLEEP_SCRIPT, QUEST_SCRIPT = 10007, 10005           # 49's, as 10002 names them (checked in setup_tables)
+OPTION_DETAIL = '\x1f'                  # engine.OPTION_DETAIL: a built option's label, then its detail line (the hours)
 NEST_SCRIPT = 223                                   # shshd-runtime: run a script to its end and come back (ENGINE_ABI 5.6)
 SCRIPTS = (*range(10002, 10018), *range(11000, 11008))
 
@@ -385,6 +386,23 @@ def setup_tables(raw):
     return out
 
 
+def place_hours(about):
+    """A place's opening hours from its description (47): the paragraph after `... hours:` (`9am-9pm every day.`; the theatre's
+    three lines joined), or its first paragraph where it opens with them (the gym's `open 24 hrs, 7 days a week.`); '' where it
+    has none (home). Cased as the casing pass would (the days short, a capital first), without the closing full stop."""
+    paragraphs = [p.strip() for p in about.split('\n\n') if p.strip()]
+    if not paragraphs:
+        return ''
+    if paragraphs[0].lower().endswith('hours:') and len(paragraphs) > 1:
+        text = ', '.join(line.strip() for line in paragraphs[1].split('\n') if line.strip())
+    elif paragraphs[0].lower().startswith('open '):
+        text = paragraphs[0]
+    else:
+        return ''
+    text = HOURS_DAY.sub(lambda m: m.group().capitalize(), text.rstrip('.'))
+    return text[:1].upper() + text[1:]
+
+
 def date_texts(schedule):
     """`Sunday, February 1` for each day (engine/shw.js dateOf: the demo's February has 28 days)."""
     out, month, date = [], schedule['month0'], schedule['date0']
@@ -411,6 +429,7 @@ class Story:
             district = self.setup['districts'][place['district']]
             self.labels[i] = f'{DISTRICT_NAMES[district]}: {PLACE_NAMES[place["name"]]}'
         self.dates = date_texts(self.schedule)
+        self.hours = {i: place_hours(self.setup['about'].get(i, '')) for i in places}
         sched = self.schedule
         self.months = [int(MONTHS.index(t.split(', ')[1].split(' ')[0]) + 1) for t in self.dates]
         self.day_dates = [int(t.rsplit(' ', 1)[1]) for t in self.dates]
@@ -626,8 +645,8 @@ def picture(s, tables, picture_id):
 
 
 def card(s, tables, place):
-    """The travel card: the place's background, and a badge `3:00 PM - The Flats: Home` (the star by day, the moon by night),
-    cleared after the next line."""
+    """The travel card: the place's background, and a badge `3:00 PM - The Flats: Home` (the status bar's sun by day, its moon
+    by night), cleared after the next line."""
     background(s, tables, place)
     s.push(tables.badge()); s.text('%s - %s')
     table_get(s, tables.times(), lambda: get_global(s, SLOT_KEY))
@@ -635,7 +654,7 @@ def card(s, tables, place):
     s.call(22, 4)
     moon, icon = s.label(), s.label()
     get_global(s, SLOT_KEY); s.push(NIGHT_SLOT); s.emit(0x0d); s.jump_if_nonzero(moon)
-    s.push(shw.STAR_BADGE); s.jump(icon)
+    s.push(shw.SUN); s.jump(icon)
     s.label(moon)
     s.push(shw.MOON)
     s.label(icon)
@@ -1726,7 +1745,7 @@ class Driver:
             skip = s.label()
             dyn_get(s, LISTED_BASE, lambda i=i: s.push(i)); s.jump_if_zero(skip)
             self.grid_entry(s, lambda i=i: s.push(places[i]['kind'])); s.push(0); s.emit(0x0c); s.jump_if_zero(skip)
-            s.text(st.labels[i]); s.push(i); s.push(1); s.call(3, 3)
+            s.text(st.labels[i] + (OPTION_DETAIL + st.hours[i] if st.hours.get(i) else '')); s.push(i); s.push(1); s.call(3, 3)
             s.label(skip)
         s.text(JOURNAL_TITLE); s.push(JOURNAL_OPTION); s.push(1); s.call(3, 3)
         s.text(STATS_TITLE); s.push(STATS_OPTION); s.push(1); s.call(3, 3)
@@ -1766,6 +1785,8 @@ def build_story(jar, addon_path):
     if missing:
         raise brew.StoryError(f'{jar}: not the 1.0.2 demo (missing {missing})')
     spec = json.loads(ExpArchive(Path(addon_path).read_bytes()).read(shw.SPEC))
+    if 'sun' not in spec:
+        raise brew.StoryError(f'the shshw add-on is too old: build revision {ADDON_REQUIRED} or later')
     story = Story(found, spec)
     resources = {DRIVER: Driver(story).build()}
     for rid in SCRIPTS:
