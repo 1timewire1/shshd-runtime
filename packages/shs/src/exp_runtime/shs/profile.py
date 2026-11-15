@@ -203,7 +203,14 @@ TRANSLATED_PORTRAIT_EFFECTS = {31400: (31410, 26990)}
 # global number the translator sets around the line (1 blue, 2 pink, 3 gray; 0 keeps SHS's own). New Rules shows an
 # object or unseen voice ("TV", "Radio") in a gray bubble and an off-stage character in their own colour (owner,
 # 2026-10-25); without this entry they keep the yellow named-line box.
-TRANSLATED_NARRATION_THEMES = {31300: 31312}
+TRANSLATED_NARRATION_THEMES = {31300: 31312,
+                               31700: 31731}     # Surviving Hollywood: its walk-ons with no portrait (Mom, Dad...) by their own
+                                                 # colours, its system voices (Instructions, Phone) gray (tools/translate shw_full.py)
+# shshd-runtime: a translated pack's quest journal, shown by the pause menu's Quest Journal row while it holds a quest (owner,
+# 2026-11-14: Surviving Hollywood's key 1 and pause menu; tools/translate shw_full.py): pack -> (the global number holding how
+# many quests, the stored-text key of quest n's title as a %d form, its lines' key). The translation rebuilds them whenever
+# the demo's journal changes.
+TRANSLATED_JOURNALS = {31700: (31728, '$SHWQT%d', '$SHWQL%d')}
 # shshd-runtime: a translated pack's music that is an intro running into a loop (music_stream.MusicStream.chain):
 # pack -> {intro resource: loop resource}. The intro plays once, then the loop repeats without a gap. The X360
 # prototype's Day of Diss plays `dont_trust_me` into `dont_trust_me_loop` (tools/translate/x360.py MUSIC_INTRO /

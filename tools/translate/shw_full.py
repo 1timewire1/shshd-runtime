@@ -66,6 +66,7 @@ ADDON_REQUIRED = 4
 DRIVER = 25001
 SETUP_SCRIPT, SETUP_ENTRY, SCHEDULE = 10002, 32001, 10000
 SLEEP_SCRIPT, QUEST_SCRIPT = 10007, 10005           # 49's, as 10002 names them (checked in setup_tables)
+NEST_SCRIPT = 223                                   # shshd-runtime: run a script to its end and come back (ENGINE_ABI 5.6)
 SCRIPTS = (*range(10002, 10018), *range(11000, 11008))
 
 
@@ -100,7 +101,10 @@ CAST_THEMES = {**{e: PINK for e in (0, 3, 9, 10, 18, 20, 21, 23, 24, 26, 29, 30,
 # Saved numbers (owner 0). The lite's are 31701-31703.
 (ENTRY_KEY, PHASE_KEY, DAY_KEY, SLOT_KEY, BED_KEY, HOME_KEY, HERE_KEY, PREVIOUS_KEY, PENDING_SCRIPT_KEY, PENDING_ENTRY_KEY,
  TIME_SET_KEY, STOPPED_KEY, AFTER_EVENT_KEY, EVENT_KEY, ACTIVITY_SCRIPT_KEY, ACTIVITY_ENTRY_KEY, BADGE_UP_KEY, RESULT_KEY,
- QUEST_COUNT_KEY, PICK_KEY, PLATE_KEY) = range(31710, 31731)
+ QUEST_COUNT_KEY, PICK_KEY, PLATE_KEY, NAMED_THEME_KEY) = range(31710, 31732)
+# NAMED_THEME_KEY: a named line without a portrait (76)'s colour, 1 blue, 2 pink, 3 gray (the profile's
+# TRANSLATED_NARRATION_THEMES); QUEST_COUNT_KEY and the stored texts QUEST_TITLE / QUEST_LINES are the journal the pause
+# menu shows (TRANSLATED_JOURNALS).
 GLOBAL_BASE = 32000                     # + the script's global (0-102)
 LISTED_BASE = 32200                     # + place: 1 while it's on the map
 PORTRAIT_KEY = 32240                    # + cast entry: its demo portrait (30, 31)
@@ -133,6 +137,8 @@ WEEKDAYS = brew.WEEKDAYS
 MONTHS = brew.MONTHS
 MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)     # engine/shw.js dateOf: no leap day
 EMOTICONS = re.compile(rb' ?[{}\[\]]')
+# The journal's reminder: the demo's key 1 is the pause menu's Quest Journal here (owner, 2026-11-14). No longer than it was.
+REMINDER, REMINDER_NOW = b"press '1' to view.", b"pause to view it."
 DEFAULT_NAME = 'Kate'
 # The places' and districts' names as SHS shows them (the demo's fonts have no capitals). The lite's spellings where it has them.
 DISTRICT_NAMES = {'downtown': 'Downtown', 'the flats': 'The Flats', 'entertainment strip': 'Entertainment Strip',
@@ -187,7 +193,7 @@ def tidy(text):
     is text when it has no control byte but newlines, doesn't start with one, and has at least three letters."""
     if not is_text(text):
         return None
-    changed = EMOTICONS.sub(b'', text).replace(b'$usr', b'$USR')
+    changed = EMOTICONS.sub(b'', text).replace(b'$usr', b'$USR').replace(REMINDER, REMINDER_NOW)
     return changed if changed != text else None
 
 
@@ -236,7 +242,9 @@ CASING_PHRASES = ('The Jeff', 'Tad Small', 'Club Franken-Stein', 'Franken-Stein'
                   'Reel Times', 'Excess Hollywood', "Hot Joe's Hot Dogs", 'Hot Joe', 'Spellman Productions', 'Hacksaw Harry',
                   'Calculus Girl', 'Rainbow, the Musical', 'The Red Badge of Courage', 'Frank Franklin', 'Frank Hobo',
                   'Pillary Fluff', 'Lord Chatterley', 'Chez Expensif', 'Battlefield Galaga', 'Citizen Krane', 'Princess Vespa',
-                  'Return of the Jedi', 'Jellyfish Jamboree', 'Chelsea Lemon', 'Ms. Lemon', 'Lemon-ade', 'Los Angeles')
+                  'Return of the Jedi', 'Jellyfish Jamboree', 'Chelsea Lemon', 'Ms. Lemon', 'Lemon-ade', 'Los Angeles',
+                  'Myra Spanks',      # the supermodel (Tyra Banks); owner, 2026-11-14
+                  'Tue. - Fri. at', 'Sat. at')        # the rehearsal schedule's days, short (not sentence ends)
 # A lone `i` (not in CASING_WORDS: casing.apply would read `is` as its plural, `Is`).
 LONE_I = re.compile(r"(?<![A-Za-z'$])i(?![A-Za-z'])")
 CASING_QUOTED = re.compile(r"(?<=')jellyfish [ab]\b")     # the screenplay's roles: 'Jellyfish A', 'Jellyfish B' (the lite's)
@@ -263,6 +271,8 @@ def recase(program, title_addresses=(), unknown=None):
                 casing.OWN_NAMES = own
             cased = PHRASE.sub(lambda m: _phrase(cased, m, written), cased)
             cased = LONE_I.sub('I', cased)
+            # a line of its own starts with a capital (the journal's `Monday Feb. 2\nday 2 of 29`, `...\ntarget word: charm`)
+            cased = re.sub(r'(?<=\n)[a-z]', lambda m: m.group().upper(), cased)
             if 'hours:' in cased.lower():
                 cased = '\n'.join(HOURS_DAY.sub(lambda m: m.group().capitalize(), line) if re.search(r'\d', line) else line
                                   for line in cased.split('\n'))
@@ -480,6 +490,14 @@ def snapshot(s):
         set_global(s, GLOBAL_BASE + g, lambda: s.push(0))
 
 
+def refresh_quests(s):
+    """Rebuild the journal now: the demo's quest script (10005, which rebuilds the quest table from the state, 66-69) run to its
+    end and come back from (shshd-runtime service 223), at its entry 0. The pause menu's Quest Journal reads what it stores
+    (owner, 2026-11-14: the demo's key 1 and pause menu)."""
+    set_global(s, ENTRY_KEY, lambda: s.push(0))
+    s.push(shs_script(QUEST_SCRIPT)); s.call(NEST_SCRIPT, 1)
+
+
 def append_word(s, buffer, word):
     """Add the text whose address `word()` pushes to the `|`-separated list in `buffer`."""
     first = s.label()
@@ -694,15 +712,22 @@ class Script:
             key = ('narration', bare)
         elif speaker in NAMED:
             def build(s):
+                set_global(s, NAMED_THEME_KEY, lambda: s.push(GREY))
                 s.text(NAMED[speaker]); s.arg(2); s.call(76, 2)
                 clear_badge(s); s.result(0)
             key = ('named', speaker)
+        elif whole and speaker is not None and self.story.setup['portraits'].get(speaker, -1) < 0:
+            # A thought by a speaker with no portrait (their speaker is a constant, so known here): the named box, bare.
+            name = self.r.text(casing.title_case(self.story.setup['cast'].get(speaker, '')))
+
+            def build(s):
+                set_global(s, NAMED_THEME_KEY, lambda: s.push(CAST_THEMES.get(speaker, BLUE)))
+                s.push(name); s.push(bare); s.call(76, 2)
+                clear_badge(s); s.result(0)
+            key = ('faceless thought', bare)
         elif whole and speaker is not None:
             def build(s):
-                done = s.label()
-                self.faceless(s, lambda: s.push(bare), done)
                 s.push(-2); s.push(bare); s.arg(1); s.push(0); s.call(13, 4)
-                s.label(done)
                 clear_badge(s); s.result(0)
             key = ('thought', bare)
         else:
@@ -712,6 +737,7 @@ class Script:
                 for entry, name in NAMED.items():
                     other = s.label()
                     s.arg(1); s.push(entry); s.emit(0x0a); s.jump_if_zero(other)
+                    set_global(s, NAMED_THEME_KEY, lambda: s.push(GREY))
                     s.text(name); s.arg(2); s.call(76, 2); s.jump(done)
                     s.label(other)
                 self.faceless(s, lambda: s.arg(2), done)
@@ -730,6 +756,7 @@ class Script:
         dyn_get(s, PORTRAIT_KEY, lambda: s.arg(1)); s.push(0); s.emit(0x0e); s.jump_if_zero(has_face)
         name = self.t.name()
         s.arg(1); s.push(name); s.call(61, 2)
+        set_global(s, NAMED_THEME_KEY, lambda: s.select(1, CAST_THEMES, BLUE))
         s.push(name); text(); s.call(76, 2); s.jump(done)
         s.label(has_face)
 
@@ -738,8 +765,19 @@ class Script:
         self.r.redirect(pc, 'plate', lambda s: (set_global(s, PLATE_KEY, lambda: s.arg(1)), s.result(0)))
 
     def page(self, pc, argc):
-        """15: (text) a page in the dialogue box: a named box under 14's plate."""
+        """15: (text) a page in the dialogue box: a named box under 14's plate, coloured as its speaker's line would be (the plate
+        is a cast name: `You` pink, `Event` gray, anyone else blue)."""
         def build(s):
+            colour = s.label()
+            for plate, theme in ((casing.title_case(self.story.setup['cast'][PLAYER]), PINK),
+                                 (casing.title_case(self.story.setup['cast'][EVENT]), GREY)):
+                other = s.label()
+                get_global(s, PLATE_KEY); s.text(plate); s.call(24, 2); s.push_result(); s.jump_if_zero(other)
+                s.push(theme); s.jump(colour)
+                s.label(other)
+            s.push(BLUE)
+            s.label(colour)                                 # local 0: the colour
+            set_global(s, NAMED_THEME_KEY, lambda: s.emit(0x41, 0))
             get_global(s, PLATE_KEY); s.arg(1); s.call(76, 2)
             clear_badge(s); s.result(0)
         self.r.redirect(pc, 'page', build)
@@ -1457,8 +1495,12 @@ class Script:
         self.r.redirect(pc, 'quest_line', build)
 
     def journal_updated(self, pc, argc):
-        """76: "quest journal updated": its jingle and a badge, cleared after the next line."""
+        """76: "quest journal updated": the journal rebuilt at once (the pause menu shows it; the demo's quest script, run and
+        come back from, the caller's entry put back after), its jingle and a badge, cleared after the next line."""
         def build(s):
+            get_global(s, ENTRY_KEY)                        # local 0: this script's entry
+            refresh_quests(s)
+            set_global(s, ENTRY_KEY, lambda: s.emit(0x41, 0))
             music(s, lambda: s.push(JOURNAL_CUE))
             s.push(shw.STAR_BADGE); s.text(JOURNAL_UPDATED); s.call(90, 2)
             set_global(s, BADGE_UP_KEY, lambda: s.push(1))
@@ -1618,6 +1660,7 @@ class Driver:
             background(s, t, lambda: get_global(s, HERE_KEY))
             self.run(s, lambda: get_global(s, ACTIVITY_SCRIPT_KEY), lambda: get_global(s, ACTIVITY_ENTRY_KEY), AFTER)
             s.label(no_force)
+            refresh_quests(s)                               # the pause menu's journal as of this turn
             night, played = s.label(), s.label()
             get_global(s, SLOT_KEY); s.push(NIGHT_SLOT); s.emit(0x0d); s.jump_if_nonzero(night)
             music(s, lambda: s.push(MAP_DAY)); s.jump(played)

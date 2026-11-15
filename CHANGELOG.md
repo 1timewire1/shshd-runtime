@@ -30,6 +30,10 @@
   rehearsals' spelling as a one-word word grid. The demo's lowercase text gets its capitals back by rule and word list
   (reference/Other Games/docs/SURVIVING_HOLLYWOOD_CASING.md). Replayed against Tardy-Slip's engine on 16 random months, it
   says the same lines, runs the same scripts and holds the same numbers to the end.
+- **Quest Journal in the pause menu** for *The Bright Lights* (owner, 2026-11-14): the demo's journal (14 quests, about 25
+  reminders a month, key 1 on the phone) lists its quests in the pause menu, each opening its lines, kept current mid-scene;
+  the reminder now says to pause. Its speakers' boxes take the lite's colours (they had none: a blue plate, yellow text),
+  the portrait-less walk-ons and system voices too.
 - **Surviving Hollywood: The Bright Lights (Lite)** (owner, 2026-11-14; `tools/translate/shw_lite.py`): the 1.0.4 demo's
   Chapter 1 as an episode under its own SHW badge and Surviving Hollywood group, in the demo's painted art, frame, sounds
   and catch game (the peanut-butter dodge, behind Use Translated Mini-Games, else a word game; its instructions open it as

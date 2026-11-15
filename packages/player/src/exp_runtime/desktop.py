@@ -47,8 +47,8 @@ from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, focus_step,
-                               place_controls)
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
+                               focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
@@ -71,6 +71,7 @@ from .loading import LoadingScreen
 from .runtime import SaveError, Session
 from .skip_ahead import can_skip, skip_ahead
 from .undo import chain_for
+from . import quest_journal
 from .minigames import MINIGAMES
 from .choice_hints import ARENA_RESULTS, arena_outcomes, brew_catch_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
 from .scene_badge import outline_badge_text
@@ -3552,6 +3553,7 @@ class Desktop:
                     skip_minigames=self.skip_minigames, skip_ahead=self.skip_ahead,
                     **({'skip_ahead_row': True} if self.skip_ahead and can_skip(self.session) else {}),
                     undo=self.undo, **({'undo_row': True} if self._undo_ready() else {}),
+                    **({'journal_row': True} if quest_journal.quests(self.session) else {}),
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     **({'hd_backdrop': self.hd_backdrop} if self.backdrop_switch() else {}),
                     **({'hires_portraits': self.hires_portraits} if self.hires_switch() else {}),
@@ -3709,6 +3711,20 @@ class Desktop:
             return
         if kind == 'pause_back':
             self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'journal' or (kind == 'pause_action' and str(command[1]).startswith('quest:')):
+            # shshd-runtime: the story's quest journal (quest_journal.py; owner, 2026-11-14): its quests' titles, each opening
+            # its lines.
+            journal = quest_journal.quests(self.session)
+            if kind == 'journal':
+                self.pause_hd.show_rows('journal', JOURNAL_LABEL, [(f'quest:{n}', title) for n, (title, _) in enumerate(journal)],
+                                        'pause')
+            else:
+                n = int(command[1].split(':', 1)[1])
+                if n < len(journal):
+                    title, lines = journal[n]
+                    self.pause_hd.show_text(f'journal:{n}', title, lines or ' ', 'journal')
             self._menu_sound()
             return
         if kind == 'pause_cycle' and command[1] == 'aspect_ratio':

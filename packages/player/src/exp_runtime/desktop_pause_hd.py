@@ -48,6 +48,7 @@ CHOICE_HINTS_LABEL = 'Choice Hints'
 SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AHEAD_LABEL = 'Skip Ahead'                # the pause menu's row, and its key's action (skip_ahead.py)
 UNDO_LABEL = 'Undo'                            # the pause menu's row: back to the last stop kept (undo.py)
+JOURNAL_LABEL = 'Quest Journal'                # the pause menu's row in a story with a journal (quest_journal.py)
 ALLOW_UNDO_LABEL = 'Allow Undo'                # Extras: keeps a save at each stop and offers that row (owner, 2026-11-06)
 ALLOW_SKIP_AHEAD_LABEL = 'Allow Skip Ahead'    # Extras: offers that row and key (owner, 2026-11-04)
 GRIDS_AS_MEMORY_LABEL = "Use '11's Memory for Word Grid"     # SHS '11's game in place of letter grids (owner, 2026-11-04)
@@ -719,6 +720,8 @@ class HdPauseMenu:
             entries = [(strings[20], ('resume',)), (strings[10], ('pause_open', 'options')),
                        (strings[120], ('pause_open', 'help'))]
             entries.append((strings[9], ('main_menu',)))
+            if settings.get('journal_row'):
+                entries.insert(1, (JOURNAL_LABEL, ('journal',)))
             if settings.get('undo_row'):
                 entries.insert(1, (UNDO_LABEL, ('undo',)))
             if settings.get('skip_ahead_row'):

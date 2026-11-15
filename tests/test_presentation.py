@@ -114,6 +114,30 @@ class PresentationRecordTests(unittest.TestCase):
         self.assertIsNone(Desktop._music_loop(desktop, 26005))
 
 
+class QuestJournalTests(unittest.TestCase):
+    """shshd-runtime: the pause menu's Quest Journal reads a translated pack's journal (profile TRANSLATED_JOURNALS)."""
+
+    def session(self, pack_id, count, texts):
+        engine = SimpleNamespace(numbers={(0, 31728): count}, number_key=lambda owner, key: (owner, key), strings=texts,
+                                 substitute=lambda text: text.replace('$USR', 'Kate'))
+        resources = SimpleNamespace(record=dict(pack_id=pack_id), library=SimpleNamespace(game_id='shs'), presentation={})
+        return SimpleNamespace(resources=resources, engine=engine)
+
+    def test_surviving_hollywood_lists_its_quests_with_their_lines(self):
+        from exp_runtime import quest_journal
+        texts = {'$SHWQT0': 'Find an agent', '$SHWQL0': 'Day 2 of 29\nGo to All-Star Agents, $USR.',
+                 '$SHWQT1': 'Headshots', '$SHWQL1': ''}
+        self.assertEqual(quest_journal.quests(self.session(31700, 2, texts)),
+                         [('Find an agent', 'Day 2 of 29\nGo to All-Star Agents, Kate.'), ('Headshots', '')])
+        self.assertEqual(quest_journal.quests(self.session(31700, 1, texts)), [('Find an agent', texts['$SHWQL0'].replace('$USR', 'Kate'))])
+
+    def test_no_journal_without_a_quest_or_outside_the_pack(self):
+        from exp_runtime import quest_journal
+        self.assertEqual(quest_journal.quests(self.session(31700, 0, {})), [])     # the lite: its count is never set
+        self.assertEqual(quest_journal.quests(self.session(31300, 3, {'$SHWQT0': 'x'})), [])
+        self.assertEqual(quest_journal.quests(None), [])
+
+
 class CreatorPresentationTests(unittest.TestCase):
     def test_a_second_speaker_joins_the_line_and_leaves_after_it(self):
         project = line(cast(), Node('a', character='alex', text='Both of us!',

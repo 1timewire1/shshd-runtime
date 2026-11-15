@@ -666,6 +666,8 @@ Everything is skipped, read or not. Skipping only what the player has seen is a 
 - A save is the whole game, randomness included, so a random pick comes out the same. The story tree isn't part of it: scenes seen stay seen.
 - The chain lives beside the autosave (`saves/<episode>.shs-undo/`, about 10 KB a save, at most 400), survives closing the app, and goes when the episode ends, starts over or its saved game is deleted. It is never synced or backed up. Nothing is kept while the switch is off.
 
+**Quest Journal** (pause menu, under Resume, Skip Ahead and Undo; owner, 2026-11-14): in a story that keeps a quest journal (the game profile's `TRANSLATED_JOURNALS`: Surviving Hollywood's *The Bright Lights*, whose demo opened it with key 1 or from its pause menu), while it holds a quest. It lists the quests' titles; each opens a page of its lines (`quest_journal.py`, pages as Data Management's). The translation rebuilds the journal whenever the story says it changed and at each map turn, so it's current mid-scene.
+
 In Cause of Death the Choice Hints switch is named **Choice & Answer Hints**, since only CoD has the typed puzzles
 whose faint answers it also shows. On a device that can vibrate (exp-runtime's iOS host), the Sound page's last
 switch is the game's own **Vibration** (string 11) and the device vibrates; elsewhere it is Simulated Vibration

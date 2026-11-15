@@ -1625,7 +1625,8 @@ class ContentLibrary:
 PRESENTATION_TABLES = dict(duet=('TRANSLATED_DUETS', tuple), narration_theme=('TRANSLATED_NARRATION_THEMES', int),
                            portrait_effects=('TRANSLATED_PORTRAIT_EFFECTS',
                                              lambda spec: (spec[0], tuple(range(spec[1], spec[1] + EFFECTS)))),
-                           music_loops=('TRANSLATED_MUSIC_LOOPS', dict))
+                           music_loops=('TRANSLATED_MUSIC_LOOPS', dict),
+                           journal=('TRANSLATED_JOURNALS', tuple))      # (profile only: quest_journal.py)
 
 
 def presentation_feature(resources, name):
