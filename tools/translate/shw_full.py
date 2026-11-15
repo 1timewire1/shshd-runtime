@@ -49,6 +49,7 @@ import newrules  # noqa: E402
 import shw  # noqa: E402
 from brew import get_global, set_global, set_word  # noqa: E402
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, requires_bytes  # noqa: E402
+from exp_runtime.brew_services import ANGLED, BREW_CATCH, BREW_MINIGAMES_QUERY, ORBIT, SIDEWAYS  # noqa: E402
 from exp_runtime.decode.bytecode import decode_program  # noqa: E402
 from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes  # noqa: E402
 from exp_runtime.exp import Metadata, encode_exp  # noqa: E402
@@ -129,12 +130,44 @@ PLACE_NAMES = {'airport': 'Airport', 'all-star-agents': 'All-Star-Agents', 'awar
                'beach': 'Beach'}
 STAT_NAMES = {'looks': 'Looks', 'body': 'Body', 'stress': 'Stress'}
 
+# -- minigames (step 3; owner's decisions, 2026-11-14) --
+INSTRUCTIONS = 35                       # the cast entry whose line explains the minigame after it
+PAGE_TITLE = brew.CATCH_GENERIC_TITLE.decode('latin-1')     # `Instructions`, as BREW's catch pages
+GAMES = frozenset({61, 62, 63, 64, 65})
+# The action menus' routine (20 inside it: four rounds of `n/4: question`, the cursor jumping): (options buffer, words, scores,
+# count, shown, -1, rounds, question, jump ms, timer ms, numbered, speaker), as the lite's fight (shw_lite.QUIZ_ARGS).
+QUIZ_ARGS = 12
+QUIZ_LIST_WORDS = 60
+WORD_LIST_WORDS = 160                   # word association's lists: up to 20 words
+WORD_GAME_MAX_MS = 30000                # the demo's word association runs 60 s; a KiWi number stops at 32767
+WORD_TITLE = 'Target: %s'
+WORD_TEXT = 'Pick the words that go with the target.'
+CATCH_MODES = {63: ORBIT, 64: ANGLED, 65: SIDEWAYS}
+# The catch games' pictures (the demo's icons) as words, for the word game in their place ("Use Translated Mini-Games" off), by
+# what each game's instructions call them.
+ICON_WORDS = {2504: 'Left feet', 2516: 'Bad note', 2517: 'Note', 2521: 'Feet', 2522: 'Smile', 2523: 'Heart', 2524: 'Kick',
+              2531: 'Peanut butter', 2534: 'Pow', 2535: 'Punch', 2536: 'Run', 2540: 'Sleep', 2541: 'Sick', 2544: 'Lift',
+              2545: 'Weight'}
+CATCH_TITLE, CATCH_TEXT = 'Catch the good ones!', 'Pick the good ones, skip the bad.'
+DODGE_TITLE, DODGE_TEXT = 'Dodge the peanut butter!', 'Pick the moves that keep you clean.'      # as the lite's
+DODGE_GOOD, DODGE_BAD = 'Dodge|Duck|Spin|Twirl', 'Catch|Grab|Taste|Snack'
+# Spelling (62, the rehearsals): SHS's word grid (96) holding the line's missing word, one board, as SHS '11's one-word boards
+# (shs11_story.memory_problems). Each rehearsal spells one word: found, the demo's score for spelling it whole (its length);
+# not, 0 (the demo's per-letter part score has no counterpart).
+GRID_FILLER = 'wb'
+GRID_SUCCESS, GRID_FAILURE = 'Bravo!', "Time's up!"
+GRID_PAGE = 'Find the missing word in the grid before time runs out: trace its letters in order.'
+GRID_MIN_SECONDS = 15
+THEATRE = 1522
+PUNCTUATION = ',.!?'
+
 
 def tidy(text):
     """A string of the script as SHS shows it: no emoticon glyphs; `$usr` as SHS's token `$USR`. Only text: brew.data_strings reads
-    all of a script's data as strings, and the setup's tables (the cast's addresses and portraits, words under 0x2000) come out
-    with control bytes, which leaves them alone (a `[` or `]` byte among them would otherwise shift the table)."""
-    if any(b < 0x20 and b != 0x0a for b in text):
+    all of a script's data as strings, and tables of numbers (the setup's cast, the word lists' addresses) come out as runs of
+    control and newline bytes (an address 0x0A5B reads `\\n[`), where removing a `[` or `]` would shift the table. So a string
+    is text when it has no control byte but newlines, doesn't start with one, and has at least three letters."""
+    if any(b < 0x20 and b != 0x0a for b in text) or text[:1] == b'\n' or sum(chr(b).isalpha() for b in text) < 3:
         return None
     changed = EMOTICONS.sub(b'', text).replace(b'$usr', b'$USR')
     return changed if changed != text else None
@@ -342,6 +375,50 @@ def snapshot(s):
         set_global(s, GLOBAL_BASE + g, lambda: s.push(0))
 
 
+def append_word(s, buffer, word):
+    """Add the text whose address `word()` pushes to the `|`-separated list in `buffer`."""
+    first = s.label()
+    s.emit(0x40, buffer); s.jump_if_zero(first)
+    s.push(buffer); s.text('|'); s.call(25, 2)
+    s.label(first)
+    s.push(buffer); word(); s.call(25, 2)
+
+
+def push_icon_word(s, picture):
+    """Push the word (ICON_WORDS) for the demo icon `picture()` pushes."""
+    end = s.label()
+    for icon, text in sorted(ICON_WORDS.items()):
+        other = s.label()
+        picture(); s.push(icon); s.emit(0x0a); s.jump_if_zero(other)
+        s.text(text); s.jump(end)
+        s.label(other)
+    s.text('Item')
+    s.label(end)
+
+
+def spelling_word(text, number):
+    """The word a spelling round asks for: the line split into words (punctuation a word of its own), and the target, the
+    `number`th, counted past the punctuation (Tardy-Slip web/shw/screens.js Spelling.start, after i.d and i.a)."""
+    t, words, p = text.strip(), [], 0
+    while p < len(t):
+        while p < len(t) and t[p] == ' ':
+            p += 1
+        if p >= len(t):
+            break
+        w = t[p]
+        p += 1
+        while p < len(t) and t[p] != ' ' and t[p] not in PUNCTUATION:
+            w += t[p]
+            p += 1
+        words.append(w)
+    target, i = number - 1, 0
+    while i <= target and i < len(words):
+        if words[i][0] in PUNCTUATION:
+            target += 1
+        i += 1
+    return words[min(target, len(words) - 1)]
+
+
 class Tables:
     """A program's copies of the tables the place and time code reads (each script's memory is its own)."""
 
@@ -496,6 +573,8 @@ class Script:
     def line(self, pc, argc):
         """16: (speaker, text). Event is the narrator (a line wholly in brackets loses them); a cast entry with no portrait and
         a name of its own (NAMED) speaks in a named box; anyone else's line wholly in brackets is a thought (13's -2 mode)."""
+        if pc in self.page_lines:
+            return self.absorbed(pc, argc)
         speaker, address = self.constant(pc, 2)
         text = string_at(self.words, address) if address is not None else None
         whole = text is not None and text.startswith(b'(') and text.endswith(b')') and text.count(b'(') == 1
@@ -654,9 +733,274 @@ class Script:
             s.call(1, 8)
         self.r.redirect(pc, 'action_menu', build)
 
-    def provisional_game(self, pc, argc):
-        """61-65: provisional until the minigame step: no game, 0."""
-        self.r.redirect(pc, ('provisional', self.r.code[pc][1] >> 8), lambda s: s.result(0))
+    # minigames
+    def game_pages(self):
+        """{minigame call pc: (the Instructions line's pc, its text's address)} for each minigame right after a line of
+        Instructions (the host call before it): that line is the game's page (a catch game's, as BREW's) or its description."""
+        hosts = [i for i in self.program.instructions if i.opcode == 0x1f]
+        pages = {}
+        for before, call in zip(hosts, hosts[1:]):
+            if call.operand >> 8 in GAMES and before.operand >> 8 == 16:
+                speaker, address = self.constant(before.pc, 2)
+                if speaker == INSTRUCTIONS and address is not None:
+                    pages[call.pc] = (before.pc, address)
+        return pages
+
+    def absorbed(self, pc, argc):
+        """An Instructions line the minigame after it shows instead."""
+        self.r.redirect(pc, 'absorbed', lambda s: (clear_badge(s), s.result(0)))
+
+    def word_association(self, pc, argc):
+        """61: (V, W, X, Y, Z, aa, time, list, others, lives): SHS's timed word game (71) under `Target: word`, the target's
+        words good and the others bad, for the demo's time (up to WORD_GAME_MAX_MS); its score is the demo's (one a right word).
+        The list: n, n targets, then each target's count and words (every call has one target); the others: count, words."""
+        page = self.pages.get(pc)
+        good, bad = self.r.words([0] * WORD_LIST_WORDS), self.r.words([0] * WORD_LIST_WORDS)
+        title = self.r.words([0] * 20)
+
+        def build(s):
+            n = lambda: (s.arg(8), s.emit(0x3f))                # noqa: E731
+            for buffer in (good, bad):
+                set_word(s, buffer, lambda: s.push(0))
+            s.push(0)                                           # local 0: the word
+            self.each(s, 0, lambda: (s.arg(8), s.push(1), s.emit(0x50), n(), s.emit(0x50), s.emit(0x3f)),
+                      lambda: append_word(s, good, lambda: (s.arg(8), s.push(2), s.emit(0x50), n(), s.emit(0x50),
+                                                            s.emit(0x41, 0), s.emit(0x50), s.emit(0x3f))))
+            self.each(s, 0, lambda: (s.arg(9), s.emit(0x3f)),
+                      lambda: append_word(s, bad, lambda: (s.arg(9), s.push(1), s.emit(0x50), s.emit(0x41, 0), s.emit(0x50),
+                                                           s.emit(0x3f))))
+            s.push(title); s.text(WORD_TITLE); s.arg(8); s.push(1); s.emit(0x50); s.emit(0x3f); s.call(22, 3)
+            s.push(title); (s.push(page[1]) if page else s.text(WORD_TEXT)); s.push(good); s.push(bad)
+            seconds, millis, pushed = s.label(), s.label(), s.label()
+            s.arg(7); s.push(1000); s.emit(0x0e); s.jump_if_nonzero(seconds)
+            s.arg(7); s.push(WORD_GAME_MAX_MS); s.emit(0x0c); s.jump_if_zero(millis)
+            s.push(WORD_GAME_MAX_MS); s.jump(pushed)
+            s.label(millis)
+            s.arg(7); s.jump(pushed)
+            s.label(seconds)
+            short = s.label()
+            s.arg(7); s.push(WORD_GAME_MAX_MS // 1000); s.emit(0x0e); s.jump_if_nonzero(short)
+            s.push(WORD_GAME_MAX_MS); s.jump(pushed)
+            s.label(short)
+            s.arg(7); s.push(1000); s.emit(0x52)
+            s.label(pushed)
+            s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS)
+            s.call(71, 8)
+        self.r.redirect(pc, ('word_association', pc), build)
+
+    def each(self, s, local, count, body):
+        """for local = 0 .. count() - 1: body()."""
+        top, end = s.label(), s.label()
+        s.emit(0x23, local); s.push(0); s.emit(0x3e); s.emit(0x15)
+        s.label(top)
+        s.emit(0x41, local); count(); s.emit(0x0e); s.jump_if_zero(end)
+        body()
+        s.emit(0x23, local); s.emit(0x41, local); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+        s.jump(top)
+        s.label(end)
+
+    def catch_sizes(self):
+        if not hasattr(self, '_sizes'):
+            sizes = self.story.spec['catch']['pictures']
+            numbers = sorted(int(n) for n in sizes if n.isdigit())
+            self._sizes = (self.r.words([v for n in numbers for v in (n, *sizes[str(n)][1:])]), len(numbers))
+        return self._sizes
+
+    def catch(self, pc, argc):
+        """63, 64, 65: the catch game, BREW's service 221 in its orbit, angled and sideways kinds (BREW's 19-21 take the same
+        arguments), the demo's skin from `shshw`, its star for the player, its score the items' values as the demo's. The
+        Instructions line before it opens it as a page (33), as BREW's do (owner, 2026-11-14). With "Use Translated Mini-Games"
+        off, a word game: the items' words (ICON_WORDS) good or bad by their value's sign, a pass the target and less its share;
+        a game with no bad items is one to dodge (the jellyfish shoot's peanut butter: its score is the hits), as the lite's."""
+        service = self.r.code[pc][1] >> 8
+        mode = CATCH_MODES[service]
+        list_arg = 5 if mode == ORBIT else 4
+        cuts = brew.catch_cuts(self.r.code, pc)
+        cut_table = -1 if cuts is None else self.r.words([len(cuts), *cuts])
+        table, count = self.catch_sizes()
+        page = self.pages.get(pc)
+        good, bad = self.r.words([0] * QUIZ_LIST_WORDS), self.r.words([0] * QUIZ_LIST_WORDS)
+
+        def build(s):
+            real, done, dodge, scored, passed = (s.label() for _ in range(5))
+            item = lambda field: (s.arg(list_arg), s.push(1 + field), s.emit(0x50), s.emit(0x41, 0), s.push(3), s.emit(0x52),
+                                  s.emit(0x50), s.emit(0x3f))  # noqa: E731
+            s.push(BREW_MINIGAMES_QUERY); s.call(70, 1)
+            s.push_result(); s.jump_if_nonzero(real)
+            for buffer in (good, bad):
+                set_word(s, buffer, lambda buffer=buffer: s.push(0))
+            s.push(0); s.push(0)                                # locals 0 the item, 1 any bad one
+            def add():
+                worse, following = s.label(), s.label()
+                item(0); s.push(0); s.emit(0x0e); s.jump_if_nonzero(worse)
+                append_word(s, good, lambda: push_icon_word(s, lambda: item(1))); s.jump(following)
+                s.label(worse)
+                s.emit(0x23, 1); s.push(1); s.emit(0x3e); s.emit(0x15)
+                append_word(s, bad, lambda: push_icon_word(s, lambda: item(1)))
+                s.label(following)
+            self.each(s, 0, lambda: (s.arg(list_arg), s.emit(0x3f)), add)
+            s.emit(0x41, 1); s.jump_if_zero(dodge)
+            s.text(CATCH_TITLE); (s.push(page[1]) if page else s.text(CATCH_TEXT)); s.push(good); s.push(bad)
+            s.push(brew.WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS); s.call(71, 8)
+            s.push_result()                                     # local 2: the result
+            s.emit(0x41, 2); s.push(brew.WORD_GAME_PASS); s.emit(0x0d); s.jump_if_nonzero(passed)
+            set_result(s, lambda: (s.emit(0x41, 2), s.arg(1), s.emit(0x52), s.push(brew.WORD_GAME_PASS), s.emit(0x53)))
+            s.jump(done)
+            s.label(passed)
+            set_result(s, lambda: s.arg(1)); s.jump(done)
+            s.label(dodge)
+            s.text(DODGE_TITLE); s.text(DODGE_TEXT); s.text(DODGE_GOOD); s.text(DODGE_BAD)
+            s.push(brew.WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS); s.call(71, 8)
+            s.push_result(); s.push(brew.WORD_GAME_PASS); s.emit(0x0d); s.jump_if_nonzero(scored)
+            set_result(s, lambda: s.arg(1)); s.jump(done)
+            s.label(scored)
+            s.result(0); s.jump(done)
+            s.label(real)
+            if page:
+                s.text(PAGE_TITLE); s.push(page[1]); s.push(0); s.call(33, 3)
+            s.push(mode); s.arg(1); s.arg(2); s.arg(3)
+            if mode == ORBIT:
+                s.arg(4); s.push(0); s.push(0)
+            elif mode == ANGLED:
+                s.push(0); s.arg(6); s.arg(7)
+            else:
+                s.push(0); s.arg(6); s.push(0)
+            s.push(shw.CATCH_STAR_PICTURE); s.arg(list_arg); s.push(table); s.push(count); s.push(cut_table)
+            s.call(BREW_CATCH, 12)
+            s.label(done)
+        self.r.redirect(pc, ('catch', pc), build)
+
+    def spelling_lists(self):
+        """{list address: (problem record address, seconds, word length)}: the rehearsals' spelling lists in this script's data
+        (1, the line, ms, the target word's number), each as one word grid board."""
+        words, out = self.words, {}
+        for k in range(len(words) - 3):
+            if words[k] != 1 or not 5000 <= words[k + 2] <= 30000 or not 1 <= words[k + 3] <= 30 or words[k + 1] >= len(words):
+                continue
+            text = string_at(words, words[k + 1])
+            if len(text) < 10 or not all(32 <= b < 127 for b in text):
+                continue
+            word = spelling_word(text.decode('latin-1'), words[k + 3])
+            letters = ''.join(dict.fromkeys(word)) + ''.join(c for c in GRID_FILLER if c not in word)
+            size = 4 if len(word) <= 10 else 5
+            name = word.capitalize()
+            problem = self.r.words([size, size, self.r.text(f'{name}!'), self.r.text(name), self.r.text(word),
+                                    self.r.text(letters), 1, 0, 1, -1])
+            out[k] = (problem, max(GRID_MIN_SECONDS, words[k + 2] // 1000), len(word))
+        return out
+
+    def spelling(self, pc, argc):
+        """62: (list): the rehearsal's line with its missing word: SHS's word grid (96) holding that word; found, the word's
+        length (the demo's score for spelling it whole), else 0. Its Instructions line (the keypad's) becomes a page about the
+        grid."""
+        if not hasattr(self, '_lists'):
+            self._lists = self.spelling_lists()
+        lists = self._lists
+        if not lists:
+            raise brew.StoryError(f'{self.rid} pc {pc}: a spelling game, and no spelling list in the data')
+        page = self.pages.get(pc)
+        theatre = shw.BACKGROUND_BASE + shw.SKY_MODES * (THEATRE - 1500)
+
+        def build(s):
+            done = s.label()
+            if page:
+                s.text(PAGE_TITLE); s.text(GRID_PAGE); s.push(0); s.call(33, 3)
+            for address, (problem, seconds, length) in sorted(lists.items()):
+                other, found = s.label(), s.label()
+                s.arg(1); s.push(address); s.emit(0x0a); s.jump_if_zero(other)
+                s.push(seconds); s.push(100); s.push(min(30000, seconds * 1000)); s.push(0)
+                s.push(0); s.push(theatre); table_get(s, self.t.skies(), lambda: get_global(s, SLOT_KEY)); s.emit(0x50)
+                s.push(-1); s.push(-1); s.push(PLAYER); s.push(0)
+                s.push(1); s.push(1); s.push(problem)
+                s.push(1); s.text(GRID_SUCCESS); s.text(GRID_FAILURE)
+                s.push(0); s.push(0); s.push(0); s.push(0)
+                s.call(96, 20)
+                s.push_result(); s.jump_if_nonzero(found)
+                s.result(0); s.jump(done)
+                s.label(found)
+                s.result(length); s.jump(done)
+                s.label(other)
+            s.result(0)
+            s.label(done)
+        self.r.redirect(pc, ('spelling', pc), build)
+
+    def quiz_routine(self):
+        """Where the action menus' routine starts (the function holding the script's one 20), or None; its callers drop
+        QUIZ_ARGS."""
+        ins = self.program.instructions
+        sites = [i.pc for i in ins if i.opcode == 0x1f and i.operand >> 8 == 20]
+        if not sites:
+            return None
+        if len(sites) != 1:
+            raise brew.StoryError(f'{self.rid}: {len(sites)} action menus, 1 expected')
+        start = max(i.pc for i in ins if i.opcode == 0x48 and i.pc <= sites[0])
+        callers = [k for k in range(len(ins) - 2) if ins[k].opcode == 0x42 and ins[k + 1].opcode == 0x29 and ins[k + 1].operand == start]
+        if not callers or any(ins[k + 2].opcode != 0x19 or ins[k + 2].operand != QUIZ_ARGS for k in callers):
+            raise brew.StoryError(f'{self.rid}: the routine at {start} is not called with {QUIZ_ARGS} arguments')
+        return start
+
+    def quiz(self, start):
+        """The action menus' routine as SHS's timed word game (71) under `Think fast!` and the routine's question (owner,
+        2026-11-14, as the lite's fight). Each word's score: where some score 0 or less (the right name, `just watch`), those above
+        0 are good; where all score (reps 1/3/7/10, `walk`...`sprint` 1/3/7/8), those at half the best or more. It returns the total
+        in B, as the routine does: a pass is the rounds times the best score, less that share (brew.word_game's rule)."""
+        good, bad = self.r.words([0] * QUIZ_LIST_WORDS), self.r.words([0] * QUIZ_LIST_WORDS)
+
+        def build(s):
+            words, scores, count, rounds = (lambda: s.arg(2)), (lambda: s.arg(3)), (lambda: s.arg(4)), (lambda: s.arg(7))
+            score = lambda: (scores(), s.emit(0x41, 0), s.emit(0x50), s.emit(0x3f))         # noqa: E731
+            for buffer in (good, bad):
+                set_word(s, buffer, lambda: s.push(0))
+            s.push(0); s.push(1); s.push(1)                 # locals 0 the word, 1 the best score, 2 every word scores
+            def survey():
+                kept, scoring = s.label(), s.label()
+                score(); s.emit(0x41, 1); s.emit(0x0c); s.jump_if_zero(kept)
+                s.emit(0x23, 1); score(); s.emit(0x3e); s.emit(0x15)
+                s.label(kept)
+                score(); s.push(0); s.emit(0x0c); s.jump_if_nonzero(scoring)
+                s.emit(0x23, 2); s.push(0); s.emit(0x3e); s.emit(0x15)
+                s.label(scoring)
+            self.each(s, 0, count, survey)
+
+            # locals 3 and 4: how many good and bad words; 5 and 6: the last of each (a list of one gets it twice: SHS's word
+            # game needs two of each, and the right name, `just watch` and `are easy to throw` stand alone)
+            s.push(0); s.push(0); s.push(0); s.push(0)
+            word = lambda: (words(), s.emit(0x41, 0), s.emit(0x50), s.emit(0x3f))       # noqa: E731
+
+            def keep(buffer, counter, last):
+                append_word(s, buffer, word)
+                s.emit(0x23, counter); s.emit(0x41, counter); s.push(1); s.emit(0x50); s.emit(0x3e); s.emit(0x15)
+                s.emit(0x23, last); word(); s.emit(0x3e); s.emit(0x15)
+
+            def sort():
+                plain, worse, following = s.label(), s.label(), s.label()
+                s.emit(0x41, 2); s.jump_if_zero(plain)
+                score(); s.push(2); s.emit(0x52); s.emit(0x41, 1); s.emit(0x0d); s.jump_if_zero(worse)
+                keep(good, 3, 5); s.jump(following)
+                s.label(plain)
+                score(); s.push(0); s.emit(0x0c); s.jump_if_zero(worse)
+                keep(good, 3, 5); s.jump(following)
+                s.label(worse)
+                keep(bad, 4, 6)
+                s.label(following)
+            self.each(s, 0, count, sort)
+            for buffer, counter, last in ((good, 3, 5), (bad, 4, 6)):
+                enough = s.label()
+                s.emit(0x41, counter); s.push(1); s.emit(0x0c); s.jump_if_nonzero(enough)
+                append_word(s, buffer, lambda last=last: s.emit(0x41, last))
+                s.label(enough)
+            s.text(brew.TIMED_TITLE); s.arg(8); s.push(good); s.push(bad)
+            s.push(brew.WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS)
+            s.call(71, 8)
+            s.push_result()                                 # local 7: the result
+            short, returned = s.label(), s.label()
+            s.emit(0x41, 7); s.push(brew.WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
+            rounds(); s.emit(0x41, 1); s.emit(0x52); s.jump(returned)
+            s.label(short)
+            s.emit(0x41, 7); rounds(); s.emit(0x52); s.emit(0x41, 1); s.emit(0x52); s.push(brew.WORD_GAME_PASS); s.emit(0x53)
+            s.label(returned)
+            s.emit(0x04)
+        self.r.replace_function(start, 'quiz', build, QUIZ_ARGS)
 
     def name_entry(self, pc, argc):
         """19: (title, initial): SHS's text entry (17), the answer kept for 7 (as shw_lite)."""
@@ -1005,13 +1349,18 @@ class Script:
                 45: goto, 46: card_here, 13: scene, 72: title_bar, 73: chapter, 10: sound, 48: end_day, 50: leave, 78: chain,
                 74: done, 34: the_end, 58: stats_define, 59: snapshot, 60: stat_changes, 66: quests_clear, 67: quest_add,
                 68: quest_lines, 69: quest_line, 76: journal_updated,
-                61: provisional_game, 62: provisional_game, 63: provisional_game, 64: provisional_game, 65: provisional_game}
+                61: word_association, 62: spelling, 63: catch, 64: catch, 65: catch}
     RENAME = {3: 24, 4: 25, 6: 27, 24: 46, 26: 64, 33: 61}
     # The no-ops (0, 2, 11, 12, 32, 57, 84), the setup's tables kept as constants (36, 37, 47, 49, 75, 81, 82), the status bar
     # (79, 80), 8 (never written: 0) and 85 (a menu flag, 0 in play).
     DROPPED = {0, 2, 5, 8, 11, 12, 32, 36, 37, 47, 49, 57, 75, 79, 80, 81, 82, 84, 85, 86}
 
     def translate(self):
+        self.pages = self.game_pages()
+        self.page_lines = {line for line, _ in self.pages.values()}
+        start = self.quiz_routine()
+        if start is not None:
+            self.quiz(start)
         for pc, service, argc in self.r.calls():
             if service in self.HANDLERS:
                 self.HANDLERS[service](self, pc, argc)
