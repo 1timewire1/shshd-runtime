@@ -1177,6 +1177,13 @@ class Application:
         return hasattr(self.library, 'addon') and self.library.addon(ADDON) is not None
 
     @library_answer
+    def dsi_language_offered(self):
+        """Whether "DSi Language" is offered on the menus: the DSiWare add-on with its translations, and the HD bundle (the
+        translations show in the HD presentation only)."""
+        from .dsi import text_table
+        return getattr(self.library, 'hd_ipa', None) is not None and text_table(self.library) is not None
+
+    @library_answer
     def smartphone_music_offered(self):
         """Whether the library has an episode the "Smartphone Music" switch changes (SMARTPHONE_MUSIC_PACKS: translated
         SHS '11 episodes)."""
@@ -1247,9 +1254,11 @@ class Application:
         """"DSi Backgrounds" and "DSi Pixels" reach the library and a paused episode."""
         self.library.dsi_backgrounds = self.state.dsi_backgrounds
         self.library.dsi_pixels = self.state.dsi_pixels
+        self.library.dsi_language = self.state.dsi_language
         if self.game:
             self.game.set_dsi_backgrounds(self.state.dsi_backgrounds)
             self.game.set_dsi_pixels(self.state.dsi_pixels)
+            self.game.set_dsi_language(self.state.dsi_language)
 
     apply_dsi_backgrounds = apply_dsi      # (the test channel's `set dsi_backgrounds`)
 
@@ -1503,6 +1512,7 @@ class Application:
         library.brew_08_backgrounds = state.brew_08_backgrounds
         library.hollywood_art = state.hollywood_art
         library.dsi_backgrounds, library.dsi_pixels = state.dsi_backgrounds, state.dsi_pixels
+        library.dsi_language = state.dsi_language
         library.ch_portraits = state.ch_portraits
         self.expanded_groups = {'saved'}
         self.episode_scroll = 0
@@ -2210,6 +2220,7 @@ class Application:
         self.game.brew_08_backgrounds = self.state.brew_08_backgrounds
         self.game.hollywood_art = self.state.hollywood_art
         self.game.dsi_backgrounds, self.game.dsi_pixels = self.state.dsi_backgrounds, self.state.dsi_pixels
+        self.game.dsi_language = self.state.dsi_language
         self.game.smartphone_music = self.state.smartphone_music
         self.game.word_grid_skin = self.state.word_grid_skin
         self.game.grids_as_memory = self.state.grids_as_memory
@@ -2323,6 +2334,8 @@ class Application:
         self.state.brew_08_backgrounds = self.game.brew_08_backgrounds
         self.state.hollywood_art = self.game.hollywood_art
         self.state.dsi_backgrounds, self.state.dsi_pixels = self.game.dsi_backgrounds, self.game.dsi_pixels
+        if hasattr(self.game, 'dsi_language'):
+            self.state.dsi_language = self.game.dsi_language
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory

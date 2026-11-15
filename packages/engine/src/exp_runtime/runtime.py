@@ -239,6 +239,12 @@ class Session:
         library = getattr(self.resources, 'library', None)
         version = library.hd_app_version() if hasattr(library, 'hd_app_version') else None
         self.engine.hd_version = version
+        # shshd-runtime: the DSiWare add-on's translations, asked for as each line is shown (the language can change)
+        source = getattr(self.resources, 'dsi_translation', None)
+        if source is not None:
+            from .dsi import Source
+            source = Source(source)
+        self.engine.translation_source = source
 
     @staticmethod
     def original_tree(resources) -> bool:
@@ -1962,8 +1968,7 @@ class Session:
                     if (not 1 <= count <= PICKER_MOST or
                             engine.character_picker.characters != [signed16(session.vm.read_word(address + i))
                                                                for i in range(count)]
-                            or details['text'] not in (engine.resolve_text(session.vm, text), engine.substitute(
-                                engine.read_text(session.vm, text), display=False))):
+                            or details['text'] not in engine.shown_forms(engine.read_text(session.vm, text))):
                         raise SaveError('Character selection does not match its VM arguments')
                 elif name == 'word_game':
                     for key in ('title', 'text'):
@@ -2014,11 +2019,9 @@ class Session:
                             from .shs.services import named_dialogue_refs
                             refs = named_dialogue_refs(request)
                         if (len(refs) < 2
-                                or details['speaker'] not in (engine.resolve_text(session.vm, refs[0]), engine.substitute(
-                                    engine.read_text(session.vm, refs[0]), display=False))
+                                or details['speaker'] not in engine.shown_forms(engine.read_text(session.vm, refs[0]))
                                 or details['raw_text'] != engine.read_text(session.vm, refs[1])
-                                or details['text'] not in (engine.substitute(details['raw_text']),
-                                                           engine.substitute(details['raw_text'], display=False))
+                                or details['text'] not in engine.shown_forms(details['raw_text'])
                                 or (details['character_id'], details['visible_character_id'],
                                     details['expression'], details['mode'], details['presentation_mode'],
                                     details['theme'], details['relationship']) != (-1, -1, 0, 0, 3, -1, None)):

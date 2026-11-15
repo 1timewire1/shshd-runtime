@@ -143,7 +143,9 @@ class EngineState:
     # Not saved: the HD build's app version when an HD app bundle is imported (Session sets it); switches the
     # few services whose HD handler differs from Android's.
     hd_version = None
-    badge_sounds = None             # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
+    # Not saved: the DSiWare add-on's translation for the language picked (EpisodeResources.dsi_translation; Session sets it).
+    translation_source = None
+    badge_sounds = None            # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
     # TRANSLATED_ARTICLE_PACKS; Session sets it).
     choose_articles = False
@@ -430,10 +432,36 @@ class EngineState:
                 chars.append(byte)
         raise VMError(f'unterminated text at data word {reference}')
 
-    def substitute(self, text: str, *, display=True) -> str:
+    def translation(self, language=None):
+        """shshd-runtime: the DSiWare add-on's translation this episode shows (`translation_source`, dsi.Translation): in
+        the HD presentation only (owner, 2026-11-15: SD's bitmap fonts have no accents), for `language` or the one picked."""
+        source = self.translation_source
+        return None if source is None or self.hd_version is None else source(language)
+
+    def translated_raw(self, text: str) -> str:
+        """shshd-runtime: a script's raw text in the language picked, its tokens kept (a quiz's word lists, which its
+        game reads unsubstituted)."""
+        translation = self.translation()
+        return text if translation is None else translation.line(text)
+
+    def shown_forms(self, text: str) -> set:
+        """shshd-runtime: every way `text` can have been shown: as the game shows it, natively, and in each language the
+        DSiWare add-on has (a save keeps the line as shown, and the language can change before it's loaded)."""
+        from .dsi import LANGUAGE_OFF, LANGUAGES
+        forms = {self.substitute(text, display=False), self.substitute(text)}
+        if self.translation_source is not None:
+            forms |= {self.substitute(text, language=language, remember=False) for language in (LANGUAGE_OFF, *LANGUAGES)}
+        return forms
+
+    def substitute(self, text: str, *, display=True, language=None, remember=True) -> str:
         """FUN_00096c9c; retain cycle checks for unsupported replacement loops. Everything shown on screen passes
         through here (scripts compare and store raw text through `read_text`), so a game's DISPLAY_CHARACTERS apply
-        last, and only to what is shown (`display=False` gives the native result)."""
+        last, and only to what is shown (`display=False` gives the native result). shshd-runtime: what's shown is first
+        put in the language picked for the DSiWare add-on's stories (`translation`), its tokens kept; a default name
+        token takes that language's name."""
+        translation = self.translation(language) if display else None
+        if translation is not None:
+            text = translation.line(text, remember=remember)
         seen = set()
         for _ in range(100):
             if text in seen:
@@ -442,6 +470,8 @@ class EngineState:
             changed = False
             for key, value in self.strings.items():
                 if key and key in text:
+                    if translation is not None:
+                        value = translation.token(key, value)
                     if key in value:
                         raise VMError(f'self-referencing text substitution {key!r}')
                     text = text.replace(key, value)
@@ -1073,7 +1103,7 @@ class EngineState:
             return EngineAction('character_picker', request, False, dict(text=prompt))
         if y == 71:
             need(8)
-            good, bad = (pipe_list(self.read_text(vm, ref)) for ref in args[2:4])
+            good, bad = (pipe_list(self.translated_raw(self.read_text(vm, ref))) for ref in args[2:4])
             three = self.three_word_games and len(good) + len(bad) == 3 and bool(good) and bool(bad)   # shshd-runtime: BREW's menus of three
             if (len(good) < 2 or len(bad) < 2) and not three or args[4] <= 0:
                 return EngineAction('unhandled_yield', request, False, dict(
@@ -1092,7 +1122,7 @@ class EngineState:
             # already lays this out at the portrait-adjacent banner position in the decorative PajamaHip title
             # font for every choice type, title included; a word_game choice just never supplied one before.
             return EngineAction('word_game', request, False, dict(
-                title=self.read_text(vm, args[0]), text=self.read_text(vm, args[1]),
+                title=self.translated_raw(self.read_text(vm, args[0])), text=self.translated_raw(self.read_text(vm, args[1])),
                 character_id=args[5], portrait_mode=args[6]))
         if y in NR_ARENA_SERVICES:
             return self._nr_arena_service(vm, request, y, args, need, at_least, complete)

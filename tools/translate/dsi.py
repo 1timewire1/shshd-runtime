@@ -1,7 +1,10 @@
 """The `shsdsi` add-on, "SHS DSiWare": the DSiWare game's (2010, A2M) redrawn backgrounds for the smartphone episodes, built
 from the player's own DSiWare image (the EUR `.nds`, or its CDN content file: the same bytes).
 
-    python tools/translate/dsi.py --nds DSI_IMAGE --out OUT_DIR
+    python tools/translate/dsi.py --nds DSI_IMAGE --library SHS_LIBRARY --out OUT_DIR
+
+`--library` (an SHS library holding the eight stories the DSi ported) gives it the DSi's translations of them
+into French, Italian, German and Spanish (dsi_text.py), shown in the HD presentation when "DSi Language" picks one.
 
 The add-on is optional: no episode declares it. While it's imported and **DSi Backgrounds** is on, an episode whose every
 background has a DSi counterpart shows the DSi's two screens in place of the smartphone's picture: the left screen while the
@@ -28,14 +31,17 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from nds import Rom, Urf  # noqa: E402
+import dsi_text  # noqa: E402
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes  # noqa: E402
-from exp_runtime.exp import Metadata, encode_exp  # noqa: E402
+from exp_runtime.decode.bytecode import decode_program  # noqa: E402
+from exp_runtime.exp import ExpArchive, Metadata, encode_exp  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsdsi', 'SHS DSiWare', 1
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsdsi', 'SHS DSiWare', 2      # 1: the backgrounds; 2: the translations
 PACK_ID = 31800                         # its metadata's pack: it has no episodes
 SPEC = 26000                            # the spec, JSON (exp_runtime/dsi.py)
 SCREEN_BASE = 26001                     # each picture's left screen at 26001 + 2 x its place in PICTURES, its right one after
+TEXT = 26900                            # the translations, JSON (dsi_text.translations; exp_runtime/dsi.py)
 GAME_CODES = ('K3VV', 'K3VE')           # EUR, USA (the backgrounds are the same in both)
 
 # The scenes' background table, `table[1 + 3k + time]` (time 0 day, 1 night, 2 sunset): each group's left screens. A right
@@ -105,6 +111,10 @@ STORIES = ('football star', 'football season', 'making some dough', 'as time goe
            'from europe with love', 'the wrong side of town', 'wrong side of town', 'best party ever')
 
 BACKGROUND, BITMAP, PALETTE = 0x709A6C0A, 0xB54AECF3, 0xFE8C1231
+# Each overlay's story (dsi_text.FOOTBALL, CLASSICS), by its smartphone titles (exp_runtime/dsi.story_key).
+OVERLAY_STORIES = {0: ('football star', 'football season'), 5: ('as time goes by',), 6: ('break a leg',),
+                   7: ('surviving europe',), 8: ('making some dough',), 9: ('from europe with love',),
+                   10: ('the wrong side of town', 'wrong side of town'), 11: ('best party ever',)}
 
 
 def time_of(name):
@@ -151,8 +161,48 @@ def png(image):
     return out.getvalue()
 
 
-def build(rom):
-    """The add-on's `.exp` bytes and a report, from a `nds.Rom`."""
+def program_strings(program):
+    """A script's strings, in its data's order."""
+    data = struct.pack(f'>{len(program.main_words)}H', *program.main_words)
+    found, start = [], 0
+    while start < len(data):
+        end = data.find(b'\0', start)
+        if end < 0:
+            break
+        raw = data[start:end]
+        if len(raw) >= 2 and all(32 <= b < 127 or b in (9, 10) or b >= 0xA0 for b in raw):
+            found.append(raw.decode('latin-1'))
+        start = (end + 2) // 2 * 2
+    return found
+
+
+def phone_lines(library):
+    """{overlay: [the smartphone's strings]} of every copy of each story in an SHS library (its manifest and files read
+    as they are, the library not opened)."""
+    from exp_runtime.dsi import TRANSLATED_PACKS, story_key
+    library = Path(library)
+    manifest = json.loads((library / 'library.json').read_text(encoding='utf-8'))
+    found = {overlay: [] for overlay in OVERLAY_STORIES}
+    for record in manifest.get('episodes', ()):
+        if 'file' not in record or (record.get('pack_id') or 0) >= TRANSLATED_PACKS:
+            continue
+        names = {story_key(name) for name in list(record.get('titles') or ()) + list(record.get('aliases') or ())}
+        overlay = next((n for n, titles in OVERLAY_STORIES.items() if names & set(titles)), None)
+        if overlay is None:
+            continue
+        archive = ExpArchive((library / record['file']).read_bytes())
+        for resource in sorted(archive.entries):
+            data = archive.read(resource)
+            if data[:4] == b'kiwi':
+                found[overlay] += program_strings(decode_program(data))
+    missing = [n for n, lines in found.items() if not lines]
+    if missing:
+        raise SystemExit('The library lacks ' + ', '.join(OVERLAY_STORIES[n][0] for n in missing))
+    return found
+
+
+def build(rom, library=None):
+    """The add-on's `.exp` bytes and a report, from a `nds.Rom` (and, for the translations, an SHS library's folder)."""
     if rom.code not in GAME_CODES:
         raise SystemExit(f'Not Surviving High School for DSiWare (game code {rom.code}; expected {" or ".join(GAME_CODES)})')
     urf = Urf(rom.file('Rom_2D.urf'))
@@ -165,10 +215,15 @@ def build(rom):
             resources[resource] = png(screen(urf, name))
         screens[picture_key(left)] = list(ids)
     spec = dict(revision=ADDON_REVISION, screens=screens, bank=bank_map(), stories=list(STORIES))
+    report = {}
+    if library is not None:
+        table, report = dsi_text.translations(dsi_text.extract(rom), phone_lines(library), dsi_text.gametext(urf))
+        resources[TEXT] = json.dumps(table, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+        spec['text'] = TEXT
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode('utf-8')
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_ID, 0, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
-    report = dict(pictures=len(screens), bank=len(spec['bank']),
+    report = dict(report, pictures=len(screens), bank=len(spec['bank']),
                   exact=sum(1 for _, exact in spec['bank'].values() if exact))
     return encode_exp(resources), report
 
@@ -176,9 +231,10 @@ def build(rom):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--nds', required=True, help="the DSiWare game's image (.nds, or the CDN content file)")
+    parser.add_argument('--library', required=True, help='an SHS library with the eight stories, for the translations')
     parser.add_argument('--out', required=True, help='folder to write the add-on into')
     args = parser.parse_args(argv)
-    data, report = build(Rom(Path(args.nds).read_bytes()))
+    data, report = build(Rom(Path(args.nds).read_bytes()), args.library)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     path = out / 'DSi_Addon_SHS_DSiWare.exp'

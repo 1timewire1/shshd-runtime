@@ -48,7 +48,7 @@ from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -406,6 +406,7 @@ class Desktop:
     hollywood_art = True            # the BREW Surviving Hollywood Preview with `shshw`: the "Hollywood Art" switch (set_hollywood_art)
     dsi_backgrounds = False         # with `shsdsi`: the "DSi Backgrounds" switch (set_dsi_backgrounds; off by default, owner)
     dsi_pixels = 'sharp'            # ...and "DSi Pixels" (set_dsi_pixels)
+    dsi_language = 'off'            # ...and "DSi Language" (set_dsi_language): its stories in its translations, HD only
     smartphone_music = True        # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
@@ -2477,6 +2478,20 @@ class Desktop:
         self._background_layer_cache = None
         self.__dict__.pop('_whole_arts', None)
 
+    def dsi_language_switch(self):
+        """shshd-runtime: whether "DSi Language" changes this episode: one of the stories the DSi ported, the add-on's
+        translations imported, and the HD presentation (SD's bitmap fonts have no accents; owner, 2026-11-15)."""
+        resources = self.session.resources
+        return (getattr(self.session.engine, 'hd_version', None) is not None and hasattr(resources, 'dsi_translation')
+                and resources.dsi_translation('fr') is not None)
+
+    def set_dsi_language(self, value):
+        """shshd-runtime: "DSi Language": the next line shown is in it (the engine asks for it as it shows each line)."""
+        self.dsi_language = value if value in DSI_LANGUAGE_NAMES else 'off'
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.dsi_language = self.dsi_language
+
     def _dsi_screen(self, background):
         """shshd-runtime: the DSi screen to draw in place of `background` (DSi Backgrounds), or None: the left screen while the
         location is aligned left (a speaker on the left), the right one while it's aligned right, and the last one shown for
@@ -3645,6 +3660,7 @@ class Desktop:
                     **({'hollywood_art': self.hollywood_art} if self.hollywood_switch() else {}),
                     **(dict(dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=DSI_PIXELS_NAMES[self.dsi_pixels])
                        if self.dsi_switch() else {}),
+                    **({'dsi_language': DSI_LANGUAGE_NAMES[self.dsi_language]} if self.dsi_language_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
@@ -3824,6 +3840,14 @@ class Desktop:
                 self.on_settings()
             if len(command) > 2:
                 self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'dsi_language' and len(command) > 2:
+            # Add-Ons' DSi Language, picked on its choice page; the app keeps it (on_settings).
+            self.set_dsi_language(command[2])
+            if self.on_settings:
+                self.on_settings()
+            self.pause_hd.back()
             self._menu_sound()
             return
         if kind == 'pause_cycle' and command[1] == 'dsi_pixels':

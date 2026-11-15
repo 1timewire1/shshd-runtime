@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
@@ -351,6 +351,8 @@ class HdShell:
         if self.app.dsi_offered():
             settings['dsi_backgrounds'] = state.dsi_backgrounds
             settings['dsi_pixels'] = DSI_PIXELS_NAMES[state.dsi_pixels]
+        if self.app.dsi_language_offered():
+            settings['dsi_language'] = DSI_LANGUAGE_NAMES[state.dsi_language]
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
@@ -457,8 +459,8 @@ class HdShell:
             state.title_music = value
             self.app._attempt(state.persist)
             self.app.play_menu_music()                  # the new tune at once, from its start
-        elif key == 'dsi_pixels':
-            state.dsi_pixels = value
+        elif key in ('dsi_pixels', 'dsi_language'):
+            setattr(state, key, value)
             self.app._attempt(state.persist)
             self.app.apply_dsi()
 

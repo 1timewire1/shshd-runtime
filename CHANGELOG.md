@@ -22,6 +22,12 @@
   screen while the speaker is on the left and the right one while they're on the right, crossfading between them;
   narration keeps the screen. The DSi's eight stories take whatever it showed, its stand-in times of day included; any
   other episode only same-time pictures. **DSi Pixels** enlarges them Sharp (the default) or Smooth.
+- **DSi Language** (owner, 2026-11-15): the `shsdsi` add-on (revision 2, built with `--library`) also carries the DSiWare
+  game's French, Italian, German and Spanish translations of the eight stories it ported (Football Star and Classics 1, 2,
+  5, 7, 8, 10 and 12), read from its five compiled copies of each scene and matched to the smartphone's lines. In the HD
+  presentation a story shows the language picked from its next line: dialogue, narration, choices ("Make your choice!"),
+  name plates (German's own names), title cards, quizzes and the DSi's own word grid lists, and its title in the episode
+  list. Lines the DSi cut stay English; saves load in any language. The HD faces now draw accented letters.
 - **Hollywood Art** for the BREW *Surviving Hollywood Preview* (owner, 2026-11-13): with the optional `shshw` add-on
   (`tools/translate/shw.py`, built from the Surviving Hollywood demo's jar), the Preview shows that game's own painted
   portraits and backgrounds, its dialogue panel as the frame, its music by scene, its catch game's look (the star, its

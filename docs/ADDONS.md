@@ -255,15 +255,22 @@ python tools/translate/shw_full.py --jar DEMO_JAR --addon shshw.exp --out OUT_DI
 
 ### `shsdsi`: SHS DSiWare
 
-Optional, for SHS's own episodes. Revision 1, about 2.9 MB. Built from the player's own image of *Surviving High School*
-for DSiWare (2010, A2M; the EUR `.nds` or its CDN content file, the same bytes; USA has the same backgrounds), as the owner
-decided on 2026-11-15 (`reference/Other Games/docs/DSI_ADDON_SCOPE.md`). The DSi redrew the smartphone bank's locations as
-2D pictures, each two screens, a left and a right, where the smartphone pans one wide picture.
+Optional, for SHS's own episodes. Revision 2, about 5.9 MB. Built from the player's own image of *Surviving High School*
+for DSiWare (2010, A2M; the EUR `.nds` or its CDN content file, the same bytes; all text is taken from EUR, decision 12) and
+an SHS library holding the eight stories the DSi ported, as the owner decided on 2026-11-15
+(`reference/Other Games/docs/DSI_ADDON_SCOPE.md`). It brings two things: the DSi's redrawn backgrounds (revision 1), and its
+French, Italian, German and Spanish translations of those eight stories (revision 2).
 
 | Resources | What |
 | --- | --- |
-| 26000 | The spec, JSON: `bank` (a smartphone picture: [DSi picture, same time of day]), `screens` (a DSi picture: [left, right]), `stories` |
+| 26000 | The spec, JSON: `bank` (a smartphone picture: [DSi picture, same time of day]), `screens` (a DSi picture: [left, right]), `stories`, `text` (26900) |
 | 26001– | The screens, 192 × 256 PNGs upright: 26001 + 2 × the picture's place in `dsi.PICTURES`, its right screen after |
+| 26900 | The translations, JSON: `lines`, `context`, `menu`, `words` (below) |
+
+#### The backgrounds
+
+The DSi redrew the smartphone bank's locations as 2D pictures, each two screens, a left and a right, where the smartphone
+pans one wide picture.
 
 **The map** (`tools/translate/dsi.py`). A DSi scene changes background with `table[location + time]`, a table of name hashes
 filled at start-up, in groups of three (day, night, sunset; the DSi repeats a time it didn't draw: `INDEX_GROUPS`). The
@@ -285,12 +292,45 @@ A background a script picks at run time is looked up the same way when it appear
 while it's aligned right, the last one for narration; a change crossfades over the location layer's 0.25 s in either
 presentation. A screen is the frame's own 3:4: it fills HD's frame and covers a taller one centred, its sides cut.
 
-**Switches:** "DSi Backgrounds" (DSi tag, off by default) and "DSi Pixels" (Sharp, nearest neighbour, the default; or
-Smooth), on the pause menu's Add-Ons and the main menu's Per-Game Settings, when the library holds `shsdsi` (in play: when
-the episode qualifies).
+A minigame that draws its own frame (the word grid) keeps its own background.
+
+#### The translations
+
+**Reading them** (`tools/translate/dsi_text.py`). The DSi compiled each scene to C++ once per language: Football Season is
+overlays 0–4, one language each; each Classic overlay holds all five, one after another. The copies are the same machine code
+but for their literal pools, so a French line is the one the French copy's same instruction loads:
+- the copies are split into functions (at each `push {…, lr}`; they have the same functions in the same order), and within
+  a function the k-th string load in English is the k-th in French;
+- where one language loads fewer strings (English shows a quiz question twice, as narration in quotes and as the prompt;
+  French loads one and copies its register), the two are walked in step, following the copied registers;
+- pointer tables no load reads (questions picked by index) pair in order, and a record a scene copies (a word grid's
+  rounds: title, prompt, words, letters) pairs word by word.
+
+About 99.7% of English lines pair in all four languages. A pairing is dropped when its name tokens, number formats, menu bars
+or line breaks differ from the English, or its length is far off (a neighbouring line slipped in).
+
+**Matching them** to the smartphone's text: a DSi line is kept when its English is one of the story's lines (in any copy in
+the library, by letters, digits and tokens), or when it sits alone between two kept lines whose smartphone lines are as far
+apart: a line the DSi rewrote (Weebox 360 as "the game thing"), which shows the DSi's wording (decision 10). A line with
+different translations in different scenes takes the most common, and the others by the line shown before it (`context`).
+The menu text (`GameText`) adds speaker names and episode titles (`menu`). Text is written in Latin-1, `œ` as `oe` and `…` as
+`...` (decision 9). A word grid's words and letters (`words`, matched by the English exactly) are the DSi's own lists, which
+it rebuilt per language (decision 11), lowercase and without accents for the grid's letter font. About 10,600 lines in all;
+the lines the DSi cut (surveys, Faceplace, promos) stay English.
+
+**In play** (`exp_runtime/dsi.py`, `Engine.substitute`): with "DSi Language" set, the eight stories (SHS's own copies, not a
+translation from another game) show it in the HD presentation only (decision 8: SD's bitmap fonts have no accents), from the
+next line; the HD faces now draw Latin-1's accented letters (`vector_text.LATIN1_EXTRA`). Name tokens are kept, and a token
+holding a name the DSi translates shows that name (German renames many characters, decision 16), never the player's own
+(`$USR`). A quiz's title, prompt and word lists follow it, and choices show the DSi's "Make your choice!". The episode list
+shows the stories' DSi titles. A save keeps the line as shown, and loads in any language (`Engine.shown_forms`).
+
+**Switches:** "DSi Backgrounds" (DSi tag, off by default), "DSi Pixels" (Sharp, nearest neighbour, the default; or Smooth) and
+"DSi Language" (Off, Français, Italiano, Deutsch, Español), on the pause menu's Add-Ons and the main menu's Per-Game Settings,
+when the library holds `shsdsi` (in play: when the episode qualifies; DSi Language with the HD bundle).
 
 ```sh
-python tools/translate/dsi.py --nds DSI_IMAGE --out OUT_DIR
+python tools/translate/dsi.py --nds DSI_IMAGE --library SHS_LIBRARY --out OUT_DIR
 ```
 
 ### `chslim`: Claire Hart (Slim)
@@ -356,6 +396,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | '08 Backgrounds | '07 | '07 BREW episodes |
 | Hollywood Art | '07 | The Surviving Hollywood Preview, with `shshw` imported |
 | DSi Backgrounds, DSi Pixels | DSi | With `shsdsi` imported; in play, an episode whose backgrounds the DSi drew |
+| DSi Language | DSi | With `shsdsi` and the HD bundle; in play, one of the DSi's eight stories in the HD presentation |
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

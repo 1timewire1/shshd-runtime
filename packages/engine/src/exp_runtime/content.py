@@ -827,6 +827,7 @@ class ContentLibrary:
         self.hollywood_art = True       # the BREW Surviving Hollywood Preview with `shshw`: the demo's own art (OPTIONAL_ART)
         self.dsi_backgrounds = False    # with `shsdsi`: the DSiWare game's two screens for the backgrounds (dsi.py)
         self.dsi_pixels = 'sharp'       # ...enlarged 'sharp' (nearest neighbour) or 'smooth'
+        self.dsi_language = 'off'       # ...and its stories' lines in 'fr', 'it', 'de' or 'es' (HD only), or 'off'
         self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
@@ -1917,6 +1918,13 @@ class EpisodeResources:
                 logging.warning('DSi backgrounds unavailable: %s', error)
                 self._dsi_pictures = None
         return self._dsi_pictures
+
+    def dsi_translation(self, language=None):
+        """shshd-runtime: this episode's lines in `language` (default: the one picked, library.dsi_language) from the
+        DSiWare add-on (dsi.Translation), or None: not one of the stories the DSi ported, no add-on, or 'off'."""
+        from .dsi import translation
+        language = getattr(self.library, 'dsi_language', 'off') if language is None else language
+        return translation(self, language)
 
     def dsi_screens(self, picture):
         """shshd-runtime: the (left, right) screens of a DSi picture, as PNG bytes, or None."""

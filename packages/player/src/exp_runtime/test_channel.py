@@ -26,7 +26,7 @@ it's done, so real clocks (fades, timers) run as in play.
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...);
-                                `set dsi_pixels sharp|smooth`
+                                `set dsi_pixels sharp|smooth`, `set dsi_language off|fr|it|de|es`
     aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
     game shs|cod                pick a game, as the game picker does (`open` needs one picked)
     import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
@@ -312,7 +312,7 @@ class Commands:
             out['prompt'] = dict(title=game.host_prompt['session'].pending.details['title'],
                                  text=game.host_prompt['session'].pending.details['text'],
                                  options=list(game.host_prompt['options']))
-        out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'skip_minigames',
+        out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'dsi_language', 'skip_minigames',
                                                                 'choice_hints', 'autoplay') if hasattr(game, key)}
         chain = game._undo_for(session)
         out['undo_saves'] = chain.numbers() if chain is not None else None
@@ -472,14 +472,15 @@ class Commands:
         key, _, value = rest.partition(' ')
         wanted = value.strip() in ('on', 'true', '1')
         state = self.app.state
-        if state is not None and key == 'dsi_pixels':
-            # Add-Ons' DSi Pixels, one of two values (sharp, smooth): as its choice page sets it
-            if value.strip() not in ('sharp', 'smooth'):
-                return dict(ok=False, error='dsi_pixels is sharp or smooth')
-            state.dsi_pixels = value.strip()
+        choices = {'dsi_pixels': ('sharp', 'smooth'), 'dsi_language': ('off', 'fr', 'it', 'de', 'es')}
+        if state is not None and key in choices:
+            # Add-Ons' DSi Pixels and DSi Language, one of a few values: as their choice pages set them
+            if value.strip() not in choices[key]:
+                return dict(ok=False, error=f'{key} is one of {", ".join(choices[key])}')
+            setattr(state, key, value.strip())
             state.persist()
             self.app.apply_dsi()
-            return dict(ok=True, key=key, value=state.dsi_pixels)
+            return dict(ok=True, key=key, value=getattr(state, key))
         if state is None or type(getattr(state, key, None)) is not bool:
             return dict(ok=False, error=f'unknown switch {key!r}')
         setattr(state, key, wanted)                                 # as Options' toggle does: kept, then passed on

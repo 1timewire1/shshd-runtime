@@ -44,6 +44,8 @@ from .fonts import BitmapFont, FontError, Glyph
 # Advances and ink boxes are measured once at this pixel size and scaled;
 # integer rounding at 1024 px is far below anything visible.
 REFERENCE_PX = 1024
+# Latin-1's upper half, offered where the face has it (vector_font).
+LATIN1_EXTRA = range(0xA0, 0x100)
 
 # HD fill colors (ARGB in initFonts) by Pajama Hip variant.
 PAJAMA_COLORS = {'': (41, 104, 221), '6': (180, 78, 78), 'G': (137, 137, 137), 'Y': (180, 109, 26)}
@@ -293,17 +295,21 @@ def vector_font(base: BitmapFont, source: FaceSource, logical_size: float, *, fi
     scale = logical_size / REFERENCE_PX
     baseline = base.base if use_common_base and base.base else _baseline(base)
     glyphs = {}
-    for code, glyph in base.glyphs.items():
+    # shshd-runtime: the Latin-1 letters the face has but the Android atlas never drew (é, ü, ñ, ¿, a no-break space),
+    # for the DSiWare add-on's translations (owner, 2026-11-15: they show in the HD presentation, whose faces have them).
+    extra = {code: None for code in LATIN1_EXTRA if code not in base.glyphs}
+    for code, glyph in (*base.glyphs.items(), *extra.items()):
         try:
             metrics = reference.metrics(chr(code))[0] if code >= 32 else None
         except (pygame.error, IndexError):
             metrics = None
         if metrics is None:
-            # Not in the face: keep the bitmap font's own advance, draw nothing.
-            glyphs[code] = replace(glyph, width=0, height=0)
+            if glyph is not None:
+                # Not in the face: keep the bitmap font's own advance, draw nothing.
+                glyphs[code] = replace(glyph, width=0, height=0)
             continue
         minx, maxx, miny, maxy, advance = metrics
-        ink = code != 32
+        ink = code not in (32, 0xA0)
         glyphs[code] = Glyph(code, 0, 0, (maxx - minx) * scale if ink else 0, (maxy - miny) * scale if ink else 0,
                              minx * scale, baseline - maxy * scale, advance * scale)
     return VectorFont(base.face, base.declared_size, base.line_height, base.page, glyphs, {},

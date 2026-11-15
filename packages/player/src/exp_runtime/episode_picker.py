@@ -112,6 +112,13 @@ class PickerModel:
     def label(self, record):
         if self.cod is not None:
             return self.cod.label(record, bundled=is_bundled)
+        language = getattr(self.library, 'dsi_language', 'off')
+        if language != 'off' and getattr(self.library, 'hd_ipa', None) is not None:
+            # shshd-runtime: a story the DSiWare game ported, under its title in the DSi's language (owner, 2026-11-15).
+            from .dsi import episode_title
+            title = episode_title(self.library, record, language)
+            if title is not None:
+                return title
         return episode_label(record, self.title_language)
 
     def subtitle(self, record):

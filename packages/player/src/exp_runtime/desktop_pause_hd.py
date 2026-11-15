@@ -68,6 +68,8 @@ HOLLYWOOD_ART_LABEL = 'Hollywood Art'           # the BREW Surviving Hollywood P
 DSI_BACKGROUNDS_LABEL = 'DSi Backgrounds'       # SHS's own episodes the DSiWare game drew: its two screens (`shsdsi`)
 DSI_PIXELS_LABEL = 'DSi Pixels'                 # ...enlarged with nearest neighbour (Sharp) or smoothly
 DSI_PIXELS_NAMES = {'sharp': 'Sharp', 'smooth': 'Smooth'}
+DSI_LANGUAGE_LABEL = 'DSi Language'             # ...and the DSi's translations of its eight stories (HD presentation only)
+DSI_LANGUAGE_NAMES = {'off': 'Off', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 SMARTPHONE_MUSIC_LABEL = 'Smartphone Music'     # translated SHS '11 episodes: the smartphone's music, else none
 WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD word game's look (with its art imported)
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
@@ -158,15 +160,18 @@ PAGE_TITLES = {'per_game': PER_GAME_LABEL}
 PAGE_PARENTS = {'options:per_game': 'options:addons'}
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
                 'controller_confirm': CONFIRM_NAMES,
-                'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'dsi_pixels': DSI_PIXELS_NAMES}
+                'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'dsi_pixels': DSI_PIXELS_NAMES,
+                'dsi_language': DSI_LANGUAGE_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
-                 'title_music': TITLE_MUSIC_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL}
+                 'title_music': TITLE_MUSIC_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL,
+                 'dsi_language': DSI_LANGUAGE_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'title_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
-                  'title_music': 'options:addons', 'dsi_pixels': 'options:addons'}
+                  'title_music': 'options:addons', 'dsi_pixels': 'options:addons',
+                  'dsi_language': 'options:addons'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ('dsi_pixels',)
+PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language')
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -934,7 +939,7 @@ class HdPauseMenu:
 
     @staticmethod
     def addon_choices(settings):
-        """The add-on options that are one of a few values, after the switches: DSi Pixels."""
+        """The add-on options that are one of a few values, after the switches: DSi Pixels and DSi Language."""
         return [('choice', CHOICE_LABELS[key], key) for key in PER_GAME_CHOICES if key in settings]
 
     def check(self, layer, right, middle):

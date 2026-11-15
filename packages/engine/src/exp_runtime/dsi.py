@@ -138,3 +138,121 @@ def screens(resources, picture):
     value = spec(resources.library)
     found = None if value is None else value.get('screens', {}).get(picture)
     return None if found is None else tuple(found)
+
+
+# ---------- the translations (revision 2: the spec's `text`) ----------
+
+LANGUAGES = ('fr', 'it', 'de', 'es')
+LANGUAGE_OFF = 'off'
+PLAYER_TOKENS = frozenset({'$USR'})     # the name the player typed: never translated
+GRID = re.compile(r'[a-z]+(\|[a-z]+)*')  # a word grid's words or letters (tools/translate/dsi_text.GRID)
+
+
+def key(text):
+    """A line as the table keys it (tools/translate/dsi_text.norm): lower case, letters, digits and name tokens, so the
+    copies of a story that differ in punctuation or spacing find the same line."""
+    return ' '.join(re.findall(r'[a-z0-9$]+', text.lower()))
+
+
+def text_table(library):
+    """The add-on's translations (dict: languages, lines, context, menu), or None. Kept on the library."""
+    value = spec(library)
+    if value is None or 'text' not in value:
+        return None
+    found = library.addon(ADDON)
+    cache_key = (found[0].get('file'), found[0].get('revision'))
+    cached = library.__dict__.get('_dsi_text')
+    if cached is None or cached[0] != cache_key:
+        try:
+            table = json.loads(found[1].read(value['text']))
+        except (KeyError, ValueError, OSError) as error:
+            logging.warning('The DSiWare add-on has no readable translations: %s', error)
+            table = None
+        library._dsi_text = cached = (cache_key, table)
+    return cached[1]
+
+
+class Translation:
+    """One episode's lines in one language. `line(text)` gives a line's translation (the line itself when the DSi has
+    none: a line it cut, or one its alignment couldn't place). Where a line is translated differently in different scenes,
+    the one after the line shown before it wins (`previous`); `token` gives a default name's translation (German renames
+    characters: `$Travis` is Tobias; owner, 2026-11-15)."""
+
+    def __init__(self, table, language):
+        self.lines, self.context, self.menu = table.get('lines', {}), table.get('context', {}), table.get('menu', {})
+        self.words = table.get('words', {})
+        self.language = language
+        self.previous = ''
+
+    def _entry(self, found, remember):
+        entry = self.context.get(found, {}).get(self.previous) or self.lines.get(found) or self.menu.get(found)
+        if remember:
+            self.previous = found
+        return None if entry is None else entry.get(self.language)
+
+    def line(self, text, *, remember=True):
+        if GRID.fullmatch(text):
+            # A word grid's words or letters: the DSi's list for this language, found by the English exactly (never a
+            # line that reads alike), else the English one.
+            return self.words.get(text, {}).get(self.language) or text
+        found = key(text)
+        if not found:
+            return text
+        translated = self._entry(found, remember)
+        return text if translated is None else translated
+
+    def token(self, name, value):
+        """A name token's value as shown: a character's name the DSi translates (German's Brendan is Michael, whether the
+        line says `$Player` or `$Brendan`) in this language; the player's own name (`$USR`), and a name the player gave a
+        lead (no DSi name), as it is."""
+        if name in PLAYER_TOKENS or not value:
+            return value
+        entry = self.menu.get(key(value)) or self.lines.get(key(value))
+        return (entry or {}).get(self.language) or value
+
+
+class Source:
+    """The engine's way to its episode's translation (EpisodeResources.dsi_translation), shared, never copied: a save's
+    restore deep-copies the engine, and the resources hold open files."""
+
+    def __init__(self, function):
+        self.function = function
+
+    def __call__(self, language=None):
+        return self.function(language)
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
+
+
+def translation(resources, language):
+    """The Translation an episode shows in `language`, or None: only the eight stories the DSi ported (`is_story`) are
+    translated, and only SHS's own copies of them."""
+    if language not in LANGUAGES:
+        return None
+    library = resources.library
+    table = text_table(library)
+    value = spec(library)
+    if table is None or not smartphone_episode(resources) or not is_story(resources.record, value):
+        return None
+    made = resources.__dict__.setdefault('_dsi_translations', {})
+    if language not in made or made[language][0] is not table:
+        made[language] = (table, Translation(table, language))
+    return made[language][1]
+
+
+def episode_title(library, record, language):
+    """A DSi story's title in `language` (the DSi's menu text), keeping the record's episode number ("01: "), or None."""
+    value = spec(library) if language in LANGUAGES else None
+    table = None if value is None else text_table(library)
+    if table is None or not is_story(record, value):
+        return None
+    for title in record.get('titles') or ():
+        entry = table.get('menu', {}).get(key(story_key(title))) or table.get('lines', {}).get(key(story_key(title)))
+        if entry and entry.get(language):
+            number = re.match(r'^\s*\d+\s*[:.]\s*', title)
+            return (number.group(0) if number else '') + entry[language]
+    return None

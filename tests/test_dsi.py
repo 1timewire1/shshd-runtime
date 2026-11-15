@@ -239,3 +239,136 @@ class DesktopTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ---------- the translations ----------
+
+import dsi_text  # noqa: E402
+
+TABLE = dict(languages=['fr', 'it', 'de', 'es'],
+             lines={'hey there $usr': {'fr': 'Salut, $USR\u00a0!', 'de': 'Hallo, $USR!'},
+                    'sure': {'fr': 'Bien s\u00fbr.', 'de': 'Klar.'},
+                    'make your choice': {'fr': 'Fais ton choix\u00a0!', 'de': 'Entscheide dich!'},
+                    'brendan': {'fr': 'Brendan', 'de': 'Michael'}},
+             context={'sure': {'are you coming': {'fr': "D'accord.", 'de': 'Okay.'}}},
+             menu={'making some dough': {'fr': 'La main \u00e0 la p\u00e2te', 'de': 'Kekse und Kohle'},
+                   'dad': {'fr': 'Papa', 'de': 'Vater'}},
+             words={'sugar|flour': {'fr': 'farine|sucre'}})
+
+
+class TextLibrary(Library):
+    def __init__(self):
+        super().__init__()
+        spec = dict(SPEC, text=26900)
+        self.archive = SimpleNamespace(read=lambda resource: json.dumps(spec if resource == dsi.SPEC else TABLE).encode(),
+                                       entries={dsi.SPEC, 26900})
+        self.dsi_language = 'fr'
+
+
+def story(title='01: Making Some Dough', pack=101):
+    library = TextLibrary()
+    found = SimpleNamespace(library=library, record=dict(titles=[title], pack_id=pack), required_addons=())
+    found.dsi_translation = lambda language=None: dsi.translation(
+        found, library.dsi_language if language is None else language)
+    return found
+
+
+class TranslationTests(unittest.TestCase):
+    def test_a_line_is_found_by_its_words_and_keeps_its_tokens(self):
+        fr = dsi.translation(story(), 'fr')
+        self.assertEqual(fr.line('Hey there, $USR!'), 'Salut, $USR\u00a0!')
+        self.assertEqual(fr.line('A line the DSi cut.'), 'A line the DSi cut.')
+        self.assertIsNone(dsi.translation(story(), 'off'))
+        self.assertIsNone(dsi.translation(story('06: The Outcast'), 'fr'))          # not a DSi story
+        self.assertIsNone(dsi.translation(story(pack=31300), 'fr'))                 # a New Rules translation of it
+
+    def test_a_line_translated_two_ways_follows_the_line_before(self):
+        fr = dsi.translation(story(), 'fr')
+        self.assertEqual(fr.line('Sure.'), 'Bien s\u00fbr.')
+        fr.line('Are you coming?')
+        self.assertEqual(fr.line('Sure!'), "D'accord.")
+
+    def test_names_follow_the_dsi_but_the_players_own_never_changes(self):
+        de = dsi.translation(story(), 'de')
+        self.assertEqual(de.token('$Player', 'Brendan'), 'Michael')
+        self.assertEqual(de.token('$Brendan', 'Brendan'), 'Michael')
+        self.assertEqual(de.token('$USR', 'Brendan'), 'Brendan')
+        self.assertEqual(de.token('$Kat', 'Kat'), 'Kat')
+        self.assertEqual(de.line('Dad'), 'Vater')                    # a name plate, from the menu text
+
+    def test_a_grid_takes_its_own_list_by_the_english_exactly(self):
+        fr = dsi.translation(story(), 'fr')
+        self.assertEqual(fr.line('sugar|flour'), 'farine|sucre')
+        self.assertEqual(fr.line('stir|mix'), 'stir|mix')
+        self.assertEqual(dsi.translation(story(), 'de').line('sugar|flour'), 'sugar|flour')
+
+    def test_the_engine_shows_the_language_picked_in_hd_only(self):
+        from exp_runtime.engine import EngineState
+        resources = story()
+        engine = EngineState()
+        engine.game_key = 'shs'
+        engine.strings = {'$USR': 'Sam', '$Player': 'Brendan'}
+        engine.translation_source = resources.dsi_translation
+        self.assertEqual(engine.substitute('Hey there, $USR!'), 'Hey there, Sam!')      # no HD build: as before
+        engine.hd_version = '1.4.38'
+        self.assertEqual(engine.substitute('Hey there, $USR!'), 'Salut, Sam\u00a0!')
+        self.assertEqual(engine.substitute('Hey there, $USR!', display=False), 'Hey there, Sam!')
+        self.assertEqual(engine.translated_raw('Make your choice!'), 'Fais ton choix\u00a0!')
+        resources.library.dsi_language = 'de'
+        self.assertEqual(engine.substitute('$Player attacks!'), 'Michael attacks!')
+        forms = engine.shown_forms('Hey there, $USR!')
+        self.assertTrue({'Hey there, Sam!', 'Salut, Sam\u00a0!', 'Hallo, Sam!'} <= forms)
+
+    def test_a_story_keeps_its_number_in_the_episode_list(self):
+        library = TextLibrary()
+        self.assertEqual(dsi.episode_title(library, dict(titles=['01: Making Some Dough']), 'fr'),
+                         '01: La main \u00e0 la p\u00e2te')
+        self.assertIsNone(dsi.episode_title(library, dict(titles=['06: The Outcast']), 'fr'))
+        self.assertIsNone(dsi.episode_title(library, dict(titles=['01: Making Some Dough']), 'off'))
+
+
+class TableBuilderTests(unittest.TestCase):
+    def test_text_is_written_as_latin1_and_grids_as_their_font_draws(self):
+        self.assertEqual(dsi_text.latin1('C\u0153ur\u2026 l\u2019\u00e9t\u00e9'), "Coeur... l'\u00e9t\u00e9")
+        self.assertEqual(dsi_text.grid_letters('W\u00fcrfe|Sto\u00df'), 'wurfe|stoss')
+        self.assertEqual(dsi_text.grid_letters('est\u00e1|ma\u00f1o'), 'esta|mano')
+        self.assertIsNone(dsi_text.grid_letters('two words'))
+
+    def test_a_pairing_must_keep_its_lines_tokens_and_bars(self):
+        self.assertTrue(dsi_text.plausible('Hey, $USR!', 'Salut, $USR\u00a0!'))
+        self.assertFalse(dsi_text.plausible('Hey, $USR!', 'Salut\u00a0!'))
+        self.assertFalse(dsi_text.plausible('Yes.|No.', 'Oui.'))
+        self.assertTrue(dsi_text.plausible('Are you coming?', 'Tu viens.'))             # a question may become a statement
+        self.assertFalse(dsi_text.plausible('To my left was a pretty blonde girl, and to my right...', 'Matt'))
+
+    def test_loads_pair_in_code_order_and_a_copied_register_counts(self):
+        ldr = lambda register: ('ldr', register)
+        mov = 0xE1A01000                                     # mov r1, r0
+        english = ([ldr(0), 0xEB, ldr(0), ldr(1), 0xEB], [None] * 5, ['One', None, 'Two', 'Three', None], [None] * 5,
+                   [None] * 5)
+        same = ([ldr(0), 0xEB, ldr(0), ldr(1), 0xEB], [None] * 5, ['Un', None, 'Deux', 'Trois', None], [None] * 5,
+                [None] * 5)
+        self.assertEqual([p[1:] for p in dsi_text.pairs(english, same)],
+                         [('One', 'Un'), ('Two', 'Deux'), ('Three', 'Trois')])
+        reused = ([ldr(0), 0xEB, ldr(0), mov, 0xEB], [None] * 5, ['Un', None, 'Deux', None, None], [None] * 5, [None] * 5)
+        self.assertEqual([p[1:] for p in dsi_text.pairs(english, reused)],
+                         [('One', 'Un'), ('Two', 'Deux'), ('Three', 'Deux')])
+
+    def test_records_pair_word_by_word_until_they_differ(self):
+        self.assertEqual(dsi_text._record_pairs((4, 'Add sugar', 'sugar|flour', 1, 'Next'),
+                                                (4, 'Ajoute', 'farine|sucre', 2, 'X')),
+                         [(2, 'Add sugar', 'Ajoute'), (3, 'sugar|flour', 'farine|sucre')])
+
+    def test_the_table_keeps_matched_lines_rewrites_contexts_and_grids(self):
+        lines = {8: [('Hello there.', {'fr': 'Salut.'}), ('Sure.', {'fr': 'Bien sûr.'}),
+                     ('Play on the game thing!', {'fr': 'Joue au truc !'}), ('Bye now.', {'fr': 'Salut !'}),
+                     ('Sure.', {'fr': "D'accord."}), ('sugar|flour', {'fr': 'Farine|Sucre'})]}
+        phone = {8: ['Hello there.', 'Sure.', 'Play on the Weebox 360!', 'Bye now.', 'Sure.']}
+        menu = {name: {1: 'Make your choice!' if name == 'en' else 'Choix'} for name in ('en', 'fr', 'it', 'de', 'es')}
+        table, report = dsi_text.translations(lines, phone, menu)
+        self.assertEqual(table['lines']['play on the weebox 360'], {'fr': 'Joue au truc !'})    # by its place
+        self.assertEqual(table['lines']['sure'], {'fr': 'Bien sûr.'})
+        self.assertEqual(table['context']['sure'], {'bye now': {'fr': "D'accord."}})
+        self.assertEqual(table['words'], {'sugar|flour': {'fr': 'farine|sucre'}})
+        self.assertEqual(table['lines']['make your choice'], {'fr': 'Choix', 'it': 'Choix', 'de': 'Choix', 'es': 'Choix'})
+        self.assertEqual(report['rewritten'], 1)
