@@ -30,11 +30,14 @@ by day, its moon by night); each morning a date card, `Monday, February 2`; the 
 waits, as the demo's; Stats in Where to? shows money and the three stats; relationships stay hidden; the status bar (79, 80) is
 dropped; options the demo greys out (17) are left off the menu. The demo's numbers are kept.
 
-**Not yet** (later Phase 3 steps): the minigames (61 word association, 62 spelling as SHS's word grid, 63-65 catch, the action
-menus' routines as word games) are provisional stand-ins; the text is still the demo's lowercase; the add-on's sun icon and
-minigame art.
+**Minigames** (owner, 2026-11-14): the action menus' routine (20) and word association (61) as SHS's timed word game (71), the
+catch games (63-65) as BREW's catch (221), spelling (62) as SHS's word grid (96). **Text**: every full build is lowercase, so
+capitals come back by rule and word lists (`recase`; reference/Other Games/docs/SURVIVING_HOLLYWOOD_CASING.md for the owner).
+
+**Not yet** (later Phase 3 steps): the line-by-line check against Tardy-Slip's engine; the add-on's sun icon.
 """
 import argparse
+from collections import Counter
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -45,6 +48,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import brew  # noqa: E402
+import casing  # noqa: E402
 import newrules  # noqa: E402
 import shw  # noqa: E402
 from brew import get_global, set_global, set_word  # noqa: E402
@@ -167,7 +171,7 @@ def tidy(text):
     all of a script's data as strings, and tables of numbers (the setup's cast, the word lists' addresses) come out as runs of
     control and newline bytes (an address 0x0A5B reads `\\n[`), where removing a `[` or `]` would shift the table. So a string
     is text when it has no control byte but newlines, doesn't start with one, and has at least three letters."""
-    if any(b < 0x20 and b != 0x0a for b in text) or text[:1] == b'\n' or sum(chr(b).isalpha() for b in text) < 3:
+    if not is_text(text):
         return None
     changed = EMOTICONS.sub(b'', text).replace(b'$usr', b'$USR')
     return changed if changed != text else None
@@ -183,8 +187,89 @@ def string_at(words, address):
     return bytes(out)
 
 
-def program_of(raw):
-    return brew.rewrite_strings(decode_program(brew.upgrade(raw)), tidy)
+def is_text(text):
+    """Whether a string read off the data is text rather than a table of numbers that reads as one (see tidy)."""
+    return not (any(b < 0x20 and b != 0x0a for b in text) or text[:1] == b'\n' or sum(chr(b).isalpha() for b in text) < 3)
+
+
+# -- casing (step 2; plan: Text) ---------------------------------------------------------------------------------------------
+# Every full build (1.0.0, 1.0.1 twice, 1.0.2, 1.0.9) stores its text in lowercase: its fonts have no capitals. Only the lite
+# 1.0.4 and the demo's help pages are mixed case. So the capitals come back by rule (casing.apply: sentence starts, `|`
+# options, after brackets and blank lines) and these lists, for the owner to check (the build writes the words it left
+# lowercase to a review list). Words the SHS library writes with a capital (casing.library_word_forms, 2026-11-14: the
+# weekdays, months and places, I'm/I'll, TV, VIP, ASAP...), and the demo's own names, as the lite and the help pages write
+# them where they do.
+CASING_LIBRARY = ('Hollywood', 'Chelsea', 'Tad', 'Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
+                  'VIP', 'Mr', 'Ms', 'Mrs', 'TV', 'DVD', 'ASAP', 'Sophie', 'Milan', 'Jeeves', 'Shakespeare', 'Jeremy', 'William',
+                  'California', 'American', 'Italian', 'Clyde', 'Rome', 'Germany', 'Olympic', 'Olympics', 'Colorado', 'British',
+                  'Paris', 'European', 'Denni', 'Chen', 'Sarah', 'Spike', 'Mary', 'French', 'Spain', 'France', 'Louvre', 'Mona',
+                  'Lisa', 'Florence', 'Italy', 'Kay', 'Broadway', 'Wisconsin', 'Europe', 'February', 'March', 'January',
+                  'April', 'Christmas')
+CASING_NAMES = ('Tony', 'Mike', 'Lou', 'Jeff', 'Kate', 'Glamlet', 'Sergei', 'Sebastian', 'Starr', 'Pillary', 'Harry', 'Loafelia',
+                'Eva', 'Vance', 'Lance', 'Cletus', 'Ramada', 'Coco', 'Bill', 'Spellman', 'Joe', 'Myra', 'Stubbs', 'Lois', 'Rhoda',
+                'Sandra', 'Hattie', 'Ursula', 'Nowles', 'Patty', 'Tammy', 'Bugsy', 'Chatterley', 'Expensif', 'Mellisa',
+                'Muggeridge', 'Hank', 'Marvin', 'Bilbo', 'Tiebo', 'Bobo', 'Frankman', 'Franklin', 'Johnie', 'Wrightman', 'Borg',
+                'Gamilton', 'Wilona', 'Rita', 'Whitney', 'Pucci', 'Vespa', 'Viesel', 'Claudio', 'Jeffrey', 'Limberlake', 'Krane',
+                'Stephen', 'Crane', 'Rudolph', 'Galaga', 'Ned', 'Botox', 'Richter', 'Bengal', 'Zozo', 'Smarmami', 'Zapazit',
+                'Viagrin', 'Tigerbath', 'Lolola', 'Protoman', 'Natalia', 'Dustin', 'Mento', 'Fiance', 'Donna', 'Dan', 'Xavier',
+                'Gregor', 'George', 'Beanstalk', 'Texas', 'Kansas', 'Barcelona', 'Angeles', 'Los')
+CASING_WORDS = {w.lower(): w for w in (*CASING_LIBRARY, *CASING_NAMES)}
+CASING_WORDS.update({**{m.lower(): m for m in ('Jan', 'Feb', 'Apr', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec')}, "i'm": "I'm", "i'll": "I'll", "i've": "I've", "i'd": "I'd"})
+# The theatre's opening hours (`mon-wed 12-9pm`): days written short, in a place's description only (`hot sun` elsewhere).
+HOURS_DAY = re.compile(r'(?<![A-Za-z])(mon|tue|wed|thu|fri|sat|sun)(?=[-, \n])')
+# Names of more than one word, any of whose words is an everyday one ("tad small", "hot joe's hot dogs"), matched whole.
+CASING_PHRASES = ('The Jeff', 'Tad Small', 'Club Franken-Stein', 'Franken-Stein', 'All-Star-Agents', 'All-Star Agents',
+                  'Reel Times', 'Excess Hollywood', "Hot Joe's Hot Dogs", 'Hot Joe', 'Spellman Productions', 'Hacksaw Harry',
+                  'Calculus Girl', 'Rainbow, the Musical', 'The Red Badge of Courage', 'Frank Franklin', 'Frank Hobo',
+                  'Pillary Fluff', 'Lord Chatterley', 'Chez Expensif', 'Battlefield Galaga', 'Citizen Krane', 'Princess Vespa',
+                  'Return of the Jedi', 'Jellyfish Jamboree', 'Chelsea Lemon', 'Ms. Lemon', 'Lemon-ade', 'Los Angeles')
+# A lone `i` (not in CASING_WORDS: casing.apply would read `is` as its plural, `Is`).
+LONE_I = re.compile(r"(?<![A-Za-z'$])i(?![A-Za-z'])")
+CASING_QUOTED = re.compile(r"(?<=')jellyfish [ab]\b")     # the screenplay's roles: 'Jellyfish A', 'Jellyfish B' (the lite's)
+PHRASE = re.compile('|'.join(r'(?<![A-Za-z])' + re.escape(p) + r'(?![A-Za-z])' for p in sorted(CASING_PHRASES, key=len,
+                                                                                                    reverse=True)), re.I)
+
+
+def recase(program, title_addresses=(), unknown=None):
+    """The program with its text cased in place (the same length): names (`title_addresses`, the cast's) title-cased, the rest
+    by casing.apply with CASING_WORDS, then CASING_PHRASES. Only text (is_text)."""
+    words = list(program.main_words)
+    data = bytearray(struct.pack(f'>{len(words)}H', *words))
+    written = {p.lower(): p for p in CASING_PHRASES}
+    for address, text in casing.strings(program):
+        if not is_text(text.encode('latin-1')):
+            continue
+        if address in title_addresses:
+            cased = casing.title_case(text)
+        else:
+            own, casing.OWN_NAMES = casing.OWN_NAMES, {}          # New Rules' own names (`rob`) aren't Hollywood's
+            try:
+                cased = casing.apply(text, CASING_WORDS, (), unknown)
+            finally:
+                casing.OWN_NAMES = own
+            cased = PHRASE.sub(lambda m: _phrase(cased, m, written), cased)
+            cased = LONE_I.sub('I', cased)
+            if 'hours:' in cased.lower():
+                cased = '\n'.join(HOURS_DAY.sub(lambda m: m.group().capitalize(), line) if re.search(r'\d', line) else line
+                                  for line in cased.split('\n'))
+            cased = CASING_QUOTED.sub(lambda m: m.group()[:-1] + m.group()[-1].upper(), cased)
+        if cased != text:
+            raw = cased.encode('latin-1')
+            data[address * 2:address * 2 + len(raw)] = raw
+    return replace(program, main_words=tuple(struct.unpack(f'>{len(words)}H', bytes(data))))
+
+
+def _phrase(text, match, written):
+    """A phrase as CASING_PHRASES writes it; its first letter stays a capital where the sentence gave it one ("The Jeff" either
+    way; "the beanstalk" keeps its lowercase "the" as no phrase starts with it)."""
+    form = written[match.group().lower()]
+    if match.group()[:1].isupper():
+        form = form[:1].upper() + form[1:]
+    return form
+
+
+def program_of(raw, title_addresses=(), unknown=None):
+    return recase(brew.rewrite_strings(decode_program(brew.upgrade(raw)), tidy), title_addresses, unknown)
 
 
 # -- the setup's constants ---------------------------------------------------------------------------------------------------
@@ -237,7 +322,7 @@ def setup_tables(raw):
                     return out.decode('cp1252')
                 out.append(b)
         return out.decode('cp1252')
-    out = dict(places={}, districts={}, about={}, stats=[], cast={}, portraits={}, home=None, scripts=None)
+    out = dict(places={}, districts={}, about={}, stats=[], cast={}, cast_addresses=set(), portraits={}, home=None, scripts=None)
     for _ in range(200000):
         stop = vm.run()
         if stop.kind == StopKind.HALT:
@@ -250,6 +335,7 @@ def setup_tables(raw):
             result = SETUP_ENTRY
         elif service == 26:
             out['cast'][a[0]] = read(a[1])
+            out['cast_addresses'].add(a[1])
         elif service == 31:
             out['portraits'][a[0]] = a[1]
         elif service == 37:
@@ -291,6 +377,7 @@ class Story:
 
     def __init__(self, resources, spec):
         self.spec = spec
+        self.unknown = Counter()                    # words the casing left lowercase: the review list
         self.schedule = parse_schedule(resources[SCHEDULE])
         self.setup = setup_tables(resources[SETUP_SCRIPT])
         places = self.setup['places']
@@ -561,7 +648,7 @@ def stat_page(s, tables, title, value, signed):
 class Script:
     def __init__(self, rid, raw, story):
         self.rid, self.story = rid, story
-        self.program = program_of(raw)
+        self.program = program_of(raw, story.setup['cast_addresses'] if rid == SETUP_SCRIPT else (), story.unknown)
         self.words = self.program.main_words
         self.r = Rewriter(self.program, zero_gap=True)
         self.t = Tables(self.r, story)
@@ -628,7 +715,7 @@ class Script:
         def build(s):
             title, built, done = s.label(), s.label(), s.label()
             other = s.label()
-            s.arg(1); s.text('you'); s.call(24, 2); s.push_result(); s.jump_if_zero(other)
+            s.arg(1); s.text('You'); s.call(24, 2); s.push_result(); s.jump_if_zero(other)
             s.text(brew.CHOICE_TITLE); s.jump(title)
             s.label(other)
             s.arg(1)
@@ -880,7 +967,7 @@ class Script:
             text = string_at(words, words[k + 1])
             if len(text) < 10 or not all(32 <= b < 127 for b in text):
                 continue
-            word = spelling_word(text.decode('latin-1'), words[k + 3])
+            word = spelling_word(text.decode('latin-1'), words[k + 3]).lower()
             letters = ''.join(dict.fromkeys(word)) + ''.join(c for c in GRID_FILLER if c not in word)
             size = 4 if len(word) <= 10 else 5
             name = word.capitalize()
@@ -1608,6 +1695,7 @@ def build_story(jar, addon_path):
     resources[ADDON_RECORD] = requires_bytes([(shw.ADDON_ID, ADDON_REQUIRED)])
     resources[VERSION_RECORD] = version_bytes(VERSION)
     resources[1] = Metadata(PACK, EPISODE, (TITLE + SUFFIX,) * 5).to_bytes()
+    build_story.unknown = story.unknown
     return brew.file_name(TITLE, SUFFIX), encode_exp(resources)
 
 
@@ -1616,12 +1704,19 @@ def main(argv=None):
     parser.add_argument('--jar', required=True, help="the 1.0.2 demo's jar (560_ver1.0_b2_hs92_english.jar)")
     parser.add_argument('--addon', required=True, help=f'shshw.exp (shw.py), revision {ADDON_REQUIRED} or later')
     parser.add_argument('--out', required=True)
+    parser.add_argument('--library', help='an SHS library: the review list leaves out words its episodes write')
     args = parser.parse_args(argv)
     name, data = build_story(args.jar, args.addon)
+    unknown = build_story.unknown
+    if args.library:
+        known = casing.library_word_forms(Path(args.library))
+        unknown = Counter({w: n for w, n in unknown.items() if w not in known})
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / name).write_bytes(data)
-    print(f'{name}: {len(data):,} bytes')
+    review = out / Path(name).with_suffix('.casing-review.txt').name
+    review.write_text(''.join(f'{count}\t{word}\n' for word, count in unknown.most_common()), encoding='utf-8')
+    print(f'{name}: {len(data):,} bytes; {len(unknown)} words left lowercase, listed in {review.name}')
 
 
 if __name__ == '__main__':
