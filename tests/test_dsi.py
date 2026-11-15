@@ -185,6 +185,31 @@ class EligibilityTests(unittest.TestCase):
         found.raw_asset = own.__getitem__
         self.assertIsNone(dsi.episode_pictures(found))                    # one it can't read
 
+    def test_the_episode_list_learns_once_which_episodes_qualify(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            library = Library()
+            library.directory = folder
+            opened = []
+            episode = resources(*host_call(11, 0, 1015))
+
+            def open_episode(record_id):
+                opened.append(record_id)
+                return episode
+            library.open_episode = open_episode
+            record = dict(id='abc', name='Story.exp')
+            self.assertIsNone(dsi.known(library, record))                 # not yet measured
+            self.assertTrue(dsi.measure(library, record))
+            self.assertTrue(dsi.known(library, record))
+            del library._dsi_coverage                                      # a new start reads the library's record
+            self.assertTrue(dsi.known(library, record))
+            self.assertEqual(opened, ['abc'])
+            library.addon = lambda addon_id: (dict(file='b.exp', revision=3), library.archive)
+            self.assertIsNone(dsi.known(library, record))                 # another add-on: measured again
+            library.held = False
+            library.addon = lambda addon_id: None
+            self.assertFalse(dsi.known(library, record))                  # no add-on: no tag
+
     def test_translations_and_add_on_episodes_keep_their_own_art(self):
         self.assertIsNone(dsi.episode_pictures(resources(*host_call(11, 0, 1015), pack=31300)))
         self.assertIsNone(dsi.episode_pictures(resources(*host_call(11, 0, 1015), requires=(('shsnr', 3),))))
@@ -340,6 +365,18 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(dsi.episode_title(library, dict(titles=['01: Making Some Dough']), 'fr'),
                          '01: La main \u00e0 la p\u00e2te')
         self.assertIsNone(dsi.episode_title(library, dict(titles=['06: The Outcast']), 'fr'))
+        TABLE['lines']['the wrong side of town'] = {'de': '`Falsches Ende der Stadt`'}
+        TABLE['menu']['football season'] = {'de': 'Football-Saison'}
+        try:
+            library = TextLibrary()
+            SPEC['stories'] += ['the wrong side of town', 'football star']
+            self.assertEqual(dsi.episode_title(library, dict(titles=['10: The Wrong Side of Town']), 'de'),
+                             '10: Falsches Ende der Stadt')
+            self.assertEqual(dsi.episode_title(library, dict(titles=['Football Star'], aliases=['Football Season']), 'de'),
+                             'Football-Saison')
+        finally:
+            del TABLE['lines']['the wrong side of town'], TABLE['menu']['football season']
+            SPEC['stories'][:] = ['making some dough']
         self.assertIsNone(dsi.episode_title(library, dict(titles=['01: Making Some Dough']), 'off'))
 
 

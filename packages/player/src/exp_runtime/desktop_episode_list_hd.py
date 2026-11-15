@@ -355,6 +355,13 @@ class HdEpisodeList(HdEpisodePicker):
             info.center = (round(right - ICON_SIZE / 2), rect.centery)
             self.draw_info_icon(layer, right - ICON_SIZE / 2, rect.centery, ICON_SIZE)
             right -= ICON_SIZE + 10
+        dsi = self.model.dsi_mark(record) if hasattr(self.model, 'dsi_mark') else None
+        if dsi is not None:
+            # The DSi tag (this fork's, owner 2026-11-15): with "DSi Backgrounds" on, an episode that shows them, next to
+            # the play button; SD (or another game's tag) beside it. The tile grid shows none.
+            right -= self.mark_width(dsi)
+            self.draw_standard_mark(layer, right, rect.y + (rect.height - 18) / 2, dsi, self.model.dsi_mark_color())
+            right -= 8
         mark = self.model.mark(record)
         if mark is not None:
             right -= self.mark_width(mark)

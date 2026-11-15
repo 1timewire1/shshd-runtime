@@ -16,7 +16,9 @@ variable isn't counted.
 """
 import json
 import logging
+from pathlib import Path
 import re
+import threading
 
 ADDON = 'shsdsi'
 SPEC = 26000
@@ -271,9 +273,65 @@ def episode_title(library, record, language):
     table = None if value is None else text_table(library)
     if table is None or not is_story(record, value):
         return None
-    for title in record.get('titles') or ():
+    titles = list(record.get('titles') or ())
+    for title in titles + list(record.get('aliases') or ()):           # (Football Star is the DSi's Football Season)
         entry = table.get('menu', {}).get(key(story_key(title))) or table.get('lines', {}).get(key(story_key(title)))
         if entry and entry.get(language):
-            number = re.match(r'^\s*\d+\s*[:.]\s*', title)
-            return (number.group(0) if number else '') + entry[language]
+            number = re.match(r'^\s*\d+\s*[:.]\s*', titles[0] if titles else title)
+            # (A title card's string may carry the emphasis marks it's shown with: not in a list.)
+            return (number.group(0) if number else '') + entry[language].replace('`', '').strip()
     return None
+
+
+# ---------- which episodes qualify, kept for the episode list (its DSi tag) ----------
+
+COVERAGE_FILE = 'dsi_backgrounds.json'     # in the library's folder: {"addon": its file, "episodes": {id: true/false}}
+_coverage_lock = threading.Lock()
+
+
+def _coverage(library):
+    """The library's record of which episodes qualify, for the add-on it holds now: (dict, its key), loaded once."""
+    found = library.addon(ADDON) if hasattr(library, 'addon') else None
+    key = None if found is None else found[0].get('file')
+    cached = library.__dict__.get('_dsi_coverage')
+    if cached is None or cached[0] != key:
+        episodes = {}
+        path = Path(library.directory) / COVERAGE_FILE
+        try:
+            saved = json.loads(path.read_text(encoding='utf-8'))
+            if saved.get('addon') == key and isinstance(saved.get('episodes'), dict):
+                episodes = {k: bool(v) for k, v in saved['episodes'].items()}
+        except (OSError, ValueError, AttributeError):
+            pass
+        library._dsi_coverage = cached = (key, episodes)
+    return cached[1], cached[0]
+
+
+def known(library, record):
+    """Whether an episode shows the DSi backgrounds (True / False), or None while that's still to be found (`measure`, on a
+    background thread: opening and reading an episode takes about 0.1 s on a PC)."""
+    if not hasattr(library, 'addon') or library.addon(ADDON) is None:
+        return False
+    with _coverage_lock:
+        episodes, _ = _coverage(library)
+        return episodes.get(record['id'])
+
+
+def measure(library, record):
+    """Find whether an episode qualifies and keep it in the library's record (written at once: a file of a few KB)."""
+    try:
+        qualifies = library.open_episode(record['id']).dsi_pictures() is not None
+    except Exception as error:      # (an episode that can't be read shows no tag)
+        logging.warning('DSi: %s not measured: %s', record.get('name'), error)
+        qualifies = False
+    with _coverage_lock:
+        episodes, key = _coverage(library)
+        episodes[record['id']] = qualifies
+        try:
+            path = Path(library.directory) / COVERAGE_FILE
+            staged = path.with_suffix('.tmp')
+            staged.write_text(json.dumps(dict(addon=key, episodes=episodes), separators=(',', ':')), encoding='utf-8')
+            staged.replace(path)
+        except OSError as error:
+            logging.warning('DSi: the record of qualifying episodes is not saved: %s', error)
+    return qualifies

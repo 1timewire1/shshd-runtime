@@ -17,6 +17,7 @@ from .games import GAMES, game_id
 from .episode_index import (HD, PickerRow, STANDARD, build_chronological_rows, build_rows, category_labels,
                             duplicates, episode_label, format_airdate, resolve_variants)
 
+DSI_TAG, DSI_MARK = 'SHSDSI', 'DSi'     # the list view's tag for episodes with the DSi's backgrounds (dsi_mark)
 TILE_PIXELS = (216 * S, 290 * S)  # the 216 x 290 point tile at the menus' scale (hd_scale)
 
 
@@ -72,6 +73,7 @@ class PickerModel:
         self._previews = {}
         self._preview_lock = threading.Lock()
         self._wanted = {}               # {record id: record} for the background thread, the newest asked for first
+        self._dsi_wanted, self._dsi_thread = {}, None     # episodes the DSi tag waits on (dsi_mark)
         self._decoded = {}              # {record id: an image it finished, not yet in `_previews`}
         self._decoding = None           # the record id it has in hand; None once a forget_preview outdates that
         self._decoder = None
@@ -86,6 +88,39 @@ class PickerModel:
         if legacy is not None:
             return legacy['badge']
         return 'SD' if self.is_standard(record) else None
+
+    def dsi_mark(self, record):
+        """The DSi tag of an episode that shows the DSiWare add-on's backgrounds while "DSi Backgrounds" is on (list view
+        only; owner, 2026-11-15), else None. An episode not yet measured gets none until a background thread has found
+        whether it qualifies (dsi.measure: about 0.1 s an episode on a PC), which the library then keeps."""
+        if self.cod is not None or not getattr(self.library, 'dsi_backgrounds', False):
+            return None
+        from . import dsi
+        qualifies = dsi.known(self.library, record)
+        if qualifies is None:
+            with self._preview_lock:
+                if record['id'] not in self._dsi_wanted:
+                    self._dsi_wanted[record['id']] = record
+                if self._dsi_thread is None:
+                    self._dsi_thread = threading.Thread(target=self._measure_wanted, name='episode-dsi', daemon=True)
+                    self._dsi_thread.start()
+            return None
+        return DSI_MARK if qualifies else None
+
+    def _measure_wanted(self):
+        from . import dsi
+        while True:
+            with self._preview_lock:
+                if not self._dsi_wanted:
+                    self._dsi_thread = None
+                    return
+                _, record = self._dsi_wanted.popitem()
+            dsi.measure(self.library, record)
+
+    def dsi_mark_color(self):
+        """The DSi tag's colour (the profile's LEGACY_GAMES 'SHSDSI')."""
+        legacy = getattr(GAMES.get(game_id(self.library)), 'LEGACY_GAMES', {}).get(DSI_TAG)
+        return None if legacy is None else legacy['color']
 
     def mark_color(self, record):
         """A legacy game's own colour for its tag (LEGACY_GAMES), else None."""

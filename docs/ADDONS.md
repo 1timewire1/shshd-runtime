@@ -289,6 +289,11 @@ picture:
 A picture of the episode's own that is plain black (a fade or flashback screen) needs no counterpart and shows as it is
 (owner, 2026-11-15): seven episodes were held back by nothing else.
 
+**In the episode list** (list view only, owner 2026-11-15): while DSi Backgrounds is on, an episode that shows them has a
+DSi tag beside its play button, left of an SD or translated game's tag. Finding that out means opening the episode
+(about 0.1 s on a PC), so a background thread does it the first time a row is drawn and the library keeps the answers in
+`dsi_backgrounds.json`, for the add-on file it holds (`dsi.known`, `dsi.measure`); the tag appears when it's known.
+
 A background a script picks at run time is looked up the same way when it appears; one with no DSi picture shows as before.
 
 **In play** (`Desktop._dsi_screen`): the left screen while the location is aligned left (a speaker on the left), the right one
