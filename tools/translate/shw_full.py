@@ -78,9 +78,15 @@ def shs_script(rid):
 PLAYER, EVENT = 0, 25
 NAMED = {2: 'Advice Column', 35: 'Instructions', 52: 'Phone', 56: 'Reel Times'}     # no portrait (-1): a named box (76)
 NARRATOR = 199
-# Faces turned the other way: as the lite's and the Preview's, drawn looking away from the middle on the right (owner's rule,
-# case by case; the full cast's sheet comes for review once it plays).
-TURNED = frozenset({2006, 2034, 2042, 2048})       # Chelsea, Milan, the Secretary, The Jeff
+# Faces turned the other way on the right of the box: drawn looking away from the middle there (owner's picks, case by case:
+# the lite's and the Preview's four, then the full cast's sheet, 2026-11-14, reference/screenshots/verify/surviving_hollywood/
+# addon_phase3/phase3_faces.png).
+TURNED = frozenset({2006, 2034, 2042, 2048,         # Chelsea, Milan, the Secretary, The Jeff
+                    2051, 2036, 2008, 2019, 2001,   # the Jaded Actress, Pillary, a Guy, Eva, the Announcer
+                    2005, 2007, 2020, 2035, 2044})  # the Cashier, a Girl, an Extra, Nerd1, Victim 4
+# The cast entries New Game's photo choice offers (21: entries 20, 18 and 0, portraits 2015, 2013 and 2037; the demo names the
+# first two `director` and `denni`, and neither ever speaks) and the player: shown on the left and in the picker, never turned.
+PHOTO_ENTRIES = frozenset({0, 18, 20})
 NO_BADGE = 629                                       # SHS character key: 1 hides the relationship icon (owner: hidden)
 
 # Saved numbers (owner 0). The lite's are 31701-31703.
@@ -430,15 +436,19 @@ def clear_badge(s):
     s.label(done)
 
 
-def push_face(s, portrait):
-    """Push the shshw picture for the demo portrait `portrait()` pushes: turned for TURNED, -1 for none (negative)."""
-    end, none = s.label(), s.label()
+def push_face(s, portrait, entry):
+    """Push the shshw picture for the demo portrait `portrait()` pushes, for the cast entry `entry()` pushes: turned for TURNED
+    unless the entry is the player or one of New Game's photos (PHOTO_ENTRIES, never turned), -1 for none (negative)."""
+    end, none, plain = s.label(), s.label(), s.label()
     portrait(); s.push(0); s.emit(0x0e); s.jump_if_nonzero(none)
+    for e in sorted(PHOTO_ENTRIES):
+        entry(); s.push(e); s.emit(0x0a); s.jump_if_nonzero(plain)
     for p in sorted(TURNED):
         other = s.label()
         portrait(); s.push(p); s.emit(0x0a); s.jump_if_zero(other)
         s.push(shw.FLIPPED_BASE + p - 2000); s.jump(end)
         s.label(other)
+    s.label(plain)
     portrait(); s.push(shw.PORTRAIT_BASE - 2000); s.emit(0x50); s.jump(end)
     s.label(none)
     s.push(-1)
@@ -1147,7 +1157,7 @@ class Script:
         """31: (entry, portrait): kept for 30, and the entry's face (72)."""
         def build(s):
             dyn_set(s, PORTRAIT_KEY, lambda: s.arg(1), lambda: s.arg(2))
-            s.arg(1); push_face(s, lambda: s.arg(2)); s.call(72, 2)
+            s.arg(1); push_face(s, lambda: s.arg(2), lambda: s.arg(1)); s.call(72, 2)
             s.arg(1); s.push(NO_BADGE); s.push(1); s.call(52, 3)
             s.result(0)
         self.r.redirect(pc, 'set_picture', build)
