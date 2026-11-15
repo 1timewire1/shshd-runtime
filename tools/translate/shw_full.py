@@ -555,6 +555,9 @@ class Tables:
     def key(self):
         return self._get('key', lambda: self.r.words([0] * KEY_WORDS))
 
+    def name(self):
+        return self._get('name', lambda: self.r.words([0] * 16))
+
     def option(self):
         return self._get('option', lambda: self.r.words([0] * OPTION_WORDS))
 
@@ -678,7 +681,10 @@ class Script:
             key = ('named', speaker)
         elif whole and speaker is not None:
             def build(s):
+                done = s.label()
+                self.faceless(s, lambda: s.push(bare), done)
                 s.push(-2); s.push(bare); s.arg(1); s.push(0); s.call(13, 4)
+                s.label(done)
                 clear_badge(s); s.result(0)
             key = ('thought', bare)
         else:
@@ -690,6 +696,7 @@ class Script:
                     s.arg(1); s.push(entry); s.emit(0x0a); s.jump_if_zero(other)
                     s.text(name); s.arg(2); s.call(76, 2); s.jump(done)
                     s.label(other)
+                self.faceless(s, lambda: s.arg(2), done)
                 s.arg(2); s.arg(1); s.push(0); s.call(13, 3); s.jump(done)
                 s.label(narration)
                 s.arg(2); s.push(NARRATOR); s.call(13, 2)
@@ -697,6 +704,16 @@ class Script:
                 clear_badge(s); s.result(0)
             key = 'line'
         self.r.redirect(pc, key, build)
+
+    def faceless(self, s, text, done):
+        """A speaker with no portrait (the demo's -2: Mom, Dad, a cop, the telemarketer...) says `text()` in SHS's named box with
+        no portrait (76), under their name, and jumps to `done`; SHS's own line (13) would show some other speaker's name."""
+        has_face = s.label()
+        dyn_get(s, PORTRAIT_KEY, lambda: s.arg(1)); s.push(0); s.emit(0x0e); s.jump_if_zero(has_face)
+        name = self.t.name()
+        s.arg(1); s.push(name); s.call(61, 2)
+        s.push(name); text(); s.call(76, 2); s.jump(done)
+        s.label(has_face)
 
     def plate(self, pc, argc):
         """14: (text) the name plate for the page that follows (15): kept, as the text's address."""
