@@ -88,6 +88,14 @@ TURNED = frozenset({2006, 2034, 2042, 2048,         # Chelsea, Milan, the Secret
 # first two `director` and `denni`, and neither ever speaks) and the player: shown on the left and in the picker, never turned.
 PHOTO_ENTRIES = frozenset({0, 18, 20})
 NO_BADGE = 629                                       # SHS character key: 1 hides the relationship icon (owner: hidden)
+THEME = 651                                          # SHS character key: the box's colours (unset, a broken mix: owner, 2026-11-14)
+BLUE, PINK, GREY = 1, 2, 3                           # as the lite's (shw_lite.CAST_THEMES)
+# Each cast entry's box colour, as the lite gives its cast: women pink (by their portraits; the faceless by name), the voices
+# with no one behind them grey, everyone else blue. 1.0.2 sets none (1.0.4's 87 has no counterpart), so they're set with each
+# entry's picture (31). A speaker with no portrait talks in SHS's named box, whose look is its own.
+CAST_THEMES = {**{e: PINK for e in (0, 3, 9, 10, 18, 20, 21, 23, 24, 26, 29, 30, 39, 45, 46, 48, 53, 55, 57, 59, 60, 62, 63,
+                                    74)},
+               **{e: GREY for e in (2, 25, 35, 52, 56)}}
 
 # Saved numbers (owner 0). The lite's are 31701-31703.
 (ENTRY_KEY, PHASE_KEY, DAY_KEY, SLOT_KEY, BED_KEY, HOME_KEY, HERE_KEY, PREVIOUS_KEY, PENDING_SCRIPT_KEY, PENDING_ENTRY_KEY,
@@ -1159,6 +1167,7 @@ class Script:
             dyn_set(s, PORTRAIT_KEY, lambda: s.arg(1), lambda: s.arg(2))
             s.arg(1); push_face(s, lambda: s.arg(2), lambda: s.arg(1)); s.call(72, 2)
             s.arg(1); s.push(NO_BADGE); s.push(1); s.call(52, 3)
+            s.arg(1); s.push(THEME); s.select(1, CAST_THEMES, BLUE); s.call(52, 3)
             s.result(0)
         self.r.redirect(pc, 'set_picture', build)
 
