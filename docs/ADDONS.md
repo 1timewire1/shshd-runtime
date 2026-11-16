@@ -127,7 +127,7 @@ Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settin
 | 26790–26795 | Diss Practice's notes and Josh's dance |
 | 26796–26805 | Day of Diss's opening: its timeline, stills, card and whip |
 | 26900–26914 | Music, each track mixed with its ambience |
-| 26960–26963 | The Title Screen Look (revision 17): its spec, MS4's sky with its clouds, the roof scene (MS4's splash, two schools, the city, and five on the roof: MS3's girl and boy, MS4's Kim, Josh and Ryan), kept above the buttons, and the logo with its splat and tapes |
+| 26960–26963 | The Title Screen Look (revision 17): its spec, MS4's sky with its clouds, the roof scene (MS4's splash, two schools, the city, and five on the roof: MS3's girl and boy, MS4's Kim, Josh and Ryan), kept above the buttons, and the logo with its splat and tapes, which in taller frames moves down to stay centred in the sky |
 | 26982–26995 | Sound effects and emoticons |
 | 26996 | The main menu's tune (`music/main_menu`, mixed as the tracks are; `x360.MENU_MUSIC`) |
 | 26999 | The frame backdrop |
@@ -150,7 +150,7 @@ the stories ask for revision 2, since 3 adds only the main menu's art. Its pack 
 | 26199 | The addon's spec, JSON |
 | 26200–26624 | Portraits, 26200 + 5 × look + expression |
 | 26800– | Parts no look draws |
-| 26960–26962 | The [Title Screen Look](#settings) (revision 3): its spec, gamelib picture 1 (the wood with the photo painted on, so nothing drops in) and the logo, picture 21 |
+| 26960–26962 | The [Title Screen Look](#settings) (revision 3): its spec, the photo cut out of gamelib picture 1's wood (its left border carried past the picture's edge), which drops in on the smartphone's own wood, and the logo, picture 21 |
 | 26980–26991 | Music and sound, the last a copy for the story's selector 2 |
 | 26992– | Relationship badges: heart, skull and smiley, whole and then broken |
 
@@ -214,7 +214,7 @@ revision 4 no sun; revision 5 no silhouettes.
 | 26632 | The star (sprite 59) as a badge icon, the same way: the lite chapter's place badges |
 | 26701-26745 | Its 45 icons (2501-2545) as catch pictures, at 3 times |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
-| 26960-26964 | The [Title Screen Look](#settings) (revision 7): its spec; the main menu's layout 9 (the spotlight panel, rims, film strip and round logo, which stays under the photo) as a top, a two-row middle and a bottom, built at the frame's height; and the city map (1100, its sky filled) as a photo |
+| 26960-26964 | The [Title Screen Look](#settings) (revision 7): its spec; the main menu's layout 9 (the spotlight panel, rims, film strip and round logo, which stays under the photo) as a top, a two-row middle and a bottom, built at the frame's height; and the city map (1100, its sky filled; its middle doubled exactly, a little smaller in the 3:4 frame so the logo shows) as a photo |
 | 26901-26914 | Music, the demo's cues 3001-3014 (city noise, club, comic, exciting, failure, fail tone, main menu, map day, map night, ringtone, sentimental, stressed, success, success tone), at 26900 + (cue − 3000), rendered through Java's synthesizer as BREW's are |
 | 26990 | The frame backdrop: the demo's orange panel (sprites 4 and 5 of its resource 16, `tools/translate/shw_sprites.py`) with its copper rim along each edge of the strip, in the shape of BREW's (26999) |
 | 26998 | The spec, JSON. Its catch pictures also list the star under 2499, a number no demo resource has, so an episode's catch list can name it |

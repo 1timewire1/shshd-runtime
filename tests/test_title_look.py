@@ -82,6 +82,25 @@ class TitleLookTests(unittest.TestCase):
         self.assertTrue(wide.photo_drops)
         self.assertFalse(fitted.photo_drops)
 
+    def test_the_smartphones_wood_a_smaller_photo_at_3_4_and_a_title_that_follows(self):
+        from exp_runtime.title_look import SMALL_UNTIL
+        the_look = look({'background': {'hd_wood': True},
+                         'photo': {'picture': {'id': 26962}, 'centre': [384, 560], 'hd_scale': 0.8},
+                         'title': {'picture': {'id': 26963}, 'centre': [384, 190], 'follow': 0.5}},
+                        {26962: png((400, 300), (255, 255, 255, 255)), 26963: png((200, 100), (255, 0, 0, 255))})
+        wood = pygame.Surface((10, 10))
+        wood.fill((120, 60, 20))
+        for height in (1024, SMALL_UNTIL, 1664):
+            with self.subTest(height=height):
+                extra = max(0, height - FRAME[1]) - HdUi.buttons_raise(height)
+                background, photo, _, title = the_look.layers(height, FRAME, S, extra=extra, photo_shift=0, photo_grow=1.0,
+                                                              scaled=lambda s, k: pygame.transform.smoothscale(
+                                                                  s, (round(s.get_width() * k), round(s.get_height() * k))),
+                                                              hd_wood=lambda: wood)
+                self.assertEqual(background[0].get_at((5, 5))[:3], (120, 60, 20))        # the wood, scaled to cover
+                self.assertEqual(photo[0].get_width(), round(400 * S * (0.8 if height == 1024 else 1.0)))
+                self.assertEqual(title[1], (384, 190 + extra * 0.5))
+
     def test_a_sliced_background_is_built_at_the_frames_height_and_the_scene_follows_the_buttons(self):
         the_look = look({'background': {'top': {'id': 26961}, 'middle': {'id': 26962}, 'bottom': {'id': 26963}},
                          'scene': {'picture': {'id': 26964}, 'left': 0, 'bottom': 1000}},

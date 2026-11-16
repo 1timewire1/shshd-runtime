@@ -38,7 +38,11 @@ def framed_photo(art, border=PHOTO_BORDER, turn=PHOTO_TURN):
     the right, as the mock-ups draw it. RGBA."""
     photo = Image.new('RGBA', (art.width + 2 * border, art.height + 2 * border), (250, 250, 246, 255))
     photo.paste(art.convert('RGB'), (border, border))
-    turned = photo.rotate(turn, resample=Image.BICUBIC, expand=True)
+    return shadowed(photo.rotate(turn, resample=Image.BICUBIC, expand=True))
+
+
+def shadowed(turned):
+    """An RGBA photo with the mock-ups' soft shadow below and to the right of it."""
     pad = 24
     out = Image.new('RGBA', (turned.width + 2 * pad, turned.height + 2 * pad), (0, 0, 0, 0))
     shadow = Image.new('RGBA', turned.size, (0, 0, 0, 0))
@@ -93,7 +97,11 @@ def nr_look(x1i, pud, store_art, base=LOOK_IDS['nr']):
 SHW_MENU_LAYOUT, SHW_HIDDEN = 9, {31, 32}       # the main menu's layout, and the children MainMenu hides
 SHW_SCALE = 3                                   # painted at a third of the points, tripled (nearest)
 SHW_BOTTOM_ROWS = 103                           # rows that stay the same at any height, from the bottom
-SHW_CITY_MAP, SHW_CITY_SCALE, SHW_PHOTO_CENTRE = 1100, 1.35, (424, 585)
+SHW_CITY_MAP, SHW_PHOTO_CENTRE = 1100, (404, 590)
+SHW_CITY_CROP, SHW_CITY_SCALE = (46, 24, 346, 264), 2  # the map's middle (the tower, the studio lot, the hills), doubled
+                                                       # exactly, so it stays sharp (owner, 2026-11-16: bigger, cleanly)
+SHW_HD_SCALE = 0.9              # ...but smaller in the 3:4 frame, where it would cover the logo (owner, 2026-11-16: between
+                                # full size and 0.8)
 
 
 def hollywood_look(jar, base=LOOK_IDS['shw']):
@@ -125,23 +133,74 @@ def hollywood_look(jar, base=LOOK_IDS['shw']):
         t = min(1.0, y / 120)
         sky.paste((round(120 + 80 * t), round(170 + 60 * t), round(225 + 20 * t), 255), (0, y, city.width, y + 1))
     sky.alpha_composite(city)
-    art = sky.convert('RGB')
-    photo = framed_photo(art.resize((round(art.width * SHW_CITY_SCALE), round(art.height * SHW_CITY_SCALE)), Image.LANCZOS))
+    art = sky.convert('RGB').crop(SHW_CITY_CROP)
+    photo = framed_photo(art.resize((art.width * SHW_CITY_SCALE, art.height * SHW_CITY_SCALE), Image.NEAREST))
     spec = {'background': {'top': picture(base + 1, SHW_SCALE, False), 'middle': picture(base + 2, SHW_SCALE, False),
                            'bottom': picture(base + 3, SHW_SCALE, False)},
-            'photo': {'picture': picture(base + 4), 'centre': list(SHW_PHOTO_CENTRE)}}
+            'photo': {'picture': picture(base + 4), 'centre': list(SHW_PHOTO_CENTRE), 'hd_scale': SHW_HD_SCALE}}
     return {base: spec_bytes(spec), base + 1: png(top), base + 2: png(middle), base + 3: png(bottom), base + 4: png(photo)}
 
 
 # ---------------------------------------------------------------------------------------------------- SHS '11
 
 SHS11_WOOD, SHS11_LOGO = (1, 0, 0), (21, 0, 0)      # gamelib pictures (entry, order, palette): wood with the photo; logo
-SHS11_SCALE, SHS11_LOGO_CENTRE = 1.6, (384, 130)     # the frame's width over the 480-wide art
+SHS11_LOGO_SCALE, SHS11_LOGO_CENTRE = 1.6, (384, 130)     # the logo at the frame's width over the 480-wide art
+SHS11_PHOTO_SCALE, SHS11_PHOTO_CENTRE = 1.5, (384, 560)
+SHS11_WOOD_SATURATION = 70      # (0-255) a pixel at least this saturated, orange to red-brown, is wood
+
+
+def shs11_photo(wood):
+    """'11's photo cut out of picture 1 (owner, 2026-11-16): the wood is flood-filled in from the picture's edges (saturated
+    orange-brown; the photo's shadow on it goes with it), the photo's white border stops it, and what's left is the photo,
+    its edge softened by a pixel. Its left border runs off the picture's edge low down: those rows are carried on past it,
+    along the border's own slant (fitted to the rows above), in the border's colour. RGBA, cropped to the photo."""
+    from collections import deque
+    W, H = wood.size
+    hsv = wood.convert('HSV').load()
+    woodlike = lambda x, y: (hsv[x, y][1] >= SHS11_WOOD_SATURATION and (hsv[x, y][0] <= 40 or hsv[x, y][0] >= 245)   # noqa
+                             and hsv[x, y][2] < 245)
+    filled = bytearray(W * H)
+    queue = deque([(x, y) for x in range(W) for y in (0, H - 1)] + [(x, y) for y in range(H) for x in (0, W - 1)])
+    while queue:
+        x, y = queue.popleft()
+        if filled[y * W + x] or not woodlike(x, y):
+            continue
+        filled[y * W + x] = 1
+        queue.extend((nx, ny) for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
+                     if 0 <= nx < W and 0 <= ny < H and not filled[ny * W + nx])
+    left = {}                       # the photo's leftmost column in each row it's in
+    for y in range(H):
+        row = filled[y * W:(y + 1) * W]
+        x = row.find(0)
+        if x >= 0 and row.count(0) > W // 4:
+            left[y] = x
+    touching = [y for y, x in left.items() if x == 0]
+    sloped = [(y, x) for y, x in left.items() if 0 < x < W // 8 and (not touching or y < touching[0])]
+    pad = 0
+    if touching and len(sloped) > 10:
+        n = len(sloped)
+        my, mx = sum(y for y, _ in sloped) / n, sum(x for _, x in sloped) / n
+        slope = sum((y - my) * (x - mx) for y, x in sloped) / sum((y - my) ** 2 for y, _ in sloped)
+        edge = {y: mx + slope * (y - my) for y in touching}
+        pad = max(0, -min(round(e) for e in edge.values())) + 1
+    mask = Image.frombytes('L', (W, H), bytes(0 if f else 255 for f in filled))
+    photo = Image.new('RGBA', (W + pad, H), (0, 0, 0, 0))
+    full = wood.convert('RGBA')
+    full.putalpha(mask)
+    photo.paste(full, (pad, 0))
+    for y in touching if pad else ():
+        colour = wood.getpixel((0, y))
+        for x in range(max(0, pad + round(edge[y])), pad):
+            photo.putpixel((x, y), colour + (255,) if len(colour) == 3 else colour)
+    alpha = photo.getchannel('A').filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(0.7))
+    photo.putalpha(alpha)
+    return photo.crop(alpha.getbbox())
 
 
 def shs11_look(art_jar, base=LOOK_IDS['shs11']):
-    """SHS '11 (the 480 x 800 build's art, `art_jar` an open zipfile): gamelib picture 1, the wood with the photo painted
-    on (so nothing drops in), covering the frame, and the logo, picture 21, on top. Both shown at the frame's width."""
+    """SHS '11 (the 480 x 800 build's art, `art_jar` an open zipfile): its photo cut out of gamelib picture 1 (shs11_photo)
+    dropping in on the smartphone's own wood (owner, 2026-11-16), and the logo, picture 21, fading in on top at the frame's
+    width."""
     import shs11
     pictures = {(p.entry, p.order, p.palette): p.png for p in shs11.interface_pictures(art_jar)}
     if SHS11_WOOD not in pictures or SHS11_LOGO not in pictures:
@@ -149,9 +208,13 @@ def shs11_look(art_jar, base=LOOK_IDS['shs11']):
     wood, logo = Image.open(io.BytesIO(pictures[SHS11_WOOD])), Image.open(io.BytesIO(pictures[SHS11_LOGO]))
     if wood.width != 480:
         raise ValueError(f"'11's wood is {wood.width} wide: use the 480 x 800 build's art")
-    spec = {'background': {'cover': picture(base + 1, SHS11_SCALE)},
-            'title': {'picture': picture(base + 2, SHS11_SCALE), 'centre': list(SHS11_LOGO_CENTRE)}}
-    return {base: spec_bytes(spec), base + 1: png(wood.convert('RGB')), base + 2: png(logo.convert('RGBA'))}
+    photo = shs11_photo(wood.convert('RGB'))
+    photo = shadowed(photo.resize((round(photo.width * SHS11_PHOTO_SCALE), round(photo.height * SHS11_PHOTO_SCALE)),
+                                  Image.LANCZOS))
+    spec = {'background': {'hd_wood': True},
+            'photo': {'picture': picture(base + 1), 'centre': list(SHS11_PHOTO_CENTRE)},
+            'title': {'picture': picture(base + 2, SHS11_LOGO_SCALE), 'centre': list(SHS11_LOGO_CENTRE)}}
+    return {base: spec_bytes(spec), base + 1: png(photo), base + 2: png(logo.convert('RGBA'))}
 
 
 # ---------------------------------------------------------------------------------------------------- X360 (MS3 + MS4)
@@ -168,7 +231,9 @@ X360_FIVE = (('ms3', 'girl', (0.2, 0.7), (100, 610)), ('ms3', 'boy', (0.2, 0.7),
              ('ms4', 'kim', (0.17, 0.65), (250, 650)), ('ms4', 'ryan', (0.17, 0.65), (530, 600)),
              ('ms4', 'josh', (0.17, 0.65), (390, 585)))
 X360_CLOUDS = 0.6               # MS4's sky clouds' opacity over the sky
-X360_LOGO_CENTRE, X360_LOGO_W = (384, 190), 660
+X360_LOGO_CENTRE, X360_LOGO_W = (384, 190), 740       # (660 at first; owner, 2026-11-16: slightly bigger)
+X360_LOGO_FOLLOW = 0.5          # in a taller frame the logo moves down half as far as the scene does: centred in the sky
+                                # between the top and the five (owner, 2026-11-16)
 X360_FLOOR = 320                # points the scene's floor is carried on below the frame, for taller frames
 
 
@@ -248,7 +313,7 @@ def x360_look(ms4_files, ms3_files, base=LOOK_IDS['x360']):
     sky.convert('RGB').save(sky_jpeg, 'JPEG', quality=90)
     spec = {'background': {'cover': picture(base + 1)},
             'scene': {'picture': picture(base + 2), 'left': 0, 'bottom': H + X360_FLOOR},
-            'title': {'picture': picture(base + 3), 'centre': list(X360_LOGO_CENTRE)}}
+            'title': {'picture': picture(base + 3), 'centre': list(X360_LOGO_CENTRE), 'follow': X360_LOGO_FOLLOW}}
     return {base: spec_bytes(spec), base + 1: sky_jpeg.getvalue(), base + 2: png(tall), base + 3: png(logo)}
 
 

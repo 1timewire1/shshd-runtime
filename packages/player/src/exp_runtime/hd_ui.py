@@ -121,7 +121,8 @@ class HdUi:
         between = (height - self.buttons_raise(height)) / 2 if taller else FRAME[1] / 2   # between the title and buttons
         if look is not None:
             return look.layers(height, FRAME, S, extra=max(0, height - FRAME[1]) - self.buttons_raise(height),
-                               photo_shift=between - FRAME[1] / 2, photo_grow=grow, scaled=self.scaled)
+                               photo_shift=between - FRAME[1] / 2, photo_grow=grow, scaled=self.scaled,
+                               hd_wood=lambda: self.main_layers()[0][0])
         layers = self.main_layers()
         if not taller:
             return layers
