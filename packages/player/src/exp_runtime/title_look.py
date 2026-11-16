@@ -29,6 +29,7 @@ from . import graphics as pygame
 
 VERSION = 1
 SMALL_UNTIL = 1152      # points tall (2:3) by which a photo's `hd_scale` has eased back to its full size
+TITLE_CLEARANCE = 8     # points a title keeps below a phone's status bar (HdUi's top_pad)
 
 
 @dataclass(eq=False)
@@ -76,7 +77,7 @@ class TitleLook:
             self._pictures[key] = image
         return self._pictures[key]
 
-    def layers(self, height, frame, S, *, extra, photo_shift, photo_grow, scaled, hd_wood=None):
+    def layers(self, height, frame, S, *, extra, photo_shift, photo_grow, scaled, hd_wood=None, top_pad=0):
         """[(background, centre), (photo, centre) or None, None (no ribbon), (title, centre) or None] for a frame
         `frame[0]` x `height` points: `extra` is how far the buttons moved down from HD's place, `photo_shift` and
         `photo_grow` what HD's photo does in this frame (HdUi.main_layout), `scaled(surface, factor)` a smooth scale,
@@ -112,7 +113,11 @@ class TitleLook:
         title = self.spec.get('title')
         if title:
             x, y = title['centre']
-            layers.append((self.picture(title['picture'], S), (x, y + extra * title.get('follow', 0))))
+            image = self.picture(title['picture'], S)
+            y += extra * title.get('follow', 0)
+            # Below a phone's status bar and camera cutout, if they'd cover it ('11's logo on the g54: owner, 2026-11-16)
+            y = max(y, top_pad + TITLE_CLEARANCE + image.get_height() / S / 2) if top_pad else y
+            layers.append((image, (x, y)))
         else:
             layers.append(None)
         return layers

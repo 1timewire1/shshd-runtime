@@ -112,17 +112,18 @@ class HdUi:
     def main_layout(self, height=FRAME[1]):
         """main_layers placed in a frame `height` points tall: (surface, center in points) for the wood, photo, ribbon
         and title, or None for a layer the Title Screen Look has none of. HD's own at 1024."""
-        return self._main_layout(height, self.title_look())
+        return self._main_layout(height, self.title_look(), getattr(self, 'top_pad', 0))
 
     @lru_cache(maxsize=2)
-    def _main_layout(self, height, look):
+    def _main_layout(self, height, look, top_pad=0):
+        """(`top_pad`: points of the frame's top a phone's status bar covers; a look's title keeps below it.)"""
         taller = height > FRAME[1]
         grow = max(1.0, min(self.PHOTO_GROW_MAX, height / FRAME[1] * self.PHOTO_GROW)) if taller else 1.0
         between = (height - self.buttons_raise(height)) / 2 if taller else FRAME[1] / 2   # between the title and buttons
         if look is not None:
             return look.layers(height, FRAME, S, extra=max(0, height - FRAME[1]) - self.buttons_raise(height),
                                photo_shift=between - FRAME[1] / 2, photo_grow=grow, scaled=self.scaled,
-                               hd_wood=lambda: self.main_layers()[0][0])
+                               hd_wood=lambda: self.main_layers()[0][0], top_pad=top_pad)
         layers = self.main_layers()
         if not taller:
             return layers
@@ -135,12 +136,12 @@ class HdUi:
         return [(wood, (384, height / 2)), (photo, (384, between)), ribbon, title]
 
     def main_backdrop(self, height=FRAME[1]):
-        return self._main_backdrop(height, self.title_look())
+        return self._main_backdrop(height, self.title_look(), getattr(self, 'top_pad', 0))
 
     @lru_cache(maxsize=2)
-    def _main_backdrop(self, height, look):
+    def _main_backdrop(self, height, look, top_pad=0):
         surface = pygame.Surface((FRAME[0] * S, round(height * S))).convert()
-        for layer in self.main_layout(height):       # (`look` keys the cache; a subclass may lay its own art out)
+        for layer in self.main_layout(height):       # (`look`, `top_pad` key the cache; a subclass may lay its own art out)
             if layer is not None:
                 image, (cx, cy) = layer
                 surface.blit(image, image.get_rect(center=(round(cx * S), round(cy * S))))

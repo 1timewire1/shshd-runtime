@@ -534,6 +534,9 @@ class HdShell:
         for part in (getattr(self, 'main', None), getattr(self, 'boot', None)):
             if getattr(part, 'grows', False):
                 part.height = height
+        main = getattr(self, 'main', None)
+        if main is not None and hasattr(self.app, 'menu_top_pad'):
+            main.top_pad = self.app.menu_top_pad(height)    # a Title Screen Look's logo keeps below a phone's status bar
         if hasattr(self, 'pause'):
             self.pause.frame_height = height if getattr(getattr(self, 'main', None), 'grows', False) else FRAME[1]
 

@@ -100,6 +100,14 @@ class TitleLookTests(unittest.TestCase):
                 self.assertEqual(background[0].get_at((5, 5))[:3], (120, 60, 20))        # the wood, scaled to cover
                 self.assertEqual(photo[0].get_width(), round(400 * S * (0.8 if height == 1024 else 1.0)))
                 self.assertEqual(title[1], (384, 190 + extra * 0.5))
+        # Under a phone's status bar (160 points of the frame's top: past the title's top at 140) the title moves down to
+        # clear it, and only then
+        title = the_look.layers(1024, FRAME, S, extra=0, photo_shift=0, photo_grow=1.0, scaled=lambda s, k: s, hd_wood=lambda: wood,
+                                top_pad=160)[3]
+        self.assertEqual(title[1], (384, 160 + 8 + 50))
+        title = the_look.layers(1024, FRAME, S, extra=0, photo_shift=0, photo_grow=1.0, scaled=lambda s, k: s, hd_wood=lambda: wood,
+                                top_pad=20)[3]
+        self.assertEqual(title[1], (384, 190))
 
     def test_a_sliced_background_is_built_at_the_frames_height_and_the_scene_follows_the_buttons(self):
         the_look = look({'background': {'top': {'id': 26961}, 'middle': {'id': 26962}, 'bottom': {'id': 26963}},
