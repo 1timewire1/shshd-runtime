@@ -19,8 +19,12 @@ from .x360_battle import NO_WORD, SECONDS
 from .x360_diss import COUNTDOWN, ENDED, RUNNING, SPIN_DOWN, TUTORIAL, TUTORIAL_MS
 from .x360_games import CLOSING, OPENING, OPENING_MS, READY
 
-WORD_HEIGHT = 42                        # native pixels at the record's middle depth
+WORD_HEIGHT = 44                        # native pixels at the record's middle depth
 WORD_COLOUR = (255, 255, 255)
+WORD_FONT = 'casual_white'              # Blambot Casual: the badaboom face blurred at this size (owner, 2026-11-16)
+WORD_DEPTH = (.85, 1.15)                # how far the camera's depth may shrink or grow a word, to keep it readable
+WORD_PLATE = (10, 12, 20, 235)          # the plate behind a word, and its edge
+WORD_EDGE = (255, 255, 255, 255)
 TARGET_Y, TARGET_HEIGHT = 40, 30        # "crash rhymes with...", along the top
 STAMPS = {'good': 'stamp_yeah', 'bad': 'stamp_ooops'}
 STAMP_MS, STAMP_WIDTH = 700, 230
@@ -79,31 +83,36 @@ class X360BattleRenderer(X360DissRenderer):
         middle = self._project(0, 0)[2]
         for depth, index, word, nx, ny in sorted(shown, key=lambda item: -item[0]):
             text = game.words[word] if 0 <= word < len(game.words) else ''
-            scale = middle / depth if depth else 1
-            image = self._text(text, max(8, round(WORD_HEIGHT * scale)), WORD_COLOUR, font='badaboom_white')
+            scale = min(WORD_DEPTH[1], max(WORD_DEPTH[0], middle / depth if depth else 1))
+            image = self._text(text, max(8, round(WORD_HEIGHT * scale)), WORD_COLOUR, font=WORD_FONT)
             w, h = image.get_width() / self.k, image.get_height() / self.k
+            edge = FRAME[0] / self.k                    # kept on screen: a long word near the side slides in
+            nx = min(max(nx, w / 2 + 10), edge - w / 2 - 10)
             centre = (nx * self.k, (ny - h / 2) * self.k)
             size = (round(w * self.k), round(h * self.k))
             if game.tier == 3:
                 self._flames(surface, centre, size, now, index)
-            self._plate(surface, nx - w / 2 - 6, ny - h, w + 12, h)
+            self._plate(surface, nx - w / 2 - 8, ny - h - 2, w + 16, h + 4, WORD_PLATE, WORD_EDGE)
             self.blit(surface, image, nx, ny, w, h, anchor='midbottom')
             if game.tier >= 2:
                 self._sparks(surface, centre, size, now, index)
 
-    def _plate(self, surface, x, y, w, h):
+    def _plate(self, surface, x, y, w, h, fill=(12, 14, 24, 170), edge=None):
         k = self.k
         rect = pygame.Rect(round(x * k), round(y * k), max(1, round(w * k)), max(1, round(h * k)))
-        key = ('plate', rect.size)
+        key = ('plate', rect.size, fill, edge)
         plate = self._scaled.get(key)
         if plate is None:
             plate = pygame.Surface(rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(plate, (12, 14, 24, 170), plate.get_rect(), border_radius=max(2, round(8 * k)))
+            radius = max(2, round(8 * k))
+            pygame.draw.rect(plate, fill, plate.get_rect(), border_radius=radius)
+            if edge is not None:
+                pygame.draw.rect(plate, edge, plate.get_rect(), max(1, round(2 * k)), border_radius=radius)
             self._scaled[key] = plate
         surface.blit(plate, rect)
 
     def _target(self, surface, game):
-        image = self._text(f'{game.target} rhymes with...', TARGET_HEIGHT, font='badaboom_white')
+        image = self._text(f'{game.target} rhymes with...', TARGET_HEIGHT, font=WORD_FONT)
         w, h = image.get_width() / self.k, image.get_height() / self.k
         if w > FRAME[0] / self.k - 20:
             w, h = FRAME[0] / self.k - 20, h * (FRAME[0] / self.k - 20) / w
