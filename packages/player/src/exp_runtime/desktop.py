@@ -37,6 +37,7 @@ from .desktop_message_hd import CodMessageRenderer, HdMessageRenderer
 from .desktop_nr_arena import NRArenaRenderer
 from .desktop_nr_arena_x360 import X360ArenaRenderer
 from .desktop_x360_diss import X360DissRenderer
+from .desktop_x360_battle import X360BattleRenderer
 from .desktop_x360_leash import X360LeashRenderer, drag_direction, stick_direction
 from .desktop_cutscene import CutsceneRenderer
 from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
@@ -645,6 +646,7 @@ class Desktop:
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
         self.cutscene_renderer = CutsceneRenderer(session.resources)
         self.x360_diss_renderer = X360DissRenderer(session.resources)
+        self.x360_battle_renderer = X360BattleRenderer(session.resources)
         self.puzzle_key = None          # the jewel puzzle: (key, direction, ms to its next repeat) of a held direction key
         self.puzzle_pad = False         # OK came from a controller's confirm, and is held
         self.leash_anchor = None        # where a drag last turned, in frame units, while one is shaking the leash
@@ -1837,7 +1839,8 @@ class Desktop:
                      getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
                      getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
                      getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
-                     getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None)):
+                     getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None),
+                     getattr(self, 'x360_battle_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -2091,12 +2094,13 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Cutscene rendering stopped: %s', error)
-        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch') and not ask and not closed
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch') and not ask and not closed
                 and not self.error):
             try:
                 engine = self.session.engine
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
-                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer, 'brew_catch': self.brew_catch_renderer,
+                            'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
+                            'x360_battle': self.x360_battle_renderer, 'brew_catch': self.brew_catch_renderer,
                             'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
                 if action.name in ('shs11_memory', 'shs11_reflex'):
                     self._warm_shs11_sounds(getattr(engine, action.name))
@@ -4230,10 +4234,11 @@ class Desktop:
             if command is not None:
                 self.command(command)
             return True
-        if (action and action.name in ('x360_slot', 'x360_diss', 'brew_catch') and not self.menu_open and not self.error and not asking
-                and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+        if (action and action.name in ('x360_slot', 'x360_diss', 'x360_battle', 'brew_catch') and not self.menu_open and not self.error
+                and not asking and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             x, y, height = self._game_point(event.pos, {'x360_slot': self.x360_slot_renderer,
-                                                        'x360_diss': self.x360_diss_renderer}.get(action.name))
+                                                        'x360_diss': self.x360_diss_renderer,
+                                                        'x360_battle': self.x360_battle_renderer}.get(action.name))
             if 0 <= x < 150 and height - 144 <= y <= height:
                 self.command(('menu',))
             elif (0 <= x <= 768 and 0 <= y <= height) or (action.name in ('brew_catch', 'x360_slot')
@@ -4703,7 +4708,7 @@ class Desktop:
         """The slot machine and Diss Practice take one input: Enter, Space or a controller's confirm. True when the key
         was one."""
         action = self.session.pending
-        if (action is None or action.name not in ('x360_slot', 'x360_diss', 'brew_catch') or self.menu_open or self.error
+        if (action is None or action.name not in ('x360_slot', 'x360_diss', 'x360_battle', 'brew_catch') or self.menu_open or self.error
                 or self.host_prompt is not None or event.key not in KEYS_ACTIVATE):
             return False
         self._attempt(lambda: self.session.answer(None))

@@ -134,6 +134,65 @@ class DissBattleTests(unittest.TestCase):
             xb.DissBattle(**saved).validate()
 
 
+class DrawingTests(unittest.TestCase):
+    """desktop_x360_battle on a stand-in X360 skin (test_nr_arena_x360's), as the practice's drawing tests do."""
+
+    def setUp(self):
+        import os
+        os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'
+        import pygame
+        from types import SimpleNamespace
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.pygame = pygame
+        from exp_runtime.desktop_x360_battle import X360BattleRenderer
+        from test_nr_arena_x360 import library, x360_skin
+        files = x360_skin(pygame, parts=True)
+        spec = json.loads(files[26300])
+        from test_x360_diss import NOTE_CAMERA            # (the practice's test's camera and notes)
+        spec['booth']['parts']['camera'] = NOTE_CAMERA
+        spec['booth']['notes'] = dict(frame=[2560, 1440], height=.25, wheel=[-.1447, 1.0085, -7.8384], out=1.19, kinds={})
+        spec['battle'] = {'taunts': ['Is that all?']}
+        files[26300] = json.dumps(spec).encode()
+        self.renderer = X360BattleRenderer(SimpleNamespace(library=library(files)))
+        self.SimpleNamespace = SimpleNamespace
+
+    def draw(self, game):
+        session = self.SimpleNamespace(engine=self.SimpleNamespace(x360_battle=game, panel=self.SimpleNamespace(background_id=-1)))
+        self.renderer.draw(session)
+        return self.pygame.image.tobytes(self.renderer.canvas, 'RGBA')
+
+    def test_every_phase_draws_and_the_words_show_on_the_record(self):
+        game = xb.DissBattle.opened(ROUNDS, tutorial=True)
+        random = Random48()
+        self.draw(game)
+        game.tick(xb.OPENING_MS + 20, random)
+        self.draw(game)
+        game.tick(xb.TUTORIAL_MS, random)
+        self.draw(game)
+        game.press()
+        game.tick(100, random)
+        self.draw(game)
+        game.tick(xb.COUNTDOWN_MS, random)
+        with_words = self.draw(game)
+        for slot in game.slots:
+            slot.update(shown=xb.NO_WORD)
+        self.assertNotEqual(self.draw(game), with_words)
+        for slot in game.slots:
+            slot.update(shown=slot['word'])
+        for tier in (2, 3):
+            game.tier, game.popup = tier, [tier, game.now_ms]
+            game.effects = [['good', 0, game.now_ms], ['bad', 1, game.now_ms]]
+            self.draw(game)
+        game.total_time = 1
+        game.tick(1200, random)
+        self.draw(game)
+        while not game.tick(500, random):
+            if game.phase == xb.ENDED:
+                game.press()
+            self.draw(game)
+
+
 class StoryTests(unittest.TestCase):
     """A creator story calls it as the translated Monday Planner will: service 222 behind the minigames query."""
 
