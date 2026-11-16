@@ -89,10 +89,11 @@ class TitleLook:
             # It grows as HD's does, but never wider than the frame: `fit` is the width (points) that must stay inside it,
             # the picture's own unless the spec says less (BREW '07's band may run off the sides; its letters may not).
             fit = photo.get('fit') or image.get_width() / S
-            grow = min(photo_grow, max(1.0, width / fit))
+            x, y = photo['centre']
+            room = 2 * min(x, width - x)                # the widest it can be about its centre and stay inside
+            grow = min(photo_grow, max(1.0, room / fit))
             if grow > 1:
                 image = scaled(image, grow)
-            x, y = photo['centre']
             layers.append((image, (x, y + photo_shift)))
         else:
             layers.append(None)

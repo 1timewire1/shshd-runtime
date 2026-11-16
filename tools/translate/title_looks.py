@@ -88,6 +88,51 @@ def nr_look(x1i, pud, store_art, base=LOOK_IDS['nr']):
     return {base: spec_bytes(spec), base + 1: png(backdrop.convert('RGB')), base + 2: png(photo), base + 3: png(logo)}
 
 
+# ---------------------------------------------------------------------------------------------------- Surviving Hollywood
+
+SHW_MENU_LAYOUT, SHW_HIDDEN = 9, {31, 32}       # the main menu's layout, and the children MainMenu hides
+SHW_SCALE = 3                                   # painted at a third of the points, tripled (nearest)
+SHW_BOTTOM_ROWS = 103                           # rows that stay the same at any height, from the bottom
+SHW_CITY_MAP, SHW_CITY_SCALE, SHW_PHOTO_CENTRE = 1100, 1.35, (424, 585)
+
+
+def hollywood_look(jar, base=LOOK_IDS['shw']):
+    """Surviving Hollywood: the main menu's layout 9 (the spotlight panel, its rims, the film strip and the round logo 1001,
+    which stays under the photo: owner, 2026-11-16) painted as the game would on a screen the frame's shape, and the city
+    map (1100, its transparent sky filled) as a photo. The layout stretches between a top and a bottom that stay the same
+    at any height, its middle a two-row scanline, so it ships as those three slices (built at the frame's height)."""
+    import shw
+    import shw_sprites
+    import shw_ui
+    found = shw.jar_resources(jar)
+    sprites, _, comps = shw_sprites.parse(found[16])
+    slots = {0: shw.picture(found[1001]).convert('RGBA'), 1: shw.picture(found[1002]).convert('RGBA')}
+    layouts = shw_ui.Layouts(found[15], sprites, comps, slots)
+    hidden = layouts.hidden(SHW_MENU_LAYOUT) | SHW_HIDDEN
+
+    def paint(h):
+        canvas = Image.new('RGBA', (FRAME[0] // SHW_SCALE + 1, h), (0, 0, 0, 255))
+        layouts.paint(canvas, SHW_MENU_LAYOUT, 0, 0, canvas.width, h, hidden=hidden)
+        return canvas.convert('RGB')
+    short = paint(-(-FRAME[1] // SHW_SCALE))            # HD's own frame: its top and bottom meet with nothing between
+    split = short.height - SHW_BOTTOM_ROWS
+    tall = paint(short.height + 40)
+    top, bottom, middle = short.crop((0, 0, short.width, split)), short.crop((0, split, short.width, short.height)), \
+        tall.crop((0, split + 16, tall.width, split + 18))      # past the 16 rows of gradient the top runs into
+    city = shw.picture(found[SHW_CITY_MAP]).convert('RGBA')
+    sky = Image.new('RGBA', city.size)
+    for y in range(city.height):
+        t = min(1.0, y / 120)
+        sky.paste((round(120 + 80 * t), round(170 + 60 * t), round(225 + 20 * t), 255), (0, y, city.width, y + 1))
+    sky.alpha_composite(city)
+    art = sky.convert('RGB')
+    photo = framed_photo(art.resize((round(art.width * SHW_CITY_SCALE), round(art.height * SHW_CITY_SCALE)), Image.LANCZOS))
+    spec = {'background': {'top': picture(base + 1, SHW_SCALE, False), 'middle': picture(base + 2, SHW_SCALE, False),
+                           'bottom': picture(base + 3, SHW_SCALE, False)},
+            'photo': {'picture': picture(base + 4), 'centre': list(SHW_PHOTO_CENTRE)}}
+    return {base: spec_bytes(spec), base + 1: png(top), base + 2: png(middle), base + 3: png(bottom), base + 4: png(photo)}
+
+
 # ---------------------------------------------------------------------------------------------------- BREW '07 and '08
 
 BREW_TITLE = 47                 # the whole title, logo and photo in one picture (res_xlarge.pud)

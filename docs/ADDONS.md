@@ -189,7 +189,7 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 ### `shshw`: Surviving Hollywood
 
 Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required by Surviving Hollywood's own chapters
-(pack 31700, below: the lite revision 4, the full chapter revision 6). Revision 6, about 3.6 MB. Built from the Surviving
+(pack 31700, below: the lite revision 4, the full chapter revision 6). Revision 7 (the Title Screen Look), about 4.1 MB. Built from the Surviving
 Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, its music, its
 catch game's look and its status bar's moon and sun (revision 5: the full chapter's daytime badges); and from the low-end
 1.0.4 (88K) demo's jar, its eight silhouettes (revision 6: the full chapter's people with no portrait).
@@ -209,6 +209,7 @@ revision 4 no sun; revision 5 no silhouettes.
 | 26632 | The star (sprite 59) as a badge icon, the same way: the lite chapter's place badges |
 | 26701-26745 | Its 45 icons (2501-2545) as catch pictures, at 3 times |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
+| 26960-26964 | The [Title Screen Look](#settings) (revision 7): its spec; the main menu's layout 9 (the spotlight panel, rims, film strip and round logo, which stays under the photo) as a top, a two-row middle and a bottom, built at the frame's height; and the city map (1100, its sky filled) as a photo |
 | 26901-26914 | Music, the demo's cues 3001-3014 (city noise, club, comic, exciting, failure, fail tone, main menu, map day, map night, ringtone, sentimental, stressed, success, success tone), at 26900 + (cue − 3000), rendered through Java's synthesizer as BREW's are |
 | 26990 | The frame backdrop: the demo's orange panel (sprites 4 and 5 of its resource 16, `tools/translate/shw_sprites.py`) with its copper rim along each edge of the strip, in the shape of BREW's (26999) |
 | 26998 | The spec, JSON. Its catch pictures also list the star under 2499, a number no demo resource has, so an episode's catch list can name it |
