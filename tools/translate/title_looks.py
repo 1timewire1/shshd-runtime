@@ -144,6 +144,8 @@ def shs11_look(art_jar, base=LOOK_IDS['shs11']):
     on (so nothing drops in), covering the frame, and the logo, picture 21, on top. Both shown at the frame's width."""
     import shs11
     pictures = {(p.entry, p.order, p.palette): p.png for p in shs11.interface_pictures(art_jar)}
+    if SHS11_WOOD not in pictures or SHS11_LOGO not in pictures:
+        return {}                   # (a jar without them, as the tests' made-up gamelib: no look)
     wood, logo = Image.open(io.BytesIO(pictures[SHS11_WOOD])), Image.open(io.BytesIO(pictures[SHS11_LOGO]))
     if wood.width != 480:
         raise ValueError(f"'11's wood is {wood.width} wide: use the 480 x 800 build's art")

@@ -364,7 +364,7 @@ class AddonTests(unittest.TestCase):
     def test_the_addon_holds_everything_and_says_where(self):
         data, spec = self.build()
         archive = ExpArchive(data)
-        self.assertEqual(addon_record(archive), ('provides', dict(id='shs11', title="Surviving High School '11", revision=2)))
+        self.assertEqual(addon_record(archive), ('provides', dict(id='shs11', title="Surviving High School '11", revision=3)))
         self.assertEqual(json.loads(archive.read(shs11.SPEC)), spec)
         self.assertEqual(len(spec['backgrounds']), shs11.LOCATIONS)
         self.assertEqual(spec['backgrounds']['0'], [26000, 26001])
@@ -814,7 +814,9 @@ class StoryTests(unittest.TestCase):
 
     def test_a_story_says_its_addon_and_pack(self):
         archive = translated(setup_script())
-        self.assertEqual(addon_record(archive), ('requires', ((shs11.ADDON_ID, shs11.ADDON_REVISION),)))
+        # (revision 3 added only the main menu's art, so a story asks for 2)
+        self.assertEqual(addon_record(archive), ('requires', ((shs11.ADDON_ID, shs11.STORIES_NEED),)))
+        self.assertEqual(shs11.STORIES_NEED, 2)
         metadata = archive.metadata()
         self.assertEqual((metadata.pack_id, metadata.episode_id, metadata.titles[0]), (shs11.PACK_ID, 7, 'Test (SHS11)'))
 

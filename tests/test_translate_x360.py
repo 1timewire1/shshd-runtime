@@ -1011,9 +1011,9 @@ QuitGame()
         for story in (x360.DAY_OF_DISS, x360.PUZZLE_TEST, x360.DATING_BETH):
             self.assertFalse(story.diss_rounds or story.script_edits or story.event_scenes)
         # Revision 15 only adds the main menu's tune (MENU_MUSIC), which no story plays; 16, Day of Diss's opening for taller
-        # frames, is what it needs now.
+        # frames, is what it needs now; 17 only the main menu's Title Screen Look.
         self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 16)
-        self.assertEqual(x360.ADDON_REVISION, 16)
+        self.assertEqual(x360.ADDON_REVISION, 17)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
 
