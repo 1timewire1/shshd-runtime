@@ -109,7 +109,8 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 16, about 55 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 17, about 56 MB.
+Revision 17 adds the main menu's [Title Screen Look](#settings), which needs the MS3 prototype's data.pak too (`--ms3`); no story asks for it.
 Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settings). Revision 16 rebuilds Day of Diss's opening for taller frames (storyboard spec version 2; [X360.md](X360.md#day-of-disss-opening)), which Day of Diss now asks for; the other stories ask for what they did.
 
 | Resources | What |
@@ -126,13 +127,15 @@ Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settin
 | 26790–26795 | Diss Practice's notes and Josh's dance |
 | 26796–26805 | Day of Diss's opening: its timeline, stills, card and whip |
 | 26900–26914 | Music, each track mixed with its ambience |
+| 26960–26963 | The Title Screen Look (revision 17): its spec, MS4's sky with its clouds, the roof scene (MS4's splash, two schools, the city, and five on the roof: MS3's girl and boy, MS4's Kim, Josh and Ryan), kept above the buttons, and the logo with its splat and tapes |
 | 26982–26995 | Sound effects and emoticons |
 | 26996 | The main menu's tune (`music/main_menu`, mixed as the tracks are; `x360.MENU_MUSIC`) |
 | 26999 | The frame backdrop |
 
 ```sh
 python tools/translate/translate.py x360 DATA_PAK --story addon --pud RES_LARGE_PUD --x1i X1I_JAR --looks NR_LOOKS_JSON \
-    --portraits PORTRAIT_CATALOG --backgrounds BACKGROUNDS --dbp DECK_SHOTS --puzzle PUZZLE_SHOTS --opening OPENING_STILLS --out OUT_DIR
+    --portraits PORTRAIT_CATALOG --backgrounds BACKGROUNDS --dbp DECK_SHOTS --puzzle PUZZLE_SHOTS --opening OPENING_STILLS \
+    --ms3 MS3_DATA_PAK --out OUT_DIR
 ```
 
 ### `shs11`: Surviving High School '11

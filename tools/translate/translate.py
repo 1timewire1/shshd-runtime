@@ -99,6 +99,7 @@ def main(argv=None):
     xb.add_argument('--puzzle', type=Path,
                     help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
                          'cursor and boards')
+    xb.add_argument('--ms3', type=Path, help="with --story addon: the MS3 prototype's data.pak, for the Title Screen Look")
     xb.add_argument('--out', type=Path, required=True)
     s11 = sub.add_parser('shs11', help="SHS '11, the J2ME game: its addon (shs11.py) or, with --story, a story (shs11_story.py)")
     s11.add_argument('--art', type=Path, help='a jar with the sharpest art: an Italian 480x800 or 360x640 build')
@@ -331,7 +332,13 @@ def translate_x360(args):
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
                                          pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle)
         opening = x360_arena_art.opening(proto.files, x360.pcm_wav, args.opening)
-        data = x360.build_addon(stories, {**skin, **opening, **x360.ms3_portraits(args.portraits),
+        look = {}
+        if args.ms3:                # the Title Screen Look: MS3's Nicole and boy stand with MS4's three
+            import title_looks
+            look = title_looks.x360_look(proto.files, x360.read_pak(args.ms3.read_bytes()))
+        else:
+            print('addon: no Title Screen Look (it needs --ms3, the MS3 prototype\'s data.pak)')
+        data = x360.build_addon(stories, {**skin, **opening, **look, **x360.ms3_portraits(args.portraits),
                                           x360.MENU_MUSIC: x360.mix_track(proto.files, 'main_menu')})
         target = args.out / f'{x360.ADDON_FILE}.exp'
         target.write_bytes(data)

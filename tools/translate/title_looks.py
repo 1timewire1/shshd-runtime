@@ -152,6 +152,104 @@ def shs11_look(art_jar, base=LOOK_IDS['shs11']):
     return {base: spec_bytes(spec), base + 1: png(wood.convert('RGB')), base + 2: png(logo.convert('RGBA'))}
 
 
+# ---------------------------------------------------------------------------------------------------- X360 (MS3 + MS4)
+
+X360_GUI = 'data/art/gui/'
+X360_SCENE = (1820, 1024)       # the main menu's 16:9 scene, laid out as the game does (pieces stretched to their boxes,
+                                # centres at x = 0.5 + pos / 1.4 of the width, y = 0.5 + pos of the height)
+X360_SCENE_SCALE = 0.8          # its right end, shrunk, set at the frame's bottom-right
+X360_SCHOOL = ((0.34, 0.24), (0.48, 0.54))      # MS4's school_building box: centre offset, size
+X360_SCHOOL_EDGES = (-20, 788)  # where the two schools' tall ends reach: a mirrored copy left, the game's own moved right
+# The five on the roof (owner, 2026-11-16): (build, piece, box shape (shares of the 16:9 screen), centre in the frame), back
+# first. Each as tall as MS4's (0.65 of the screen, scaled); MS3's keep their own box's shape.
+X360_FIVE = (('ms3', 'girl', (0.2, 0.7), (100, 610)), ('ms3', 'boy', (0.2, 0.7), (668, 560)),
+             ('ms4', 'kim', (0.17, 0.65), (250, 650)), ('ms4', 'ryan', (0.17, 0.65), (530, 600)),
+             ('ms4', 'josh', (0.17, 0.65), (390, 585)))
+X360_CLOUDS = 0.6               # MS4's sky clouds' opacity over the sky
+X360_LOGO_CENTRE, X360_LOGO_W = (384, 190), 660
+X360_FLOOR = 320                # points the scene's floor is carried on below the frame, for taller frames
+
+
+def x360_piece(files, name):
+    """A gui picture as RGBA: its PNG if there is one, else its JPEG with its `_a` alpha, else the alpha alone in white."""
+    if X360_GUI + name + '.png' in files:
+        return Image.open(io.BytesIO(files[X360_GUI + name + '.png'])).convert('RGBA')
+    alpha = files.get(X360_GUI + name + '_a.jpg')
+    if X360_GUI + name + '.jpg' in files:
+        image = Image.open(io.BytesIO(files[X360_GUI + name + '.jpg'])).convert('RGBA')
+    else:
+        image = Image.new('RGBA', Image.open(io.BytesIO(alpha)).size, (255, 255, 255, 255))
+    if alpha is not None:
+        image.putalpha(Image.open(io.BytesIO(alpha)).convert('L').resize(image.size))
+    return image
+
+
+def x360_look(ms4_files, ms3_files, base=LOOK_IDS['x360']):
+    """X360 (the owner's all-five version): MS4's sky and clouds behind; the roof scene, MS4's splash, the five (MS3's Nicole
+    and boy, MS4's Kim, Josh and Ryan), two schools and the city, kept above the buttons; the logo with its splat and tapes
+    fading in on top. `ms4_files`, `ms3_files`: the prototypes' data.pak contents (x360.read_pak). Nothing drops in."""
+    W, H = FRAME
+    sw, sh = X360_SCENE
+
+    def tint(image, rgb):
+        out = Image.new('RGBA', image.size, rgb + (255,))
+        out.putalpha(image.getchannel('A'))
+        return out
+
+    def place(canvas, image, pos=(0, 0), size=(1, 1)):
+        w, h = round(sw * size[0]), round(sh * size[1])
+        image = image.resize((w, h), Image.LANCZOS)
+        cx, cy = sw * (0.5 + pos[0] / 1.4), sh * (0.5 + pos[1])
+        canvas.alpha_composite(image, (round(cx - w / 2), round(cy - h / 2)))
+
+    def scene_x(frame_x):           # the scene's x for a frame x (the scaled scene's right edge is the frame's)
+        return (frame_x - (W - sw * X360_SCENE_SCALE)) / X360_SCENE_SCALE
+
+    sky = x360_piece(ms4_files, 'background').resize((H, H), Image.LANCZOS).crop(((H - W) // 2, 0, (H + W) // 2, H))
+    clouds = x360_piece(ms4_files, 'clouds')
+    clouds.putalpha(clouds.getchannel('A').point(lambda v: round(v * X360_CLOUDS)))
+    sky.alpha_composite(clouds.resize((W, W // 2), Image.LANCZOS))
+    back, front = Image.new('RGBA', X360_SCENE), Image.new('RGBA', X360_SCENE)
+    place(back, x360_piece(ms4_files, 'stain_clouds'))
+    (_, py), (sx, sy) = X360_SCHOOL
+    school = x360_piece(ms4_files, 'school_building')
+    left = scene_x(X360_SCHOOL_EDGES[0]) + sx * sw / 2
+    place(front, school.transpose(Image.FLIP_LEFT_RIGHT), ((left / sw - 0.5) * 1.4, py), (sx, sy))
+    right = scene_x(X360_SCHOOL_EDGES[1]) - sx * sw / 2
+    place(front, school, ((right / sw - 0.5) * 1.4, py), (sx, sy))
+    place(front, x360_piece(ms4_files, 'city'))
+    place(front, tint(x360_piece(ms4_files, 'black_line'), (0, 0, 0)))
+    size = (round(sw * X360_SCENE_SCALE), round(sh * X360_SCENE_SCALE))
+    scene = Image.new('RGBA', (W, H))
+    scene.alpha_composite(back.resize(size, Image.LANCZOS), (W - size[0], H - size[1]))
+    height = round(0.65 * sh * X360_SCENE_SCALE)
+    files = {'ms3': ms3_files, 'ms4': ms4_files}
+    for build, name, box, (cx, cy) in X360_FIVE:
+        width = round(height * (box[0] * sw) / (box[1] * sh))
+        figure = x360_piece(files[build], name).resize((width, height), Image.LANCZOS)
+        scene.alpha_composite(figure, (cx - width // 2, cy - height // 2))
+    scene.alpha_composite(front.resize(size, Image.LANCZOS), (W - size[0], H - size[1]))
+    top = scene.getbbox()[1]
+    floor = scene.crop((0, H - 1, W, H))
+    tall = Image.new('RGBA', (W, H - top + X360_FLOOR))
+    tall.alpha_composite(scene.crop((0, top, W, H)))
+    for y in range(H - top, tall.height):           # the floor carried on below, for frames whose buttons sit lower
+        tall.alpha_composite(floor, (0, y))
+    lw = X360_LOGO_W
+    lh = round(lw * 288 / 512)                      # the stain's and logo's 0.4 x 0.4 boxes of the 16:9 screen
+    logo = Image.new('RGBA', (lw, lh))
+    for image, scale in ((tint(x360_piece(ms4_files, 'stain'), (0, 0, 0)), 1.0), (x360_piece(ms4_files, 'logo'), 1.0),
+                         (tint(x360_piece(ms4_files, 'tapes'), (235, 235, 225)), 0.75)):
+        w, h = round(lw * scale), round(lh * scale)
+        logo.alpha_composite(image.resize((w, h), Image.LANCZOS), ((lw - w) // 2, (lh - h) // 2))
+    sky_jpeg = io.BytesIO()
+    sky.convert('RGB').save(sky_jpeg, 'JPEG', quality=90)
+    spec = {'background': {'cover': picture(base + 1)},
+            'scene': {'picture': picture(base + 2), 'left': 0, 'bottom': H + X360_FLOOR},
+            'title': {'picture': picture(base + 3), 'centre': list(X360_LOGO_CENTRE)}}
+    return {base: spec_bytes(spec), base + 1: sky_jpeg.getvalue(), base + 2: png(tall), base + 3: png(logo)}
+
+
 # ---------------------------------------------------------------------------------------------------- BREW '07 and '08
 
 BREW_TITLE = 47                 # the whole title, logo and photo in one picture (res_xlarge.pud)
