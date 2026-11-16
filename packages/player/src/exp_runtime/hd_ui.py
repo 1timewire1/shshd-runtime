@@ -101,29 +101,48 @@ class HdUi:
         points tall (owner, 2026-11-12: not so close to the bottom)."""
         return round(max(0, height - FRAME[1]) * HdUi.BUTTONS_RAISE)
 
-    @lru_cache(maxsize=2)
+    # shshd-runtime (Add-Ons' Title Screen Look, owner 2026-11-16): the app sets this to a callable giving the chosen
+    # look (title_look.TitleLook) or None, the smartphone's own; every HD screen that shows the main menu's art follows it.
+    look_source = None
+
+    def title_look(self):
+        source = HdUi.look_source
+        return source() if source is not None else None
+
     def main_layout(self, height=FRAME[1]):
         """main_layers placed in a frame `height` points tall: (surface, center in points) for the wood, photo, ribbon
-        and title. HD's own at 1024."""
+        and title, or None for a layer the Title Screen Look has none of. HD's own at 1024."""
+        return self._main_layout(height, self.title_look())
+
+    @lru_cache(maxsize=2)
+    def _main_layout(self, height, look):
+        taller = height > FRAME[1]
+        grow = max(1.0, min(self.PHOTO_GROW_MAX, height / FRAME[1] * self.PHOTO_GROW)) if taller else 1.0
+        between = (height - self.buttons_raise(height)) / 2 if taller else FRAME[1] / 2   # between the title and buttons
+        if look is not None:
+            return look.layers(height, FRAME, S, extra=max(0, height - FRAME[1]) - self.buttons_raise(height),
+                               photo_shift=between - FRAME[1] / 2, photo_grow=grow, scaled=self.scaled)
         layers = self.main_layers()
-        if height <= FRAME[1]:
+        if not taller:
             return layers
         (wood, _), (photo, _), ribbon, title = layers
         cover = max(1.0, FRAME[0] * S / wood.get_width(), height * S / wood.get_height())
         if cover > 1:
             wood = self.scaled(wood, cover)
-        grow = max(1.0, min(self.PHOTO_GROW_MAX, height / FRAME[1] * self.PHOTO_GROW))
         if grow > 1:
             photo = self.scaled(photo, grow)
-        middle = (384, height / 2)
-        between = (384, (height - self.buttons_raise(height)) / 2)     # between the title and the raised buttons
-        return [(wood, middle), (photo, between), ribbon, title]
+        return [(wood, (384, height / 2)), (photo, (384, between)), ribbon, title]
+
+    def main_backdrop(self, height=FRAME[1]):
+        return self._main_backdrop(height, self.title_look())
 
     @lru_cache(maxsize=2)
-    def main_backdrop(self, height=FRAME[1]):
+    def _main_backdrop(self, height, look):
         surface = pygame.Surface((FRAME[0] * S, round(height * S))).convert()
-        for image, (cx, cy) in self.main_layout(height):
-            surface.blit(image, image.get_rect(center=(round(cx * S), round(cy * S))))
+        for layer in self.main_layout(height):       # (`look` keys the cache; a subclass may lay its own art out)
+            if layer is not None:
+                image, (cx, cy) = layer
+                surface.blit(image, image.get_rect(center=(round(cx * S), round(cy * S))))
         return surface
 
     # ------------------------------------------------------------ text

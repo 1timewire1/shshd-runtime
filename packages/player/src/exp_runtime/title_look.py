@@ -1,0 +1,114 @@
+"""shshd-runtime: Add-Ons' Title Screen Look (owner, 2026-11-16; reference/TITLE_SCREENS_PLAN.md): a translated game's own
+title art in place of the HD main menu's wood, photo, ribbon and title (HdUi.main_layers), from that game's addon.
+
+The addon carries a spec, a JSON resource (the game profile's TITLE_LOOKS gives its number), whose pictures follow it:
+
+    {"version": 1,
+     "background": {"cover": PICTURE}  or  {"top": PICTURE, "middle": PICTURE, "bottom": PICTURE},
+     "scene": {"picture": PICTURE, "left": x, "bottom": y},       (optional)
+     "photo": {"picture": PICTURE, "centre": [x, y]},             (optional)
+     "title": {"picture": PICTURE, "centre": [x, y]}}             (optional)
+    PICTURE = {"id": resource, "scale": points per pixel, "smooth": false for pixel art (scaled nearest)}
+
+Coordinates are HD's points in its 768 x 1024 frame. In a taller frame (General's Aspect Ratio) each part goes where HD's
+own does (HdUi.main_layout): a "cover" background is scaled to cover the frame and centred, as the wood is; a sliced one is
+built at the frame's height (its top at the top, its bottom at the bottom, the middle repeated between); the scene keeps its
+distance above the buttons, so it moves down with them; the photo moves and grows as HD's photo does; the title keeps its
+place at the top. The photo is what the first launch drops in, and the title what fades in (desktop_main_hd).
+"""
+from dataclasses import dataclass, field
+from io import BytesIO
+import json
+import logging
+
+from . import graphics as pygame
+
+VERSION = 1
+
+
+@dataclass(eq=False)
+class TitleLook:
+    """One game's look: its spec and its pictures, read from `library` (addon `addon`, the spec at `spec_id`)."""
+    library: object
+    addon: str
+    spec_id: int
+    spec: dict
+    _pictures: dict = field(default_factory=dict)
+
+    @classmethod
+    def load(cls, library, addon, spec_id):
+        """The look, or None when the addon lacks it (an older revision) or its spec is one this player can't read."""
+        data = library.addon_resource(addon, spec_id) if hasattr(library, 'addon_resource') else None
+        if data is None:
+            return None
+        try:
+            spec = json.loads(data)
+        except ValueError:
+            logging.warning('Title Screen Look: %s %d is not a spec', addon, spec_id)
+            return None
+        if not isinstance(spec, dict) or spec.get('version') != VERSION or 'background' not in spec:
+            return None
+        return cls(library, addon, spec_id, spec)
+
+    def picture(self, entry, S):
+        """A spec PICTURE at the canvas's S pixels per point (cached)."""
+        key = (entry['id'], S)
+        if key not in self._pictures:
+            data = self.library.addon_resource(self.addon, entry['id'])
+            if data is None:
+                raise KeyError(f'{self.addon} has no picture {entry["id"]}')
+            image = pygame.image.load(BytesIO(data)).convert_alpha()
+            factor = entry.get('scale', 1) * S
+            size = max(1, round(image.get_width() * factor)), max(1, round(image.get_height() * factor))
+            if size != image.get_size():
+                image = (pygame.transform.smoothscale if entry.get('smooth', True) else pygame.transform.scale)(image, size)
+            self._pictures[key] = image
+        return self._pictures[key]
+
+    def layers(self, height, frame, S, *, extra, photo_shift, photo_grow, scaled):
+        """[(background, centre), (photo, centre) or None, None (no ribbon), (title, centre) or None] for a frame
+        `frame[0]` x `height` points: `extra` is how far the buttons moved down from HD's place, `photo_shift` and
+        `photo_grow` what HD's photo does in this frame (HdUi.main_layout), `scaled(surface, factor)` a smooth scale."""
+        width = frame[0]
+        background = self.background(height, width, S, scaled)
+        scene = self.spec.get('scene')
+        if scene:
+            image = self.picture(scene['picture'], S)
+            background = background.copy()
+            background.blit(image, (round(scene.get('left', 0) * S), round((scene['bottom'] + extra) * S) - image.get_height()))
+        layers = [(background, (width / 2, height / 2))]
+        photo = self.spec.get('photo')
+        if photo:
+            image = self.picture(photo['picture'], S)
+            if photo_grow > 1:
+                image = scaled(image, photo_grow)
+            x, y = photo['centre']
+            layers.append((image, (x, y + photo_shift)))
+        else:
+            layers.append(None)
+        layers.append(None)
+        title = self.spec.get('title')
+        layers.append((self.picture(title['picture'], S), tuple(title['centre'])) if title else None)
+        return layers
+
+    def background(self, height, width, S, scaled):
+        """The background for a frame `width` x `height` points, the frame's size exactly."""
+        spec = self.spec['background']
+        size = (round(width * S), round(height * S))
+        surface = pygame.Surface(size).convert()
+        if 'cover' in spec:
+            image = self.picture(spec['cover'], S)
+            factor = max(size[0] / image.get_width(), size[1] / image.get_height())
+            if factor > 1:
+                image = scaled(image, factor)
+            surface.blit(image, image.get_rect(center=(size[0] // 2, size[1] // 2)))
+            return surface
+        top, middle, bottom = (self.picture(spec[part], S) for part in ('top', 'middle', 'bottom'))
+        y = top.get_height()
+        end = size[1] - bottom.get_height()
+        while y < end:
+            surface.blit(middle, (0, y))
+            y += middle.get_height()
+        surface.blit(top, (0, 0))
+        surface.blit(bottom, (0, end))
+        return surface

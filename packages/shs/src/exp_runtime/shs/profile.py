@@ -239,6 +239,15 @@ TITLE_MUSIC = {'brew': ('shsbrew', 26906), 'nr': ('shsnr', 26988), 'x360': ('shs
 # ...and which game an episode is, for Auto: its pack, or for an episode made in the Creator its primary add-on's
 # (content.feature_pack). Anything else is the smartphone's, 'default'.
 TITLE_MUSIC_PACKS = {31000: 'brew', 31100: 'brew', 31200: 'brew', 31300: 'nr', 31400: 'x360', 31600: 'shs11', 31700: 'shw'}
+# shshd-runtime: Add-Ons' Title Screen Look (owner, 2026-11-16; reference/TITLE_SCREENS_PLAN.md): each translated game's own
+# title art for the HD main menu, which its addon carries as a spec (title_look.py) at the number given, its pictures after
+# it: game -> (its addon, the spec). BREW's two editions are two looks in the one addon. Auto follows the episode last
+# played, by its pack, as Title Screen Music's does, but tells the editions apart: '08 is the Campaign (31000), '07 the
+# Classic stories and Fall '06 (31100, 31200).
+TITLE_LOOKS = {'nr': ('shsnr', 26960), 'brew07': ('shsbrew', 26960), 'brew08': ('shsbrew', 26970), 'shw': ('shshw', 26960),
+               'shs11': ('shs11', 26960), 'x360': ('shsx360', 26960)}
+TITLE_LOOK_PACKS = {31000: 'brew08', 31100: 'brew07', 31200: 'brew07', 31300: 'nr', 31400: 'x360', 31600: 'shs11',
+                    31700: 'shw'}
 # The names table every episode made in the Creator shares (presentation `creator`; player.json `name_sets`), apart from the
 # smartphone stories' and each translation's (owner, 2026-11-09).
 CREATOR_NAME_SET = 'creator'

@@ -153,22 +153,27 @@ LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'D
 TITLE_MUSIC_LABEL = 'Title Screen Music'
 TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'nr': 'New Rules', 'x360': 'X360',
                      'shs11': "'11", 'shw': 'Surviving Hollywood'}
-# On the main menu, Add-Ons keeps Use Translated Mini-Games and Title Screen Music, and the other add-on switches go one page
+# Add-Ons' Title Screen Look (main menu only; owner, 2026-11-16): the main menu's art, the same way; BREW's editions are two.
+TITLE_LOOK_LABEL = 'Title Screen Look'
+TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'nr': 'New Rules', 'brew07': "'07", 'brew08': "'08",
+                    'shw': 'Surviving Hollywood', 'shs11': "'11", 'x360': 'X360'}
+# On the main menu, Add-Ons keeps Use Translated Mini-Games, Title Screen Music and Title Screen Look, and the other add-on switches go one page
 # further in, Per-Game Settings (owner, 2026-11-09); the pause menu lists them all on Add-Ons, as before.
 PER_GAME_LABEL = 'Per-Game Settings'
 PAGE_TITLES = {'per_game': PER_GAME_LABEL}
 PAGE_PARENTS = {'options:per_game': 'options:addons'}
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
                 'controller_confirm': CONFIRM_NAMES,
-                'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'dsi_pixels': DSI_PIXELS_NAMES,
+                'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
+                'dsi_pixels': DSI_PIXELS_NAMES,
                 'dsi_language': DSI_LANGUAGE_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
-                 'title_music': TITLE_MUSIC_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL,
+                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL,
                  'dsi_language': DSI_LANGUAGE_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'title_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
-                  'title_music': 'options:addons', 'dsi_pixels': 'options:addons',
+                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_pixels': 'options:addons',
                   'dsi_language': 'options:addons'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
 PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language')
@@ -914,6 +919,8 @@ class HdPauseMenu:
                 rows.append(('page', PER_GAME_LABEL, 'options:per_game'))
             if 'title_music' in settings:
                 rows.append(('choice', TITLE_MUSIC_LABEL, 'title_music'))
+            if 'title_look' in settings:
+                rows.append(('choice', TITLE_LOOK_LABEL, 'title_look'))
             return rows
         if category == 'addons':
             return [('switch', self.SWITCH_LABELS[key], key) for key in ADDON_KEYS if key in settings] + self.addon_choices(settings)

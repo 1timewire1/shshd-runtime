@@ -1817,15 +1817,54 @@ class Application:
 
     def remember_title_game(self, resources):
         """Title Screen Music's Auto: the game of the episode just started (the profile's TITLE_MUSIC_PACKS, by its pack, or by
-        its primary add-on's for an episode made in the Creator); the smartphone's, 'default', for any other."""
+        its primary add-on's for an episode made in the Creator); the smartphone's, 'default', for any other. Title Screen
+        Look's Auto the same way (TITLE_LOOK_PACKS, which tells BREW's editions apart)."""
         from .content import feature_pack
-        packs = getattr(GAMES.get(getattr(self.library, 'game_id', None)), 'TITLE_MUSIC_PACKS', None)
-        if packs is None or not hasattr(self.state, 'last_title_game'):
-            return
-        game = packs.get(feature_pack(resources), 'default')
-        if game != self.state.last_title_game:
-            self.state.last_title_game = game
+        profile = GAMES.get(getattr(self.library, 'game_id', None))
+        changed = False
+        for attribute, table in (('last_title_game', 'TITLE_MUSIC_PACKS'), ('last_title_look', 'TITLE_LOOK_PACKS')):
+            packs = getattr(profile, table, None)
+            if packs is None or not hasattr(self.state, attribute):
+                continue
+            game = packs.get(feature_pack(resources), 'default')
+            if game != getattr(self.state, attribute):
+                setattr(self.state, attribute, game)
+                changed = True
+        if changed:
             self._attempt(self.state.persist)
+
+    _title_look = (None, None)          # (what it was read for, the TitleLook or None)
+
+    def title_look(self):
+        """The Title Screen Look chosen (Add-Ons; Auto, the game last played) as a title_look.TitleLook, or None for the
+        smartphone's own art: Default, a game whose addon the library lacks, or an addon too old to carry one. Read once
+        for each choice and addon file."""
+        library = self.library
+        table = getattr(GAMES.get(getattr(library, 'game_id', None)), 'TITLE_LOOKS', {}) if library else {}
+        choice = getattr(self.state, 'title_look', 'default')
+        if choice == 'auto':
+            choice = getattr(self.state, 'last_title_look', 'default')
+        entry = table.get(choice)
+        if entry is None:
+            return None
+        record = next((a for a in getattr(library, 'addons', ()) if a.get('addon') == entry[0]), None)
+        if record is None:
+            return None
+        key = (id(library), choice, record['id'])
+        if self._title_look[0] != key:
+            from .title_look import TitleLook
+            self._title_look = key, TitleLook.load(library, *entry)
+        return self._title_look[1]
+
+    @library_answer
+    def title_look_offered(self):
+        """Title Screen Look's choices here: Default, Auto, and each game whose addon carries its look."""
+        table = getattr(GAMES.get(self.library.game_id), 'TITLE_LOOKS', {}) if self.library else {}
+        offered = ['default', 'auto']
+        for game, (addon, spec) in table.items():
+            if hasattr(self.library, 'addon_has') and self.library.addon_has(addon, spec):
+                offered.append(game)
+        return offered
 
     @staticmethod
     def _stop_sounds_but(*kept):

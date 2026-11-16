@@ -421,6 +421,14 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | X360 | `shsx360` (revision 16) | 26996 | `music/main_menu` |
 | '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
 
+**Title Screen Look** (SHS's HD main menu only, under Add-Ons; owner, 2026-11-16) chooses its art the same way: Default, Auto,
+or a translated game's own title art from its addon, offered when the addon carries it (`TITLE_LOOKS` in the SHS profile). The
+gold buttons, their backdrop, the gear and the info button stay; the wood, photo, ribbon and title give way to the game's
+(`title_look.py`), and the episode picker's backdrop follows. The first launch still drops the photo in and fades the title in
+where the look has them. BREW's editions are two looks: Auto takes '08's after a Campaign story (31000) and '07's after a
+Classic story or Fall '06 (31100, 31200). The looks are built by `tools/translate/title_looks.py`; which addon revisions carry
+them is listed with each addon above as they land. The plan: `reference/TITLE_SCREENS_PLAN.md` beside the repository.
+
 ## Data Management
 
 **Options › Data Management › Add-Ons** lists a library's addons, and hides itself when there are none. From the chooser it's always there, and picks the game first when both have a library. Each addon has:

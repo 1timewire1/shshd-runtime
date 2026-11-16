@@ -209,7 +209,10 @@ class HdMainMenu(HdUi):
         return self.height - FRAME[1] - self.buttons_raise(self.height)
 
     def draw_photo(self, layer):
-        photo, (cx, cy) = self.main_layout(self.height)[1]
+        placed = self.main_layout(self.height)[1]
+        if placed is None:              # a Title Screen Look with no photo: nothing drops in
+            return
+        photo, (cx, cy) = placed
         t = self.age - INTRO_PHOTO_START
         if not self.intro or t >= INTRO_PHOTO_ZOOM and t >= INTRO_PHOTO_TURN:
             layer.blit(photo, photo.get_rect(center=(round(cx * S), round(cy * S))))
@@ -237,13 +240,15 @@ class HdMainMenu(HdUi):
 
     def draw_ribbon_title(self, layer):
         layers = self.main_layout(self.height)
-        (ribbon, ribbon_center), (title, title_center) = layers[2], layers[3]
         t = self.age - INTRO_STRIP_START
         progress = 1.0 if not self.intro else max(0.0, min(1.0, t / INTRO_STRIP_TIME))
-        if progress > 0:
+        if progress > 0 and layers[2] is not None:          # (a Title Screen Look has no ribbon)
+            ribbon, ribbon_center = layers[2]
             image = ribbon if progress >= 1 else pygame.transform.smoothscale(
                 ribbon, (ribbon.get_width(), max(1, round(ribbon.get_height() * progress))))
             layer.blit(image, image.get_rect(center=(round(ribbon_center[0] * S), round(ribbon_center[1] * S))))
+        if progress > 0 and layers[3] is not None:
+            title, title_center = layers[3]
             fade = title if progress >= 1 else title.copy()
             if progress < 1:
                 fade = faded(fade, round(255 * progress))

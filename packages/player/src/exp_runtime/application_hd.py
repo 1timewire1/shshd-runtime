@@ -104,6 +104,8 @@ class HdShell:
         self.pause = HdPauseMenu(SimpleNamespace(library=library))
         self.pause.main_menu = True
         self.main.backdrop_enabled = lambda: app.state.hd_backdrop
+        from .hd_ui import HdUi
+        HdUi.look_source = app.title_look       # Add-Ons' Title Screen Look, on every HD screen showing the menu's art
         self.stage = 'loading'
         self.age = 0.0
         self.flash_age = 0.0
@@ -375,6 +377,11 @@ class HdShell:
             from .desktop_pause_hd import TITLE_MUSIC_NAMES
             settings['title_music'] = TITLE_MUSIC_NAMES[state.title_music]
             settings['title_music_names'] = {key: TITLE_MUSIC_NAMES[key] for key in offered}
+        offered = self.app.title_look_offered()
+        if len(offered) > 2:
+            from .desktop_pause_hd import TITLE_LOOK_NAMES
+            settings['title_look'] = TITLE_LOOK_NAMES[state.title_look]
+            settings['title_look_names'] = {key: TITLE_LOOK_NAMES[key] for key in offered}
         # Data Management's rows (main menu only).
         if self.app.library.addons:
             settings['manage_addons'] = True
@@ -459,6 +466,9 @@ class HdShell:
             state.title_music = value
             self.app._attempt(state.persist)
             self.app.play_menu_music()                  # the new tune at once, from its start
+        elif key == 'title_look':
+            state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
+            self.app._attempt(state.persist)
         elif key in ('dsi_pixels', 'dsi_language'):
             setattr(state, key, value)
             self.app._attempt(state.persist)
