@@ -63,6 +63,7 @@ class DerivationTests(unittest.TestCase):
         from exp_runtime.cod.hd_art import BAR_FRAME, COMMON_FRAMES
         self.assertEqual(COMMON_FRAMES[37], 46)                               # the ring
         self.assertEqual([COMMON_FRAMES[7 + wedge] for wedge in range(16)], list(range(12, 28)))
+        self.assertEqual([COMMON_FRAMES[29 + theme] for theme in range(3)], [34, 35, 36])   # the song notes
         self.assertNotIn(BAR_FRAME, COMMON_FRAMES)                            # composed from 55 + 56
 
     def test_packs_with_different_frames_are_refused(self):

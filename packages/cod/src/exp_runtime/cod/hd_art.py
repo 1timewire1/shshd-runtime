@@ -145,6 +145,9 @@ COMMON_FRAMES.update({0: 4, **{piece: piece + 9 for piece in range(51, 60)}})
 # The quiz's running man (23-27 -> 28-32): the same five poses, SHS HD's blue turned to CoD's grey. Like the wedges they
 # are not exact doubles (29x71 for 16x36), so they keep their own size; fit 21-47.
 COMMON_FRAMES.update({23 + pose: 28 + pose for pose in range(5)})
+# The song notes (29-31 -> 34-36, dialogue.IPHONE_NOTE_FRAMES): SHS HD's blue, rose and gray notes, all three gray in CoD;
+# exact doubles (20x28 for 10x14), fit 38-41.
+COMMON_FRAMES.update({29 + theme: 34 + theme for theme in range(3)})
 # Frame 47, the bottom bar (identical in both games), is one 320x49 piece; SHS HD splits it into a 64x49-unit cap
 # (55) and a 64x24 strip (56) stretched along the rest, starting 25 units down.
 BAR_FRAME, BAR_CAP, BAR_STRIP, BAR_STRIP_TOP = 47, 55, 56, 25

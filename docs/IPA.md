@@ -181,6 +181,18 @@ save to a system with different font metrics can fail that validation; use the
 same fonts to resume such a checkpoint. Identical-font save/restore was tested.
 The original Android bitmap-font path still reads its supplied atlas pixels.
 
+**Song notes.** Both iPhone builds draw `{` as a music note image, not a
+glyph. SHS `SHSEngine::initPermanents` (1.4.2 build 1.4.3.54, ARM
+**0003e358–0003e40c**; 1.3.7, Thumb **00032238–000322e6**) calls
+`CSFont::addCharImage(master, frame, '{', (1, 2), 12)` with its common pack
+(resource `0x7d`, the UI role 126) on each colored theme's body font and its
+`` ` `` switch font: frame 29 (theme 1, blue), 30 (theme 2, rose), 31
+(theme 3, gray), 10x14 at 1x. The default set (`updateFonts` 1.3.7
+**00059fe0**) and narration register none. CoD's are in
+[COD.md](COD.md). `dialogue.IPHONE_NOTE_*` port this for IPA libraries. As with
+SHS HD, this fork gives SHS narration and default-theme lines the gray note in
+the text's own colour (owner's request); CoD keeps their plain brace.
+
 ## Dialogue text placement
 
 Both games use the common `DialogueLayout` / `DialogueRenderer` and the

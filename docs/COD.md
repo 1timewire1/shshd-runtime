@@ -180,6 +180,24 @@ engine `+0xe254` with black (`0xff000000`); its backtick switch font at
 `+0xfa74` uses gold (`0xffb46d1a`, `000234a0`). The shared narrator now uses
 this CoD palette rather than SHS's amber/brown pair.
 
+Songs are written `{{ some words {{`, and `{` is drawn as a music note.
+`SHSEngine::initPermanents` (1.3.4 armv7 `0002720a`–`000272a6`; the 1.4.7
+free edition `0002733c`–`000273dc`, same arguments) calls
+`CSFont::addCharImage(master, frame, '{', (1, 2), 12)` with common pack 126
+(resource `0x7e`, engine `+0x2980`) on each colored set's body font and its
+`` ` `` switch font: `+0x142d4`/`+0x15af4` frame 29 (theme 1),
+`+0x1d394`/`+0x1ebb4` frame 30 (theme 2), `+0x26454`/`+0x27c74` frame 31
+(theme 3). The three frames are gray 10x14 notes. The default set
+(`+0x2f514`, which `updateFonts` `0003a5b0` binds for any other theme) and
+narration (`+0xe254`) register none and draw the face's own brace.
+`CSFont::drawChar` (`00003ef0`) hands a character to the active switch font,
+so a note inside backticks is the switch font's (the same frame), drawn
+untinted by `renderCutupAligned` (anchor `0x24`) at the pen plus (1, 2).
+`dialogue.IPHONE_NOTE_*` port this; with the SHS HD art source the frames are SHS
+HD's pack-155 notes 34–36 in CoD's gray (`cod/hd_art.COMMON_FRAMES`). These six
+are the binary's only `addCharImage` calls; whether CoD's choice menu draws
+with one of these fonts is not checked, so the player keeps a plain brace there.
+
 Score notices are theme-dependent in the supplied 1.3.4 native code.
 `updateFonts` (`000355e4`) selects the main letter font at dialog `+0xd4`:
 theme 1 uses engine `+0x17314`, red `(240,81,60)`; theme 2 uses `+0x21bf4`,

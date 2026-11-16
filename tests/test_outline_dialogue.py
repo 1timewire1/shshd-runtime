@@ -35,6 +35,54 @@ class SongNoteTests(unittest.TestCase):
         line = layout_text(noted, '{ la {', 200, TextStyle(13, 10))
         self.assertEqual(line.width, 2 * NOTE_ADVANCE + 4 + 2 * 8 + 4)
 
+    def test_iphone_colored_sets_draw_a_brace_as_the_common_packs_note_in_body_and_emphasis(self):
+        # The iPhone builds' SHSEngine::initPermanents (CoD 1.3.4 / 1.4.7, SHS 1.3.7): addCharImage(common pack,
+        # 29 / 30 / 31, '{', (1, 2), 12) on each colored set's body font and its '`' switch font; the default set and
+        # narration register none. CoD keeps their plain brace; SHS (this fork, as with HD) gives them the gray note
+        # in the text's own color.
+        from exp_runtime.dialogue import IPHONE_NOTE, IPHONE_NOTE_PACK, NOTE_CODE, with_note
+        from test_label_layout import authored_dialogue
+        (size, offset, advance) = IPHONE_NOTE
+        text = '`{{ Partners in song {{` then {{ la {{'
+        for game in ('cod', 'shs'):
+            layout = authored_dialogue(outline=True)
+            layout.resources.library.game_id = game
+            layout.resources.library.kind = 'ipa'
+            body = layout.font(BODY_FONT)
+            for theme, frame in ((1, 29), (2, 30), (3, 31), (-1, None if game == 'cod' else 31)):
+                details = dict(presentation_mode=1, theme=theme, emphasis_theme=1, speaker='Singer', text=text)
+                names = SpeakerNames()
+                layout.prepare_name(details, names)
+                page = layout.page(details, names=names)
+                notes = [g for g in page.body.glyphs if g.glyph.code == NOTE_CODE]
+                self.assertEqual(len(notes), 8)
+                self.assertEqual(page.note_frame, frame)
+                if frame is None:                                # CoD's default set: the face's own brace
+                    self.assertTrue(all(g.glyph == body.glyphs[NOTE_CODE] for g in notes))
+                    continue
+                self.assertEqual(page.note_pack, IPHONE_NOTE_PACK)
+                default = dialogue_styles(theme, game=game, outline=True)[3].color
+                self.assertEqual(page.note_tint, default if theme == -1 else None)
+                self.assertEqual([g.font is not None for g in notes], [True] * 4 + [False] * 4)  # sung in the switch font
+                for g in notes:
+                    self.assertEqual((g.glyph.width, g.glyph.height, g.glyph.advance), (*size, advance))
+                    self.assertEqual(g.glyph.xoffset, offset[0])
+                # Its bottom 2 points below the baseline: an installed face (no BMFont base) stands on line_height.
+                noted = with_note(body, *IPHONE_NOTE)
+                self.assertEqual(body.base, 0)
+                self.assertEqual(noted.glyphs[NOTE_CODE].yoffset + size[1], body.line_height + 2)
+                first, second, word = page.body.glyphs[:3]       # '{', '{', 'P' (the space draws nothing)
+                self.assertEqual((second.x - first.x, word.x - first.x), (advance, 2 * advance + 4))
+            narration = dict(presentation_mode=4, theme=1, emphasis_theme=1, speaker='', text='{{ hummed {{')
+            page = layout.page(narration, names=SpeakerNames())
+            if game == 'cod':
+                self.assertIsNone(page.note_frame)
+                self.assertNotEqual(page.body.glyphs[0].glyph.advance, advance)
+            else:
+                self.assertEqual((page.note_frame, page.note_pack), (31, IPHONE_NOTE_PACK))
+                self.assertEqual(page.note_tint, dialogue_styles(1, narrator=True, game='shs', outline=True)[3].color)
+                self.assertEqual(page.body.glyphs[0].glyph.advance, advance)
+
 
 class OutlineDialogueTests(unittest.TestCase):
     def test_switch_faces_wrap_with_their_own_advances_on_one_baseline(self):

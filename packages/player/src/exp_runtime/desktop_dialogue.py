@@ -124,15 +124,26 @@ class DialogueRenderer:
         return pygame.image.frombytes(frame.pixels, (frame.width, frame.height), frame.mode).convert_alpha()
 
     @lru_cache(maxsize=8)
-    def note_image(self, frame, tint=None):
-        """Pack 155's song note (dialogue.NOTE_FRAMES); `tint` recolors it, keeping its alpha (the gold fonts' note)."""
-        image = self.frame_native(155, frame)
+    def note_image(self, frame, tint=None, pack=155):
+        """A song note: pack 155's (dialogue.NOTE_FRAMES) or the iPhone builds' common-pack one (role 126,
+        dialogue.IPHONE_NOTE_FRAMES); `tint` recolors it, keeping its alpha (the gold fonts' note)."""
+        image = self.frame_native(pack, frame)
         if tint is None:
             return image
         image = image.copy()
         image.fill(tuple(tint[:3]) + (0,), special_flags=pygame.BLEND_RGBA_MAX)
         image.fill(tuple(tint[:3]) + (255,), special_flags=pygame.BLEND_RGBA_MIN)
         return image
+
+    def note_density(self, pack, frame):
+        """note_image's pixels per unit: 2 for HD's pack 155 and for Cause of Death's 2x stand-ins with the SHS HD art
+        source (cod/hd_art.COMMON_FRAMES: SHS HD's note in CoD's gray); the iPhone packs' own frames are 1x."""
+        if pack == 155:
+            return 2
+        if pack == 126 and self.cod_hd_common() is not None:
+            from .cod.hd_art import COMMON_FRAMES
+            return 2 if frame in COMMON_FRAMES else 1
+        return 1
 
     @lru_cache(maxsize=64)
     def frame_native(self, asset_id, index):
@@ -1367,12 +1378,16 @@ class DialogueRenderer:
         self.draw_portrait(motion.portrait, motion.portrait_scale, 'rings', bubble)
         self.draw_portrait(duet, motion.portrait_scale, 'rings', bubble)
         self.draw_notice(session.engine)
-        # HD's song notes: '{' drawn as pack 155's note in the theme's color (dialogue.NOTE_FRAMES), at 2 px a unit.
-        notes = ({NOTE_CODE: self.note_image(page.note_frame, getattr(page, 'note_tint', None))}
-                 if getattr(page, 'note_frame', None) is not None else None)
+        # HD's song notes: '{' drawn as pack 155's note in the theme's color (dialogue.NOTE_FRAMES), at 2 px a unit;
+        # the iPhone builds', their common pack's (dialogue.IPHONE_NOTE_FRAMES: CoD's gray, SHS's colored).
+        notes, density = None, 2
+        if getattr(page, 'note_frame', None) is not None:
+            pack = getattr(page, 'note_pack', 155)
+            notes = {NOTE_CODE: self.note_image(page.note_frame, getattr(page, 'note_tint', None), pack)}
+            density = self.note_density(pack, page.note_frame)
         self.text.draw_layout(self.canvas, page.body_font, page.body,
                               page.body_origin[0] * k, page.body_origin[1] * k,
-                              scale=k, source_end=motion.revealed, inline=notes, inline_density=2)
+                              scale=k, source_end=motion.revealed, inline=notes, inline_density=density)
         self.canvas.blit(faded(self.name_layer, motion.name_alpha), self._name_area.topleft, self._name_area)
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the

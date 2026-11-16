@@ -69,14 +69,10 @@ class SharedDialogueTests(unittest.TestCase):
     def test_ios_narration_emphasis_is_the_same_colour_in_a_stroked_face_and_androids_a_darker_colour(self):
         reference = authored_dialogue()
 
-        class Outline:
-            cap_height = 12
-
-            def __init__(self, font):
-                self.plain = font
-
-            def __getattr__(self, name):
-                return getattr(self.plain, name)
+        def Outline(font):
+            # An installed face as the IPA loads it (ios_fonts.IOSFont): the plain metrics with a cap height.
+            from exp_runtime.ios_fonts import IOSFont
+            return IOSFont(**font.__dict__, cap_height=12, descent=4)
 
         def page(font):
             resources = EpisodeResources.__new__(EpisodeResources)
@@ -143,6 +139,7 @@ class SharedDialogueTests(unittest.TestCase):
                                          {(0, 0, 0) if game == 'cod' else (223, 163, 52)})
                 expected_names, names = SpeakerNames(), SpeakerNames()
                 reference.resources.library.game_id = game
+                reference.resources.library.kind = kind         # (an IPA's song notes: dialogue.IPHONE_NOTE_FRAMES)
                 for mode in (2, 1, 3):
                     for theme in (1, 2, 3, -1):
                         for speaker in ('A very long speaker name', 'Alex', 'The Whole Room', "Howard's Mom"):

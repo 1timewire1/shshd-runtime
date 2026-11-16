@@ -36,6 +36,21 @@ COD_BASELINE_DROP = 2.4
 NOTE_CODE = 0x7B
 NOTE_FRAMES = {1: 34, 2: 35, 3: 36}
 NOTE_SIZE, NOTE_OFFSET, NOTE_ADVANCE = (10, 14), (0.5, 1), 11
+# The iPhone builds have their own. Cause of Death's SHSEngine::initPermanents (1.3.4 armv7 0002720a..000272a6; the
+# 1.4.7 free edition 0002733c..000273dc, the same arguments) calls `CSFont::addCharImage(master, frame, '{', (1, 2),
+# 12)` with the master image of common pack 126 (resource 0x7e, engine +0x2980) on each colored set's body font and its
+# '`' switch font: +0x142d4 / +0x15af4 frame 29 (theme 1), +0x1d394 / +0x1ebb4 frame 30 (theme 2), +0x26454 / +0x27c74
+# frame 31 (theme 3), three gray 10x14 notes at 1x. The default set (+0x2f514, which updateFonts 0003a5b0 binds for any
+# other theme) and narration (+0xe254) register none, so they draw the face's own '{'. CSFont::drawChar (00003ef0)
+# draws through the active switch font, so a note inside '`' is the switch font's (the same frame), untinted. SHS's
+# iPhone build (1.3.7, armv6 initPermanents 00032238..000322e6) makes the same six calls on the same sets (+0x20 on:
+# +0x142f4 ... +0x27c94; updateFonts 00059fe0, default +0x2f534) with its common pack, resource 0x7d (the UI role 126,
+# shs/ios_assets.py), whose frames 29-31 are blue, rose and gray. Layout units are iPhone points, so the place and
+# advance are used as they stand. Songs are written "{{ some words {{".
+IPHONE_NOTE_FRAMES = {1: 29, 2: 30, 3: 31}
+IPHONE_NOTE_PACK = 126
+IPHONE_NOTE_SIZE, IPHONE_NOTE_OFFSET, IPHONE_NOTE_ADVANCE = (10, 14), (1, 2), 12
+IPHONE_NOTE = (IPHONE_NOTE_SIZE, IPHONE_NOTE_OFFSET, IPHONE_NOTE_ADVANCE)
 
 
 # A two-speaker line's portraits are drawn at this scale about their housings' centres, so the title between them
@@ -96,14 +111,18 @@ def _shift_lines(layout, shifts):
     return replace(layout, lines=lines, glyphs=glyphs)
 
 
-def with_note(font):
-    """`font` with '{' measured as the note image (NOTE_FRAMES); one copy per font."""
-    cached = _NOTE_FONTS.get(id(font))
+def with_note(font, size=NOTE_SIZE, offset=NOTE_OFFSET, advance=NOTE_ADVANCE):
+    """`font` with '{' measured as the note image (NOTE_FRAMES; the iPhone builds pass IPHONE_NOTE): `size` units, its
+    bottom-left `offset` right of the pen and below the baseline, advancing `advance`. One copy per font and metrics."""
+    key = (id(font), size, offset, advance)
+    cached = _NOTE_FONTS.get(key)
     if cached is None or cached[0] is not font:
         from .fonts import Glyph
-        glyph = Glyph(NOTE_CODE, 0, 0, NOTE_SIZE[0], NOTE_SIZE[1], NOTE_OFFSET[0],
-                      font.base + NOTE_OFFSET[1] - NOTE_SIZE[1], NOTE_ADVANCE)
-        cached = _NOTE_FONTS[id(font)] = (font, replace(font, glyphs={**font.glyphs, NOTE_CODE: glyph}))
+        # The baseline in glyph coordinates: the vector faces' `base`; the iPhone builds' installed faces (ios_fonts.
+        # IOSFont) leave BMFont's base unset, their glyphs standing on the line box's bottom (line_height).
+        baseline = font.base or font.line_height
+        glyph = Glyph(NOTE_CODE, 0, 0, size[0], size[1], offset[0], baseline + offset[1] - size[1], advance)
+        cached = _NOTE_FONTS[key] = (font, replace(font, glyphs={**font.glyphs, NOTE_CODE: glyph}))
     return cached[1]
 
 
@@ -151,6 +170,7 @@ class DialoguePage:
     name_bounds: Rect | None = None
     note_frame: int | None = None  # pack 155's frame drawn for '{' (NOTE_FRAMES), when HD's fonts give it one
     note_tint: tuple | None = None  # the color it is drawn in instead of its own (the gold fonts' note, this fork's)
+    note_pack: int = 155            # the pack note_frame is in: SHS HD's 155 (2 px a unit) or the iPhone's 126 role
     theme: int | None = None        # the box's theme when it is not the line's own (a two-speaker line's)
     # shshd-runtime (General's Aspect Ratio): how far the whole bubble (box, text, title, portrait) was moved up for the
     # rows it holds past HD's own (DialogueLayout.page's `extra_rows`), so its bottom stays where HD's is.
@@ -284,7 +304,24 @@ class DialogueLayout:
         lift = 0
         cod = game_id(self.resources) == 'cod'
         note_tint = None
-        if not cod and getattr(font, 'source', None) is not None:
+        note_pack, note_metrics = 155, (NOTE_SIZE, NOTE_OFFSET, NOTE_ADVANCE)
+        colored = mode != 4 and theme in IPHONE_NOTE_FRAMES
+        if cod:
+            # CoD's own notes (IPHONE_NOTE_FRAMES), in every font configuration (installed faces or vector text): only
+            # the colored sets have them, so narration and default-theme lines keep a plain '{', as on the iPhone.
+            if colored:
+                note_pack, note_metrics = IPHONE_NOTE_PACK, IPHONE_NOTE
+                font = with_note(font, *note_metrics)
+                note_frame = IPHONE_NOTE_FRAMES[theme]
+        elif getattr(getattr(self.resources, 'library', None), 'kind', 'apk') == 'ipa':
+            # SHS's iPhone build (a base-game IPA library: its installed faces, no HD bundle): the same notes from its
+            # own common pack. As with HD's, this fork gives narration and default-theme lines, which the iPhone leaves
+            # with a plain '{', the gray note in the text's own color, so every song line keeps its notes.
+            note_pack, note_metrics = IPHONE_NOTE_PACK, IPHONE_NOTE
+            font = with_note(font, *note_metrics)
+            note_frame = IPHONE_NOTE_FRAMES[theme] if colored else IPHONE_NOTE_FRAMES[3]
+            note_tint = None if colored else body_style.color
+        elif getattr(font, 'source', None) is not None:
             # HD's song notes (NOTE_FRAMES). This fork also gives the gold fonts (narration, and named lines without a
             # portrait), which HD leaves with a plain '{', the gray note in the text's own color (owner's request:
             # translated New Rules stories narrate songs), so every song line keeps its notes.
@@ -321,7 +358,7 @@ class DialogueLayout:
                 # The iOS builds' outline text switches to a stroked twin in the same colour (shs/profile.py).
                 emphasis = GAMES[game_id(self.resources)].NARRATION_EMPHASIS_FONT
                 face = self.font(emphasis)
-                switch_fonts = {'`': (emphasis, with_note(face) if note_frame is not None else face)}
+                switch_fonts = {'`': (emphasis, with_note(face, *note_metrics) if note_frame is not None else face)}
                 body_style = replace(body_style, markers=(('`', body_style.color),))
             name = layout_text(self.font(name_font), '', 1, name_style)
             name_origin, name_scale = (0, 0), .9
@@ -372,7 +409,8 @@ class DialogueLayout:
                 switch_fonts = {'`': (EMPHASIS_FONT, emphasis)}
                 body_style = replace(body_style, height=max(cap_height, emphasis.cap_height), gap=10)
             if note_frame is not None and switch_fonts:
-                switch_fonts = {key: (name, with_note(face)) for key, (name, face) in switch_fonts.items()}
+                switch_fonts = {key: (name, with_note(face, *note_metrics))
+                                for key, (name, face) in switch_fonts.items()}
             if mode in (1, 2):
                 portrait = self.bank.rectangle(17, 0x30 if mode == 1 else 0x4e)
                 # CSFont line offsets: the iPhone build's and HD's ARR_TEXT_LINE_OFFSETS_LEFT/RIGHT ({160, 140} points);
@@ -519,4 +557,4 @@ class DialogueLayout:
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
-                            theme=details['theme'] if duet is not None or narration_theme else None, lift=lift)
+                            note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift)
