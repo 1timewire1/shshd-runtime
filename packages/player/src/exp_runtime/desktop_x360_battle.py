@@ -19,12 +19,15 @@ from .x360_battle import NO_WORD, SECONDS
 from .x360_diss import COUNTDOWN, ENDED, RUNNING, SPIN_DOWN, TUTORIAL, TUTORIAL_MS
 from .x360_games import CLOSING, OPENING, OPENING_MS, READY
 
-WORD_HEIGHT = 44                        # native pixels at the record's middle depth
-WORD_COLOUR = (255, 255, 255)
+WORD_HEIGHT = 32                        # native pixels at the record's middle depth
+WORD_COLOUR = None                      # the font's own: tinting it white also whitened its thin dark edge, so the
+                                        # letters swelled and ran together (owner, 2026-11-16: "a glow")
 WORD_FONT = 'casual_white'              # Blambot Casual: the badaboom face blurred at this size (owner, 2026-11-16)
 WORD_DEPTH = (.85, 1.15)                # how far the camera's depth may shrink or grow a word, to keep it readable
-WORD_PLATE = (10, 12, 20, 235)          # the plate behind a word, and its edge
-WORD_EDGE = (255, 255, 255, 255)
+WORD_PLATE = (10, 12, 20, 140)          # the plate behind a word, see-through (None: none), and its edge
+WORD_EDGE = None
+WORD_OUTLINE = 2                        # canvas pixels of black outline round the letters (0: none)
+WORD_CUT = 60                           # the letters' alpha from which a pixel counts as letter, with an outline
 TARGET_Y, TARGET_HEIGHT = 40, 30        # "crash rhymes with...", along the top
 STAMPS = {'good': 'stamp_yeah', 'bad': 'stamp_ooops'}
 STAMP_MS, STAMP_WIDTH = 700, 230
@@ -92,10 +95,35 @@ class X360BattleRenderer(X360DissRenderer):
             size = (round(w * self.k), round(h * self.k))
             if game.tier == 3:
                 self._flames(surface, centre, size, now, index)
-            self._plate(surface, nx - w / 2 - 8, ny - h - 2, w + 16, h + 4, WORD_PLATE, WORD_EDGE)
-            self.blit(surface, image, nx, ny, w, h, anchor='midbottom')
+            if WORD_PLATE is not None:
+                self._plate(surface, nx - w / 2 - 8, ny - h - 2, w + 16, h + 4, WORD_PLATE, WORD_EDGE)
+            if WORD_OUTLINE:
+                image = self._outlined(image, WORD_OUTLINE)
+                pad = WORD_OUTLINE / self.k
+                w, h = w + 2 * pad, h + 2 * pad
+                self.blit(surface, image, nx, ny + pad, w, h, anchor='midbottom')
+            else:
+                self.blit(surface, image, nx, ny, w, h, anchor='midbottom')
             if game.tier >= 2:
                 self._sparks(surface, centre, size, now, index)
+
+    def _outlined(self, image, width):
+        """`image` (white letters) with a black outline `width` pixels round them, kept for the next frames."""
+        key = ('outline', id(image), width)
+        found = self._scaled.get(key)
+        if found is None or found[0] is not image:
+            # The outline follows the letters as drawn (their own thin dark edge included) from WORD_CUT's strength.
+            mask = pygame.mask.from_surface(image, WORD_CUT)
+            black = mask.to_surface(setcolor=(0, 0, 0, 255), unsetcolor=(0, 0, 0, 0))
+            image_drawn = image
+            out = pygame.Surface((image.get_width() + 2 * width, image.get_height() + 2 * width), pygame.SRCALPHA)
+            for dx in range(-width, width + 1):
+                for dy in range(-width, width + 1):
+                    if dx * dx + dy * dy <= width * width:
+                        out.blit(black, (width + dx, width + dy))
+            out.blit(image_drawn, (width, width))
+            found = self._scaled[key] = (image, out)
+        return found[1]
 
     def _plate(self, surface, x, y, w, h, fill=(12, 14, 24, 170), edge=None):
         k = self.k
