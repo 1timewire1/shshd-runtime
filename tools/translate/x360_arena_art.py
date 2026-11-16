@@ -38,6 +38,11 @@ PARTS_BASE = 26414                      # the deck split: body, record, its seam
 OPENING_BASE = 26796                    # Day of Diss's opening (opening): its spec, then its pictures and whip, 10 in all
 OPENING_FRAME = 768, 1024
 OPENING_ART = 'data/art/hud/characters_presentation/josh/'
+# Spike's taunts in the Monday Planner's Diss Battle (desktop_x360_battle: one every 9 s, in turn, so four fill its 40 s).
+# Neither prototype has any, so these are new (owner, 2026-11-16, to try out): bravado that slips, as his nervous
+# pre-battle lines do.
+BATTLE_TAUNTS = ("You call that a rhyme?", "I'm not nervous. You are!", "My grandma disses better!",
+                 "Okay... I got this. Right?")
 OPENING_SUBTITLE = "King of Diss '08"   # (guilabel hud/characters_presentation/josh/subtitle)
 OPENING_WHIP = 14510                    # the card and its whip, in the music
 OPENING_CLIMB_WINDOW = 978              # of josh_tall's 1440 wide: the width that lines his face up with the card's
@@ -614,6 +619,7 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
         resources.update(shot)
     shot, spec['title'] = title(files)
     resources.update(shot)
+    spec['battle'] = {'taunts': list(BATTLE_TAUNTS)}
     resources[SPEC] = json.dumps(spec, sort_keys=True, separators=(',', ':')).encode('utf-8')
     assert all(i in SKIN_IDS for i in resources)
     return resources

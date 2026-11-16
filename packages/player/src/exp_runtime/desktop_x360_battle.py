@@ -187,10 +187,10 @@ class X360BattleRenderer(X360DissRenderer):
         if not taunts or game.phase != RUNNING:
             return
         played = (SECONDS - game.total_time) * 1000
-        turn, into = divmod(played + 3000, TAUNT_EVERY_MS)
-        if into >= TAUNT_MS:
+        turn, into = divmod(played + 3000, TAUNT_EVERY_MS)     # the first at 6 s, then 15, 24 and 33
+        if turn == 0 or into >= TAUNT_MS:                       # (turn 0 would flash for its last half second at the start)
             return
-        text = taunts[turn % len(taunts)]
+        text = taunts[(turn - 1) % len(taunts)]
         image = self._text(text, TAUNT_HEIGHT, (20, 20, 30), font='badaboom')
         w, h = image.get_width() / self.k, image.get_height() / self.k
         if w > 215:                                     # (the score's digits start at 250)

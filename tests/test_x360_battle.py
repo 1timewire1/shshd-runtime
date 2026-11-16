@@ -192,6 +192,29 @@ class DrawingTests(unittest.TestCase):
                 game.press()
             self.draw(game)
 
+    def test_spikes_taunts_come_in_turn_from_six_seconds_and_none_at_the_start(self):
+        from exp_runtime.desktop_x360_battle import TAUNT_HEIGHT
+        game = xb.DissBattle.opened(ROUNDS, tutorial=False)
+        random = Random48()
+        game.tick(xb.OPENING_MS + 20, random)
+        game.press()
+        game.tick(xb.COUNTDOWN_MS + 20, random)
+        self.assertEqual(game.phase, xb.RUNNING)
+        self.renderer.x360()[0]['battle'] = {'taunts': ['one', 'two']}
+        said, text = [], self.renderer._text
+        self.renderer._text = lambda words, height, *a, **k: (said.append(words) if height == TAUNT_HEIGHT else None,
+                                                               text(words, height, *a, **k))[1]
+        shown = {}
+        for left in range(xb.SECONDS, 0, -1):
+            game.total_time = left
+            said.clear()
+            self.draw(game)
+            shown[xb.SECONDS - left] = list(said)
+        self.assertEqual({s: w for s, w in shown.items() if w},
+                         {6: ['one'], 7: ['one'], 8: ['one'], 9: ['one'], 15: ['two'], 16: ['two'], 17: ['two'],
+                          18: ['two'], 24: ['one'], 25: ['one'], 26: ['one'], 27: ['one'], 33: ['two'], 34: ['two'],
+                          35: ['two'], 36: ['two']})
+
 
 class StoryTests(unittest.TestCase):
     """A creator story calls it as the translated Monday Planner will: service 222 behind the minigames query."""

@@ -119,7 +119,7 @@ Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settin
 | 26200–26239, 26750–26784 | Portrait renders, 113 × 128 (`x360.RENDERS`) |
 | 27200–27239, 27750–27784 | The same, 226 × 256 |
 | 28200–28784 | The MS3 Characters set (`x360.MS3_LOOKS`) |
-| 26300 | The skin's spec: what the renderers read to find everything below |
+| 26300 | The skin's spec: what the renderers read to find everything below (from revision 19 also Spike's Diss Battle taunts, `battle.taunts`) |
 | 26301–26391 | Pictures, font pages, sounds and music for the arena skin |
 | 26400–26418 | The deck, digits and title-screen backdrop, shot in an emulator |
 | 26420–26435 | The slot machine and leash game |
