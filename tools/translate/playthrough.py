@@ -110,10 +110,10 @@ def steps(s, answers, name, limit, record):
                 if game.phase == 'ready' or (game.focus == game.slot and game.option == 0):
                     s.answer(None)
                 action = s.tick(33)
-        elif kind == 'x360_diss':
+        elif kind in ('x360_diss', 'x360_battle'):
             record.append(dict(kind=kind))
             while s.pending is not None and s.pending.name == kind:      # presses again and again, then past the score
-                game = s.engine.x360_diss
+                game = getattr(s.engine, kind)
                 s.answer(None)
                 action = s.tick(100)
         elif kind == 'x360_puzzle':

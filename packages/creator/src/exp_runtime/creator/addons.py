@@ -10,7 +10,7 @@ from .model import Asset, ProjectError, is_audio, is_image
 
 # The add-on whose mini-game a node plays: the episode needs it, as the primary or an extra (owner, 2026-11-09).
 NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 'shsx360',
-               'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'brew_catch': 'shsbrew'}
+               'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'x360_battle': 'shsx360', 'brew_catch': 'shsbrew'}
 # What a primary add-on brings (its settings that need its pictures and sounds; the runtime's ADDON_FEATURE_PACKS) and what any
 # declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
 ADDON_FEATURES = {
@@ -30,13 +30,14 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
                   'brew_catch': "the BREW games' catch game",
                   'shs11_memory': "SHS '11's Memory", 'shs11_reflex': "SHS '11's Reflex",
                   'x360_leash': 'the X360 leash game', 'x360_puzzle': 'the X360 jewel puzzle',
-                  'x360_diss': 'X360 Diss Practice', 'cutscene_available': 'storyboard cutscenes',
+                  'x360_diss': 'X360 Diss Practice', 'x360_battle': 'the X360 Diss Battle',
+                  'cutscene_available': 'storyboard cutscenes',
                   'cutscene': 'storyboard cutscenes'}
 # In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3) and
 # SHS '11's games (5.4).
 MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214, 218), 'the X360 mini-games'),
                      (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"),
-                     (range(221, 222), "the BREW games' catch game"))
+                     (range(221, 222), "the BREW games' catch game"), (range(222, 223), 'the X360 mini-games'))
 
 
 class AddonsNeeded(ProjectError):

@@ -10,7 +10,7 @@ import struct
 from exp_runtime.exp import ContentError, ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
-from exp_runtime.x360_services import X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
+from exp_runtime.x360_services import X360_BATTLE, X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
 from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RESOURCE, version_bytes
@@ -39,7 +39,7 @@ TEXT_BUFFER_WORDS = 512
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
 SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
-                            'shs11_memory', 'shs11_reflex', 'brew_catch',
+                            'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
 HD_KINDS = frozenset(('faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result'))
@@ -94,7 +94,7 @@ def variable_names(project):
     names = {n.variable for n in project.nodes if n.kind in ('set', 'branch') and n.variable}
     for node in project.nodes:
         p = parameters(node)
-        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'relationship', 'score', 'picker'):
+        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'relationship', 'score', 'picker'):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
@@ -195,7 +195,7 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
         raise ProjectError(f'{label}: choose a reusable character')
-    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'input', 'relationship',
+    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'input', 'relationship',
                      'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
     if node.kind == 'cutscene':
@@ -204,6 +204,14 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError('Random upper bound must be positive')
     if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
         raise ProjectError('Diss Practice tutorial is 0 or 1')
+    if node.kind == 'x360_battle':
+        rounds = p['rounds']
+        if p['tutorial'] not in (0, 1) or not 0 <= p['bonus'] <= 10:
+            raise ProjectError('Diss Battle tutorial is 0 or 1, and its bonus 0 to 10')
+        if not rounds or any(not str(r.get('target', '')).strip() or len(r.get('words', ())) != 4
+                             or len({w.strip().lower() for w in r['words']}) != 4 or not all(w.strip() for w in r['words'])
+                             for r in rounds):
+            raise ProjectError('Each Diss Battle round needs a target and four different words: the rhyme, then three wrong ones')
     if node.kind in ('music', 'sound') and p['resource'] < 0:
         raise ProjectError('Audio resource IDs must be nonnegative')
     music = range(8201, 8210 if project.game == 'cod' else 8233)
@@ -370,7 +378,7 @@ def presentation_record(project):
     record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)
     record.update({name: True for name, on in sorted(project.options.items()) if on})
     if any(node.kind in ('minigames_available', 'brew_catch', 'shs11_memory', 'shs11_reflex', 'x360_slot', 'x360_leash',
-                         'x360_puzzle', 'x360_diss') for node in project.nodes):
+                         'x360_puzzle', 'x360_diss', 'x360_battle') for node in project.nodes):
         record['minigames'] = True
     from .model import primary_addon
     primary = primary_addon(project)
@@ -814,6 +822,15 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.call(X360_PUZZLE); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'x360_diss':
                 asm.call(X360_DISS, p['tutorial']); asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'x360_battle':
+                # Service 222: tutorial, bonus, round count, then a table of five text references a round (target, the
+                # rhyme, three wrong words), as SHS '11's Memory passes its rounds.
+                refs = []
+                for i, record in enumerate(p['rounds']):
+                    refs.append(text(f'rounds.{i}.target', record['target'], plain=True))
+                    refs.extend(text(f'rounds.{i}.words.{j}', word, plain=True) for j, word in enumerate(record['words']))
+                asm.call(X360_BATTLE, p['tutorial'], p['bonus'], len(p['rounds']), asm.table(refs))
+                asm.emit(0x21); store_variable(p['result'])
             elif kind == 'brew_catch':
                 branches = [(n.operator, n.value) for n in project.nodes
                             if n.kind == 'branch' and n.variable == p['result']]

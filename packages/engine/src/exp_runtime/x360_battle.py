@@ -62,7 +62,7 @@ class DissBattle:
     bonus: int = 0                                  # added to the grade (FIRST_PLAY_BONUS for a first play)
     tiers: bool = True                              # False plays New Rules' own scoring (the tuning's comparison)
     phase: str = OPENING
-    phase_ms: float = OPENING_MS
+    phase_ms: float | int = OPENING_MS               # (whole or fractional ms: the save loader checks types)
     started: bool = False
     tutorial: bool = True
     budget: int = 0                                 # time not yet played, in thirds of a ms
@@ -73,14 +73,14 @@ class DissBattle:
     streak: int = 0                                 # right answers in a row
     tier: int = 1
     velocity: int = VELOCITY
-    angle: float = WHEEL_START
-    arm_ms: float = -1
-    block_ms: float = 0
+    angle: float | int = WHEEL_START
+    arm_ms: float | int = -1
+    block_ms: float | int = 0
     order: list = field(default_factory=list)       # the rounds still to come, shuffled (a fresh shuffle when used up)
     round: int = -1                                 # the round showing (an index into rounds)
     words: list = field(default_factory=list)       # this round's words, [rhyme, wrong, wrong, wrong]
     slots: list = field(default_factory=lambda: [_slot() for _ in SLOTS])
-    redeal_ms: float = 0
+    redeal_ms: float | int = 0
     touching: list = field(default_factory=list)
     touched: int = -1
     right: int = 0                                  # for the score screen and the tuning

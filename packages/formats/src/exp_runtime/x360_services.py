@@ -6,3 +6,4 @@ X360_SLOT = 214
 X360_LEASH = 215
 X360_PUZZLE = 216
 X360_DISS = 217
+X360_BATTLE = 222       # the Monday Planner's real Diss Battle (x360_battle.py; owner, 2026-11-16)

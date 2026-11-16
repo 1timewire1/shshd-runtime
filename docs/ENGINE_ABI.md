@@ -616,6 +616,9 @@ also carries ([X360.md](X360.md#minigames)).
 | 215 | Leash game | — | 1 won, 0 lost |
 | 216 | Jewel puzzle | — | The score |
 | 217 | Diss Practice | show the tutorial first | The score, at most 32767 |
+| 222 | Diss Battle (the Monday Planner's; ours: `x360_battle.py`) | show the tutorial first, a bonus added to the grade, the round count, a table of 5 text references a round (target, the rhyme, three wrong words) | The grade, 0–10 (a skip: 10 or 0) |
+
+Saves from version 40 keep a Diss Battle in play.
 
 ## 5.3 Storyboard cutscenes (shshd-runtime service 218)
 

@@ -134,5 +134,87 @@ class DissBattleTests(unittest.TestCase):
             xb.DissBattle(**saved).validate()
 
 
+class StoryTests(unittest.TestCase):
+    """A creator story calls it as the translated Monday Planner will: service 222 behind the minigames query."""
+
+    def project(self, **params):
+        from exp_runtime.creator import Node
+        from test_creator_features import sequence
+        rounds = [{'target': r[0], 'words': r[1:]} for r in ROUNDS]
+        node = Node('b', 'x360_battle', params=dict(result='grade', bonus=2, tutorial=1, rounds=rounds, **params))
+        project = sequence(node, Node('said', text='Grade {grade}'))
+        project.addons = [dict(id='shsx360', revision=1)]
+        return project
+
+    def session(self):
+        from test_creator import session_for
+        session = session_for(self.project())
+        action = session.advance()
+        self.assertEqual(action.name, 'x360_battle')
+        return session
+
+    def test_the_story_hands_over_its_rounds_and_bonus(self):
+        game = self.session().engine.x360_battle
+        self.assertEqual(game.rounds, ROUNDS)
+        self.assertEqual((game.bonus, game.tutorial), (2, True))
+
+    def test_it_plays_to_the_end_and_the_story_reads_the_grade(self):
+        session = self.session()
+        for _ in range(2000):
+            if session.pending is None or session.pending.name != 'x360_battle':
+                break
+            game = session.engine.x360_battle
+            if game.phase in (xb.TUTORIAL, xb.READY, xb.ENDED) or game.phase == xb.RUNNING:
+                session.answer(None)
+            session.tick(100)
+        self.assertIsNone(session.engine.x360_battle)
+        self.assertEqual(session.pending.name, 'dialogue')
+        self.assertRegex(session.pending.details['text'], r'^Grade (\d|10)$')
+
+    def test_the_skip_gives_ten_or_none(self):
+        for success, grade in ((True, 10), (False, 0)):
+            session = self.session()
+            self.assertTrue(session.minigame_unstarted)
+            action = session.skip_minigame(success)
+            self.assertEqual(action.details['text'], f'Grade {grade}')
+
+    def test_a_game_in_progress_saves_and_comes_back_where_it_was(self):
+        from exp_runtime.runtime import SaveError, Session
+        from test_creator import session_for
+        session = self.session()
+        session.engine.x360_battle.tutorial = False
+        session.engine.x360_battle.start()
+        session.tick(250)
+        for _ in range(20):
+            session.tick(250)
+        state = json.loads(json.dumps(session.snapshot()))
+        self.assertEqual(state['version'], 40)
+        again = Session.from_snapshot(session_for(self.project()).resources, state)
+        self.assertEqual(again.engine.x360_battle, session.engine.x360_battle)
+        state['engine']['x360_battle']['tier'] = 7
+        with self.assertRaises(SaveError):
+            Session.from_snapshot(session_for(self.project()).resources, state)
+
+    def test_an_older_save_loads_with_no_battle(self):
+        from exp_runtime.runtime import Session
+        from test_creator import session_for
+        session = session_for(self.project())
+        state = json.loads(json.dumps(session.snapshot()))
+        state['version'] = 39
+        del state['engine']['x360_battle']
+        self.assertIsNone(Session.from_snapshot(session_for(self.project()).resources, state).engine.x360_battle)
+
+    def test_the_creator_refuses_rounds_that_arent_whole(self):
+        from exp_runtime.creator import ProjectError, compile_project
+        for rounds in ([], [{'target': 'cat', 'words': ['hat', 'dog']}], [{'target': 'cat', 'words': ['hat', 'hat', 'a', 'b']}]):
+            with self.subTest(rounds=rounds), self.assertRaises(ProjectError):
+                compile_project(self._with(rounds))
+
+    def _with(self, rounds):
+        project = self.project()
+        project.nodes[0].params['rounds'] = rounds
+        return project
+
+
 if __name__ == '__main__':
     unittest.main()

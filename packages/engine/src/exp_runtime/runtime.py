@@ -433,7 +433,8 @@ class Session:
             return game.round == 1 and game.entry_ms == 400 and game.remaining_ms == game.duration_ms
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
-        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'shs11_memory', 'shs11_reflex', 'brew_catch'):
+        if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex',
+                           'brew_catch'):
             return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
@@ -472,6 +473,8 @@ class Session:
             return self._complete_minigame(result=0)    # (its story reads no result)
         elif kind == 'x360_diss':
             return self._complete_minigame(result=PASS_SCORE + 1 if success else 0)
+        elif kind == 'x360_battle':
+            return self._complete_minigame(result=10 if success else 0)     # the grade: the best, or none
         elif kind in ('shs11_memory', 'shs11_reflex'):
             return self._complete_minigame(result=getattr(game, 'best_result', 2) if success else 0)
         else:
@@ -935,6 +938,11 @@ class Session:
                 raise ValueError('Diss Practice takes a press')
             self.engine.x360_diss.press()
             return action
+        elif action.name == 'x360_battle':
+            if value is not None:
+                raise ValueError('The Diss Battle takes a press')
+            self.engine.x360_battle.press()
+            return action
         elif action.name == 'shs11_memory':
             if value is not None and (type(value) is not int or not 0 <= value < 9):
                 raise ValueError('Memory takes a press, or a cell')
@@ -1320,8 +1328,8 @@ class Session:
         if self.pending and self.pending.name == 'x360_leash':
             finished = self.engine.x360_leash.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
             return self._complete_minigame() if finished else self.pending
-        if self.pending and self.pending.name == 'x360_diss':
-            game = self.engine.x360_diss
+        if self.pending and self.pending.name in ('x360_diss', 'x360_battle'):
+            game = getattr(self.engine, self.pending.name)
             finished = game.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
             if game.sounds:
                 self.engine.request_sound(*game.sounds)
@@ -1390,7 +1398,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=39,
+        return dict(format='shs-runtime-save', version=40,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1444,7 +1452,7 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 40):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 41):
                 raise SaveError('Unsupported save format or version')
             # Version 38 adds the BREW games' catch game (brew_catch.py); an older save never had one open.
             if state['version'] < 38 and isinstance(state.get('engine'), dict):
@@ -1461,6 +1469,10 @@ class Session:
                 state['engine'].setdefault('shs11_tutorial_seen', False)
                 state['engine'].setdefault('shs11_reflex', None)
                 state['engine'].setdefault('shs11_reflex_tutorial_seen', False)
+            # Version 40 adds the Monday Planner's Diss Battle (x360_battle.py); an older save never had one.
+            if state['version'] < 40 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('x360_battle', None)
             # Version 35 adds a storyboard cutscene (cutscene.py); an older save never had one.
             if state['version'] < 35 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
@@ -1841,11 +1853,12 @@ class Session:
                     engine.x360_puzzle.validate()
                 except (ValueError, KeyError, TypeError, IndexError) as error:
                     raise SaveError(str(error)) from error
-            if engine.x360_diss is not None:
-                try:
-                    engine.x360_diss.validate()
-                except (ValueError, KeyError, TypeError, IndexError) as error:
-                    raise SaveError(str(error)) from error
+            for game in (engine.x360_diss, engine.x360_battle):
+                if game is not None:
+                    try:
+                        game.validate()
+                    except (ValueError, KeyError, TypeError, IndexError) as error:
+                        raise SaveError(str(error)) from error
             if not 0 <= engine.choice_ms <= 250:
                 raise SaveError('Invalid choice entrance clock')
             if engine.word_grid is not None:
@@ -1916,7 +1929,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'brew_catch': (221,), 'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,)}
+                           'brew_catch': (221,), 'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'x360_battle': (222,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)

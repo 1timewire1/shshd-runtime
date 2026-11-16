@@ -1335,9 +1335,11 @@ class Desktop:
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'The leash: shake the way the arrows point.',
                                        self.SKIP_OPTIONS, lambda index: self._resolve_x360_leash(action, index))
-        if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_diss'
+        if (prompt is None and self.skip_minigames and action is not None and action.name in ('x360_diss', 'x360_battle')
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
-            prompt = self._open_prompt(action, 'Skip this mini-game?', 'Diss practice: catch the good notes with the needle.',
+            summary = ('Diss practice: catch the good notes with the needle.' if action.name == 'x360_diss'
+                       else 'Diss battle: catch the word that rhymes with the needle.')
+            prompt = self._open_prompt(action, 'Skip this mini-game?', summary,
                                        self.SKIP_OPTIONS, lambda index: self._resolve_x360_diss(action, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
@@ -1430,12 +1432,12 @@ class Desktop:
         self._attempt(lambda: self.session.skip_minigame(index == 0))
 
     def _resolve_x360_diss(self, action, index):
-        """Diss Practice's skip prompt: Win / Lose finish it with that result, Play plays it."""
+        """Diss Practice's skip prompt, and the Diss Battle's: Win / Lose finish it with that result, Play plays it."""
         if self.session.pending is not action:
             return
         if index == 2:
             self.minigame_played = action
-            self.session.engine.x360_diss.start()       # the prompt was its go-ahead: no second one
+            getattr(self.session.engine, action.name).start()      # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_minigame(index == 0))
 

@@ -16,6 +16,8 @@ from .minigames import WordGame
 from .nr_arena import NRArena
 from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
 from .x360_diss import DissPractice, X360_DISS
+from .x360_battle import DissBattle
+from .x360_services import X360_BATTLE
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
 from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
@@ -214,6 +216,7 @@ class EngineState:
     x360_puzzle: JewelPuzzle | None = None      # shshd-runtime: and their jewel puzzle
     cutscene: Cutscene | None = None            # shshd-runtime: a storyboard cutscene
     x360_diss: DissPractice | None = None       # shshd-runtime: and their Diss Practice
+    x360_battle: DissBattle | None = None       # shshd-runtime: and the Monday Planner's Diss Battle
     shs11_memory: MemoryGame | None = None      # shshd-runtime: SHS '11's Memory (shs11_games.py)
     shs11_tutorial_seen: bool = False           # (per story: see shs11_games.py)
     shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
@@ -280,7 +283,7 @@ class EngineState:
         self.word_game = self.word_grid = self.football = self.nr_arena = self.x360_slot = self.x360_leash = None
         self.x360_puzzle = None
         self.cutscene = None
-        self.x360_diss = None
+        self.x360_diss = self.x360_battle = None
         self.shs11_memory = self.shs11_reflex = self.brew_catch = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
@@ -1145,6 +1148,14 @@ class EngineState:
             need(1)
             self.x360_diss = DissPractice.opened(bool(args[0]))
             return EngineAction('x360_diss', request, False)
+        if y == X360_BATTLE:                                    # (likewise): tutorial, bonus, rounds, their table
+            need(4)
+            rounds = [[self.read_text(vm, vm.read_word(args[3] + 5 * k + i)) for i in range(5)] for k in range(args[2])]
+            try:
+                self.x360_battle = DissBattle.opened(rounds, bonus=max(0, min(10, args[1])), tutorial=bool(args[0]))
+            except ValueError as error:
+                return EngineAction('unhandled_yield', request, False, dict(reason=str(error)))
+            return EngineAction('x360_battle', request, False)
         if y == SHS11_MEMORY:                                   # (likewise): seconds, target, rounds, their table, the player
             need(5)
             rounds = []

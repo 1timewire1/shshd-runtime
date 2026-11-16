@@ -7,7 +7,7 @@ from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
                       'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
-                      'shs11_memory', 'shs11_reflex', 'brew_catch'))
+                      'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
 FIELDS = {
@@ -112,6 +112,10 @@ NOTES = {
     'x360_diss': "shshd-runtime only, behind minigames_available. The X360 prototype's Diss Practice, drawn from its "
                  'addon; stores the score in result (over 5000 is its pass; a skip stores a pass or 0). tutorial 1 '
                  'shows its tutorial screen first.',
+    'x360_battle': "shshd-runtime only, behind minigames_available. The X360 Monday Planner's Diss Battle: New Rules' "
+                   'Rhyme on Diss Practice\'s turntable, drawn from the X360 addon. rounds: [{target, words: [the rhyme, '
+                   'then three wrong words]}], at least one. Stores the grade 0-10 in result (bonus added, at most 10; a '
+                   'skip stores 10 or 0). tutorial 1 shows its tutorial screen first.',
     'music': 'Music IDs are 8201–8232 in SHS and 8201–8209 in CoD, or an embedded MP3 (asset_import_audio). '
              'Some SHS IDs select offsets in another audio asset. SHS only: params.then_loop names an embedded MP3/WAV '
              'the track runs into without a gap after playing once (-1 none); other apps play the track alone, '
