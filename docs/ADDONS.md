@@ -156,8 +156,9 @@ python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR
 ### `shsbrew`: the BREW games
 
 Required by every translated [BREW](BREW.md) story (126: the '08 Campaign, the Classic stories, the M.A.S.H. packs and Fall
-'06), under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 10,
-about 18.8 MB; the stories ask for revision 7, since 8 to 10 only redraw pictures.
+'06), under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 12,
+about 19.2 MB; the stories ask for revision 7 (Theme Park's card 11), since the later ones only redraw pictures or add the
+main menu's art.
 
 | Resources | What |
 | --- | --- |
@@ -166,6 +167,8 @@ about 18.8 MB; the stories ask for revision 7, since 8 to 10 only redraw picture
 | 26400 + picture | Time badge icons, BREW's small pictures 101-166 at the smartphone's size, 92 pixels (`EVENT_ICON_BASE`) |
 | 26600 | A story's own icon: CS Idol's yawning face (`OWN_ICON_BASE`) |
 | 26900-26914 | Music, tracks 8000-8014 |
+| 26960-26962 | '07's [Title Screen Look](#settings) (revision 12): its spec, the lilac tile, and picture 47 without CENTERSCORE, its band carried to the edges (it doesn't drop in) |
+| 26970-26972 | '08's Title Screen Look (revision 12, with `--java-08` and `--store-art`): its spec, Java '08's blue SHS tile, and EA's store thumbnail as a photo |
 | 26991 | The frame backdrop behind a pink box |
 | 26992-26997 | Relationship icons: heart, skull and smiley, whole and then broken |
 | 26998 | The spec: each story's looks, the Classic stories' own backgrounds, the catch game |
@@ -176,10 +179,11 @@ about 18.8 MB; the stories ask for revision 7, since 8 to 10 only redraw picture
 
 Revisions: 2 the event icons; 3 the Java '08 Look; 4 the Classic stories' own backgrounds; 5 '08's redraws of them; 6 the
 yawning face the catch games show; 7 that face as an event icon, and King of the Road's Michael centred; 8 the TV turned to face
-the middle; 9 the Kid lowered onto the ring; 10 the badge icons at the smartphone's size.
+the middle; 9 the Kid lowered onto the ring; 10 the badge icons at the smartphone's size; 11 Theme Park's card picture; 12
+the Title Screen Looks.
 
 ```sh
-python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --out OUT_DIR
+python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --java-08 JAVA_08_JAR --store-art STORE_ART_FOLDER --out OUT_DIR
 ```
 
 ### `shshw`: Surviving Hollywood

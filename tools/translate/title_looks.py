@@ -86,3 +86,64 @@ def nr_look(x1i, pud, store_art, base=LOOK_IDS['nr']):
             'photo': {'picture': picture(base + 2), 'centre': list(NR_PHOTO_CENTRE)},
             'title': {'picture': picture(base + 3, NR_LOGO_SCALE, False), 'centre': list(NR_LOGO_CENTRE)}}
     return {base: spec_bytes(spec), base + 1: png(backdrop.convert('RGB')), base + 2: png(photo), base + 3: png(logo)}
+
+
+# ---------------------------------------------------------------------------------------------------- BREW '07 and '08
+
+BREW_TITLE = 47                 # the whole title, logo and photo in one picture (res_xlarge.pud)
+BREW_TILE_ART = 14              # the UI tile (sheet 12 frame 2), the lilac check behind it
+BREW_07_ROWS = 225              # '07's picture down to HIGH SCHOOL: its rows 225..251 are the gap and CENTERSCORE (owner: dropped)
+BREW_SCALE, BREW_CENTRE = 3, (384, 375)     # tripled, nearest; centred between the top and the buttons
+BREW_MARGIN = 12                # points kept clear at each side when '07's picture grows in a taller frame
+JAVA_08_TILES, JAVA_08_SCALE = (4, 5), 4    # the Java '08 demo's blue "SHS" tiles (sheet 8018), checkered, quadrupled
+STORE_THUMBNAIL = 'product-thumbnail_SHS.jpg'   # EA Mobile's '08 store thumbnail (Wayback), its own logo on it
+BREW_08_PHOTO_CENTRE = (384, 390)
+
+
+def brew_07_look(base_07_pud, base=LOOK_IDS['brew07']):
+    """BREW '07: picture 47 without CENTERSCORE on the lilac tile, tripled. The pink band behind the photo is carried out to
+    the frame's edges, each row by its edge pixel, as the phone's 240-wide screen showed it edge to edge. The picture takes
+    the photo's place, the band with it, but doesn't drop in: its logo is painted onto the photo (owner, 2026-11-16)."""
+    import brew_art
+    art = brew_art.Art([brew_art.base_pack(base_07_pud)])
+    title = art.image(BREW_TITLE).convert('RGBA')
+    title = title.crop(title.getbbox())
+    title = title.crop((0, 0, title.width, BREW_07_ROWS))
+    tile = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+    art.draw(tile, BREW_TILE_ART, 0, 0)
+    tile = tile.crop(tile.getbbox())
+    width = -(-FRAME[0] // BREW_SCALE)
+    backdrop = tiled(tile, (width, -(-TALLEST // BREW_SCALE)))
+    photo = Image.new('RGBA', (width, title.height), (0, 0, 0, 0))
+    left = (width - title.width) // 2
+    for y in range(title.height):
+        for x0, xs in ((0, range(0, left)), (title.width - 1, range(left + title.width, width))):
+            pixel = title.getpixel((x0, y))
+            if pixel[3] == 255:
+                for x in xs:
+                    photo.putpixel((x, y), pixel)
+    photo.alpha_composite(title, (left, 0))
+    spec = {'background': {'cover': picture(base + 1, BREW_SCALE, False)},
+            'photo': {'picture': picture(base + 2, BREW_SCALE, False), 'centre': list(BREW_CENTRE),
+                      'fit': title.width * BREW_SCALE + 2 * BREW_MARGIN,      # the letters stay inside; the band may not
+                      'drop': False}}           # in place from the start: its logo is painted on (owner, 2026-11-16)
+    return {base: spec_bytes(spec), base + 1: png(backdrop.convert('RGB')), base + 2: png(photo)}
+
+
+def brew_08_look(java_08_jar, store_art, base=LOOK_IDS['brew08']):
+    """BREW '08 (owner's concept B): the Java '08 demo's blue SHS tile, checkered as its menu lays it, quadrupled, and EA's
+    store thumbnail (its own logo) as a photo, smoothly quadrupled. No separate title."""
+    import brew_java
+    frames = brew_java.sheet(brew_java.resources(java_08_jar)[brew_java.UI_SHEET])
+    tiles = [frames[k].convert('RGBA') for k in JAVA_08_TILES]
+    size = tiles[0].size
+    width, height = -(-FRAME[0] // JAVA_08_SCALE), -(-TALLEST // JAVA_08_SCALE)
+    backdrop = Image.new('RGBA', (width, height), (0, 0, 0, 255))
+    for ty, y in enumerate(range(0, height, size[1])):
+        for tx, x in enumerate(range(0, width, size[0])):
+            backdrop.alpha_composite(tiles[(tx + ty) % 2], (x, y))
+    thumbnail = Image.open(Path(store_art) / STORE_THUMBNAIL).convert('RGB')
+    photo = framed_photo(thumbnail.resize((thumbnail.width * 4, thumbnail.height * 4), Image.LANCZOS))
+    spec = {'background': {'cover': picture(base + 1, JAVA_08_SCALE, False)},
+            'photo': {'picture': picture(base + 2), 'centre': list(BREW_08_PHOTO_CENTRE)}}
+    return {base: spec_bytes(spec), base + 1: png(backdrop.convert('RGB')), base + 2: png(photo)}

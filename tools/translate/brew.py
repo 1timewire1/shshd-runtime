@@ -46,7 +46,7 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 import newrules  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 11   # 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 12   # 12: the Title Screen Looks ('07, '08); 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
 # 4: Classic stories' own backgrounds; 5: '08's redraws of them; 6: the stories' own catch picture (OWN_CATCH_PICTURES); 7: that
 # picture as an event icon too (OWN_ICON_BASE), and King of the Road's Michael centred (CENTRE_OWN_BODY)
 ADDON_REQUIRED = 7                      # what a story needs: rev 8 only redraws the TV, so the stories built for 7 stay as they are
@@ -3727,10 +3727,11 @@ def portrait_picture(face):
     return big.resize((big.width // 2, big.height // 2), Image.BOX)
 
 
-def build_addon(casts, games, render_music=None, java_jar=None, shs_hd_episodes=None):
+def build_addon(casts, games, render_music=None, java_jar=None, shs_hd_episodes=None, store_art=None):
     """The addon's resources and spec, from the portrait catalogue's casts (brew_casts.json) and the games' folders: `games`
     {'08': the '08 folder, '07: the VX9800 module folder}. Every look any story shows, every location at every sky, the music,
-    the relationship icons and the frame's backdrop."""
+    the relationship icons and the frame's backdrop; the main menu's Title Screen Looks, '08's with `java_jar` and
+    `store_art` (EA Mobile's store art folder)."""
     bases = dict(zip(('08', '07'), (load_pack(games['08'] / 'game/SHS/res_xlarge.pud'), load_pack(games['07'] / 'res_xlarge.pud'))))
     resources, spec = {}, dict(format=SPEC_FORMAT, version=SPEC_VERSION, stories={}, looks=[])
     art08, art07 = brew_art.Art([bases['08']]), brew_art.Art([bases['07']])
@@ -3835,6 +3836,12 @@ def build_addon(casts, games, render_music=None, java_jar=None, shs_hd_episodes=
     if shs_hd_episodes is not None:
         card_resources, spec['card_pictures'] = card_pictures(shs_hd_episodes)
         resources.update(card_resources)
+    # Rev 12: the HD main menu's Title Screen Looks, '07's (from its pud) and, with the Java '08 demo and EA's store art,
+    # '08's (title_looks.py)
+    import title_looks
+    resources.update(title_looks.brew_07_look(games['07'] / 'res_xlarge.pud'))
+    if java_jar is not None and store_art is not None:
+        resources.update(title_looks.brew_08_look(java_jar, store_art))
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_CAMPAIGN, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()

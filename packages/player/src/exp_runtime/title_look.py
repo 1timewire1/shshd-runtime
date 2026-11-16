@@ -6,15 +6,15 @@ The addon carries a spec, a JSON resource (the game profile's TITLE_LOOKS gives 
     {"version": 1,
      "background": {"cover": PICTURE}  or  {"top": PICTURE, "middle": PICTURE, "bottom": PICTURE},
      "scene": {"picture": PICTURE, "left": x, "bottom": y},       (optional)
-     "photo": {"picture": PICTURE, "centre": [x, y]},             (optional)
+     "photo": {"picture": PICTURE, "centre": [x, y], "fit": w, "drop": true},   (optional; `fit`, `drop` optional)
      "title": {"picture": PICTURE, "centre": [x, y]}}             (optional)
     PICTURE = {"id": resource, "scale": points per pixel, "smooth": false for pixel art (scaled nearest)}
 
 Coordinates are HD's points in its 768 x 1024 frame. In a taller frame (General's Aspect Ratio) each part goes where HD's
 own does (HdUi.main_layout): a "cover" background is scaled to cover the frame and centred, as the wood is; a sliced one is
 built at the frame's height (its top at the top, its bottom at the bottom, the middle repeated between); the scene keeps its
-distance above the buttons, so it moves down with them; the photo moves and grows as HD's photo does; the title keeps its
-place at the top. The photo is what the first launch drops in, and the title what fades in (desktop_main_hd).
+distance above the buttons, so it moves down with them; the photo moves and grows as HD's photo does, but no wider than the
+frame (`fit`, the width that must stay inside, else the picture's); the title keeps its place at the top. The photo is what the first launch drops in, and the title what fades in (desktop_main_hd).
 """
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -50,6 +50,12 @@ class TitleLook:
             return None
         return cls(library, addon, spec_id, spec)
 
+    @property
+    def photo_drops(self):
+        """Whether the first launch drops the photo in (`"drop": false` keeps it in place: BREW '07's, whose logo is painted
+        onto it; owner, 2026-11-16)."""
+        return bool(self.spec.get('photo', {}).get('drop', True))
+
     def picture(self, entry, S):
         """A spec PICTURE at the canvas's S pixels per point (cached)."""
         key = (entry['id'], S)
@@ -80,8 +86,12 @@ class TitleLook:
         photo = self.spec.get('photo')
         if photo:
             image = self.picture(photo['picture'], S)
-            if photo_grow > 1:
-                image = scaled(image, photo_grow)
+            # It grows as HD's does, but never wider than the frame: `fit` is the width (points) that must stay inside it,
+            # the picture's own unless the spec says less (BREW '07's band may run off the sides; its letters may not).
+            fit = photo.get('fit') or image.get_width() / S
+            grow = min(photo_grow, max(1.0, width / fit))
+            if grow > 1:
+                image = scaled(image, grow)
             x, y = photo['centre']
             layers.append((image, (x, y + photo_shift)))
         else:

@@ -71,6 +71,17 @@ class TitleLookTests(unittest.TestCase):
         self.assertEqual(layout(the_look, 1024)[1][0].get_size(), (400 * S, 300 * S))
         self.assertGreater(layout(the_look, 1664)[1][0].get_width(), 400 * S)                   # ...and grown
 
+    def test_a_photo_grows_no_wider_than_the_frame_and_may_stay_put(self):
+        pictures = {26961: png((768, 2048), (0, 0, 255, 255)), 26962: png((768, 200), (255, 255, 255, 255))}
+        wide = look({'background': {'cover': {'id': 26961}}, 'photo': {'picture': {'id': 26962}, 'centre': [384, 375]}},
+                    pictures)
+        self.assertEqual(layout(wide, 1664)[1][0].get_width(), 768 * S)          # as wide as the frame already: no growth
+        fitted = look({'background': {'cover': {'id': 26961}},
+                       'photo': {'picture': {'id': 26962}, 'centre': [384, 375], 'fit': 600, 'drop': False}}, pictures)
+        self.assertEqual(layout(fitted, 1664)[1][0].get_width(), round(768 * 768 / 600 * S))     # until `fit` fills it
+        self.assertTrue(wide.photo_drops)
+        self.assertFalse(fitted.photo_drops)
+
     def test_a_sliced_background_is_built_at_the_frames_height_and_the_scene_follows_the_buttons(self):
         the_look = look({'background': {'top': {'id': 26961}, 'middle': {'id': 26962}, 'bottom': {'id': 26963}},
                          'scene': {'picture': {'id': 26964}, 'left': 0, 'bottom': 1000}},

@@ -214,7 +214,9 @@ class HdMainMenu(HdUi):
             return
         photo, (cx, cy) = placed
         t = self.age - INTRO_PHOTO_START
-        if not self.intro or t >= INTRO_PHOTO_ZOOM and t >= INTRO_PHOTO_TURN:
+        look = self.title_look()
+        settled = not self.intro or (look is not None and not look.photo_drops)       # (BREW '07's stays put)
+        if settled or t >= INTRO_PHOTO_ZOOM and t >= INTRO_PHOTO_TURN:
             layer.blit(photo, photo.get_rect(center=(round(cx * S), round(cy * S))))
             return
         zoom = keyframes((0, .882, .941, 1), (10.0, 1.0, 1.1, 1.0), max(0.0, t) / INTRO_PHOTO_ZOOM)
