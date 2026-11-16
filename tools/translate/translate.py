@@ -59,6 +59,9 @@ def main(argv=None):
     nr.add_argument('--downloads', type=Path,
                     help="the folder of .expd downloads to learn capitals from, for a built-in story (with --library)")
     nr.add_argument('--lite', type=Path, help="a Lite Java build's jar, for king-of-diss-lite")
+    nr.add_argument('--store-art', type=Path,
+                    help="with --x1i, for the addon: the folder of EA Mobile's store art (header_mob_shsnr.jpg), for the "
+                         "Title Screen Look's photo")
     nr.add_argument('--addon', type=Path,
                     help="the New Rules addon (`addon` writes it): the episodes leave out what it holds and declare it")
     nr.add_argument('--arena', action='store_true',
@@ -154,8 +157,14 @@ def main(argv=None):
     for path in args.episodes:
         downloads, twin, twin_files, full = args.downloads, None, (), None
         if str(path) == 'addon':
+            look = None
+            if args.store_art and args.x1i:
+                import title_looks
+                look = title_looks.nr_look(args.x1i, args.pud, args.store_art)
+            elif args.store_art or args.x1i:
+                print('addon: no Title Screen Look (it needs both --x1i and --store-art)')
             data = newrules.build_addon(art, music, library=newrules.decode_program(portraits[newrules.LIBRARY]),
-                                        arena_source=x1i)
+                                        arena_source=x1i, title_look=look)
             target = args.out / f'{ADDON_FILE}.exp'
             target.write_bytes(data)
             print(f'addon: {newrules.ADDON_TITLE!r} revision {newrules.ADDON_REVISION} -> {target} '

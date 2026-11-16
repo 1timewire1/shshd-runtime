@@ -46,7 +46,8 @@ FRAME_BACKDROP = 26999
 # shared by every translation that declares it instead of each carrying its own copies (owner, 2026-10-30). Raise the
 # revision when an ID above changes meaning; episodes need at least the revision they were built against.
 # Revision 2 adds the minigame library and the arena's skin; 3 the arena's copy of the dialogue screens' frame.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 3
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 4    # 4: the Title Screen Look
+STORIES_NEED = 3        # what a story asks for: revision 4 added only the main menu's art, which no story uses
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 # New Rules' minigame arena drawn from the X1i build's art (nr_arena_art.build_skin), after the backgrounds (26000-26173)
 # and below the episodes' own portraits (26200 on): the player's desktop_nr_arena.SKIN names the same IDs.
@@ -498,20 +499,21 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                 resources[MUSIC_BASE + index] = music(index)
         report.music = len(tracks)
     if addon is not None:
-        resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, ADDON_REVISION)])
+        resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, STORIES_NEED)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     # The tag tells the importer this is a New Rules story, which the picker never hides as its smartphone version.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources), report
 
 
-def build_addon(art, music=None, library=None, arena_source=None):
+def build_addon(art, music=None, library=None, arena_source=None, title_look=None):
     """The New Rules addon's `.exp` bytes: every location's background in every mode, the frame backdrop and, with
     `music` (index -> MP3 bytes), every music track, at the IDs the translations use; with `library` (New Rules'
     minigame library, a KiwiProgram) its translation (translate_library) at LIBRARY, which the runtime runs beside
     every story declaring the addon; with `arena_source` (the X1i jar's resources) the arena's skin (ARENA_SKIN,
-    nr_arena_art.build_skin), which the player draws the arena from."""
-    resources = {}
+    nr_arena_art.build_skin), which the player draws the arena from; with `title_look` (title_looks.nr_look's
+    resources) the HD main menu's Title Screen Look (revision 4)."""
+    resources = dict(title_look or {})
     if library is not None:
         resources[LIBRARY] = translate_library(library, music=music is not None).to_bytes()
     if arena_source is not None:

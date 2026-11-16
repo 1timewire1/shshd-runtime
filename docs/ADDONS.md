@@ -86,21 +86,26 @@ Replacing an episode adds a new record beside the old one, as an episode's id is
 
 ### `shsnr`: New Rules
 
-Required by every [New Rules](NEW_RULES.md) translation. Revision 3, about 45 MB.
+Required by every [New Rules](NEW_RULES.md) translation. Revision 4, about 45 MB; the stories ask for revision 3, since 4
+adds only the main menu's art.
 
 | Resources | What |
 | --- | --- |
 | 25200 | New Rules' minigame library, run as a linked segment beside the story ([VM_SPEC.md](VM_SPEC.md)) |
 | 26000–26173 | Backgrounds: 29 locations × 6 times of day |
 | 26174–26178 | The arena's skin and frame |
+| 26960–26963 | The [Title Screen Look](#settings) (revision 4): its spec, the X1i menu backdrop, Paula, Spike and Raven as a photo (EA Mobile's store header), and the WinMo logo |
 | 26980–26994 | The 15 music tracks |
 | 26999 | The frame backdrop |
 
 Portraits stay in each episode, since each story numbers its looks in the order it meets them.
 
 ```sh
-python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I_JAR --out OUT_DIR
+python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I_JAR --store-art STORE_ART_FOLDER --out OUT_DIR
 ```
+
+`STORE_ART_FOLDER` holds EA Mobile's store art from the Wayback Machine (`header_mob_shsnr.jpg`); without it, or without
+`--x1i`, the addon has no Title Screen Look.
 
 ### `shsx360`: the cancelled Xbox 360 game
 
