@@ -133,6 +133,25 @@ def hollywood_look(jar, base=LOOK_IDS['shw']):
     return {base: spec_bytes(spec), base + 1: png(top), base + 2: png(middle), base + 3: png(bottom), base + 4: png(photo)}
 
 
+# ---------------------------------------------------------------------------------------------------- SHS '11
+
+SHS11_WOOD, SHS11_LOGO = (1, 0, 0), (21, 0, 0)      # gamelib pictures (entry, order, palette): wood with the photo; logo
+SHS11_SCALE, SHS11_LOGO_CENTRE = 1.6, (384, 130)     # the frame's width over the 480-wide art
+
+
+def shs11_look(art_jar, base=LOOK_IDS['shs11']):
+    """SHS '11 (the 480 x 800 build's art, `art_jar` an open zipfile): gamelib picture 1, the wood with the photo painted
+    on (so nothing drops in), covering the frame, and the logo, picture 21, on top. Both shown at the frame's width."""
+    import shs11
+    pictures = {(p.entry, p.order, p.palette): p.png for p in shs11.interface_pictures(art_jar)}
+    wood, logo = Image.open(io.BytesIO(pictures[SHS11_WOOD])), Image.open(io.BytesIO(pictures[SHS11_LOGO]))
+    if wood.width != 480:
+        raise ValueError(f"'11's wood is {wood.width} wide: use the 480 x 800 build's art")
+    spec = {'background': {'cover': picture(base + 1, SHS11_SCALE)},
+            'title': {'picture': picture(base + 2, SHS11_SCALE), 'centre': list(SHS11_LOGO_CENTRE)}}
+    return {base: spec_bytes(spec), base + 1: png(wood.convert('RGB')), base + 2: png(logo.convert('RGBA'))}
+
+
 # ---------------------------------------------------------------------------------------------------- BREW '07 and '08
 
 BREW_TITLE = 47                 # the whole title, logo and photo in one picture (res_xlarge.pud)

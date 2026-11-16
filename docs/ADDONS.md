@@ -137,7 +137,8 @@ python tools/translate/translate.py x360 DATA_PAK --story addon --pud RES_LARGE_
 
 ### `shs11`: Surviving High School '11
 
-Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Memory in place of letter grids. Revision 2, about 9 MB. Its pack is 31600.
+Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Memory in place of letter grids. Revision 3, about 9 MB;
+the stories ask for revision 2, since 3 adds only the main menu's art. Its pack is 31600.
 
 | Resources | What |
 | --- | --- |
@@ -146,6 +147,7 @@ Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Me
 | 26199 | The addon's spec, JSON |
 | 26200–26624 | Portraits, 26200 + 5 × look + expression |
 | 26800– | Parts no look draws |
+| 26960–26962 | The [Title Screen Look](#settings) (revision 3): its spec, gamelib picture 1 (the wood with the photo painted on, so nothing drops in) and the logo, picture 21 |
 | 26980–26991 | Music and sound, the last a copy for the story's selector 2 |
 | 26992– | Relationship badges: heart, skull and smiley, whole and then broken |
 

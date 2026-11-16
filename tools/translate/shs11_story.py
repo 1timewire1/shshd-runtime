@@ -939,7 +939,7 @@ def translate(res, story, twin_archive):
                                          s.push(NARRATOR), s.text(''), s.call(64, 2),
                                          s.push(NARRATOR), s.push(-1), s.call(72, 2)))
         resources[FIRST_SCRIPT + script - story.scripts[0]] = rewriter.finish().to_bytes()
-    resources[ADDON_RECORD] = requires_bytes([(shs11.ADDON_ID, shs11.ADDON_REVISION)])
+    resources[ADDON_RECORD] = requires_bytes([(shs11.ADDON_ID, shs11.STORIES_NEED)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
     resources[1] = Metadata(shs11.PACK_ID, story.number, (story.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources)
