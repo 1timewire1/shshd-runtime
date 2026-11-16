@@ -472,14 +472,16 @@ class Commands:
         key, _, value = rest.partition(' ')
         wanted = value.strip() in ('on', 'true', '1')
         state = self.app.state
-        choices = {'dsi_pixels': ('sharp', 'smooth'), 'dsi_language': ('off', 'fr', 'it', 'de', 'es')}
+        from .menu import SHARED_PREFERENCES
+        choices = {k: v for k, v in SHARED_PREFERENCES.items() if isinstance(v, tuple)}
         if state is not None and key in choices:
-            # Add-Ons' DSi Pixels and DSi Language, one of a few values: as their choice pages set them
+            # An option that is one of a few values (DSi Pixels, DSi Language, Title Screen Look...): as its choice page sets it
             if value.strip() not in choices[key]:
                 return dict(ok=False, error=f'{key} is one of {", ".join(choices[key])}')
             setattr(state, key, value.strip())
             state.persist()
-            self.app.apply_dsi()
+            if key.startswith('dsi_'):
+                self.app.apply_dsi()
             return dict(ok=True, key=key, value=getattr(state, key))
         if state is None or type(getattr(state, key, None)) is not bool:
             return dict(ok=False, error=f'unknown switch {key!r}')
