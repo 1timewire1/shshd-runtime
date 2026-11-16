@@ -618,6 +618,11 @@ also carries ([X360.md](X360.md#minigames)).
 | 217 | Diss Practice | show the tutorial first | The score, at most 32767 |
 | 222 | Diss Battle (the Monday Planner's; ours: `x360_battle.py`) | show the tutorial first, a bonus added to the grade, the round count, a table of 5 text references a round (target, the rhyme, three wrong words) | The grade, 0–10 (a skip: 10 or 0) |
 
+The Diss Battle has its own question, **70 selector 205** (`X360_BATTLE_QUERY`;
+`minigames_available` with `for: x360_battle` in the creator), answered by the same
+switch. An older shshd-runtime that answers 201 but lacks 222 answers 205 with 0, so
+the story falls back to the speed diss it also carries.
+
 Saves from version 40 keep a Diss Battle in play.
 
 ## 5.3 Storyboard cutscenes (shshd-runtime service 218)

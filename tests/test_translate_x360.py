@@ -434,8 +434,11 @@ QuitGame()
 
     def test_every_track_and_sound_is_one_the_addon_carries(self):
         import x360
-        for resource, _ in x360.MIXES.values():
+        for key, (resource, _) in x360.MIXES.items():
             self.assertTrue(x360.addon_holds(resource))
+            if key == x360.BATTLE_MUSIC:        # (26900-26913 are full: by the main menu's, above the sound effects)
+                self.assertEqual(resource, x360.ADDON_MIXES['main_menu'][0] + 1)
+                continue
             self.assertLess(resource, x360.MUSIC_OTHER)
         for _, resource in x360.SCRIPT_SOUNDS.values():
             self.assertTrue(x360.addon_holds(resource))
@@ -922,6 +925,20 @@ QuitGame()
         lines, prompts, _ = self.drive(data, right[:6] + wrong[6:9])
         self.assertEqual((lines, len(prompts)), (['Before', 'Lost'], 9))
 
+    def test_the_real_diss_battle_comes_first_where_the_player_has_it(self):
+        import x360
+        project = self.project(['t/battle'], script_edits={'t/battle': (('--call the game here', 'SpeedDiss()'),)})
+        asks = [n for n in project.nodes if n.kind == 'minigames_available']
+        self.assertEqual([n.params.get('for') for n in asks], ['x360_battle'])
+        battle = next(n for n in project.nodes if n.kind == 'x360_battle')
+        self.assertEqual((battle.params['bonus'], battle.params['tutorial']), (x360.BATTLE_BONUS, 1))
+        self.assertEqual(battle.params['rounds'], x360.battle_rounds())
+        for (word, options, answer), record in zip(x360.SPIKE_ROUNDS, x360.battle_rounds()):
+            self.assertEqual(record['target'], word)
+            self.assertEqual(record['words'][0], options[answer])           # the rhyme first
+            self.assertEqual(len(set(record['words'])), 4)
+            self.assertNotIn(word, record['words'])
+
     def test_every_speed_diss_round_has_a_rhyme_and_times_out_as_a_miss(self):
         import x360
         project = self.project(['t/battle'], script_edits={'t/battle': (('--call the game here', 'SpeedDiss()'),)})
@@ -1011,9 +1028,11 @@ QuitGame()
         for story in (x360.DAY_OF_DISS, x360.PUZZLE_TEST, x360.DATING_BETH):
             self.assertFalse(story.diss_rounds or story.script_edits or story.event_scenes)
         # Revision 15 only adds the main menu's tune (MENU_MUSIC), which no story plays; 16, Day of Diss's opening for taller
-        # frames, is what it needs now; 17 only the main menu's Title Screen Look.
-        self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 16)
-        self.assertEqual(x360.ADDON_REVISION, 17)
+        # frames, is what it needs now; 17 only the main menu's Title Screen Look; 18 the Diss Battle's music, which the
+        # Planner needs.
+        self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 18)
+        self.assertEqual(x360.MONDAY_PLANNER.addon_revision, 18)
+        self.assertEqual(x360.ADDON_REVISION, 18)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
 

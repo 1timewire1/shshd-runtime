@@ -45,7 +45,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 17   # 17: the Title Screen Look (with --ms3); 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 18   # 18: the Diss Battle's music (dissdown); 17: the Title Screen Look (with --ms3); 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 1
@@ -112,7 +112,10 @@ MIXES = {'freedom': (26902, (('data/sound/music/freedom.ogg', 40),)),
          # Diss Practice's: the maps name the first, and the other two nothing; one for each round (owner, 2026-11-02).
          'dbp': (26907, (('data/sound/music/dbp_bg_music.ogg', 127),)),
          'dbp_2': (26912, (('data/sound/music/dbp_bg_music2.ogg', 127),)),
-         'dbp_3': (26913, (('data/sound/music/dbp_bg_music3.ogg', 127),))}
+         'dbp_3': (26913, (('data/sound/music/dbp_bg_music3.ogg', 127),)),
+         # The real Diss Battle's (owner, 2026-11-16): nothing in the prototype plays it, so no sound master gives it a
+         # Volume; mixed at the others' 40 (the mix's gain sets its level anyway).
+         'dissdown': (26997, (('data/sound/music/dissdown.ogg', 40),))}
 # The prototype's main menu tune (sound.wxr `music/main_menu`, Volume 40), which no story plays: the addon carries it for the
 # player's Title Screen Music setting (shs profile TITLE_MUSIC; owner, 2026-11-09), mixed as the stories' tracks are. Its ID
 # is apart from theirs (other cues count up from MUSIC_OTHER).
@@ -282,6 +285,29 @@ SPIKE_ROUNDS = (('rude', ('lewd', 'crook', 'socks'), 0), ('crash', ('trash', 'ch
                 ('dues', ('money', 'ruse', 'socks'), 1), ('lewd', ('crude', 'pimple', 'took', 'guy'), 0),
                 ('tan', ('street', 'lewd', 'can'), 2), ('spend', ('president', 'cruise', 'door', 'bend'), 3),
                 ('rap', ('snap', 'planned', 'bling'), 0), ('cool', ('shoes', 'ladle', 'school', 'store'), 2))
+# The real Diss Battle (owner, 2026-11-16; reference/Other Games/docs/DISS_BATTLE_X360_PLAN.md): New Rules' Rhyme on the
+# practice's turntable, with the speed diss above as its fallback. Its rounds are the speed diss's (battle_rounds), its
+# target Spike's 7 in New Rules, plus New Rules' first-play bonus (this is the only battle), and its music `dissdown`,
+# which nothing in the prototype plays.
+BATTLE_EVENT, BATTLE_TARGET, BATTLE_BONUS, BATTLE_MUSIC = 'episode3/diss_battle_001', 7, 2, 'dissdown'
+
+
+def battle_rounds():
+    """SPIKE_ROUNDS as the Diss Battle's rounds: the target, its rhyme, and three wrong words. A round with only two
+    wrong words takes the next round's target as its third (none of them rhymes with another round's target)."""
+    rounds = []
+    for k, (word, options, answer) in enumerate(SPIKE_ROUNDS):
+        wrong = [o for i, o in enumerate(options) if i != answer]
+        step = 1
+        while len(wrong) < 3:
+            extra = SPIKE_ROUNDS[(k + step) % len(SPIKE_ROUNDS)][0]
+            if extra not in wrong and extra != options[answer] and extra != word:
+                wrong.append(extra)
+            step += 1
+        rounds.append({'target': word, 'words': [options[answer]] + wrong[:3]})
+    return rounds
+
+
 FAIL_SOUND = ('data/sound/fx/dbp_fail.wav', 26982)      # SCRIPT_SOUNDS' generic/disaster; `sound/scratch` too (fx.wxr)
 WHOOSH_SOUND = ('data/sound/fx/whoosh_002.wav', 26983)
 _SPIKE_LOSS = ('else\ngameSHS.SetCharacterEmotion("spike","happy")\ngameSHS.SetCharacterEmotion("josh","sad")\n'
@@ -299,7 +325,7 @@ MONDAY_PLANNER = Story('Monday Planner', 4, ['episode3/monday_morning'], [
                                    'english_classroom', 'parking_lot', 'josh_house_in', 'kim_house_in')},
     player='josh', voices={'255 192 192': 'kim'},       # Kim on the phone (the telephone bubble has no speaker)
     title_card=('front_afternoon', 'King of Diss'),
-    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=13,
+    script_music={'chilled': 'chilled', 'diss_001': 'diss_001', 'lazy': 'lazy'}, addon_revision=18,   # 18: dissdown
     # Andy is fully modelled and nobody's in the prototype (its `andy` template wears Moondog): he's Spike (owner, 2026-11-02).
     renders={'spike': 'andy'},
     keep_state=frozenset({'tod'}), diss_rounds=True,
@@ -953,6 +979,30 @@ class Builder:
         self.block(lua_subset.parse(PRACTICE_END))
 
     def speed_diss(self):
+        """The battle: the real Diss Battle (x360_battle) where the player has it and its switch is on, to `dissdown`, its
+        grade won at Spike's 7 (flow set to SPEED_DISS_WIN or 0, as the scene's script reads it); otherwise the speed
+        diss, as before."""
+        self.add('minigames_available', params={'result': 'real_minigames', 'for': 'x360_battle'})
+        real = self.add('branch', params={'expression': '(real_minigames == 1)'})
+        self.pending = [(real.id, 'next')]
+        self.play_mix(BATTLE_MUSIC)
+        self.add('x360_battle', params={'result': 'battle_grade', 'bonus': BATTLE_BONUS, 'tutorial': 1,
+                                        'rounds': battle_rounds()})
+        won = self.add('branch', params={'expression': f'(battle_grade >= {BATTLE_TARGET})'})
+        self.pending = [(won.id, 'next')]
+        self.add('set', variable='flow', params={'expression': str(SPEED_DISS_WIN)})
+        ends = self.pending
+        self.pending = [(won.id, 'otherwise')]
+        self.add('set', variable='flow', params={'expression': '0'})
+        self.pending += ends
+        if self.story.event_music.get(BATTLE_EVENT):               # back to the scene's own music
+            self.play_mix(self.story.event_music[BATTLE_EVENT])
+        ends = self.pending
+        self.pending = [(real.id, 'otherwise')]
+        self.speed_diss_rounds()
+        self.pending += ends
+
+    def speed_diss_rounds(self):
         """The battle's speed diss (SPIKE_ROUNDS): the timed rounds until ten hits or three misses, or they run out. A
         round timed out counts as a miss: its timer picks a wrong answer."""
         for name in ('flow', 'miss'):

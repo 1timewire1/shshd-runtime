@@ -81,7 +81,8 @@ def dispatch(self, vm, *, resource_exists=None):
             available = getattr(self, 'nr_arena_enabled', False) and vm.linked is not None
             return complete('query_build', int(available), selector=selector)
         from ..x360_games import X360_MINIGAMES_QUERY
-        if selector == X360_MINIGAMES_QUERY:
+        from ..x360_services import X360_BATTLE_QUERY
+        if selector in (X360_MINIGAMES_QUERY, X360_BATTLE_QUERY):
             # shshd-runtime: whether the X360 translations' real minigames play here (the same switch); others take
             # the timed choice the story carries.
             return complete('query_build', int(getattr(self, 'nr_arena_enabled', False)), selector=selector)

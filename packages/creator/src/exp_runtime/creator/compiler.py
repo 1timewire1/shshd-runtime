@@ -10,7 +10,7 @@ import struct
 from exp_runtime.exp import ContentError, ExpArchive, Metadata, encode_exp
 from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHORING_MAGIC
 from exp_runtime.decode.bytecode import decode_program
-from exp_runtime.x360_services import X360_BATTLE, X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
+from exp_runtime.x360_services import X360_BATTLE, X360_BATTLE_QUERY, X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
 from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RESOURCE, version_bytes
@@ -202,6 +202,8 @@ def validate_node(project, node, nodes, assets, characters):
         validate_cutscene(label, p, assets)
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
+    if node.kind == 'minigames_available' and p['for'] not in ('', 'x360_battle'):
+        raise ProjectError('A minigames query is for every mini-game (empty) or for x360_battle')
     if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
         raise ProjectError('Diss Practice tutorial is 0 or 1')
     if node.kind == 'x360_battle':
@@ -809,7 +811,10 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'random':
                 asm.call(27, p['bound']); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'minigames_available':
-                asm.call(70, X360_MINIGAMES_QUERY); asm.emit(0x21); store_variable(p['result'])
+                # `for` 'x360_battle' asks whether this player has the Diss Battle (selector 205): an earlier SHSHD
+                # Runtime answers 201 but would stop at service 222, so a story asks this before it (owner, 2026-11-16).
+                selector = X360_BATTLE_QUERY if p.get('for') == 'x360_battle' else X360_MINIGAMES_QUERY
+                asm.call(70, selector); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'cutscene_available':
                 asm.call(70, CUTSCENE_QUERY); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'cutscene':

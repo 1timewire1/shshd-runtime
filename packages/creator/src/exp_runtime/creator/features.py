@@ -40,7 +40,7 @@ DEFAULTS = {
     'scene_label': {'icon': -1}, 'pan': {'automatic': True, 'alignment': 2},
     'transition': {'selector': 0}, 'close_dialogue': {},
     'random': {'bound': 2, 'result': 'roll'},
-    'minigames_available': {'result': 'real_minigames'}, 'cutscene_available': {'result': 'real_cutscene'}, 'cutscene': {'spec': 0}, 'x360_slot': {'result': 'slot_points'}, 'x360_leash': {'result': 'leash_won'}, 'x360_puzzle': {'result': 'puzzle_score'}, 'x360_diss': {'result': 'diss_score', 'tutorial': 0},
+    'minigames_available': {'result': 'real_minigames', 'for': ''}, 'cutscene_available': {'result': 'real_cutscene'}, 'cutscene': {'spec': 0}, 'x360_slot': {'result': 'slot_points'}, 'x360_leash': {'result': 'leash_won'}, 'x360_puzzle': {'result': 'puzzle_score'}, 'x360_diss': {'result': 'diss_score', 'tutorial': 0},
     'x360_battle': {'result': 'battle_grade', 'bonus': 0, 'tutorial': 1,
                     'rounds': [{'target': 'crash', 'words': ['trash', 'chatter', 'ride', 'rat']},
                                {'target': 'cool', 'words': ['school', 'shoes', 'ladle', 'store']}]},

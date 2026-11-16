@@ -130,6 +130,7 @@ Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settin
 | 26960–26963 | The Title Screen Look (revision 17): its spec, MS4's sky with its clouds, the roof scene (MS4's splash, two schools, the city, and five on the roof: MS3's girl and boy, MS4's Kim, Josh and Ryan), kept above the buttons, and the logo with its splat and tapes, which in taller frames moves down to stay centred in the sky |
 | 26982–26995 | Sound effects and emoticons |
 | 26996 | The main menu's tune (`music/main_menu`, mixed as the tracks are; `x360.MENU_MUSIC`) |
+| 26997 | The Diss Battle's tune (revision 18): `music/dissdown`, which the prototype never plays (`x360.BATTLE_MUSIC`) |
 | 26999 | The frame backdrop |
 
 ```sh
