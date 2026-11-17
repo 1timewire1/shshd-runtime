@@ -1,7 +1,8 @@
 """shshd-runtime: a real Diss Battle for the cancelled Xbox 360 game's Monday Planner (owner, 2026-11-16; plan
 `reference/Other Games/docs/DISS_BATTLE_X360_PLAN.md`). The prototype has only a `--call diss practice minigame or
 something` comment where New Rules plays its Rhyme game, so this is ours: New Rules' Rhyme on Diss Practice's turntable
-(x360_diss: the same deck, arm and catch), with the practice's streak tiers.
+(x360_diss: the same deck and arm), with the Minigame Arena's catch (the word nearest the needle) and the practice's
+streak tiers.
 
 - **Rhyme (New Rules):** a target word ("`crash` rhymes with...") and four words riding the record, the rhyme and three
   wrong ones. Catching the rhyme scores and brings a new target and words; a wrong word costs 3 (never below 0), goes
@@ -20,7 +21,7 @@ down, holds the score, and closes. The game's frames are 60 a second, whatever t
 from dataclasses import dataclass, field
 
 from .x360_diss import (BLANK_FRAMES, CLOSING, CLOSING_MS, COUNTDOWN, COUNTDOWN_MS, ELEMENTS, END_WAIT_MS, ENDED,
-                        INPUT_BLOCK_MS, OPENING, OPENING_MS, PUSH_MS, READY, REACH_ACROSS, REACH_ALONG, RUNNING,
+                        INPUT_BLOCK_MS, OPENING, OPENING_MS, PUSH, PUSH_MS, READY, RUNNING,
                         SOUND_BAD, SOUND_GOOD, SPIN_DOWN, SPIN_DOWN_STEP, TUTORIAL, TUTORIAL_MS, WHEEL_START, arm_angle,
                         head)
 import math
@@ -32,7 +33,9 @@ SLOTS = (0, 1, 2, 3)                    # the record's four places the words rid
 WORDS = len(SLOTS)
 POINTS, PENALTY = 3, 3                  # New Rules' Rhyme: +3 a right answer, -3 a wrong one
 DOUBLE_STREAK, FIRE_STREAK = 5, 10      # right answers in a row before x2, then x3
-REDEAL_MS = 500                         # after a right answer, the record clears this long before the next words show
+CATCH_SPREAD = 45                       # degrees either side of the needle a word is caught (the arena's: a quarter each)
+LAND_MS = max(PUSH, key=lambda point: point[1])[0]     # the arm's swing at its deepest: the needle on the words' ring
+REDEAL_MS = 500                        # after a right answer, the record clears this long before the next words show
 FIRST_PLAY_BONUS = 2                    # New Rules' first play of a game
 NR_GRADE = (8, 1)                       # New Rules: grade = 8 x score / seconds (for the tuning's comparison)
 # Score thresholds for grades 1-10 over SECONDS (x360_battle_tune.py, 12 games a skill level, 2026-11-16; see its docstring
@@ -81,7 +84,7 @@ class DissBattle:
     words: list = field(default_factory=list)       # this round's words, [rhyme, wrong, wrong, wrong]
     slots: list = field(default_factory=lambda: [_slot() for _ in SLOTS])
     redeal_ms: float | int = 0
-    touching: list = field(default_factory=list)
+    touching: list = field(default_factory=list)    # (the practice's catch kept it; unused since the arena's, kept for saves)
     touched: int = -1
     right: int = 0                                  # for the score screen and the tuning
     wrong: int = 0
@@ -218,20 +221,22 @@ class DissBattle:
         return False
 
     def _trigger(self):
-        """The practice's trigger: a word is caught as the arm's head reaches it."""
-        (hx, hz), (ux, uz) = head(arm_angle(self.arm_ms))
-        for index, slot in enumerate(self.slots):
-            inside = False
-            if slot['word'] != NO_WORD:
-                x, z = self.slot_at(index)
-                dx, dz = x - hx, z - hz
-                inside = abs(dx * ux + dz * uz) < REACH_ALONG and abs(dz * ux - dx * uz) < REACH_ACROSS
-            if inside and index not in self.touching:
-                self.touching.append(index)
-                self.touched = index
-            elif not inside and index in self.touching:
-                self.touching.remove(index)
-                self.touched = -1
+        """The Minigame Arena's catch (owner, 2026-11-16: the practice's, sized for notes, missed words the needle
+        touched): as the needle lands on the record, the word nearest it, within CATCH_SPREAD degrees round the record.
+        New Rules' Rhyme takes the word nearest its selector with a 360-degree window (nr_arena 727), so each of the four
+        words owns a quarter of the record. A word gone blank there catches nothing."""
+        if not self.arm_ms - 50 / 3 < LAND_MS <= self.arm_ms:
+            return
+        (hx, hz), _ = head(arm_angle(LAND_MS))
+        needle = math.degrees(math.atan2(hz, hx))
+        nearest, apart = -1, 180.0
+        for index in range(WORDS):
+            x, z = self.slot_at(index)
+            gap = abs((math.degrees(math.atan2(z, x)) - needle + 180) % 360 - 180)
+            if gap < apart:
+                nearest, apart = index, gap
+        if apart <= CATCH_SPREAD and self.slots[nearest]['word'] != NO_WORD:
+            self.touched = nearest
 
     def _deal(self, random):
         """The next round: its four words in the four places, in a shuffled order."""

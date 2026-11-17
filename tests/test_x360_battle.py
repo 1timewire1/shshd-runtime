@@ -51,6 +51,38 @@ class DissBattleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             xb.DissBattle.opened([['crash', 'trash', 'rat', 'rat', 'ride']])
 
+    def test_the_needle_takes_the_word_nearest_it_as_the_arena_does(self):
+        """Each word owns a quarter of the record: a press catches whichever is nearest the needle as it lands, up to 45
+        degrees away (owner, 2026-11-16: the practice's catch was sized for notes, and missed long words it touched)."""
+        import math
+        from exp_runtime.x360_diss import arm_angle, head
+        (hx, hz), _ = head(arm_angle(xb.LAND_MS))
+        needle = math.degrees(math.atan2(hz, hx))
+        caught = {}
+        for start in range(0, 360, 2):
+            game, random = running()
+            game.angle = start
+            game.press()
+            landing = None
+            for _ in range(30):
+                if landing is None and game.arm_ms >= xb.LAND_MS - FRAME:
+                    landing = {i: abs((math.degrees(math.atan2(*reversed(game.slot_at(i)))) - needle + 180) % 360 - 180)
+                               for i in range(xb.WORDS)}
+                game.tick(FRAME, random)
+                if game.right or game.wrong:
+                    break
+            self.assertEqual(game.right + game.wrong, 1, f'nothing caught from {start} degrees')
+            caught[start] = min(landing.values())
+        self.assertGreater(max(caught.values()), 40)                    # far from the needle, still caught
+        # A word gone blank is nobody's: the nearest place holding nothing catches nothing.
+        game, random = running()
+        for slot in game.slots:
+            slot.update(word=xb.NO_WORD, shown=xb.NO_WORD)
+        game.press()
+        for _ in range(30):
+            game.tick(FRAME, random)
+        self.assertEqual((game.right, game.wrong), (0, 0))
+
     def test_four_words_ride_the_record_and_the_rhyme_scores_with_a_new_target(self):
         game, random = running()
         self.assertEqual(sorted(slot['word'] for slot in game.slots), [0, 1, 2, 3])
