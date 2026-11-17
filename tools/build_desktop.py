@@ -70,12 +70,13 @@ def main(argv=None):
                 '--copy-metadata', 'shshd-runtime',
                 '--exclude-module', 'tkinter']
         if creator:
-            # The kiwi-and-hammer icon, and its MCP server (decision 5: `--mcp --workspace DIR` in the frozen app), with the
-            # mcp package's modules, which it loads by name.
+            # The kiwi-and-hammer icon, and its MCP server (decision 5: `--mcp --workspace DIR` in the frozen app), reached only
+            # through those flags, so named here; PyInstaller follows its imports. (Collecting all of `mcp` would import its
+            # command line, which exits without the optional typer.)
             logo = root / 'packages/creator/src/exp_runtime/creator/kiwi-hammer.svg'
             args += ['--add-data', str(logo) + ':exp_runtime/creator',
                      '--hidden-import', 'exp_runtime.creator.mcp_server', '--hidden-import', 'exp_runtime.creator.media',
-                     '--collect-submodules', 'mcp', '--copy-metadata', 'mcp']
+                     '--copy-metadata', 'mcp']
         for source in source_roots(root, components):
             args += ['--paths', str(source)]
         for component in components:
