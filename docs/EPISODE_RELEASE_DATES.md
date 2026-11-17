@@ -93,6 +93,27 @@ backward by more than 45 days against the running maximum) -- this caught three 
 compilation, described below, that a spot check would have missed, and was re-run clean (zero flagged) after
 the GameFAQs/Wikia reprocessing below.
 
+## App Store and Facebook cross-checks (Wayback Machine, 2026-11-05)
+
+Details are in `reference/Other Games/docs/WAYBACK_CHECKS.md`, beside the repository (not part of it). The developers' Facebook page was captured, but no capture reaches a weekly episode post (a logged-out page shows only the newest few), so **no individual date below can be upgraded from it**. It was still up in January 2025 and was gone by November 2026, later than "now deleted" above might suggest.
+
+The captured App Store pages do give primary evidence for the release *day*, and the table's dates agree with it. EA's stated day, against the table's weekday counts:
+
+| Period | EA's text (capture) | Table's most common weekdays |
+|---|---|---|
+| Feb 2010 | "Every Monday" (iPhone, Feb 18, 2010) | 2010 H1: Mon 23, Tue 8 |
+| Dec 2010 – Nov 2011 | "Every Friday" (CoD, Dec 2010; iPhone, Nov 2011) | 2011 H1: Fri 23; 2011 H2: Fri 35 |
+| Mar – Apr 2012 | "Every Thursday" (iPad, Apr 2012) | 2012 H1: Fri 19, Thu 18 |
+
+So the change from Mondays to Fridays in 2010 is real, not noise from mixing sources. EA's text doesn't say when it happened or why Thursdays and Fridays are about equal from 2012; one day per stage (Now Airing and On Demand) would fit, but that's unconfirmed.
+
+**Forum dates.** The `shscod.activeboard.com` episode-sharing forum was captured too, with first-post dates for 20 of these episodes between June 2012 and March 2013 (table in WAYBACK_CHECKS.md). A forum post is a latest possible date, not a release date. In June–August 2012, the forum has episodes 4–7 days before this table's Wikia dates (`Getting Over Howard`, an @SHSTeam date, by 11), which supports the On Demand/Now Airing offset described above. From September 2012 on they agree within 3 days. No date below has been changed.
+
+Other dated points:
+- **`11: The Concert`** is named as "Now Airing" on the paid iPhone page captured Feb 18, 2010. That's three weeks after this table's 2010-01-25, probably stale text: the same page's update note matches a Facebook note dated Jan 26, 2010. Weak support for the January date.
+- **End of service:** "the app will be gone after 9/8", posted Sep 3 and 7, 2014, the last sale posts.
+- **The last posts:** novels on Sep 24, 2014, and Choices on Aug 17, 2016.
+
 ## Methodology
 
 - Matched against the library's own English episode titles (`record['titles'][0]`) by normalizing both sides
