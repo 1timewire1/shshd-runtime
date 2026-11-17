@@ -621,6 +621,26 @@ class ShellActionTests(unittest.TestCase):
         shell.tick(0)
         self.assertEqual((answers, shell.stage), ([1], 'sound'))
 
+    def test_the_sound_question_comes_back_when_a_window_over_it_clears_the_stack(self):
+        """An import's "Replace Saved Episodes?" answered over "Play with sound?" cleared the stack with the question in it,
+        and the launch waited under a blank screen (iPad, 2026-11-17): the next frame asks again."""
+        from types import SimpleNamespace
+        shell = self.shell
+        shell.app.external_music = lambda: False
+        shell.app.state = SimpleNamespace(skip_sound_prompt=False, music=True, sound=True)
+        shell.fade, shell.pause_open = None, False
+        shell.stage, shell.age = 'sound', 10.0
+        shell.stack.clear()
+        shell.stack.queue(shell.SOUND_MENU)
+        shell.app._attempt = lambda action: action()
+        shell.confirm('Replace Saved Episodes?', 'Newer versions replace them.', 'Replace', lambda: None)
+        shell.perform(shell.CONFIRM_ACTION)                 # the answer clears the whole stack
+        self.assertEqual(shell.stack.stack, [])
+        shell.tick(0)
+        self.assertEqual((shell.stage, shell.stack.stack), ('sound', [shell.SOUND_MENU]))
+        shell.tick(0)                                       # asked once, not stacked again each frame
+        self.assertEqual(shell.stack.stack, [shell.SOUND_MENU])
+
     def test_the_fade_darkens_a_canvas_whose_pixels_carry_alpha_zero(self):
         canvas = pygame.Surface((4, 4), 0, 32, (0xff0000, 0xff00, 0xff, 0xff000000))
         canvas.fill((200, 100, 50, 0))

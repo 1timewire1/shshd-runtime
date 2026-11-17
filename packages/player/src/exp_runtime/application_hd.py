@@ -310,13 +310,12 @@ class HdShell:
         if (self.stage == 'loading' and self.age >= LOADING_TIME + SOUND_DELAY
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
             self.stage = 'sound'
-            if getattr(self.app.state, 'skip_sound_prompt', False):
-                # Sound's Skip Sound Prompt: on as "Play with sound?" answered goes (action 1: SHS HD's EA flash, CoD's
-                # fade through black), Music and Sound as set.
-                self.perform(1)
-            else:
-                self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
-                self.window_ms = 0
+            self.ask_sound()
+        elif self.stage == 'sound' and not self.stack.stack:
+            # Nothing left to answer: a window over the question closed it with itself (a confirmation's answer clears
+            # the stack, as an import's "Replace Saved Episodes?" did on the iPad, 2026-11-17), and the launch waited
+            # under a blank screen. Ask again.
+            self.ask_sound()
         elif self.stage == 'flash':
             self.flash_age += seconds
             if self.boot.flash_done(self.flash_age):
@@ -740,6 +739,16 @@ class HdShell:
                 self.pause_open = False
             return True
         return False
+
+    def ask_sound(self):
+        """"Play with sound?" (or its music form), or with Sound's Skip Sound Prompt on, the answer that goes on."""
+        if getattr(self.app.state, 'skip_sound_prompt', False):
+            # Sound's Skip Sound Prompt: on as "Play with sound?" answered goes (action 1: SHS HD's EA flash, CoD's
+            # fade through black), Music and Sound as set.
+            self.perform(1)
+        else:
+            self.stack.queue(self.MUSIC_MENU if self.app.external_music() else self.SOUND_MENU)
+            self.window_ms = 0
 
     def close_window(self):
         if self.stage == 'sound':
