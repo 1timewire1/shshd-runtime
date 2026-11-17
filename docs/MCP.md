@@ -65,6 +65,26 @@ For other clients supporting `mcpServers`, use:
 
 The server itself requires no HTTP listener, account or network service.
 
+### The standalone Creator
+
+The **SHSHD Runtime Creator** download is its own MCP server: point `command` at its executable and add `--mcp`. Nothing
+else needs installing.
+
+```json
+{
+  "mcpServers": {
+    "shshd_creator": {
+      "command": "C:/Programs/SHSHD Runtime Creator/SHSHD Runtime Creator.exe",
+      "args": ["--mcp", "--workspace", "C:/Users/me/Stories"]
+    }
+  }
+}
+```
+
+On macOS the executable is inside the app: `/Applications/SHSHD Runtime Creator.app/Contents/MacOS/SHSHD Runtime Creator`;
+on Linux, `SHSHD Runtime Creator` in its folder. Open the app once first (its first launch, as the player's), so the system
+lets a client start it.
+
 ## Edit alongside the desktop creator
 
 Save a project inside the configured MCP workspace and open that same `.expproj`

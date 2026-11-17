@@ -191,8 +191,27 @@ jobs:
           uv run --locked --extra build python tools/package_desktop.py
           --target "$EXP_TARGET" --label "$EXP_BUILD_LABEL" --smoke-test
 
-      # This fork does not package exp-runtime's standalone episode creator yet (owner, 2026-10-21: it needs work for the
-      # HD features first); its wheel is still built, tested and attached to releases.
+      # The standalone episode creator (owner, 2026-11-17, decision 4): on version tags and manual runs only, and never
+      # holding the player up. A failed build or smoke test leaves that target without a Creator download; the release
+      # attaches whichever Creator archives passed.
+      - name: Build the standalone episode creator
+        id: creator-build
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        run: uv run --locked --extra build --extra creator --extra creator-mcp python tools/build_desktop.py --creator
+
+      - name: Package, audit and test the creator download
+        id: creator-package
+        if: steps.creator-build.outcome == 'success'
+        continue-on-error: true
+        run: >-
+          uv run --locked --extra build --extra creator --extra creator-mcp python tools/package_desktop.py
+          --creator --target "$EXP_TARGET" --label "$EXP_BUILD_LABEL" --smoke-test
+
+      - name: Drop a creator download that failed its test
+        if: steps.creator-package.outcome == 'failure'
+        shell: bash
+        run: rm -f dist/downloads/shshd-runtime-creator-*
 
       - name: Upload player archives and checksums
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

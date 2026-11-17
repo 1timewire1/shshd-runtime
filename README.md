@@ -34,6 +34,7 @@ Open this repository's **Releases** page and download the file for your device:
 | Linux | `shshd-runtime-<version>-linux-x64.tar.gz` |
 | Android 7.0 or newer | `shshd-runtime-<version>-android.apk` (from v1.1.0) |
 | iPhone and iPad | `shshd-runtime-<version>-ios-arm64-unsigned.ipa` (from v1.1.0) |
+| Episode Creator (Windows, macOS, Linux) | `shshd-runtime-creator-<version>-<platform>` (from v1.1.0, where it built) |
 
 On a computer, extract the archive and open **SHSHD Runtime** inside. Keep the
 complete app or executable folder together. Python and the runtime
@@ -46,17 +47,23 @@ your libraries and saves. See [the Android app](docs/ANDROID_APP.md).
 The iPhone/iPad app is unsigned: sign it with your own Apple ID or a signing
 tool before installing it. See [the iOS app](docs/IOS_APP.md).
 
-To make episodes, install the creator from a release's Python wheels (see
-[Python components](#python-components)) and run `shshd-creator`. This fork
-has no standalone Creator app yet. See [the creator guide](docs/CREATOR.md).
+To make episodes, download **SHSHD Runtime Creator** for your computer from the
+same release (its first launch is the same as the player's), or install it from
+the release's Python wheels (see [Python components](#python-components)) and
+run `shshd-creator`. It finds the player's library by itself, and can also run as
+an MCP server (`--mcp --workspace FOLDER`). See [the creator guide](docs/CREATOR.md).
 
 For development builds, open **Actions → Builds** (or **Actions → Android
 APK** for Android), choose a successful run, and download its platform
 artifact. Extract the artifact ZIP, then the app archive inside it.
 
 Builds include a SHA-256 checksum. macOS builds use ad-hoc signing and are not
-notarized; Windows builds are unsigned. See [distribution](docs/DISTRIBUTION.md)
-for CI triggers, packaging and the first-launch requirements.
+notarized; Windows builds are unsigned, so the first launch needs one extra
+step: on macOS, right-click the app and choose **Open** (or run
+`xattr -dr com.apple.quarantine "SHSHD Runtime.app"`); on Windows, choose **More
+info → Run anyway**. See [distribution](docs/DISTRIBUTION.md#first-launch)
+for CI triggers and packaging. Each app comes with `THIRD_PARTY_NOTICES.txt`,
+the open-source components it bundles and their licences.
 
 The Android app runs the desktop engine and renderer as they are. The
 iPhone/iPad app shares the Python engine and menus, drawing through native iOS

@@ -241,10 +241,43 @@ to interpret references to private evidence snapshots.
 
 ## Creator downloads
 
-Upstream's desktop jobs also build and package a standalone `EXP Runtime Creator`. This fork does not yet (owner,
-2026-10-21: the creator needs work for the HD features first), so its workflow has no creator build steps and its
-releases carry no creator archives. The `shshd_runtime_creator-<version>-py3-none-any.whl` wheel and its checksum are
-still built, tested (`tools/test_packages.py`) and required release files.
+The desktop jobs also build **SHSHD Runtime Creator** (owner, 2026-11-17; upstream's `EXP Runtime Creator`, renamed:
+bundle id `org.shshd.creator`, the kiwi-and-hammer icon), but only on version tags and manual **Run workflow** runs
+(decision 4): `tools/build_desktop.py --creator`, then `tools/package_desktop.py --creator --smoke-test`. Those steps never
+fail the job. A target whose Creator didn't build or failed its smoke test has its archive dropped, and the release
+attaches whichever `shshd-runtime-creator-<tag>-<target>` archives passed, beside the player's, without requiring them.
+To add a missing one later, rerun the release with **Run workflow** and the tag run's ID (`release_run_id`) once a run
+has built it.
+
+The smoke test extracts the archive and, from a separate folder:
+
+- opens the editor offscreen and compiles a new project;
+- checks `THIRD_PARTY_NOTICES.txt` is inside;
+- runs `--data-folder` with a scratch data root and checks the Creator looks for the player's library in the player's
+  own data folder (decision 6; both apps share it, `SHSHD Runtime`);
+- starts `--mcp --workspace` and checks the MCP server answers `initialize` over stdio (decision 5);
+- runs its media worker (`--media-worker`), which screenshots and audio previews use inside the frozen app.
+
+The `shshd_runtime_creator-<version>-py3-none-any.whl` wheel and its checksum are still built, tested
+(`tools/test_packages.py`) and required release files. The Creator archive is about twice the player's (Qt; decision 1:
+accepted as it is).
+
+## Third-party notices
+
+Both apps carry `THIRD_PARTY_NOTICES.txt` (decision 2), written at build time by `tools/notices.py`: every Python package
+the app's own packages require in the build environment, followed through, with its version, licence and the licence texts
+it ships, then Python, PyInstaller's bootloader and the native libraries with their own terms (SDL, Qt under the LGPL with
+its source, libarchive). The packaging step refuses an app without it.
+
+## First launch
+
+The desktop apps are unsigned (decision 3: macOS builds are ad-hoc signed, not notarized; Windows builds aren't signed).
+The first time each app opens:
+
+- **macOS:** right-click (or Control-click) the app and choose **Open**, then **Open** again. Or, in Terminal:
+  `xattr -dr com.apple.quarantine "/Applications/SHSHD Runtime.app"` (and the same for `SHSHD Runtime Creator.app`).
+- **Windows:** SmartScreen says it protected your PC: choose **More info**, then **Run anyway**.
+- **Linux:** nothing extra; keep the folder together and run the executable inside.
 
 The creator contains Qt and the shared preview player; player and iOS downloads
 exclude the creator and MCP dependencies. The separately installable

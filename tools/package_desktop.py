@@ -3,7 +3,13 @@
 Only the platform's application bundle/directory is included. The optional
 smoke test extracts the finished archive and renders first-launch setup using
 SDL's dummy drivers. No player library, APK or episodes are required.
+
+With --creator, the standalone episode creator (owner, 2026-11-17; upstream's
+0df4f13): its smoke test opens the editor offscreen, then checks its notices,
+that it finds the player's data folder from a scratch one (decision 6), its
+MCP server over stdio (decision 5) and its media worker.
 """
+import json
 import argparse
 import hashlib
 import os
@@ -19,7 +25,8 @@ import zipfile
 
 
 TARGETS = ('windows-x64', 'linux-x64', 'macos-arm64', 'macos-x64')
-FORBIDDEN_SUFFIXES = {'.apk', '.ipa', '.exp', '.rar', '.kiw', '.sav', '.c', '.asm'}
+FORBIDDEN_SUFFIXES = {'.apk', '.ipa', '.exp', '.rar', '.kiw', '.sav', '.c', '.asm', '.expproj'}
+NOTICES = 'THIRD_PARTY_NOTICES.txt'         # (decision 2: in both apps)
 FORBIDDEN_NAMES = {
     'libshs09.so', 'surviving_hs', 'surviving_hs.app', 'cod.app', 'res_generated',
     'library.json', 'player.json', 'launcher.json',
@@ -38,14 +45,32 @@ def host_target():
     return target
 
 
-def bundle_name(target):
-    return 'SHSHD Runtime.app' if target.startswith('macos-') else 'SHSHD Runtime'
+def app_name(creator=False):
+    return 'SHSHD Runtime Creator' if creator else 'SHSHD Runtime'
 
 
-def executable(bundle, target):
+def bundle_name(target, creator=False):
+    return app_name(creator) + ('.app' if target.startswith('macos-') else '')
+
+
+def executable(bundle, target, creator=False):
+    name = app_name(creator)
     if target.startswith('macos-'):
-        return bundle / 'Contents' / 'MacOS' / 'SHSHD Runtime'
-    return bundle / ('SHSHD Runtime.exe' if target.startswith('windows-') else 'SHSHD Runtime')
+        return bundle / 'Contents' / 'MacOS' / name
+    return bundle / (name + '.exe' if target.startswith('windows-') else name)
+
+
+def archive_name(label, target, creator=False):
+    """This fork's downloads, not upstream's: shshd-runtime-<label>-<target>, the Creator's shshd-runtime-creator-..."""
+    suffix = '.tar.gz' if target.startswith('linux-') else '.zip'
+    return f'shshd-runtime-{"creator-" if creator else ""}{label}-{target}{suffix}'
+
+
+def check_notices(bundle):
+    """The app carries its third-party notices (PyInstaller puts data beside its libraries)."""
+    found = [path for path in bundle.rglob(NOTICES) if path.is_file() and path.stat().st_size > 1000]
+    if not found:
+        raise ValueError(f'{NOTICES} is missing from {bundle.name}')
 
 
 def audit_bundle(bundle):
@@ -78,7 +103,7 @@ def _tar_metadata(info):
     return info
 
 
-def package(root, target, label):
+def package(root, target, label, *, creator=False):
     if target not in TARGETS:
         raise ValueError(f'Unknown download target: {target}')
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', label):
@@ -87,14 +112,14 @@ def package(root, target, label):
     if re.fullmatch(r'[0-9a-f]{40}', label):
         label = label[:12]
     root = root.resolve()
-    bundle = root / 'dist' / 'desktop' / bundle_name(target)
+    bundle = root / 'dist' / 'desktop' / bundle_name(target, creator)
     audit_bundle(bundle)
-    if not executable(bundle, target).is_file():
-        raise ValueError(f'Application executable is absent: {executable(bundle, target)}')
+    check_notices(bundle)
+    if not executable(bundle, target, creator).is_file():
+        raise ValueError(f'Application executable is absent: {executable(bundle, target, creator)}')
     output = root / 'dist' / 'downloads'
     output.mkdir(parents=True, exist_ok=True)
-    suffix = '.tar.gz' if target.startswith('linux-') else '.zip'
-    destination = output / f'shshd-runtime-{label}-{target}{suffix}'      # this fork's downloads, not upstream's
+    destination = output / archive_name(label, target, creator)
     with tempfile.TemporaryDirectory(prefix='exp-package-', dir=output) as temporary:
         archive = Path(temporary) / destination.name
         if target.startswith('macos-'):
@@ -118,7 +143,7 @@ def package(root, target, label):
     return destination
 
 
-def smoke_test(archive, target):
+def smoke_test(archive, target, *, creator=False):
     """Launch the extracted download from a separate working directory."""
     with tempfile.TemporaryDirectory(prefix='exp-download-test-') as temporary:
         stage = Path(temporary)
@@ -134,14 +159,70 @@ def smoke_test(archive, target):
         else:
             with zipfile.ZipFile(archive) as stream:
                 stream.extractall(stage)
-        bundle = stage / bundle_name(target)
+        bundle = stage / bundle_name(target, creator)
         audit_bundle(bundle)
+        check_notices(bundle)
         if target.startswith('macos-'):
             subprocess.run(['codesign', '--verify', '--deep', '--strict', str(bundle)], check=True)
         env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy',
-                   PYGAME_HIDE_SUPPORT_PROMPT='1')
-        subprocess.run([str(executable(bundle, target)), '--smoke-test'],
-                       cwd=stage, env=env, check=True, timeout=30)
+                   PYGAME_HIDE_SUPPORT_PROMPT='1', QT_QPA_PLATFORM='offscreen')
+        program = str(executable(bundle, target, creator))
+        subprocess.run([program, '--smoke-test'], cwd=stage, env=env, check=True, timeout=60 if creator else 30)
+        if creator:
+            creator_checks([program], stage, env)
+
+
+def scratch_data_env(env, folder):
+    """`env` with the platform's data root at `folder` (launcher.user_data_directory)."""
+    env = dict(env)
+    if sys.platform == 'win32':
+        env['LOCALAPPDATA'] = str(folder)
+    elif sys.platform == 'darwin':
+        env['HOME'] = str(folder)
+    else:
+        env['XDG_DATA_HOME'] = str(folder)
+    return env
+
+
+def creator_checks(command, stage, env):
+    """The frozen Creator (`command`: its executable, as a list): it finds the player's data folder (a scratch one), its MCP
+    server answers over stdio, and its media worker runs inside it."""
+    scratch = stage / 'scratch-data'
+    scratch.mkdir()
+    answer = subprocess.run([*command, '--data-folder'], cwd=stage, env=scratch_data_env(env, scratch), check=True,
+                            timeout=60, capture_output=True, text=True)
+    found = json.loads(answer.stdout.strip().splitlines()[-1])
+    data = Path(found['data'])
+    if not data.name == 'SHSHD Runtime' or scratch.resolve() not in data.resolve().parents:
+        raise ValueError(f'The Creator looks for the player\'s data in {data}, not under {scratch}')
+    workspace = stage / 'workspace'
+    workspace.mkdir()
+    request = json.dumps(dict(jsonrpc='2.0', id=1, method='initialize', params=dict(
+        protocolVersion='2025-06-18', capabilities={}, clientInfo=dict(name='smoke-test', version='1')))) + '\n'
+    process = subprocess.Popen([*command, '--mcp', '--workspace', str(workspace)], cwd=stage, env=env,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        process.stdin.write(request)
+        process.stdin.flush()
+        line = process.stdout.readline()
+    finally:
+        process.kill()
+        process.communicate(timeout=30)
+    reply = json.loads(line)
+    if reply.get('result', {}).get('serverInfo', {}).get('name') != 'SHSHD Runtime Creator':
+        raise ValueError(f'The Creator\'s MCP server did not answer: {line[:300]!r}')
+    import io
+    import wave
+    sound = io.BytesIO()
+    with wave.open(sound, 'wb') as stream:
+        stream.setparams((1, 2, 22050, 0, 'NONE', 'not compressed'))
+        stream.writeframes(b'\0\0' * 2205)
+    import base64
+    request = json.dumps(dict(mode='audio_info', data=base64.b64encode(sound.getvalue()).decode()))
+    answer = subprocess.run([*command, '--media-worker'], cwd=stage, env=env, input=request.encode(), check=True,
+                            timeout=60, capture_output=True)
+    if json.loads(answer.stdout).get('duration_ms') not in range(90, 110):
+        raise ValueError(f'The Creator\'s media worker answered {answer.stdout[:200]!r}')
 
 
 def main(argv=None):
@@ -149,15 +230,16 @@ def main(argv=None):
     parser.add_argument('--target', choices=TARGETS, help='Must match the current OS and Python architecture')
     parser.add_argument('--label', default='local', help='Version tag or commit SHA used in the filename')
     parser.add_argument('--smoke-test', action='store_true', help='Extract and test the packaged app before uploading')
+    parser.add_argument('--creator', action='store_true', help='Package the standalone episode creator')
     args = parser.parse_args(argv)
     try:
         actual = host_target()
         if args.target and args.target != actual:
             raise ValueError(f'Requested {args.target}, but this Python is running on {actual}')
-        result = package(Path(__file__).resolve().parents[1], actual, args.label)
+        result = package(Path(__file__).resolve().parents[1], actual, args.label, creator=args.creator)
         if args.smoke_test:
-            smoke_test(result, actual)
-    except (ValueError, OSError, subprocess.SubprocessError) as error:
+            smoke_test(result, actual, creator=args.creator)
+    except (ValueError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         parser.exit(1, f'Packaging failed: {error}\n')
     print(f'Download and SHA-256 checksum ready: {result}')
 

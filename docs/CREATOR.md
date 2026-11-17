@@ -591,12 +591,13 @@ relocate unknown native pointers. No original game content is bundled.
 
 ## Standalone builds and MCP
 
-Upstream exp-runtime builds separate **EXP Runtime Creator** downloads; this
-fork doesn't yet (its build tools have no `--creator` option), since the editor
-needs work for the HD features first. The creator ships as the
-`shshd-runtime-creator` wheel on each release, and CI tests it there. The
-player downloads (desktop, Android and iOS) exclude the editor, Qt and MCP
-server dependencies.
+Releases from v1.1.0 carry **SHSHD Runtime Creator** downloads for Windows, macOS and Linux, beside the player
+(owner, 2026-11-17; [DISTRIBUTION.md](DISTRIBUTION.md#creator-downloads)). Extract it and open it as you would the player;
+its first launch needs the same extra step ([First launch](DISTRIBUTION.md#first-launch)). It finds the player's library
+in the player's own data folder, previews in the bundled player, and is its own MCP server:
+`"SHSHD Runtime Creator" --mcp --workspace FOLDER` ([MCP.md](MCP.md#the-standalone-creator)). The creator also ships as the
+`shshd-runtime-creator` wheel, and CI tests it there. The player downloads (desktop, Android and iOS) exclude the editor,
+Qt and MCP server dependencies.
 
 For automation, the optional **creator-mcp** extra runs a stdio MCP server using
 the same model/compiler and debugger. See [MCP.md](MCP.md) for installation,

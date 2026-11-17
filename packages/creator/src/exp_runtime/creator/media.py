@@ -23,7 +23,9 @@ def worker(request):
     """SDL stays in a short-lived child: no windows, audio devices or live-state mutation."""
     env = dict(os.environ, PYGAME_HIDE_SUPPORT_PROMPT='1', SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
     try:
-        result = subprocess.run([sys.executable, '-m', 'exp_runtime.creator.media'],
+        # A standalone Creator is its own worker (`--media-worker`); from Python, the module.
+        command = [sys.executable, '--media-worker'] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'exp_runtime.creator.media']
+        result = subprocess.run(command,
             input=json.dumps(request).encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=env, timeout=30, check=False)
     except subprocess.TimeoutExpired as error:

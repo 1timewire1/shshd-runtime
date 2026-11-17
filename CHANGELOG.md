@@ -4,6 +4,15 @@
 
 ### Added
 
+- **SHSHD Runtime Creator downloads** (owner, 2026-11-17; [DISTRIBUTION.md](docs/DISTRIBUTION.md#creator-downloads)): the
+  episode creator as its own app for Windows, macOS and Linux, built on version tags beside the player. It finds the
+  player's library, previews in the bundled player and runs as an MCP server (`--mcp --workspace FOLDER`). Before it,
+  the Creator caught up with this fork: playtest and MCP play or skip every translated minigame and cutscene; Surviving
+  Hollywood as a primary add-on, the quest journal, answer details, the word grid's part score and stat-change pages;
+  optional art from Hollywood and the DSi; Reflex with your own icons; BREW-style calendars with school days, events and
+  date cards; and New Rules' minigames in their arena.
+- **Third-party notices** in both desktop apps (`THIRD_PARTY_NOTICES.txt`, generated at build time), and first-launch
+  steps for the unsigned builds ([DISTRIBUTION.md](docs/DISTRIBUTION.md#first-launch)).
 - **The Android app** ([ANDROID_APP.md](docs/ANDROID_APP.md); begun in @andymenard's fork, merged 2026-11-03): the
   desktop engine and renderer in an SDL2 activity, one APK for Android 7.0 or newer (ARM64 devices and the x86-64
   emulator). It brings touch with flicked lists that glide on, pinch-to-zoom on the story tree (following the fingers
