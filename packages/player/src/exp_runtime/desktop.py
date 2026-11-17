@@ -499,6 +499,8 @@ class Desktop:
     def _skin_has_its_sounds(self):
         """Only where the skin really draws: without the HD bundle's art, '11's own look keeps '11's own sounds."""
         hd = getattr(self, 'shs11_hd', None)
+        if hd is not None and not hd.has_addon() and hd.art_available():
+            return True                 # without '11's addon its games are the word game's (Memory with HD's art alone)
         return self._word_grid_skin and hd is not None and hd.available()
 
     _shs11_seen_this_run = None
@@ -4733,7 +4735,10 @@ class Desktop:
         """What draws an SHS '11 game: its own look, or the word game's with the switch on and its art there."""
         game = self.session.engine.shs11_memory if action.name == 'shs11_memory' else None
         stands_in = game is not None and game.grid          # in a grid's place it always has a grid's look (owner, 2026-11-04)
-        if self.shs11_hd is not None and (self.shs11_hd.art_available() if stands_in else self.word_grid_skin and self.shs11_hd.available()):
+        # A Creator episode's Memory with no '11 addon: the same grid look, from SHS HD's art alone (owner, 2026-11-17).
+        bare = game is not None and self.shs11_hd is not None and not self.shs11_hd.has_addon()
+        if self.shs11_hd is not None and (self.shs11_hd.art_available() if stands_in or bare
+                                          else self.word_grid_skin and self.shs11_hd.available()):
             return self.shs11_hd
         return self.shs11_memory_renderer if action.name == 'shs11_memory' else self.shs11_reflex_renderer
 

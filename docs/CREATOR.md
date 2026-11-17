@@ -190,8 +190,8 @@ built on. The episode then takes that game's settings that need its pictures and
 
 The primary is listed first, so its pictures win where add-ons share a number. Every other add-on the project uses is an
 **extra**: its pictures and sounds keep their numbers, aliased to it in the export, and its mini-games play from it. Adding a
-mini-game node declares its add-on (the catch game `shsbrew`, Memory and Reflex `shs11`, the X360 games `shsx360`), and an export
-without it is refused. Players need every add-on the episode lists. The switches only move the add-on's pictures, never the
+mini-game node declares its add-on (the catch game `shsbrew`, Reflex `shs11`, the X360 games `shsx360`), and an export
+without it is refused. Memory declares `shs11` when the library has it, and plays without it too (below). Players need every add-on the episode lists. The switches only move the add-on's pictures, never the
 project's own. The project still can't take two pictures with the same number from different add-ons: copy one in instead.
 
 The same dialog turns on the translated games' settings that need no add-on: `a(n)` and `word(s)` picked by the word or number
@@ -213,13 +213,15 @@ before them have neither. In MCP: `project_set_primary_addon` (library, addon or
 ## Storyboard cutscenes
 
 **The BREW catch game.** The **Catch game (BREW)** node plays [the BREW games' catch game](BREW.md), in SHS projects with the
-`shsbrew` add-on. Put it behind **Real minigames?** and give other players a word game. Its settings are the kind (angled: items
+`shsbrew` add-on. Put it behind **Real minigames?** asking about the catch game, and give other players a word game. Its settings are the kind (angled: items
 fall at an angle, a chance of them at it; sideways: from the left; orbit: round a circle the spread wide), the target, the time
 between items, their speed, the player's picture, and the items: a value, a picture and how many. Pictures are BREW picture
 numbers from the add-on, the same numbers as its badge icons, whose sizes come from the project's library. The result
 is the score, 0 to the target. Branches on it tell the skip prompt where the story parts.
 
-**SHS '11's games.** The Memory and Reflex nodes play [SHS '11's minigames](SHS11.md#minigames), in SHS projects only. Put them behind a **Real minigames?** node, as with the X360 games, and give other players something else to do. Memory's rounds each have a cue, a word of 1 to 9 capital letters, a bonus, points a letter, a letter time and a limit. Reflex's rounds are the 13 numbers in [ENGINE_ABI.md](ENGINE_ABI.md#54-shs-11s-minigames-shshd-runtime-services-219-and-220). The result is 2, 1 or 0. They draw from HD's word game art or the `shs11` addon, so a project should require one of those.
+**SHS '11's games.** The Memory and Reflex nodes play [SHS '11's minigames](SHS11.md#minigames), in SHS projects only. Put them behind a **Real minigames?** node asking about SHS '11's games, and give other players something else to do. Memory's rounds each have a cue, a word of 1 to 9 capital letters, a bonus, points a letter, a letter time and a limit. Reflex's rounds are the 13 numbers in [ENGINE_ABI.md](ENGINE_ABI.md#54-shs-11s-minigames-shshd-runtime-services-219-and-220). The result is 2, 1 or 0. Reflex needs the `shs11` add-on (its icons are '11's). Memory plays with it in '11's own look, or, on a player without it, from SHS HD's art in the HD word game's look with its sounds, as Memory in a word grid's place does (owner, 2026-11-17); a player with neither can't draw it.
+
+**Real minigames?** stores 1 where the player plays the game it asks about and 0 elsewhere, which should take your other path. Its **Asks about** list has four: the X360 games (slot machine, leash, jewel puzzle, Diss Practice), the Diss Battle, SHS '11's games and the catch game. Each has its own question, since a player may have one and not another (an SHSHD Runtime from before the Diss Battle has the other X360 games). A project with a game not behind a question about it is refused.
 
 A storyboard plays stills with a window moving across them, overlays growing or sliding in, and sounds at their moments, then holds for a press. Day of Diss's opening is one ([X360.md](X360.md#day-of-disss-opening)).
 

@@ -22,8 +22,8 @@ def library(*ids):
     return SimpleNamespace(addon=found.get, addons=[found[i][0] for i in ids], game_id='shs')
 
 
-def story(*nodes, **fields):
-    return Project(title='Add-ons', start='a', nodes=[*nodes, Node('z', 'end')], **fields)
+def story(*nodes, start='a', **fields):
+    return Project(title='Add-ons', start=start, nodes=[*nodes, Node('z', 'end')], **fields)
 
 
 def record(project):
@@ -78,7 +78,8 @@ class CatchTests(unittest.TestCase):
     def project(self, **params):
         node = Node('a', 'brew_catch', params=dict(dict(sizes=SIZES), **params), next='b')
         branch = Node('b', 'branch', variable='catch_score', operator='>=', value=30, next='z', otherwise='z')
-        return story(node, branch, addons=[dict(id='shsbrew', revision=10)])
+        asked = Node('q', 'minigames_available', params={'for': 'brew_catch', 'result': 'real'}, next='a')
+        return story(asked, node, branch, addons=[dict(id='shsbrew', revision=10)], start='q')
 
     def session(self, project):
         from exp_runtime.runtime import Session

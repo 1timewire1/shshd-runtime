@@ -238,6 +238,18 @@ class NativeExportTests(Library):
         project.nodes.append(Node('n', 'native', params={'instructions': [[0x1f, 72 << 8]]}))
         self.assertEqual(mechanics(project), [])
 
+    def test_every_service_this_runtime_answers_from_200_is_named(self):
+        # The original apps stop at any of them, so an imported project calling one can't go to them as it is. A service
+        # added to the engine past the last named one fails here until it's listed.
+        from exp_runtime.creator.addons import MECHANIC_SERVICES
+        from exp_runtime.runtime import Session
+        from test_runtime import Resources, host_call
+        from test_vm import program
+        named = {number for services, _ in MECHANIC_SERVICES for number in services}
+        self.assertEqual(named, set(range(200, 225)))
+        session = Session(Resources(program(*host_call(225), 0x33)))
+        self.assertEqual(session.advance().name, 'unhandled_yield')        # the first one the runtime doesn't answer
+
     def test_an_imported_episode_that_needs_an_addon_cant_be_packed(self):
         project = sequence(Node('line', text='Hello.'))
         project.addons, project.native = [dict(id='packs', revision=1)], {'resources': {}}

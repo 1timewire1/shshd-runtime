@@ -126,6 +126,28 @@ STATUS = {
 }
 
 
+# This runtime's own services (docs/ENGINE_ABI.md section 5; every one from 200 that it answers: creator.addons.MECHANIC_SERVICES)
+# and the members of its presentation record (resource 3, presentation.MEMBERS): what the Creator authors of them, and what it
+# can't yet, by the stage of reference/CREATOR_CATCHUP_PLAN.md that adds it (owner, 2026-11-17). A test fails when a runtime
+# feature is added without being listed here, so none reaches players unauthorable unnoticed.
+RUNTIME_STATUS = {
+    **{service: pending("New Rules' minigame arena: no node yet (Stage 4)") for service in range(200, 214)},
+    214: emits('x360_slot'), 215: emits('x360_leash'), 216: emits('x360_puzzle'), 217: emits('x360_diss'),
+    218: emits('cutscene'), 219: emits('shs11_memory'), 220: emits('shs11_reflex'), 221: emits('brew_catch'),
+    222: emits('x360_battle'),
+    223: pending('running a scene and coming back: no node yet (Stage 3)'),
+    224: pending("the word grid's part score: the grid node has no result for it yet (Stage 2)"),
+}
+PRESENTATION_STATUS = {
+    'duet': emits('dialogue'), 'narration_theme': emits('dialogue'), 'portrait_effects': emits('dialogue'),
+    'music_loops': emits('music'), 'creator': equivalent('every episode made in the Creator'),
+    'addons': equivalent('the primary add-on (Add-Ons panel)'), 'word_forms': equivalent('a free setting (Add-Ons panel)'),
+    'date_first': equivalent('a free setting (Add-Ons panel)'), 'three_word_games': equivalent('a free setting (Add-Ons panel)'),
+    'big_pickers': equivalent('a free setting (Add-Ons panel)'), 'minigames': emits('minigames_available'),
+    'aliases': equivalent("an extra add-on's pictures and sounds"),
+    'optional_art': pending("an optional add-on's pictures in place of the episode's: not written yet (Stage 2)"),
+}
+
 def calls(service):
     return sum(CORPUS[service][0])
 

@@ -296,7 +296,8 @@ class StoryTests(unittest.TestCase):
         from test_creator_features import sequence
         rounds = [{'target': r[0], 'words': r[1:]} for r in ROUNDS]
         node = Node('b', 'x360_battle', params=dict(result='grade', bonus=2, tutorial=1, rounds=rounds, **params))
-        project = sequence(node, Node('said', text='Grade {grade}'))
+        asked = Node('q', 'minigames_available', params={'for': 'x360_battle', 'result': 'real'})    # its own question (205)
+        project = sequence(asked, node, Node('said', text='Grade {grade}'))
         project.addons = [dict(id='shsx360', revision=1)]
         return project
 

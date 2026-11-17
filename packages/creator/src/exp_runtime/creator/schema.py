@@ -86,8 +86,10 @@ NOTES = {
     'random': 'bound must be positive. Stores an actual native random draw in result.',
     'minigames_available': "shshd-runtime only. Stores in result whether the player plays a translated story's real "
                            'minigames: 1 where its switch is on, 0 on any other player, which should take a word game. '
-                           'params.for "x360_battle" asks it of the X360 Diss Battle (x360_battle), which earlier '
-                           'versions of shshd-runtime lack: ask that before an x360_battle node.',
+                           'params.for says which games: "" the X360 games (x360_slot, x360_leash, x360_puzzle, '
+                           'x360_diss), "x360_battle" the Diss Battle, "shs11" SHS \'11\'s Memory and Reflex, '
+                           '"brew_catch" the catch game. Each game must be behind a query for its own (a player may '
+                           'have one and not another); the project is refused otherwise.',
     'cutscene_available': "shshd-runtime only. Stores in result whether the player draws storyboard cutscenes: 1 where it "
                           'does, 0 on any other player, which should go straight on.',
     'cutscene': "shshd-runtime only, behind cutscene_available. Plays the storyboard whose JSON spec is resource `spec`, in the "

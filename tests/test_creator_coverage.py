@@ -79,6 +79,24 @@ class CreatorCoverageTests(unittest.TestCase):
     def test_pending_services_are_the_known_gaps(self):
         self.assertEqual({s for s, c in STATUS.items() if c.status == 'pending'}, PENDING)
 
+    def test_this_runtimes_own_services_and_presentation_are_classified(self):
+        # Every service from 200 the runtime answers, and every member of its presentation record: authored by the Creator, or
+        # a gap with the catch-up stage that closes it. A feature added to the runtime fails here until it's listed.
+        from exp_runtime.creator.addons import MECHANIC_SERVICES
+        from exp_runtime.creator.coverage import PRESENTATION_STATUS, RUNTIME_STATUS
+        from exp_runtime.creator.model import KINDS
+        from exp_runtime.presentation import MEMBERS
+        self.assertEqual(set(RUNTIME_STATUS), {number for services, _ in MECHANIC_SERVICES for number in services})
+        self.assertEqual(set(PRESENTATION_STATUS), set(MEMBERS))
+        for table in (RUNTIME_STATUS, PRESENTATION_STATUS):
+            for key, coverage in table.items():
+                with self.subTest(key=key):
+                    self.assertIn(coverage.status, ('emits', 'equivalent', 'pending'))
+                    if coverage.status == 'emits':
+                        self.assertTrue(set(coverage.detail) <= set(KINDS))
+        self.assertEqual({s for s, c in RUNTIME_STATUS.items() if c.status == 'pending'}, set(range(200, 214)) | {223, 224})
+        self.assertEqual({m for m, c in PRESENTATION_STATUS.items() if c.status == 'pending'}, {'optional_art'})
+
     def test_emitting_kinds_really_compile_to_their_services(self):
         for service, coverage in STATUS.items():
             if coverage.status != 'emits':

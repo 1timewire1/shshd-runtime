@@ -313,7 +313,8 @@ class SwitchTests(unittest.TestCase):
 
     def renderer_for(self, *, grid, skin, available=True):
         from exp_runtime.desktop import Desktop
-        ui = SimpleNamespace(word_grid_skin=skin, shs11_hd=SimpleNamespace(available=lambda: available, art_available=lambda: available),
+        ui = SimpleNamespace(word_grid_skin=skin, shs11_hd=SimpleNamespace(available=lambda: available, art_available=lambda: available,
+                                                                      has_addon=lambda: True),
                              shs11_memory_renderer='own memory',
                              shs11_reflex_renderer='own reflex',
                              session=SimpleNamespace(engine=SimpleNamespace(shs11_memory=SimpleNamespace(grid=grid))))
@@ -341,7 +342,7 @@ class SwitchTests(unittest.TestCase):
 
     def test_without_the_addon_memory_in_a_grids_place_still_has_the_skin(self):
         from exp_runtime.desktop import Desktop
-        hd = SimpleNamespace(available=lambda: False, art_available=lambda: True)
+        hd = SimpleNamespace(available=lambda: False, art_available=lambda: True, has_addon=lambda: False)
         ui = SimpleNamespace(word_grid_skin=False, shs11_hd=hd, session=SimpleNamespace(engine=SimpleNamespace(
             shs11_memory=SimpleNamespace(grid=True))))
         self.assertIs(Desktop.shs11_renderer(ui, SimpleNamespace(name='shs11_memory')), hd)
@@ -420,14 +421,18 @@ class SwitchTests(unittest.TestCase):
         session = SimpleNamespace(shs11_hd_sounds=False)
         ui = Desktop.__new__(Desktop)
         ui._session = session
-        ui.shs11_hd = SimpleNamespace(available=lambda: True)
+        ui.shs11_hd = SimpleNamespace(available=lambda: True, art_available=lambda: True, has_addon=lambda: True)
         ui.word_grid_skin = True
         self.assertTrue(session.shs11_hd_sounds)
         ui.word_grid_skin = False
         self.assertFalse(session.shs11_hd_sounds)
-        ui.shs11_hd = SimpleNamespace(available=lambda: False)
+        ui.shs11_hd = SimpleNamespace(available=lambda: False, art_available=lambda: False, has_addon=lambda: True)
         ui.word_grid_skin = True
         self.assertFalse(session.shs11_hd_sounds)
+        # Without '11's addon, its games are the word game's (Memory from HD's art alone): its sounds, switch or not.
+        ui.shs11_hd = SimpleNamespace(available=lambda: False, art_available=lambda: True, has_addon=lambda: False)
+        ui.word_grid_skin = False
+        self.assertTrue(session.shs11_hd_sounds)
 
     def test_the_preference_is_kept(self):
         from exp_runtime.menu import SHARED_PREFERENCES

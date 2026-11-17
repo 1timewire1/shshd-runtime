@@ -17,11 +17,11 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDia
     QSpinBox, QSplitter, QTextEdit, QToolBar, QVBoxLayout, QWidget)
 
 from exp_runtime.exp import ContentError
-from .addons import (ADDON_FEATURES, AddonsNeeded, NODE_ADDONS, copy_addon_asset, drop_unused_addons, require_node_addon,
-                     set_primary_addon, use_addon_asset)
+from .addons import (ADDON_FEATURES, AddonsNeeded, NODE_ADDONS, OPTIONAL_NODE_ADDONS, copy_addon_asset, drop_unused_addons,
+                     require_node_addon, set_primary_addon, use_addon_asset)
 from .cutscenes import blank_spec, cutscene_assets, read_project_spec, save_cutscene
 from .assets import addon_asset_ids, image_png, import_library_image, player_library
-from .compiler import compile_project, export_project, export_native_slot
+from .compiler import QUERY_NAMES, compile_project, export_project, export_native_slot
 from exp_runtime.cutscene_spec import read_spec
 from .model import (Choice, EMOTICONS, KINDS, OPERATORS, Node, Project, ProjectError,
                     project_from_bytes, save_project, Character, is_audio, is_image, validate_structure)
@@ -497,7 +497,7 @@ class Editor(QMainWindow):
         if kind == 'choice':
             node.options = [Choice('First choice'), Choice('Second choice')]
         self.project.nodes.append(node)
-        if kind in NODE_ADDONS:
+        if kind in NODE_ADDONS or kind in OPTIONAL_NODE_ADDONS:
             # Its game plays from an add-on's art: the episode declares it, an extra unless it's the primary (owner, 2026-11-09).
             try:
                 with self.open_library() as library:
@@ -637,6 +637,13 @@ class Editor(QMainWindow):
                         lambda value: self.set_node('expression', value)))
                 if node.kind == 'dialogue' and self.project.game == 'shs':
                     self.presentation_rows(form, node)
+                if node.kind == 'minigames_available':
+                    # Each game has its own question: a player that has the X360 games may still lack the others.
+                    asks = self.combo([(name[0].upper() + name[1:], key) for key, name in QUERY_NAMES.items()],
+                                      parameters(node)['for'], lambda value: self.set_param('for', value))
+                    asks.setToolTip('Which games the result is about: put each game behind the question its own '
+                                    'players answer (SHSHD Runtime).')
+                    form.addRow('Asks about', asks)
                 if node.kind == 'cutscene':
                     choices = [('None', 0)] + [(f'{a.id} · {a.name}', a.id) for a in cutscene_assets(self.project)]
                     form.addRow('Cutscene', self.combo(choices, parameters(node)['spec'],

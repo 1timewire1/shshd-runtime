@@ -13,8 +13,9 @@ from exp_runtime.shs11_services import SHS11_MEMORY, SHS11_REFLEX
 
 
 def project(kind, params=None, game='shs'):
-    # Its game plays from '11's add-on, so the project declares it (owner, 2026-11-09).
-    return Project(title='Games', game=game, start='a', nodes=[
+    # Its game plays from '11's add-on, so the project declares it (owner, 2026-11-09), behind '11's own question (203).
+    return Project(title='Games', game=game, start='q', nodes=[
+        Node('q', 'minigames_available', params={'for': 'shs11', 'result': 'real'}, next='a'),
         Node('a', kind, params=params if params is not None else {}, next='b'),
         Node('b', 'end')], addons=[dict(id='shs11', revision=2)])
 
@@ -32,6 +33,49 @@ class CreatorShs11(unittest.TestCase):
     def test_each_node_calls_its_service(self):
         self.assertIn(SHS11_MEMORY, host_calls(compiled('shs11_memory')))
         self.assertIn(SHS11_REFLEX, host_calls(compiled('shs11_reflex')))
+
+    def test_each_game_asks_its_own_question_and_a_game_without_it_is_refused(self):
+        # An SHSHD Runtime with the X360 games answers 201 but would stop at '11's services (219, 220) or the catch game's
+        # (221): each asks its own (203, 204), as the translations do (owner, 2026-11-17).
+        from exp_runtime.creator.compiler import MINIGAME_QUERIES
+        self.assertEqual(MINIGAME_QUERIES, {'': 201, 'x360_battle': 205, 'shs11': 203, 'brew_catch': 204})
+        program = compiled('shs11_memory')
+        calls = [k for k, i in enumerate(program.instructions) if i.opcode == 0x1f and i.operand >> 8 == 70]
+        self.assertEqual([program.instructions[k - 1].operand for k in calls], [203])
+        wrong = project('shs11_reflex')
+        wrong.nodes[0].params['for'] = ''                                   # the X360 games' question
+        with self.assertRaisesRegex(ProjectError, r"Real minigames\? node asking about SHS '11's games"):
+            compile_project(wrong)
+        bare = project('shs11_memory')
+        bare.start, bare.nodes = 'a', bare.nodes[1:]                        # no question at all
+        with self.assertRaisesRegex(ProjectError, 'Real minigames'):
+            compile_project(bare)
+
+    def test_memory_needs_no_add_on_and_reflex_does(self):
+        # Memory without '11's add-on is drawn from SHS HD's art, as Memory in a grid's place is; Reflex's icons are the
+        # add-on's (owner, 2026-11-17).
+        memory, reflex = project('shs11_memory'), project('shs11_reflex')
+        memory.addons = reflex.addons = []
+        compile_project(memory)
+        with self.assertRaisesRegex(ProjectError, 'shs11 add-on'):
+            compile_project(reflex)
+
+    def test_memory_takes_the_add_on_when_the_library_has_it_and_keeps_it(self):
+        from types import SimpleNamespace
+        from exp_runtime.creator.addons import drop_unused_addons, require_node_addon
+        with_it = SimpleNamespace(addon=lambda addon_id: ({'addon': addon_id, 'revision': 3}, None))
+        without = SimpleNamespace(addon=lambda addon_id: None)
+        memory = project('shs11_memory')
+        memory.addons = []
+        require_node_addon(memory, without, 'shs11_memory')               # none in the library: none needed
+        self.assertEqual(memory.addons, [])
+        require_node_addon(memory, with_it, 'shs11_memory')               # there: '11's own look
+        self.assertEqual([entry['id'] for entry in memory.addons], ['shs11'])
+        drop_unused_addons(memory)                                        # kept while Memory plays from it
+        self.assertEqual([entry['id'] for entry in memory.addons], ['shs11'])
+        memory.nodes = [node for node in memory.nodes if node.kind != 'shs11_memory']
+        drop_unused_addons(memory)
+        self.assertEqual(memory.addons, [])
 
     def test_a_word_must_fit_the_nine_tiles(self):
         for word in ('TOOLONGWORD', 'lower', 'TWO WORD', ''):

@@ -54,6 +54,7 @@ class Shs11HdRenderer(HdWordRenderer):
         self.game = None
         self.turns = {}
         self._loaded = None
+        self._has_addon = None
         self._pictures = {}
 
     def _spec(self):
@@ -72,6 +73,16 @@ class Shs11HdRenderer(HdWordRenderer):
     def art_available(self):
         """The player's HD bundle has the word game's art, which is all Memory in a grid's place needs (it wants no addon)."""
         return HdWordRenderer.available(self)
+
+    def has_addon(self):
+        """Whether the library has SHS '11's addon (a damaged one counts as none). Without it, Memory is drawn as it is in a
+        grid's place: an episode made in the Creator may play Memory with only SHS HD's art (owner, 2026-11-17)."""
+        if self._has_addon is None:
+            try:
+                self._has_addon = self._spec() is not None
+            except Exception:                           # a damaged addon: as if it weren't there
+                self._has_addon = False
+        return self._has_addon
 
     def alpha(self, game):
         return None
@@ -144,7 +155,7 @@ class Shs11HdRenderer(HdWordRenderer):
         if char == GRID_QUESTION:
             image, h = self.grid_question_mark(), QUESTION_HEIGHT
         elif char == '?':
-            image, h = self.question_mark(), QUESTION_HEIGHT
+            image, h = (self.question_mark() if self.has_addon() else self.grid_question_mark()), QUESTION_HEIGHT
         elif ord(char) >= ICON_BASE:
             image, h = self.icon_tile(ord(char))[0], ICON_HEIGHT
         else:
@@ -310,7 +321,7 @@ class Shs11HdRenderer(HdWordRenderer):
             self.game, self.turns, self._effects = game, {}, None
             if reflex:                          # now, not in the middle of its first set
                 self.warm_icons(game)
-        spec = None if not reflex and game.grid else self._spec()[0]
+        spec = None if not reflex and (game.grid or not self.has_addon()) else self._spec()[0]
         texts = GRID_TEXT if spec is None else spec['text']
         background = session.pending.details.get('background_id', session.engine.panel.background_id)
         size = self.canvas_size()

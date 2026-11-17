@@ -8,9 +8,13 @@ from copy import deepcopy
 
 from .model import Asset, ProjectError, is_audio, is_image
 
-# The add-on whose mini-game a node plays: the episode needs it, as the primary or an extra (owner, 2026-11-09).
-NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 'shsx360',
+# The add-on whose mini-game a node plays: the episode needs it, as the primary or an extra (owner, 2026-11-09). Not
+# SHS '11's Memory: with no add-on it's drawn from SHS HD's art, as Memory in a grid's place is (owner, 2026-11-17).
+NODE_ADDONS = {'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 'shsx360',
                'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'x360_battle': 'shsx360', 'brew_catch': 'shsbrew'}
+# ...and the add-on a node plays from when the library has it, without needing it: SHS '11's Memory wears '11's own look with
+# its add-on, else SHS HD's art (owner, 2026-11-17). Added with the node when the library has it, and kept while the node is.
+OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11'}
 # What a primary add-on brings (its settings that need its pictures and sounds; the runtime's ADDON_FEATURE_PACKS) and what any
 # declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
 ADDON_FEATURES = {
@@ -33,11 +37,13 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
                   'x360_diss': 'X360 Diss Practice', 'x360_battle': 'the X360 Diss Battle',
                   'cutscene_available': 'storyboard cutscenes',
                   'cutscene': 'storyboard cutscenes'}
-# In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3) and
-# SHS '11's games (5.4).
+# In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3),
+# SHS '11's games (5.4), the catch game (5.5), running a script and coming back (5.6) and the word grid's part score (5.6a).
+# Every service from 200 that the runtime answers is listed (a test checks): the original apps stop at any of them.
 MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214, 218), 'the X360 mini-games'),
                      (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"),
-                     (range(221, 222), "the BREW games' catch game"), (range(222, 223), 'the X360 mini-games'))
+                     (range(221, 222), "the BREW games' catch game"), (range(222, 223), 'the X360 mini-games'),
+                     (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"))
 
 
 class AddonsNeeded(ProjectError):
@@ -111,7 +117,8 @@ def drop_unused_addons(project):
     imported episode's list stays as its scripts need it."""
     if not project.native:
         used = ({asset.addon for asset in project.assets if asset.addon}
-                | {NODE_ADDONS[node.kind] for node in project.nodes if node.kind in NODE_ADDONS})
+                | {NODE_ADDONS[node.kind] for node in project.nodes if node.kind in NODE_ADDONS}
+                | {OPTIONAL_NODE_ADDONS[node.kind] for node in project.nodes if node.kind in OPTIONAL_NODE_ADDONS})
         project.addons = [entry for entry in project.addons if entry['id'] in used or entry.get('primary')]
 
 
@@ -142,12 +149,16 @@ def set_primary_addon(project, library, addon_id, edition=''):
 
 
 def require_node_addon(project, library, kind):
-    """A node playing an add-on's mini-game was added: the project declares that add-on (an extra unless it's the primary)."""
-    addon_id = NODE_ADDONS.get(kind)
+    """A node playing an add-on's mini-game was added: the project declares that add-on (an extra unless it's the primary).
+    One it only plays from when there (OPTIONAL_NODE_ADDONS) is declared if the library has it, and otherwise left out."""
+    optional = kind in OPTIONAL_NODE_ADDONS
+    addon_id = OPTIONAL_NODE_ADDONS.get(kind) or NODE_ADDONS.get(kind)
     if addon_id is None or any(entry['id'] == addon_id for entry in project.addons):
         return
     found = library.addon(addon_id) if library is not None else None
     if found is None:
+        if optional:
+            return
         raise ProjectError(f'This needs the {addon_id} add-on: import it into the library first.')
     require_addon(project, addon_id, found[0]['revision'])
 

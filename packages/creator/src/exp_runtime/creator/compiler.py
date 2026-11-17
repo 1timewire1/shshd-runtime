@@ -12,6 +12,8 @@ from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHOR
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.x360_services import X360_BATTLE, X360_BATTLE_QUERY, X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
 from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
+from exp_runtime.shs11_services import SHS11_MINIGAMES_QUERY
+from exp_runtime.brew_services import BREW_MINIGAMES_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RESOURCE, version_bytes
 from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
@@ -56,6 +58,16 @@ TREE_CONDITIONS = range(0x4b, 0x69)
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, SHS '11 31600):
 # their episodes take their game's own settings and names, so the Creator marks nothing of its own in them.
 from exp_runtime.presentation import TRANSLATION_PACKS  # noqa: E402
+
+# Service 70's question a Real minigames? node asks, by its `for`: each game's own, which an SHSHD Runtime answers 1 only
+# where it plays that game (with Use Translated Mini-Games on). The X360 games ask 201; the Diss Battle came later (205),
+# and SHS '11's games (203) and the catch game (204) have their own, as their translations ask (owner, 2026-11-17).
+MINIGAME_QUERIES = {'': X360_MINIGAMES_QUERY, 'x360_battle': X360_BATTLE_QUERY, 'shs11': SHS11_MINIGAMES_QUERY,
+                    'brew_catch': BREW_MINIGAMES_QUERY}
+QUERY_FOR = {'x360_slot': '', 'x360_leash': '', 'x360_puzzle': '', 'x360_diss': '', 'x360_battle': 'x360_battle',
+             'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'brew_catch': 'brew_catch'}
+QUERY_NAMES = {'': 'the X360 games', 'x360_battle': 'the Diss Battle', 'shs11': "SHS '11's games",
+               'brew_catch': 'the catch game'}
 # shshd-runtime presentation (SCHEMA.md "Presentation extension"): the SHS global numbers (service 54) a dialogue line
 # sets for its second speaker (ID + 1) and their expression, a named line's bubble colour and the emoticon over its
 # speaker, cleared after the line. They are the numbers tools/translate uses for New Rules and the X360 prototype; the
@@ -202,8 +214,8 @@ def validate_node(project, node, nodes, assets, characters):
         validate_cutscene(label, p, assets)
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
-    if node.kind == 'minigames_available' and p['for'] not in ('', 'x360_battle'):
-        raise ProjectError('A minigames query is for every mini-game (empty) or for x360_battle')
+    if node.kind == 'minigames_available' and p['for'] not in MINIGAME_QUERIES:
+        raise ProjectError('A minigames query is for the X360 games (empty), x360_battle, shs11 or brew_catch')
     if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
         raise ProjectError('Diss Practice tutorial is 0 or 1')
     if node.kind == 'x360_battle':
@@ -497,6 +509,12 @@ def validate(project: Project):
             raise ProjectError(f'Music {p["resource"]} runs into a loop in one node but not the same way in another; '
                                'an intro always runs into one loop')
     validate_tree_pairing(project, nodes)
+    asked = {parameters(n)['for'] for n in project.nodes if n.kind == 'minigames_available'}
+    for node in project.nodes:
+        wants = QUERY_FOR.get(node.kind)
+        if wants is not None and wants not in asked:
+            raise ProjectError(f'{node.label or node.id}: put it behind a Real minigames? node asking about '
+                               f'{QUERY_NAMES[wants]}, so a player without it takes your other path')
     both = text_keys(project) & set(variable_names(project))  # Also validates all expression syntax before writing.
     if both:
         raise ProjectError(f'{sorted(both)[0]} names both a stored text and a number; rename one of them')
@@ -811,9 +829,9 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'random':
                 asm.call(27, p['bound']); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'minigames_available':
-                # `for` 'x360_battle' asks whether this player has the Diss Battle (selector 205): an earlier SHSHD
-                # Runtime answers 201 but would stop at service 222, so a story asks this before it (owner, 2026-11-16).
-                selector = X360_BATTLE_QUERY if p.get('for') == 'x360_battle' else X360_MINIGAMES_QUERY
+                # Each game asks its own (MINIGAME_QUERIES): an SHSHD Runtime that has the X360 games (201) but not the
+                # Diss Battle, SHS '11's games or the catch game would stop at their services.
+                selector = MINIGAME_QUERIES[p.get('for', '')]
                 asm.call(70, selector); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'cutscene_available':
                 asm.call(70, CUTSCENE_QUERY); asm.emit(0x21); store_variable(p['result'])

@@ -86,6 +86,19 @@ class SwitchTests(unittest.TestCase):
         ui.word_grid_skin, own.available = True, lambda: False
         self.assertEqual(Desktop.shs11_renderer(ui, SimpleNamespace(name='shs11_memory')), 'memory')
 
+    @unittest.skipUnless(HAS_PILLOW, 'needs Pillow')
+    def test_a_stories_memory_without_the_addon_takes_hds_art(self):
+        # An episode made in the Creator may play Memory with only SHS HD's art (owner, 2026-11-17): the grid's look,
+        # switch or no switch; with the addon, the switch decides as before.
+        from exp_runtime.desktop import Desktop
+        own = SimpleNamespace(available=lambda: False, art_available=lambda: True, has_addon=lambda: False)
+        memory = SimpleNamespace(name='shs11_memory')
+        ui = SimpleNamespace(word_grid_skin=False, shs11_hd=own, shs11_memory_renderer='memory', shs11_reflex_renderer='reflex',
+                             session=SimpleNamespace(engine=SimpleNamespace(shs11_memory=SimpleNamespace(grid=False))))
+        self.assertIs(Desktop.shs11_renderer(ui, memory), own)
+        own.has_addon = lambda: True
+        self.assertEqual(Desktop.shs11_renderer(ui, memory), 'memory')
+
 
 if __name__ == '__main__':
     unittest.main()
