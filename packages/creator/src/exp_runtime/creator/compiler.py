@@ -40,7 +40,7 @@ TEXT_BUFFER_WORDS = 512
 # What a failed survey upload shows: the offline runtime replaces exactly this response with its local receipt
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
-SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                             'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
@@ -140,6 +140,8 @@ def variable_names(project):
             names.update(name for name in (p['home_result'], p['away_result']) if name)
         if node.kind == 'grid' and p['part_score']:
             names.add(p['part_score'])
+        if node.kind == 'nr_arena':
+            names.add(p['result'])
         if node.kind == 'survey' and isinstance(p['results'], list):
             names.update(p['results'])
         for expression in node_expressions(node):
@@ -386,6 +388,9 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('home_result', 'away_result'):
             if p[key] and not p[key].isidentifier():
                 raise ProjectError(f'{label}: {key} must be a variable name')
+    if node.kind == 'nr_arena':
+        from . import nr_arena
+        nr_arena.validate(p)
     if node.kind == 'shs11_reflex':
         minigames.validate_reflex_icons(p, {a.id for a in project.assets if a.data is not None and is_image(a.data)})
     if node.kind == 'grid' and p['part_score'] and not p['part_score'].isidentifier():
@@ -759,6 +764,10 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
     scripts = {scene: 25002 + i for i, scene in enumerate(scenes)} if shared else {scenes[0]: 25001}
     ordinals = {node.id: i for i, node in enumerate(project.nodes)}
     if project.calendars and len(scenes) > 997: raise ProjectError('A project with a calendar has at most 997 scenes')
+    # With the shsnr add-on, New Rules' minigame library is linked beside every script (VM_SPEC.md 2.3), whose code and data must
+    # stay below it.
+    from .nr_arena import LIBRARY_CODE, LIBRARY_DATA
+    linked_library = any(entry['id'] == 'shsnr' for entry in project.addons)
     from . import calendar as calendars
     from .calendar_driver import KINDS as CALENDAR_KINDS, ENDS as CALENDAR_ENDS, Context as CalendarContext, driver, emit_node
     calendar_context = CalendarContext(project, parameters, ordinals, lambda node_id: scripts[nodes[node_id].scene],
@@ -964,6 +973,11 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                     asm.call(90, p['icon'], text('text') if node.text else -1)
             elif kind in CALENDAR_KINDS:
                 emit_node(asm, calendar_context, node, p, expression)
+            elif kind == 'nr_arena':
+                from . import nr_arena
+                nr_arena.emit(asm, p, lambda field, value, raw=False: text(field, value, raw=raw, plain=not raw),
+                              character('character') if node.character else 0, lambda: store_variable(p['result']),
+                              ('nr_arena', node.id))
             elif kind == 'quest':
                 # Its title and lines under the episode's own keys, and the count past the highest quest the project sets.
                 title_form, lines_form = journal_forms(project)
@@ -1102,6 +1116,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'end': asm.call(7); asm.emit(0x33)
             if kind not in ('choice', 'branch', 'text_branch', 'end', *CALENDAR_ENDS):
                 route(asm, scene, node.next)
+        if linked_library and (len(asm.code) >= LIBRARY_CODE or len(asm.words) // 2 >= LIBRARY_DATA):
+            raise ProjectError('A scene is too large to run beside New Rules\' minigame library: split it into scene groups')
         resources[script_id] = asm.finish()
     if project.calendars:
         # The calendar's own script, after the scenes' (CREATOR_CALENDAR_DESIGN.md "How it plays").

@@ -94,7 +94,7 @@ class CreatorCoverageTests(unittest.TestCase):
                     self.assertIn(coverage.status, ('emits', 'equivalent', 'pending'))
                     if coverage.status == 'emits':
                         self.assertTrue(set(coverage.detail) <= set(KINDS))
-        self.assertEqual({s for s, c in RUNTIME_STATUS.items() if c.status == 'pending'}, set(range(200, 214)))
+        self.assertEqual({s for s, c in RUNTIME_STATUS.items() if c.status == 'pending'}, set())
         self.assertEqual({m for m, c in PRESENTATION_STATUS.items() if c.status == 'pending'}, set())
 
     def test_emitting_kinds_really_compile_to_their_services(self):

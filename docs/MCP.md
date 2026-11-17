@@ -250,7 +250,7 @@ started, phase, score or points, round, time left, result so far, and
 `press` is the go-ahead and then the game's button (the X360 slot machine,
 leash, jewel puzzle, Diss Practice and Diss Battle, the BREW catch game, a
 cutscene), a cell 0-8 for SHS '11's Memory and Reflex (no cell for their
-tutorial's OK), or a key code on New Rules' arena, followed by `milliseconds`;
+tutorial's OK), or a key code on New Rules' arena (-5 OK, -1 to -4 the joystick, 48-57 the number keys; the arena's score waits for OK after time's up, which the `minigame` field says), followed by `milliseconds`;
 `tick` lets time pass. Time passes in player frames (16 ms each), so a game's
 own clock and caps behave as on a device.
 

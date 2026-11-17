@@ -658,6 +658,12 @@ class Editor(QMainWindow):
                     asks.setToolTip('Which games the result is about: put each game behind the question its own '
                                     'players answer (SHSHD Runtime).')
                     form.addRow('Asks about', asks)
+                if node.kind == 'nr_arena':
+                    from .nr_arena import NAMES as ARENA_GAMES
+                    game = self.combo([(name, key) for key, name in ARENA_GAMES.items()], parameters(node)['game'],
+                                      self.set_arena_game)
+                    game.setToolTip("New Rules' library game in its arena (the shsnr add-on); other players get its fallback.")
+                    form.addRow('Game', game)
                 if node.kind == 'cutscene':
                     choices = [('None', 0)] + [(f'{a.id} · {a.name}', a.id) for a in cutscene_assets(self.project)]
                     form.addRow('Cutscene', self.combo(choices, parameters(node)['spec'],
@@ -726,6 +732,19 @@ class Editor(QMainWindow):
         emoticon.setEnabled(portrait)
         emoticon.setToolTip('Shown over the speaker\'s portrait; choose the images with Emoticon images….' + note)
         form.addRow('Emoticon', emoticon)
+
+    def set_arena_game(self, game):
+        """A New Rules minigame node's game, with that game's target, intro and fallback words as the stories have them."""
+        from .nr_arena import DEFAULTS as ARENA_DEFAULTS
+        node = self.project.node(self.selected)
+        if parameters(node)['game'] == game:
+            return
+        chosen = ARENA_DEFAULTS[game]
+        changes = dict(game=game, target=chosen['target'], intro=chosen['intro'])
+        if 'good' in chosen:
+            changes.update(good=list(chosen['good']), bad=list(chosen['bad']))
+        self.set_node('params', dict(node.params, **changes))
+        self.show_properties()
 
     def set_param(self, key, value):
         node = self.project.node(self.selected)

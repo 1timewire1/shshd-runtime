@@ -131,7 +131,8 @@ STATUS = {
 # can't yet, by the stage of reference/CREATOR_CATCHUP_PLAN.md that adds it (owner, 2026-11-17). A test fails when a runtime
 # feature is added without being listed here, so none reaches players unauthorable unnoticed.
 RUNTIME_STATUS = {
-    **{service: pending("New Rules' minigame arena: no node yet (Stage 4)") for service in range(200, 214)},
+    **{service: equivalent("New Rules' minigame library, which the New Rules minigame node plays") for service in range(200, 213)},
+    213: emits('nr_arena'),
     214: emits('x360_slot'), 215: emits('x360_leash'), 216: emits('x360_puzzle'), 217: emits('x360_diss'),
     218: emits('cutscene'), 219: emits('shs11_memory'), 220: emits('shs11_reflex'), 221: emits('brew_catch'),
     222: emits('x360_battle'),

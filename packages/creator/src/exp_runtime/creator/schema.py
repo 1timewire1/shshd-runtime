@@ -6,7 +6,7 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                      'tree_result', 'loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                       'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
@@ -18,7 +18,7 @@ FIELDS = {
     'text_branch': ('next', 'otherwise'), 'relationship': ('character', 'next'),
     'input': ('text', 'next'), 'title': ('text', 'next'), 'message': ('text', 'next'),
     'notice': ('text', 'next'), 'scene_label': ('text', 'next'), 'quest': ('text', 'next'), 'journal_updated': ('text', 'next'),
-    'start_calendar': (), 'calendar_back': (), 'return_scene': (),
+    'start_calendar': (), 'calendar_back': (), 'return_scene': (), 'nr_arena': ('character', 'next'),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
     'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'), 'brew_catch': ('next',),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
@@ -50,6 +50,12 @@ NOTES = {
     'start_calendar': 'SHS only. Starts the calendar params.calendar (its ID in the project\'s calendars): its clock at its first '
                       'school day\'s start, its table\'s events on their days. One runs at a time. The story goes on in its '
                       'events; when it runs out, at its After node (or the episode ends).',
+    'nr_arena': "shshd-runtime only; needs the shsnr add-on. New Rules' minigame library in its arena, as King of Diss and "
+                'Dancing Queen call it: params.game rhyme, rhythm, dance_steps, beat_boxing or dj_fever, params.target 1-10 (the '
+                'score that passes: 7, 6, 5, 7 and 3 in the stories) and params.intro. A player without the arena plays the '
+                'fallback: a speed diss of timed choices from params.rhymes (families of rhyming words) for rhyme, else an SHS '
+                'word game with params.good and params.bad (character: who it shows). The score goes in params.result: '
+                'passed at the target or more. Ask to Skip Mini-Games offers its outcomes before it.',
     'calendar_back': 'Ends a calendar event; the calendar picks the next. Inside Run due events, back to the event that ran it.',
     'schedule_event': 'Adds an event to the running calendar params.calendar: params.event (a name in its table), or with no '
                       'event params.target (a node), params.name, params.icon, params.duration (-1 any time in its half hour) '

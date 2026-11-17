@@ -80,6 +80,13 @@ class Playtest:
         """The open mini-game or cutscene as a player would read it: its score, time left, round and what it waits for."""
         session = self.debugger.session
         name = raw['action']
+        arena = session.engine.nr_arena
+        if name in ARENA | {'arena_entrance', 'arena_exit'} and arena is not None:
+            # New Rules' arena: its keys (nr_arena.KEY_BITS: -5 OK, -1 to -4 the joystick, 48-57 the number keys); after
+            # time's up, its score waits for OK.
+            waits = ('time' if name in ('arena_entrance', 'arena_exit') else 'ok (key -5) for the score' if arena.time_up == 2
+                     else 'keys' if name == 'arena_frame' else 'answer' if name == 'arena_menu' else 'continue')
+            return dict(kind='nr_arena', time_up=arena.time_up, labels=[l for l in arena.labels if l], waits_for=waits)
         game = raw['minigames'].get(name)
         if game is None: return None
         live = getattr(session.engine, name)

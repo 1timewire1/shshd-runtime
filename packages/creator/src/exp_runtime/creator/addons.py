@@ -11,7 +11,8 @@ from .model import Asset, ProjectError, is_audio, is_image
 # The add-on whose mini-game a node plays: the episode needs it, as the primary or an extra (owner, 2026-11-09). Not
 # SHS '11's Memory: with no add-on it's drawn from SHS HD's art, as Memory in a grid's place is (owner, 2026-11-17).
 NODE_ADDONS = {'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 'shsx360',
-               'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'x360_battle': 'shsx360', 'brew_catch': 'shsbrew'}
+               'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'x360_battle': 'shsx360', 'brew_catch': 'shsbrew',
+               'nr_arena': 'shsnr'}
 # ...and the add-on a node plays from when the library has it, without needing it: SHS '11's Memory wears '11's own look with
 # its add-on, else SHS HD's art (owner, 2026-11-17). Added with the node when the library has it, and kept while the node is.
 OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11'}
@@ -25,7 +26,7 @@ ADDON_FEATURES = {
     'shs11': (("SHS '11's relationship icons and their sounds", "SHS '11's one sound channel",
                "SHS '11's right/wrong music for answer hints"), ("SHS '11's Memory", "SHS '11's Reflex")),
     'shsnr': (("New Rules' frame around the scene", 'The Hi-Res Portraits switch', "New Rules' right/wrong music for answer hints"),
-              ()),
+              ("New Rules' minigame library: Rhyme, Rhythm, Dance steps, Beat boxing, DJ Fever",)),
     'shsx360': (("The X360 frame around the scene", 'The MS3 Characters switch'),
                 ('The slot machine', 'The leash game', 'The jewel puzzle', 'Diss Practice')),
     'shsdsi': ((), ('Optional art only (never required): your pictures shown as its DSi locations while DSi Backgrounds is on',)),
@@ -40,7 +41,8 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
                   'x360_diss': 'X360 Diss Practice', 'x360_battle': 'the X360 Diss Battle',
                   'cutscene_available': 'storyboard cutscenes',
                   'cutscene': 'storyboard cutscenes',
-                  'run_due': 'running a scene and coming back', 'call_scene': 'running a scene and coming back'}
+                  'run_due': 'running a scene and coming back', 'call_scene': 'running a scene and coming back',
+                  'nr_arena': "New Rules' minigame arena"}
 # In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3),
 # SHS '11's games (5.4), the catch game (5.5), running a script and coming back (5.6) and the word grid's part score (5.6a).
 # Every service from 200 that the runtime answers is listed (a test checks): the original apps stop at any of them.
