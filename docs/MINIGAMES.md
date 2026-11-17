@@ -536,6 +536,22 @@ but not every native font-object parameter. Random generators and speaker fonts
 now persist across episodes in the same application process; other native
 widget lifetimes remain partial. Full visual fidelity remains a requirement.
 
+shshd-runtime: saves taken while a minigame plays.
+- **The 60 s autosave waits** while any minigame or New Rules arena screen is up
+  (`application.AUTOSAVE_HELD`), and runs on the first frame after it closes; leaving
+  the app still saves at once (owner, 2026-11-16: the save's ~110 ms cost a visible
+  stall on the g54 during the Diss Battle).
+- **Every game's state is typed for the loader:** a save's dataclasses are checked
+  field by field against their annotations, with no int-for-float leeway. A clock that
+  can hold whole or fractional milliseconds, such as the X360 turntable's 50/3 ms
+  frames, is declared `float | int` (owner, 2026-11-16: Diss Practice's arm at rest,
+  -1 in a float field, made Undo at its start fail). `test_x360_diss` runs its state
+  through the loader at every frame.
+
+The translated games' own rules, results and skip outcomes are in their documents:
+[New Rules' arena](NEW_RULES.md), the [X360 games](X360.md#minigames), including the
+Diss Battle, and [SHS '11's](SHS11.md#minigames).
+
 Unimplemented surrounding engine services remain explicit stops. Service 91's
 loading timer and service 99's native stub have since been recovered; Football
 Star now enters its first match through the loading screen and returns to
