@@ -42,6 +42,37 @@ def addon_asset_ids(library, addon_id):
     return sorted(key for key in library.addon(addon_id)[1].entries if 26000 <= key <= 32767)
 
 
+SKIES = ('day', 'night', 'sunset')   # its backgrounds' three skies, BREW's sky modes (tools/translate shw.SKY_STRIPS)
+ADDON_ART_SPEC = 26998       # where Surviving Hollywood's add-on keeps what its pictures are (tools/translate shw.SPEC)
+
+
+def addon_asset_labels(library, addon_id):
+    """{resource: what it is} for an add-on whose spec says (Surviving Hollywood's: its portraits by the demo's number, the
+    same facing left, its eight silhouettes and its backgrounds; owner, 2026-11-17), {} for any other. The numbers alone say
+    nothing, so the character art picker and MCP name them from it."""
+    import json
+    found = library.addon(addon_id) if library is not None and hasattr(library, 'addon') else None
+    if found is None or ADDON_ART_SPEC not in found[1].entries:
+        return {}
+    try:
+        spec = json.loads(found[1].read(ADDON_ART_SPEC))
+    except (ValueError, OSError, KeyError):
+        return {}
+    if not isinstance(spec, dict) or not isinstance(spec.get('portraits'), dict):
+        return {}
+    labels = {}
+    for number, resource in spec.get('portraits', {}).items():
+        labels[resource] = f'portrait {number}'
+    for number, resource in spec.get('flipped', {}).items():
+        labels[resource] = f'portrait {number}, facing left'
+    for k, resource in enumerate(spec.get('silhouettes', []), 1):
+        labels[resource] = f'silhouette {k}'
+    for number, resources in spec.get('backgrounds', {}).items():
+        for sky, resource in enumerate(resources if isinstance(resources, list) else [resources]):
+            labels[resource] = f'background {number}' + (f', {SKIES[sky]}' if isinstance(resources, list) and sky < len(SKIES) else '')
+    return {resource: label for resource, label in labels.items() if type(resource) is int}
+
+
 def import_library_image(project, library, resource, episode=None):
     if library.game_id != project.game:
         raise ProjectError('The library must match the project game')

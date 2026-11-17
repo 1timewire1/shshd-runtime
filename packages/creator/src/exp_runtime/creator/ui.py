@@ -181,7 +181,11 @@ class LibraryBrowser(QDialog):
         try:
             if selector and selector.startswith('addon:'):
                 self.addon = selector[len('addon:'):]
-                self.items.addItems([str(i) for i in addon_asset_ids(self.library, self.addon)])
+                from .assets import addon_asset_labels
+                labels = addon_asset_labels(self.library, self.addon)        # Surviving Hollywood's portraits and silhouettes
+                ids = addon_asset_ids(self.library, self.addon)
+                ids.sort(key=lambda i: (i not in labels, i))                 # the named pictures first
+                self.items.addItems([f'{i} · {labels[i]}' if i in labels else str(i) for i in ids])
                 return
             self.episode = self.library.open_episode(selector) if selector else None
             ids = (self.episode.archive.entries if self.episode else self.library.base_members)
@@ -217,7 +221,7 @@ class LibraryBrowser(QDialog):
         """An add-on's resource: a picture is shown, and a sound or cutscene is named. Copying only takes pictures and sounds."""
         ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         try:
-            resource = int(text)
+            resource = int(text.split(' ', 1)[0])
             data = self.library.addon(self.addon)[1].read(resource)
             copyable = True
             if is_image(data):

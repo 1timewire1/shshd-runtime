@@ -108,7 +108,7 @@ def create_server(root):
     @read_tool(name='asset_list')
     def library_assets(library: str, episode: str | None = None, kind: str | None = None,
                        query: str = '', offset: int = 0, limit: int = 50, addon: str | None = None) -> dict:
-        """Browse supplied resources with type, dimensions and audio duration. Offset >=0; limit 1–200. Numeric IDs are not invented names."""
+        """Browse supplied resources with type, dimensions and audio duration. Offset >=0; limit 1–200. Numeric IDs are not invented names; an add-on whose spec says what its pictures are (shshw: portraits, silhouettes, backgrounds) names them, and query matches those names."""
         from .catalog import library_assets
         return library_assets(workspace, library, episode=episode, kind=kind, query=query, offset=offset, limit=limit, addon=addon)
 

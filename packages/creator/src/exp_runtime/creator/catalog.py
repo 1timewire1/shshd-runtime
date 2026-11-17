@@ -8,11 +8,14 @@ from .model import ProjectError
 def library_assets(workspace, library, *, episode=None, kind=None, query='', offset=0, limit=50, addon=None):
     page(offset, limit)
     with ContentLibrary(workspace.path(library)) as content:
+        labels = {}
         if addon:
             held = content.addon(addon)
             if held is None:
                 raise ProjectError(f'The library has no {addon} add-on')
             read, ids = held[1].read, sorted(held[1].entries)
+            from .assets import addon_asset_labels
+            labels = addon_asset_labels(content, addon)
         else:
             resources = content.open_episode(episode) if episode else content
             read = resources.archive.read if episode else content.read_asset
@@ -23,10 +26,11 @@ def library_assets(workspace, library, *, episode=None, kind=None, query='', off
         index = offset
         while index < len(ids) and index < offset + 200 and len(found) < limit:
             resource = ids[index]; index += 1
-            if query.casefold() not in str(resource): continue
+            name = labels.get(resource)
+            if query.casefold() not in str(resource) and query.casefold() not in (name or '').casefold(): continue
             info = inspect_asset(read(resource))
             if kind and info['type'] != kind: continue
-            found.append(dict(id=resource, name=None, **info))
+            found.append(dict(id=resource, name=name, **info))
         return dict(assets=found, total_resources=len(ids), scanned=index - offset,
                     next_offset=index if index < len(ids) else None)
 

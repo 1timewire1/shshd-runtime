@@ -318,6 +318,10 @@ These came with the Surviving Hollywood translation and work on any SHS project 
 - **Fill with stat changes…** on a Message node writes a `Stat changes` page, a line per property you pick. A `{+expression}`
   placeholder (in any text) shows `+` before a rise: `Looks: {+prop(0, 501)}` reads `Looks: +3`, `Looks: -2` or `Looks: 0`.
 
+**Browse library images…** names Surviving Hollywood's pictures from its add-on (`shshw`): each portrait by the demo's number,
+the same facing left, its eight silhouettes and its backgrounds by sky, listed first; MCP's `asset_list` names them too and
+finds them by name. Take one by reference (**Use from add-on**) for a character's portrait.
+
 ### Optional art
 
 **Optional art…** (SHS projects) lets an optional add-on stand in for your own pictures while a player has it and its switch

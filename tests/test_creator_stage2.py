@@ -342,5 +342,20 @@ class OptionalArt(unittest.TestCase):
         self.assertTrue(optional_art_offered(resources, 'hollywood_art'))
 
 
+
+class HollywoodArtNames(unittest.TestCase):
+    def test_its_portraits_silhouettes_and_backgrounds_are_named(self):
+        import json
+        from exp_runtime.creator.assets import addon_asset_labels
+        spec = dict(portraits={'2012': 27012}, flipped={'2012': 27112}, silhouettes=[27200, 27201],
+                    backgrounds={'1504': [26012, 26013, 26014]})
+        library = FakeLibrary(shshw=FakeArchive({26998: json.dumps(spec).encode(), 27012: b'', 27112: b'', 27200: b''}))
+        self.assertEqual(addon_asset_labels(library, 'shshw'), {
+            27012: 'portrait 2012', 27112: 'portrait 2012, facing left', 27200: 'silhouette 1', 27201: 'silhouette 2',
+            26012: 'background 1504, day', 26013: 'background 1504, night', 26014: 'background 1504, sunset'})
+        self.assertEqual(addon_asset_labels(FakeLibrary(shsbrew=FakeArchive({26998: b'{"catch": {}}'})), 'shsbrew'), {})
+        self.assertEqual(addon_asset_labels(FakeLibrary(), 'shshw'), {})
+
+
 if __name__ == '__main__':
     unittest.main()
