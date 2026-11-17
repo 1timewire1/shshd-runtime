@@ -40,6 +40,7 @@ from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    SHARED_PREFERENCES, default_library, group_episodes, preference_defaults, remember_library,
                    shared_preference)
+from .minigames import MINIGAMES
 from .runtime import SaveError, Session
 from .settings import AppSettings
 from . import frame_shape
@@ -53,6 +54,9 @@ from .vm import VMError
 
 ERRORS = (ContentError, SaveError, VMError, OSError, ValueError, pygame.error)
 AUTOSAVE_MS = 60000     # SHSEngine::onTick saves the game every 60 s of play
+# ...but not while a minigame plays (owner, 2026-11-16): a save is a stalled frame (109 ms on the g54 in the X360 Diss
+# Battle), so one that falls due mid-game waits until the game is over, when the story has the screen again.
+AUTOSAVE_HELD = MINIGAMES | {'arena_entrance', 'arena_frame', 'arena_menu', 'arena_info', 'arena_exit'}
 # This fork: the HD launch waits at most this long past its loading screen for the update check (it usually finishes
 # during loading), so an offer comes before "Play with sound?"; a later answer waits for the idle main menu.
 UPDATE_WAIT = 2.5
@@ -2338,6 +2342,12 @@ class Application:
             logging.warning('Automatic save failed: %s', error)
             return None
 
+    def minigame_playing(self):
+        """Whether the story is in a minigame (AUTOSAVE_HELD), whose frames a save would stall."""
+        session = self.game.session if self.game else None
+        pending = session.pending if session is not None else None
+        return pending is not None and pending.name in AUTOSAVE_HELD
+
     def discard_unloadable_save(self, path):
         """`SHSEngine::onTick`, a load that fails (`loadGame` result 1): the save file is deleted and the error dialog "Save file was
         corrupt. Save file could not be loaded. Deleting save file." (string 228) is shown at the episode menu. The file is kept
@@ -2815,7 +2825,7 @@ class Application:
         if self.screen == 'game':
             self.game.tick(elapsed)
             self.autosave_age += elapsed
-            if self.autosave_age > AUTOSAVE_MS:                            # SHSEngine::onTick, in the playing mode
+            if self.autosave_age > AUTOSAVE_MS and not self.minigame_playing():     # SHSEngine::onTick, playing
                 self.autosave()
             if self.game.session.episode_ended:
                 self.return_to_menu()

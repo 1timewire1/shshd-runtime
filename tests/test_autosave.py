@@ -22,6 +22,7 @@ class AutosaveTests(unittest.TestCase):
             refresh_saves=Mock(), flush_drops=Mock(), return_to_menu=Mock(), cancel_pointer=Mock(),
             _sync_menu_music=Mock(), settings=SimpleNamespace(check_for_updates=False), update_prompt=None)
         self.app.autosave = lambda **kwargs: self.module.Application.autosave(self.app, **kwargs)
+        self.app.minigame_playing = lambda: self.module.Application.minigame_playing(self.app)
 
     def tick(self, elapsed):
         self.module.Application.tick(self.app, elapsed)
@@ -35,6 +36,20 @@ class AutosaveTests(unittest.TestCase):
         self.app.save_screenshot.assert_not_called()                 # only leaving the app photographs the game
         self.tick(30000)
         self.app.state.checkpoint.assert_called_once()
+
+    def test_a_save_due_in_a_minigame_waits_for_its_end(self):
+        """Not native (owner, 2026-11-16): a save is a stalled frame, 109 ms on the g54 in the Diss Battle."""
+        for name in ('x360_battle', 'word_game', 'arena_frame'):
+            self.app.game.session.pending = SimpleNamespace(name=name)
+            self.app.autosave_age = 0
+            self.tick(59000)
+            self.tick(30000)                                          # due, and held
+            self.app.state.checkpoint.assert_not_called()
+            self.app.game.session.pending = SimpleNamespace(name='dialogue')
+            self.tick(16)                                             # the game over: saved at once
+            self.app.state.checkpoint.assert_called_once_with(self.app.game.session)
+            self.assertEqual(self.app.autosave_age, 0)
+            self.app.state.checkpoint.reset_mock()
 
     def test_leaving_the_app_saves_once_until_the_game_is_entered_again(self):
         lost = self.pygame.event.Event(self.pygame.WINDOWFOCUSLOST)
