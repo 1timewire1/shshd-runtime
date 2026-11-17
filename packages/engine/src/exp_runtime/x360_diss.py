@@ -92,7 +92,7 @@ def head(angle):
 @dataclass
 class DissPractice:
     phase: str = OPENING
-    phase_ms: int = OPENING_MS
+    phase_ms: float | int = OPENING_MS              # (a frame is 50/3 ms, so whole or fractional: the save loader checks types)
     started: bool = False
     tutorial: bool = False                          # the first practice's screen is still to come
     budget: int = 0                                 # time not yet played, in thirds of a ms
@@ -104,9 +104,9 @@ class DissPractice:
     tier: int = 1                                   # GoodNotesType
     velocity: int = DEFAULT_VELOCITY                # Wheel.Velocity
     reversed: bool = False                          # Wheel.Direction left
-    angle: float = WHEEL_START                      # the wheel's Ang
-    arm_ms: float = -1                              # how far into PUSH, or -1 at rest
-    block_ms: int = 0                               # BlockInputTimed
+    angle: float | int = WHEEL_START                # the wheel's Ang
+    arm_ms: float | int = -1                        # how far into PUSH, or -1 at rest (an undo save at rest: owner, 2026-11-16)
+    block_ms: float | int = 0                       # BlockInputTimed
     elements: list = field(default_factory=lambda: [_element() for _ in ELEMENTS])
     touching: list = field(default_factory=list)    # the elements in the trigger, as it counts them
     touched: int = -1                               # elementTouched

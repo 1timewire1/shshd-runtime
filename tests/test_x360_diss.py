@@ -267,6 +267,20 @@ class RuleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             again.validate()
 
+    def test_the_save_loader_takes_it_at_every_frame(self):
+        """Through the loader's type check, from the opening to the score (owner, 2026-11-16: an undo save taken as it
+        came up, its arm at rest at -1 in a float field, wouldn't load; a frame of 50/3 ms left fractions in int ones)."""
+        from exp_runtime.runtime import _typed_value
+        game, random = DissPractice(), Dealer()
+        for frame in range(2000):
+            self.assertEqual(_typed_value(json.loads(json.dumps(asdict(game))), DissPractice), game, (frame, game.phase))
+            if game.phase == READY or frame % 7 == 0:
+                game.press()
+            game.tick((1, 16, 17, 33, 50, 250)[frame % 6], random)
+            if game.phase == ENDED:
+                break
+        self.assertEqual(game.phase, ENDED)
+
 
 NOTE_CAMERA = [-.0175, 3.0619, -11.7855, .6349, 18.7875, .9874, 20.875]
 
