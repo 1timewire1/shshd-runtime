@@ -46,9 +46,9 @@ your libraries and saves. See [the Android app](docs/ANDROID_APP.md).
 The iPhone/iPad app is unsigned: sign it with your own Apple ID or a signing
 tool before installing it. See [the iOS app](docs/IOS_APP.md).
 
-To make episodes, download `exp-runtime-creator-v0.6.1-<target>.zip` (or
-`.tar.gz` for Linux) and open **EXP Runtime Creator**. The Creator has separate
-downloads for the same four desktop targets. See [the creator guide](docs/CREATOR.md).
+To make episodes, install the creator from a release's Python wheels (see
+[Python components](#python-components)) and run `shshd-creator`. This fork
+has no standalone Creator app yet. See [the creator guide](docs/CREATOR.md).
 
 For development builds, open **Actions → Builds** (or **Actions → Android
 APK** for Android), choose a successful run, and download its platform
@@ -243,8 +243,8 @@ remain shared.
 
 ## Python components
 
-The project builds six wheels (`shshd-runtime` and `shshd-runtime-formats`,
-`-engine`, `-player`, `-shs`, `-cod`), attached to each GitHub release. This
+The project builds seven wheels (`shshd-runtime` and `shshd-runtime-formats`,
+`-engine`, `-player`, `-shs`, `-cod`, `-creator`), attached to each GitHub release. This
 fork does not publish to PyPI. Install from a release's downloaded wheels:
 
 ```sh

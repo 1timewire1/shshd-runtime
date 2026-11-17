@@ -5,20 +5,19 @@ Runtime and the original games. It exports the native CSPUD `.exp` container
 with KiWi v2 bytecode. Authored scripts pass checks against the original
 SHS Android, SHS iOS and CoD iOS loaders and interpreters; full playback in
 the original apps remains unverified. See the compatibility details below.
-The creator was introduced in v0.6.0. Download the `exp-runtime-creator-v0.6.1-<target>`
-archive from Releases for Windows, Linux or macOS, extract it, and open
-**EXP Runtime Creator**. Keep the complete app or executable directory together.
-Python and Qt are bundled. Alternatively, install with pip:
+The creator came from exp-runtime v0.6.0. This fork has no standalone Creator
+app yet (it needs work for the HD features first), so install it from a
+release's Python wheels (Python 3.10 or newer; pip fetches Qt):
 
 ```sh
-python -m pip install 'exp-runtime[creator]>=0.6.1'
-exp-creator
+python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.0.2"
+shshd-creator
 ```
 
 To run from this checkout:
 
 ```sh
-uv run --locked --extra creator exp-creator
+uv run --locked --extra creator shshd-creator
 ```
 
 The screenshots below use an authored example episode, **The Lantern Club**.
@@ -473,14 +472,14 @@ compatibility; a compatible installation is not currently available for it.
 
 ## Python API and package boundaries
 
-`exp-runtime-creator` contains the headless document model and compiler and
-depends only on `exp-runtime-formats`. Its `[desktop]` extra adds Qt for Python
+`shshd-runtime-creator` contains the headless document model and compiler and
+depends only on `shshd-runtime-formats`. Its `[desktop]` extra adds Qt for Python
 (`PySide6-Essentials`), the existing desktop player and both game adapters. The
 umbrella's `[creator]` extra selects that complete editor. Ordinary player
 installs and desktop/iOS player bundles exclude the creator and Qt.
 
-`python -m pip install 'exp-runtime[creator]>=0.6.1'`
-installs the visual editor. Source checkouts and locally built wheels support
+`python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.0.2"`
+installs the visual editor from a release's wheels. Source checkouts and locally built wheels support
 the same authoring API.
 
 ```python
@@ -529,15 +528,12 @@ relocate unknown native pointers. No original game content is bundled.
 
 ## Standalone builds and MCP
 
-CI builds and smoke-tests separate **EXP Runtime Creator** downloads for Windows
-x64, Linux x64, macOS arm64 and macOS x64. The creator uses its kiwi-and-hammer
-icon and includes the player needed for preview. Existing player/iOS artifacts
-continue to exclude the editor, Qt and MCP server dependencies.
-
-```sh
-uv run --locked --extra build --extra creator python tools/build_desktop.py --creator
-uv run --locked --extra build --extra creator python tools/package_desktop.py --creator --smoke-test
-```
+Upstream exp-runtime builds separate **EXP Runtime Creator** downloads; this
+fork doesn't yet (its build tools have no `--creator` option), since the editor
+needs work for the HD features first. The creator ships as the
+`shshd-runtime-creator` wheel on each release, and CI tests it there. The
+player downloads (desktop, Android and iOS) exclude the editor, Qt and MCP
+server dependencies.
 
 For automation, the optional **creator-mcp** extra runs a stdio MCP server using
 the same model/compiler and debugger. See [MCP.md](MCP.md) for installation,

@@ -6,15 +6,15 @@ It uses the same model and compiler as the desktop creator. Projects are
 ordinary `.expproj` files; no game assets are supplied.
 
 ```sh
-uv run --locked --extra creator-mcp exp-creator-mcp --workspace /path/to/stories
+uv run --locked --extra creator-mcp shshd-creator-mcp --workspace /path/to/stories
 ```
 
-Install the server with pip:
+Install the server with pip, from a release's Python wheels:
 
 ```sh
-python -m pip install 'exp-runtime[creator-mcp]>=0.6.1'
+python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.0.2"
 # Equivalent component-only install:
-python -m pip install 'exp-runtime-creator[mcp]>=0.6.1'
+python -m pip install --find-links ./wheels "shshd-runtime-creator[mcp]==1.0.2"
 ```
 
 This extra installs the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x),
@@ -28,24 +28,24 @@ project's Python 3.10 support.
 Create a workspace directory, then register the installed entry point:
 
 ```sh
-codex mcp add exp_creator -- /absolute/path/to/venv/bin/exp-creator-mcp --workspace /absolute/path/to/stories
+codex mcp add shshd_creator -- /absolute/path/to/venv/bin/shshd-creator-mcp --workspace /absolute/path/to/stories
 codex mcp list
 ```
 
 The equivalent Codex configuration is:
 
 ```toml
-[mcp_servers.exp_creator]
-command = "/absolute/path/to/venv/bin/exp-creator-mcp"
+[mcp_servers.shshd_creator]
+command = "/absolute/path/to/venv/bin/shshd-creator-mcp"
 args = ["--workspace", "/absolute/path/to/stories"]
 startup_timeout_sec = 20
 tool_timeout_sec = 60
 ```
 
-Use `Scripts/exp-creator-mcp.exe` on Windows. For source development, set
+Use `Scripts/shshd-creator-mcp.exe` on Windows. For source development, set
 `command` to the absolute path of `uv` and use arguments
-`["run", "--directory", "/path/to/exp-runtime", "--locked", "--extra",
-"creator-mcp", "exp-creator-mcp", "--workspace", "/path/to/stories"]`.
+`["run", "--directory", "/path/to/shshd-runtime", "--locked", "--extra",
+"creator-mcp", "shshd-creator-mcp", "--workspace", "/path/to/stories"]`.
 
 Codex also supports `enabled_tools` and `disabled_tools` for a smaller exposed
 catalog. See the official [MCP setup](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
@@ -55,8 +55,8 @@ For other clients supporting `mcpServers`, use:
 ```json
 {
   "mcpServers": {
-    "exp_creator": {
-      "command": "/absolute/path/to/venv/bin/exp-creator-mcp",
+    "shshd_creator": {
+      "command": "/absolute/path/to/venv/bin/shshd-creator-mcp",
       "args": ["--workspace", "/absolute/path/to/stories"]
     }
   }
