@@ -358,6 +358,13 @@ preserving closing text and translations. Arbitrary original imports retain
 their native resource payloads and expose native blocks instead of adding
 inferred story metadata.
 
+**Import (shshd-runtime).** An episode carrying this record was made in the
+creator, and SHSHD Runtime files it under **User-Created Episodes**, listed
+after the official categories, rather than in Premium Content, the fallback for
+an episode no catalog knows (owner, 2026-11-17; `content.authored_fields`). A
+translation's own category, from its title's tag, comes first. Importing an
+episode again files a copy added before this rule.
+
 ## Presentation extension (shshd-runtime)
 
 An episode may contain resource **3** beginning with `SHSHD-PRESENTATION\0`,

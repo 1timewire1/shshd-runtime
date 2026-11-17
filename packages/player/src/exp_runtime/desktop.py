@@ -1818,6 +1818,10 @@ class Desktop:
         self._sync_story_scale()
         self.buttons = []
         action = self.session.pending
+        if getattr(getattr(self, 'nr_arena_renderer', None), 'pad_cursor', None) is not None:
+            arena = getattr(self.session.engine, 'nr_arena', None)
+            if action is None or action.name != 'arena_frame' or arena is None or not arena.keypad or arena.time_up:
+                self.nr_arena_renderer.pad_cursor = self.x360_arena_renderer.pad_cursor = None   # (_arena_pad's)
         if action is not None and action.name == 'dialogue':
             self._prime_games()
         if self.session.engine.panel.background_id >= 0:
@@ -4665,6 +4669,8 @@ class Desktop:
         key = event.key
         if action.name in ('arena_entrance', 'arena_exit'):
             return key in ARENA_KEYS or key in ARENA_NUMBER_KEYS          # New Rules takes no keys meanwhile
+        if action.name == 'arena_frame' and self._arena_pad(event):
+            return True
         if action.name == 'arena_frame':
             code = ARENA_KEYS.get(key)
             if code is None:
@@ -4679,6 +4685,35 @@ class Desktop:
         if key in KEYS_ACTIVATE:
             focus = self._arena_renderer().focus(action)
             self.command(('arena_answer', focus if focus is not None else 0))
+            return True
+        return False
+
+    def _arena_pad(self, event):
+        """Sequences with a controller (owner, 2026-11-17): it is played on the number keys 1-6 around the ring (765),
+        and a controller has none. While they show and the game runs, the D-pad (or stick) moves a highlight around
+        them, in their order round the ring, and confirm presses the highlighted one; before the first move, and while
+        a bubble shows ("Press OK to start"), confirm is OK as always. Keyboards, touch and the other arena games are
+        unchanged. True when the event was used."""
+        from .desktop_nr_arena import KEYPAD
+        arena = getattr(self.session.engine, 'nr_arena', None)
+        renderers = [r for r in (getattr(self, 'nr_arena_renderer', None), getattr(self, 'x360_arena_renderer', None))
+                     if r is not None]
+        if arena is None or not arena.keypad or arena.time_up or not renderers:
+            for renderer in renderers:
+                renderer.pad_cursor = None
+            return False
+        if getattr(event, 'controller', None) is None:
+            return False
+        cursor = renderers[0].pad_cursor
+        step = {pygame.K_RIGHT: 1, pygame.K_DOWN: 1, pygame.K_LEFT: -1, pygame.K_UP: -1}.get(event.key)
+        if step is not None:
+            cursor = 0 if cursor is None else (cursor + step) % len(KEYPAD)
+            for renderer in renderers:
+                renderer.pad_cursor = cursor
+            return True
+        if event.key in KEYS_ACTIVATE and cursor is not None and not any(arena.bubbles):
+            # (a bubble, "Press OK to start" among them, waits for OK: confirm stays OK while one shows)
+            self.command(('arena_key', 48 + int(KEYPAD[cursor])))
             return True
         return False
 

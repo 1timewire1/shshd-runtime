@@ -706,6 +706,15 @@ class NRArenaRenderer:
             rect = skin.nodes['hint']
             skin.blit(surface, 'frame/4/22', rect.x, rect.y, origin=False)
 
+    # shshd-runtime (owner, 2026-11-17): a controller has no number keys, so in Sequences its D-pad moves a highlight around
+    # the six keys and its confirm presses that one (Desktop._arena_pad); None while no controller has moved it.
+    pad_cursor = None
+
+    def key_lit(self, arena, i):
+        """Whether the number key at KEYPAD[i] is drawn lit: as it flashes when pressed (766), or under the pad's
+        highlight."""
+        return (arena.keypad_flash_ms > 0 and arena.keypad_flash == i) or self.pad_cursor == i
+
     def _keypad(self, surface, arena, ring):
         """765: the number keys 1-6 around the ring (their slots' places at full size), 766's key flashing."""
         count = len(arena.slots) or 1
@@ -716,7 +725,7 @@ class NRArenaRenderer:
             y = self._row_y(arena, ring, self._ring_y(ring, a, 100), i, 100)
             if 2 <= i <= 4:
                 y -= self.item_height + score_font.height
-            font = score_font if arena.keypad_flash_ms > 0 and arena.keypad_flash == i else self.font(ITEM_FONT)
+            font = score_font if self.key_lit(arena, i) else self.font(ITEM_FONT)
             font.draw_line(surface, ch, x - font.advance(ch), y)
             self.targets.append((pygame.Rect(x - 24, y - 12, 48, 48), ('arena_key', 48 + int(ch))))
 

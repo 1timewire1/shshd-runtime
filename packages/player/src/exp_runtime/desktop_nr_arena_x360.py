@@ -646,7 +646,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         from .desktop_nr_arena import KEYPAD
         for i, ch in enumerate(KEYPAD):
             cell = self._panel_cell(arena, ring, i)
-            flashing = arena.keypad_flash_ms > 0 and arena.keypad_flash == i
+            flashing = self.key_lit(arena, i)
             image = self.text_surface('badaboom_white' if not flashing else 'badaboom', ch, PANEL_LABEL,
                                       None if not flashing else (255, 200, 40))
             top = 2 <= i <= 4
@@ -1023,7 +1023,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             y = self._row_y(arena, ring, self._ring_y(ring, a, 100), i, 100)
             if 2 <= i <= 4:
                 y -= self.item_height + 22
-            flashing = arena.keypad_flash_ms > 0 and arena.keypad_flash == i
+            flashing = self.key_lit(arena, i)
             image = self.text_surface('badaboom_white' if not flashing else 'badaboom', ch, 24,
                                       None if not flashing else (255, 200, 40))
             self.blit(surface, image, x - 14, y + 2, anchor='midtop')

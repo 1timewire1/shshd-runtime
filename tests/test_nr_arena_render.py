@@ -253,6 +253,44 @@ class ArenaKeyTests(unittest.TestCase):
         self.key(ui, pygame.K_ESCAPE)                       # Escape still pauses
         self.assertEqual(ui.command.call_args.args[0], ('menu',))
 
+    def test_a_controller_plays_sequences_number_keys_with_a_highlight(self):
+        # Owner, 2026-11-17: Sequences is played on the number keys 1-6 around the ring, which a controller lacks.
+        import pygame
+        from exp_runtime.desktop_nr_arena import KEYPAD
+        ui = self.desktop('arena_frame')
+        ui.session.engine.nr_arena = arena = SimpleNamespace(keypad=True, time_up=0, keypad_flash=-1, keypad_flash_ms=0,
+                                                             bubbles=[None, None])
+        self.key(ui, pygame.K_RETURN, 'south')               # before the highlight moves, confirm is still OK
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', -5))
+        ui.command.reset_mock()
+        self.key(ui, pygame.K_RIGHT, 'right')                # the first move shows the highlight on the first key
+        self.key(ui, pygame.K_DOWN, 'down')
+        ui.command.assert_not_called()
+        self.assertEqual(ui.nr_arena_renderer.pad_cursor, 1)
+        self.assertTrue(ui.nr_arena_renderer.key_lit(arena, 1))
+        self.assertFalse(ui.nr_arena_renderer.key_lit(arena, 0))
+        self.key(ui, pygame.K_RETURN, 'south')
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', 48 + int(KEYPAD[1])))
+        arena.bubbles = [['press ok to start', -1, 0], None]  # a bubble waits for OK: confirm is OK meanwhile
+        self.key(ui, pygame.K_RETURN, 'south')
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', -5))
+        arena.bubbles = [None, None]
+        for _ in range(2):
+            self.key(ui, pygame.K_LEFT, 'left')              # round the ring, past the first key to the last
+        self.key(ui, pygame.K_RETURN, 'south')
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', 48 + int(KEYPAD[-1])))
+        self.key(ui, pygame.K_RIGHT)                         # a keyboard's arrows and digits are as before
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', -4))
+        self.key(ui, pygame.K_3)
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', 51))
+        arena.time_up = 1                                    # time's up: the controller's keys are the arena's again
+        self.key(ui, pygame.K_RIGHT, 'right')
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', -4))
+        self.assertIsNone(ui.nr_arena_renderer.pad_cursor)
+        arena.time_up, arena.keypad = 0, False               # another game, without the number keys: unchanged
+        self.key(ui, pygame.K_DOWN, 'down')
+        self.assertEqual(ui.command.call_args.args[0], ('arena_key', -2))
+
     def test_the_arenas_last_picture_fades_out_over_the_next_screen(self):
         import pygame
         from unittest.mock import patch

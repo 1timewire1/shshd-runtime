@@ -146,6 +146,34 @@ def legacy_fields(titles, game, episode_id=None):
     return {}
 
 
+def authored_fields(archive, record):
+    """shshd-runtime (owner, 2026-11-17): an episode made in the Creator carries its authoring record (resource 2,
+    authored.py, written by every export), and is listed under User-Created Episodes rather than falling back to
+    Premium Content. A translation's own category (legacy_fields) comes first: some translators build through the
+    Creator's compiler. Returns {category} or {}."""
+    if record.get('category') or record.get('legacy'):
+        return {}
+    from .authored import authoring_record
+    from .episode_index import USER_CREATED_LABEL
+    try:
+        found = authoring_record(archive)
+    except ContentError:
+        found = None                    # (a damaged authoring record: it plays as before, filed as before)
+    return {'category': USER_CREATED_LABEL} if found is not None else {}
+
+
+def _with_authored(record, data):
+    """An already imported episode filed as authored_fields says, so importing a Creator episode again moves a copy
+    imported before the category existed."""
+    if record.get('category') or record.get('legacy') or 'file' not in record:
+        return record
+    try:
+        fields = authored_fields(ExpArchive(data), record)
+    except ContentError:
+        return record
+    return dict(record, **fields) if fields else record
+
+
 def _with_legacy_order(record, game):
     """An already imported translation with its place as the game now gives it (legacy_fields), so importing it again
     picks up a new order. Its title's tag is long gone, so this goes by the `legacy` it was recorded with."""
@@ -1503,7 +1531,8 @@ class ContentLibrary:
                             repaired.add(sha)
                     continue
                 if sha in records:
-                    records[sha] = _with_legacy_order(_with_episode_alias(records[sha], name), self.game_id)
+                    records[sha] = _with_authored(
+                        _with_legacy_order(_with_episode_alias(records[sha], name), self.game_id), data)
                     if (sha in listed and sha not in repaired and 'file' in records[sha]
                             and not (self.directory / records[sha]['file']).is_file()):
                         # Its file went missing (Verify Library removes a damaged one): this copy restores it.
@@ -1520,6 +1549,7 @@ class ContentLibrary:
                               scripts=sorted(programs), file=f'content/{sha}.exp', **source,
                               **episode_index_fields(archive, programs))
                 record.update(legacy_fields(record['titles'], self.game_id, meta.episode_id))
+                record.update(authored_fields(archive, record))
                 revision = episode_revision(archive)
                 if revision is not None:
                     record['revision'] = revision

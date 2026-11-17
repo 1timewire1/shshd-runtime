@@ -10,7 +10,11 @@
   the Creator caught up with this fork: playtest and MCP play or skip every translated minigame and cutscene; Surviving
   Hollywood as a primary add-on, the quest journal, answer details, the word grid's part score and stat-change pages;
   optional art from Hollywood and the DSi; Reflex with your own icons; BREW-style calendars with school days, events and
-  date cards; and New Rules' minigames in their arena.
+  date cards; and New Rules' minigames in their arena. Its episodes are listed under **User-Created Episodes**, after
+  the official ones, instead of Premium Content (re-import one added before to move it), and the SHS novel's Extended
+  adaptation joins the novel's bonus chapter under Special SHS Novel Content.
+- **Sequences with a controller** (owner, 2026-11-17): New Rules' number-key game, which a controller couldn't play,
+  takes a highlight moved round its six keys with the D-pad or stick and pressed with confirm.
 - **Third-party notices** in both desktop apps (`THIRD_PARTY_NOTICES.txt`, generated at build time), and first-launch
   steps for the unsigned builds ([DISTRIBUTION.md](docs/DISTRIBUTION.md#first-launch)).
 - **The Android app** ([ANDROID_APP.md](docs/ANDROID_APP.md); begun in @andymenard's fork, merged 2026-11-03): the

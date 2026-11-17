@@ -21,7 +21,7 @@ episodes take a season from SHS's pack numbering (pack 1001 is not a season here
 import re
 
 from ..episode_catalog import basename
-from ..episode_index import PickerRow, build_chronological_rows, episode_label, sort_key, title_case
+from ..episode_index import USER_CREATED_LABEL, PickerRow, build_chronological_rows, episode_label, sort_key, title_case
 
 VOLUME_ONE = 'VOLUME ONE'
 VOLUME_ONE_TITLE = 'Volume One: The Maskmaker'            # the catalogue's base-game title; also bank 13 string 182
@@ -123,6 +123,8 @@ def category(record, catalog, *, bundled=lambda record: False):
     """The catalogue category a record is listed under (as written, e.g. "VOLUME TWO", "Season 7")."""
     if bundled(record):
         return VOLUME_ONE
+    if record.get('category'):
+        return record['category']       # shshd-runtime: set on import (content.authored_fields: User-Created Episodes)
     label = catalog.category(record)
     if label and label.strip():
         return label.strip()
@@ -165,6 +167,8 @@ def build_rows(records, catalog, *, bundled=lambda record: False):
         number = volume_number(row.title)
         if number is not None:
             return 0, number, ''
+        if title == USER_CREATED_LABEL.casefold():
+            return 3, 0, ''                 # shshd-runtime: the Creator's episodes, last
         return (1, TRAILING.index(title), '') if title in TRAILING else (2, 0, title)
     result = []
     for key, members in rows.items():

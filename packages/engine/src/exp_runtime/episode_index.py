@@ -19,6 +19,12 @@ INDEX_VERSION = 2
 SIGNATURE_SIZE = 32
 OVERLAP_THRESHOLD = 0.9
 PREMIUM_LABEL = 'Premium Content'
+# shshd-runtime (owner, 2026-11-17): episodes made in the Creator (its authoring record, resource 2: content.py
+# authored_fields) are listed under a category of their own, last, rather than falling back to Premium Content.
+USER_CREATED_LABEL = 'User-Created Episodes'
+# The SHS novel's Extended adaptation (tools/translate/novel_patch.py, pack 31500) is listed with the novel's other
+# bonus content (owner, 2026-11-17).
+NOVEL_PACK = 31500
 VOTE_PACKS = (1000, 2000, 3000, 4000, 5000)
 # Pack ids of the season packs: 101 = Season 1, 201 = Season 2 ... 1201 = Season 12 (100 per season, +1).
 _SEASON_PACK = re.compile(r'^(\d+)01$')
@@ -275,7 +281,9 @@ def episode_category(record, variant, catalog, *, mega_label, novel_label, bundl
     """
     from .episode_catalog import basename
     if record.get('category'):
-        return record['category']        # shshd-runtime: set on import (content.legacy_fields)
+        return record['category']        # shshd-runtime: set on import (content.legacy_fields, authored_fields)
+    if record['pack_id'] == NOVEL_PACK:
+        return novel_label               # shshd-runtime: the novel's Extended adaptation (no catalog knows its pack)
     other = STANDARD if variant == HD else HD
     pack_season = season_label(record)
     for source in (variant, other):
@@ -325,7 +333,8 @@ def build_rows(records, variants, catalog, *, mega_label='Mega Packs', novel_lab
             rows.setdefault(title.casefold(), [title, []])[1].extend(moved)
     result = [PickerRow(f'category:{key}', label, tuple(sorted(episodes, key=sort_key)))
               for key, (label, episodes) in rows.items() if episodes]
-    result.sort(key=lambda row: (row.title.casefold() != mega_label.casefold(), row.title.casefold() in GENERIC,
+    result.sort(key=lambda row: (row.title.casefold() == USER_CREATED_LABEL.casefold(),
+                                 row.title.casefold() != mega_label.casefold(), row.title.casefold() in GENERIC,
                                  sort_key(row.episodes[0])))
     return result
 
