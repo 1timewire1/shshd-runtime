@@ -52,6 +52,21 @@ def validate_shs11(kind, p):
                 raise ProjectError(f'Reflex round {i} needs a gauge and a hold time')
 
 
+# Reflex's icons: a frame of '11's sheet (0-13, shs11_games.SHEET_ICONS) or the project's own picture (26000 up; OWN_ICON).
+REFLEX_ICONS = ('right', 'wrong', 'skull')
+SHEET_ICONS, OWN_ICON = 14, 26000
+
+
+def validate_reflex_icons(p, own_pictures):
+    """Each Reflex round's icons are '11's sheet frames or the project's own pictures (`own_pictures`: their numbers)."""
+    for i, r in enumerate(p['rounds'], 1):
+        for field in REFLEX_ICONS:
+            value = r[field]
+            if not (0 <= value < SHEET_ICONS or value >= OWN_ICON and value in own_pictures):
+                raise ProjectError(f'Reflex round {i}: {field} is an icon of \'11\'s sheet (0-{SHEET_ICONS - 1}) or one of the '
+                                   'project\'s own pictures')
+
+
 CATCH_KINDS = {'angled': ANGLED, 'sideways': SIDEWAYS, 'orbit': ORBIT}
 CATCH_ADDON, CATCH_SPEC = 'shsbrew', 26998       # the add-on's catch art and its spec (desktop_brew_catch)
 CATCH_MOST = 20                                  # brew_catch.MAX_ITEMS

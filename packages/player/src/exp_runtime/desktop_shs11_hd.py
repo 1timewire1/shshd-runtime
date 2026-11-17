@@ -24,7 +24,7 @@ from .desktop_word_hd import (ATLAS, EFFECT_SLOTS, FRAME, HEADING_LINES, HEADING
 from .graphics import opaque
 from .hd_gl import to_pil
 from .shs.grid_layout import clamp, ease
-from .shs11_games import (GRID_TEXT, AGE, BAD, BARS, BARS_SHOWN, BONUS_SHOWN_MS, CUE, CUE_MS, DEAL, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, HIDDEN,
+from .shs11_games import (GRID_TEXT, OWN_ICON, REFLEX_TEXT, SHEET_ICONS, AGE, BAD, BARS, BARS_SHOWN, BONUS_SHOWN_MS, CUE, CUE_MS, DEAL, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, HIDDEN,
                           LOOK, PENALTY, PICTURE, PLAY, READY, RIGHT, RIGHT_PICTURE, SELECT, SHOWN, SHUT_MS, SHUTTING, SKULL, SKULL_PICTURE, TIME_UP, TIME_UP_MS,
                           WRONG, WRONG_PICTURE)
 
@@ -42,6 +42,19 @@ GAUGE_TILE = 88
 POPUP_TITLES = {'shs11_memory': 'Memory', 'shs11_reflex': 'Reflex'}
 MEMORY_BOXES = {GOAL: 'goal', LOOK: 'look', SHOWN: 'select', BAD: 'careful', READY: 'ready'}
 REFLEX_BOXES = {GOAL: 'goal', GAUGE: 'gauge', SELECT: 'select', BARS: 'bars', PENALTY: 'penalty', SKULL: 'skull', READY: 'ready'}
+# Without '11's addon (a Creator episode's Reflex with its own icons; owner, 2026-11-17): the sheet's box, bars drawn in its green,
+# and a gauge of plain bars with a round marker, in place of the addon's pictures.
+PLAIN_BOX = (74, 64)
+BAR_GREEN, BAR_EDGE = (70, 190, 70, 255), (20, 90, 20, 255)
+GAUGE_TRAVEL, GAUGE_HEIGHT = 300, 22
+GAUGE_TRACK, GAUGE_FILL, GAUGE_MARKER = (20, 40, 80), (70, 190, 70), (250, 250, 250)
+
+
+def icon_area(frames, box):
+    """Where an episode's own icon goes in '11's icon box: where its own icons sit (sheet frames 0-13), as a Rect. Their bars
+    overlap the icon's right side, as on '11's own icons."""
+    rects = [pygame.Rect(f[4], f[5], f[2], f[3]) for f in frames[:SHEET_ICONS]]
+    return rects[0].unionall(rects[1:]).clip(pygame.Rect(0, 0, *box))
 
 
 class Shs11HdRenderer(HdWordRenderer):
@@ -99,21 +112,49 @@ class Shs11HdRenderer(HdWordRenderer):
         """A Reflex icon and its bars, in the sheet's own box, as a PIL image with its width in board units."""
         code -= ICON_BASE
         picture, bars = code // 10, code % 10
-        spec = self._spec()[0]['reflex']['icons']
+        loaded = self._spec() if self.has_addon() else None
+        spec = loaded[0]['reflex']['icons'] if loaded is not None else None
         key = ('tile', code)
         found = self._pictures.get(key)
         if found is None:
-            sheet = self.picture(spec['picture'])
-            box = pygame.Surface(spec['box'], pygame.SRCALPHA).convert_alpha()
-            x, y, w, h, ox, oy = spec['frames'][picture][:6]
-            part = sheet.subsurface((x, y, w, h)).copy()
-            part.fill(ICON_TINT, special_flags=pygame.BLEND_RGBA_MULT)
-            box.blit(part, (ox, oy))
-            for frame in BAR_FRAMES[:bars]:
-                x, y, w, h, ox, oy = spec['frames'][frame][:6]
-                box.blit(sheet, (ox, oy), (x, y, w, h))
+            box = pygame.Surface(spec['box'] if spec else PLAIN_BOX, pygame.SRCALPHA).convert_alpha()
+            if picture >= OWN_ICON:
+                # The episode's own picture (owner, 2026-11-17), as it is: the author's colours, not the cube letters' blue.
+                import io
+                own = pygame.image.load(io.BytesIO(self.resources.read_asset(picture)), 'own.png').convert_alpha()
+                # Where '11's icons sit in the box (beside its bars), or most of a plain box above its bars.
+                area = (icon_area(spec['frames'], spec['box']) if spec is not None
+                        else pygame.Rect(round(box.get_width() * .1), round(box.get_height() * .06),
+                                         round(box.get_width() * .8), round(box.get_height() * .72)))
+                scale = min(area.width / own.get_width(), area.height / own.get_height())
+                own = pygame.transform.smoothscale(own, (max(1, round(own.get_width() * scale)), max(1, round(own.get_height() * scale))))
+                box.blit(own, own.get_rect(center=area.center))
+            else:
+                sheet = self.picture(spec['picture'])
+                x, y, w, h, ox, oy = spec['frames'][picture][:6]
+                part = sheet.subsurface((x, y, w, h)).copy()
+                part.fill(ICON_TINT, special_flags=pygame.BLEND_RGBA_MULT)
+                box.blit(part, (ox, oy))
+            if spec is not None:
+                sheet = self.picture(spec['picture'])
+                for frame in BAR_FRAMES[:bars]:
+                    x, y, w, h, ox, oy = spec['frames'][frame][:6]
+                    box.blit(sheet, (ox, oy), (x, y, w, h))
+            else:
+                self.plain_bars(box, bars)
             found = self._pictures[key] = to_pil(box), box
         return found
+
+    @staticmethod
+    def plain_bars(box, bars):
+        """An icon's bars without the addon's art: up to three green bars along the box's foot, the sheet's way of showing them."""
+        width, height = box.get_size()
+        bar_w, bar_h, gap = round(width * .2), max(3, round(height * .09)), round(width * .06)
+        left = (width - (3 * bar_w + 2 * gap)) // 2
+        for n in range(bars):
+            rect = pygame.Rect(left + n * (bar_w + gap), height - bar_h - 2, bar_w, bar_h)
+            pygame.draw.rect(box, BAR_GREEN, rect)
+            pygame.draw.rect(box, BAR_EDGE, rect, 1)
 
     def question_mark(self):
         """Memory's `?`, which the cube font hasn't got: '11's letter font's, in the cube letters' blue."""
@@ -242,7 +283,30 @@ class Shs11HdRenderer(HdWordRenderer):
             found = self._pictures[key] = face
         self.canvas.blit(found, found.get_rect(center=centre))
 
+    def plain_gauge(self, game):
+        """The gauge without the addon's bar and marker: a track, its fill up to the marker, and a round marker, between the
+        same two small cube faces with the wrong and right icons."""
+        span = GAUGE_TRAVEL * GAUGE_SCALE
+        left, top = (FRAME[0] - span) / 2, GAUGE_Y
+        drop = 0
+        if game.phase == ENTER:
+            drop = round((max(0, game.phase_ms) / ENTER_MS) ** 2 * (top + GAUGE_TILE))
+        height = round(GAUGE_HEIGHT * GAUGE_SCALE)
+        y = top + GAUGE_TILE / 2 - height / 2 - drop
+        track = pygame.Rect(round(left), round(y), round(span), height)
+        pygame.draw.rect(self.canvas, GAUGE_TRACK, track, border_radius=height // 2)
+        at = round(span * min(1000, max(0, game.marker_at)) / 1000)
+        if at > 0:
+            pygame.draw.rect(self.canvas, GAUGE_FILL, (track.left, track.top, at, height), border_radius=height // 2)
+        pygame.draw.circle(self.canvas, GAUGE_MARKER, (track.left + at, track.centery), round(height * .7))
+        middle = round(top + GAUGE_TILE / 2) - drop
+        self.gauge_tile(TOP_FACE[4], game.row[WRONG_PICTURE], (round(left - GAUGE_TILE / 2 - 6), middle))
+        self.gauge_tile(TOP_FACE[2], game.row[RIGHT_PICTURE], (round(left + span + GAUGE_TILE / 2 + 6), middle))
+
     def draw_gauge(self, game):
+        if not self.has_addon():
+            self.plain_gauge(game)
+            return
         spec = self._spec()[0]['reflex']
         marker, bar = spec['marker'], spec['bar']
         scale = GAUGE_SCALE
@@ -321,7 +385,7 @@ class Shs11HdRenderer(HdWordRenderer):
             self.game, self.turns, self._effects = game, {}, None
             if reflex:                          # now, not in the middle of its first set
                 self.warm_icons(game)
-        spec = None if not reflex and (game.grid or not self.has_addon()) else self._spec()[0]
+        spec = None if (game.grid if not reflex else False) or not self.has_addon() else self._spec()[0]
         texts = GRID_TEXT if spec is None else spec['text']
         background = session.pending.details.get('background_id', session.engine.panel.background_id)
         size = self.canvas_size()
@@ -371,7 +435,7 @@ class Shs11HdRenderer(HdWordRenderer):
         if reflex:
             key = REFLEX_BOXES.get(game.phase) if game.tutorial and game.wait_ms <= 0 else None
             if key is not None:
-                self.box(POPUP_TITLES[name], spec['reflex']['text'][key])
+                self.box(POPUP_TITLES[name], (spec['reflex']['text'] if spec is not None else REFLEX_TEXT)[key])
         else:
             key = MEMORY_BOXES.get(game.phase) if game.tutorial or game.phase == GOAL else None
             if game.tutorial and game.phase == DEAL:

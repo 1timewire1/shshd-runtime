@@ -73,6 +73,20 @@ GRID_TEXT = dict(
     careful='Be careful: selecting a wrong box will result in a time penalty!',
     ready='Ready to try the real thing? Good luck!',
     time_up="Time's up!")
+# Reflex's right, wrong and skull pictures are frames of '11's icon sheet (0 to SHEET_ICONS - 1), or in an episode made in the
+# Creator its own pictures (OWN_ICON and up; owner, 2026-11-17), which a player without '11's addon draws in the HD word game's look.
+SHEET_ICONS = 14
+OWN_ICON = 26000
+REFLEX_TEXT = dict(
+    goal='Tap the right icons as quickly as you can.',
+    gauge='The gauge shows two icons: the right one at its right end, the wrong one at its left.',
+    select='Tap right icons on the grid below to fill the gauge.',
+    bars='An icon shows one, two or three bars. The more bars a right icon has, the more it fills the gauge.',
+    penalty='A wrong icon with more bars costs you more, so tap with care.',
+    skull='Avoid the skull: it costs you the most.',
+    ready='Ready to try the real thing? Good luck!')
+
+
 GRID_BONUS, GRID_LETTER_POINTS = 20, 10
 GRID_LETTER_MS, GRID_LIMIT_MS, GRID_LIMIT_LETTER_MS = 570, 4250, 700
 GRID_PICK_MS = 500                      # the pace a target assumes: a pick this often

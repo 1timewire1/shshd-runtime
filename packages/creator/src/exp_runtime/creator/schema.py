@@ -111,8 +111,10 @@ NOTES = {
                   'from it, or given as {picture: [width, height]}). Result: the score, 0 to target. Branches on it set the skip '
                   "prompt's stretches.",
     'shs11_reflex': "shshd-runtime only, behind minigames_available. SHS '11's Reflex: tap the right icons to fill a gauge. "
-                    "right, wrong and skull are pictures in '11's icon sheet; the four odds are out of 100. Result as Memory's. "
-                    'Drawn from the HD word game or the shs11 addon.',
+                    "right, wrong and skull are icons of '11's sheet (0-13), or the project's own pictures (26000 up: "
+                    'asset_import_image); the four odds are out of 100. Result as Memory\'s. With every icon your own it '
+                    'needs no add-on (drawn in the HD word game\'s look; with the shs11 addon in either look), else the '
+                    'shs11 addon.',
     'x360_slot': "shshd-runtime only, behind minigames_available. The X360 prototype's slot machine, drawn from its "
                  'addon; stores the points (the bulbs taken, 0 to 5) in result.',
     'x360_leash': "shshd-runtime only, behind minigames_available. The X360 prototype's leash game, drawn from its "

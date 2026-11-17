@@ -60,6 +60,33 @@ class CreatorShs11(unittest.TestCase):
         with self.assertRaisesRegex(ProjectError, 'shs11 add-on'):
             compile_project(reflex)
 
+    def test_reflex_with_the_authors_own_icons_needs_no_add_on(self):
+        # Decision A's second half (owner, 2026-11-17): right, wrong and skull from the project's own pictures.
+        from io import BytesIO
+        from PIL import Image
+        from exp_runtime.creator.addons import node_addon, require_node_addon
+        from types import SimpleNamespace
+        reflex = project('shs11_reflex')
+        reflex.addons = []
+        data = BytesIO(); Image.new('RGB', (8, 8)).save(data, format='PNG')
+        ids = [reflex.add_image(name, data.getvalue()).id for name in ('Right', 'Wrong', 'Skull')]
+        params = deepcopy(DEFAULTS['shs11_reflex'])
+        for r in params['rounds']:
+            r.update(right=ids[0], wrong=ids[1], skull=ids[2])
+        reflex.nodes[1].params = params
+        self.assertIsNone(node_addon(reflex, 'shs11_reflex'))
+        compile_project(reflex)                                         # no add-on asked for
+        require_node_addon(reflex, SimpleNamespace(addon=lambda addon_id: None), 'shs11_reflex')
+        self.assertEqual(reflex.addons, [])
+        params['rounds'][0]['skull'] = 8                                # one of '11's own again: its add-on is needed
+        with self.assertRaisesRegex(ProjectError, 'shs11 add-on'):
+            compile_project(reflex)
+        reflex.addons = [dict(id='shs11', revision=2)]
+        for bad in (14, 26999):                                         # not a sheet icon; not one of the project's pictures
+            params['rounds'][0]['skull'] = bad
+            with self.assertRaisesRegex(ProjectError, "sheet"):
+                compile_project(reflex)
+
     def test_memory_takes_the_add_on_when_the_library_has_it_and_keeps_it(self):
         from types import SimpleNamespace
         from exp_runtime.creator.addons import drop_unused_addons, require_node_addon

@@ -3,8 +3,8 @@
 higher (`av`.j) and the gauge at (8, 69) of N73's in the banner's place. As there, nothing here decides anything in the game."""
 from . import graphics as pygame
 from .desktop_shs11_memory import ART, FRAME, Shs11MemoryRenderer
-from .shs11_games import (AGE, BARS, BARS_SHOWN, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, PENALTY, PICTURE, READY,
-                          RIGHT_PICTURE, SELECT, SHUTTING, SKULL, TIME_UP, WRONG_PICTURE)
+from .shs11_games import (AGE, BARS, BARS_SHOWN, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, OWN_ICON, PENALTY, PICTURE,
+                          READY, RIGHT_PICTURE, SELECT, SHUTTING, SKULL, TIME_UP, WRONG_PICTURE)
 
 GAUGE_PLACE = (26, 221)
 LOW_BOX_Y = 333                         # the box over the grid (`av`.d, `r.a` 104 of N73's)
@@ -40,9 +40,28 @@ class Shs11ReflexRenderer(Shs11MemoryRenderer):
         for picture in spec['marker']['pictures']:
             yield lambda picture=picture: self.image(picture)
 
+    def own_icon(self, picture, area):
+        """An episode's own picture for an icon (a Creator episode's; owner, 2026-11-17), fitted to where the sheet's icons sit."""
+        key = ('own', picture)
+        found = self._images.get(key)
+        if found is None:
+            import io
+            image = pygame.image.load(io.BytesIO(self.resources.read_asset(picture)), 'own.png').convert_alpha()
+            scale = min(area.width * ART / image.get_width(), area.height * ART / image.get_height())
+            found = self._images[key] = pygame.transform.smoothscale(
+                image, (max(1, round(image.get_width() * scale)), max(1, round(image.get_height() * scale))))
+        return found
+
     def icon(self, surface, frame_number, centre):
-        """A frame of the icon sheet, in its box, with the box's middle at `centre`."""
+        """A frame of the icon sheet, in its box, with the box's middle at `centre`; an episode's own picture in its place."""
         spec = self._reflex()['icons']
+        if frame_number >= OWN_ICON:
+            from .desktop_shs11_hd import icon_area
+            area = icon_area(spec['frames'], spec['box'])
+            image = self.own_icon(frame_number, area)
+            left, top = centre[0] - round(spec['box'][0] * ART / 2), centre[1] - round(spec['box'][1] * ART / 2)
+            surface.blit(image, image.get_rect(center=(left + round(area.centerx * ART), top + round(area.centery * ART))))
+            return
         frame = spec['frames'][frame_number]
         left, top = centre[0] - round(spec['box'][0] * ART / 2), centre[1] - round(spec['box'][1] * ART / 2)
         surface.blit(self.piece(spec['picture'], frame), (left + round(frame[4] * ART), top + round(frame[5] * ART)))

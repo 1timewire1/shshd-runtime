@@ -325,6 +325,8 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('home_result', 'away_result'):
             if p[key] and not p[key].isidentifier():
                 raise ProjectError(f'{label}: {key} must be a variable name')
+    if node.kind == 'shs11_reflex':
+        minigames.validate_reflex_icons(p, {a.id for a in project.assets if a.data is not None and is_image(a.data)})
     if node.kind == 'grid' and p['part_score'] and not p['part_score'].isidentifier():
         raise ProjectError(f'{label}: part_score must be a variable name')
     if node.kind == 'quest':

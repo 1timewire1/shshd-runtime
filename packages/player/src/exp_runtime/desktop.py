@@ -4686,8 +4686,9 @@ class Desktop:
         """What draws an SHS '11 game: its own look, or the word game's with the switch on and its art there."""
         game = self.session.engine.shs11_memory if action.name == 'shs11_memory' else None
         stands_in = game is not None and game.grid          # in a grid's place it always has a grid's look (owner, 2026-11-04)
-        # A Creator episode's Memory with no '11 addon: the same grid look, from SHS HD's art alone (owner, 2026-11-17).
-        bare = game is not None and self.shs11_hd is not None and not self.shs11_hd.has_addon()
+        # A Creator episode's Memory, or its Reflex with the author's own icons, with no '11 addon: the same grid look, from SHS
+        # HD's art alone (owner, 2026-11-17).
+        bare = self.shs11_hd is not None and not self.shs11_hd.has_addon()
         if self.shs11_hd is not None and (self.shs11_hd.art_available() if stands_in or bare
                                           else self.word_grid_skin and self.shs11_hd.available()):
             return self.shs11_hd

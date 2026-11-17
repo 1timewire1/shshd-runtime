@@ -14,7 +14,7 @@ NODE_ADDONS = {'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 's
                'x360_puzzle': 'shsx360', 'x360_diss': 'shsx360', 'x360_battle': 'shsx360', 'brew_catch': 'shsbrew'}
 # ...and the add-on a node plays from when the library has it, without needing it: SHS '11's Memory wears '11's own look with
 # its add-on, else SHS HD's art (owner, 2026-11-17). Added with the node when the library has it, and kept while the node is.
-OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11'}
+OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11'}
 # What a primary add-on brings (its settings that need its pictures and sounds; the runtime's ADDON_FEATURE_PACKS) and what any
 # declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
 ADDON_FEATURES = {
@@ -54,7 +54,18 @@ def node_addon(project, kind):
     primary wears that add-on's own skin and needs nothing from BREW's (profile TRANSLATED_CATCH_ADDON; owner, 2026-11-14)."""
     if kind == 'brew_catch' and any(entry.get('primary') and entry['id'] == 'shshw' for entry in project.addons):
         return 'shshw'
+    if kind == 'shs11_reflex' and reflex_own_icons(project):
+        return None             # the author's own icons: the add-on only gives it '11's look (decision A, 2026-11-17)
     return NODE_ADDONS.get(kind)
+
+
+def reflex_own_icons(project):
+    """Whether every Reflex node draws only the project's own pictures for its right, wrong and skull icons."""
+    from .features import parameters
+    from .minigames import REFLEX_ICONS, OWN_ICON
+    nodes = [node for node in project.nodes if node.kind == 'shs11_reflex']
+    return bool(nodes) and all(isinstance(r, dict) and all(type(r.get(f)) is int and r[f] >= OWN_ICON for f in REFLEX_ICONS)
+                               for node in nodes for r in parameters(node)['rounds'])
 
 
 class AddonsNeeded(ProjectError):
@@ -164,8 +175,9 @@ def set_primary_addon(project, library, addon_id, edition=''):
 def require_node_addon(project, library, kind):
     """A node playing an add-on's mini-game was added: the project declares that add-on (an extra unless it's the primary).
     One it only plays from when there (OPTIONAL_NODE_ADDONS) is declared if the library has it, and otherwise left out."""
-    optional = kind in OPTIONAL_NODE_ADDONS
-    addon_id = OPTIONAL_NODE_ADDONS.get(kind) or node_addon(project, kind)
+    needed = node_addon(project, kind)
+    optional = needed is None and kind in OPTIONAL_NODE_ADDONS
+    addon_id = needed or OPTIONAL_NODE_ADDONS.get(kind)
     if addon_id is None or any(entry['id'] == addon_id for entry in project.addons):
         return
     found = library.addon(addon_id) if library is not None else None

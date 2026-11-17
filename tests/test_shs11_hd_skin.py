@@ -57,6 +57,21 @@ class CubeTests(unittest.TestCase):
             self.assertEqual(renderer.cell_at(x, y), cell)
         self.assertIsNone(renderer.cell_at(5, 5))
 
+    def test_an_own_icon_without_the_addon_gets_plain_bars_and_texts(self):
+        # A Creator episode's Reflex with the author's own icons and no '11 addon (owner, 2026-11-17).
+        from io import BytesIO
+        from PIL import Image
+        from exp_runtime.desktop_shs11_hd import ICON_BASE, PLAIN_BOX
+        from exp_runtime.shs11_games import REFLEX_TEXT
+        data = BytesIO(); Image.new('RGBA', (40, 40), (250, 200, 30, 255)).save(data, format='PNG')
+        resources = SimpleNamespace(library=SimpleNamespace(addon=lambda name: None), read_asset=lambda r: data.getvalue())
+        renderer = self.renderer()(resources, None)
+        self.assertFalse(renderer.has_addon())
+        image, box = renderer.icon_tile(ICON_BASE + 26000 * 10 + 2)
+        self.assertEqual(box.get_size(), PLAIN_BOX)
+        self.assertEqual(tuple(box.get_at((PLAIN_BOX[0] // 2, round(PLAIN_BOX[1] * .45))))[:3], (250, 200, 30))   # the icon
+        self.assertEqual(set(REFLEX_TEXT), {'goal', 'gauge', 'select', 'bars', 'penalty', 'skull', 'ready'})
+
     def test_without_the_addon_it_isnt_available(self):
         renderer = self.renderer()(SimpleNamespace(library=SimpleNamespace(addon=lambda name: None)), None)
         self.assertFalse(renderer.available())
@@ -76,7 +91,7 @@ class SwitchTests(unittest.TestCase):
     @unittest.skipUnless(HAS_PILLOW, 'needs Pillow')
     def test_it_picks_who_draws_only_with_its_art_there(self):
         from exp_runtime.desktop import Desktop
-        own = SimpleNamespace(available=lambda: True)
+        own = SimpleNamespace(available=lambda: True, has_addon=lambda: True)
         ui = SimpleNamespace(word_grid_skin=True, shs11_hd=own, shs11_memory_renderer='memory', shs11_reflex_renderer='reflex',
                              session=SimpleNamespace(engine=SimpleNamespace(shs11_memory=None)))
         action = SimpleNamespace(name='shs11_reflex')
