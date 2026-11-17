@@ -148,6 +148,9 @@ class WordGrid(GameState):
     bad_prefix: list[int] = field(default_factory=list)
     dragging: bool = False
     score: int = 0
+    # shshd-runtime: the most letters of a word traced in their places so far (Surviving Hollywood's spelling scores a missed
+    # word by its letters typed right); kept by the engine when the grid closes, for service 224.
+    part_score: int = 0
     round: int = 0
     phase: int = -2
     phase_ms: int = 1000
@@ -361,6 +364,8 @@ class WordGrid(GameState):
         if ((self.problem.highlight and self.selection[0] not in self.starts)
                 or not any(word.startswith(self.selected_text) for word in self.problem.words)):
             self.bad_prefix.append(index)
+        text = self.selected_text
+        self.part_score = max([self.part_score, *(sum(a == b for a, b in zip(text, word)) for word in self.problem.words)])
         # Native move handler submits immediately when the full word matches.
         if self.selection[0] in self.starts and self.selected_text in self.problem.words:
             self.break_tiles(random)

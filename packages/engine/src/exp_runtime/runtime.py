@@ -536,6 +536,8 @@ class Session:
         else:
             if kind == 'football':
                 self.engine.football_scores = [game.home, game.away]
+            elif kind == 'word_grid':
+                self.engine.grid_part_score = game.part_score
             self.vm.resume(game.result if result is None else result)  # UI result cells are unchanged.
             self.pending = None
         setattr(self.engine, kind, None)
@@ -1398,7 +1400,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=40,
+        return dict(format='shs-runtime-save', version=41,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1452,7 +1454,7 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 41):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 42):
                 raise SaveError('Unsupported save format or version')
             # Version 38 adds the BREW games' catch game (brew_catch.py); an older save never had one open.
             if state['version'] < 38 and isinstance(state.get('engine'), dict):
@@ -1469,6 +1471,12 @@ class Session:
                 state['engine'].setdefault('shs11_tutorial_seen', False)
                 state['engine'].setdefault('shs11_reflex', None)
                 state['engine'].setdefault('shs11_reflex_tutorial_seen', False)
+            # Version 41 adds the word grid's part score (service 224); an older save had traced nothing toward one.
+            if state['version'] < 41 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('grid_part_score', 0)
+                if isinstance(state['engine'].get('word_grid'), dict):
+                    state['engine']['word_grid'].setdefault('part_score', 0)
             # Version 40 adds the Monday Planner's Diss Battle (x360_battle.py); an older save never had one.
             if state['version'] < 40 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)

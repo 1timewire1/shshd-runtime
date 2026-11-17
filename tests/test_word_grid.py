@@ -24,6 +24,16 @@ def resources(*, tutorial=False, targets='cat'):
     return Resources(program(*host_call(96, *args), 0x21, (0x1f, 0xfe01), words=[w & 0xffff for w in words]))
 
 
+def part_score_resources():
+    """resources(), then service 224 (the grid's part score), whose result the script hands on (0xfe)."""
+    words, refs = text_words('Find a word', 'CAT', 'cat', 'catx', 'Correct', 'Try again')
+    table = len(words)
+    words += [3, 2, *refs[:4], 1, 0, 1, -1]
+    args = [2, 200, 1000, 500, 0, -1, -1, 0, -1, 0, 0, 1, table, 1, refs[4], refs[5], 0, 0, 0, 0]
+    return Resources(program(*host_call(96, *args), *host_call(224), 0x21, (0x1f, 0xfe01),
+                             words=[w & 0xffff for w in words]))
+
+
 def tutorial_resources():
     words, refs = text_words('Find a word', 'CAT', 'cat', 'catx', '', 'Learn',
                              'Touch to continue.', 'Trace the word.', 'Try the hint.', 'Correct', 'Try again')
@@ -104,7 +114,7 @@ class GridTests(unittest.TestCase):
         self.assertEqual(restored.engine.random, s.engine.random)
         self.assertEqual(restored.engine.word_grid.selection, [0])
         current = restored.snapshot()
-        self.assertEqual(current['version'], 40)
+        self.assertEqual(current['version'], 41)
         for key, value in (('pop_ms', {}), ('explosions', []), ('glint_ms', 100_000_000)):
             self.assertEqual(current['engine']['word_grid'].pop(key), value)
         self.assertEqual(json.loads(json.dumps(current['engine']['word_grid'])), old['engine']['word_grid'])
@@ -271,3 +281,52 @@ class GridTests(unittest.TestCase):
             self.assertEqual(g.board,list('beirvbrrbriievdd'))
             self.assertEqual(g.starts,[14])
             self.assertEqual(Session.from_snapshot(r,s.snapshot()).snapshot(),s.snapshot())
+
+
+class GridPartScoreTests(unittest.TestCase):
+    """shshd-runtime: the most letters of the word traced in their places, read after the grid by service 224 (Surviving
+    Hollywood's rehearsals score a missed word by it, as the demo scores letters typed right)."""
+
+    def traced_c_then_a(self, s):
+        g = s.engine.word_grid
+        w = g.problem.width
+        c = g.board.index('c')
+        a = next(i for i, letter in enumerate(g.board)
+                 if letter == 'a' and max(abs(i % w - c % w), abs(i // w - c // w)) == 1)
+        s.grid_pointer('down', c)
+        s.grid_pointer('move', a)
+        s.grid_pointer('up')
+        return g
+
+    def test_a_missed_word_hands_on_its_letters_traced_right(self):
+        s = Session(part_score_resources()); s.advance(); play_phase(s)
+        g = self.traced_c_then_a(s)
+        self.assertEqual(g.part_score, 2)
+        self.assertEqual(json.loads(json.dumps(s.snapshot()))['engine']['word_grid']['part_score'], 2)
+        for _ in range(400):
+            a = s.tick(250)
+            if a.name != 'word_grid':
+                break
+        self.assertEqual((a.request.yield_id, a.request.args), (0xfe, (2,)))
+        self.assertEqual(s.engine.grid_part_score, 2)
+
+    def test_the_best_trace_counts_and_a_wrong_start_counts_nothing(self):
+        s = Session(part_score_resources()); s.advance(); play_phase(s)
+        g = s.engine.word_grid
+        s.grid_pointer('down', g.board.index('t')); s.grid_pointer('up')
+        self.assertEqual(g.part_score, 0)                     # t is the third letter, not the first
+        self.traced_c_then_a(s)
+        s.grid_pointer('down', g.board.index('c')); s.grid_pointer('up')
+        self.assertEqual(g.part_score, 2)                     # a shorter later trace doesn't lower it
+
+    def test_a_version_40_save_loads_with_no_part_score(self):
+        s = Session(part_score_resources()); s.advance(); play_phase(s)
+        old = json.loads(json.dumps(s.snapshot())); old['version'] = 40
+        del old['engine']['grid_part_score']; del old['engine']['word_grid']['part_score']
+        restored = Session.from_snapshot(s.resources, old)
+        self.assertEqual((restored.engine.grid_part_score, restored.engine.word_grid.part_score), (0, 0))
+        self.assertEqual(restored.snapshot()['version'], 41)
+
+
+if __name__ == '__main__':
+    unittest.main()

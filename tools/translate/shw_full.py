@@ -31,7 +31,7 @@ waits, as the demo's; Stats in Where to? shows money and the three stats; relati
 dropped; options the demo greys out (17) are left off the menu. The demo's numbers are kept.
 
 **Minigames** (owner, 2026-11-14): the action menus' routine (20) and word association (61) as SHS's timed word game (71), the
-catch games (63-65) as BREW's catch (221), spelling (62) as SHS's word grid (96). **Text**: every full build is lowercase, so
+catch games (63-65) as BREW's catch (221), spelling (62) as SHS's word grid (96) with its part score (224). **Text**: every full build is lowercase, so
 capitals come back by rule and word lists (`recase`; reference/Other Games/docs/SURVIVING_HOLLYWOOD_CASING.md for the owner).
 
 **Faces**: the cast's painted portraits (30, 31), some turned (TURNED). The 21 people the demo gives no portrait (Mom, Dad, the
@@ -192,11 +192,13 @@ DODGE_TITLE, DODGE_TEXT = 'Dodge the peanut butter!', 'Pick the moves that keep 
 DODGE_GOOD, DODGE_BAD = 'Dodge|Duck|Spin|Twirl', 'Catch|Grab|Taste|Snack'
 # Spelling (62, the rehearsals): SHS's word grid (96) holding the line's missing word, one board, as SHS '11's one-word boards
 # (shs11_story.memory_problems). Each rehearsal spells one word: found, the demo's score for spelling it whole (its length);
-# not, 0 (the demo's per-letter part score has no counterpart).
+# not, the grid's part score (service 224: the most letters of the word traced in their places), as the demo scores the
+# letters typed right when time runs out. Glamlet's soliloquy (11007) reads a middle grade from it (owner, 2026-11-17).
 GRID_FILLER = 'wb'
 GRID_SUCCESS, GRID_FAILURE = 'Bravo!', "Time's up!"
 GRID_PAGE = 'Find the missing word in the grid before time runs out: trace its letters in order.'
 GRID_MIN_SECONDS = 15
+GRID_PART_SCORE = 224
 THEATRE = 1522
 PUNCTUATION = ',.!?'
 
@@ -1096,8 +1098,8 @@ class Script:
 
     def spelling(self, pc, argc):
         """62: (list): the rehearsal's line with its missing word: SHS's word grid (96) holding that word; found, the word's
-        length (the demo's score for spelling it whole), else 0. Its Instructions line (the keypad's) becomes a page about the
-        grid."""
+        length (the demo's score for spelling it whole), else the grid's part score (224: its letters traced in their places).
+        Its Instructions line (the keypad's) becomes a page about the grid."""
         if not hasattr(self, '_lists'):
             self._lists = self.spelling_lists()
         lists = self._lists
@@ -1121,7 +1123,7 @@ class Script:
                 s.push(0); s.push(0); s.push(0); s.push(0)
                 s.call(96, 20)
                 s.push_result(); s.jump_if_nonzero(found)
-                s.result(0); s.jump(done)
+                s.call(GRID_PART_SCORE, 0); s.jump(done)
                 s.label(found)
                 s.result(length); s.jump(done)
                 s.label(other)

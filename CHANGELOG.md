@@ -110,7 +110,9 @@
   around them in KiWi: a **Where to?** choice of the places open now (`District: Place`, then Quest Journal and Stats), time
   badges on arrival, a date card each morning, **Stat changes** pages, the quest journal's pages. Its minigames are SHS's:
   the action menus and word association as the timed word game, the catch games as BREW's catch in the demo's skin, the
-  rehearsals' spelling as a one-word word grid. The demo's lowercase text gets its capitals back by rule and word list
+  rehearsals' spelling as a one-word word grid, where a missed word scores the letters traced in their places (service
+  224, save version 41; owner, 2026-11-17), as the demo scores the letters typed right, so Glamlet's soliloquy can give its
+  middle reaction. The demo's lowercase text gets its capitals back by rule and word list
   (reference/Other Games/docs/SURVIVING_HOLLYWOOD_CASING.md). Replayed against Tardy-Slip's engine on 16 random months, it
   says the same lines, runs the same scripts and holds the same numbers to the end.
 - **Quest Journal in the pause menu** for *The Bright Lights* (owner, 2026-11-14): the demo's journal (14 quests, about 25

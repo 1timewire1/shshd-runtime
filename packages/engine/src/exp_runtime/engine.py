@@ -18,6 +18,9 @@ from .x360_games import LeashGame, SlotMachine, X360_LEASH, X360_SLOT
 from .x360_diss import DissPractice, X360_DISS
 from .x360_battle import DissBattle
 from .x360_services import X360_BATTLE
+# shshd-runtime: the last word grid's part score, the most letters of its word traced in their places (word_grid.part_score),
+# read after service 96 as football's score is after 94 (95). Surviving Hollywood's rehearsals score a missed word by it.
+GRID_PART_SCORE = 224
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
 from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
@@ -227,6 +230,7 @@ class EngineState:
     grid_tutorials_seen: bool = False
     football: GameState | None = None
     football_scores: list[int | None] = field(default_factory=lambda: [None, None])
+    grid_part_score: int = 0                    # shshd-runtime: the last word grid's part score (service 224)
     next_dialogue_notice: str = ''
     notice: str = ''
     notice_ms: int = 0
@@ -1171,6 +1175,9 @@ class EngineState:
             self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1],
                                                   tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
             return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
+        if y == GRID_PART_SCORE:
+            need(0)
+            return complete('get_grid_part_score', self.grid_part_score)
         if y == BREW_CATCH:                                     # (likewise): the kind, target, spawn ms, speed, spread, chance, angle,
             if len(args) != 12:                                 # player's picture, list of items, table of sizes, sizes in it, and
                 need(11)                                        # (12th, optional) the story's cut-offs, for the skip prompt only

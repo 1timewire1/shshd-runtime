@@ -671,6 +671,16 @@ does (`FUN_0000af08`). It takes exactly one argument and nests at most 16 deep (
 (a halt) resumes the caller with 0. Native players and upstream exp-runtime
 stop at it as an unknown service. [BREW.md](BREW.md) has the season driver around it.
 
+## 5.6a The word grid's part score (shshd-runtime service 224)
+
+Service **224** takes no arguments and returns the last word grid's (96) **part score**: the most letters of one of its
+words traced in their places, counted on every cell added to a trace (`word_grid.part_score`; the engine keeps it as
+`grid_part_score` when the grid closes, and saves keep both, save version 41). A script reads it right after service 96, as
+it reads football's score with 95 after 94. Surviving Hollywood's translated rehearsals return it for a missed word, as the
+demo scores the letters typed right when time runs out (Tardy-Slip `web/shw/screens.js` `Spelling.check`), so Glamlet's
+soliloquy can give its middle reaction (owner, 2026-11-17). Native players and upstream exp-runtime stop at it as an
+unknown service.
+
 ## 5.7 The BREW packs' text and menus
 
 In the BREW translations (profile `TRANSLATED_ARTICLE_PACKS`, `TRANSLATED_BREW_MENU_PACKS`, `TRANSLATED_THREE_WORD_PACKS`), and
