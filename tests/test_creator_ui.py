@@ -195,6 +195,25 @@ class CreatorInspectorTests(unittest.TestCase):
             editor.dirty = False
             editor.close()
 
+    def test_optional_art_keeps_a_mapping_whose_add_on_isnt_here(self):
+        from unittest import mock
+        from io import BytesIO
+        from PIL import Image
+        from PySide6.QtWidgets import QDialog
+        from exp_runtime.creator.ui import Editor
+        editor = Editor(discover_library=False)
+        editor.show()
+        try:
+            data = BytesIO(); Image.new('RGB', (8, 8)).save(data, format='PNG')
+            picture = editor.project.add_image('Beach', data.getvalue())
+            editor.project.optional_art = {'shsdsi': {str(picture.id): 26001}}
+            with mock.patch.object(QDialog, 'exec', return_value=QDialog.DialogCode.Accepted):
+                editor.optional_art()
+            self.assertEqual(editor.project.optional_art, {'shsdsi': {str(picture.id): 26001}})
+        finally:
+            editor.dirty = False
+            editor.close()
+
     def test_the_quest_journal_dialog_keeps_its_stats(self):
         from unittest import mock
         from PySide6.QtWidgets import QDialog

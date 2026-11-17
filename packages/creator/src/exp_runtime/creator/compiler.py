@@ -424,6 +424,9 @@ def presentation_record(project):
     if project.native or project.game != 'shs' or project.pack_id in TRANSLATION_PACKS:
         return record                   # an original episode, or a translation: its game's own tables
     record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)
+    art = {addon: dict(sorted(table.items())) for addon, table in sorted(project.optional_art.items()) if table}
+    if art:
+        record['optional_art'] = art
     if project.journal or any(node.kind == 'quest' for node in project.nodes):
         title_form, lines_form = journal_forms(project)
         record['journal'] = dict(count=JOURNAL_COUNT_KEY, title=title_form, lines=lines_form,

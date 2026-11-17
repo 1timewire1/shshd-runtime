@@ -145,7 +145,7 @@ PRESENTATION_STATUS = {
     'date_first': equivalent('a free setting (Add-Ons panel)'), 'three_word_games': equivalent('a free setting (Add-Ons panel)'),
     'big_pickers': equivalent('a free setting (Add-Ons panel)'), 'minigames': emits('minigames_available'),
     'aliases': equivalent("an extra add-on's pictures and sounds"),
-    'optional_art': pending("an optional add-on's pictures in place of the episode's: not written yet (Stage 2)"),
+    'optional_art': equivalent("an optional add-on's pictures (Optional art…)"),
     'journal': emits('quest'),
 }
 

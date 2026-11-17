@@ -7,6 +7,8 @@ add-on imported and DSi Backgrounds on, an episode shows them when every backgro
 - in the eight stories the DSi ported (`stories`), whatever the DSi showed for that picture, its stand-in times included;
 - in any other episode, only a picture of the same location at the same time of day (`exact`).
 An episode's own picture that is plain black (a fade or flashback screen) needs no counterpart: it shows as it is.
+An episode made in the Creator may name the DSi location each of its own pictures is (presentation `optional_art`, `shsdsi`:
+its picture -> the location's left screen; owner, 2026-11-17), which counts as that picture's counterpart.
 The spec (resource SPEC) maps a smartphone bank picture to a DSi picture (`bank`: id -> [picture, exact]) and a DSi picture
 to its two screens (`screens`: picture -> [left resource, right resource]).
 
@@ -119,16 +121,31 @@ def picture_for(resources, background):
     return entry[0]
 
 
+def own_locations(resources, value):
+    """{the episode's picture: DSi picture} that its presentation record names (`optional_art`, `shsdsi`: a picture -> the
+    location's left screen), {} for none."""
+    from .content import declared
+    named = (declared(resources, 'optional_art') or {}).get(ADDON) or {}
+    lefts = {screens[0]: picture for picture, screens in value.get('screens', {}).items() if screens}
+    return {own: lefts[left] for own, left in named.items() if left in lefts}
+
+
 def episode_pictures(resources):
     """{background: DSi picture} for an episode that qualifies, None for one that doesn't (or without the add-on)."""
     value = spec(resources.library)
-    if value is None or not smartphone_episode(resources):
+    if value is None:
+        return None
+    own = own_locations(resources, value)
+    if not own and not smartphone_episode(resources):
         return None
     bank = value.get('bank', {})
     story = is_story(resources.record, value)
     shown = shown_backgrounds(resources.programs.values(), resources.exists)
     pictures = {}
     for background in shown:
+        if background in own:
+            pictures[background] = own[background]
+            continue
         entry = bank.get(str(background))
         if entry is None and background >= OWN_ART and plain_black(resources, background):
             continue                # its own black screen shows as it is, as it would beside the DSi's art

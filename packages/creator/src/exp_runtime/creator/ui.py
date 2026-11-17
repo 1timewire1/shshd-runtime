@@ -336,6 +336,7 @@ class Editor(QMainWindow):
         toolbox.addWidget(button)
         for label, callback in (('Characters…', self.characters), ('Translations…', self.translations),
                                 ('Emoticon images…', self.emoticon_images), ('Quest journal…', self.quest_journal),
+                                ('Optional art…', self.optional_art),
                                 ('Add-ons and settings…', self.addon_settings),
                                 ('Auto arrange', self.arrange), ('Copy nodes', self.copy),
                                 ('Paste nodes', self.paste), ('Duplicate nodes', self.duplicate)):
@@ -786,6 +787,58 @@ class Editor(QMainWindow):
             journal = [dict(label=label.text().strip(), key=key.value(), prefix=prefix.text())
                        for label, key, prefix in rows if label.text().strip()]
             self.set_project('journal', journal)
+            self.show_properties()
+
+    def optional_art(self):
+        """Pictures of an optional add-on shown in place of the project's own while that add-on is imported and its switch is
+        on (SHS, SHSHD Runtime): Surviving Hollywood's art by number, or a DSi location for each background."""
+        from .model import OPTIONAL_ART_ADDONS
+        from .optional_art import addon_pictures
+        if self.project.native:
+            self.error('Native projects keep their original presentation.'); return
+        if self.project.game != 'shs':
+            self.error('Optional art is for Surviving High School episodes.'); return
+        own = [a for a in self.project.assets if a.data is not None and is_image(a.data)]
+        if not own:
+            self.error('Add the pictures of your own that an add-on should stand in for first.'); return
+        try:
+            with self.open_library() as library:
+                choices = {addon: addon_pictures(library, addon) for addon in OPTIONAL_ART_ADDONS}
+        except (ContentError, OSError) as error:
+            self.error(error); return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Optional art')
+        form = QFormLayout(dialog)
+        intro = QLabel('An optional add-on can show its pictures in place of yours while a player has it and its switch is on '
+                       '(SHSHD Runtime). Players without it see yours, so the episode never needs it.')
+        intro.setWordWrap(True)
+        form.addRow(intro)
+        boxes = {}
+        for addon, switch in OPTIONAL_ART_ADDONS.items():
+            pictures = choices[addon]
+            heading = QLabel(f'{addon} ({switch})' + ('' if pictures else ': not in the library'))
+            heading.setStyleSheet('font-weight: bold')
+            form.addRow(heading)
+            table = self.project.optional_art.get(addon, {})
+            for asset in own:
+                current = table.get(str(asset.id))
+                values = [('Your own', None)] + pictures
+                if current is not None and all(value != current for _, value in values):
+                    values.append((f'{current} (not in the library)', current))
+                box = self.combo(values, current, lambda value: None)
+                box.setEnabled(len(values) > 1)
+                box.setObjectName(f'art_{addon}_{asset.id}')
+                form.addRow(f'{asset.id} · {asset.name}', box)
+                boxes[addon, asset.id] = box
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            art = {}
+            for (addon, resource), box in boxes.items():
+                if box.currentData() is not None:
+                    art.setdefault(addon, {})[str(resource)] = box.currentData()
+            self.set_project('optional_art', art)
             self.show_properties()
 
     def stat_changes_preset(self):

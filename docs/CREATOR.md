@@ -318,6 +318,14 @@ These came with the Surviving Hollywood translation and work on any SHS project 
 - **Fill with stat changes…** on a Message node writes a `Stat changes` page, a line per property you pick. A `{+expression}`
   placeholder (in any text) shows `+` before a rise: `Looks: {+prop(0, 501)}` reads `Looks: +3`, `Looks: -2` or `Looks: 0`.
 
+### Optional art
+
+**Optional art…** (SHS projects) lets an optional add-on stand in for your own pictures while a player has it and its switch
+is on: Surviving Hollywood's pictures by number (**Hollywood Art**), or a DSi location for each of your backgrounds (**DSi
+Backgrounds**; the DSi's two screens, as its own stories show them, once every background the episode can show has one). The
+add-on is never required: players without it see your pictures. The export writes the map into resource 3
+([SCHEMA.md](SCHEMA.md#presentation-extension-shshd-runtime)), and MCP's `project_update` takes it as `optional_art`.
+
 ## SHS HD side panels
 
 Faceplace and Decision Tree nodes target SHS HD and are rejected in CoD projects,

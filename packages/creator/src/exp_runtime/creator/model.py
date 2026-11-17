@@ -150,6 +150,10 @@ class Project:
     # shshd-runtime: the stats the quest journal shows above its quests (presentation `journal`), each {label, key, prefix}:
     # a property of owner 0 (a Score / property node keeps it), `$` before Money (owner, 2026-11-17).
     journal: list[dict] = field(default_factory=list)
+    # shshd-runtime: pictures an optional add-on draws in place of the project's own while its switch is on (presentation
+    # `optional_art`): {add-on: {"own picture": add-on resource}}. Surviving Hollywood's art (Hollywood Art) by number; a DSi
+    # location (DSi Backgrounds) by its left screen. The add-on stays optional: players without it show the project's own.
+    optional_art: dict = field(default_factory=dict)
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -222,6 +226,9 @@ FREE_SETTINGS = {'word_forms': '"a(n)" and "word(s)" picked by the word or numbe
 # A primary add-on's editions, where it serves more than one game: BREW's '07 and '08 stories have different switches.
 ADDON_EDITIONS = {'shsbrew': ('08', '07')}
 JOURNAL_STATS = 8                       # the most stats a quest journal shows
+# The optional add-ons whose pictures a project can show in place of its own (presentation `optional_art`), with the switch that
+# turns each on: Surviving Hollywood's (the profile's OPTIONAL_ART) and the DSi backgrounds (exp_runtime.dsi).
+OPTIONAL_ART_ADDONS = {'shshw': 'Hollywood Art', 'shsdsi': 'DSi Backgrounds'}
 
 
 def primary_addon(project):
@@ -350,6 +357,16 @@ def validate_structure(project: Project):
             raise ProjectError('A journal stat needs a label')
         _integer(stat['key'], 0, 32767, 'Journal stat key')
         _string(stat['prefix'], 'journal stat prefix', 4)
+    if not isinstance(project.optional_art, dict) or set(project.optional_art) - set(OPTIONAL_ART_ADDONS):
+        raise ProjectError('Optional art comes from ' + ' or '.join(OPTIONAL_ART_ADDONS))
+    for table in project.optional_art.values():
+        if not isinstance(table, dict) or len(table) > 2000:
+            raise ProjectError('Optional art maps the project\'s pictures to the add-on\'s')
+        for own, target in table.items():
+            if not isinstance(own, str) or not own.isdigit():
+                raise ProjectError('Optional art names a project picture by its number')
+            _integer(int(own), 26000, 32767, 'An optional-art picture')
+            _integer(target, 0, 32767, "An add-on's picture")
     if not isinstance(project.emoticons, list) or len(project.emoticons) != len(EMOTICONS):
         raise ProjectError(f'Emoticon images need exactly {len(EMOTICONS)} slots')
     for resource in project.emoticons:
@@ -473,6 +490,7 @@ def project_from_record(data):
         data.setdefault('options', {})
         data.setdefault('episode_version', None)
         data.setdefault('journal', [])
+        data.setdefault('optional_art', {})
         for node in data['nodes']:
             for option in node.get('options', ()):
                 if isinstance(option, dict):

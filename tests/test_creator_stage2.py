@@ -254,5 +254,93 @@ class HollywoodPrimary(unittest.TestCase):
         self.assertEqual(pack_setting(resources, 'TRANSLATED_FRAME_BACKDROP'), 26990)
 
 
+
+def png():
+    from io import BytesIO
+    from PIL import Image
+    output = BytesIO()
+    Image.new('RGB', (16, 16), (200, 40, 40)).save(output, format='PNG')
+    return output.getvalue()
+
+
+class FakeArchive:
+    def __init__(self, entries):
+        self.data = entries
+        self.entries = set(entries)
+
+    def read(self, resource):
+        return self.data[resource]
+
+
+class FakeLibrary:
+    """A library holding only the add-ons given, as content.ContentLibrary answers `addon`."""
+    game_id = 'shs'
+
+    def __init__(self, **addons):
+        self.addons_held = addons
+        self.dsi_backgrounds = self.hollywood_art = True
+
+    def addon(self, addon_id):
+        archive = self.addons_held.get(addon_id)
+        return None if archive is None else ({'addon': addon_id, 'title': addon_id, 'revision': 1, 'file': addon_id}, archive)
+
+
+def dsi_addon():
+    import json
+    spec = dict(screens={'Beach_Night': [26001, 26002], 'Classroom_Day': [26003, 26004]}, bank={}, stories=[])
+    return FakeArchive({26000: json.dumps(spec).encode(), 26001: b'l', 26002: b'r', 26003: b'l', 26004: b'r'})
+
+
+@unittest.skipUnless(__import__('importlib').util.find_spec('PIL'), 'needs Pillow')
+class OptionalArt(unittest.TestCase):
+    def project(self, art):
+        project = story(Node('b', 'background', next='a'), Node('a', text='Hi.', next='end'))
+        picture = project.add_image('Beach', png())
+        project.nodes[0].asset = picture.id
+        project.optional_art = art(picture.id)
+        return project, picture.id
+
+    def test_the_record_carries_it_and_the_add_on_stays_optional(self):
+        from exp_runtime.presentation import presentation_record
+        project, own = self.project(lambda own: {'shsdsi': {str(own): 26001}, 'shshw': {str(own): 26100}})
+        record = presentation_record(ExpArchive(compile_project(project)))
+        self.assertEqual(record['optional_art'], {'shsdsi': {own: 26001}, 'shshw': {own: 26100}})
+        self.assertNotIn('addons', record)
+        self.assertEqual(project.addons, [])
+
+    def test_it_is_checked(self):
+        for art in ({'shsbrew': {'26000': 1}}, {'shsdsi': {'12': 26001}}, {'shsdsi': {'x': 26001}}, {'shsdsi': {'26000': -1}}):
+            with self.subTest(art=art):
+                project, _ = self.project(lambda own: art)
+                with self.assertRaises(ProjectError):
+                    compile_project(project)
+
+    def test_a_picture_named_as_a_dsi_location_shows_it(self):
+        from exp_runtime import dsi
+        from exp_runtime.presentation import presentation_record
+        project, own = self.project(lambda own: {'shsdsi': {str(own): 26001}})
+        archive = ExpArchive(compile_project(project))
+        library = FakeLibrary(shsdsi=dsi_addon())
+        resources = SimpleNamespace(library=library, record={'pack_id': 30000, 'titles': ['Stage 2']},
+                                    presentation=presentation_record(archive), required_addons=(),
+                                    programs=archive.programs(), exists=lambda key: key in archive.entries)
+        self.assertEqual(dsi.episode_pictures(resources), {own: 'Beach_Night'})
+        resources.presentation = {}                         # unnamed, its own picture has no counterpart
+        self.assertIsNone(dsi.episode_pictures(resources))
+
+    def test_the_dialog_lists_each_add_on_s_pictures(self):
+        from exp_runtime.creator.optional_art import addon_pictures
+        library = FakeLibrary(shsdsi=dsi_addon(), shshw=FakeArchive({26100: png(), 26101: b'not a picture', 31000: png()}))
+        self.assertEqual(addon_pictures(library, 'shsdsi'), [('Beach_Night (DSi)', 26001), ('Classroom_Day (DSi)', 26003)])
+        self.assertEqual(addon_pictures(library, 'shshw'), [('26100 (shshw)', 26100), ('31000 (shshw)', 31000)])
+        self.assertEqual(addon_pictures(FakeLibrary(), 'shshw'), [])
+
+    def test_hollywood_art_reads_through_the_episode(self):
+        from exp_runtime.content import optional_art_offered
+        resources = SimpleNamespace(library=FakeLibrary(shshw=FakeArchive({26100: png()})),
+                                    presentation={'optional_art': {'shshw': {26000: 26100}}}, record={'pack_id': 30000})
+        self.assertTrue(optional_art_offered(resources, 'hollywood_art'))
+
+
 if __name__ == '__main__':
     unittest.main()

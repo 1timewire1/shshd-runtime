@@ -28,6 +28,7 @@ ADDON_FEATURES = {
               ()),
     'shsx360': (("The X360 frame around the scene", 'The MS3 Characters switch'),
                 ('The slot machine', 'The leash game', 'The jewel puzzle', 'Diss Practice')),
+    'shsdsi': ((), ('Optional art only (never required): your pictures shown as its DSi locations while DSi Backgrounds is on',)),
     'shshw': (("Surviving Hollywood's panel behind the scene", "The catch game in Hollywood's own look (nothing from BREW's)",
                "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
 }
