@@ -290,16 +290,16 @@ class GridPartScoreTests(unittest.TestCase):
     def traced_c_then_a(self, s):
         g = s.engine.word_grid
         w = g.problem.width
-        c = g.board.index('c')
-        a = next(i for i, letter in enumerate(g.board)
-                 if letter == 'a' and max(abs(i % w - c % w), abs(i // w - c // w)) == 1)
+        # Any c with an a beside it (the deal is random; the board always holds the word, so one exists).
+        c, a = next((c, a) for c in range(len(g.board)) for a in range(len(g.board))
+                    if g.board[c] == 'c' and g.board[a] == 'a' and max(abs(a % w - c % w), abs(a // w - c // w)) == 1)
         s.grid_pointer('down', c)
         s.grid_pointer('move', a)
         s.grid_pointer('up')
         return g
 
     def test_a_missed_word_hands_on_its_letters_traced_right(self):
-        s = Session(part_score_resources()); s.advance(); play_phase(s)
+        s = Session(part_score_resources()); s.engine.random = NativeRandom(1); s.advance(); play_phase(s)
         g = self.traced_c_then_a(s)
         self.assertEqual(g.part_score, 2)
         self.assertEqual(json.loads(json.dumps(s.snapshot()))['engine']['word_grid']['part_score'], 2)
@@ -311,7 +311,7 @@ class GridPartScoreTests(unittest.TestCase):
         self.assertEqual(s.engine.grid_part_score, 2)
 
     def test_the_best_trace_counts_and_a_wrong_start_counts_nothing(self):
-        s = Session(part_score_resources()); s.advance(); play_phase(s)
+        s = Session(part_score_resources()); s.engine.random = NativeRandom(1); s.advance(); play_phase(s)
         g = s.engine.word_grid
         s.grid_pointer('down', g.board.index('t')); s.grid_pointer('up')
         self.assertEqual(g.part_score, 0)                     # t is the third letter, not the first
@@ -320,7 +320,7 @@ class GridPartScoreTests(unittest.TestCase):
         self.assertEqual(g.part_score, 2)                     # a shorter later trace doesn't lower it
 
     def test_a_version_40_save_loads_with_no_part_score(self):
-        s = Session(part_score_resources()); s.advance(); play_phase(s)
+        s = Session(part_score_resources()); s.engine.random = NativeRandom(1); s.advance(); play_phase(s)
         old = json.loads(json.dumps(s.snapshot())); old['version'] = 40
         del old['engine']['grid_part_score']; del old['engine']['word_grid']['part_score']
         restored = Session.from_snapshot(s.resources, old)
