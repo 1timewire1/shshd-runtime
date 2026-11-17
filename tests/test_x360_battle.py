@@ -224,6 +224,28 @@ class DrawingTests(unittest.TestCase):
                 game.press()
             self.draw(game)
 
+    def test_the_rules_card_loads_what_play_draws_first(self):
+        """The first countdown frame loaded the deck's pictures, 430 ms on the g54 (2026-11-16): the rules card, held
+        for a press, loads them a piece a frame instead, so the start loads nothing new."""
+        game = xb.DissBattle.opened(ROUNDS, tutorial=True)
+        random = Random48()
+        game.tick(xb.OPENING_MS + 20, random)
+        for _ in range(40):
+            game.tick(FRAME, random)
+            self.draw(game)
+        game.tick(xb.TUTORIAL_MS, random)                  # (the card takes a press once its prompt shows)
+        self.assertEqual(self.renderer._warm, [])
+        def loaded():                                   # pictures read from the skin (not the arm's cut frames)
+            return {k for k in self.renderer._images if isinstance(k, int)}, set(self.renderer._fonts)
+        before = loaded()
+        game.press()
+        game.tick(100, random)
+        self.draw(game)
+        game.tick(xb.COUNTDOWN_MS, random)
+        self.draw(game)
+        self.assertEqual(game.phase, xb.RUNNING)
+        self.assertEqual(loaded(), before)
+
     def test_spikes_taunts_come_in_turn_from_six_seconds_and_none_at_the_start(self):
         from exp_runtime.desktop_x360_battle import TAUNT_HEIGHT
         game = xb.DissBattle.opened(ROUNDS, tutorial=False)

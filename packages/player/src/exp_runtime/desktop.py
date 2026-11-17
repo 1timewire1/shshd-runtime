@@ -47,6 +47,7 @@ from .desktop_brew_catch import BrewCatchRenderer
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
+from .x360_diss import SOUND_BAD as X360_SOUND_BAD, SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
@@ -2102,8 +2103,8 @@ class Desktop:
                             'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
                             'x360_battle': self.x360_battle_renderer, 'brew_catch': self.brew_catch_renderer,
                             'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
-                if action.name in ('shs11_memory', 'shs11_reflex'):
-                    self._warm_shs11_sounds(getattr(engine, action.name))
+                if action.name in ('shs11_memory', 'shs11_reflex', 'x360_diss', 'x360_battle'):
+                    self._warm_shs11_sounds(getattr(engine, action.name), action.name)
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
@@ -4751,17 +4752,20 @@ class Desktop:
             logging.warning('Preparing the minigames stopped: %s', error)
             self._priming = (key, iter(()))
 
-    def _warm_shs11_sounds(self, game):
-        """Decode a game's sounds as it opens, so that the first of each isn't decoded in the frame it plays in: one a
-        frame (all in its first frame was a hitch on a phone as a game opened, owner 2026-11-12); its opening plays
-        none, and any played sooner is decoded then, as it would be anyway."""
+    def _warm_shs11_sounds(self, game, kind=''):
+        """Decode a game's sounds as it opens ('11's and the X360 turntable's), so that the first of each isn't decoded
+        in the frame it plays in: one a frame (all in its first frame was a hitch on a phone as a game opened, owner
+        2026-11-12); its opening plays none, and any played sooner is decoded then, as it would be anyway."""
         if not self.sound_enabled:
             return
         if game is not self._shs11_warmed:
             self._shs11_warmed = game
-            hd_sounds = getattr(game, 'grid', False) or self.session.shs11_hd_sounds
-            self._shs11_to_warm = list(dict.fromkeys(
-                [a for assets in GRID_SOUNDS.values() for a in assets] if hd_sounds else SHS11_GAME_SOUNDS))
+            if kind in ('x360_diss', 'x360_battle'):     # the X360 turntable's (Diss Practice, the Diss Battle): its hits, 2026-11-16
+                assets = (*X360_SOUND_GOOD, X360_SOUND_BAD, X360_SOUND_REMIX)     # (g54: a first YEAH! cost 128 ms)
+            else:
+                hd_sounds = getattr(game, 'grid', False) or self.session.shs11_hd_sounds
+                assets = [a for assets in GRID_SOUNDS.values() for a in assets] if hd_sounds else SHS11_GAME_SOUNDS
+            self._shs11_to_warm = list(dict.fromkeys(assets))
         if self._shs11_to_warm:
             asset = self._shs11_to_warm.pop(0)
             try:

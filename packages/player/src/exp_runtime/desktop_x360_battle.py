@@ -49,6 +49,7 @@ class X360BattleRenderer(X360DissRenderer):
         now = game.now_ms
         if game.phase == TUTORIAL or (game.phase == OPENING and game.tutorial):
             self._rules(surface, game)
+            self._warm_up()
             return
         rise = 0
         if game.phase == OPENING:
@@ -74,6 +75,26 @@ class X360BattleRenderer(X360DissRenderer):
             surface.blit(words, words.get_rect(center=(FRAME[0] // 2, round(START_Y * self.k))))
         if game.phase == COUNTDOWN:
             self._countdown_digit(surface, game)
+
+    def _warm_up(self):
+        """While the rules card waits for its press, what play draws first, a piece a frame: the deck's pictures (else
+        all loaded on the first countdown frame: 105 ms on a PC, ~430 ms on the g54 after a cold start, 2026-11-16),
+        the countdown and score digits, the stamps, the hit sprites and the fonts. Once a renderer; later battles reuse it."""
+        if self._warm is None:
+            spec = self.x360()[0]
+            parts, pictures = spec['booth']['parts'], spec['pictures']
+            loads = [parts['body']['id'], parts['record']['id'], parts['spindle']['id'], parts['seams']['id'],
+                     parts['arm']['atlas'], spec['booth']['digits']['atlas']]
+            loads += [pictures[name] for name in STAMPS.values() if name in pictures]
+            loads += [pictures[name] for name in pictures if name.startswith(('fx_spark_', 'fx_puff_'))]
+            self._warm = [lambda resource=resource: self.image(resource) for resource in loads]
+            self._warm += [lambda: self._text('A', WORD_HEIGHT, WORD_COLOUR, font=WORD_FONT),
+                           lambda: self._text('A', TARGET_HEIGHT, font=WORD_FONT),
+                           lambda: self._text('A', TAUNT_HEIGHT, (20, 20, 30), font='badaboom')]
+        if self._warm:
+            self._warm.pop(0)()
+
+    _warm = None
 
     # -- the record ------------------------------------------------------------------------------------------------
     def _words(self, surface, game, now):
