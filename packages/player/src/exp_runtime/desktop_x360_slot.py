@@ -61,8 +61,17 @@ class X360SlotRenderer:
         self._font = None
         self._face = (None, None)
 
+    _skin = None                        # (resources, addon_skin's result): read once, not every frame
+
     def _spec(self):
-        return addon_skin(self.resources)
+        # The spec was parsed from the addon's JSON on every call: about 6 ms a frame on a phone (g54, 2026-11-17), a
+        # fifth of the jewel puzzle's frame. Kept per episode's resources; a missing skin is looked for again.
+        if self._skin is None or self._skin[0] is not self.resources:
+            found = addon_skin(self.resources)
+            if found is None:
+                return None
+            self._skin = (self.resources, found)
+        return self._skin[1]
 
     def image(self, resource):
         found = self._images.get(resource)

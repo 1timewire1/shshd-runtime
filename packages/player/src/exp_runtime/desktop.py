@@ -129,6 +129,16 @@ OPAQUE_ENOUGH = 250
 DSI_PIXELS = ('sharp', 'smooth')
 
 
+def _covers(surface, size):
+    """Whether blitting `surface` at an area of `size` replaces every pixel there: that size, with no per-pixel alpha,
+    surface alpha or colour key (an opaque picture is drawn as a copy, so what was under it can go undrawn)."""
+    if tuple(surface.get_size()) != tuple(size) or surface.get_masks()[3]:
+        return False
+    alpha = surface.get_alpha() if hasattr(surface, 'get_alpha') else None
+    key = surface.get_colorkey() if hasattr(surface, 'get_colorkey') else None
+    return alpha in (None, 255) and key is None
+
+
 def opaque_enough(surface, least=OPAQUE_ENOUGH):
     """Whether every pixel of `surface` is at least `least` opaque (255: wholly). A mask's count, in C: reading the
     alpha bytes back into Python took about 40 ms for a 1080 x 2400 picture on a PC (several times that on a phone),
@@ -2668,7 +2678,9 @@ class Desktop:
             self.window.blit(scaled, self.viewport)
             ui_layers.append((scaled, self.viewport))
         if overlay is not None:
-            self.window.blit(pygame.transform.smoothscale(overlay, target_size),
+            # (Already the column's size where the story is drawn at the window's density, Android: no resample.)
+            self.window.blit(overlay if overlay.get_size() == target_size
+                             else pygame.transform.smoothscale(overlay, target_size),
                              self.viewport.move(0, -round(self.story_lift * scale)))
         self._panel_handover(ui_layers)
         hd_frame = (self.__dict__.get('_frame_width', FRAME_UNITS[0]), self._frame_tall) == FRAME_UNITS
@@ -2960,13 +2972,16 @@ class Desktop:
         hidden = (change is None and self.pending_background_alpha >= 255 and placement is not None
                   and self._background_cover == (id(background), tuple(placement), tuple(viewport)))
         if not covered and not hidden:
-            self.window.fill((0, 0, 0), viewport)
             # shshd-runtime: a translated episode may carry its own picture for that (profile TRANSLATED_FRAME_BACKDROP).
             if placement is not None and background.get_width() >= 2 * background.get_height():
                 # A location strip: where it is in the frame, as frame units from the top (the backdrop's bars hug it).
                 unit = target_size[1] / self.__dict__.get('_frame_tall', FRAME_UNITS[1])
                 self._strip_units = (placement[1] / unit, (placement[1] + placement[3]) / unit)
             frame_backdrop = self._frame_backdrop(viewport.size)
+            # An opaque backdrop of the frame's size covers every pixel the black would: that fill was 3.3 ms of every
+            # translated episode's frame on a phone (g54, 2026-11-17).
+            if frame_backdrop is None or not _covers(frame_backdrop, viewport.size):
+                self.window.fill((0, 0, 0), viewport)
             if frame_backdrop is not None:
                 self.window.blit(frame_backdrop, viewport)
         self._background_cover = None

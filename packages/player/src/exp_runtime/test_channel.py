@@ -41,7 +41,8 @@ it's done, so real clocks (fades, timers) run as in play.
                                 the command running and what showed after each
     profile on|off              profile the app's thread (cProfile) between the two; `off` replies with the costliest
                                 calls by their own time and by their total (`profile off WORD`: only those whose
-                                file or function name contains WORD)
+                                file or function name contains WORD; `profile off callers NAME`: the callers
+                                of the functions named NAME, e.g. fill or blit, by their time in it)
     shot NAME [inline]          save the window as NAME.png in the app's data folder; replies with its path, and with
                                 `inline` its PNG too (base64 `png`), for a device whose files a computer can't read
     log [N]                     the app's last N log lines (default 50), kept since the channel opened
@@ -649,6 +650,17 @@ class Commands:
         only = rest.partition(' ')[2].strip()              # `profile off WORD`: only calls whose file or name has WORD
         channel.profiler.disable()
         stats, channel.profiler = pstats.Stats(channel.profiler), None
+        if only.startswith('callers '):
+            # `profile off callers NAME`: who calls the functions named NAME (e.g. fill, blit), costliest first
+            name = only.split()[1]
+            out = []
+            for func, row in stats.stats.items():
+                if func[2] == name or func[2].endswith(f"'{name}' of 'pygame.surface.Surface' objects>") \
+                        or func[2].endswith(f' {name}>'):
+                    for caller, (_, calls, own, _total) in sorted(row[4].items(), key=lambda c: -c[1][2])[:20]:
+                        out.append(dict(callee=func[2][:60], call=f'{Path(caller[0]).name}:{caller[1]} {caller[2]}',
+                                        calls=calls, own_ms=round(own * 1000, 1)))
+            return dict(ok=True, callers=out)
 
         def top(key, count=15):
             rows = [item for item in stats.stats.items() if not only or any(only in str(part) for part in item[0])]

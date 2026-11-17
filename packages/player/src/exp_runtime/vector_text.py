@@ -29,6 +29,7 @@ SHS_ARIAL_ROUNDED_FONT (or the other SHS_*_FONT variables below) to a font
 file to override either of those, or SHS_VECTOR_TEXT=0 to keep the Android
 bitmap fonts.
 """
+from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 import math
@@ -220,7 +221,7 @@ class VectorFont(BitmapFont):
         """CoreGraphics fill-and-stroke (glyph_outline): the outline instance (white, `stroke`) under the fill
         instance (its own colour, `embolden`), each the glyph filled plus a mitered stroke of that width. None when
         the face has no TrueType outline for `code` (the dilation below is used instead)."""
-        from .glyph_outline import Outlines, coverage
+        from .glyph_outline import Outlines
         outlines = _OUTLINES.get(id(self.source))
         if outlines is None:
             if _system_face(self.source):
@@ -244,12 +245,12 @@ class VectorFont(BitmapFont):
             return None
         layers = []
         if self.stroke > 0:
-            layers.append((coverage(outlines, code, px, self.stroke * px), STROKE_COLOR))
+            layers.append((_coverage(outlines, code, px, self.stroke * px), STROKE_COLOR))
         if self.embolden_color is None:
-            layers.append((coverage(outlines, code, px, self.embolden * px), fill))
+            layers.append((_coverage(outlines, code, px, self.embolden * px), fill))
         else:
-            layers.append((coverage(outlines, code, px), fill))
-            layers.append((coverage(outlines, code, px, self.embolden * px, fill=False), self.embolden_color))
+            layers.append((_coverage(outlines, code, px), fill))
+            layers.append((_coverage(outlines, code, px, self.embolden * px, fill=False), self.embolden_color))
         if any(mask is None for mask, _ in layers):
             return None
         left = min(mask[1] for mask, _ in layers)
@@ -269,6 +270,24 @@ class VectorFont(BitmapFont):
 
 
 _OUTLINES = {}
+_COVERAGE = OrderedDict()               # (face, code, px, width, fill) -> glyph_outline.coverage's mask, most recent last
+COVERAGE_KEPT = 1024
+
+
+def _coverage(outlines, code, px, stroke_width=0., fill=True):
+    """glyph_outline.coverage, kept: a mask doesn't depend on the colour it's drawn in, and it was the whole cost of a
+    stroked glyph (about 20 ms on a phone, g54 2026-11-17), redone for every colour of the same face, size and stroke
+    (SHS HD's four Pajama Hip name colours, the notices, Cause of Death's names). The same pixels, drawn once."""
+    from .glyph_outline import coverage
+    key = id(outlines), code, px, stroke_width, fill
+    found = _COVERAGE.get(key, _COVERAGE)
+    if found is _COVERAGE:                  # (a glyph with no outline is kept too: None)
+        found = _COVERAGE[key] = coverage(outlines, code, px, stroke_width, fill)
+        if len(_COVERAGE) > COVERAGE_KEPT:
+            _COVERAGE.popitem(last=False)
+    else:
+        _COVERAGE.move_to_end(key)
+    return found
 
 
 def _system_face(source):

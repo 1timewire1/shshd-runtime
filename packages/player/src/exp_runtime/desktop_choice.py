@@ -451,14 +451,25 @@ class ChoiceRenderer:
         from .hd_choice import HD_GEOMETRY
         g = geometry or HD_GEOMETRY
         k, d = self.scale, g.density
-        ox, oy = g.units(x, y)
-        for _, node, visible, (nx, ny, w, h) in self.panel_layouts(g).nodes(
-                layout_id, (ox, oy), size=(width / d, height / d), hidden=hidden, shown=shown):
-            if not visible or node.kind != 1 or w <= 0 or h <= 0:
-                continue
-            image = self.hd_piece(*node.payload, theme, g is not HD_GEOMETRY)
+        # The pieces' places, worked out once: walking the layout tree for the header, the description and the footer
+        # was about 5 ms of each redrawn menu frame on a phone (g54, 2026-11-17). The same places, in the same order.
+        key = (id(self.resources), id(g), layout_id, x, y, width, height, tuple(hidden), tuple(shown), k)
+        places = self.__dict__.setdefault('_widget_places', {}).get(key)
+        if places is None:
+            ox, oy = g.units(x, y)
+            places = []
+            for _, node, visible, (nx, ny, w, h) in self.panel_layouts(g).nodes(
+                    layout_id, (ox, oy), size=(width / d, height / d), hidden=hidden, shown=shown):
+                if not visible or node.kind != 1 or w <= 0 or h <= 0:
+                    continue
+                places.append((node.payload, pygame.Rect(round(nx * k), round(ny * k), round(w * k), round(h * k))))
+            if len(self._widget_places) > 64:
+                self._widget_places.clear()
+            self._widget_places[key] = places
+        for payload, rect in places:
+            image = self.hd_piece(*payload, theme, g is not HD_GEOMETRY)
             if image is not None:
-                self.tile(image, pygame.Rect(round(nx * k), round(ny * k), round(w * k), round(h * k)))
+                self.tile(image, pygame.Rect(rect))
 
     def hd_line(self, color, x, y, width, geometry=None):
         """A one-point rule at the build's points."""
@@ -483,18 +494,29 @@ class ChoiceRenderer:
         # page, scroll, pressed / hovered / focused row and hints -- is last frame's: redrawing it was about 15 ms a
         # frame on a phone (more at a narrow frame's 2.4 pixels a unit), most of a frame's budget.
         game = session.engine.word_game if page.scored else None
+        timed = page.timer_center is not None and session.remaining_ms is not None
         rest = None
-        if (target is None and game is None and (page.timer_center is None or session.remaining_ms is None)
-                and all(self.label_home(row, None) >= 1 for row in page.rows)):
+        # shshd-runtime: a timed menu and the quiz too, while only their timer moves (the wheel and the running man are
+        # on the overlay, redrawn alone): the whole panel every frame was about 26 ms of the quiz's frame on a phone
+        # (g54, 2026-11-17: 20-29 fps). The quiz's score is in the key; its effect and its labels' flights are not still.
+        still_game = game is None or (not game.effect_ms and not game.fly_off_ms and game.fly_off_row < 0)
+        if (target is None and still_game and all(self.label_home(row, game) >= 1 for row in page.rows)):
             table = page.table
-            downs = tuple(pressed == ('choose', row.index) or focus == row.index or (
-                pointer is not None and pygame.Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
-                .clip(pygame.Rect(table.x, table.y, table.width, table.height)).collidepoint(pointer))
-                for row in page.rows)
+            if game is not None:
+                downs = tuple(game.selected == row.index or game.selected < 0 and focus == row.index
+                              for row in page.rows)
+            else:
+                downs = tuple(pressed == ('choose', row.index) or focus == row.index or (
+                    pointer is not None and pygame.Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
+                    .clip(pygame.Rect(table.x, table.y, table.width, table.height)).collidepoint(pointer))
+                    for row in page.rows)
             hints = (tuple(hint.kind for hint in self.hints) if choice_hints and self.hint_key == self.cached_key
                      else None)
-            rest = (id(page), scroll, downs, hints, id(self.wide), k)
+            rest = (id(page), scroll, downs, hints, id(self.wide), k, timed, game is not None and game.score)
             if rest == self.__dict__.get('_rest_key') and self.__dict__.get('_rest_buttons') is not None:
+                if game is not None or timed:
+                    self.overlay.fill((0, 0, 0, 0))
+                    self._draw_hd_clock(page, session, game)
                 return page, list(self._rest_buttons)
         self._rest_key = self._rest_buttons = None
 
@@ -570,11 +592,9 @@ class ChoiceRenderer:
         self.canvas.set_clip(None)
         if page.portrait is not None:
             self.draw_hd_portrait(session, page)
+        self._draw_hd_clock(page, session, game)
         if game is not None:
-            self.draw_hd_timer(page.timer_center, max(0, game.remaining_ms), game.duration_ms, g)
             self.draw_hd_quiz(page, game)
-        elif page.timer_center is not None and session.remaining_ms is not None:
-            self.draw_hd_timer(page.timer_center, session.remaining_ms, session.pending.details['timeout_ms'], g)
         # initActionMenu calls setTimed: the quiz shows the timed hint (CoD IMG_0516-0521).
         timed = session.remaining_ms is not None or page.scored
         hint = 'Touch choice before time runs out' if timed else 'Touch the best choice'
@@ -706,18 +726,28 @@ class ChoiceRenderer:
                                                                  16)))
         return self._quiz_fonts
 
+    def _draw_hd_clock(self, page, session, game):
+        """What moves on the overlay (outside the menu's fades): the circle timer and, in the quiz, the running man."""
+        g = page.geometry
+        if game is not None:
+            self.draw_hd_timer(page.timer_center, max(0, game.remaining_ms), game.duration_ms, g)
+            k, d, cod = self.scale, g.density, g.density == 1
+            cx, cy = page.timer_center
+            first, count, seconds = g.running_man
+            frame = int((game.duration_ms - max(0, game.remaining_ms)) / 1000 / seconds) % count
+            image = self.hd_piece(0, first + frame, 0, cod)
+            if image is not None:
+                # g_layerRunningMan's frames are centred on the layer, a point below the wheel's centre.
+                self.overlay.blit(image, image.get_rect(center=(round(cx * k), round((cy + g.running_drop / d) * k))))
+        elif page.timer_center is not None and session.remaining_ms is not None:
+            self.draw_hd_timer(page.timer_center, session.remaining_ms, session.pending.details['timeout_ms'], g)
+
     def draw_hd_quiz(self, page, game):
+        """The quiz's score and its rising effect, on the panel (the running man is the overlay's: _draw_hd_clock)."""
         from .hd_choice import FontMetrics, text_in_region
         from .vector_text import cap_height
         k, g = self.scale, page.geometry
-        d, cod = g.density, page.geometry.density == 1
-        cx, cy = page.timer_center
-        first, count, seconds = g.running_man
-        frame = int((game.duration_ms - max(0, game.remaining_ms)) / 1000 / seconds) % count
-        image = self.hd_piece(0, first + frame, 0, cod)
-        if image is not None:
-            # g_layerRunningMan's frames are centred on the layer, a point below the wheel's centre.
-            self.overlay.blit(image, image.get_rect(center=(round(cx * k), round((cy + g.running_drop / d) * k))))
+        d = g.density
         score_font, effect_font = self.quiz_fonts()
         x, y, w, h = g.score_box
         ux, uy = g.units(g.panel_x + x, page.footer_top + y)
