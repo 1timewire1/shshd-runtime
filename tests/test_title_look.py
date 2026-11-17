@@ -166,3 +166,30 @@ class TitleLookChoiceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PickerBackdropTests(unittest.TestCase):
+    """The episode grid and lists show the main menu's art under their rows: the look chosen now, not the one the grid
+    first drew with (owner, 2026-11-16: Auto's look changed by another game played, the grid still showed the old one)."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def test_the_grids_backdrop_follows_the_look(self):
+        from exp_runtime.desktop_episode_picker import HdEpisodePicker
+        looks = {colour: look({'background': {'cover': {'id': 26961}}}, {26961: png((384, 1024), colour + (255,))})
+                 for colour in ((0, 0, 255), (255, 0, 0))}
+        picker = HdEpisodePicker.__new__(HdEpisodePicker)
+        picker.height = FRAME[1]
+        try:
+            for colour in ((0, 0, 255), (255, 0, 0), (0, 0, 255)):
+                with self.subTest(colour=colour):
+                    HdUi.look_source = lambda colour=colour: looks[colour]
+                    plain = picker.plain_backdrop().get_at((10, 10))[:3]
+                    dimmed = picker.backdrop(picker.height).get_at((10, 10))[:3]
+                    self.assertEqual(plain, colour)
+                    self.assertEqual([value > 0 for value in dimmed], [value > 0 for value in colour])   # (dimmed)
+                    self.assertLess(max(dimmed), max(colour))
+        finally:
+            HdUi.look_source = None

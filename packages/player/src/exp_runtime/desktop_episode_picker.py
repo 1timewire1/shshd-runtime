@@ -375,10 +375,15 @@ class HdEpisodePicker(HdUi):
         """The main menu's backdrop at this frame's height (a 3:4 one's own where it has no taller layout)."""
         return self.main_backdrop(self.height) if self.height != FRAME[1] else self.main_backdrop()
 
-    @lru_cache(maxsize=2)
     def backdrop(self, height=FRAME[1]):
         """The main menu's backdrop, dimmed behind the rows (see module docstring)."""
-        layer = self.shaped_backdrop().copy()
+        return self._dimmed(self.shaped_backdrop())
+
+    @lru_cache(maxsize=2)
+    def _dimmed(self, backdrop):
+        """(Keyed by the menu's backdrop itself, which HdUi keeps per height and Title Screen Look: owner, 2026-11-16, Auto's
+        look changed by another game played still showed its old look here, and only here.)"""
+        layer = backdrop.copy()
         shade = pygame.Surface(layer.get_size(), pygame.SRCALPHA)
         shade.fill((0, 0, 0, BACKDROP_DIM_ALPHA))
         layer.blit(shade, (0, 0))
@@ -512,7 +517,6 @@ class HdEpisodePicker(HdUi):
         layer.blit(plate, ((x - pad) * S, (y - 2) * S))
         self.text(layer, row.title, ROW_LABEL_POINTS, x, y, outline=False)
 
-    @lru_cache(maxsize=1)
     def plain_backdrop(self):
         """The main menu's backdrop, undimmed (the list screens' card sits over it as the menus' cards do)."""
         return self.shaped_backdrop()
