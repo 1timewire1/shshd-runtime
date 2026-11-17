@@ -319,3 +319,29 @@ class CatchCallTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class UnknownPictures(unittest.TestCase):
+    def test_a_picture_the_add_on_doesnt_draw_is_left_out_not_an_error(self):
+        # An episode made in the Creator may name a catch picture its add-on lacks (Stage 6, 2026-11-17: a Hollywood
+        # episode given BREW's numbers stopped the player with a KeyError). The game plays on, that picture unseen.
+        import os
+        from types import SimpleNamespace
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        import pygame
+        pygame.init()
+        self.addCleanup(pygame.quit)
+        pygame.display.set_mode((64, 64))
+        from exp_runtime.desktop_brew_catch import BrewCatchRenderer
+        game = CatchGame.opened(ANGLED, 45, 350, 350, 0, 50, 40, 133, [(3, 151, 20), (-3, 152, 20)], SIZES, Rng())
+        game.objects.append([0, 0, 0, 0, 0])
+        renderer = BrewCatchRenderer(SimpleNamespace(library=None))
+        drawn = []
+        spec = dict(frame=1, ring=2, digits=list(range(10, 20)), captions=[3, 4],
+                    pictures={'151': [7, 30, 30]})                        # neither the player (133) nor 152
+        renderer._spec = lambda: (spec, None)
+        renderer.skin = lambda spec: None
+        renderer.java_look = lambda: False
+        renderer.image = lambda resource: (drawn.append(resource), pygame.Surface((30, 30)))[1]
+        renderer.draw(SimpleNamespace(engine=SimpleNamespace(brew_catch=game)))
+        self.assertNotIn(133, drawn)

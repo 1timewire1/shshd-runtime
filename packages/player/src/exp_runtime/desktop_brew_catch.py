@@ -188,10 +188,13 @@ class BrewCatchRenderer:
             surface.fill(LINE_COLOUR, pygame.Rect(field.x + (FIELD_WIDTH // 2 - 1) * SCALE, field.y, 2 * SCALE, field.height))
         surface.set_clip(field)
         pictures = spec['pictures']
-        surface.blit(self.image(pictures[str(game.sprite)][0]), (field.x + (game.x >> 8) * SCALE, field.y + (game.y >> 8) * SCALE))
+        # (A picture the add-on doesn't draw, which an episode made in the Creator may name, is left out, not an error.)
+        if str(game.sprite) in pictures:
+            surface.blit(self.image(pictures[str(game.sprite)][0]), (field.x + (game.x >> 8) * SCALE, field.y + (game.y >> 8) * SCALE))
         for item in game.objects:
-            picture = pictures[str(game.templates[item[4]][1])][0]
-            surface.blit(self.image(picture), (field.x + (item[0] >> 8) * SCALE, field.y + (item[1] >> 8) * SCALE))
+            found = pictures.get(str(game.templates[item[4]][1]))
+            if found is not None:
+                surface.blit(self.image(found[0]), (field.x + (item[0] >> 8) * SCALE, field.y + (item[1] >> 8) * SCALE))
         surface.set_clip(None)
         if game.score > 0:
             width = max(1, game.score * FILL_WIDTH // max(1, game.target))
@@ -236,6 +239,8 @@ class BrewCatchRenderer:
         own = getattr(self, '_own_skin', False)
 
         def picture(number, x, y, width, height):
+            if str(number) not in spec['pictures']:          # (one the add-on doesn't draw: left out)
+                return
             ours = spec['pictures'][str(number)][0]
             if own:
                 mapped.setdefault(ours, (archive, ours))
@@ -290,7 +295,8 @@ class BrewCatchRenderer:
         def picture(number, x, y, width, height):
             found = java['pictures'].get(str(number))
             if found is None:                               # (BREW's house has no Java copy)
-                surface.blit(self.image(spec['pictures'][str(number)][0]), (field.x + x * SCALE, field.y + y * SCALE))
+                if str(number) in spec['pictures']:
+                    surface.blit(self.image(spec['pictures'][str(number)][0]), (field.x + x * SCALE, field.y + y * SCALE))
                 return
             surface.blit(self.image(found[0]), (field.x + (x + (width - found[1]) // 2) * SCALE,
                                                 field.y + (y + (height - found[2]) // 2) * SCALE))
