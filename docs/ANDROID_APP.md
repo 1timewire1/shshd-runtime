@@ -1,4 +1,4 @@
-# Android app (experimental)
+# Android app
 
 This port packages the existing Python engine and pygame-ce renderer in an
 SDL2 Android activity (python-for-android): the desktop drawing path runs as it
@@ -10,8 +10,10 @@ It began in [@andymenard's fork](https://github.com/andymenard/shshd-runtime),
 whose Android commits were cherry-picked onto this repository's `android-port`
 branch with their authorship (their first APK built in
 [GitHub Actions run 39041119010](https://github.com/andymenard/shshd-runtime/actions/runs/39041119010)).
-Since then it imports, opens both games' HD menus and pickers and plays
-episodes on an Android 15 emulator; physical-device checks are pending.
+Since then it has been checked on Android 15 emulators (phone and tablet) and
+on a Moto g54 5G (Android 15), the test phone since 2026-10-28: upgrades over
+earlier builds, imports, real Wi-Fi Sync, resume after a restart, rotation and
+the side panels, and the translated games' minigames.
 
 ## Build with GitHub Actions
 
@@ -141,7 +143,7 @@ A phone's clocks hold 60 fps only if frames fit the budget, so one slow effect c
 - `desktop_word_hd.QUICK_DRAWING` rounds the word game's cube poses to fewer steps, leaves moving pieces unsmoothed, and limits its haze by time, not by frames. Limiting it by frames made it visibly choppy.
 - `desktop_dialogue.REUSE_AT_REST` reuses a settled dialogue line's pieces (`dialogue_animation.at_rest`).
 
-Measured on a Moto g54 in the owner's play, 2026-11-04: dialogue about 56 fps, Memory's skin 52, Reflex's skin 53, a real word grid 37 with a low of 30 and 55 at rest. Word grids and the 60-second autosave's 60-100 ms stall are still open.
+Measured on a Moto g54 in the owner's play, 2026-11-04: dialogue about 56 fps, Memory's skin 52, Reflex's skin 53, a real word grid 55 at rest (37 before `graphics.faded` stopped blending opaque frames), and the story tree's pinch 51-57 fps (2026-11-12). The 60-second autosave waits until a minigame ends; on story screens it still costs one 60-100 ms frame a minute.
 
 ## CoD colors
 
@@ -161,5 +163,6 @@ not taken; the HD letter effect keeps theme 1's red (docs/COD.md).
 - Close/relaunch and verify restored progress and settings.
 - Check tall/notched displays, Back navigation and sound after resume.
 
-Device checks need to be recorded after an APK is installed. No original game
-content is bundled with the runtime or committed as test fixtures.
+A full pass ran on the emulators on 2026-11-02/03 and on the g54 on 2026-11-03,
+and the g54 has run every tester build since. No original game content is
+bundled with the runtime or committed as test fixtures.
