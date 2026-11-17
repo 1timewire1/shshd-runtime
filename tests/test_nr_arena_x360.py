@@ -142,6 +142,31 @@ class X360ArenaTests(unittest.TestCase):
         arena.score = 3580
         return arena
 
+    def test_on_ios_the_arena_canvas_stays_composited_with_the_meters_markers(self):
+        # The iOS host composites a big layer on the GPU only when its ops are blits, scales and opaque fills or boxes;
+        # the meter's marker triangles, drawn straight onto the canvas as polygons, sent the whole 1536 x 2048 canvas to
+        # the CPU every frame (the X360 skin at 13-17 fps on the iPad, 2026-11-17).
+        from exp_runtime import graphics
+        from exp_runtime.platforms import drawing
+        from native_host_fonts import FontHost
+        previous = graphics.install(drawing.Backend(FontHost(), ''))
+        try:
+            renderer = self.module.X360ArenaRenderer(self.resources())
+            renderer.target_height = 2048
+            arena = self.arena()
+            arena.meter, arena.target_marker, arena.second_marker = 4, 6, 3
+            renderer.draw(None, self.session(arena), now_ms=1234)
+            frame = drawing.FrameEncoder().encode(renderer.canvas)
+            canvas = [node for node in frame['nodes']
+                      if 'ops' in node and tuple(node['size']) == tuple(renderer.canvas.get_size())]
+            self.assertTrue(canvas)
+            for node in canvas:
+                self.assertLessEqual(len(node['ops']), 64)
+                self.assertEqual({op['kind'] for op in node['ops']} - {'fill', 'blit', 'scale', 'rect'}, set())
+                self.assertEqual([op for op in node['ops'] if op.get('blend') is not None], [])
+        finally:
+            graphics.install(previous)
+
     def test_without_the_x360_addon_it_isnt_available(self):
         renderer = self.module.X360ArenaRenderer(self.resources(with_addon=False))
         self.assertFalse(renderer.available())

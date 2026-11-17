@@ -31,6 +31,7 @@ SPEC = 26300                            # x360_arena_art.SPEC
 NR_TRACK_BASE = 26980                   # New Rules' tracks in its addon (tools/translate/newrules.py MUSIC_BASE)
 FORMAT, VERSION = 'shshd-arena-skin-x360', 1
 METER_BOX = pygame.Rect(14, 112, 190, 30)
+MARKER_PAD = 2                          # canvas pixels round a meter marker's triangle, for its outline
 LABEL_TOP = pygame.Rect(14, 150, 230, 52)       # HUD box 0's label (New Rules' top band), under the meter
 LABEL_BOTTOM = pygame.Rect(30, 500, 429, 56)    # HUD box 2's label (the bottom band: "cool rhymes with...")
 STAMPS = {'correct!': 'stamp_yeah', 'wrong!': 'stamp_ooops'}     # the library's flash labels (decision 7)
@@ -737,10 +738,25 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         for marker, colour in ((second, (80, 140, 255)), (target, (255, 255, 255))):
             if 0 <= marker <= 9 and marker != -2:
                 mx = inner.x + inner.width * (marker + 1) / 10
-                points = [(mx * k, (rect.bottom + 1) * k), ((mx - 5) * k, (rect.bottom + 9) * k),
-                          ((mx + 5) * k, (rect.bottom + 9) * k)]
-                pygame.draw.polygon(surface, colour, points)
-                pygame.draw.polygon(surface, (0, 0, 0), points, max(1, round(k)))
+                tick = self._marker_tick(colour)
+                surface.blit(tick, (round((mx - 5) * k) - MARKER_PAD, round((rect.bottom + 1) * k) - MARKER_PAD))
+
+    def _marker_tick(self, colour):
+        """A meter marker's triangle, drawn once into its own small picture and blitted: drawn straight onto the canvas,
+        a shape kept the iOS host from compositing the whole arena on the GPU, and it drew all 1536 x 2048 of it on the
+        CPU every frame (the X360 skin at 13-17 fps on the iPad, 2026-11-17)."""
+        k = self.k
+        key = ('marker', colour, k)
+        tick = self._scaled.get(key)
+        if tick is None:
+            size = (round(10 * k) + 2 * MARKER_PAD, round(8 * k) + 2 * MARKER_PAD)
+            tick = pygame.Surface(size, pygame.SRCALPHA)
+            pad = MARKER_PAD
+            points = [(5 * k + pad, pad), (pad, 8 * k + pad), (10 * k + pad, 8 * k + pad)]
+            pygame.draw.polygon(tick, colour, points)
+            pygame.draw.polygon(tick, (0, 0, 0), points, max(1, round(k)))
+            self._scaled[key] = tick
+        return tick
 
     def _label_x360(self, surface, arena, session, box, now, dy=0):
         """A HUD box's picture and its label or flashing message: box 1's on the record's label in Diss Practice's
