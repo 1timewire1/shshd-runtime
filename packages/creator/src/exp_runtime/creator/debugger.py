@@ -1,5 +1,6 @@
 """Source-node stepping and breakpoints using the production VM and services."""
-from dataclasses import asdict
+from contextlib import contextmanager
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,12 +9,18 @@ from .compiler import VARIABLE_OWNER, compile_details
 from .model import ProjectError
 
 
+# The engine's open mini-games (and cutscene) whose whole state the debugger reports.
+MINIGAME_STATES = ('word_game', 'football', 'word_grid', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle',
+                   'shs11_memory', 'shs11_reflex', 'brew_catch', 'cutscene')
+
+
 class _Paused(Exception):
     pass
 
 
 class DebugSession:
-    def __init__(self, project, *, start=None, seed=None, library=None, language=None):
+    def __init__(self, project, *, start=None, seed=None, library=None, language=None, minigames=True, cutscenes=True,
+                 skip_arena=False):
         from exp_runtime.runtime import Session
         from exp_runtime.content import digest
         from exp_runtime.vm import StopKind
@@ -24,7 +31,7 @@ class DebugSession:
         programs = self.archive.programs()
         self.resources = SimpleNamespace(library=SimpleNamespace(game_id=project.game, directory=Path('.')),
             identity={'profile': 'creator-debug', 'episode_sha256': digest(self.compilation.data)},
-            program=programs.__getitem__, exists=lambda key: key in self.archive.entries or
+            program=programs.__getitem__, read_asset=self.archive.read, exists=lambda key: key in self.archive.entries or
             any(a.id == key for a in project.assets))
         if library:
             from .preview import preview_resources
@@ -34,6 +41,12 @@ class DebugSession:
         except Exception:
             self.close()
             raise
+        # As a player with the translated mini-games and storyboard cutscenes plays it (both on, as the player has them), or
+        # without them to test the story's other way; skip_arena is the player's Ask to Skip Mini-Games for New Rules' arena.
+        if not all(type(value) is bool for value in (minigames, cutscenes, skip_arena)):
+            self.close()
+            raise ProjectError('minigames, cutscenes and skip_arena are true or false')
+        self.session.nr_arena, self.session.cutscenes, self.session.skip_arena = minigames, cutscenes, skip_arena
         if seed is not None:
             if type(seed) is not int or not 0 <= seed <= 0xffffffff:
                 self.close()
@@ -102,10 +115,18 @@ class DebugSession:
                 'text_variables': dict(session.engine.strings),
                 'action': pending.name if pending else None,
                 'details': pending.details if pending else {}, 'trace': list(self.trace),
-                'minigames': {name: asdict(value) for name in ('word_game', 'football', 'word_grid')
-                              if (value := getattr(session.engine, name)) is not None},
+                'minigames': {name: asdict(value) for name in MINIGAME_STATES
+                              if is_dataclass(value := getattr(session.engine, name, None))},
                 'stack': list(session.vm.stack), 'result': session.vm.result,
                 'pending_arguments': list(session.vm.pending.args) if session.vm.pending else []}
+
+    @contextmanager
+    def plain(self):
+        """The session without the stepping wrapper, for work on copies of it (the skip prompt's outcomes): a copy keeps the
+        wrapper's function as it is, which would step this session's VM instead of the copy's."""
+        wrapper = self.session.vm.__dict__.pop('run')
+        try: yield self.session
+        finally: self.session.vm.run = wrapper
 
     def set_variable(self, name, value):
         if name not in self.compilation.variables or type(value) is not int or not -32768 <= value <= 32767:

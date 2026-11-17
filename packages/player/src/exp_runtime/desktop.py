@@ -78,7 +78,9 @@ from .skip_ahead import can_skip, skip_ahead
 from .undo import chain_for
 from . import quest_journal
 from .minigames import MINIGAMES
-from .choice_hints import ARENA_RESULTS, arena_outcomes, brew_catch_outcomes, shs11_outcomes, word_game_outcomes, x360_slot_outcomes
+from .choice_hints import (ARENA_RESULTS, arena_outcomes, arena_skip_options, brew_catch_outcomes,  # noqa: F401 (options: re-exported)
+                           brew_catch_skip_options, shs11_outcomes, shs11_skip_options, word_game_options, word_game_outcomes,
+                           x360_slot_outcomes)
 from .scene_badge import outline_badge_text
 from .pointer import ButtonPress, step_focus
 from .text_input import accept_name_character, validate_name
@@ -183,57 +185,6 @@ def window_margins(size, frame):
              pygame.Rect(0, frame.top, frame.left, frame.height),
              pygame.Rect(frame.right, frame.top, width - frame.right, frame.height))
     return [area for area in areas if area.width > 0 and area.height > 0]
-
-
-def word_game_options(outcomes):
-    """(option labels, the score each finishes the quiz with) for the skip prompt, best first, then "Play" (labels
-    only): Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, the score ranges for more
-    ("Score 6 or more", "Score 4 to 5", "Score 0 to 3"). The best outcome scores the most a quiz can, as Win always did;
-    any other its lowest score."""
-    if outcomes is None or len(outcomes) == 2:
-        return ('Win', 'Lose', 'Play'), (32767, 0)
-    if len(outcomes) == 1:
-        return ('Skip', 'Play'), (32767,)
-    labels, scores = [], []
-    for index, (low, high) in enumerate(reversed(outcomes)):
-        labels.append(f'Score {low} or more' if high is None else f'Score {low}' if low == high
-                      else f'Score {low} to {high}')
-        scores.append(32767 if index == 0 else low)
-    return (*labels, 'Play'), tuple(scores)
-
-
-def arena_skip_options(outcomes):
-    """(option labels, the result each hands the story) for a New Rules arena game's skip prompt, as word_game_options
-    labels them (Win / Lose, Skip, or the result ranges), then "Play" (labels only). Each outcome hands its lowest
-    result: every result in it leads the same way to the episode's end (checked on all 50 episodes, 2026-10-31)."""
-    labels, _ = word_game_options(outcomes)
-    if outcomes is None:
-        return labels, (ARENA_RESULTS - 1, 0)
-    return labels, tuple(low for low, _ in reversed(outcomes))
-
-
-def brew_catch_skip_options(outcomes, target):
-    """(option labels, the score each finishes the BREW catch game with) for its skip prompt, as word_game_options labels
-    them (Win / Lose, Skip, or the score ranges), then "Play" (labels only). The best outcome scores the target, as
-    the game itself can at most; any other its lowest score."""
-    labels, _ = word_game_options(outcomes)
-    if outcomes is None or len(outcomes) == 2:
-        return labels, (target, 0)
-    if len(outcomes) == 1:
-        return labels, (target,)
-    best = outcomes[-1][0]                      # nothing scores more than the target, so the best names it
-    labels = (f'Score {target}' if best >= target else f'Score {best} to {target}', *labels[1:])
-    return labels, tuple(target if index == 0 else low for index, (low, _) in enumerate(reversed(outcomes)))
-
-
-def shs11_skip_options(outcomes, best=2):
-    """(option labels, the result each hands the story) for an SHS '11 game's skip prompt, best first, then "Play" (labels only):
-    Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, Win / Come close / Lose for its three."""
-    if outcomes is None or len(outcomes) == 2:
-        return ('Win', 'Lose', 'Play'), (best, 0)
-    if len(outcomes) == 1:
-        return ('Skip', 'Play'), (best,)
-    return ('Win', 'Come close', 'Lose', 'Play'), (2, 1, 0)
 
 
 # shshd-runtime: a skip prompt's outcomes are worked out on this worker, from a copy of the session, with the loading band on

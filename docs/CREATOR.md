@@ -326,7 +326,8 @@ variables, submit actual inputs and advance the clock. It shows native PCs,
 pending frames and minigame state. A missing base resource cannot be diagnosed
 visually in this headless debugger; use player preview for layout and audio.
 Unknown services and opcodes still stop explicitly. The debugger never inserts
-a winning minigame result. MCP additionally exposes grid pointer phases.
+a winning minigame result. MCP additionally exposes grid pointer phases, and plays and skips every translated
+mini-game and cutscene as the player does ([MCP.md](MCP.md#translated-mini-games-and-cutscenes-shshd-runtime)).
 
 [![Story debugger stopped at the example's choice, showing its options, timer, program counter and input controls.](images/creator/debugger.png)](images/creator/debugger.png)
 

@@ -37,6 +37,48 @@ class CreatorWorkspaceTests(unittest.TestCase):
 
 
 @unittest.skipUnless(find_spec('mcp'), 'Install the creator-mcp extra for MCP transport checks')
+class CreatorMCPMinigameTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_minigame_is_played_and_skipped_through_mcp(self):
+        # Creator catch-up Stage 1 (2026-11-17): the translated mini-games through the same tools an agent uses.
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        from exp_runtime.creator.model import save_project
+        sys.path.insert(0, str(Path(__file__).parent))
+        from test_creator_playtest_minigames import project
+        with tempfile.TemporaryDirectory() as directory:
+            save_project(project('x360_leash'), Path(directory) / 'leash.expproj')
+            params = StdioServerParameters(command=sys.executable,
+                args=['-m', 'exp_runtime.creator.mcp_server', '--workspace', directory])
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write) as client:
+                    await client.initialize()
+
+                    async def call(name, **arguments):
+                        result = await client.call_tool(name, arguments)
+                        self.assertFalse(result.isError, result.content)
+                        return json.loads(result.content[0].text)
+                    for won in (True, False):
+                        started = await call('playtest_start', path='leash.expproj', seed=1)
+                        session = started['session']
+                        state = await call('playtest_run', session=session)
+                        self.assertEqual(state['minigame']['kind'], 'x360_leash')
+                        options = await call('playtest_skip_options', session=session)
+                        self.assertEqual([o['label'] for o in options['options']], ['Win', 'Lose', 'Play'])
+                        if won:
+                            state = await call('playtest_skip_minigame', session=session, option='Win')
+                            self.assertEqual(state['variables']['leash_won'], 1)
+                        else:
+                            state = await call('playtest_skip_minigame', session=session, option=2)       # Play
+                            self.assertTrue(state['minigame']['started'])
+                            state = await call('playtest_minigame_input', session=session, action='tick', milliseconds=10000)
+                            self.assertNotEqual(state['action'], 'x360_leash')                           # left to drain
+                            self.assertEqual(state['variables']['leash_won'], 0)
+                        await call('playtest_close', session=session)
+                    off = await call('playtest_start', path='leash.expproj', minigames=False)
+                    self.assertEqual((await call('playtest_run', session=off['session']))['variables']['real'], 0)
+
+
+@unittest.skipUnless(find_spec('mcp'), 'Install the creator-mcp extra for MCP transport checks')
 class CreatorMCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_initialize_tools_resources_edit_export_debug_and_shutdown(self):
         from mcp import ClientSession, StdioServerParameters

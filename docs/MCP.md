@@ -225,6 +225,35 @@ Continue or explicit clock ticks. Lower-level `playtest_debug_step` and
 explicit manual override recorded in the session state; it is not a simulated
 player result. Unknown service arguments remain pending.
 
+### Translated mini-games and cutscenes (shshd-runtime)
+
+A playtest plays as a player with the translated mini-games and storyboard
+cutscenes does. `playtest_start` (and a scenario) take `minigames=false` or
+`cutscenes=false` to test the story's other way, as a player without them
+takes it, and `skip_arena=true` for Ask to Skip Mini-Games before New Rules
+arena games. `playtest_run` stops at each mini-game and cutscene (and at the
+arena's frames, menu and info box); running until a choice or the end watches
+a cutscene through and presses at its hold.
+
+The state's `minigame` field reports the open game: its kind, whether it has
+started, phase, score or points, round, time left, result so far, and
+`waits_for` (the skip prompt or go-ahead, a press, a cell, or time).
+`playtest_minigame_input` plays it through the player's own Session calls:
+`press` is the go-ahead and then the game's button (the X360 slot machine,
+leash, jewel puzzle, Diss Practice and Diss Battle, the BREW catch game, a
+cutscene), a cell 0-8 for SHS '11's Memory and Reflex (no cell for their
+tutorial's OK), or a key code on New Rules' arena, followed by `milliseconds`;
+`tick` lets time pass. Time passes in player frames (16 ms each), so a game's
+own clock and caps behave as on a device.
+
+`playtest_skip_options` lists the skip prompt the player shows before the game
+starts: Win / Lose / Play, Skip / Play where the story goes one way, or the
+outcomes a quiz, slot machine, catch game or arena game's story has, worked out
+on copies of the session as the player does. `playtest_skip_minigame` answers
+it by label or index: an outcome finishes the game with that result, Play
+plays it. A cutscene's one option skips it to its end. Scenario steps take the
+same `press` and `skip` actions (`value` is the cell, key code or option).
+
 `playtest_run_scenario` executes a declarative `scenario` with up to 200 steps
 and 200 assertions. For example, adapt the IDs to your graph:
 

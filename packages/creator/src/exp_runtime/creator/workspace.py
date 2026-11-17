@@ -277,13 +277,15 @@ class Workspace:
             return {'path': str(output.relative_to(self.root)), 'sha256': self.revision(output),
                     'bytes': len(result.data), 'scripts': sorted(result.locations)}
 
-    def start_debug(self, name, start=None, *, seed=None, library=None, language=None):
+    def start_debug(self, name, start=None, *, seed=None, library=None, language=None, minigames=True, cutscenes=True,
+                    skip_arena=False):
         from .debugger import DebugSession
         if len(self.debuggers) >= 8: raise ProjectError('Close a debug session before starting another (limit 8)')
         project, revision = self.read(name)
         if library is not None: project.library = str(self.path(library)) if library else ''
         if project.library: project.library = str(self.path(project.library))
-        debugger = DebugSession(project, start=start, seed=seed, library=project.library or None, language=language)
+        debugger = DebugSession(project, start=start, seed=seed, library=project.library or None, language=language,
+                                minigames=minigames, cutscenes=cutscenes, skip_arena=skip_arena)
         key = uuid.uuid4().hex
         debugger.path, debugger.revision = name, revision
         self.debuggers[key] = debugger

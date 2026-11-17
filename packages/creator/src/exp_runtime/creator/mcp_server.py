@@ -184,9 +184,11 @@ def create_server(root):
 
     @write_tool(name='playtest_start')
     def debug_start(path: str, start: str | None = None, seed: int | None = None,
-                    library: str | None = None, language: Literal['en', 'fr', 'it', 'de', 'es'] | None = None) -> dict:
-        """Start isolated playback, paused at the first node. Optional seed 0–4294967295; imported library enables accurate layout/screenshots. Limit 8 sessions."""
-        result = workspace.start_debug(path, start, seed=seed, library=library, language=language)
+                    library: str | None = None, language: Literal['en', 'fr', 'it', 'de', 'es'] | None = None,
+                    minigames: bool = True, cutscenes: bool = True, skip_arena: bool = False) -> dict:
+        """Start isolated playback, paused at the first node. Optional seed 0–4294967295; imported library enables accurate layout/screenshots. minigames/cutscenes false play the story's other way (a player without them); skip_arena asks before New Rules arena games. Limit 8 sessions."""
+        result = workspace.start_debug(path, start, seed=seed, library=library, language=language, minigames=minigames,
+                                       cutscenes=cutscenes, skip_arena=skip_arena)
         return dict(session=result['session'], revision=result['revision'], **workspace.playtests[result['session']].state())
 
     @read_tool(name='playtest_get_state')
@@ -356,12 +358,31 @@ def create_server(root):
         return workspace.playtests[session].choose(option_id)
 
     @write_tool()
-    def playtest_input(session: str, action: Literal['continue', 'answer_text', 'answer', 'tick', 'step', 'grid_pointer'],
+    def playtest_input(session: str, action: Literal['continue', 'answer_text', 'answer', 'tick', 'step', 'grid_pointer', 'press', 'skip'],
                        value: str | int | None = None, milliseconds: int = 0,
                        phase: Literal['down', 'move', 'up', 'cancel'] | None = None, cell: int | None = None) -> dict:
-        """Send one real player/debug input. Tick accepts integer 0–60000 ms. Text uses native input rules; minigames use actual selections or pointer cells, never injected results."""
+        """Send one real player/debug input. Tick accepts integer 0–60000 ms. Text uses native input rules; minigames use actual selections or pointer cells, never injected results. Press and skip are as playtest_minigame_input and playtest_skip_minigame."""
         workspace.debugger(session)
         return workspace.playtests[session].input(action, value=value, milliseconds=milliseconds, phase=phase, cell=cell)
+
+    @write_tool()
+    def playtest_minigame_input(session: str, action: Literal['press', 'tick'], value: int | None = None,
+                                milliseconds: int = 0) -> dict:
+        """Play the open translated mini-game as the player does. press: the go-ahead, then the game's button (X360 slot machine, leash, jewel puzzle, Diss Practice and Battle, BREW catch game, a cutscene), a cell 0-8 for SHS '11's Memory and Reflex, or a key code on New Rules' arena; then milliseconds pass in frames. tick: let milliseconds pass in frames (0–60000). The state's minigame field shows its score, time left, round and what it waits for."""
+        workspace.debugger(session)
+        return workspace.playtests[session].input(action, value=value, milliseconds=milliseconds)
+
+    @read_tool()
+    def playtest_skip_options(session: str) -> dict:
+        """The skip prompt a player with Ask to Skip Mini-Games sees over the open mini-game (or a New Rules arena game, or a cutscene's skip): its options in order, Play last. Outcomes are worked out on copies of the session, as the player does."""
+        workspace.debugger(session)
+        return dict(options=workspace.playtests[session].skip_options())
+
+    @write_tool()
+    def playtest_skip_minigame(session: str, option: str | int) -> dict:
+        """Answer the skip prompt by an option's label or index from playtest_skip_options, as the player's tap does: an outcome finishes the game with it and the story goes on; Play plays it. A cutscene is skipped to its end."""
+        workspace.debugger(session)
+        return workspace.playtests[session].input('skip', value=option)
 
     @read_tool()
     def playtest_render(session: str) -> dict:
@@ -382,7 +403,9 @@ def create_server(root):
         if library is not None: project.library = str(workspace.path(library)) if library else ''
         if project.library: workspace.path(project.library)
         debugger = DebugSession(project, start=settings.get('start'), seed=settings['seed'],
-                                language=settings.get('language'), library=project.library or None)
+                                language=settings.get('language'), library=project.library or None,
+                                minigames=settings.get('minigames', True), cutscenes=settings.get('cutscenes', True),
+                                skip_arena=settings.get('skip_arena', False))
         try: return dict(revision=revision, **run_scenario(debugger, settings))
         finally: debugger.close()
 

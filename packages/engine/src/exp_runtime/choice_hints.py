@@ -336,6 +336,112 @@ def arena_outcomes(session, *, max_steps=40000, max_panels=30):
     return _outcomes(session, finish, range(ARENA_RESULTS), max_steps, max_panels, numbers=False)
 
 
+def word_game_options(outcomes):
+    """(option labels, the score each finishes the quiz with) for the skip prompt, best first, then "Play" (labels
+    only): Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, the score ranges for more
+    ("Score 6 or more", "Score 4 to 5", "Score 0 to 3"). The best outcome scores the most a quiz can, as Win always did;
+    any other its lowest score."""
+    if outcomes is None or len(outcomes) == 2:
+        return ('Win', 'Lose', 'Play'), (32767, 0)
+    if len(outcomes) == 1:
+        return ('Skip', 'Play'), (32767,)
+    labels, scores = [], []
+    for index, (low, high) in enumerate(reversed(outcomes)):
+        labels.append(f'Score {low} or more' if high is None else f'Score {low}' if low == high
+                      else f'Score {low} to {high}')
+        scores.append(32767 if index == 0 else low)
+    return (*labels, 'Play'), tuple(scores)
+
+
+def arena_skip_options(outcomes):
+    """(option labels, the result each hands the story) for a New Rules arena game's skip prompt, as word_game_options
+    labels them (Win / Lose, Skip, or the result ranges), then "Play" (labels only). Each outcome hands its lowest
+    result: every result in it leads the same way to the episode's end (checked on all 50 episodes, 2026-10-31)."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None:
+        return labels, (ARENA_RESULTS - 1, 0)
+    return labels, tuple(low for low, _ in reversed(outcomes))
+
+
+def brew_catch_skip_options(outcomes, target):
+    """(option labels, the score each finishes the BREW catch game with) for its skip prompt, as word_game_options labels
+    them (Win / Lose, Skip, or the score ranges), then "Play" (labels only). The best outcome scores the target, as
+    the game itself can at most; any other its lowest score."""
+    labels, _ = word_game_options(outcomes)
+    if outcomes is None or len(outcomes) == 2:
+        return labels, (target, 0)
+    if len(outcomes) == 1:
+        return labels, (target,)
+    best = outcomes[-1][0]                      # nothing scores more than the target, so the best names it
+    labels = (f'Score {target}' if best >= target else f'Score {best} to {target}', *labels[1:])
+    return labels, tuple(target if index == 0 else low for index, (low, _) in enumerate(reversed(outcomes)))
+
+
+def shs11_skip_options(outcomes, best=2):
+    """(option labels, the result each hands the story) for an SHS '11 game's skip prompt, best first, then "Play" (labels only):
+    Win / Lose for two outcomes (or when the previews cannot tell), Skip for one, Win / Come close / Lose for its three."""
+    if outcomes is None or len(outcomes) == 2:
+        return ('Win', 'Lose', 'Play'), (best, 0)
+    if len(outcomes) == 1:
+        return ('Skip', 'Play'), (best,)
+    return ('Win', 'Come close', 'Lose', 'Play'), (2, 1, 0)
+
+
+PLAY = None                     # skip_prompt's outcome for Play
+
+
+def skip_prompt(session):
+    """shshd-runtime: the skip prompt a player with Ask to Skip Mini-Games puts over the pending mini-game, as [(label, outcome)]
+    in its order, Play last (outcome PLAY); None where it puts none. The same labels and outcomes as desktop.Desktop._host_prompt,
+    for players without a window (the Creator's playtest); answer_skip_prompt answers it as the player does. A New Rules arena
+    game's (service 213 waiting) is the one shown whatever has started; the others only before their game has."""
+    action = session.pending
+    name = action.name if action else None
+    if name == 'arena_skip':
+        labels, results = arena_skip_options(arena_outcomes(session))
+        return list(zip(labels, (*results, PLAY)))
+    if name not in ('word_game', 'word_grid', 'football') and not session.minigame_unstarted:
+        return None
+    if name in ('word_grid', 'football', 'x360_leash', 'x360_diss', 'x360_battle'):
+        return [('Win', True), ('Lose', False), ('Play', PLAY)]
+    if name == 'x360_puzzle':
+        return [('Skip', False), ('Play', PLAY)]
+    if name == 'word_game':
+        labels, values = word_game_options(word_game_outcomes(session))
+    elif name == 'x360_slot':
+        labels, values = arena_skip_options(x360_slot_outcomes(session))
+        labels = tuple(label.replace(' or more', '') for label in labels)        # (5 is all there is)
+    elif name in ('shs11_memory', 'shs11_reflex'):
+        labels, values = shs11_skip_options(shs11_outcomes(session), getattr(getattr(session.engine, name), 'best_result', 2))
+    elif name == 'brew_catch':
+        labels, values = brew_catch_skip_options(brew_catch_outcomes(session), session.engine.brew_catch.target)
+    else:
+        return None
+    return list(zip(labels, (*values, PLAY)))
+
+
+def answer_skip_prompt(session, outcome):
+    """Answer the pending mini-game's skip prompt with one of skip_prompt's outcomes, as the player's choice does: an outcome
+    finishes the game with it (the story going on), PLAY lets it play, with the go-ahead the prompt gave."""
+    name = session.pending.name if session.pending else None
+    if name == 'arena_skip':
+        return session.answer(-1 if outcome is PLAY else outcome)
+    if outcome is PLAY:
+        session.start_minigame()
+        if name in ('x360_slot', 'x360_leash', 'x360_diss', 'x360_battle', 'x360_puzzle'):
+            getattr(session.engine, name).start()           # the prompt was its go-ahead: no second one
+        return session.pending
+    if name == 'word_game':
+        return session.skip_word_game(outcome)
+    if name == 'x360_slot':
+        return session.skip_x360_slot(outcome)
+    if name in ('shs11_memory', 'shs11_reflex'):
+        return session.skip_shs11(outcome)
+    if name == 'brew_catch':
+        return session.skip_brew_catch(outcome)
+    return session.skip_minigame(outcome)
+
+
 def _preview_story(session, finish, value, max_steps, max_panels, numbers=True):
     """What `finish(preview, value)` leads to on an isolated runtime copy that plays on through its next panels to its
     next decision, or None when the copy can't tell."""

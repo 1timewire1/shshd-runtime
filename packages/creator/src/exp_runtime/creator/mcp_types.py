@@ -22,12 +22,13 @@ class Edit(BaseModel):
 
 class ScenarioStep(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    action: Literal['run', 'choose', 'continue', 'answer_text', 'answer', 'tick', 'step', 'grid_pointer']
+    action: Literal['run', 'choose', 'continue', 'answer_text', 'answer', 'tick', 'step', 'grid_pointer', 'press', 'skip']
     until: Literal['input', 'choice', 'end', 'node'] = 'input'
     node_id: str | None = None
     option_id: str | None = Field(default=None, description='For choose: exact enabled option ID returned by a playtest, stable within this project revision.')
-    value: str | int | None = None
-    milliseconds: int = Field(default=0, ge=0, le=60000, description='For tick: integer 0–60000 milliseconds; default 0.')
+    value: str | int | None = Field(default=None, description='For answer/answer_text: the answer. For press: a cell 0-8 (SHS \'11) '
+                                   'or an arena key code, else none. For skip: a skip option\'s label or index.')
+    milliseconds: int = Field(default=0, ge=0, le=60000, description='For tick, or after a press: integer 0–60000 milliseconds; default 0.')
     phase: Literal['down', 'move', 'up', 'cancel'] | None = None
     cell: int | None = None
 
@@ -45,5 +46,8 @@ class Scenario(BaseModel):
     seed: int = Field(default=0, ge=0, le=4294967295, description='Reproducible unsigned 32-bit seed, 0–4294967295; default 0.')
     start: str | None = Field(default=None, description='Optional authored starting node; imported native entry points stay fixed.')
     language: Literal['en', 'fr', 'it', 'de', 'es'] | None = None
+    minigames: bool = Field(default=True, description='Play the translated mini-games (as the player does); false tests the story\'s other way.')
+    cutscenes: bool = Field(default=True, description='Play storyboard cutscenes (as the player does); false tests the story\'s other way.')
+    skip_arena: bool = Field(default=False, description='Ask before each New Rules arena game, as Ask to Skip Mini-Games does.')
     steps: list[ScenarioStep] = Field(max_length=200, description='At most 200 real input operations. Stops on errors, unsupported calls or budgets.')
     assertions: list[Assertion] = Field(default_factory=list, max_length=200, description='At most 200 checks against the final state or visited nodes.')
