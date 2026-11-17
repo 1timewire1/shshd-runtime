@@ -56,7 +56,10 @@ on **Releases**. From v1.1.0 it also waits for the iOS job and the Android APK
 and `shshd-runtime-<tag>-android.apk` with their checksums. The iOS job's
 `macos-26` runner can queue for a long time, so a release can wait on it; the
 Android build needs the release key's repository secrets
-([ANDROID_APP.md](ANDROID_APP.md)). Ordinary pushes and pull requests
+([ANDROID_APP.md](ANDROID_APP.md)). When GitHub's Apple Silicon runners are
+short, a macOS or iOS job that gets none is cancelled after 15 minutes with no
+steps run (2026-11-16's 0b47ecc run), and no release is made: use **Re-run
+failed jobs** on the tag's run, and the release jobs follow once they pass. Ordinary pushes and pull requests
 never create releases. Their jobs have read-only repository permissions; only
 the version-tag release job has `contents: write`, using GitHub's built-in
 token. No personal token is required; the only signing secrets are the Android release key's.
