@@ -55,7 +55,8 @@ class Workspace:
                 'native': bool(project.native), 'node_count': len(project.nodes),
                 'nodes': [asdict(n) for n in project.nodes[offset:offset + limit]],
                 'characters': [asdict(c) for c in project.characters],
-                'addons': project.addons, 'options': project.options,
+                'addons': project.addons, 'options': project.options, 'journal': project.journal,
+                'optional_art': project.optional_art, 'calendars': project.calendars,
                 'assets': [{'id': a.id, 'name': a.name, 'embedded': a.data is not None, 'addon': a.addon,
                             'bytes': len(a.data) if a.data else 0} for a in project.assets]}
 

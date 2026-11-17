@@ -39,7 +39,8 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
                   'x360_leash': 'the X360 leash game', 'x360_puzzle': 'the X360 jewel puzzle',
                   'x360_diss': 'X360 Diss Practice', 'x360_battle': 'the X360 Diss Battle',
                   'cutscene_available': 'storyboard cutscenes',
-                  'cutscene': 'storyboard cutscenes'}
+                  'cutscene': 'storyboard cutscenes',
+                  'run_due': 'running a scene and coming back', 'call_scene': 'running a scene and coming back'}
 # In an imported episode's scripts: New Rules' arena and the X360 games (ENGINE_ABI.md 5.1, 5.2), cutscenes (5.3),
 # SHS '11's games (5.4), the catch game (5.5), running a script and coming back (5.6) and the word grid's part score (5.6a).
 # Every service from 200 that the runtime answers is listed (a test checks): the original apps stop at any of them.

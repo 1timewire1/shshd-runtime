@@ -340,7 +340,7 @@ class Editor(QMainWindow):
         toolbox.addWidget(button)
         for label, callback in (('Characters…', self.characters), ('Translations…', self.translations),
                                 ('Emoticon images…', self.emoticon_images), ('Quest journal…', self.quest_journal),
-                                ('Optional art…', self.optional_art),
+                                ('Optional art…', self.optional_art), ('Calendars…', self.calendars_panel),
                                 ('Add-ons and settings…', self.addon_settings),
                                 ('Auto arrange', self.arrange), ('Copy nodes', self.copy),
                                 ('Paste nodes', self.paste), ('Duplicate nodes', self.duplicate)):
@@ -844,6 +844,21 @@ class Editor(QMainWindow):
                     art.setdefault(addon, {})[str(resource)] = box.currentData()
             self.set_project('optional_art', art)
             self.show_properties()
+
+    def calendars_panel(self):
+        """The project's calendars (calendar_panel.CalendarDialog); nodes its Free time preset adds join the story."""
+        from .calendar_panel import CalendarDialog
+        if self.project.native:
+            self.error('Native projects keep their original scripts.'); return
+        if self.project.game != 'shs':
+            self.error('Calendars are for Surviving High School episodes.'); return
+        dialog = CalendarDialog(self.project, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.remember()
+            self.project.calendars = dialog.value
+            self.project.nodes.extend(dialog.nodes)
+            self.changed()
+            self.refresh()
 
     def stat_changes_preset(self):
         """Fill the selected Message node with a "Stat changes" page: a line for each property picked, `{+prop(0, key)}`

@@ -669,7 +669,7 @@ call into another scene would if SHS had one. The caller's frames wait on a stac
 nest runner uses it for the events BREW runs inside another (service 37), one after another, as the decompiled '08 engine
 does (`FUN_0000af08`). It takes exactly one argument and nests at most 16 deep (`NESTED_SCRIPT_DEPTH`); the inner script's end
 (a halt) resumes the caller with 0. Native players and upstream exp-runtime
-stop at it as an unknown service. [BREW.md](BREW.md) has the season driver around it.
+stop at it as an unknown service. [BREW.md](BREW.md) has the season driver around it. The Creator's **Run due events** and **Run a scene and come back** nodes use it too ([CREATOR.md](CREATOR.md#calendars)).
 
 ## 5.6a The word grid's part score (shshd-runtime service 224)
 

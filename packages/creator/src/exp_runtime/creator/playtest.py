@@ -71,6 +71,8 @@ class Playtest:
             result.update(pending_arguments=raw['pending_arguments'], details=raw['details'])
         minigame = self.minigame(raw)
         if minigame is not None: result['minigame'] = minigame
+        calendar = self.calendar()
+        if calendar is not None: result['calendar'] = calendar
         if verbose: result['vm'] = raw
         return result
 
@@ -109,6 +111,33 @@ class Playtest:
         else:
             summary['waits_for'] = 'time'       # an opening, countdown, time-up or closing
         return summary
+
+    def calendar(self):
+        """The running calendar as a player would read it: its date, the clock and today's events (with whether each has run)."""
+        project = self.debugger.project
+        if not project.calendars:
+            return None
+        from . import calendar as cal
+        from .features import parameters
+        engine = self.debugger.session.engine
+        number = lambda key: engine.numbers.get(engine.number_key(cal.OWNER, key), 0)
+        running = number(cal.CAL)
+        if not 1 <= running <= len(project.calendars):
+            return dict(running=None)
+        calendar, day, clock = project.calendars[running - 1], number(cal.DAY), number(cal.CLOCK)
+        found = cal.templates(project, parameters)[0]
+        states = {cal.WAITING: 'waiting', cal.PENDING: 'due', cal.DONE: 'done', cal.CANCELLED: 'cancelled'}
+        today = []
+        if day >= 0:
+            for i in range(number(cal.DAY_COUNT - day)):
+                n = number(cal.DAY_LIST - cal.MOST_A_DAY * day - i)
+                field = lambda f: number(cal.OCCURRENCE - cal.FIELDS * n - f)
+                template = found[field(cal.TEMPLATE_F) - 1] if 1 <= field(cal.TEMPLATE_F) <= len(found) else None
+                today.append(dict(name=template.name if template else '', node=template.node if template else '',
+                                  minute=field(cal.MINUTE_F), state=states.get(field(cal.STATE_F), '?')))
+        return dict(running=calendar['id'], day=day, date=cal.date_text(calendar, day) if day >= 0 else None,
+                    minute=clock, time=f'{(clock // 60) % 24:02}:{clock % 60:02}', events_left=number(cal.WAITING_LEFT),
+                    today=sorted(today, key=lambda e: e['minute']))
 
     def skippable(self):
         """Whether the player's skip prompt (Ask to Skip Mini-Games) is over the pending screen, or it's a cutscene (always

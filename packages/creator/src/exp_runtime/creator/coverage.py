@@ -135,7 +135,7 @@ RUNTIME_STATUS = {
     214: emits('x360_slot'), 215: emits('x360_leash'), 216: emits('x360_puzzle'), 217: emits('x360_diss'),
     218: emits('cutscene'), 219: emits('shs11_memory'), 220: emits('shs11_reflex'), 221: emits('brew_catch'),
     222: emits('x360_battle'),
-    223: pending('running a scene and coming back: no node yet (Stage 3)'),
+    223: emits('call_scene', 'run_due'),
     224: emits('grid'),
 }
 PRESENTATION_STATUS = {

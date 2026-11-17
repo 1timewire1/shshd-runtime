@@ -106,6 +106,12 @@ def rename_node(project, old, new):
         if n.otherwise == old: n.otherwise = new
         for option in n.options:
             if option.target == old: option.target = new
+        if n.kind in ('schedule_event', 'call_scene') and n.params.get('target') == old:
+            n.params = dict(n.params, target=new)
+    for calendar in project.calendars:              # (the nodes calendars name: their After node and their events')
+        if calendar['after'] == old: calendar['after'] = new
+        for event in calendar['events']:
+            if event['node'] == old: event['node'] = new
     prefix = f'node.{old}.'
     for language, translations in project.locales.items():
         project.locales[language] = {(f'node.{new}.' + key[len(prefix):] if key.startswith(prefix) else key): value

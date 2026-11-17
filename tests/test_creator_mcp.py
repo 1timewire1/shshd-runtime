@@ -77,6 +77,46 @@ class CreatorMCPMinigameTests(unittest.IsolatedAsyncioTestCase):
                     off = await call('playtest_start', path='leash.expproj', minigames=False)
                     self.assertEqual((await call('playtest_run', session=off['session']))['variables']['real'], 0)
 
+    async def test_a_calendar_is_previewed_and_played_through_mcp(self):
+        # Creator catch-up Stage 3 (2026-11-17).
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        from exp_runtime.creator.model import save_project
+        sys.path.insert(0, str(Path(__file__).parent))
+        from test_creator_calendar import story
+        with tempfile.TemporaryDirectory() as directory:
+            save_project(story(), Path(directory) / 'term.expproj')
+            params = StdioServerParameters(command=sys.executable,
+                args=['-m', 'exp_runtime.creator.mcp_server', '--workspace', directory])
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write) as client:
+                    await client.initialize()
+
+                    async def call(name, **arguments):
+                        result = await client.call_tool(name, arguments)
+                        self.assertFalse(result.isError, result.content)
+                        return json.loads(result.content[0].text)
+                    preview = await call('calendar_preview', path='term.expproj')
+                    days = preview['calendars'][0]['days']
+                    self.assertEqual(days[0]['date'], 'Monday, September 13')
+                    started = await call('playtest_start', path='term.expproj', seed=1)
+                    session = started['session']
+                    state = await call('playtest_run', session=session)
+                    for _ in range(3):
+                        await call('playtest_input', session=session, action='tick', milliseconds=3000)
+                        await call('playtest_input', session=session, action='continue')
+                        state = await call('playtest_run', session=session)
+                    self.assertEqual(state['calendar']['date'], 'Monday, September 13')
+                    self.assertEqual([e['name'] for e in state['calendar']['today']], ['Class', 'Lunch', 'Secret'])
+                    calendars = preview['calendars']
+                    project = await call('project_get', path='term.expproj', view='full')
+                    changed = json.loads(json.dumps(project['calendars']))
+                    changed[0]['week_cards'] = True
+                    await call('project_update', path='term.expproj', revision=project['revision'], changes={'calendars': changed})
+                    self.assertTrue((await call('project_get', path='term.expproj', view='full'))['calendars'][0]['week_cards'])
+                    await call('playtest_close', session=session)
+                    del calendars
+
 
 @unittest.skipUnless(find_spec('mcp'), 'Install the creator-mcp extra for MCP transport checks')
 class CreatorMCPTests(unittest.IsolatedAsyncioTestCase):

@@ -23,7 +23,7 @@ KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 
          'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
          'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
          'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
-         'open_url', 'survey', 'quest', 'journal_updated', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
+         'open_url', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
@@ -91,7 +91,7 @@ class Node:
                 return [('Native', f'{self.params["script"]}:{target}') for target in dict.fromkeys(targets)]
             except (KeyError, TypeError, ValueError):
                 return []
-        if self.kind == 'end':
+        if self.kind in ('end', 'start_calendar', 'calendar_back', 'return_scene'):   # (calendar_driver.ENDS)
             return []
         if self.kind == 'choice':
             return [(option.text, option.target) for option in self.options]
@@ -154,6 +154,8 @@ class Project:
     # `optional_art`): {add-on: {"own picture": add-on resource}}. Surviving Hollywood's art (Hollywood Art) by number; a DSi
     # location (DSi Backgrounds) by its left screen. The add-on stays optional: players without it show the project's own.
     optional_art: dict = field(default_factory=dict)
+    # shshd-runtime: the story's calendars (calendar.py; CREATOR_CALENDAR_DESIGN.md), BREW's school days and events.
+    calendars: list[dict] = field(default_factory=list)
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -357,6 +359,8 @@ def validate_structure(project: Project):
             raise ProjectError('A journal stat needs a label')
         _integer(stat['key'], 0, 32767, 'Journal stat key')
         _string(stat['prefix'], 'journal stat prefix', 4)
+    from .calendar import validate_calendars
+    validate_calendars(project.calendars)
     if not isinstance(project.optional_art, dict) or set(project.optional_art) - set(OPTIONAL_ART_ADDONS):
         raise ProjectError('Optional art comes from ' + ' or '.join(OPTIONAL_ART_ADDONS))
     for table in project.optional_art.values():
@@ -491,6 +495,7 @@ def project_from_record(data):
         data.setdefault('episode_version', None)
         data.setdefault('journal', [])
         data.setdefault('optional_art', {})
+        data.setdefault('calendars', [])
         for node in data['nodes']:
             for option in node.get('options', ()):
                 if isinstance(option, dict):

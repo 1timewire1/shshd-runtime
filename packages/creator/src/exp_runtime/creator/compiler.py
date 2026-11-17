@@ -40,7 +40,7 @@ TEXT_BUFFER_WORDS = 512
 # What a failed survey upload shows: the offline runtime replaces exactly this response with its local receipt
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
-SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'quest', 'journal_updated', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                             'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
@@ -101,10 +101,23 @@ def _node_expression(node):
     return None
 
 
+def _calendar_expressions(node):
+    """A calendar node's expressions (its day and minute), and a scene label's icon."""
+    p = parameters(node)
+    if node.kind == 'schedule_event':
+        return [p['day'] or 'day()'] + ([p['minute']] if p['minute'].strip() else [])
+    if node.kind in ('set_clock', 'skip_ahead'):
+        return [p['minute']] if node.kind == 'set_clock' or p['to'] == 'time' else []
+    if node.kind == 'scene_label' and p['icon_expression'].strip():
+        return [p['icon_expression']]
+    return []
+
+
 def node_expressions(node):
     answers = parameters(node)['answers'] if node.kind == 'survey' else []
     answers = [value for value in answers if isinstance(value, str)] if isinstance(answers, list) else []
-    return [value for value in [_node_expression(node)] + [o.condition for o in node.options] + answers if value]
+    return [value for value in [_node_expression(node)] + [o.condition for o in node.options] + answers
+            + _calendar_expressions(node) if value]
 
 
 def text_key(name):
@@ -131,6 +144,10 @@ def variable_names(project):
             names.update(p['results'])
         for expression in node_expressions(node):
             names.update(expressions.parse(expression)[1])
+    for calendar in project.calendars:
+        for event in calendar['events']:
+            if event['condition'].strip():
+                names.update(expressions.parse(event['condition'])[1])
     if any(n.kind == 'speakers' and parameters(n)['narrator'] for n in project.nodes):
         names.add(NARRATOR)
     return sorted(names)
@@ -175,6 +192,50 @@ def catch_library_sizes(project):
 
 
 _CATCH_SIZES = {}
+
+
+def validate_calendars(project, nodes):
+    """The calendars' nodes, events and conditions, and every calendar node and function's calendar (calendar.py)."""
+    from . import calendar as cal
+    if project.calendars and project.game != 'shs':
+        raise ProjectError('Calendars are for Surviving High School episodes')
+    ids = {c['id'] for c in project.calendars}
+    names = {(c['id'], e['name']) for c in project.calendars for e in c['events']}
+    for calendar in project.calendars:
+        label = f'Calendar {calendar["name"] or calendar["id"]}'
+        if calendar['after'] and calendar['after'] not in nodes:
+            raise ProjectError(f'{label}: choose an existing After node')
+        for event in calendar['events']:
+            if event['node'] not in nodes:
+                raise ProjectError(f'{label}: event {event["name"] or "?"} needs an existing node to start at')
+            if event['condition'].strip():
+                expressions.parse(event['condition'])
+        cal.occurrences(calendar, calendar['events'])           # (its days and limits)
+    for node in project.nodes:
+        p = parameters(node)
+        label = node.label or node.id
+        if node.kind in ('start_calendar', 'schedule_event', 'cancel_event') and p['calendar'] not in ids:
+            raise ProjectError(f'{label}: choose one of the project\'s calendars')
+        if node.kind in ('schedule_event', 'cancel_event') and p['event'] and (p['calendar'], p['event']) not in names \
+                and not (node.kind == 'cancel_event' and any(
+                    n.kind == 'schedule_event' and parameters(n)['name'] == p['event'] for n in project.nodes)):
+            raise ProjectError(f'{label}: {p["calendar"]} has no event named {p["event"]}')
+        if node.kind == 'schedule_event' and not p['event']:
+            if p['target'] not in nodes:
+                raise ProjectError(f'{label}: choose an event, or the node a new one starts at')
+            if not p['minute'].strip():
+                raise ProjectError(f'{label}: give the new event a time')
+        if node.kind == 'cancel_event' and not p['event']:
+            raise ProjectError(f'{label}: name the event to cancel')
+        if node.kind == 'skip_ahead' and p['to'] not in ('time', 'end_of_day'):
+            raise ProjectError(f'{label}: skip ahead to a time or to the end of the day')
+        if node.kind == 'call_scene' and p['target'] not in nodes:
+            raise ProjectError(f'{label}: choose the node whose scene it runs')
+        if node.kind in ('set_clock', 'skip_ahead', 'schedule_event', 'cancel_event', 'run_due') and not project.calendars:
+            raise ProjectError(f'{label}: add a calendar to the project first')
+        for expression in _calendar_expressions(node) + node_expressions(node):
+            if expressions.uses_calendar(expressions.parse(expression)[0]) and not project.calendars:
+                raise ProjectError(f'{label}: day(), minute() and the other calendar functions need a calendar')
 
 
 def validate_node(project, node, nodes, assets, characters):
@@ -552,6 +613,7 @@ def validate(project: Project):
             raise ProjectError(f'Music {p["resource"]} runs into a loop in one node but not the same way in another; '
                                'an intro always runs into one loop')
     validate_tree_pairing(project, nodes)
+    validate_calendars(project, nodes)
     asked = {parameters(n)['for'] for n in project.nodes if n.kind == 'minigames_available'}
     for node in project.nodes:
         wants = QUERY_FOR.get(node.kind)
@@ -692,10 +754,23 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
     slots = cycle(FORMAT_SLOTS)
     nodes = {node.id: node for node in project.nodes}
     scenes = sorted({node.scene for node in project.nodes})
-    shared = len(scenes) > 1
+    shared = len(scenes) > 1 or bool(project.calendars)          # a calendar's driver is a script of its own
     if len(scenes) > 998: raise ProjectError('At most 998 authored scenes are supported')
     scripts = {scene: 25002 + i for i, scene in enumerate(scenes)} if shared else {scenes[0]: 25001}
     ordinals = {node.id: i for i, node in enumerate(project.nodes)}
+    if project.calendars and len(scenes) > 997: raise ProjectError('A project with a calendar has at most 997 scenes')
+    from . import calendar as calendars
+    from .calendar_driver import KINDS as CALENDAR_KINDS, ENDS as CALENDAR_ENDS, Context as CalendarContext, driver, emit_node
+    calendar_context = CalendarContext(project, parameters, ordinals, lambda node_id: scripts[nodes[node_id].scene],
+                                       25002 + len(scenes) if project.calendars else None,
+                                       lambda key, fallback: translated(project, key, fallback))
+
+    def calendar_hook(asm):
+        """The calendar functions' writer for an expression in this script, or None without a calendar."""
+        if not project.calendars:
+            return None
+        return lambda name, args, walk: calendars.emit_function(calendars.emitter(asm), name, args, walk,
+                                                                calendar_context.templates, calendar_context.by_name)
     resources = {asset.id: asset.data for asset in project.assets if asset.data is not None}
     characters, definitions = _character_bank(project, resources)
     locations = {}
@@ -752,7 +827,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.emit(0x1a, variables[name]); asm.emit(0x07); asm.emit(0x3e); asm.emit(0x15)
 
         def expression(value):
-            expressions.emit(asm, expressions.parse(value)[0], read_variable, characters.__getitem__)
+            expressions.emit(asm, expressions.parse(value)[0], read_variable, characters.__getitem__, calendar_hook(asm))
+        calendar_context.expression = lambda _asm, value: expression(value)
 
         def store_word(address):
             # Stack value -> data word `address`, as a single-scene variable is stored.
@@ -788,7 +864,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                     asm.emit(0x1a, asm.text('')); asm.jump(done)
                     asm.labels[rise] = len(asm.code); asm.emit(0x1a, asm.text('+'))
                     asm.labels[done] = len(asm.code)
-                else: expressions.emit(asm, item, read_variable, characters.__getitem__)
+                else: expressions.emit(asm, item, read_variable, characters.__getitem__, calendar_hook(asm))
             if len(values) > 253: raise ProjectError('A text can format at most 253 values')
             asm.emit(0x1f, 0 << 8 | len(values) + 2)
             return 0x7ff5 + slot
@@ -880,7 +956,14 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'message': asm.call(33, text('title'), text('text'), p['flag'])
             elif kind == 'notice': asm.call(88, text('text'))
             elif kind == 'emphasis': asm.call(89)
-            elif kind == 'scene_label': asm.call(90, p['icon'], text('text') if node.text else -1)
+            elif kind == 'scene_label':
+                if p['icon_expression'].strip():        # its icon from the story's state, as BREW's time badges (plan Stage 3, 2)
+                    expression(p['icon_expression']); asm.emit(0x1a, text('text') if node.text else -1)
+                    asm.emit(0x1f, 90 << 8 | 2)
+                else:
+                    asm.call(90, p['icon'], text('text') if node.text else -1)
+            elif kind in CALENDAR_KINDS:
+                emit_node(asm, calendar_context, node, p, expression)
             elif kind == 'quest':
                 # Its title and lines under the episode's own keys, and the count past the highest quest the project sets.
                 title_form, lines_form = journal_forms(project)
@@ -1017,9 +1100,20 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 if node.text: asm.call(106, p['index'], text('text'))
                 else: asm.call(107, p['index'])
             elif kind == 'end': asm.call(7); asm.emit(0x33)
-            if kind not in ('choice', 'branch', 'text_branch', 'end'):
+            if kind not in ('choice', 'branch', 'text_branch', 'end', *CALENDAR_ENDS):
                 route(asm, scene, node.next)
         resources[script_id] = asm.finish()
+    if project.calendars:
+        # The calendar's own script, after the scenes' (CREATOR_CALENDAR_DESIGN.md "How it plays").
+        asm = _Assembler()
+
+        def driver_variable(name):
+            asm.call(53, VARIABLE_OWNER, variables[name]); asm.emit(0x21)
+        calendar_context.expression = lambda _asm, value: expressions.emit(
+            asm, expressions.parse(value)[0], driver_variable, characters.__getitem__, calendar_hook(asm))
+        driver(asm, calendar_context)
+        resources[calendar_context.driver_script] = asm.finish()
+        locations[calendar_context.driver_script] = {}
     titles = tuple(project.locales.get(language, {}).get('title', project.title) for language in ('en', 'fr', 'it', 'de', 'es'))
     resources[1] = Metadata(project.pack_id, project.episode_id, titles).to_bytes()
     record = project_record(project)

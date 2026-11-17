@@ -15,6 +15,10 @@ COMPARE = {ast.Eq: 0x0a, ast.NotEq: 0x0b, ast.Gt: 0x0c, ast.GtE: 0x0d, ast.Lt: 0
 FUNCTIONS = {'prop': (53, 2), 'bit': (51, 3), 'art': (73, 1), 'build': (70, 1)}
 # build(n), the app build query (70): 2 and 3 are constants, 9 is 1 and 10 tells whether the in-app store is available.
 BUILD_SELECTORS = (2, 3, 9, 10)
+# shshd-runtime: a calendar's state and date maths (calendar.emit_function; CREATOR_CALENDAR_DESIGN.md): name -> argument count.
+# event_first takes an event's name, in quotes.
+CALENDAR_FUNCTIONS = {'day': 0, 'weekday': 0, 'minute': 0, 'date': 2, 'next_weekday': 1, 'days_between': 4, 'event_first': 1,
+                      'events_between': 2}
 RESERVED_OWNER = -30000
 
 
@@ -59,6 +63,13 @@ def parse(expression):
             for value in node.values: check(value)
         elif isinstance(node, ast.Compare) and all(type(op) in COMPARE for op in node.ops):
             for value in (node.left, *node.comparators): check(value)
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in CALENDAR_FUNCTIONS
+              and not node.keywords and len(node.args) == CALENDAR_FUNCTIONS[node.func.id]):
+            if node.func.id == 'event_first':
+                if not (isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str) and node.args[0].value):
+                    raise ProjectError("event_first takes an event's name in quotes")
+                return
+            for value in node.args: check(value)
         elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in FUNCTIONS
               and not node.keywords and len(node.args) == FUNCTIONS[node.func.id][1]):
             owner, *rest = node.args
@@ -73,23 +84,38 @@ def parse(expression):
             for value in rest: check(value)
         else:
             raise ProjectError('Use integers, variables, arithmetic, comparisons, and/or/not, '
-                               'and prop(owner, key), bit(owner, key, n), art(character) or build(n) only')
+                               'and prop(owner, key), bit(owner, key, n), art(character) or build(n) only, or with a '
+                               'calendar day(), weekday(), minute(), date(month, day), next_weekday(w), '
+                               'days_between(m, d, m, d), event_first("name") or events_between(from, to)')
     check(tree)
     return tree, names
 
 
+def uses_calendar(tree):
+    """Whether an expression reads a calendar."""
+    return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in CALENDAR_FUNCTIONS
+               for node in ast.walk(tree))
+
+
 def characters(tree):
     """Character IDs named as owners."""
-    return {node.args[0].value for node in ast.walk(tree) if isinstance(node, ast.Call)
+    return {node.args[0].value for node in ast.walk(tree) if isinstance(node, ast.Call) and node.args
+            and getattr(node.func, 'id', '') in FUNCTIONS
             and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)}
 
 
-def emit(asm, tree, read_variable, character=None):
-    """`character(id)` gives the native number of a character named as an owner."""
+def emit(asm, tree, read_variable, character=None, calendar=None):
+    """`character(id)` gives the native number of a character named as an owner; `calendar(name, args, walk)` writes a calendar
+    function."""
     serials = itertools.count()
 
     def walk(tree):
-        if isinstance(tree, ast.Call):
+        if isinstance(tree, ast.Call) and tree.func.id in CALENDAR_FUNCTIONS:
+            if calendar is None:
+                raise ProjectError(f'{tree.func.id}() reads a calendar: add one to the project')
+            args = [a.value for a in tree.args] if tree.func.id == 'event_first' else tree.args
+            calendar(tree.func.id, args, walk)
+        elif isinstance(tree, ast.Call):
             service, count = FUNCTIONS[tree.func.id]
             for argument in tree.args:
                 if isinstance(argument, ast.Constant) and isinstance(argument.value, str):

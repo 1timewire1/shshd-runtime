@@ -12,6 +12,9 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              notice='Dialogue notification', emphasis='Emphasize dialogue', scene_label='Scene label',
              pan='Background pan', transition='Screen transition', close_dialogue='Close dialogue',
              random='Random variable', quest='Set quest', journal_updated='Journal updated',
+             start_calendar='Start calendar', calendar_back='Back to the calendar', schedule_event='Schedule event',
+             cancel_event='Cancel event', set_clock='Set the clock', skip_ahead='Skip ahead', run_due='Run due events',
+             call_scene='Run a scene and come back', return_scene='Return',
              minigames_available='Real minigames?', cutscene_available='Cutscenes?', cutscene='Storyboard cutscene', x360_slot='X360 slot machine', x360_leash='X360 leash game', x360_puzzle='X360 jewel puzzle', x360_diss='X360 Diss Practice', x360_battle='X360 Diss Battle', word_game='Timed word choices', football='Football (SHS)',
              grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", brew_catch='Catch game (BREW)', scene='Scene link',
              flag='Property flag', speakers='Player / narrator', set_text='Set text', text_default='Text default',
@@ -38,10 +41,16 @@ DEFAULTS = {
     'text_branch': {'variable': 'answer', 'equals': 'Answer'},
     'title': {'subtitle': '', 'background': -1, 'flag': 0},
     'message': {'title': '', 'flag': 0}, 'notice': {}, 'emphasis': {},
-    'scene_label': {'icon': -1}, 'pan': {'automatic': True, 'alignment': 2},
+    'scene_label': {'icon': -1, 'icon_expression': ''}, 'pan': {'automatic': True, 'alignment': 2},
     # shshd-runtime: the quest journal the pause menu shows (presentation `journal`; owner, 2026-11-17). A quest's lines are the
     # node's text; an empty title takes the quest off. Journal updated is a scene label with its own words and a sound.
     'quest': {'number': 0, 'title': 'A quest'}, 'journal_updated': {'icon': -1, 'sound': -1},
+    # shshd-runtime: calendars (calendar.py). Times are minutes after midnight; day and minute are expressions.
+    'start_calendar': {'calendar': ''}, 'calendar_back': {},
+    'schedule_event': {'calendar': '', 'event': '', 'target': '', 'name': '', 'icon': -1, 'duration': -1, 'first': False,
+                       'day': 'day()', 'minute': ''},
+    'cancel_event': {'calendar': '', 'event': '', 'all': True}, 'set_clock': {'minute': '540'},
+    'skip_ahead': {'to': 'time', 'minute': '900'}, 'run_due': {}, 'call_scene': {'target': ''}, 'return_scene': {},
     'transition': {'selector': 0}, 'close_dialogue': {},
     'random': {'bound': 2, 'result': 'roll'},
     'minigames_available': {'result': 'real_minigames', 'for': ''}, 'cutscene_available': {'result': 'real_cutscene'}, 'cutscene': {'spec': 0}, 'x360_slot': {'result': 'slot_points'}, 'x360_leash': {'result': 'leash_won'}, 'x360_puzzle': {'result': 'puzzle_score'}, 'x360_diss': {'result': 'diss_score', 'tutorial': 0},
@@ -109,6 +118,12 @@ def text_fields(project):
     if project.native: return result
     for character in project.characters:
         result[f'character.{character.id}.name'] = character.name
+    for calendar in project.calendars:              # (calendar_driver: its cards' title and its events' badges)
+        if calendar['card_title']:
+            result[f'calendar.{calendar["id"]}.card_title'] = calendar['card_title']
+        for k, event in enumerate(calendar['events']):
+            if event['name']:
+                result[f'calendar.{calendar["id"]}.event.{k}.name'] = event['name']
     for node in project.nodes:
         for field in ('text', 'speaker'):
             result[f'node.{node.id}.{field}'] = getattr(node, field)
@@ -118,7 +133,7 @@ def text_fields(project):
                 result[f'node.{node.id}.option.{i}.detail'] = option.detail
         p = parameters(node)
         for field in ('prompt', 'default', 'equals', 'subtitle', 'title', 'notification', 'success', 'failure',
-                      'extra_offense', 'extra_defense'):
+                      'extra_offense', 'extra_defense') + (('name',) if node.kind == 'schedule_event' else ()):
             if field in p:
                 result[f'node.{node.id}.param.{field}'] = p[field]
         for field in ('good', 'bad', 'instructions'):

@@ -6,7 +6,7 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey', 'quest', 'journal_updated', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                      'tree_result', 'loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                       'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
@@ -18,6 +18,7 @@ FIELDS = {
     'text_branch': ('next', 'otherwise'), 'relationship': ('character', 'next'),
     'input': ('text', 'next'), 'title': ('text', 'next'), 'message': ('text', 'next'),
     'notice': ('text', 'next'), 'scene_label': ('text', 'next'), 'quest': ('text', 'next'), 'journal_updated': ('text', 'next'),
+    'start_calendar': (), 'calendar_back': (), 'return_scene': (),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
     'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'), 'brew_catch': ('next',),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
@@ -46,6 +47,24 @@ NOTES = {
              'params.title and its lines (text, one per line); an empty title takes it off. The journal lists quests by '
              'number. Its stats come from the project\'s journal (project_update changes.journal: [{label, key, prefix}], '
              'owner-0 properties kept by Score / property nodes). Other apps keep the texts and show nothing.',
+    'start_calendar': 'SHS only. Starts the calendar params.calendar (its ID in the project\'s calendars): its clock at its first '
+                      'school day\'s start, its table\'s events on their days. One runs at a time. The story goes on in its '
+                      'events; when it runs out, at its After node (or the episode ends).',
+    'calendar_back': 'Ends a calendar event; the calendar picks the next. Inside Run due events, back to the event that ran it.',
+    'schedule_event': 'Adds an event to the running calendar params.calendar: params.event (a name in its table), or with no '
+                      'event params.target (a node), params.name, params.icon, params.duration (-1 any time in its half hour) '
+                      'and params.first. params.day is a day expression (day(), day() + 1, date(11, 9), next_weekday(5)); '
+                      'params.minute an expression, or empty for the event\'s own time. Nothing happens when that calendar '
+                      'is not running, or the day is past its last.',
+    'cancel_event': 'Takes the waiting occurrences of params.event (by name) off params.calendar: all of them, or with '
+                    'params.all false the first.',
+    'set_clock': 'Sets the calendar\'s clock to params.minute (an expression, minutes after midnight), forward or back.',
+    'skip_ahead': 'Moves the calendar\'s clock forward: params.to "time" to params.minute, or "end_of_day". Events passed are '
+                  'missed.',
+    'run_due': 'SHSHD Runtime only (other apps stop at it). Runs, here and now, the untimed events due since the last check, one '
+               'after another, each to its Back to the calendar node, then this scene carries on.',
+    'call_scene': 'SHSHD Runtime only (service 223). Runs params.target\'s scene until a Return node, then carries on to next.',
+    'return_scene': 'Ends a scene run by Run a scene and come back.',
     'journal_updated': 'SHS only. A scene label saying the journal changed (text, "Quest journal updated" when empty), with '
                        'params.icon (-1 none) and params.sound (-1 none), as Surviving Hollywood shows it.',
     'background': 'asset must reference an imported image in this project.',

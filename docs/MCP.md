@@ -225,6 +225,14 @@ Continue or explicit clock ticks. Lower-level `playtest_debug_step` and
 explicit manual override recorded in the session state; it is not a simulated
 player result. Unknown service arguments remain pending.
 
+### Calendars (shshd-runtime)
+
+`calendar_preview` lists each calendar's school days, dates and the events its table puts on them; `project_update` takes the
+`calendars` list (its fields are in `calendar_preview`'s description), and the calendar nodes (`start_calendar`,
+`calendar_back`, `schedule_event`, `cancel_event`, `set_clock`, `skip_ahead`, `run_due`, `call_scene`, `return_scene`) are edited
+as any node. While a calendar runs, the playtest state's `calendar` field gives its date, the clock (`minute`, `time`), the events
+left and today's events with their state.
+
 ### Translated mini-games and cutscenes (shshd-runtime)
 
 A playtest plays as a player with the translated mini-games and storyboard

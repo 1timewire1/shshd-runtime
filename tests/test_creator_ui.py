@@ -214,6 +214,37 @@ class CreatorInspectorTests(unittest.TestCase):
             editor.dirty = False
             editor.close()
 
+    def test_the_calendar_panel_makes_a_term_with_free_time(self):
+        # Creator catch-up Stage 3 (owner, 2026-11-17): calendars, their events and the Free time preset.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from test_creator_calendar import story
+        from exp_runtime.creator.calendar_panel import CalendarDialog
+        from exp_runtime.creator.compiler import compile_project
+        project = story()
+        project.calendars = []
+        dialog = CalendarDialog(project)
+        dialog.show()
+        try:
+            dialog.add_calendar()
+            dialog.after.setCurrentIndex(dialog.after.findData('after'))
+            dialog.add_event()
+            dialog.table.cellWidget(0, 0).setText('Class')
+            dialog.table.cellWidget(0, 1).setCurrentIndex(dialog.table.cellWidget(0, 1).findData('class'))
+            dialog.free_time()
+            self.app.processEvents()
+            self.assertTrue(dialog.save_current(), dialog.error.text())
+            self.assertEqual([e['name'] for e in dialog.value[0]['events']], ['Class', 'Free time'])
+            self.assertEqual(len(dialog.nodes), 4)
+            project.calendars, project.nodes = dialog.value, project.nodes + dialog.nodes
+            compile_project(project)                                    # the panel's term and preset compile
+            dialog.table.cellWidget(0, 3).setText('13/45')
+            self.assertFalse(dialog.save_current())
+            self.assertIn('date', dialog.error.text())
+        finally:
+            dialog.close()
+
     def test_the_quest_journal_dialog_keeps_its_stats(self):
         from unittest import mock
         from PySide6.QtWidgets import QDialog

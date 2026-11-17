@@ -76,7 +76,8 @@ def create_server(root):
         dialogue params.emoticon images)/options (SHSHD Runtime settings that need no add-on, each true or false:
         word_forms, date_first, three_word_games, big_pickers)/journal (the quest journal's stats, at most eight
         {label, key, prefix}: owner-0 properties; quests are Set quest nodes)/optional_art ({"shshw" or "shsdsi":
-        {"own picture": add-on picture}}: a DSi location by its left screen). Use project_get's revision."""
+        {"own picture": add-on picture}}: a DSi location by its left screen)/calendars (see calendar_preview and the
+        Calendar notes in schema_get). Use project_get's revision."""
         return workspace.update(path, revision, changes)
 
     @edit_tool(name='graph_edit_node')
@@ -170,6 +171,17 @@ def create_server(root):
         """Replace a native data bank without changing its length or any addresses."""
         from .native import set_data_words
         return workspace.edit(path, revision, lambda project: set_data_words(project, script, words, extra=extra))
+
+    @read_tool(name='calendar_preview')
+    def calendar_preview(path: str) -> dict:
+        """The project's calendars, each with its school days in order, their dates and the events its table puts on them (day
+        numbers from 0, times in minutes after midnight). Events Schedule event nodes add while playing are not listed.
+        A calendar is {id, name, first: [month, day, weekday 0 Sunday], last: [month, day], weekdays, day_start, day_end,
+        date_cards, week_cards, card_title, after (node), events: [{name, node, when: once|weekly|school_days, date, until,
+        weekdays, minute, timed, duration, first, icon (-1 the clock; SHS's badge icons are 3100-3127), condition, badge}]}."""
+        from .calendar import preview
+        project, revision = workspace.read(path)
+        return dict(revision=revision, calendars=[dict(id=c['id'], name=c['name'], days=preview(c)) for c in project.calendars])
 
     @read_tool(name='project_validate')
     def validate_project(path: str) -> dict:

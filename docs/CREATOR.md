@@ -330,6 +330,34 @@ Backgrounds**; the DSi's two screens, as its own stories show them, once every b
 add-on is never required: players without it see your pictures. The export writes the map into resource 3
 ([SCHEMA.md](SCHEMA.md#presentation-extension-shshd-runtime)), and MCP's `project_update` takes it as `optional_art`.
 
+## Calendars
+
+**Calendars…** (SHS projects; owner, 2026-11-17) runs a story's events over school days, as the BREW games do. Each calendar has:
+
+- its first date (with its weekday) and last, at most 120 days; its school days (Monday, Wednesday and Friday to begin with,
+  any you like); when its day starts and ends (7:30 AM to midnight to begin with);
+- a date card for each new day (`Friday, November 9`, with an optional title under it) and, if you like, week cards (`Week 2 of
+  13` over that week's dates);
+- an **After the calendar** node, where the story goes when it runs out (none ends the episode);
+- a table of events: a name, the node it starts at, when (once, weekly on chosen days, or every school day between two dates), a
+  time, timed with a length or any time in its half hour, **First** (wins its half hour), a badge icon (the clock, SHS's own
+  3100-3127, or one of your pictures), a condition, and whether it shows a badge (`3:00 PM - Practice`).
+
+**Start calendar** starts one: one runs at a time. Each half hour, its timed events run one at a time (a First one before the
+others, then in the order they were scheduled), then its untimed ones; an event whose condition is false when its turn comes is
+skipped. Each event ends with **Back to the calendar**. **Free time preset** adds a choice of activities on every school day.
+
+While playing: **Schedule event** adds one (from the table, or any node with its own name and time) on a day given as an
+expression (`day()`, `day() + 2`, `date(11, 9)`, `next_weekday(5)`); **Cancel event** takes an event's waiting occurrences off;
+**Set the clock** and **Skip ahead** move the time; expressions read `day()`, `weekday()`, `minute()`, `date(m, d)`,
+`next_weekday(w)`, `days_between(m, d, m, d)`, `event_first("name")` and `events_between(from, to)`; a Scene label can take its
+icon from an expression. **Run due events** runs the events due since the last check here and now, each inside this scene, and
+**Run a scene and come back** runs another scene until a **Return** node: these two use service 223, so an episode with them is
+SHSHD Runtime's only. A calendar otherwise uses native services, so its episode can still go to the original apps.
+
+The calendar keeps its state in the numbers multi-scene stories use (owner -30000), so saves, Skip Ahead and Undo need nothing
+new. The playtest state and MCP's `calendar_preview` show its days and events; `project_update` takes `calendars`.
+
 ## SHS HD side panels
 
 Faceplace and Decision Tree nodes target SHS HD and are rejected in CoD projects,
