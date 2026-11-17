@@ -149,6 +149,36 @@ class ArenaModelTests(unittest.TestCase):
 
 
 class ArenaServiceTests(unittest.TestCase):
+    def test_undo_keeps_one_save_for_the_arena_not_one_a_frame(self):
+        # Each frame's wait (208) is a new screen at a new point: Allow Undo saved on every frame, 13 ms each on the
+        # iPad, and the arena ran at 13-17 fps (2026-11-17). One save, as it opens.
+        import tempfile
+        from exp_runtime.undo import UndoChain
+        words, (title, options, info) = text_words('tutorial?', 'yes|no', 'press ok!')
+        story = program(*host_call(200, 0, 1), *host_call(210, title, options, 0), *host_call(211, info),
+                        *host_call(208), *host_call(203, 707), 0x21, (0x1A, 1), 0x0A, (0x2B, 8),
+                        *host_call(206, 0, 718, 0, 0, 0), 0x33, (0x28, -14), words=words)
+        with tempfile.TemporaryDirectory() as folder:
+            chain = UndoChain(Path(folder) / 'x.shs-undo')
+            session = Session(resources(story))
+            seen = [session.advance().name]
+            chain.record(session)
+            for _ in range(8):
+                seen.append(session.tick(250).name)
+                chain.record(session)
+            seen.append(session.answer(1).name)
+            chain.record(session)
+            seen.append(session.answer().name)
+            chain.record(session)
+            for _ in range(20):
+                seen.append(session.tick(33).name)
+                chain.record(session)
+            session.arena_press(-5)
+            seen.append(session.tick(33).name)
+            chain.record(session)
+            self.assertEqual(set(seen), {'arena_entrance', 'arena_menu', 'arena_info', 'arena_frame', 'arena_exit'})
+            self.assertEqual(chain.numbers(), [1])                          # the entrance only
+
     def test_a_game_loop_runs_frame_by_frame_and_the_score_comes_back(self):
         # Open the arena, ask "tutorial? yes|no", show an info box, then each frame read a key and add it to the score
         # until OK, close and halt with the score.

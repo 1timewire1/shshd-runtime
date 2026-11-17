@@ -23,6 +23,10 @@ from .skip_ahead import ENDS, PASSES
 
 SUFFIX = '.shs-undo'
 NOT_STOPS = frozenset(('unhandled_yield',))     # an error stop, not a point in the story
+# New Rules' arena is one game, saved as it opens (arena_entrance, or its skip prompt); its frames, info boxes, menus and
+# exit are its own play. Each frame's wait (service 208) is a new screen at a new point, so the chain took a save on every
+# frame: 13 ms a frame on the iPad, the arena down to 13-17 fps with Allow Undo on (2026-11-17).
+ARENA_INSIDE = frozenset(('arena_frame', 'arena_info', 'arena_menu', 'arena_exit'))
 MOST_SAVES = 400                                # one episode never has this many stops; past it the oldest go
 
 
@@ -92,7 +96,8 @@ class UndoChain:
 
     def record(self, session):
         """Keep a save of `session` if it's at a stop the chain doesn't already end on. True if one was written."""
-        if session.episode_exited or not is_stop(session.pending) or getattr(session, 'ephemeral', False):
+        if (session.episode_exited or not is_stop(session.pending) or session.pending.name in ARENA_INSIDE
+                or getattr(session, 'ephemeral', False)):
             return False
         here = point(session)
         if self._latest_point() == here:
