@@ -279,14 +279,16 @@
 - **Named lines without a portrait can take a colour in translated episodes.** The translator can mark such a line
   blue, pink or gray (shs profile `TRANSLATED_NARRATION_THEMES`), as New Rules shows an off-stage character in their
   own colour and a TV or radio in gray; unmarked lines keep the yellow box.
-- **Skip Upsell Intros** (SHS, Options > General on the main menu, and the older menu's Cheats page;
+- **Skip Upsell Intros** (both games, Options > General on the main menu, and the older menu's Cheats page;
   [#8](https://github.com/1timewire1/shshd-runtime/issues/8)). Thirty-three episodes open with store plugs before
   their story: "Want to catch up? Grab the Season 1 Set...", the Story Vote Ticket and genre votes, the Season 2
   update, the Novel Prelude pack, Holiday Short Stories, the Cause of Death plug. With the switch on, a new game
   passes those lines and starts at the episode's title card or its own recap. The lines were chosen one by one from
   every episode's opening (Game of Cones' and the novel's openings are story, and April Fools' joke messages stay).
-  The runtime keeps them as hashes of their text; an opening that does not match is left alone. Season sets that
-  show a plug after their chapter menu, and Cause of Death's plugs, are not covered yet.
+  The runtime keeps them as hashes of their text; an opening that does not match is left alone. In Cause of Death
+  (owner, 2026-11-17) it passes the bundle, Facebook and Claire Hart plugs that open 38 episodes, and keeps the
+  Halloween special's Ghost Harvest lines, which lead into its choice. Plugs that come after a chapter menu or a
+  story line (A New Start Season 2, Set 9, the Novel, CoD's volume sets) wait for line-level skipping.
 - **Each episode has its own Decision Tree.** Football Star keeps the library's original tree files; any other episode
   that builds a tree keeps its own (`dtview/` and `dtsaves/<episode>/`), is not warp-locked, and its warps restore its
   own saved state rather than Football Star's tracked variables.

@@ -1,13 +1,14 @@
-"""The store plugs some SHS episodes open with before their story ("Want to catch up? Grab the Season 1 Set...", the
-Story Vote Ticket, the Novel Prelude pack, the Cause of Death plug...): the narrator's lines before the title card or
-the episode's own recap.
+"""The store plugs some SHS and Cause of Death episodes open with before their story ("Want to catch up? Grab the
+Season 1 Set...", the Story Vote Ticket, the Novel Prelude pack, the Cause of Death plug, CoD's volume bundles and
+Facebook page...): the narrator's lines before the title card or the episode's own recap.
 
 The player's `skip_upsell_intros` preference plays those lines headlessly when a new game starts, acknowledging them as
 a player would, and stops at the episode's first screen. Which lines are a plug was chosen line by line from every
 episode's opening (owner, 2026-10-22; findings "Issue #8: promo intros scan"). The lines are kept as hashes of their
 text, in the order they show, so the table carries no story text; an episode whose opening does not match a sequence
-whole is left untouched. Season sets that show a plug after their chapter menu (A New Start Season 2, Set 9) are not
-covered yet.
+whole is left untouched. Only a plug that opens the episode is covered: one after a chapter menu (A New Start Season
+2, Set 9, CoD's volume sets) or after a story line (the Novel, A Fallon Family Christmas) waits for line-level
+skipping. Cause of Death's openings were added the same way (owner, 2026-11-17).
 """
 from hashlib import sha256
 
@@ -56,6 +57,35 @@ SEQUENCES = (
     ('f79e16e35fac0f2d',),
     # 72_Trapped_In_The_Classroom (1 screen)
     ('998d5cb58923a27c',),
+    # Cause of Death (owner, 2026-11-17, line by line from reference/promo_review/cod_intro_store_plugs.md): the bundle,
+    # Facebook and Claire Hart plugs where they open an episode. Kept: the Halloween special's Ghost Harvest lines,
+    # which lead into its choice. Revisit with line-level skipping: Claire Hart's "clairvoyant" line introduces the
+    # episode's guest.
+    # 14_1_Joint_Forces, 14_4_One_Step_Ahead, 14_Interlude (2 screens)
+    ('ea162ff7011c3dff', 'b09d6d542e5ec1e1'),
+    # 14_2_Accelerant, 14_3_Catch_and_Release, 14_7_Prodigal_Son, 14_8_New_World_Order_Part_1 (2 screens)
+    ('ea162ff7011c3dff', '747a7d85b08a70df'),
+    # 14_5_Second_Chances, 14_6_The_Greater_Good, SS09_Greene_Zone_1, SS10_Greene_Zone_2, SS17_Peacemaker_1,
+    # SS18_Peacemaker_2 (1 screen)
+    ('ea162ff7011c3dff',),
+    # 14_9_New_World_Order_Part_2, 16_1_Haunted, 16_2_Metamorphosis, 16_3_Unfinished_Business,
+    # 16_5_The_Red_Room, 16_6_True_Faces, 16_7_Sunset, 16_Interlude, SS19_Kai_Hard_Part_1, SS20_Kai_Hard_Part_2,
+    # SS21_Seth_Lies_and_Videotape_Part_1, SS22_Seth_Lies_and_Videotape_Part_2, SS23_Forks_in_the_Road_Part_1,
+    # SS24_Forks_in_the_Road_Part_2, SS25_City_of_Love_Part_1, SS26_City_of_Love_Part_2 (2 screens)
+    ('ea162ff7011c3dff', 'b694a8ea221a5e5b'),
+    # SS01_Detective_Kalaba_1, SS02_Detective_Kalaba_2 (1 screen)
+    ('73ffa10ee98c6f18',),
+    # SS03_Amys_Case_1, SS04_Amys_Case_2 (1 screen)
+    ('ec9b1b4d60b6f1d8',),
+    # SS05_Fallon_And_Yeong_1, SS06_Fallon_And_Yeong_2 (1 screen)
+    ('2c8af3c30355e647',),
+    # SS11_In_The_Cards_1 (6 screens)
+    ('2c8af3c30355e647', 'ea10313f254a6750', 'edcd62562290de56', 'd4d44402cf64c44b', 'ea6cfa671edd04cf',
+     '3c7d1d3b94328053'),
+    # SS12_In_The_Cards_2 (5 screens)
+    ('2c8af3c30355e647', 'ea10313f254a6750', 'edcd62562290de56', 'd4d44402cf64c44b', 'ea6cfa671edd04cf'),
+    # SS16_Far_From_Home_2 (2 screens)
+    ('ea162ff7011c3dff', '521b4ccdbb341ead'),
 )
 
 

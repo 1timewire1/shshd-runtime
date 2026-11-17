@@ -136,9 +136,9 @@ class CodPauseMenu(HdPauseMenu):
 
     # -- screens ----------------------------------------------------------------------------------------------
     def layout(self, settings, host_rows=(), *, message=''):
-        # CoD has no side panels and no High School Story ad intros (owner's choice: those switches are not listed); its
-        # store plugs are not mapped yet (upsell_intro.py covers SHS).
+        # CoD has no side panels and no High School Story ad intros (owner's choice: those switches are not listed). Its
+        # store plugs take Skip Upsell Intros (upsell_intro.py, owner, 2026-11-17).
         # Its word quizzes (service 71) take Ask to Skip Mini-Games.
         settings = {key: value for key, value in settings.items()
-                    if key not in ('side_panels', 'skip_ad_intros', 'skip_upsell_intros')}
+                    if key not in ('side_panels', 'skip_ad_intros')}
         return super().layout(settings, host_rows, message=message)

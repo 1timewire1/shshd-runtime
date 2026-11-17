@@ -45,8 +45,10 @@ class UpsellIntroTests(unittest.TestCase):
         session = skip_upsell_intro(Session(opening(*PLUG)), (longer, shorter))
         self.assertEqual((session.pending.name, session.pending.details['text']), ('dialogue', PLUG[2]))
 
-    def test_the_table_has_the_owners_33_episodes_and_no_story_text(self):
-        self.assertEqual(len(SEQUENCES), 15)
+    def test_the_table_has_the_owners_episodes_and_no_story_text(self):
+        # SHS's 33 episodes in 15 sequences (2026-10-22), Cause of Death's 38 in 10 (2026-11-17).
+        self.assertEqual(len(SEQUENCES), 25)
+        self.assertEqual(len(set(SEQUENCES)), 25)
         self.assertTrue(all(len(line) == 16 and int(line, 16) >= 0 for lines in SEQUENCES for line in lines))
         self.assertEqual(max(len(lines) for lines in SEQUENCES), 7)
 

@@ -111,8 +111,9 @@ class AppScreenTests(unittest.TestCase):
         options.activate(('pause_cycle', 'aspect_ratio', '9:16'))
         options.menu.slide = None
         self.assertEqual(AppSettings(Path(self.root) / 'settings.json').aspect_ratio, '9:16')
-        for key in ('skip_ad_intros', 'skip_upsell_intros', 'hires_portraits'):     # only SHS offers them
+        for key in ('skip_ad_intros', 'hires_portraits'):                   # only SHS offers them
             self.assertNotIn(('pause_toggle', key), general)
+        self.assertIn(('pause_toggle', 'skip_upsell_intros'), general)        # both games' store plugs
         self.assertNotIn(('pause_open', 'choice:title_language'), general)
         self.assertTrue(options.step_back())                                # up a page...
         self.assertEqual(options.menu.state.screen, 'options')

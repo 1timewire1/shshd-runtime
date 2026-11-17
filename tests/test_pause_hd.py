@@ -516,9 +516,11 @@ class CodPauseTests(unittest.TestCase):
         self.menu.state.screen = 'options:general'
         self.settings['hd_backdrop'] = True
         self.assertIn(('pause_toggle', 'hd_backdrop'), [c[:2] for _, c in self.buttons()])
-        # CoD's store plugs are not mapped yet: Skip Upsell Intros is SHS's only.
-        self.settings['skip_upsell_intros'] = False
-        self.assertNotIn(('pause_toggle', 'skip_upsell_intros'), [c[:2] for _, c in self.buttons()])
+        # CoD's opening store plugs take Skip Upsell Intros too (owner, 2026-11-17); its ad intros switch stays out.
+        self.settings.update(skip_upsell_intros=False, skip_ad_intros=False)
+        buttons = [c[:2] for _, c in self.buttons()]
+        self.assertIn(('pause_toggle', 'skip_upsell_intros'), buttons)
+        self.assertNotIn(('pause_toggle', 'skip_ad_intros'), buttons)
 
     def test_cods_own_overrides_and_version_token(self):
         from exp_runtime import desktop_cod_pause, help_text_overrides
