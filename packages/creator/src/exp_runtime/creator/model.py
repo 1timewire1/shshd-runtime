@@ -23,7 +23,7 @@ KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 
          'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
          'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
          'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
-         'open_url', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
+         'open_url', 'survey', 'quest', 'journal_updated', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
@@ -48,6 +48,8 @@ class Choice:
     text: str = 'Choice'
     target: str = ''
     condition: str = ''
+    # shshd-runtime: a line of detail under the answer's label (engine.OPTION_DETAIL; Where to?'s opening hours), '' for none.
+    detail: str = ''
 
 
 @dataclass
@@ -145,6 +147,9 @@ class Project:
     # shshd-runtime: the episode's version (episode_version.py), 1-65535, or None for none: a newer export replaces an
     # older copy when imported (owner, 2026-11-06).
     episode_version: int | None = None
+    # shshd-runtime: the stats the quest journal shows above its quests (presentation `journal`), each {label, key, prefix}:
+    # a property of owner 0 (a Score / property node keeps it), `$` before Money (owner, 2026-11-17).
+    journal: list[dict] = field(default_factory=list)
 
     def node(self, node_id):
         return next(node for node in self.nodes if node.id == node_id)
@@ -216,6 +221,7 @@ FREE_SETTINGS = {'word_forms': '"a(n)" and "word(s)" picked by the word or numbe
                  'big_pickers': 'Portrait pickers of up to ten photos (BREW)'}
 # A primary add-on's editions, where it serves more than one game: BREW's '07 and '08 stories have different switches.
 ADDON_EDITIONS = {'shsbrew': ('08', '07')}
+JOURNAL_STATS = 8                       # the most stats a quest journal shows
 
 
 def primary_addon(project):
@@ -302,6 +308,9 @@ def validate_structure(project: Project):
             _string(option.text, 'option text', 2000)
             _string(option.target, 'option target', 200)
             _string(option.condition, 'option condition', 2000)
+            _string(option.detail, 'option detail', 200)
+            if any(ord(c) < 32 for c in option.detail) or any(ord(c) < 32 and c != '\n' for c in option.text):
+                raise ProjectError('An answer and its detail are plain text')
     if not isinstance(project.characters, list) or len(project.characters) > 199:
         raise ProjectError('At most 199 reusable characters are supported')
     character_ids = set()
@@ -331,6 +340,16 @@ def validate_structure(project: Project):
             _string(value, 'translated text')
     if not isinstance(project.native, dict):
         raise ProjectError('Invalid native archive data')
+    if not isinstance(project.journal, list) or len(project.journal) > JOURNAL_STATS:
+        raise ProjectError(f'The quest journal shows at most {JOURNAL_STATS} stats')
+    for stat in project.journal:
+        if not isinstance(stat, dict) or set(stat) != {'label', 'key', 'prefix'}:
+            raise ProjectError('A journal stat is {label, key, prefix}')
+        _string(stat['label'], 'journal stat label', 40)
+        if not stat['label'].strip():
+            raise ProjectError('A journal stat needs a label')
+        _integer(stat['key'], 0, 32767, 'Journal stat key')
+        _string(stat['prefix'], 'journal stat prefix', 4)
     if not isinstance(project.emoticons, list) or len(project.emoticons) != len(EMOTICONS):
         raise ProjectError(f'Emoticon images need exactly {len(EMOTICONS)} slots')
     for resource in project.emoticons:
@@ -453,6 +472,11 @@ def project_from_record(data):
         data.setdefault('addons', [])
         data.setdefault('options', {})
         data.setdefault('episode_version', None)
+        data.setdefault('journal', [])
+        for node in data['nodes']:
+            for option in node.get('options', ()):
+                if isinstance(option, dict):
+                    option.setdefault('detail', '')
         for asset in data['assets']:
             asset.setdefault('addon', '')
         nodes = []

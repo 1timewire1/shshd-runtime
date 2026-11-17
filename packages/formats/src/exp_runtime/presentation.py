@@ -31,6 +31,12 @@ For a translated episode (owner, 2026-11-13; SURVIVING_HOLLYWOOD_ADDON_PLAN.md):
 - `optional_art`: {add-on: {episode resource: add-on resource}}: pictures an optional add-on (one the episode doesn't
   require) draws instead of the episode's own while that add-on's switch is on (the profile's OPTIONAL_ART): the BREW
   Surviving Hollywood Preview's portraits and backgrounds from `shshw`.
+
+For an episode made in the Creator (owner, 2026-11-17; CREATOR_CATCHUP_PLAN.md Stage 2):
+
+- `journal`: {count, title, lines, stats}: a quest journal the pause menu shows (quest_journal.py), as Surviving Hollywood's
+  translation keeps one: the global number holding how many quests, the stored-text keys of quest n's title and lines as
+  `%d` forms, and the stats shown first, each [label, global number, prefix] (`$` before Money).
 """
 import json
 
@@ -42,7 +48,7 @@ FORMAT = 'shshd-presentation'
 VERSION = 1
 EFFECTS = 6
 MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creator', 'addons', 'word_forms', 'date_first',
-           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art')
+           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art', 'journal')
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
 # 31500, SHS '11 31600, Surviving Hollywood 31700): their episodes take their game's settings from the profile's tables and declare none of the members
 # above for an episode made in the Creator.
@@ -110,6 +116,20 @@ def normalize(record):
             raise ValueError('optional_art must be {add-on: {episode resource: add-on resource}}')
         result['optional_art'] = {addon: {_number(int(resource), 'a resource'): _number(target, 'an add-on resource')
                                           for resource, target in table.items()} for addon, table in art.items()}
+    if 'journal' in record:
+        journal = record['journal']
+        if not isinstance(journal, dict) or set(journal) != {'count', 'title', 'lines', 'stats'}:
+            raise ValueError('journal must be {count, title, lines, stats}')
+        for form in (journal['title'], journal['lines']):
+            if not isinstance(form, str) or form.count('%') != 1 or '%d' not in form:
+                raise ValueError("a journal's title and lines keys are forms with one %d")
+        stats = journal['stats']
+        if not isinstance(stats, list) or not all(
+                isinstance(stat, list) and len(stat) == 3 and isinstance(stat[0], str) and stat[0]
+                and isinstance(stat[2], str) and len(stat[2]) <= 4 for stat in stats):
+            raise ValueError("a journal's stats are [label, global number, prefix]")
+        result['journal'] = (_number(journal['count'], "a journal's count"), journal['title'], journal['lines'],
+                             tuple((label, _number(key, 'a stat'), prefix) for label, key, prefix in stats))
     if 'addons' in record:
         addons = record['addons']
         if (not isinstance(addons, dict) or set(addons) != {'primary', 'edition'} or not isinstance(addons['primary'], str)

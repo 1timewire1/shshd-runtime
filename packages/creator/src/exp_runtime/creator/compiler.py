@@ -40,7 +40,7 @@ TEXT_BUFFER_WORDS = 512
 # What a failed survey upload shows: the offline runtime replaces exactly this response with its local receipt
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
-SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'quest', 'journal_updated', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                             'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
@@ -73,6 +73,21 @@ QUERY_NAMES = {'': 'the X360 games', 'x360_battle': 'the Diss Battle', 'shs11': 
 # speaker, cleared after the line. They are the numbers tools/translate uses for New Rules and the X360 prototype; the
 # episode names them in resource 3. Score and flag nodes may not use one on owner 0 while a line's option does.
 DUET_KEYS = (31310, 31311)
+# The quest journal (presentation `journal`, quest_journal.py): the global number holding how many quests, as Surviving Hollywood's
+# translation keeps it, and its stored-text keys, made the episode's own: the names table every Creator episode shares would
+# otherwise show one episode's quests in another's journal.
+JOURNAL_COUNT_KEY = 31728
+# The engine's (exp_runtime.engine; the Creator's core needs only the formats package, so a test checks they match): the word
+# grid's part score (service 224, ENGINE_ABI.md 5.6a) and what separates an option's label from its detail line.
+GRID_PART_SCORE = 224
+OPTION_DETAIL = ''
+MAX_QUESTS = 64
+JOURNAL_UPDATED = 'Quest journal updated'
+
+
+def journal_forms(project):
+    """(title form, lines form) of the project's quest texts, each with one %d for the quest's number."""
+    return (f'{{quest {project.pack_id}.{project.episode_id} title %d}}', f'{{quest {project.pack_id}.{project.episode_id} lines %d}}')
 BUBBLE_KEY = 31312
 EMOTICON_KEY = 31410
 
@@ -110,6 +125,8 @@ def variable_names(project):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
+        if node.kind == 'grid' and p['part_score']:
+            names.add(p['part_score'])
         if node.kind == 'survey' and isinstance(p['results'], list):
             names.update(p['results'])
         for expression in node_expressions(node):
@@ -122,32 +139,38 @@ def variable_names(project):
 def placeholders(value, numeric):
     """`{expression}` spans of a text that format a number: the expression parses, reads a variable or game state,
     and every variable it reads is one of `numeric`. Other braces, such as `{name}` of a stored text or a Faceplace
-    emoticon, stay literal."""
+    emoticon, stay literal. A leading `+` ({+change}) shows a sign before a rise, as Surviving Hollywood's stat changes do:
+    (match, tree, signed) each."""
     spans = []
     for match in PLACEHOLDER.finditer(value):
+        inner = match.group(1).strip()
+        signed = inner.startswith('+')
         try:
-            tree, names = expressions.parse(match.group(1).strip())
+            tree, names = expressions.parse(inner[1:].strip() if signed else inner)
         except ProjectError:
             continue
         if (names or expressions.has_calls(tree)) and names <= numeric:
-            spans.append((match, tree))
+            spans.append((match, tree, signed))
     return spans
 
 
 def catch_library_sizes(project):
-    """{picture: (width, height)} of the catch pictures in the project's library's BREW add-on, read once per library; {} with no
-    library (a catch node then gives its pictures' sizes itself)."""
+    """{picture: (width, height)} of the catch pictures in the project's library's add-on it plays from (BREW's, or Surviving
+    Hollywood's as the primary: addons.node_addon), read once per library; {} with no library (a catch node then gives its
+    pictures' sizes itself)."""
     if not project.library:
         return {}
-    cached = _CATCH_SIZES.get(project.library)
+    from .addons import node_addon
+    addon = node_addon(project, 'brew_catch')
+    cached = _CATCH_SIZES.get((project.library, addon))
     if cached is None:
         try:
             from exp_runtime.content import ContentLibrary
             with ContentLibrary(Path(project.library)) as library:
-                cached = minigames.brew_catch_sizes(library)
+                cached = minigames.brew_catch_sizes(library, addon)
         except (ImportError, ContentError, OSError):
             cached = {}
-        _CATCH_SIZES[project.library] = cached
+        _CATCH_SIZES[project.library, addon] = cached
     return cached
 
 
@@ -282,11 +305,12 @@ def validate_node(project, node, nodes, assets, characters):
         validate_hd_node(project, node, p, label, assets)
     if node.kind in SHS_ONLY_KINDS and project.game != 'shs':
         raise ProjectError(f'{label}: the CoD game has no {node.kind.replace("_", " ")} service')
-    from .addons import NODE_ADDONS
-    if (node.kind in NODE_ADDONS and not any(entry['id'] == NODE_ADDONS[node.kind] for entry in project.addons)
+    from .addons import node_addon
+    needed = node_addon(project, node.kind)
+    if (needed is not None and not any(entry['id'] == needed for entry in project.addons)
             and project.pack_id not in TRANSLATION_PACKS):     # (a translator declares its own)
         # Its game plays from that add-on's art, so the episode needs it to play (owner, 2026-11-09).
-        raise ProjectError(f'{label}: add the {NODE_ADDONS[node.kind]} add-on (as the primary or an extra)')
+        raise ProjectError(f'{label}: add the {needed} add-on (as the primary or an extra)')
     if node.kind == 'open_url' and not p['url'].strip():
         raise ProjectError(f'{label}: enter the link to open')
     if node.kind == 'append_text' and len(node.text) > 400:
@@ -301,6 +325,16 @@ def validate_node(project, node, nodes, assets, characters):
         for key in ('home_result', 'away_result'):
             if p[key] and not p[key].isidentifier():
                 raise ProjectError(f'{label}: {key} must be a variable name')
+    if node.kind == 'grid' and p['part_score'] and not p['part_score'].isidentifier():
+        raise ProjectError(f'{label}: part_score must be a variable name')
+    if node.kind == 'quest':
+        if not 0 <= p['number'] < MAX_QUESTS:
+            raise ProjectError(f'{label}: a quest number is 0 to {MAX_QUESTS - 1}')
+        if '\n' in p['title'] or len(p['title']) > 80:
+            raise ProjectError(f'{label}: a quest title is one line of at most 80 characters')
+    if node.kind == 'journal_updated':
+        if p['sound'] != -1 and p['sound'] < 0:
+            raise ProjectError(f'{label}: the sound is a resource, or -1 for none')
     if node.kind in ('word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch'):
         minigames.validate(node.kind, p)
     if node.kind == 'grid':
@@ -390,6 +424,10 @@ def presentation_record(project):
     if project.native or project.game != 'shs' or project.pack_id in TRANSLATION_PACKS:
         return record                   # an original episode, or a translation: its game's own tables
     record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)
+    if project.journal or any(node.kind == 'quest' for node in project.nodes):
+        title_form, lines_form = journal_forms(project)
+        record['journal'] = dict(count=JOURNAL_COUNT_KEY, title=title_form, lines=lines_form,
+                                 stats=[[stat['label'], stat['key'], stat['prefix']] for stat in project.journal])
     record.update({name: True for name, on in sorted(project.options.items()) if on})
     if any(node.kind in ('minigames_available', 'brew_catch', 'shs11_memory', 'shs11_reflex', 'x360_slot', 'x360_leash',
                          'x360_puzzle', 'x360_diss', 'x360_battle') for node in project.nodes):
@@ -643,6 +681,9 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
         return Compilation(compile_native(project), locations, {}, False, {})
     variables = {name: i for i, name in enumerate(variable_names(project))}
     numeric = set(variables)
+    from itertools import count as _count
+    sign_labels = _count()
+    quest_count = 1 + max((parameters(n)['number'] for n in project.nodes if n.kind == 'quest'), default=-1)
     slots = cycle(FORMAT_SLOTS)
     nodes = {node.id: node for node in project.nodes}
     scenes = sorted({node.scene for node in project.nodes})
@@ -725,14 +766,23 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                         pattern.append('%c'); values.append(ord('%'))
                     else:
                         pattern.append(piece)
-            for match, tree in spans:
+            for match, tree, signed in spans:
                 literal(value[position:match.start()])
+                if signed:                  # `+` before a rise, nothing otherwise (a fall has its own minus)
+                    pattern.append('%s'); values.append(('sign', tree))
                 pattern.append('%d'); values.append(tree)
                 position = match.end()
             literal(value[position:])
             asm.emit(0x1a, 1 - slot); asm.emit(0x1a, asm.text(''.join(pattern)))
             for item in values:
                 if isinstance(item, int): asm.emit(0x1a, item)
+                elif isinstance(item, tuple) and item and item[0] == 'sign':
+                    rise, done = ('sign', next(sign_labels)), ('signed', next(sign_labels))
+                    expressions.emit(asm, item[1], read_variable, characters.__getitem__)
+                    asm.emit(0x1a, 0); asm.emit(0x0c); asm.jump_if(rise)
+                    asm.emit(0x1a, asm.text('')); asm.jump(done)
+                    asm.labels[rise] = len(asm.code); asm.emit(0x1a, asm.text('+'))
+                    asm.labels[done] = len(asm.code)
                 else: expressions.emit(asm, item, read_variable, characters.__getitem__)
             if len(values) > 253: raise ProjectError('A text can format at most 253 values')
             asm.emit(0x1f, 0 << 8 | len(values) + 2)
@@ -771,7 +821,10 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.call(52, 0, 651, node.theme)
                 asm.call(2, text('speaker'), text('text'), node.timeout_ms, node.timeout_option, character(), 0)
                 for i, option in enumerate(node.options):
-                    asm.emit(0x1a, formatted(translated(project, base + f'option.{i}', option.text)))
+                    label_text = translated(project, base + f'option.{i}', option.text)
+                    if option.detail:       # its detail line (engine.OPTION_DETAIL), as a translated story's opening hours
+                        label_text += OPTION_DETAIL + translated(project, base + f'option.{i}.detail', option.detail)
+                    asm.emit(0x1a, formatted(label_text))
                     asm.emit(0x1a, i); expression(option.condition or '1'); asm.emit(0x1f, 3 << 8 | 3)
                 asm.call(4, int(p['shuffle']))
                 for i, option in enumerate(node.options):
@@ -823,6 +876,15 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'notice': asm.call(88, text('text'))
             elif kind == 'emphasis': asm.call(89)
             elif kind == 'scene_label': asm.call(90, p['icon'], text('text') if node.text else -1)
+            elif kind == 'quest':
+                # Its title and lines under the episode's own keys, and the count past the highest quest the project sets.
+                title_form, lines_form = journal_forms(project)
+                asm.call(46, asm.text(title_form % p['number']), text('title'))
+                asm.call(46, asm.text(lines_form % p['number']), text('text'))
+                asm.call(54, JOURNAL_COUNT_KEY, quest_count)
+            elif kind == 'journal_updated':
+                if p['sound'] != -1: asm.call(79, p['sound'])
+                asm.call(90, p['icon'], text('text', node.text or JOURNAL_UPDATED))
             elif kind == 'pan': asm.call(97, int(p['automatic']), p['alignment'])
             elif kind == 'transition': asm.call(16, p['selector'])
             elif kind == 'close_dialogue': asm.call(39)
@@ -875,6 +937,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 minigames.validate(kind, localized)
                 minigames.emit(asm, kind, p, lambda *args, **options: text(*args, plain=True, **options), character)
                 asm.emit(0x21); store_variable(p['result'])
+                if kind == 'grid' and p['part_score']:
+                    asm.call(GRID_PART_SCORE); asm.emit(0x21); store_variable(p['part_score'])     # (read right after 96)
                 if kind == 'football':
                     for selector, name in ((1, p['home_result']), (0, p['away_result'])):
                         if name: asm.call(95, selector); asm.emit(0x21); store_variable(name)

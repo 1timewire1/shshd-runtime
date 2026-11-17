@@ -11,7 +11,8 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              text_branch='Text answer condition', title='Title card', message='Message',
              notice='Dialogue notification', emphasis='Emphasize dialogue', scene_label='Scene label',
              pan='Background pan', transition='Screen transition', close_dialogue='Close dialogue',
-             random='Random variable', minigames_available='Real minigames?', cutscene_available='Cutscenes?', cutscene='Storyboard cutscene', x360_slot='X360 slot machine', x360_leash='X360 leash game', x360_puzzle='X360 jewel puzzle', x360_diss='X360 Diss Practice', x360_battle='X360 Diss Battle', word_game='Timed word choices', football='Football (SHS)',
+             random='Random variable', quest='Set quest', journal_updated='Journal updated',
+             minigames_available='Real minigames?', cutscene_available='Cutscenes?', cutscene='Storyboard cutscene', x360_slot='X360 slot machine', x360_leash='X360 leash game', x360_puzzle='X360 jewel puzzle', x360_diss='X360 Diss Practice', x360_battle='X360 Diss Battle', word_game='Timed word choices', football='Football (SHS)',
              grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", brew_catch='Catch game (BREW)', scene='Scene link',
              flag='Property flag', speakers='Player / narrator', set_text='Set text', text_default='Text default',
              expression_default='Default expression', character_art='Character art', character_name='Rename character',
@@ -38,6 +39,9 @@ DEFAULTS = {
     'title': {'subtitle': '', 'background': -1, 'flag': 0},
     'message': {'title': '', 'flag': 0}, 'notice': {}, 'emphasis': {},
     'scene_label': {'icon': -1}, 'pan': {'automatic': True, 'alignment': 2},
+    # shshd-runtime: the quest journal the pause menu shows (presentation `journal`; owner, 2026-11-17). A quest's lines are the
+    # node's text; an empty title takes the quest off. Journal updated is a scene label with its own words and a sound.
+    'quest': {'number': 0, 'title': 'A quest'}, 'journal_updated': {'icon': -1, 'sound': -1},
     'transition': {'selector': 0}, 'close_dialogue': {},
     'random': {'bound': 2, 'result': 'roll'},
     'minigames_available': {'result': 'real_minigames', 'for': ''}, 'cutscene_available': {'result': 'real_cutscene'}, 'cutscene': {'spec': 0}, 'x360_slot': {'result': 'slot_points'}, 'x360_leash': {'result': 'leash_won'}, 'x360_puzzle': {'result': 'puzzle_score'}, 'x360_diss': {'result': 'diss_score', 'tutorial': 0},
@@ -62,7 +66,7 @@ DEFAULTS = {
                            'prompt': 'Connect adjacent letters.', 'words': ['CAT'],
                            'alphabet': 'CAT', 'highlight': True, 'advance_after_one': True,
                            'minimum_starts': 1, 'id': 1001}],
-             'symbols': [], 'tutorials': [], 'result': 'grid_passed'},
+             'symbols': [], 'tutorials': [], 'result': 'grid_passed', 'part_score': ''},
     # shshd-runtime: SHS '11's games (ENGINE_ABI.md 5.4). A round's fields are the words of its table there.
     'shs11_memory': {'seconds': 60, 'target': 200,
                      'rounds': [{'cue': 'A word for a small, mischievous helper.', 'word': 'ELF', 'bonus': 20, 'points': 10,
@@ -110,6 +114,8 @@ def text_fields(project):
             result[f'node.{node.id}.{field}'] = getattr(node, field)
         for i, option in enumerate(node.options):
             result[f'node.{node.id}.option.{i}'] = option.text
+            if option.detail:
+                result[f'node.{node.id}.option.{i}.detail'] = option.detail
         p = parameters(node)
         for field in ('prompt', 'default', 'equals', 'subtitle', 'title', 'notification', 'success', 'failure',
                       'extra_offense', 'extra_defense'):

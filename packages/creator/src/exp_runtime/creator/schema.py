@@ -6,7 +6,7 @@ from .features import DEFAULTS, NAMES
 from .model import EMOTICONS, Node, ProjectError
 
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
-                      'tree_result', 'loading', 'survey', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+                      'tree_result', 'loading', 'survey', 'quest', 'journal_updated', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                       'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch'))
 
 
@@ -17,7 +17,7 @@ FIELDS = {
     'branch': ('variable', 'operator', 'value', 'next', 'otherwise'),
     'text_branch': ('next', 'otherwise'), 'relationship': ('character', 'next'),
     'input': ('text', 'next'), 'title': ('text', 'next'), 'message': ('text', 'next'),
-    'notice': ('text', 'next'), 'scene_label': ('text', 'next'),
+    'notice': ('text', 'next'), 'scene_label': ('text', 'next'), 'quest': ('text', 'next'), 'journal_updated': ('text', 'next'),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
     'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'), 'brew_catch': ('next',),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
@@ -41,7 +41,13 @@ NOTES = {
                 '2 pink, 3 gray; 0 the game\'s own); params.emoticon shows over the speaker\'s portrait (' +
                 ', '.join(f'{i} {name.lower()}' for i, name in enumerate(EMOTICONS, 1)) + '; 0 none) using the '
                 'image set in the project\'s emoticons (project_update changes.emoticons: six asset IDs or null).',
-    'choice': 'Provide 2–8 nonempty answers. Conditions enable answers; timeout_option is a zero-based visible row; native shuffling moves labels/return values, while enabled flags remain on rows.',
+    'choice': 'Provide 2–8 nonempty answers. Conditions enable answers; timeout_option is a zero-based visible row; native shuffling moves labels/return values, while enabled flags remain on rows. An answer\'s detail is a smaller line under it (SHS, SHSHD Runtime; other apps show it after the label).',
+    'quest': "SHS only, SHSHD Runtime's quest journal (the pause menu's Quest Journal). Sets quest params.number (0-63): its "
+             'params.title and its lines (text, one per line); an empty title takes it off. The journal lists quests by '
+             'number. Its stats come from the project\'s journal (project_update changes.journal: [{label, key, prefix}], '
+             'owner-0 properties kept by Score / property nodes). Other apps keep the texts and show nothing.',
+    'journal_updated': 'SHS only. A scene label saying the journal changed (text, "Quest journal updated" when empty), with '
+                       'params.icon (-1 none) and params.sound (-1 none), as Surviving Hollywood shows it.',
     'background': 'asset must reference an imported image in this project.',
     'set': 'variable is required; a nonempty params.expression overrides value.',
     'branch': 'params.expression overrides variable/operator/value. Both destinations are required.',
@@ -127,7 +133,9 @@ NOTES = {
     'sound': 'A game sound ID, or an embedded MP3/WAV (asset_import_audio).',
     'word_game': 'good needs at least 2 words; bad at least 3. Duration 1–32767 ms. Words cannot contain pipes.',
     'football': 'Six interleaved offense/defense tables, each 1–10 rows of [code, yards, variation, weight]. See defaults for a valid example.',
-    'grid': 'Problems define dimensions, targets and alphabet. Tutorials use a fixed board. Native limits and table checks apply.',
+    'grid': 'Problems define dimensions, targets and alphabet. Tutorials use a fixed board. Native limits and table checks apply. '
+            'params.part_score (SHSHD Runtime only: other apps stop at it) stores the most letters of one word traced in place '
+            '(service 224), for a middle outcome after a missed word.',
     'end': 'Uses native episode-exit service 7. The player returns to its existing menu, where another installed episode can be selected.',
     'native': 'Imported native projects only. Preserve script/PC, instruction counts and data-bank lengths; no high-level reconstruction is assumed.',
 }
@@ -170,7 +178,8 @@ def node_schema(kind=None):
     if 'options' in properties:
         properties['options'].update(minItems=2, maxItems=8, items=dict(type='object', additionalProperties=False,
             properties=dict(text=dict(type='string', minLength=1), target=dict(type='string', minLength=1),
-                            condition=dict(type='string', default='')), required=['text', 'target']))
+                            condition=dict(type='string', default=''), detail=dict(type='string', default='', maxLength=200)),
+            required=['text', 'target']))
         properties['timeout_ms'].update(minimum=0, description='0 disables the timer; otherwise milliseconds, maximum 32767.')
         properties['timeout_option'].update(minimum=0, maximum=7)
     properties['params'] = dict(type='object', additionalProperties=False,

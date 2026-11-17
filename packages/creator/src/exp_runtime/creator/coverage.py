@@ -136,7 +136,7 @@ RUNTIME_STATUS = {
     218: emits('cutscene'), 219: emits('shs11_memory'), 220: emits('shs11_reflex'), 221: emits('brew_catch'),
     222: emits('x360_battle'),
     223: pending('running a scene and coming back: no node yet (Stage 3)'),
-    224: pending("the word grid's part score: the grid node has no result for it yet (Stage 2)"),
+    224: emits('grid'),
 }
 PRESENTATION_STATUS = {
     'duet': emits('dialogue'), 'narration_theme': emits('dialogue'), 'portrait_effects': emits('dialogue'),
@@ -146,6 +146,7 @@ PRESENTATION_STATUS = {
     'big_pickers': equivalent('a free setting (Add-Ons panel)'), 'minigames': emits('minigames_available'),
     'aliases': equivalent("an extra add-on's pictures and sounds"),
     'optional_art': pending("an optional add-on's pictures in place of the episode's: not written yet (Stage 2)"),
+    'journal': emits('quest'),
 }
 
 def calls(service):

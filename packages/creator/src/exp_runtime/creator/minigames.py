@@ -57,10 +57,11 @@ CATCH_ADDON, CATCH_SPEC = 'shsbrew', 26998       # the add-on's catch art and it
 CATCH_MOST = 20                                  # brew_catch.MAX_ITEMS
 
 
-def brew_catch_sizes(library):
-    """{picture: (width, height)} of every catch picture the library's BREW add-on draws, {} without one."""
+def brew_catch_sizes(library, addon=CATCH_ADDON):
+    """{picture: (width, height)} of every catch picture the library's add-on draws (BREW's, or another with its own catch
+    spec at the same number: Surviving Hollywood's), {} without one."""
     import json
-    found = library.addon(CATCH_ADDON) if library is not None and hasattr(library, 'addon') else None
+    found = library.addon(addon) if library is not None and hasattr(library, 'addon') else None
     if found is None or CATCH_SPEC not in found[1].entries:
         return {}
     pictures = json.loads(found[1].read(CATCH_SPEC)).get('catch', {}).get('pictures', {})

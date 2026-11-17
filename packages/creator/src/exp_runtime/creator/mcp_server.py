@@ -74,7 +74,8 @@ def create_server(root):
     def update_project(path: str, revision: str, changes: dict) -> dict:
         """Change title/game/IDs/start/language/locales/library/emoticons (six image asset IDs or null, the
         dialogue params.emoticon images)/options (SHSHD Runtime settings that need no add-on, each true or false:
-        word_forms, date_first, three_word_games, big_pickers). Use project_get's revision."""
+        word_forms, date_first, three_word_games, big_pickers)/journal (the quest journal's stats, at most eight
+        {label, key, prefix}: owner-0 properties; quests are Set quest nodes). Use project_get's revision."""
         return workspace.update(path, revision, changes)
 
     @edit_tool(name='graph_edit_node')

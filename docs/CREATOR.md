@@ -187,6 +187,7 @@ built on. The episode then takes that game's settings that need its pictures and
 | `shs11` | '11's relationship icons and their sounds; its one sound channel; its right/wrong music |
 | `shsnr` | New Rules' frame; the Hi-Res Portraits switch; its right/wrong music |
 | `shsx360` | The X360 frame; the MS3 Characters switch |
+| `shshw` | Surviving Hollywood's panel behind the scene; the catch game in Hollywood's own look (nothing from BREW's: a catch node then needs only `shshw`, with picture numbers from its catch art); its title tune and title screen where Title Screen Music and Look are on Auto |
 
 The primary is listed first, so its pictures win where add-ons share a number. Every other add-on the project uses is an
 **extra**: its pictures and sounds keep their numbers, aliased to it in the export, and its mini-games play from it. Adding a
@@ -299,6 +300,23 @@ owner-0 keys in an episode that uses the matching option. An intro always runs
 into the same loop. The emoticon images are part of the project (format
 version 3; older projects upgrade on opening). Bring your own images: the
 creator ships none. The iOS app does not yet run an intro into its loop.
+
+### Surviving Hollywood's journal, details and stat pages
+
+These came with the Surviving Hollywood translation and work on any SHS project (owner, 2026-11-17):
+
+- **Set quest** sets quest 0-63 in the pause menu's **Quest Journal**: a title and its lines (the node's text, one per line,
+  `$USR` and other stored texts filled in). An empty title takes the quest off. **Quest journal…** picks up to eight stats the
+  journal lists first, each a label, an owner-0 property (kept by **Score / property** nodes) and a prefix (`$` for money).
+  The keys are the episode's own, so two episodes never show each other's quests. Other apps keep the texts and show nothing.
+- **Journal updated** is a scene label saying so ("Quest journal updated" unless you write other words), with an icon and a
+  sound if you like, as Hollywood shows it.
+- A choice's answers take a **Detail**: a smaller line under the answer, as Where to?'s opening hours. Other apps show it after
+  the answer.
+- A word grid's **part_score** setting stores the most letters of one word the player traced in place (service 224), for a
+  middle outcome after a missed word, as Glamlet's soliloquy has. Other apps stop at it, so it counts as this runtime's own.
+- **Fill with stat changes…** on a Message node writes a `Stat changes` page, a line per property you pick. A `{+expression}`
+  placeholder (in any text) shows `+` before a rise: `Looks: {+prop(0, 501)}` reads `Looks: +3`, `Looks: -2` or `Looks: 0`.
 
 ## SHS HD side panels
 

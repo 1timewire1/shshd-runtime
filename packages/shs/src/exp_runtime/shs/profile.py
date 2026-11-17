@@ -226,8 +226,10 @@ PRESENTATION_RECORD = True
 # sounds (presentation `addons`: frame backdrop, relationship icons and sounds, answer-feedback music, one sound channel, and the
 # add-on's switches) from the tables above as if it were that add-on's translated pack (content.feature_pack; owner,
 # 2026-11-09, CREATOR_ADDONS_PLAN.md). (add-on, edition) -> pack. The settings that need no add-on it declares one by one.
+# Surviving Hollywood's (`shshw`, 31700; owner, 2026-11-17): its panel behind the scene, its catch game's skin (TRANSLATED_CATCH_ADDON)
+# and its title tune and look.
 ADDON_FEATURE_PACKS = {('shsbrew', '08'): 31000, ('shsbrew', '07'): 31100, ('shs11', ''): 31600, ('shsnr', ''): 31300,
-                       ('shsx360', ''): 31400}
+                       ('shsx360', ''): 31400, ('shshw', ''): 31700}
 # shshd-runtime: Add-Ons' Title Screen Music (owner, 2026-11-09): each translated game's own title tune, which the main menu
 # plays once in place of MENU_MUSIC when chosen: game -> (its addon, the resource). BREW's '07 and '08 share one MIDI (track
 # 8006); New Rules' is its track 8 and '11's its track 1, the main menu's only full tune; the X360 prototype's is its

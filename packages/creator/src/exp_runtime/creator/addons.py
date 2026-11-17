@@ -28,6 +28,8 @@ ADDON_FEATURES = {
               ()),
     'shsx360': (("The X360 frame around the scene", 'The MS3 Characters switch'),
                 ('The slot machine', 'The leash game', 'The jewel puzzle', 'Diss Practice')),
+    'shshw': (("Surviving Hollywood's panel behind the scene", "The catch game in Hollywood's own look (nothing from BREW's)",
+               "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
 }
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
@@ -46,6 +48,14 @@ MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214,
                      (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"))
 
 
+def node_addon(project, kind):
+    """The add-on a node's mini-game plays from in this project (NODE_ADDONS), or None: the catch game on a Surviving Hollywood
+    primary wears that add-on's own skin and needs nothing from BREW's (profile TRANSLATED_CATCH_ADDON; owner, 2026-11-14)."""
+    if kind == 'brew_catch' and any(entry.get('primary') and entry['id'] == 'shshw' for entry in project.addons):
+        return 'shshw'
+    return NODE_ADDONS.get(kind)
+
+
 class AddonsNeeded(ProjectError):
     """Going to an original app with addon assets that can be packed in: `names` says which addons. Blocked, with the offer."""
 
@@ -59,6 +69,8 @@ class AddonsNeeded(ProjectError):
 def mechanics(project):
     """What the project uses that only this runtime has, as a sorted list of names; empty if nothing."""
     found = {MECHANIC_NODES[node.kind] for node in project.nodes if node.kind in MECHANIC_NODES}
+    if any(node.kind == 'grid' and node.params.get('part_score') for node in project.nodes):
+        found.add("the word grid's part score")
     for node in project.nodes:
         if node.kind == 'native':
             for opcode, operand in node.params.get('instructions', ()):
@@ -117,7 +129,7 @@ def drop_unused_addons(project):
     imported episode's list stays as its scripts need it."""
     if not project.native:
         used = ({asset.addon for asset in project.assets if asset.addon}
-                | {NODE_ADDONS[node.kind] for node in project.nodes if node.kind in NODE_ADDONS}
+                | {node_addon(project, node.kind) for node in project.nodes if node.kind in NODE_ADDONS}
                 | {OPTIONAL_NODE_ADDONS[node.kind] for node in project.nodes if node.kind in OPTIONAL_NODE_ADDONS})
         project.addons = [entry for entry in project.addons if entry['id'] in used or entry.get('primary')]
 
@@ -152,7 +164,7 @@ def require_node_addon(project, library, kind):
     """A node playing an add-on's mini-game was added: the project declares that add-on (an extra unless it's the primary).
     One it only plays from when there (OPTIONAL_NODE_ADDONS) is declared if the library has it, and otherwise left out."""
     optional = kind in OPTIONAL_NODE_ADDONS
-    addon_id = OPTIONAL_NODE_ADDONS.get(kind) or NODE_ADDONS.get(kind)
+    addon_id = OPTIONAL_NODE_ADDONS.get(kind) or node_addon(project, kind)
     if addon_id is None or any(entry['id'] == addon_id for entry in project.addons):
         return
     found = library.addon(addon_id) if library is not None else None

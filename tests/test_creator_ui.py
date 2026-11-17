@@ -152,8 +152,60 @@ class CreatorInspectorTests(unittest.TestCase):
                     text = editor.inspector.findChild(QTextEdit, 'story_text')
                     wanted = kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game',
                                       'set_text', 'text_default', 'character_name', 'picker', 'faceplace',
-                                      'faceplace_post', 'faceplace_link', 'tree_node', 'tree_result', 'append_text')
+                                      'faceplace_post', 'faceplace_link', 'tree_node', 'tree_result', 'append_text',
+                                      'quest', 'journal_updated')
                     self.assertEqual(text is not None, wanted)
+        finally:
+            editor.dirty = False
+            editor.close()
+
+    def test_an_answer_takes_a_detail_line(self):
+        # Creator catch-up Stage 2 (2026-11-17): a smaller line under an answer, as Where to?'s opening hours.
+        from PySide6.QtWidgets import QLineEdit
+        from exp_runtime.creator.ui import Editor
+        editor = Editor(discover_library=False)
+        editor.show()
+        try:
+            editor.add_node('choice')
+            self.app.processEvents()
+            detail = editor.inspector.findChild(QLineEdit, 'detail_0')
+            self.assertIsNotNone(detail)
+            detail.setText('Open 9 to 9'); detail.textEdited.emit('Open 9 to 9')
+            self.assertEqual(editor.project.node(editor.selected).options[0].detail, 'Open 9 to 9')
+        finally:
+            editor.dirty = False
+            editor.close()
+
+    def test_the_stat_changes_preset_fills_a_message(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QDialog, QPushButton
+        from exp_runtime.creator.ui import Editor
+        editor = Editor(discover_library=False)
+        editor.show()
+        try:
+            editor.project.journal = [dict(label='Looks', key=501, prefix='')]
+            editor.add_node('message')
+            self.app.processEvents()
+            button = next(b for b in editor.inspector.findChildren(QPushButton) if b.text() == 'Fill with stat changes…')
+            with mock.patch.object(QDialog, 'exec', return_value=QDialog.DialogCode.Accepted):
+                button.click()
+            node = editor.project.node(editor.selected)
+            self.assertEqual((node.params['title'], node.text), ('Stat changes', 'Looks: {+prop(0, 501)}'))
+        finally:
+            editor.dirty = False
+            editor.close()
+
+    def test_the_quest_journal_dialog_keeps_its_stats(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QDialog
+        from exp_runtime.creator.ui import Editor
+        editor = Editor(discover_library=False)
+        editor.show()
+        try:
+            editor.project.journal = [dict(label='Money', key=500, prefix='$')]
+            with mock.patch.object(QDialog, 'exec', return_value=QDialog.DialogCode.Accepted):
+                editor.quest_journal()
+            self.assertEqual(editor.project.journal, [dict(label='Money', key=500, prefix='$')])
         finally:
             editor.dirty = False
             editor.close()

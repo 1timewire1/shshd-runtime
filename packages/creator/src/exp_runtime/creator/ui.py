@@ -335,7 +335,7 @@ class Editor(QMainWindow):
         button.clicked.connect(lambda: self.add_node(self.node_kind.currentData()))
         toolbox.addWidget(button)
         for label, callback in (('Characters…', self.characters), ('Translations…', self.translations),
-                                ('Emoticon images…', self.emoticon_images),
+                                ('Emoticon images…', self.emoticon_images), ('Quest journal…', self.quest_journal),
                                 ('Add-ons and settings…', self.addon_settings),
                                 ('Auto arrange', self.arrange), ('Copy nodes', self.copy),
                                 ('Paste nodes', self.paste), ('Duplicate nodes', self.duplicate)):
@@ -554,7 +554,8 @@ class Editor(QMainWindow):
                 speaker.textEdited.connect(lambda value: self.set_node('speaker', value))
                 speaker.setEnabled(node.kind != 'dialogue' or not node.character)
                 form.addRow('Speaker / title', speaker)
-            if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game',
+            if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game', 'quest',
+                             'journal_updated',
                              'set_text', 'text_default', 'character_name', 'picker', 'faceplace', 'faceplace_post',
                              'faceplace_link', 'tree_node', 'tree_result', 'append_text'):
                 text = QTextEdit()
@@ -588,6 +589,14 @@ class Editor(QMainWindow):
                     condition.setPlaceholderText('Optional: points >= 3')
                     condition.textEdited.connect(lambda value, i=i: self.set_option(i, 'condition', value))
                     form.addRow('Enabled when', condition)
+                    if self.project.game == 'shs':
+                        detail = QLineEdit(option.detail)
+                        detail.setObjectName(f'detail_{i}')
+                        detail.setPlaceholderText('Optional: a smaller line under the answer')
+                        detail.setToolTip('Shown under the answer in SHSHD Runtime, as Where to?\'s opening hours; other '
+                                          'apps show it after the answer.')
+                        detail.textEdited.connect(lambda value, i=i: self.set_option(i, 'detail', value))
+                        form.addRow('Detail', detail)
                     form.addRow('Go to', self.destination(option.target, lambda target, i=i: self.set_option(i, 'target', target)))
                 buttons = QHBoxLayout()
                 for label, delta in (('Add answer', 1), ('Remove last', -1)):
@@ -659,6 +668,12 @@ class Editor(QMainWindow):
                     then_loop.setToolTip('An embedded track this one runs into without a gap after playing once '
                                          '(SHSHD Runtime). Other apps play this track alone.')
                     form.addRow('Then loop', then_loop)
+            if node.kind == 'message' and self.project.game == 'shs' and not self.project.native:
+                preset = QPushButton('Fill with stat changes…')
+                preset.setToolTip('A "Stat changes" page listing the properties you pick, a + before each rise, as '
+                                  'Surviving Hollywood shows them.')
+                preset.clicked.connect(self.stat_changes_preset)
+                form.addRow(preset)
             if parameters(node) and node.kind != 'dialogue':
                 settings = QPushButton('Edit ' + ('native instructions…' if node.kind == 'native' else 'settings…'))
                 settings.clicked.connect(self.node_settings); form.addRow(settings)
@@ -735,6 +750,81 @@ class Editor(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.set_project('emoticons', [box.currentData() for box in boxes])
             self.show_properties()
+
+    def quest_journal(self):
+        """The quest journal's stats (SHS, SHSHD Runtime): up to eight owner-0 properties shown above the quests, each with a
+        label and a prefix ($ before Money). Quests themselves are Set quest nodes."""
+        from .model import JOURNAL_STATS
+        if self.project.native:
+            self.error('Native projects keep their original presentation.'); return
+        if self.project.game != 'shs':
+            self.error('The quest journal is for Surviving High School episodes.'); return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Quest journal')
+        form = QFormLayout(dialog)
+        intro = QLabel('The pause menu\'s Quest Journal (SHSHD Runtime) lists the quests your Set quest nodes keep, after '
+                       'these stats: properties of owner 0, as Score / property nodes change them. Leave a label empty '
+                       'to drop its row.')
+        intro.setWordWrap(True)
+        form.addRow(intro)
+        rows = []
+        stats = list(self.project.journal) + [dict(label='', key=0, prefix='')] * (JOURNAL_STATS - len(self.project.journal))
+        for n, stat in enumerate(stats, 1):
+            line = QHBoxLayout()
+            label = QLineEdit(stat['label']); label.setPlaceholderText('Label, e.g. Money'); label.setObjectName(f'stat_label_{n}')
+            key = QSpinBox(); key.setRange(0, 32767); key.setValue(stat['key']); key.setPrefix('key '); key.setObjectName(f'stat_key_{n}')
+            prefix = QLineEdit(stat['prefix']); prefix.setMaxLength(4); prefix.setPlaceholderText('Prefix')
+            prefix.setObjectName(f'stat_prefix_{n}')
+            for widget in (label, key, prefix):
+                line.addWidget(widget)
+            form.addRow(f'Stat {n}', line)
+            rows.append((label, key, prefix))
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            journal = [dict(label=label.text().strip(), key=key.value(), prefix=prefix.text())
+                       for label, key, prefix in rows if label.text().strip()]
+            self.set_project('journal', journal)
+            self.show_properties()
+
+    def stat_changes_preset(self):
+        """Fill the selected Message node with a "Stat changes" page: a line for each property picked, `{+prop(0, key)}`
+        showing a + before a rise (the journal's stats offered first)."""
+        from .stat_pages import stat_changes_page
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Stat changes')
+        form = QFormLayout(dialog)
+        intro = QLabel('One line per property of owner 0 that holds a change (set it with a Score / property node before '
+                       'this page). The journal\'s stats are filled in; leave a label empty to drop its line.')
+        intro.setWordWrap(True)
+        form.addRow(intro)
+        rows = []
+        stats = [dict(label=s['label'], key=s['key']) for s in self.project.journal][:8]
+        stats += [dict(label='', key=0)] * (8 - len(stats))
+        for n, stat in enumerate(stats, 1):
+            line = QHBoxLayout()
+            label = QLineEdit(stat['label']); label.setPlaceholderText('Label, e.g. Looks')
+            key = QSpinBox(); key.setRange(0, 32767); key.setValue(stat['key']); key.setPrefix('key ')
+            line.addWidget(label); line.addWidget(key)
+            form.addRow(f'Line {n}', line)
+            rows.append((label, key))
+        signed = QCheckBox('A + before each rise'); signed.setChecked(True); form.addRow(signed)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        lines = [(label.text().strip(), key.value()) for label, key in rows if label.text().strip()]
+        if not lines:
+            return
+        title, text = stat_changes_page(lines, signed.isChecked())
+        node = self.project.node(self.selected)
+        self.remember()
+        node.params = dict(node.params, title=title)
+        node.text = text
+        self.changed()
+        self.show_properties()
 
     def open_library(self):
         """The project's library (a context manager), or a stand-in with no add-ons when none is chosen."""
