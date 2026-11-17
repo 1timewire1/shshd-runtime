@@ -194,6 +194,24 @@ class DrawingTests(unittest.TestCase):
         self.renderer.draw(session)
         return self.pygame.image.tobytes(self.renderer.canvas, 'RGBA')
 
+    def test_the_words_outline_is_the_same_without_a_mask_module(self):
+        # The iOS drawing backend has no pygame.mask: the Diss Battle stopped at its first word on the iPad (2026-11-17).
+        # Built from the alpha bytes instead, the silhouette must be pygame's mask's, pixel for pixel.
+        from exp_runtime import desktop_x360_battle as battle
+        pygame = self.pygame
+        image = pygame.Surface((40, 20), pygame.SRCALPHA)
+        for x in range(40):
+            for y in range(20):
+                image.set_at((x, y), (255, 255, 255, (x * 7 + y * 13) % 256))
+        with_mask = pygame.image.tobytes(battle.silhouette(image, battle.WORD_CUT), 'RGBA')
+        real = battle.pygame
+        battle.pygame = self.SimpleNamespace(image=pygame.image)          # no mask attribute, as on iOS
+        try:
+            without = pygame.image.tobytes(battle.silhouette(image, battle.WORD_CUT), 'RGBA')
+        finally:
+            battle.pygame = real
+        self.assertEqual(without, with_mask)
+
     def test_every_phase_draws_and_the_words_show_on_the_record(self):
         game = xb.DissBattle.opened(ROUNDS, tutorial=True)
         random = Random48()

@@ -38,6 +38,19 @@ TUTORIAL_LINES = ('Diss battle!', 'Catch the word that rhymes', 'with the needle
 RISE = 420
 
 
+
+def silhouette(image, cut):
+    """`image` as black where its alpha is above `cut` and clear elsewhere, as pygame's mask makes it. The iOS drawing
+    backend has no mask module (the Diss Battle stopped there on the iPad, 2026-11-17), so it's built from the alpha bytes
+    there, the same rule."""
+    mask = getattr(pygame, 'mask', None)
+    if mask is not None:
+        return mask.from_surface(image, cut).to_surface(setcolor=(0, 0, 0, 255), unsetcolor=(0, 0, 0, 0))
+    data = pygame.image.tobytes(image, 'RGBA')
+    out = bytearray(len(data))
+    out[3::4] = data[3::4].translate(bytes(255 if alpha > cut else 0 for alpha in range(256)))
+    return pygame.image.frombytes(bytes(out), image.get_size(), 'RGBA')
+
 class X360BattleRenderer(X360DissRenderer):
     def draw(self, session):
         game = self.game = session.engine.x360_battle
@@ -134,8 +147,7 @@ class X360BattleRenderer(X360DissRenderer):
         found = self._scaled.get(key)
         if found is None or found[0] is not image:
             # The outline follows the letters as drawn (their own thin dark edge included) from WORD_CUT's strength.
-            mask = pygame.mask.from_surface(image, WORD_CUT)
-            black = mask.to_surface(setcolor=(0, 0, 0, 255), unsetcolor=(0, 0, 0, 0))
+            black = silhouette(image, WORD_CUT)
             image_drawn = image
             out = pygame.Surface((image.get_width() + 2 * width, image.get_height() + 2 * width), pygame.SRCALPHA)
             for dx in range(-width, width + 1):
