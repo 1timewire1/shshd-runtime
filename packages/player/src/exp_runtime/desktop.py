@@ -47,7 +47,9 @@ from .desktop_brew_catch import BrewCatchRenderer
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
-from .x360_diss import SOUND_BAD as X360_SOUND_BAD, SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX
+from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISODE as X360_ROUND_EPISODE,
+                        SOUND_BAD as X360_SOUND_BAD,
+                        SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
@@ -1872,7 +1874,7 @@ class Desktop:
         self.story_below = False
         self.story_centred = False
         self.story_lift = 0
-        self.scene_zoom = 1.
+        self.scene_zoom = self._practice_scene_zoom()
         self.under_layer = None
         self.edge_layer = None
         self.pending_background = None
@@ -3168,6 +3170,18 @@ class Desktop:
             self.location_changing = None
             return None
         return dict(p=default_ease(max(0., t)), old=change['old'], **{'from': change['start']})
+
+    def _practice_scene_zoom(self):
+        """J for the story's own screens on one of Monday Planner's Diss Practice round backgrounds (the practice's skip
+        prompt, the lines after it, whether it was played or skipped): the game's scene, so the picture never shows more
+        height than 3:4 does (round 1's render streaks; owner, 2026-11-16). 1 elsewhere; the game itself sets it from its
+        renderer."""
+        renderer = self.__dict__.get('x360_diss_renderer')
+        record = getattr(self.session.resources, 'record', None) or {}
+        if (renderer is None or (record.get('pack_id'), record.get('episode_id')) != X360_ROUND_EPISODE
+                or self.session.engine.panel.background_id not in X360_ROUND_BACKGROUNDS):
+            return 1.
+        return renderer.scene_zoom
 
     def _background_placement(self, background, target_size):
         """Where the whole picture lies, (x, y, width, height) in target pixels from the frame's top-left: the

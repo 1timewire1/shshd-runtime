@@ -205,6 +205,36 @@ class BackgroundShapeTests(unittest.TestCase):
                 (x, y, w, h), _ = self.place('9:16', align=align)
                 self.assertAlmostEqual(x if edge == 'left' else x + w - tw, 0)
 
+    def test_a_practice_rounds_background_shows_no_more_height_than_3_4_on_the_storys_screens(self):
+        """Diss Practice's skip prompt and the lines after it, played or skipped (owner, 2026-11-16: round 1's render
+        streaks above 3:4): the game's scene placement on Monday Planner's round backgrounds, and only there."""
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_x360_diss import X360DissRenderer
+        from exp_runtime.x360_diss import ROUND_BACKGROUNDS, ROUND_EPISODE
+        units = frame_shape.frame_units('fit', (1080, 2400), fixed_window=True)       # the g54's 20:9
+        target = (768, round(768 * units[1] / units[0]))
+        art = self.pygame.Surface((960, 1440))
+        renderer = X360DissRenderer.__new__(X360DissRenderer)
+        renderer.frame_units = units
+        _, top, _, height = self.ui(None)._background_placement(art, (768, 1024))     # 3:4's: 337 of 1440 above
+        planner, other = ROUND_EPISODE, (31300, ROUND_EPISODE[1])     # (New Rules numbers its own from 26000 too)
+        for background, episode, zoomed in ((ROUND_BACKGROUNDS[0], planner, True), (ROUND_BACKGROUNDS[2], planner, True),
+                                            (26112, planner, False), (ROUND_BACKGROUNDS[0], other, False)):
+            with self.subTest(background=background, episode=episode):
+                ui = self.ui(units)
+                ui.x360_diss_renderer = renderer
+                ui.session.engine.panel.background_id = background
+                ui.session.engine.x360_diss = None                          # (finished or skipped: cleared at once)
+                ui.session.resources = SimpleNamespace(record=dict(pack_id=episode[0], episode_id=episode[1]))
+                ui.scene_zoom = Desktop._practice_scene_zoom(ui)
+                x, y, w, h = ui._background_placement(art, target)
+                if zoomed:
+                    self.assertAlmostEqual(ui.scene_zoom, renderer.scene_zoom)
+                    self.assertAlmostEqual(-y / h, -top / height)               # its top is 3:4's
+                    self.assertAlmostEqual(y + h - target[1], (top + height - 1024) * h / height, delta=1)
+                else:
+                    self.assertEqual(ui.scene_zoom, 1.)
+
     def test_past_its_height_the_picture_is_enlarged_to_the_frame(self):
         units = frame_shape.frame_units('fit', (900, 2400), fixed_window=True)      # past 9:21: 9:21
         target = (768, round(768 * units[1] / units[0]))

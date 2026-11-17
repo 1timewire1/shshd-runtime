@@ -66,6 +66,12 @@ PUSH = tuple((ms / 4, angle) for ms, angle in (
 PUSH_MS = PUSH[-1][0]
 # The sounds, in the X360 addon (tools/translate/x360_arena_art.py SOUNDS): a good note, a broken note, a remix arrow.
 SOUND_GOOD, SOUND_BAD, SOUND_REMIX = (26380, 26381, 26382), 26383, 26384
+# The backgrounds Monday Planner (ROUND_EPISODE: tools/translate/x360.py PACK_ID, its episode_id) plays its three practice
+# rounds on (SCENE_BACKGROUND_BASE + SCENES' front_morning, hallway_b, josh_practice): the story shows them only for a
+# practice and the lines after it. The player gives them the game's scene there too (owner, 2026-11-16: the skip prompt and
+# the line after showed round 1's render streaks above 3:4). Other packs number their own backgrounds from 26000 too.
+ROUND_EPISODE = (31400, 4)
+ROUND_BACKGROUNDS = (26111, 26115, 26119)
 
 
 def _element():

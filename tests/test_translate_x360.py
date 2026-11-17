@@ -1035,6 +1035,16 @@ QuitGame()
         self.assertEqual(x360.ADDON_REVISION, 19)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
+    def test_the_practice_rounds_backgrounds_are_the_ones_the_player_knows(self):
+        """exp_runtime.x360_diss.ROUND_BACKGROUNDS: the player gives these the game's scene on the story's screens too."""
+        import x360
+        from exp_runtime.x360_diss import ROUND_BACKGROUNDS, ROUND_EPISODE
+        self.assertEqual((x360.PACK_ID, x360.MONDAY_PLANNER.episode_id), ROUND_EPISODE)
+        scenes = [x360.MONDAY_PLANNER.event_scenes[f'episode3/practice_diss_00{n}'] for n in (1, 2, 3)]
+        self.assertEqual(tuple(x360.SCENE_BACKGROUND_BASE + x360.SCENES.index(scene) for scene in scenes), ROUND_BACKGROUNDS)
+        self.assertEqual([event for event, scene in x360.MONDAY_PLANNER.event_scenes.items()       # nothing else is drawn
+                          if scene in scenes and not event.startswith('episode3/practice_diss_')], [])  # on them
+
 
 class EmoticonEffectTests(unittest.TestCase):
     def test_each_effect_enters_then_keeps_a_quiet_loop(self):
