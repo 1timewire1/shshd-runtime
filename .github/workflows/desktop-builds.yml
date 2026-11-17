@@ -87,9 +87,16 @@ jobs:
 
   ios:
     name: iOS
-    # Beside the desktop builds since the iOS catch-up (docs/IOS_APP.md); not part of a release yet.
+    # Beside the desktop builds since the iOS catch-up (docs/IOS_APP.md); a version tag's IPA is a release download.
     if: github.event_name != 'workflow_dispatch' || inputs.release_run_id == ''
     uses: ./.github/workflows/ios-builds.yml
+
+  android:
+    name: Android
+    # Version tags only: the APK workflow runs on its own for master pushes (90 minutes, the release key's secrets).
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/android-builds.yml
+    secrets: inherit
 
   build:
     name: ${{ matrix.target }}
@@ -198,15 +205,16 @@ jobs:
 
   release-source:
     name: Select tested release artifacts
-    # This fork: releases carry the desktop downloads and wheels only. The iOS job still runs, but neither waits for
-    # nor requires it (its macos-26 runner can queue for a long time); its IPA stays an Actions artifact for now.
+    # This fork: since v1.1.0 a release also carries the unsigned iOS IPA and the Android APK, so it waits for both
+    # (the iOS job's macos-26 runner can queue for a long time).
     if: >-
       ${{ always() && !cancelled() && (
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
-         needs.build.result == 'success' && needs.packages.result == 'success') ||
+         needs.build.result == 'success' && needs.packages.result == 'success' &&
+         needs.ios.result == 'success' && needs.android.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.release_run_id != '')
       ) }}
-    needs: [build, packages]
+    needs: [build, packages, ios, android]
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     permissions:
@@ -257,7 +265,8 @@ jobs:
               raise SystemExit('The release tag no longer matches the source run commit')
 
           required = {'Python wheels (3.10)', 'Python wheels (3.14)', 'windows-x64',
-                      'linux-x64', 'macos-arm64', 'macos-x64'}
+                      'linux-x64', 'macos-arm64', 'macos-x64',
+                      'iOS / Unsigned iPhone app', 'Android / APK'}
           passed = set()
           page = 1
           while True:
@@ -391,6 +400,38 @@ jobs:
           run-id: ${{ needs.release-source.outputs.run-id }}
           github-token: ${{ github.token }}
 
+      - name: Download the unsigned iOS IPA and checksum
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ios-arm64-unsigned
+          path: dist/ios
+          run-id: ${{ needs.release-source.outputs.run-id }}
+          github-token: ${{ github.token }}
+
+      - name: Download the Android APK and checksum
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: shshd-runtime-android
+          path: dist/android
+          run-id: ${{ needs.release-source.outputs.run-id }}
+          github-token: ${{ github.token }}
+
+      # The IPA is already named for the tag; the APK (python-for-android's shshd-release-<version>.apk) takes the
+      # desktop downloads' pattern, its checksum rewritten for the new name once the original has been checked.
+      - name: Include the mobile apps in the release
+        shell: bash
+        run: |
+          ipa="shshd-runtime-$EXP_TAG-ios-arm64-unsigned.ipa"
+          ipa_path=$(find dist/ios -name "$ipa" -print -quit)
+          test -n "$ipa_path"
+          cp -- "$ipa_path" "$ipa_path.sha256" dist/release/
+          apk_path=$(find dist/android -name "shshd-release-${EXP_TAG#v}.apk" -print -quit)
+          test -n "$apk_path"
+          (cd "$(dirname "$apk_path")" && sha256sum --check "$(basename "$apk_path").sha256")
+          apk="shshd-runtime-$EXP_TAG-android.apk"
+          cp -- "$apk_path" "dist/release/$apk"
+          (cd dist/release && sha256sum -- "$apk" > "$apk.sha256")
+
       - name: Include component wheels in the release
         working-directory: dist/python-packages
         shell: bash
@@ -410,7 +451,7 @@ jobs:
         working-directory: dist/release
         shell: bash
         run: |
-          for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip; do
+          for target in windows-x64.zip linux-x64.tar.gz macos-arm64.zip macos-x64.zip                         ios-arm64-unsigned.ipa android.apk; do
             test -s "shshd-runtime-$EXP_TAG-$target"
             test -s "shshd-runtime-$EXP_TAG-$target.sha256"
           done

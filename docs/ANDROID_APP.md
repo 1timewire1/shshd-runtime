@@ -28,8 +28,8 @@ intended for sideloading, not Play Store publication.
 2. Open **Actions → Android APK** and select the latest run. Once the workflow
    exists on the repository's default branch it can also be run manually.
 3. Download **shshd-runtime-android** from the completed run's artifacts.
-   Extract it to find the APKs (`arm64-v8a` for devices, `x86_64` for the
-   emulator) and their SHA-256 checksums.
+   Extract it to find the APK (`dist/android/shshd-release-<version>.apk`, one
+   for devices and the emulator) and its SHA-256 checksum.
 4. Transfer the APK to an Android device and open it. Allow installation
    from that file manager/browser when Android asks.
 
@@ -41,7 +41,12 @@ it in. Back up any progress you want to keep first.
 
 The initial native build can take tens of minutes. The workflow has a
 90-minute timeout and keeps the downloadable APK for seven days. It grants
-read-only repository permissions and does not publish releases.
+read-only repository permissions and does not publish releases itself.
+
+From v1.1.0, a version tag's **Builds** run also calls this workflow, and the
+release attaches its APK as `shshd-runtime-<version>-android.apk` with a
+SHA-256 checksum ([distribution](DISTRIBUTION.md)). Releases are built with the
+release key, so they install over tester builds and the reverse.
 
 ## Local build
 

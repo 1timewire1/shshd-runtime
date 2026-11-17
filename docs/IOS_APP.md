@@ -5,7 +5,7 @@
 > host), with frames composited on the GPU. It was tested on an iPad mini 5 (a 50-minute soak through 15
 > episodes of every kind: 54-60 fps, memory steady) and in the simulator, with iPhone shapes checked through
 > the safe-area insets. The catch-up is described in `reference/IOS_CATCHUP_PLAN.md`. Builds produce an
-> unsigned IPA that users sign themselves; releases don't carry it yet.
+> unsigned IPA that users sign themselves; releases carry it from v1.1.0.
 
 Introduced in **v0.4.0**. The v0.3.0 release supports importing
 original IPA assets on desktop; it does not include this iPhone/iPad app.
@@ -51,10 +51,9 @@ artifact contains only the IPA and checksum; `ios-simulator-verification`
 contains the verification report. The standalone **iOS builds** workflow can
 also be run manually for development artifacts.
 
-Upstream's release job also waits for iOS verification and attaches the IPA
-and checksum to the GitHub Release. This fork's release doesn't yet: the IPA
-and the simulator reports remain Actions artifacts (`docs/DISTRIBUTION.md`). Users handle signing and installation.
-For a release made before this workflow change, see
+From v1.1.0 the release job waits for the iOS job, as upstream's does, and attaches the unsigned IPA and its
+checksum to the GitHub Release (`docs/DISTRIBUTION.md`); the simulator reports remain Actions artifacts. Users
+handle signing and installation. For a release made before this workflow change (v1.0.2 and earlier), see
 [adding the missing IPA](DISTRIBUTION.md#adding-an-ipa-to-an-existing-release).
 
 ## Install from Xcode

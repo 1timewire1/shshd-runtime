@@ -24,37 +24,43 @@ number is informational. See [SHS IPA support](docs/IPA.md) and
 
 ## Download an app
 
-An experimental [Android port](docs/ANDROID_APP.md) and **Android APK** build
-workflow are included. It reuses the pygame renderer and needs Android build
-and device verification before it can be considered a working release.
+Open this repository's **Releases** page and download the file for your device:
 
-Open this repository's **Releases** page and download the archive for your
-system: `shshd-runtime-<version>-windows-x64.zip`, `-linux-x64.tar.gz`,
-`-macos-arm64.zip` (Apple Silicon) or `-macos-x64.zip` (Intel). Extract it and
-open **SHSHD Runtime** inside. Keep the complete app or executable folder
-together. Python and the runtime dependencies are bundled.
+| Device | Download |
+| --- | --- |
+| Windows | `shshd-runtime-<version>-windows-x64.zip` |
+| macOS, Apple Silicon | `shshd-runtime-<version>-macos-arm64.zip` |
+| macOS, Intel | `shshd-runtime-<version>-macos-x64.zip` |
+| Linux | `shshd-runtime-<version>-linux-x64.tar.gz` |
+| Android 7.0 or newer | `shshd-runtime-<version>-android.apk` (from v1.1.0) |
+| iPhone and iPad | `shshd-runtime-<version>-ios-arm64-unsigned.ipa` (from v1.1.0) |
+
+On a computer, extract the archive and open **SHSHD Runtime** inside. Keep the
+complete app or executable folder together. Python and the runtime
+dependencies are bundled.
+
+On Android, open the APK and allow installation from that app when Android
+asks; it isn't on the Play Store. Each release installs over the last and keeps
+your libraries and saves. See [the Android app](docs/ANDROID_APP.md).
+
+The iPhone/iPad app is unsigned: sign it with your own Apple ID or a signing
+tool before installing it. See [the iOS app](docs/IOS_APP.md).
 
 To make episodes, download `exp-runtime-creator-v0.6.1-<target>.zip` (or
 `.tar.gz` for Linux) and open **EXP Runtime Creator**. The Creator has separate
 downloads for the same four desktop targets. See [the creator guide](docs/CREATOR.md).
 
-For development builds, open **Actions → Builds**, choose a successful
-run, and download its platform artifact. Extract the artifact ZIP, then the
-app archive inside it.
+For development builds, open **Actions → Builds** (or **Actions → Android
+APK** for Android), choose a successful run, and download its platform
+artifact. Extract the artifact ZIP, then the app archive inside it.
 
 Builds include a SHA-256 checksum. macOS builds use ad-hoc signing and are not
 notarized; Windows builds are unsigned. See [distribution](docs/DISTRIBUTION.md)
 for CI triggers, packaging and the first-launch requirements.
 
-The [iPhone/iPad app](docs/IOS_APP.md) shares the Python engine, menus and
-renderers with desktop, using native iOS drawing, audio and Files access.
-**The iOS app does not work in this fork yet.** This fork's SHS HD and Cause
-of Death screens draw with pygame directly, which the iOS app does not
-include. They still need porting to its native drawing layer, which also lacks
-several features they use. The iOS job builds the simulator app but fails on
-launch, so releases carry the desktop downloads only. See
-[the iOS status](docs/IOS_APP.md) for details; the port is planned after
-v1.0.0.
+The Android app runs the desktop engine and renderer as they are. The
+iPhone/iPad app shares the Python engine and menus, drawing through native iOS
+graphics, audio and Files access.
 
 ## Build your own app
 

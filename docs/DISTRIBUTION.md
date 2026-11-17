@@ -33,6 +33,7 @@ for the required one-time setup and [SDK.md](SDK.md) for component installs.
 | `macos-arm64` | `macos-14` | ZIP containing the Apple Silicon app |
 | `macos-x64` | `macos-15-intel` | ZIP containing the Intel app |
 | `ios-arm64-unsigned` | `macos-26` | Unsigned IPA for users to sign and install |
+| `shshd-runtime-android` | `ubuntu-24.04` | Android APK, signed with the release key (version tags only) |
 
 After a successful run, development downloads are under **Actions → Builds
 → the run → Artifacts**, with one artifact per platform. Each desktop artifact
@@ -49,13 +50,16 @@ files; a mismatch fails before building Python distributions. Once all
 four desktop builds and the Python packaging checks pass, the release job
 requires all four desktop downloads and their checksum files, verifies the
 checksums, and publishes the desktop archives and wheels with their checksums
-on **Releases**. In this fork the iOS job still runs on every push, but the
-release neither waits for nor includes it yet: the port works (see
-[IOS_APP.md](IOS_APP.md)), but its `macos-26` runner can queue for a long
-time, and its IPA stays an Actions artifact for now. Ordinary pushes and pull requests
+on **Releases**. From v1.1.0 it also waits for the iOS job and the Android APK
+(which Builds runs on version tags only; master pushes have their own
+**Android APK** runs) and attaches `shshd-runtime-<tag>-ios-arm64-unsigned.ipa`
+and `shshd-runtime-<tag>-android.apk` with their checksums. The iOS job's
+`macos-26` runner can queue for a long time, so a release can wait on it; the
+Android build needs the release key's repository secrets
+([ANDROID_APP.md](ANDROID_APP.md)). Ordinary pushes and pull requests
 never create releases. Their jobs have read-only repository permissions; only
 the version-tag release job has `contents: write`, using GitHub's built-in
-token. No personal token or signing secrets are required.
+token. No personal token is required; the only signing secrets are the Android release key's.
 
 The release body comes from [RELEASE.md](../RELEASE.md) at the repository root.
 Update it before tagging a version. [CHANGELOG.md](../CHANGELOG.md) records
@@ -128,7 +132,7 @@ app release and PyPI upload are separate jobs, so check both when releasing.
 
 ### Adding an IPA to an existing release
 
-For a tag released before iOS was connected to the release job, download its
+For a tag released before iOS was connected to the release job (v1.0.2 and earlier), download its
 successful **iOS builds → ios-arm64-unsigned** artifact. Extract the outer
 artifact ZIP and find the `.ipa` and `.ipa.sha256` files; older artifacts put
 them under `dist/downloads/`. Use the run for that tag/commit so the files match
