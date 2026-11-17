@@ -4,6 +4,76 @@
 
 ### Added
 
+- **The Android app** ([ANDROID_APP.md](docs/ANDROID_APP.md); begun in @andymenard's fork, merged 2026-11-03): the
+  desktop engine and renderer in an SDL2 activity, one APK for Android 7.0 or newer (ARM64 devices and the x86-64
+  emulator). It brings touch with flicked lists that glide on, pinch-to-zoom on the story tree (following the fingers
+  and keeping their middle still), the side panels turning the phone to landscape, RAR import through the APK's own
+  libarchive, supplied fonts by face and style, and the device's vibrator (General → Vibration). Tester builds and
+  releases share one release key, so each installs over the last. Tuned on a Moto g54 to hold 50-60 fps in stories,
+  menus and minigames (see Fixed for what each frame stopped doing).
+- **The iOS app caught up** (2026-11-13; [IOS_APP.md](docs/IOS_APP.md)). This fork's SHS HD and Cause of Death screens,
+  the app's own screens and the translated games now run on iPhone and iPad through `exp_runtime.graphics`'s iOS
+  backend, with frames composited on the GPU, edge to edge within the safe area's insets, and pinch on the story tree.
+  It was tested on an iPad mini 5 (a 50-minute soak through 15 episodes at 54-60 fps). Its CI job runs on every build,
+  on an Intel Mac when Apple Silicon runners are short.
+- **Aspect Ratio** (Options → General; owner, 2026-11-11; `frame_shape.py`): **Fit Screen** (the window's shape, from
+  3:4 to about 9:21), 3:4, 2:3 or 9:16. Phones open in Fit Screen and computers in 3:4; on a computer, picking a shape
+  resizes the window. In a taller frame:
+  - The story fills it without squeezing dialogue. Backgrounds keep their scale and show more of the scene (at 2:3 a
+    location's whole picture, so nothing pans), and from 9:16 the frame is the story's 320-unit column wide, as SD SHS
+    and Cause of Death fill an iPhone.
+  - Title and chapter cards cover the whole frame; choices, narration, notices and name entry are placed for it.
+  - Every minigame is laid out for it: HD football and the word game, New Rules' arena in both skins, '11's Memory and
+    Reflex, the X360 games (Diss Practice scales its scene with Josh) and the BREW catch game.
+  - So are the menus: SHS HD's (main menu, picker, lists, windows), Cause of Death's and the app's own screens, clear
+    of a phone's status and navigation bars.
+  - Storyboards gain spec version 2 (a travelling anchor, black above and below), and Day of Diss's opening has a
+    version for taller frames (X360 add-on revision 16).
+- **Side panels on any screen shape** (2026-11-12): where the frame is too narrow for them beside the story, the
+  Faceplace wall and story tree open over it, half the screen each, with a whoosh, while the music waits. Turning a
+  phone or tablet to landscape shows them beside the story. A linked Faceplace post closes the panels before asking.
+- **Controller support** (thanks @zazatree; [RUNTIME.md](docs/RUNTIME.md)): XInput, DirectInput, PlayStation, Switch
+  Pro and Stadia controllers, with buttons by position. Football's nine plays map to the face buttons, triggers,
+  bumpers and R3, and the word grid has a Hold mode (the default: hold confirm and drag a finger cell by cell) and a
+  Tap mode. Options gains a Controller page (Confirm Button for a Nintendo layout, Word Grid Controls), and General's
+  Vibration rumbles a connected controller.
+- **The app's own screens in HD** (2026-10-30; [MAIN_MENU.md](docs/MAIN_MENU.md)): the game chooser, Bulk Import and
+  each game's Setup are drawn in SHS HD's style, with the message, update and busy cards over them, and a file browser
+  for every pick (Choose Game, Open Library, Bulk Import, Add Episodes, the folders).
+- **Options shared by both games** (2026-10-29), kept in the app's `settings.json` and offered from the game chooser
+  too:
+  - **Start In** (General): Last Played (the default), Choose a Game, Surviving High School or Cause of Death.
+  - **Skip Sound Prompt** (Sound): launches go on without "Play with sound?".
+  - **Unlock Warping** (Extras, SHS's main menu): clears the story tree's lock, as finishing Football Season does,
+    with the game's own "Options Unlocked" notice.
+- **Data Management** (main menu and the game chooser; 2026-10-29/30):
+  - **Library:** Library Info, Storage, Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library and
+    Delete Library (asked twice; it deletes the library's own parts only).
+  - **Episodes:** Add, Delete and Export Episodes, and Reset Decision Tree, each on a list of ticked episodes.
+  - **Progress:** Back Up Progress and Restore Progress (a bundle of saves, trees, names and the warp lock, keyed by
+    each episode's content hash, so it restores into any library of that game; a restore backs up first), Reset
+    Names and Delete All Saves.
+  - On a computer, the Backups and Exports folders can be chosen; from the game chooser, both games at once.
+- **Sync Devices** (2026-10-30): sends saved games and trees, names, options and episodes with their add-ons to
+  another device on the same network, after both screens show the same four-digit code. The receiver merges by
+  episode, can back itself up first, and is offered the sender's whole library of a game it lacks. Options that
+  belong to one device (vibration, controller settings) stay put.
+- **SHS '11, translated** (2026-11-04; [SHS11.md](docs/SHS11.md)): its five stories (pack 31600, tagged SHS11, needing
+  the `shs11` add-on) with its two minigames ported, **Memory** and **Reflex**, its Word Grid skin and Smartphone
+  Music. An Extras switch plays Memory in place of letter grids, and the Creator can use both games.
+- **Skip Ahead** (Options → Extras → Allow Skip Ahead, off by default; 2026-11-05): a pause-menu item under Resume,
+  and the N key, that goes straight to the next thing that needs the player: a choice, name entry, the look picker, a
+  quiz, a mini-game, the arena, or the next title card. The script still runs on the way, so flags, the tree and the
+  wall keep up. An all-games version of SHS '11's hidden code 4687.
+- **Title Screen Look** (SHS's HD main menu, Options → Add-Ons; owner, 2026-11-16;
+  [ADDONS.md](docs/ADDONS.md#settings)): Default, Auto (the game last played) or a translated game's own title art
+  ('07, '08, New Rules, X360, '11 or Surviving Hollywood) from its add-on. The gold buttons stay; the wood, photo,
+  ribbon and title give way to the game's, and the episode picker's backdrop follows.
+- **The Diss Battle** (Monday Planner; owner, 2026-11-16; [X360.md](docs/X360.md)): the battle against Spike the
+  prototype never built, as New Rules' Rhyme on Diss Practice's turntable (service 222, a Creator node). Catch the
+  rhyming word as it reaches the needle; streaks double and triple the points over 40 s, and the story gets New
+  Rules' grade. Without Use Translated Mini-Games it is a speed diss. Saves keep a battle in progress (save version
+  40), and Spike's taunts (X360 add-on revision 19) are on trial.
 - **The BREW games, SHS '07 and '08, translated** (`tools/translate/translate.py brew`; [BREW.md](docs/BREW.md)). 126
   stories under their own badges: the '08 Campaign (pack 31000), the Classic stories and M.A.S.H. packs as '07 (31100),
   and Fall '06 Football Season (31200), with the `shsbrew` add-on (revision 11) holding their art and music. Each
@@ -310,6 +380,9 @@
 
 ### Changed
 
+- **Releases carry the Android APK and the unsigned iOS IPA** (`shshd-runtime-<tag>-android.apk`,
+  `shshd-runtime-<tag>-ios-arm64-unsigned.ipa`), with their checksums, beside the desktop downloads and wheels. A
+  version tag's Builds run builds the APK too, and the release waits for both ([DISTRIBUTION.md](docs/DISTRIBUTION.md)).
 - **Cause of Death's end of episode** ([#16](https://github.com/1timewire1/shshd-runtime/pull/16), thanks
   @zazatree):
   - **"Thanks for playing!" is CoD's own panel**, the iOS form SHS HD's panel already used, on CoD's layout bank
@@ -355,6 +428,12 @@
 
 ### Fixed
 
+- **Choice Hints no longer freeze a choice as it opens.** Working out the hints took 20 ms to 0.8 s on a PC (about
+  five times that on a phone) in the frame the choice came up. They are now worked out beside the frames on every
+  platform, and the choice's first frame takes as long as with hints off (25-30 ms where it took 165-350 ms); the
+  hints show a moment later.
+- **The 60 s autosave no longer stalls a minigame.** It waits until the minigame ends. Every translated minigame's
+  state also loads back at any frame now (`float | int` clocks), which a test checks frame by frame.
 - **The menus no longer slow down as you finish episodes.** Each time the main menu or the episode picker came
   back, the app reopened every finished episode to check its save was an ending: several seconds once dozens were
   done. Each save is now checked once, and again only when it changes.
