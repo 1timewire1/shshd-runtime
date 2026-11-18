@@ -412,9 +412,9 @@ selected in Translations or with `--language`, and **carries the others**
 (owner, 2026-11-17): every other language with translations goes into the file
 as its languages record (resource 6,
 [SCHEMA.md](SCHEMA.md#episode-languages-extension-shshd-runtime)), and the
-player's **Story Language** (Off, English, Français, Italiano, Deutsch,
-Español: Options › Add-Ons, Per-Game Settings on the main menu) shows the story
-in it, in the HD presentation, as SHS '11's Italian is shown. One export plays
+player's **Preferred Language** (English, Français, Italiano, Deutsch,
+Español: Options › General; until 2026-11-18 a Story Language of its own) shows the story
+in it where the episode has it, in the HD presentation, as SHS '11's Italian is shown. One export plays
 in all its languages; `--language` only picks the one compiled. Missing
 translations fall back to the authored text, field by field; Diagnostics warns
 about text in any language that Latin-1 can't hold. Story

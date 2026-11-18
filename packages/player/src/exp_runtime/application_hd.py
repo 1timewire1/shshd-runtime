@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
@@ -352,12 +352,6 @@ class HdShell:
         if self.app.dsi_offered():
             settings['dsi_backgrounds'] = state.dsi_backgrounds
             settings['dsi_pixels'] = DSI_PIXELS_NAMES[state.dsi_pixels]
-        if self.app.dsi_language_offered():
-            settings['dsi_language'] = DSI_LANGUAGE_NAMES[state.dsi_language]
-        if self.app.shs11_language_offered():
-            settings['shs11_language'] = SHS11_LANGUAGE_NAMES[state.shs11_language]
-        if self.app.story_language_offered():
-            settings['story_language'] = STORY_LANGUAGE_NAMES[state.story_language]
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
@@ -372,9 +366,9 @@ class HdShell:
             settings['word_grid_skin'] = state.word_grid_skin       # ...with the HD bundle's word game art
         if self.app.arena_skin_offered() and state.arena_minigames:
             settings['arena_skin'] = state.arena_skin               # ...with the X360 addon
-        if self.translated_titles():
-            settings['title_language'] = self.language_name(state.title_language)
-            settings['title_language_names'] = {language: self.language_name(language) for language in TITLE_LANGUAGES}
+        if self.preferred_language_offered():
+            settings['preferred_language'] = self.language_name(state.preferred_language)
+            settings['preferred_language_names'] = {language: self.language_name(language) for language in TITLE_LANGUAGES}
         offered = self.app.title_music_offered()
         if len(offered) > 2:                            # (Default and Auto alone choose nothing)
             from .desktop_pause_hd import TITLE_MUSIC_NAMES
@@ -415,8 +409,14 @@ class HdShell:
             settings['unlock_warp'] = True
         return settings
 
+    def preferred_language_offered(self):
+        """Whether Preferred Language changes something: an episode titled in another language, or an add-on's stories with
+        their translations (DSi, SHS '11, the Creator's)."""
+        return (self.translated_titles() or self.app.dsi_language_offered() or self.app.shs11_language_offered()
+                or self.app.story_language_offered())
+
     def translated_titles(self):
-        """Whether any episode has a title in another language, so the Episode Titles button changes something."""
+        """Whether any episode has a title in another language, so Preferred Language changes its titles."""
         if self._translated is None:
             self._translated = any(len(set(record['titles'])) > 1 for record in self.library.episodes)
         return self._translated
@@ -456,10 +456,11 @@ class HdShell:
             self.app._attempt(lambda: self.app.settings.set_start_in(value))
         elif key == 'aspect_ratio':
             self.app._attempt(lambda: self.app.set_aspect_ratio(value))
-        elif key == 'title_language':
-            state.title_language = value
+        elif key == 'preferred_language':
+            state.preferred_language = value
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
+            self.app.apply_dsi()                        # ...and the add-ons' stories (the library and a paused episode)
         elif key in ('controller_confirm', 'grid_controls'):
             setattr(state, key, value)
             self.app._attempt(state.persist)
@@ -472,7 +473,7 @@ class HdShell:
         elif key == 'title_look':
             state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
             self.app._attempt(state.persist)
-        elif key in ('dsi_pixels', 'dsi_language', 'shs11_language', 'story_language'):
+        elif key == 'dsi_pixels':
             setattr(state, key, value)
             self.app._attempt(state.persist)
             self.app.apply_dsi()
@@ -797,12 +798,10 @@ class HdShell:
         elif kind == 'pause_cycle' and len(command) > 2:
             self.choose(command[1], command[2])
             self.pause.back()                           # a choice page: back to its option's page
-        elif kind == 'pause_cycle' and command[1] == 'title_language':
+        elif kind == 'pause_cycle' and command[1] == 'preferred_language':
             state = self.app.state
-            state.title_language = TITLE_LANGUAGES[(TITLE_LANGUAGES.index(state.title_language) + 1)
-                                                   % len(TITLE_LANGUAGES)]
-            state.persist()
-            self.app.picker = None                      # the pickers' captions follow the language
+            self.choose('preferred_language', TITLE_LANGUAGES[(TITLE_LANGUAGES.index(state.preferred_language) + 1)
+                                                              % len(TITLE_LANGUAGES)])
         elif kind == 'pause_cycle' and command[1] == 'controller_confirm':
             state = self.app.state
             state.controller_confirm = 'east' if state.controller_confirm == 'south' else 'south'

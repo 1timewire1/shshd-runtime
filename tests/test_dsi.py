@@ -365,6 +365,9 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(dsi.episode_title(library, dict(titles=['01: Making Some Dough']), 'fr'),
                          '01: La main \u00e0 la p\u00e2te')
         self.assertIsNone(dsi.episode_title(library, dict(titles=['06: The Outcast']), 'fr'))
+        # Owner, 2026-11-18: New Rules' Making Some Dough (a translated game's pack) keeps its own title, as its lines do.
+        self.assertIsNone(dsi.episode_title(library, dict(pack_id=31301, titles=['Making Some Dough']), 'fr'))
+        self.assertIsNotNone(dsi.episode_title(library, dict(pack_id=1, titles=['01: Making Some Dough']), 'fr'))
         TABLE['lines']['the wrong side of town'] = {'de': '`Falsches Ende der Stadt`'}
         TABLE['menu']['football season'] = {'de': 'Football-Saison'}
         try:

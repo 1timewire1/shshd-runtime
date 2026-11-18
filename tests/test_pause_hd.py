@@ -211,15 +211,15 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(rows[-1][1], 'Simulated Vibration Sound')
         self.assertEqual([c[:2] for _, c in self.commands()][-2], ('pause_toggle', 'vibration'))
 
-    def test_title_language_button_and_data_management_on_the_main_menu_only(self):
+    def test_preferred_language_button_and_data_management_on_the_main_menu_only(self):
         state = self.menu.state
         state.screen = 'options'
         self.assertNotIn(('pause_open', 'options:data'), [c for _, c in self.commands()])   # in a story: none
-        self.settings.update(title_language='English', add_episodes=True, open_library=True)
+        self.settings.update(preferred_language='English', add_episodes=True, open_library=True)
         self.assertIn(('pause_open', 'options:data'), [c for _, c in self.commands()])
         state.screen = 'options:general'
         rows = self.commands()
-        self.assertEqual(rows[-2][1], ('pause_open', 'choice:title_language'))         # last row: opens its page
+        self.assertEqual(rows[-2][1], ('pause_open', 'choice:preferred_language'))         # last row: opens its page
         from exp_runtime.desktop_pause_hd import PANEL_W, PANEL_X
         self.assertEqual((rows[-2][0].x, rows[-2][0].width), (PANEL_X, PANEL_W))       # the whole row
         state.screen = 'options:data'                                       # its pages, those with an offered row
@@ -232,7 +232,7 @@ class HdPauseTests(unittest.TestCase):
 
     def test_aspect_ratio_is_generals_first_choice_and_opens_a_page_of_the_shapes(self):
         from exp_runtime.desktop_pause_hd import ASPECT_LABEL, ASPECT_NAMES
-        self.settings.update(aspect_ratio=ASPECT_NAMES['fit'], title_language='English')
+        self.settings.update(aspect_ratio=ASPECT_NAMES['fit'], preferred_language='English')
         rows = self.menu.option_rows('general', self.settings, self.menu.strings())
         choices = [(label, key) for kind, label, key in rows if kind == 'choice']
         self.assertEqual(choices[0], (ASPECT_LABEL, 'aspect_ratio'))
@@ -241,15 +241,15 @@ class HdPauseTests(unittest.TestCase):
                          [(name, ('aspect_ratio', value)) for value, name in ASPECT_NAMES.items()])
 
     def test_start_in_opens_a_page_of_its_choices_and_unlock_warping_is_an_extras_action(self):
-        """General's Start In and Episode Titles open a menu page of their values (owner, 2026-11-09), the current one
+        """General's Start In and Preferred Language open a menu page of their values (owner, 2026-11-09), the current one
         ticked, each row picking its value; back from it is the option's page. Extras' Unlock Warping is an action row,
         offered only while the host says the lock is on."""
         from exp_runtime.desktop_pause_hd import START_IN_NAMES
         state = self.menu.state
         state.screen = 'options:general'
-        self.settings.update(title_language='English', start_in=START_IN_NAMES['games'])
+        self.settings.update(preferred_language='English', start_in=START_IN_NAMES['games'])
         rows = self.commands()
-        self.assertEqual([c for _, c in rows][-3:], [('pause_open', 'choice:title_language'),
+        self.assertEqual([c for _, c in rows][-3:], [('pause_open', 'choice:preferred_language'),
                                                      ('pause_open', 'choice:start_in'), ('pause_back',)])
         self.menu.open('choice:start_in')
         self.menu.slide = None
@@ -258,9 +258,9 @@ class HdPauseTests(unittest.TestCase):
         self.assertFalse(self.menu.back())
         self.menu.slide = None
         self.assertEqual(state.screen, 'options:general')
-        self.settings['title_language_names'] = {'en': 'English', 'fr': 'French'}       # the host's own names
-        state.screen = 'choice:title_language'
-        self.assertEqual([label for _, label, _ in self.menu.option_rows('choice:title_language', self.settings,
+        self.settings['preferred_language_names'] = {'en': 'English', 'fr': 'French'}       # the host's own names
+        state.screen = 'choice:preferred_language'
+        self.assertEqual([label for _, label, _ in self.menu.option_rows('choice:preferred_language', self.settings,
                                                                          self.menu.strings())], ['English', 'French'])
         state.screen = 'options:sound'
         self.assertNotIn(('pause_toggle', 'skip_sound_prompt'), [c for _, c in self.commands()])   # in a story

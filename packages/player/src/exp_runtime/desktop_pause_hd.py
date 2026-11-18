@@ -68,15 +68,11 @@ HOLLYWOOD_ART_LABEL = 'Hollywood Art'           # the BREW Surviving Hollywood P
 DSI_BACKGROUNDS_LABEL = 'DSi Backgrounds'       # SHS's own episodes the DSiWare game drew: its two screens (`shsdsi`)
 DSI_PIXELS_LABEL = 'DSi Pixels'                 # ...enlarged with nearest neighbour (Sharp) or smoothly
 DSI_PIXELS_NAMES = {'sharp': 'Sharp', 'smooth': 'Smooth'}
-DSI_LANGUAGE_LABEL = 'DSi Language'             # ...and the DSi's translations of its eight stories (HD presentation only)
+# The values Preferred Language gives the stories' translations (languages.language_settings; HD presentation only): the
+# DSi's eight stories in its translations, SHS '11's in their own Italian and Creator episodes in their project's other
+# languages (resource 6). Each was a choice of its own until 2026-11-18 (DSi Language, '11 Language, Story Language).
 DSI_LANGUAGE_NAMES = {'off': 'Off', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
-# "'11 Language" (owner, 2026-11-17): translated SHS '11 episodes in '11's own Italian, carried in each episode (resource 6,
-# episode_languages.py; HD presentation only)
-SHS11_LANGUAGE_LABEL = "'11 Language"
 SHS11_LANGUAGE_NAMES = {'off': 'English', 'it': 'Italiano'}
-# "Story Language" (owner, 2026-11-17): an episode made in the Creator in another of its project's languages, carried in
-# the episode (resource 6); Off is the language it was exported in. HD presentation only.
-STORY_LANGUAGE_LABEL = 'Story Language'
 STORY_LANGUAGE_NAMES = {'off': 'Off', 'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 SMARTPHONE_MUSIC_LABEL = 'Smartphone Music'     # translated SHS '11 episodes: the smartphone's music, else none
 WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD word game's look (with its art imported)
@@ -87,7 +83,7 @@ ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X36
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
-SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'shs11_language': 'SHS11', 'arena_skin': 'SHSNR',
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
                  'ch_portraits': 'CHC',
                  'ch_backdrop': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
@@ -122,10 +118,11 @@ GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros',
                 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'undo', 'grids_as_memory')
 ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin', 'arena_skin')
-# General's last row on the main menu: the episode title language, a button that steps through the languages
-# (`settings['title_language']` is the current one's name). Data Management's rows are actions, tapped like Help &
-# About's rows; both are offered by the main menu only.
-TITLE_LANGUAGE_LABEL = 'Episode Titles'
+# General's Preferred Language (owner, 2026-11-18; it was Episode Titles): the episode titles, and the stories of the
+# add-ons that have a translation (DSi, SHS '11, the Creator's), in it where each has it (languages.language_settings);
+# `settings['preferred_language']` is the current one's name. Data Management's rows are actions, tapped like Help &
+# About's rows; it is offered by the main menu only.
+PREFERRED_LANGUAGE_LABEL = 'Preferred Language'
 # General's Start In, also offered by the main menus only (owner, 2026-10-29): which game the app opens in
 # (settings.AppSettings.start_in); `settings['start_in']` is the current choice's name.
 START_IN_LABEL = 'Start In'
@@ -149,8 +146,8 @@ CONFIRM_NAMES = {'south': 'Bottom', 'east': 'Right'}
 # highlighted cell.
 GRID_CONTROLS_LABEL = 'Word Grid Controls'
 GRID_CONTROLS_NAMES = {'tap': 'Tap', 'hold': 'Hold'}
-# The episode title languages (languages.TITLE_LANGUAGES), by their own names; the main menu names them from the game's
-# strings instead (settings['title_language_names']).
+# The preferred languages (languages.PREFERRED_LANGUAGES), by their own names; the main menu names them from the game's
+# strings instead (settings['preferred_language_names']).
 LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 # An option that is one of a few values (owner, 2026-11-09): its row opens a menu page of them (screen 'choice:<key>', a
 # row each, the current one ticked) instead of a button that steps through them, and shows the current one under its name
@@ -170,24 +167,18 @@ TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'nr': 'New Rules', 'br
 PER_GAME_LABEL = 'Per-Game Settings'
 PAGE_TITLES = {'per_game': PER_GAME_LABEL}
 PAGE_PARENTS = {'options:per_game': 'options:addons'}
-CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'title_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
+CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
                 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
-                'dsi_pixels': DSI_PIXELS_NAMES,
-                'dsi_language': DSI_LANGUAGE_NAMES, 'shs11_language': SHS11_LANGUAGE_NAMES,
-                'story_language': STORY_LANGUAGE_NAMES}
-CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
+                'dsi_pixels': DSI_PIXELS_NAMES}
+CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
-                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL,
-                 'dsi_language': DSI_LANGUAGE_LABEL, 'shs11_language': SHS11_LANGUAGE_LABEL,
-                 'story_language': STORY_LANGUAGE_LABEL}
-CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'title_language': 'options:general', 'start_in': 'options:general',
+                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL}
+CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
-                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_pixels': 'options:addons',
-                  'dsi_language': 'options:addons', 'shs11_language': 'options:addons',
-                  'story_language': 'options:addons'}
+                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_pixels': 'options:addons'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language', 'shs11_language', 'story_language')
+PER_GAME_CHOICES = ('dsi_pixels',)
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -905,8 +896,8 @@ class HdPauseMenu:
                     and not (key == 'device_vibration' and settings.get('controller_vibration'))]
             if 'aspect_ratio' in settings:
                 rows.append(('choice', ASPECT_LABEL, 'aspect_ratio'))
-            if 'title_language' in settings:
-                rows.append(('choice', TITLE_LANGUAGE_LABEL, 'title_language'))
+            if 'preferred_language' in settings:
+                rows.append(('choice', PREFERRED_LANGUAGE_LABEL, 'preferred_language'))
             if 'start_in' in settings:
                 rows.append(('choice', START_IN_LABEL, 'start_in'))
             return rows
@@ -957,7 +948,7 @@ class HdPauseMenu:
 
     @staticmethod
     def addon_choices(settings):
-        """The add-on options that are one of a few values, after the switches: DSi Pixels, DSi Language and '11 Language."""
+        """The add-on options that are one of a few values, after the switches: DSi Pixels."""
         return [('choice', CHOICE_LABELS[key], key) for key in PER_GAME_CHOICES if key in settings]
 
     def check(self, layer, right, middle):

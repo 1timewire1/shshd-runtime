@@ -44,13 +44,18 @@ class SyncFlowTests(unittest.TestCase):
                        controller_confirm='south', grid_controls='hold', **{key: False for key in (
                            'sound', 'logging_disabled', 'side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
                            'skip_upsell_intros', 'skip_ahead', 'undo', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
-                           'arena_minigames', 'arena_skin', 'skip_sound_prompt', 'dsi_backgrounds')}, dsi_pixels='sharp', dsi_language='off', shs11_language='off', story_language='off', music_volume=50, sound_volume=50, order='episode', title_language='en',
+                           'arena_minigames', 'arena_skin', 'skip_sound_prompt', 'dsi_backgrounds')}, dsi_pixels='sharp', preferred_language='fr', music_volume=50, sound_volume=50, order='episode', title_language='en',
                            title_music='default', last_title_game='default', title_look='default', last_title_look='default')
         provider = SendProvider(app, ['options', 'episodes'], ['shs'])
         self.assertEqual(provider.offer(['shs']), {'shs': ['a']})
         self.assertEqual(provider.player, {})                     # Names off, Saved Games off
         self.assertNotIn('vibration', provider.options)
         self.assertTrue(provider.options['autoplay'])
+        # Preferred Language, and the four it replaced for a device from before it (2026-11-18)
+        self.assertEqual({key: provider.options[key] for key in ('preferred_language', 'title_language', 'dsi_language',
+                                                                 'shs11_language', 'story_language')},
+                         dict(preferred_language='fr', title_language='fr', dsi_language='fr', shs11_language='off',
+                              story_language='fr'))
         self.assertIsNone(SendProvider(app, ['names']).options)
         self.assertEqual(SendProvider(app, ['names']).player['names']['$USR'], 'Zoe')
 

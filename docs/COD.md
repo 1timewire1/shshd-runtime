@@ -897,10 +897,11 @@ CoD's colours (`cod/hd_art.positional_frames`).
   - **Add-Ons** (when the library has an addon or translated game that needs a switch): CoD's are HD Portraits in CoD
     and Backdrop. On the main menu they sit one page in, under Per-Game Settings.
   - **On the main menu only:**
-    - **Episode Titles** ends General. Its row shows the current language under its name, in smaller letters as
+    - **Preferred Language** ends General (Episode Titles until 2026-11-18, when it took in the add-ons' DSi Language,
+      '11 Language and Story Language: the titles, and those add-ons' stories where they have it). Its row shows the current language under its name, in smaller letters as
       the episode lists' airdates, and opens a page of the title languages, the current one ticked; picking one sets
       it and slides back (owner, 2026-11-09: it was a button that stepped through them, as Start In, Confirm Button
-      and Word Grid Controls were, which now work the same way). It is offered where some episode has a translated title, so not in CoD (none of
+      and Word Grid Controls were, which now work the same way). It is offered where some episode has a translated title or an add-on's stories have translations, so not in CoD (none of
       its 74 has one).
     - **Start In** follows it in General (owner, 2026-10-29): Last Played (the game an episode was last started
       in; the default, the game chooser until there is one), Choose a Game, Surviving High School or Cause of
@@ -982,7 +983,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
   - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
     79 x 27 switch, and the value buttons at 104 x 34 with an 18-point label, wider where the value needs it.
 
-  Options are shared by both games (owner, 2026-10-29): the switches, the sliders and the Episode Titles language
+  Options are shared by both games (owner, 2026-10-29): the switches, the sliders and the Preferred Language
   live in the app's `settings.json` (`preferences`, `menu.SHARED_PREFERENCES`) as well as each game's
   `player.json`, and the shared copy wins. The first launch takes them from the game saved most recently. Game data
   stays per library: the selected episode, the name tables, the warp lock and the HD art mode.

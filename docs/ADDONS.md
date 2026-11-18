@@ -370,16 +370,18 @@ The menu text (`GameText`) adds speaker names and episode titles (`menu`). Text 
 it rebuilt per language (decision 11), lowercase and without accents for the grid's letter font. About 10,600 lines in all;
 the lines the DSi cut (surveys, Faceplace, promos) stay English.
 
-**In play** (`exp_runtime/dsi.py`, `Engine.substitute`): with "DSi Language" set, the eight stories (SHS's own copies, not a
-translation from another game) show it in the HD presentation only (decision 8: SD's bitmap fonts have no accents), from the
+**In play** (`exp_runtime/dsi.py`, `Engine.substitute`): with General's "Preferred Language" on French, Italian, German or
+Spanish, the eight stories (SHS's own copies, not a translation from another game) show it in the HD presentation only (decision 8: SD's bitmap fonts have no accents), from the
 next line; the HD faces now draw Latin-1's accented letters (`vector_text.LATIN1_EXTRA`). Name tokens are kept, and a token
 holding a name the DSi translates shows that name (German renames many characters, decision 16), never the player's own
 (`$USR`). A quiz's title, prompt and word lists follow it, and choices show the DSi's "Make your choice!". The episode list
-shows the stories' DSi titles. A save keeps the line as shown, and loads in any language (`Engine.shown_forms`).
+shows the stories' DSi titles: SHS's own copies only, as for the lines (a translated game's story of the same name, New Rules'
+Making Some Dough, keeps its title; owner, 2026-11-18). A save keeps the line as shown, and loads in any language (`Engine.shown_forms`).
 
-**Switches:** "DSi Backgrounds" (DSi tag, off by default), "DSi Pixels" (Sharp, nearest neighbour, the default; or Smooth) and
-"DSi Language" (Off, Français, Italiano, Deutsch, Español), on the pause menu's Add-Ons and the main menu's Per-Game Settings,
-when the library holds `shsdsi` (in play: when the episode qualifies; DSi Language with the HD bundle).
+**Switches:** "DSi Backgrounds" (DSi tag, off by default) and "DSi Pixels" (Sharp, nearest neighbour, the default; or Smooth),
+on the pause menu's Add-Ons and the main menu's Per-Game Settings, when the library holds `shsdsi` (in play: when the episode
+qualifies). Its language is General's Preferred Language (owner, 2026-11-18; until then a "DSi Language" of its own), with the
+HD bundle: English is the stories' own.
 
 ```sh
 python tools/translate/dsi.py --nds DSI_IMAGE --library SHS_LIBRARY --out OUT_DIR
@@ -448,9 +450,6 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | '08 Backgrounds | '07 | '07 BREW episodes |
 | Hollywood Art | '07 | The Surviving Hollywood Preview, with `shshw` imported |
 | DSi Backgrounds, DSi Pixels | DSi | With `shsdsi` imported; in play, an episode whose backgrounds the DSi drew |
-| DSi Language | DSi | With `shsdsi` and the HD bundle; in play, one of the DSi's eight stories in the HD presentation |
-| '11 Language | SHS11 | An episode carrying '11's Italian (resource 6) and the HD bundle; in play, such an episode in the HD presentation |
-| Story Language | — | An episode made in the Creator carrying other languages (resource 6) and the HD bundle; in play, such an episode in the HD presentation |
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

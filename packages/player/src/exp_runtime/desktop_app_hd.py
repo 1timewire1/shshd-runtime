@@ -170,11 +170,11 @@ SLIDER = (143, 460)                     # a volume slider's track: its left and 
 # Translated Minigames (TRANSLATED_MINIGAMES) and translated Episode Titles (no CoD episode has one). Each game's own Options still has
 # them.
 ONE_GAME_OPTIONS = ('skip_ad_intros', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds',
-                    'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'dsi_language', 'shs11_language', 'story_language', 'smartphone_music', 'word_grid_skin',
+                    'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'smartphone_music', 'word_grid_skin',
                     'grids_as_memory',
                     'ch_portraits',
                     'ch_backdrop', 'arena_minigames', 'arena_skin',
-                    'title_language')
+                    'preferred_language')
 
 
 class AppOptionsMenu(AppCard):
@@ -210,7 +210,11 @@ class AppOptions:
 
     def values(self):
         from .menu import preference_defaults, shared_preference
-        saved = {key: value for key, value in self.app.settings.preferences.items() if shared_preference(key, value)}
+        from .languages import preferred_from
+        preferences = self.app.settings.preferences
+        saved = {key: value for key, value in preferences.items() if shared_preference(key, value)}
+        if 'preferred_language' not in saved:           # (settings from before Preferred Language: its four)
+            saved['preferred_language'] = preferred_from(preferences)
         return dict(preference_defaults(), **saved)
 
     def settings(self):
@@ -227,7 +231,7 @@ class AppOptions:
                                             'arena_minigames', 'arena_skin',
                                             'skip_sound_prompt')}
         settings.update(music_volume=v['music_volume'] / 100, sound_volume=v['sound_volume'] / 100,
-                        title_language=LANGUAGE_NAMES.get(v['title_language'], v['title_language']),
+                        preferred_language=LANGUAGE_NAMES.get(v['preferred_language'], v['preferred_language']),
                         check_updates=app.settings.check_for_updates,
                         start_in=START_IN_NAMES[app.settings.start_in], reset_settings=True,
                         aspect_ratio=ASPECT_NAMES[app.settings.aspect(app.fixed_window)])
@@ -312,7 +316,7 @@ class AppOptions:
                 current = app.settings.aspect(app.fixed_window)
                 app.settings.set_aspect_ratio(CHOICES[(CHOICES.index(current) + 1) % len(CHOICES)])
                 getattr(app, 'shape_window', lambda: None)()
-            elif key == 'title_language':
+            elif key == 'preferred_language':
                 self.set(key, TITLE_LANGUAGES[(TITLE_LANGUAGES.index(v[key]) + 1) % len(TITLE_LANGUAGES)])
             elif key == 'controller_confirm':
                 self.set(key, 'east' if v[key] == 'south' else 'south')

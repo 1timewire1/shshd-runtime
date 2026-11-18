@@ -176,7 +176,7 @@ def main(argv: list[str] | None = None) -> None:
                     from .menu import MenuState
                     state = MenuState(library)
                     if args.title_language is not None:
-                        state.title_language = args.title_language
+                        state.preferred_language = args.title_language      # (the titles' language is Preferred Language's)
                     for record in library.episodes:
                         print(f"{record['id'][:12]}  {state.title(record)}  ({record['name']})")
                     return

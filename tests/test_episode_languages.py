@@ -136,13 +136,19 @@ class PlayerTests(unittest.TestCase):
         picker.library.shs11_language = 'off'
         self.assertEqual(picker.label(record), 'Foreign Exchange')
 
-    def test_the_switch_is_offered_with_its_names(self):
+    def test_preferred_language_gives_it_italian_alone(self):
+        # Owner, 2026-11-18: General's Preferred Language in place of '11 Language (and DSi Language, Story Language and
+        # Episode Titles): '11's stories take Italian when it's the preferred one, their own English otherwise.
+        from exp_runtime.languages import language_settings
         from exp_runtime.menu import SHARED_PREFERENCES
-        from exp_runtime.desktop_pause_hd import CHOICE_NAMES, PER_GAME_CHOICES, SHS11_LANGUAGE_NAMES, SWITCH_BADGES
-        self.assertEqual(SHARED_PREFERENCES['shs11_language'], ('off', 'it'))
-        self.assertEqual(CHOICE_NAMES['shs11_language'], SHS11_LANGUAGE_NAMES)
-        self.assertIn('shs11_language', PER_GAME_CHOICES)
-        self.assertEqual(SWITCH_BADGES['shs11_language'], 'SHS11')
+        from exp_runtime.desktop_pause_hd import CHOICE_NAMES, CHOICE_PARENTS, LANGUAGE_NAMES, PER_GAME_CHOICES
+        self.assertNotIn('shs11_language', SHARED_PREFERENCES)
+        self.assertEqual(SHARED_PREFERENCES['preferred_language'], ('en', 'fr', 'it', 'de', 'es'))
+        self.assertEqual([language_settings(code)['shs11_language'] for code in ('en', 'fr', 'it', 'de', 'es')],
+                         ['off', 'off', 'it', 'off', 'off'])
+        self.assertEqual((CHOICE_NAMES['preferred_language'], CHOICE_PARENTS['preferred_language']),
+                         (LANGUAGE_NAMES, 'options:general'))
+        self.assertEqual(PER_GAME_CHOICES, ('dsi_pixels',))
 
 
 class TranslatorTests(unittest.TestCase):

@@ -180,8 +180,10 @@ Answer hints, Skip mini-games, Skip ad intros and Skip upsell intros only.
   Options only, since it acts as an episode starts.
 - **Skip Upsell Intros** skips the store plugs some episodes open with. Off by
   default.
-- **Episode Titles** (main menu) selects English, French, Italian, German or
-  Spanish names where the EXP includes them. Story text remains in the language
+- **Preferred Language** (Options › General) selects English, French, Italian,
+  German or Spanish: episode names where the EXP includes them and, in the HD
+  presentation, the stories of add-ons that carry translations (the DSi's, SHS
+  '11's Italian, the Creator's). Other story text remains in the language
   supplied by each episode.
 - **SHS HD Backdrop** fills the space around the game with SHS HD's collage.
 - **Check for Updates** asks this repository's latest release at launch. When a

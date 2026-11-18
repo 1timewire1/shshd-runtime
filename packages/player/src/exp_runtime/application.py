@@ -1035,8 +1035,10 @@ class Application:
 
     def apply_options(self, options):
         """Shared options from a sync or a backup: each this app knows, with a value it accepts
-        (menu.shared_preference); the rest are left. Persisted, and the options with effects of their own applied."""
-        for key, value in options.items():
+        (menu.shared_preference); the rest are left. Persisted, and the options with effects of their own applied. From
+        before Preferred Language, its four languages give it (languages.with_preferred)."""
+        from .languages import with_preferred
+        for key, value in with_preferred(options).items():
             if shared_preference(key, value):
                 setattr(self.state, key, value)
         self.state.persist()
@@ -1186,22 +1188,22 @@ class Application:
 
     @library_answer
     def dsi_language_offered(self):
-        """Whether "DSi Language" is offered on the menus: the DSiWare add-on with its translations, and the HD bundle (the
-        translations show in the HD presentation only)."""
+        """Whether Preferred Language reaches the DSi's stories (HdShell.preferred_language_offered): the DSiWare add-on with
+        its translations, and the HD bundle (the translations show in the HD presentation only)."""
         from .dsi import text_table
         return getattr(self.library, 'hd_ipa', None) is not None and text_table(self.library) is not None
 
     @library_answer
     def shs11_language_offered(self):
-        """Whether "'11 Language" is offered on the menus: an episode carrying translations that answer to it (its
-        languages record, kept in library.json at import), and the HD bundle (they show in the HD presentation only)."""
+        """Whether Preferred Language reaches SHS '11's stories: an episode carrying translations that answer to
+        `shs11_language` (its languages record, kept in library.json at import), and the HD bundle (HD presentation only)."""
         return getattr(self.library, 'hd_ipa', None) is not None and any(
             (record.get('languages') or {}).get('setting') == 'shs11_language' for record in self.library.episodes)
 
     @library_answer
     def story_language_offered(self):
-        """Whether "Story Language" is offered: an episode made in the Creator carrying other languages (its record answers
-        to it, kept in library.json at import), and the HD bundle."""
+        """Whether Preferred Language reaches Creator episodes: one carrying other languages (its record answers to
+        `story_language`, kept in library.json at import), and the HD bundle."""
         return getattr(self.library, 'hd_ipa', None) is not None and any(
             (record.get('languages') or {}).get('setting') == 'story_language' for record in self.library.episodes)
 
@@ -1282,9 +1284,7 @@ class Application:
         if self.game:
             self.game.set_dsi_backgrounds(self.state.dsi_backgrounds)
             self.game.set_dsi_pixels(self.state.dsi_pixels)
-            self.game.set_dsi_language(self.state.dsi_language)
-            self.game.set_shs11_language(self.state.shs11_language)
-            self.game.set_story_language(self.state.story_language)
+            self.game.set_preferred_language(self.state.preferred_language)
 
     apply_dsi_backgrounds = apply_dsi      # (the test channel's `set dsi_backgrounds`)
 
@@ -2287,6 +2287,7 @@ class Application:
         self.game.brew_08_backgrounds = self.state.brew_08_backgrounds
         self.game.hollywood_art = self.state.hollywood_art
         self.game.dsi_backgrounds, self.game.dsi_pixels = self.state.dsi_backgrounds, self.state.dsi_pixels
+        self.game.preferred_language = self.state.preferred_language
         self.game.dsi_language = self.state.dsi_language
         self.game.shs11_language = self.state.shs11_language
         self.game.story_language = self.state.story_language
@@ -2409,12 +2410,8 @@ class Application:
         self.state.brew_08_backgrounds = self.game.brew_08_backgrounds
         self.state.hollywood_art = self.game.hollywood_art
         self.state.dsi_backgrounds, self.state.dsi_pixels = self.game.dsi_backgrounds, self.game.dsi_pixels
-        if hasattr(self.game, 'dsi_language'):
-            self.state.dsi_language = self.game.dsi_language
-        if hasattr(self.game, 'shs11_language'):
-            self.state.shs11_language = self.game.shs11_language
-        if hasattr(self.game, 'story_language'):
-            self.state.story_language = self.game.story_language
+        if hasattr(self.game, 'preferred_language'):
+            self.state.preferred_language = self.game.preferred_language
         self.state.smartphone_music = self.game.smartphone_music
         self.state.word_grid_skin = self.game.word_grid_skin
         self.state.grids_as_memory = self.game.grids_as_memory
@@ -2661,12 +2658,12 @@ class Application:
                 language = command[1]
                 if language not in TITLE_LANGUAGES:
                     raise ValueError('Unsupported episode title language')
-                previous = self.state.title_language
-                self.state.title_language = language
+                previous = self.state.preferred_language
+                self.state.preferred_language = language     # (SD: Preferred Language, its titles alone)
                 try:
                     self.state.persist()
                 except OSError:
-                    self.state.title_language = previous
+                    self.state.preferred_language = previous
                     raise
                 self.episode_scroll = self.scroll = 0
             elif kind == 'start':

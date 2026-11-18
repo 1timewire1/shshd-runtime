@@ -429,6 +429,12 @@
 
 ### Changed
 
+- **Preferred Language** (owner, 2026-11-18; [MAIN_MENU.md](docs/MAIN_MENU.md)): one choice in Options › General in place
+  of Episode Titles and the add-ons' DSi Language, '11 Language and Story Language. English, Français, Italiano, Deutsch or
+  Español: the episode titles in it where an episode has them and, in the HD presentation, the DSi's stories, SHS '11's
+  (Italian) and Creator episodes in it where they have it (`languages.language_settings`). In play it's on the pause
+  menu's General while the episode has a translation. Saved settings, backups and syncs from before it take the first of
+  the four that wasn't English, and a sync sends the four as well for a device that hasn't it yet.
 - **One Funky Monkey** (owner, 2026-11-18; [BREW.md](docs/BREW.md#how-a-story-is-translated)): '08's `(Classic)` copy
   (9238) is gone, as its writing turned out to be a copy-edit of '07's. The `'07` entry (version 4) keeps '07's style and
   date and takes '08's six typo fixes and nine rewordings into its lines, but keeps '07's two rewritten lines ("Hello
@@ -497,6 +503,8 @@
 
 ### Fixed
 
+- **A DSi language renamed New Rules' Making Some Dough** (owner, 2026-11-18): the episode list gave the DSi's title to any
+  story of one of its eight names, a translated game's too. Only SHS's own copy takes it now, as only it takes the lines.
 - **iOS: sound effects and additive blends held up frames** (owner, 2026-11-18, found in the X360 jewel puzzle):
   every effect sent its sound's whole data with the play, and the host set the audio session's category and made it
   active again before each one, within the frame (every frame a sound started in took about 39 ms). A sound's data now

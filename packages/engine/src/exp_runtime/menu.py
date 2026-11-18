@@ -11,7 +11,7 @@ import tempfile
 
 from .content import is_bundled
 from .episode_index import section_place
-from .languages import TITLE_LANGUAGES, episode_title
+from .languages import PREFERRED_LANGUAGES, TITLE_LANGUAGES, episode_title, language_settings, preferred_from
 from .games import GAMES, game_id
 from .launcher import default_library, remember_library
 from .runtime import SaveError, Session
@@ -64,7 +64,7 @@ TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360')
 
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
-# The preferences both games share (owner, 2026-10-29): Options' switches, sliders and the Episode Titles language,
+# The preferences both games share (owner, 2026-10-29): Options' switches, sliders and the Preferred Language,
 # kept app-wide (the player's settings.AppSettings) as well as in each library's player.json. Game data stays per
 # library: the selected episode, the name tables, the warp lock (Football Season's progress) and the HD art mode
 # (its twin store is the library's). Each value's check: a type, or the values it may take.
@@ -73,8 +73,8 @@ SHARED_PREFERENCES = dict(
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
     side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
-    dsi_language=('off', 'fr', 'it', 'de', 'es'), shs11_language=('off', 'it'), story_language=('off', 'en', 'fr', 'it', 'de', 'es'),
-    order=('episode', 'title'), title_language=TITLE_LANGUAGES, title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw'),
+    preferred_language=PREFERRED_LANGUAGES,
+    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     title_look=('default', 'auto') + TITLE_LOOK_GAMES, last_title_look=('default',) + TITLE_LOOK_GAMES)
 
@@ -174,12 +174,6 @@ class MenuState:
                     self.dsi_backgrounds = data['dsi_backgrounds']
                 if data.get('dsi_pixels') in ('sharp', 'smooth'):
                     self.dsi_pixels = data['dsi_pixels']
-                if data.get('dsi_language') in ('off', 'fr', 'it', 'de', 'es'):
-                    self.dsi_language = data['dsi_language']
-                if data.get('shs11_language') in ('off', 'it'):
-                    self.shs11_language = data['shs11_language']
-                if data.get('story_language') in ('off', 'en', 'fr', 'it', 'de', 'es'):
-                    self.story_language = data['story_language']
                 if type(data.get('smartphone_music')) is bool:
                     self.smartphone_music = data['smartphone_music']
                 if type(data.get('word_grid_skin')) is bool:
@@ -206,7 +200,9 @@ class MenuState:
                     self.grid_controls = data['grid_controls']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
                     self.hd_art = data['hd_art']
-                self.title_language = data.get('title_language', 'en')
+                # (A file from before Preferred Language has the four it replaced: languages.preferred_from.)
+                self.preferred_language = (data['preferred_language'] if data.get('preferred_language') in PREFERRED_LANGUAGES
+                                           else preferred_from(data))
                 self.choice_hints = data.get('choice_hints', False)
                 self.skip_minigames = data.get('skip_minigames', False)
                 self.skip_ad_intros = data.get('skip_ad_intros', False)
@@ -229,6 +225,9 @@ class MenuState:
             except (ValueError, OSError) as error:
                 self.warning = f'Could not read preferences: {error}'
         if shared is not None:
+            if 'preferred_language' not in shared.preferences and any(
+                    key in shared.preferences for key in ('title_language', 'dsi_language', 'shs11_language', 'story_language')):
+                self.preferred_language = preferred_from(shared.preferences)
             for key, value in shared.preferences.items():
                 if shared_preference(key, value):
                     setattr(self, key, value)
@@ -282,11 +281,6 @@ class MenuState:
         # With the DSiWare add-on (`shsdsi`, dsi.py): its backgrounds (off by default; owner, 2026-11-15), enlarged sharp or smooth
         self.dsi_backgrounds = False
         self.dsi_pixels = 'sharp'
-        self.dsi_language = 'off'      # ...and its stories in its French, Italian, German or Spanish (HD only)
-        # "'11 Language": SHS '11's episodes in their own Italian, carried in each episode (resource 6; HD only)
-        self.shs11_language = 'off'
-        # "Story Language": an episode made in the Creator in another of its project's languages (resource 6; HD only)
-        self.story_language = 'off'
         # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
         self.ch_portraits = True
         self.ch_backdrop = True
@@ -306,7 +300,9 @@ class MenuState:
         # stick or D-pad steering it (desktop.Desktop._grid_hold); 'tap', confirm adds the highlighted cell
         self.grid_controls = 'hold'
         self.order = 'episode'
-        self.title_language = 'en'
+        # General's Preferred Language (owner, 2026-11-18): the episode titles, the DSi's stories, SHS '11's and the
+        # Creator's in it where each has it (the properties below; languages.language_settings)
+        self.preferred_language = 'en'
         # Add-Ons' Title Screen Music (owner, 2026-11-09): the main menu's tune, the game's own ('default'), a translated game's
         # from its addon (the profile's TITLE_MUSIC), or 'auto', the game of the episode last played (`last_title_game`)
         self.title_music = 'default'
@@ -315,6 +311,13 @@ class MenuState:
         # tells BREW's editions apart)
         self.title_look = 'default'
         self.last_title_look = 'default'
+
+    # Preferred Language as each part of the player reads it: Episode Titles' language, and DSi Language, '11 Language and
+    # Story Language as they were (HD only: their add-ons' stories in it, 'off' where an add-on doesn't have it).
+    title_language = property(lambda self: language_settings(self.preferred_language)['title_language'])
+    dsi_language = property(lambda self: language_settings(self.preferred_language)['dsi_language'])
+    shs11_language = property(lambda self: language_settings(self.preferred_language)['shs11_language'])
+    story_language = property(lambda self: language_settings(self.preferred_language)['story_language'])
 
     def title(self, record):
         return episode_title(record, self.title_language)
@@ -376,12 +379,12 @@ class MenuState:
                     order=self.order,
                     music_volume=self.music_volume, sound_volume=self.sound_volume, logging_disabled=self.logging_disabled,
                     warp_unlocked=self.warp_unlocked, hd_art=self.hd_art,
-                    title_language=self.title_language, choice_hints=self.choice_hints,
+                    preferred_language=self.preferred_language, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, dsi_language=self.dsi_language, shs11_language=self.shs11_language, story_language=self.story_language, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls,

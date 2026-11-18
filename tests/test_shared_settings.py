@@ -75,12 +75,16 @@ class SharedSettingsTests(unittest.TestCase):
         settings = AppSettings(self.root / 'settings.json')
         shs = MenuState(library(self.root, 'shs', autoplay=False, music_volume=20, warp_unlocked=True,
                                 names={'$USR': 'Zoe'}), shared=settings)
-        shs.autoplay, shs.music_volume, shs.title_language = True, 80, 'es'
+        shs.autoplay, shs.music_volume, shs.preferred_language = True, 80, 'es'
         shs.persist()
         self.assertEqual((settings.preferences['autoplay'], settings.preferences['music_volume']), (True, 80))
         self.assertEqual(set(settings.preferences), set(SHARED_PREFERENCES))
         cod = MenuState(library(self.root, 'cod', autoplay=False, music_volume=50), shared=settings)
         self.assertEqual((cod.autoplay, cod.music_volume, cod.title_language), (True, 80, 'es'))
+        # Settings from before Preferred Language (2026-11-18) give it from the four it replaced.
+        old = AppSettings(self.root / 'old-settings.json')
+        old.preferences = dict(title_language='en', dsi_language='de', shs11_language='off', story_language='off')
+        self.assertEqual(MenuState(library(self.root / 'old', 'cod'), shared=old).preferred_language, 'de')
         self.assertEqual((cod.warp_unlocked, cod.names), (False, {}))       # the other game's progress and names
         self.assertEqual(json.loads((shs.library.directory / 'player.json').read_text())['autoplay'], True)
 
@@ -152,7 +156,7 @@ class UnlockWarpingTests(unittest.TestCase):
             panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
             backdrop_switch=lambda: False, hires_switch=lambda: False, ms3_switch=lambda: False, java_look_switch=lambda: False, brew_08_switch=lambda: False, hollywood_switch=lambda: False, dsi_switch=lambda: False, ch_switch=lambda: False,
         minigames_switch=lambda: False, smartphone_switch=lambda: False,
-            dsi_language_switch=lambda: False, shs11_language_switch=lambda: False, story_language_switch=lambda: False, word_grid_switch=lambda: False, x360_arena_switch=lambda: False,
+            preferred_language_switch=lambda: False, word_grid_switch=lambda: False, x360_arena_switch=lambda: False,
             session=None)))         # (the pause menu's Quest Journal row reads the story: none here)
 
 if __name__ == '__main__':

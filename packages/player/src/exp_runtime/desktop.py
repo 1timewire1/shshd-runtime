@@ -52,7 +52,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -371,9 +371,13 @@ class Desktop:
     hollywood_art = True            # the BREW Surviving Hollywood Preview with `shshw`: the "Hollywood Art" switch (set_hollywood_art)
     dsi_backgrounds = False         # with `shsdsi`: the "DSi Backgrounds" switch (set_dsi_backgrounds; off by default, owner)
     dsi_pixels = 'sharp'            # ...and "DSi Pixels" (set_dsi_pixels)
-    dsi_language = 'off'            # ...and "DSi Language" (set_dsi_language): its stories in its translations, HD only
-    shs11_language = 'off'          # "'11 Language" (set_shs11_language): SHS '11's episodes in their own Italian, HD only
-    story_language = 'off'          # "Story Language" (set_story_language): Creator episodes in their other languages
+    # General's "Preferred Language" (set_preferred_language; owner, 2026-11-18), and what it gives each add-on's stories
+    # (languages.language_settings; HD only): the DSi's in its translations, SHS '11's in their own Italian and Creator
+    # episodes in their other languages
+    preferred_language = 'en'
+    dsi_language = 'off'
+    shs11_language = 'off'
+    story_language = 'off'
     smartphone_music = True        # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
@@ -2470,6 +2474,20 @@ class Desktop:
         return (getattr(self.session.engine, 'hd_version', None) is not None and hasattr(resources, 'dsi_translation')
                 and resources.dsi_translation('fr') is not None)
 
+    def preferred_language_switch(self):
+        """shshd-runtime: whether "Preferred Language" changes this episode's lines: the DSi's, '11's or the Creator's
+        translations reach it (HD only)."""
+        return self.dsi_language_switch() or self.shs11_language_switch() or self.story_language_switch()
+
+    def set_preferred_language(self, value):
+        """shshd-runtime: "Preferred Language": the next line shown is in it, where the episode's add-on has it."""
+        from .languages import PREFERRED_LANGUAGES, language_settings
+        self.preferred_language = value if value in PREFERRED_LANGUAGES else 'en'
+        values = language_settings(self.preferred_language)
+        self.set_dsi_language(values['dsi_language'])
+        self.set_shs11_language(values['shs11_language'])
+        self.set_story_language(values['story_language'])
+
     def set_dsi_language(self, value):
         """shshd-runtime: "DSi Language": the next line shown is in it (the engine asks for it as it shows each line)."""
         self.dsi_language = value if value in DSI_LANGUAGE_NAMES else 'off'
@@ -3707,11 +3725,8 @@ class Desktop:
                     **({'hollywood_art': self.hollywood_art} if self.hollywood_switch() else {}),
                     **(dict(dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=DSI_PIXELS_NAMES[self.dsi_pixels])
                        if self.dsi_switch() else {}),
-                    **({'dsi_language': DSI_LANGUAGE_NAMES[self.dsi_language]} if self.dsi_language_switch() else {}),
-                    **({'shs11_language': SHS11_LANGUAGE_NAMES[self.shs11_language]}
-                       if self.shs11_language_switch() else {}),
-                    **({'story_language': STORY_LANGUAGE_NAMES[self.story_language]}
-                       if self.story_language_switch() else {}),
+                    **({'preferred_language': LANGUAGE_NAMES[self.preferred_language]}
+                       if self.preferred_language_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
@@ -3893,10 +3908,9 @@ class Desktop:
                 self.pause_hd.back()
             self._menu_sound()
             return
-        if kind == 'pause_cycle' and command[1] in ('dsi_language', 'shs11_language', 'story_language') and len(command) > 2:
-            # Add-Ons' DSi Language, '11 Language or Story Language, picked on its choice page; the app keeps it.
-            {'dsi_language': self.set_dsi_language, 'shs11_language': self.set_shs11_language,
-             'story_language': self.set_story_language}[command[1]](command[2])
+        if kind == 'pause_cycle' and command[1] == 'preferred_language' and len(command) > 2:
+            # General's Preferred Language, picked on its choice page; the app keeps it.
+            self.set_preferred_language(command[2])
             if self.on_settings:
                 self.on_settings()
             self.pause_hd.back()

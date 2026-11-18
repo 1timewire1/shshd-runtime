@@ -328,7 +328,7 @@ and reports the write error. See the [exit contract](STORY_SERVICES.md#episode-e
 
 | File, relative to the library | Schema / behavior |
 | --- | --- |
-| `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", title_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English titles. `names` (object of `$KEY` to string, at most 4096) is the name table every episode shares ([RUNTIME.md](RUNTIME.md#names-shared-across-episodes)) |
+| `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", preferred_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English, or (from before Preferred Language, 2026-11-18) take the first of `title_language`, `dsi_language`, `shs11_language` and `story_language` that isn't English (`languages.preferred_from`). `names` (object of `$KEY` to string, at most 4096) is the name table every episode shares ([RUNTIME.md](RUNTIME.md#names-shared-across-episodes)) |
 | `saves/<episode-sha>.shs-save.json` | Existing manual F5/F9 slot, [runtime save schema](RUNTIME.md#runtime-save-schema-version-13) |
 | `settings.json` (the app's data folder, not a library) | `{version:1, check_for_updates:bool, preferences:{...}, start_in:"auto"\|"games"\|"shs"\|"cod" (default "auto"), last_game:"shs"\|"cod"\|null}`. `preferences` holds the Options both games share (`menu.SHARED_PREFERENCES`), which override `player.json`'s copies; an older file with only `check_for_updates` still reads. Also `aspect_ratio` ("3:4"\|"2:3"\|"9:16"\|"fit"\|null: General's Aspect Ratio, this device's own), `backup_folder` and `export_folder` (Data Management's folders, null for the default) and the hidden `test_channel` port |
 | `saves/<episode-sha>.shs-auto.json` | Automatic checkpoint on menu return and application exit, same schema |
@@ -498,7 +498,7 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
   this player adds (General / Sound / Controller / Extras / Add-Ons / Data Management) slide like native pages.
-- **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Episode Titles and Start In,
+- **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Preferred Language and Start In,
   the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
   letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
   picking one sets it and slides back (`desktop_pause_hd.CHOICE_NAMES`, screen `choice:<key>`). They were buttons that
@@ -831,7 +831,7 @@ The chooser's Options is the HD main menu's Options (`AppOptions`): the pause me
 input, on the same card. Its value buttons and the sliders' speakers are drawn as shapes too. It reads and writes the
 shared options in `settings.json`, since no library is open there; the next game opened takes them, because the
 shared copy wins. Options only one game offers are left out (`ONE_GAME_OPTIONS`: SHS's ad intros,
-New Rules Hi-Res Portraits and Episode Titles); each game's own Options still has them. Its pages:
+New Rules Hi-Res Portraits and Preferred Language); each game's own Options still has them. Its pages:
 - General, Sound, Controller (with a controller connected), Extras and Add-Ons (the switches that only concern translated
   games and addons; hidden when none of them is offered);
 - Data Management for both games (owner, 2026-10-30), with the Backups and Exports folders and Reset Settings.

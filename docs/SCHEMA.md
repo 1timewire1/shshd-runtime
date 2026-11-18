@@ -497,7 +497,7 @@ native players and upstream exp-runtime never read resource 6.
 
 | Member | Contract |
 | --- | --- |
-| `setting` | The switch that picks the language: `shs11_language` ("'11 Language": `off` or `it`), or `story_language` ("Story Language", an episode made in the Creator: `off`, `en`, `fr`, `it`, `de` or `es`) |
+| `setting` | Which of the player's language settings picks the language: `shs11_language` (SHS '11's Italian: `off` or `it`), or `story_language` (an episode made in the Creator: `off`, `en`, `fr`, `it`, `de` or `es`). Both follow General's Preferred Language since 2026-11-18 (`languages.language_settings`: '11's is `it` for Italian alone), and keep these names in the record |
 | `languages` | `{code: name}` of the languages it carries (`{"it": "Italiano"}`) |
 | `titles` | `{code: title}`: the episode's title in each, for the episode list |
 | `lines`, `context`, `menu`, `words` | The DSiWare add-on's table shape ([ADDONS.md](ADDONS.md#the-translations)): `{key: {code: text}}`, a line found by its key (lower case, letters, digits and name tokens), a line translated two ways by the line before it (`context: {key: {previous key: {code: text}}}`), names and titles in `menu`, a word grid's words and letters in `words` |
@@ -507,7 +507,7 @@ The library keeps `setting`, the language names and the titles in the
 episode's record at import (`languages`), so the menus and the episode list
 know without opening it. While the switch picks one of its languages, and in
 the HD presentation only (SD's bitmap fonts have no accents), everything the
-episode shows passes through it as DSi Language's lines do
+episode shows passes through it as the DSi's lines do
 (`Engine.substitute`): lines, choices, names, title cards, message pages,
 formatted lines (services 0 and 22 translate the format and its texts before
 filling them in), Memory's words and the '11 games' boxes. A save keeps a line

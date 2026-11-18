@@ -114,7 +114,7 @@ class AppScreenTests(unittest.TestCase):
         for key in ('skip_ad_intros', 'hires_portraits'):                   # only SHS offers them
             self.assertNotIn(('pause_toggle', key), general)
         self.assertIn(('pause_toggle', 'skip_upsell_intros'), general)        # both games' store plugs
-        self.assertNotIn(('pause_open', 'choice:title_language'), general)
+        self.assertNotIn(('pause_open', 'choice:preferred_language'), general)
         self.assertTrue(options.step_back())                                # up a page...
         self.assertEqual(options.menu.state.screen, 'options')
         self.assertFalse(options.step_back())                               # ...then out of Options

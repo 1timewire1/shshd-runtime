@@ -408,7 +408,7 @@ class MenuRenderer:
                 self.button('Save Progress', (30, 329, 260, 34), ('save',))
                 self.button('Load Progress', (30, 377, 260, 34), ('load',))
             else:
-                self.label('Episode title language', (31, 246, 258, 25))
+                self.label('Preferred language', (31, 246, 258, 25))
                 language = self.strings[118 + TITLE_LANGUAGES.index(app.state.title_language)]
                 self.button(language, (30, 273, 260, 29), ('title_languages',))
                 self.button('Add Episodes', (30, 310, 260, 29), ('browse', 'episodes'))
@@ -428,8 +428,8 @@ class MenuRenderer:
                 self.button('On' if getattr(app.state, setting) else 'Off', (213, y, 78, 29), ('toggle', setting))
                 self.label(note, (30, y + 32, 260, 38), color=GRAY)
         elif screen == 'title_languages':
-            self.panel('Episode Titles')
-            self.label('Choose episode names where translations are available. Story text stays in the language of each supplied episode.',
+            self.panel('Preferred Language')
+            self.label('Episode names in this language where translations are available. Story text stays in the language of each supplied episode.',
                        (30, 120, 260, 80), color=GRAY)
             for index, language in enumerate(TITLE_LANGUAGES):
                 selected = language == app.state.title_language

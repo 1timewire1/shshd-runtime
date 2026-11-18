@@ -292,10 +292,12 @@ def translation(resources, language):
 
 
 def episode_title(library, record, language):
-    """A DSi story's title in `language` (the DSi's menu text), keeping the record's episode number ("01: "), or None."""
+    """A DSi story's title in `language` (the DSi's menu text), keeping the record's episode number ("01: "), or None. Only
+    SHS's own copy is the DSi's story, as for its lines (translation): a translated game's of the same name (New Rules'
+    Making Some Dough) keeps its title (owner, 2026-11-18). A record names its pack, not its add-ons, so that's the test."""
     value = spec(library) if language in LANGUAGES else None
     table = None if value is None else text_table(library)
-    if table is None or not is_story(record, value):
+    if table is None or (record.get('pack_id') or 0) >= TRANSLATED_PACKS or not is_story(record, value):
         return None
     titles = list(record.get('titles') or ())
     for title in titles + list(record.get('aliases') or ()):           # (Football Star is the DSi's Football Season)

@@ -498,7 +498,7 @@ and below are rejected instead of writing past native storage. Width/precision
 modifiers are not invented. Service 22 (`my_sprintf`) is separate: only `%s`
 and `%d` are formats, another `%x` keeps x without the percent sign, and the
 result is written to VM memory at a1. shshd-runtime: while an episode is shown
-in another language (DSi Language, '11 Language), both services translate the
+in another language (Preferred Language: the DSi's, '11's), both services translate the
 format and the texts its `%s` takes before filling them in, so the line they
 make is in that language; message pages (service 33) are translated likewise.
 

@@ -338,7 +338,7 @@ class LibraryMenuTests(unittest.TestCase):
         original = {path: path.read_bytes() for path in (manual, automatic)}
         snapshot = session.snapshot()
         manifest = (self.directory / 'library.json').read_bytes()
-        state.title_language = 'fr'
+        state.preferred_language = 'fr'
         state.persist()
         restored = MenuState(self.library)
         self.assertEqual(restored.title(self.library.select(state.selected)), 'École')
@@ -347,11 +347,16 @@ class LibraryMenuTests(unittest.TestCase):
                          session.vm.program.to_bytes())
         self.assertEqual((self.directory / 'library.json').read_bytes(), manifest)
         self.assertEqual({path: path.read_bytes() for path in original}, original)
-        # Existing preferences predate this presentation-only field.
+        # Existing preferences predate this presentation-only field, and then Preferred Language (2026-11-18), which
+        # takes the first of the four it replaced that isn't English.
         data = json.loads(state.path.read_text())
-        del data['title_language']
+        del data['preferred_language']
         state.path.write_text(json.dumps(data))
         self.assertEqual(MenuState(self.library).title_language, 'en')
+        state.path.write_text(json.dumps(dict(data, title_language='en', dsi_language='off', shs11_language='it')))
+        migrated = MenuState(self.library)
+        self.assertEqual((migrated.preferred_language, migrated.title_language, migrated.dsi_language,
+                          migrated.shs11_language, migrated.story_language), ('it', 'it', 'it', 'it', 'it'))
         data['title_language'] = ['fr']
         state.path.write_text(json.dumps(data))
         invalid = MenuState(self.library)
@@ -363,7 +368,7 @@ class LibraryMenuTests(unittest.TestCase):
         english = self.library.episodes[0]
         self.assertEqual(self.library.select('École')['id'], english['id'])
         state = MenuState(self.library)
-        state.title_language = 'fr'
+        state.preferred_language = 'fr'
         state.persist()
         preferences = state.path.read_bytes()
         for args, title in (([], 'École'), (['--title-language', 'de'], 'Schule')):
