@@ -396,6 +396,24 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(renderer.canvas.get_at((520, 680)), self.CAST_COLOURS[x.CAST_IDLE])
         self.assertEqual(renderer.canvas.get_at((520, 790)), self.CAST_COLOURS[x.CAST_IDLE])
 
+    def test_the_cast_decodes_on_a_thread_from_when_its_game_is_due(self):
+        # Owner, 2026-11-18: the g54 stalled as the game opened, its five atlases decoded in its first frames (677 ms).
+        renderer, game, session = self.cast_renderer()
+        renderer.prefetch()
+        build, jobs = renderer._prefetch
+        self.assertEqual(len(jobs), len(build['animations']))
+        self.assertEqual(next(iter(jobs)), build['animations'][x.CAST_IDLE]['atlas'])      # the idle first
+        for done, _ in jobs.values():
+            self.assertTrue(done.wait(10))
+        renderer.prefetch()
+        self.assertIs(renderer._prefetch[1], jobs)                         # (once a look)
+        game.tick(x.OPENING_MS)
+        game.cast_ms = 0
+        renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT), self.CAST_COLOURS[x.CAST_IDLE])
+        renderer.drop_cast()
+        self.assertIsNone(renderer._prefetch)
+
     def test_an_older_addon_or_another_background_draws_no_cast_and_the_close_stays_short(self):
         for cast, background in ((False, 26109), (True, 26100)):
             renderer, game, session = self.cast_renderer(cast)

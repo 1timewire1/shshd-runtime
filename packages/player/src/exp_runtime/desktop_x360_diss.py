@@ -207,6 +207,17 @@ class X360DissRenderer(X360Deck):
             return
         surface.blit(image, (round(x * self.k), round(y * self.k)))
 
+    def drop_dance(self):
+        """Forget Josh's dance atlas and its scaled frame once the game has gone (Desktop): kept, an episode left for Resume
+        held it while another played (the g54 at about 1 GB with Dating Beth after Monday Planner; owner, 2026-11-18)."""
+        self._images.pop(self._josh_atlas, None)
+        self._josh_atlas = None
+        self._josh_frame = None, None
+
+    @property
+    def holds_dance(self):
+        return self._josh_atlas is not None
+
     def _animations(self):
         """({dance, dance_ms3, leash_cast}, archive) for this episode's library, or None (animation_source)."""
         if self._anim is None or self._anim[0] is not self.resources:

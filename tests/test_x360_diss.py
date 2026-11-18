@@ -445,6 +445,17 @@ class DrawingTests(unittest.TestCase):
         self.assertEqual(self._josh_colour(game), (255, 0, 255))
         self.renderer.resources.library.ms3_characters = False
 
+    def test_the_dance_lets_its_atlas_go_once_its_game_has_gone(self):
+        # Owner, 2026-11-18: an episode left for Resume held it while another played (the g54 at about 1 GB).
+        dance = self._with_dance()
+        game = DissPractice.opened(False)
+        self._josh_colour(game)
+        self.assertTrue(self.renderer.holds_dance)
+        self.assertIn(dance['atlas'], self.renderer._images)
+        self.renderer.drop_dance()
+        self.assertFalse(self.renderer.holds_dance)
+        self.assertNotIn(dance['atlas'], self.renderer._images)
+
     def test_an_addon_without_the_dance_still_draws(self):
         self.assertNotIn('dance', self.renderer.x360()[0]['booth'])
         self.draw(DissPractice.opened(False))

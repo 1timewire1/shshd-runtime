@@ -2249,6 +2249,14 @@ class Application:
             # accidentally reusing the previous episode's cached artwork; the last episode's view and art leave the
             # renderers' method caches with it (episode_thumbnails.release_episode_caches).
             episode_thumbnails.release_episode_caches()
+            if self.game is not None:
+                # shshd-runtime: the left episode's game art goes now, and the player with it, at once: it sits in
+                # reference cycles (its callbacks), which only a full collection frees, and held Josh's dance and the
+                # leash cast meanwhile (the g54 at about 1 GB; owner, 2026-11-18).
+                self.game.release_art()
+                self.game = None
+                import gc
+                gc.collect()
             settings = getattr(self, 'settings', None)
             if settings is not None and self.selected_game in GAMES:
                 self._attempt(lambda: settings.set_last_game(self.selected_game))     # Start In's Last Played
@@ -2478,6 +2486,7 @@ class Application:
         # A live session retains its mixer stream and playhead through menu
         # navigation. A fresh Desktop or explicit save load selects a new cue.
         self.game.active = False
+        self.game.release_art()                 # (a game left for Resume draws them again if it's resumed)
         if not self.game.session.episode_ended:
             self.game._sync_music()
         if self.audio:

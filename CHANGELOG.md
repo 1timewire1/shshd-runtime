@@ -503,6 +503,12 @@
 
 ### Fixed
 
+- **The X360 leash game stalled as it opened, and the X360 games' art outlived them** (owner's g54, 2026-11-18): the cast's
+  five atlases were decoded in the game's first frames (677 ms on the g54); they now decode on a thread from when the game
+  is due, its skip prompt included (worst frame 69 ms). Josh's dance atlas stayed loaded after Diss Practice, and an
+  episode left for Resume, or replaced by another, kept its dance and cast (the g54 at about 1 GB with Dating Beth after
+  Monday Planner): they go when their game does, when the episode is left, and a replaced episode's player is collected
+  at once (746 MB for the same steps).
 - **A DSi language renamed New Rules' Making Some Dough** (owner, 2026-11-18): the episode list gave the DSi's title to any
   story of one of its eight names, a translated game's too. Only SHS's own copy takes it now, as only it takes the lines.
 - **iOS: sound effects and additive blends held up frames** (owner, 2026-11-18, found in the X360 jewel puzzle):

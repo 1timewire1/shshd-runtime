@@ -959,6 +959,19 @@ class Desktop:
         else:
             song.set_volume(self.music_volume * level)
 
+    def release_art(self):
+        """shshd-runtime: let go of the X360 games' animation art (Josh's dance, the leash cast: about 100 MB decoded each)
+        when the episode is left: a game left for Resume draws them again as it's resumed, and the app no longer holds a
+        replaced episode's (Application.start; owner, 2026-11-18: the g54 at about 1 GB)."""
+        for name in ('x360_diss', 'x360_battle'):
+            dancer = self.__dict__.get(name + '_renderer')
+            if dancer is not None and dancer.holds_dance:
+                dancer.drop_dance()
+        leash = self.__dict__.get('x360_leash_renderer')
+        if leash is not None and (leash.holds_cast or leash._prefetch is not None):
+            leash.drop_cast()
+            leash._cast_look = None
+
     def take_pause_song(self):
         """The menu's song if the pause menu is playing it (not fading): the main menu keeps it going, where the
         original fades it out and leaves the main menu silent (owner's choice, 2026-10-20)."""
@@ -1831,9 +1844,15 @@ class Desktop:
         if action is not None and action.name == 'dialogue':
             self._prime_games()
         leash = self.__dict__.get('x360_leash_renderer')
-        if (leash is not None and (action is None or action.name != 'x360_leash') and leash._cast_look is not None
-                and leash.holds_cast):
-            leash.drop_cast()                   # (the leash game's cast, about 64 MB decoded, once it has gone)
+        if leash is not None and action is not None and action.name == 'x360_leash':
+            leash.prefetch()                    # its cast decoding from when it's due, its skip prompt included
+        for name in ('x360_diss', 'x360_battle'):
+            dancer = self.__dict__.get(name + '_renderer')
+            if dancer is not None and dancer.holds_dance and (action is None or action.name != name):
+                dancer.drop_dance()             # (Josh's dance atlas, once its game has gone)
+        if (leash is not None and (action is None or action.name != 'x360_leash')
+                and ((leash._cast_look is not None and leash.holds_cast) or leash._prefetch is not None)):
+            leash.drop_cast()                   # (the leash game's cast, about 96 MB decoded, once it has gone or been skipped)
             leash._cast_look = None
         if self.session.engine.panel.background_id >= 0:
             self.last_background_id = self.session.engine.panel.background_id

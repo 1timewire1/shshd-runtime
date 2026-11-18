@@ -13,6 +13,9 @@ switch. The spec places them on the background (`places`, by background: their s
 against the shot's and where their feet go, in the 960 x 1440 picture's pixels), and the player says where the picture is
 this frame (`scene_placement`), so they follow its pan and its size in a taller frame. The game says which animation and
 how far in (LeashGame.cast_anim, cast_ms), and what it blends from over 0.3 s. Without them the game plays as before."""
+import io
+import threading
+
 from . import graphics as pygame
 from .desktop_nr_arena_x360 import animation_source
 from .desktop_x360_slot import FRAME, X360SlotRenderer
@@ -63,6 +66,7 @@ class X360LeashRenderer(X360SlotRenderer):
         self._hud = None
         self._cast_frames = {}          # (atlas, rect, size): a frame at the size it's drawn, the last two kept
         self._cast_look = None          # the build drawn last
+        self._prefetch = None           # (build, {atlas: [done, (size, RGBA bytes) or the error]}): prefetch's
 
     def alpha(self, game):
         """The game's fade as it opens and closes (None: whole). With the cast drawn, the close is the cast's: the bar
@@ -83,13 +87,54 @@ class X360LeashRenderer(X360SlotRenderer):
         return anim[1]
 
     def _anim_image(self, resource):
-        """One of the cast's atlases, from the archive it comes from (kept with the skin's pictures)."""
+        """One of the cast's atlases, from the archive it comes from (kept with the skin's pictures): prefetch's once it
+        has decoded it (waiting for that one if it hasn't yet), else decoded here."""
         found = self._images.get(resource)
         if found is None:
-            import io
+            job = self._job(resource)
+            if job is not None:
+                job[0].wait()
+                if isinstance(job[1], tuple):
+                    size, data = job[1]
+                    found = self._images[resource] = pygame.image.frombytes(data, size, 'RGBA')
+                    job[1] = None
+                    return found
             found = self._images[resource] = pygame.image.load(io.BytesIO(self._animations()[1].read(resource)),
                                                                'x360.png').convert_alpha()
         return found
+
+    def _job(self, atlas):
+        return self._prefetch[1].get(atlas) if self._prefetch is not None else None
+
+    def prefetch(self):
+        """Decode the cast's atlases on a thread, MG1_IDLE2's first, from when its game is due (its skip prompt included),
+        so the game opens with them: decoded in the frames it opened with, the five stalled the g54 (677 ms at once;
+        owner, 2026-11-18). Pillow lets go of Python's lock as it decodes. pygame's only: iOS's backend sends a picture
+        to its host as the PNG it was, which raw pixels would have to be encoded into again."""
+        if pygame.native():
+            return
+        found = self.cast_build()
+        if found is None or (self._prefetch is not None and self._prefetch[0] is found[1]):
+            return
+        build = found[1]
+        jobs = {}
+        for name in (CAST_IDLE, *CAST_ANIMS):
+            atlas = build['animations'].get(name, {}).get('atlas')
+            if atlas is not None and atlas not in self._images and atlas not in jobs:
+                jobs[atlas] = [threading.Event(), None]
+        self._prefetch = (build, jobs)
+        archive = self._animations()[1]
+
+        def decode():
+            from PIL import Image
+            for atlas, job in list(jobs.items()):
+                try:
+                    image = Image.open(io.BytesIO(archive.read(atlas))).convert('RGBA')
+                    job[1] = (image.size, image.tobytes())
+                except Exception as error:          # (the frame's own load reports it)
+                    job[1] = error
+                job[0].set()
+        threading.Thread(target=decode, name='leash-cast', daemon=True).start()
 
     def cast_build(self):
         """(the cast's spec, `leash_cast`, and this look's build of it), or None without them."""
@@ -117,6 +162,7 @@ class X360LeashRenderer(X360SlotRenderer):
             if atlas not in kept:
                 self._images.pop(atlas, None)
         self._cast_frames.clear()
+        self._prefetch = None
 
     @property
     def holds_cast(self):
@@ -136,6 +182,9 @@ class X360LeashRenderer(X360SlotRenderer):
         for name in (CAST_IDLE, *CAST_ANIMS):
             atlas = build['animations'].get(name, {}).get('atlas')
             if atlas is not None and atlas not in self._images:
+                job = self._job(atlas)
+                if job is not None and not job[0].is_set():
+                    return                              # (prefetch is still decoding it: taken when it's done)
                 self._anim_image(atlas)
                 return
 
