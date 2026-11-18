@@ -429,6 +429,10 @@
 
 ### Changed
 
+- **One Funky Monkey** (owner, 2026-11-18; [BREW.md](docs/BREW.md#how-a-story-is-translated)): '08's `(Classic)` copy
+  (9238) is gone, as its writing turned out to be a copy-edit of '07's. The `'07` entry (version 4) keeps '07's style and
+  date and takes '08's six typo fixes and nine rewordings into its lines, but keeps '07's two rewritten lines ("Hello
+  Officer?" and the zoo keeper's "and some fecal."). A longer line is a new string the script takes as its own.
 - **The X360 add-on splits in two** (owner, 2026-11-18; [ADDONS.md](docs/ADDONS.md#shsx360anim-the-x360-animations)):
   Josh's dance and the leash game's cast move into an optional animations add-on, `shsx360anim` (about 47 MB), so the X360
   add-on itself (revision 22) is about 48 MB instead of 89. No story requires the animations; without them Diss Practice

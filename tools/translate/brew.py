@@ -3164,11 +3164,68 @@ STORY_FIXES = {'shs085_06_01_shs08.exp': fix_surviving_college}
 
 FUNKY_MONKEY_ENDINGS = (2507, 2568, 2623, 2684, 2751)     # '07 monkey.exp: each ending's music push, its first instruction
 OWN_SCENE_26505 = 26505
+# '08's copy-edit of Funky Monkey, which '07's entry takes in '07's own style (owner, 2026-11-18): its six typo fixes and nine
+# rewordings, as (a part of one '07 line as the translation shows it, what '08 has there). Not its restyling (lower-case
+# "zoo keeper", choices as `(Take a shot.)`) nor its two rewritten lines ("Hello Officer?" became "Call the cops.", and the zoo
+# keeper's "and some fecal." "and well, you know..."), which stay '07's. The whole comparison:
+# reference/Other Games/Additional Resources/brew-portrait-catalog/funky_monkey_07_08.md.
+FUNKY_MONKEY_08_EDITS = (
+    (b"if you're face wants", b'if your face wants'),
+    (b'that do gooder Lucas', b'that do-gooder Lucas'),
+    (b'Cause he just thinks', b"'Cause he just thinks"),
+    (b'Ick Iew!.', b'Ick Iew!'),
+    (b'a little forlorn.)"', b'a little forlorn.)'),
+    (b'goody two shoes, Lucas, wish he was never born from', b'goody two-shoes, Lucas, wish he was never born, from'),
+    (b'punching the math department', b'punching everyone from the math department'),
+    (b'I am amazed.', b"I'm amazed."),
+    (b'(Minutes later, Zoo Keeper arrives', b'(Minutes later, the Zoo Keeper arrives'),
+    (b'begin immediately destroying', b'immediately begin destroying'),
+    (b'not all that pleased to be eating with poop flinging', b'not at all pleased to be eating with poop-flinging'),
+    (b'staring at the monkeys', b'staring at the chimpanzees'),
+    (b'instruction I told you about', b'instruction I gave you about'),
+    (b'look thoughtfully up at the chimpanzees, frequently using', b'look up at the chimpanzees thoughtfully, using'),
+    (b'community service that let\'s all', b"community service and he let's all"),
+)
+FUNKY_MONKEY_VERSION = 4                # 4: '08's copy-edit (FUNKY_MONKEY_08_EDITS), the only Funky Monkey (owner, 2026-11-18)
+
+
+def funky_monkey_lines(program):
+    """'07's Funky Monkey (its story script, its strings tidied) with '08's copy-edit (FUNKY_MONKEY_08_EDITS): (the program with the
+    lines that still fit their place edited there, [(address, edited text)] of the ones that grow, for funky_monkey_grown)."""
+    fits, grows = {}, []
+    lines = list(data_strings(program))
+    for old, new in FUNKY_MONKEY_08_EDITS:
+        found = [(start, text, length) for start, text, length in lines if old in text]
+        if len(found) != 1:
+            raise StoryError(f"Funky Monkey ('07): {old!r} is in {len(found)} lines, not one")
+        start, text, length = found[0]
+        edited = text.replace(old, new)
+        if len(edited) + 1 <= 2 * length:               # (with its NUL)
+            fits[text] = edited
+        else:
+            grows.append((start, edited))
+    return rewrite_strings(program, fits.get), grows
+
+
+def funky_monkey_grown(rewriter, grows):
+    """The copy-edited lines that grow (funky_monkey_lines), each a new string after the data that its one push names now:
+    [(address, text)], which script_context takes as its own lines (a thought's twin, a long line's pieces). An address in
+    the hundreds or more, pushed once, is the line's: a small one could be a number too, but the lines there all fit."""
+    late = []
+    for start, edited in grows:
+        pushes = [pc for pc in range(rewriter.original) if rewriter.code[pc] == (0x1a, start)]
+        if len(pushes) != 1 or start < 100:
+            raise StoryError(f"Funky Monkey ('07): the line at {start} is pushed {len(pushes)} times")
+        address = rewriter.text(edited.decode('latin-1'))
+        rewriter.code[pushes[0]] = (0x1a, address)
+        late.append((address, edited))
+    return late
 
 
 def fix_funky_monkey_07(rewriter, context):
     """'08's Funky Monkey opens five of its endings with a scene change (14: speaker kept, day sky, its own picture 26505), where '07's
-    keep whatever was showing. '07's copy keeps its own writing, and its date, but takes '08's fixes to its code (owner, 2026-11-07)."""
+    keep whatever was showing. '07's copy keeps its date and its style but takes '08's fixes to its code (owner, 2026-11-07) and its
+    copy-edit (funky_monkey_lines; owner, 2026-11-18): the only Funky Monkey, as '08's `(Classic)` copy isn't built any more."""
     code = rewriter.code
     for pc in FUNKY_MONKEY_ENDINGS:
         if not (code[pc - 2][0] == 0x48 and code[pc][0] == 0x1a and 8000 <= code[pc][1] < 8000 + MUSIC_TRACKS and code[pc + 1] == (0x1f, 9 << 8 | 1)):
@@ -3241,9 +3298,11 @@ def drop_page_pauses(rewriter):
             rewriter.code[pc + 1] = (0x29, rewriter.code_base + pc + 2)
 
 
-def script_context(rewriter, script, looks, player, program, catch_sizes=None):
-    """What a script's shims share: scratch words in its data, and its bracketed strings' bare twins."""
+def script_context(rewriter, script, looks, player, program, catch_sizes=None, late=()):
+    """What a script's shims share: scratch words in its data, and its bracketed strings' bare twins. `late`: [(address, text)] of
+    lines appended after the data that stand for lines of its own (funky_monkey_grown), taken as its own."""
     start = spin_routine(program)
+    lines = [*data_strings(program), *((address, text, 0) for address, text in late)]
     thoughts, game_words, long_lines = [], [], []
 
     def pieces(key, text):
@@ -3252,7 +3311,7 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
         if len(parts) > 1:                                  # (only a line that splits takes copies of its pieces)
             entries = [-rewriter.text(piece) if aside else rewriter.text(piece) for piece, aside in parts]
             long_lines.append((key, rewriter.words([len(entries)] + entries)))
-    for address, text, _ in data_strings(program):
+    for address, text, _ in lines:
         bare = bracketed(text)
         if bare is not None:
             thoughts.append((address, rewriter.text(bare.decode('latin-1'))))
@@ -3262,7 +3321,7 @@ def script_context(rewriter, script, looks, player, program, catch_sizes=None):
         word = bare_word(text) if start is not None else None
         if word is not None:
             game_words.append((address, rewriter.text(word.decode('latin-1'))))
-    strings = {address: text.decode('latin-1') for address, text, _ in data_strings(program)}
+    strings = {address: text.decode('latin-1') for address, text, _ in lines}
     catch = {}
     if any(i.opcode == 0x1f and i.operand >> 8 in CATCH_MODES for i in program.instructions):
         words = sorted(CATCH_WORDS.items())
@@ -3482,13 +3541,17 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     resources = {}
     for script in scripts:
         program = strip_quotes(strip_round_counts(strip_name_marks(decode_program(upgrade(archive_resources[script])))))
+        grows = []
+        if name == 'monkey.exp' and script == story_script:
+            program, grows = funky_monkey_lines(program)
         rewriter = Rewriter(program, zero_gap=True)
+        late = funky_monkey_grown(rewriter, grows)
         drop_page_pauses(rewriter)
         if name in STORY_FIXES and script == story_script:
             STORY_FIXES[name](rewriter)
         sizes = {int(picture): tuple(entry[1:]) for picture, entry in spec.get('catch', {}).get('pictures', {}).items()
                  if int(picture) not in own_missing}
-        context = script_context(rewriter, script, table, not title.startswith('Quiz '), program, sizes)
+        context = script_context(rewriter, script, table, not title.startswith('Quiz '), program, sizes, late)
         context['kind'] = 'season' if season else 'calendar' if calendar else 'single'
         context['program'], context['script_map'] = program, script_map
         context['own_missing'] = own_missing
@@ -3559,6 +3622,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         needs = max(needs, EXTRA_EVENT_ICONS_REVISION)
     resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, needs)])
     resources[VERSION_RECORD] = version_bytes(FIXED_ICONS_VERSION if story_title in EVENT_ICON_FIXES else STORY_VERSION)
+    if name == 'monkey.exp':
+        resources[VERSION_RECORD] = version_bytes(FUNKY_MONKEY_VERSION)
     if name == 'clsc_073_Hollywood.exp':
         # The Surviving Hollywood demo's art, while `shshw` is there and "Hollywood Art" is on (shw.py; owner, 2026-11-13)
         import shw

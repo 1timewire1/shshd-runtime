@@ -1914,6 +1914,26 @@ class BrewCalendarTests(unittest.TestCase):
             plain = scenes()
         self.assertEqual((fixed - plain) % len(brew.FUNKY_MONKEY_ENDINGS), 0)       # (each the same scene change, inserted once)
         self.assertGreater(fixed, plain)
+        # Owner, 2026-11-18: it takes '08's copy-edit too (its typo fixes and rewordings, in '07's style), but keeps '07's two
+        # rewritten lines, and it's the only Funky Monkey. A line that grows is a new string its push names, taken as one
+        # of the script's own (its aside still its own line).
+        import json
+        import playthrough as pt
+        _, data = brew.build_classic(CLASSIC_07 / 'monkey.exp', addon_path, BREW_08 / 'addons' / 'Classic')
+        self.assertEqual(json.loads(ExpArchive(data).read(5).split(b'\0', 1)[1])['revision'], brew.FUNKY_MONKEY_VERSION)
+        shown = [r['text'] for r in pt.play(data, [0] * 40, addons=[ExpArchive(addon_path.read_bytes())])
+                 if r['kind'] == 'line']
+        for line in ("Hi Lucas, I'm Adam. I'm standing at your left elbow and I'm about to extend my right fist, if your face "
+                     "wants to take it.",
+                     "(If it were, I'd be punching everyone from the math department all the time.)"):
+            self.assertIn(line, shown)
+        self.assertIn("'Cause he just thinks he's so smart and it really bugs me.", shown)       # (grown: a new string)
+        self.assertFalse([line for line in shown if "you're face" in line or 'the math department all' in line
+                          and 'everyone' not in line])
+        story = brew.decode_program(ExpArchive(data).read(brew.STORY_SCRIPT))
+        text = b''.join(w.to_bytes(2, 'big') for w in [*story.main_words, *story.extra_words])
+        self.assertIn(b'Calling All Zoo Keepers | Hello Officer?', text)  # '07's two rewritten lines stay (quotes tidied)
+        self.assertIn(b'items torn from the tree and some fecal.', text)
 
     def test_an_08_classic_copy_is_a_campaign_episode_on_the_calendar(self):
         # Stage 3b: Funky Monkey's '08 file, which really differs from '07's, is its own `(Classic)` entry under '08.
