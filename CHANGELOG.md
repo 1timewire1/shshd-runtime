@@ -497,11 +497,13 @@
   chain's sheen, were added into the puzzle's see-through canvas, which iOS's drawing backend works out in Python and
   sends as a new picture every frame (a chain: 2.8 s a frame through the backend on a PC). The board's grid now draws on
   an opaque layer of its own, where the host adds them itself; only the board's rim takes them in Python (17 ms for the
-  same frame), and both boards are drawn while the game opens. A round played on the iPad with the change as a
-  dev-module ran at 51.6 fps (median 16.7 ms, p90 33 ms); the rim's effects in Python are what's left in a chain's
-  frames. Pixel for pixel the same through the iOS backend; on the desktop
-  the grid is opaque, as the art is (smoothscale had left it 251-253). The backend also composites only the part of a
-  picture that lands on a region.
+  same frame), and both boards are drawn while the game opens. On iOS the sheen's pieces on the rim are drawn once a
+  step (8 px) and the sparks and pulsing glows once a step of their fade, so the host keeps them (a chain's frame:
+  3.6 ms through the backend on a PC). The backend also composites only the part of a picture that lands on a region.
+  On the iPad, with these as dev-modules, Python takes 2.6 ms a frame (7-13 before) and a round runs at 50-53 fps:
+  what's left is the host's, each sound effect's start (a new player and the audio session set again, within the
+  frame: 39 ms frames) and CoreGraphics' additive blend (a chain's frame draws in 19.6 ms). Within 5 levels of the
+  old look (the steps); on the desktop the grid is opaque, as the art is (smoothscale had left it 251-253).
 - **A freeze when music paused as a sound effect ended** (the owner's g54, 2026-11-17, changing settings): pygame's
   `music.pause`/`unpause` wait for SDL's audio lock holding Python's, while the audio thread, as a sound ends, holds that
   lock waiting for Python's. Music now pauses through SDL_mixer by ctypes, which lets Python's lock go

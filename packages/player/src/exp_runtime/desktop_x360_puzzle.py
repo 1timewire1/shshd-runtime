@@ -23,8 +23,11 @@ SCORE_RIGHT, TIME_RIGHT, DIGIT_Y, DIGIT_H = 590, 740, 744, 84
 COLOURS = ((255, 40, 30), (40, 230, 50), (50, 90, 255), (240, 220, 40), (220, 50, 220))  # the emitters' BirthColorEnd
 GLOW_SIZE = 1.7                         # selection_00N's billboards against a cell
 GLOW_PULSE_MS = 900
+GLOW_STEP = 4                           # the pulse's brightness steps, each glow made once (_glow_at)
+SPARK_STEP_MS = 10                      # a spark's fading steps, each drawn once (_spark): under a frame
 FADE_MS = 300
 SHEEN_MS = 2400                         # the metal board's reflection crossing it
+SHEEN_RIM_STEP = 8                      # its steps on the board's rim, each drawn once (_sheen_rim): ~7 px a frame anyway
 HINT_TEXT, START_TEXT = 'Slide the rows to join 4 or more!', 'Press OK to start'
 TIME_UP_TEXT, CONTINUE_TEXT = "Time's Up!", 'Press OK to continue'
 PARTICLES = 5                           # destroy_piece_00N
@@ -48,6 +51,10 @@ class X360PuzzleRenderer(X360SlotRenderer):
         self._sheen = None
         self._layer = None                              # the grid's opaque layer (_grid_layer)
         self._kept = set()                              # the board pictures read once (_board)
+        self._rim_board, self._rim_cache = None, {}     # the sheen's rim strips, by (strip, step) (_sheen_rim)
+        self._rim_todo = None                           # the strips _warm_rim has yet to draw
+        self._glow_levels = {}                          # (kind, level): the glow at a pulse's step (_glow_at)
+        self._sparks = {}                               # (kind, age step): a spark (_spark)
         self._veil = None
         self._digits = {}
 
@@ -109,6 +116,8 @@ class X360PuzzleRenderer(X360SlotRenderer):
         surface.fill((0, 0, 0, 0))
         if game.phase in (OPENING, READY):
             self._warm(spec)
+        elif not game.in_chain and pygame.native() and game.phase not in (TIME_UP, SHOWING_SCORE, CLOSING):
+            self._warm_rim(spec)
         # The board's grid is drawn on a layer of its own, opaque as the board is there, so the effects added into it
         # (the clearing jewels' glow, their sparks, the metal board's sheen) are the host's own additive blend on a
         # phone. Added into the see-through canvas they were each worked out in Python and sent as a new picture every
@@ -116,17 +125,19 @@ class X360PuzzleRenderer(X360SlotRenderer):
         # iPad). The board's rim around the grid, partly see-through, still takes the effects on the canvas.
         image, rect = self._board(surface, spec, game)
         layer = self._grid_layer(image, rect)
-        effects = []                                    # (picture, where on the frame): added in the layer and the rim
-        if game.in_chain:
-            effects.append(self._board_sheen(rect, game))
-        for picture, at in effects:
-            self._add(layer, picture, at, rect)
+        sheen = self._board_sheen(rect, game) if game.in_chain else None
+        if sheen is not None:
+            self._add(layer, *sheen, rect)
         self._jewels(layer, spec, game)
-        sparks = self._cleared(game)
+        sparks = self._cleared(game)                    # (picture, where on the frame): added in the layer and the rim
         for picture, at in sparks:
             self._add(layer, picture, at, rect)
         surface.blit(layer, GRID.topleft)
-        for picture, at in effects + sparks:
+        if sheen is not None and pygame.native():
+            self._sheen_rim(surface, image, rect, *sheen)
+        elif sheen is not None:                         # (SDL's add, in C: as cheap on the rim as anywhere)
+            self._add_rim(surface, *sheen, rect)
+        for picture, at in sparks:
             self._add_rim(surface, picture, at, rect)
         if game.phase != TIME_UP and game.phase != SHOWING_SCORE and game.phase != OPENING:
             box = spec['placed']['cursor']
@@ -174,41 +185,95 @@ class X360PuzzleRenderer(X360SlotRenderer):
 
     @staticmethod
     def _add(layer, picture, at, board):
-        """An effect added into the grid's layer, within the board as on the canvas."""
-        clip = layer.get_clip()
-        layer.set_clip(board.move(-GRID.x, -GRID.y).clip(layer.get_rect()))
+        """An effect added into the grid's layer (the board covers it all, so the layer's own edges are the clip)."""
         layer.blit(picture, (at[0] - GRID.x, at[1] - GRID.y), special_flags=pygame.BLEND_RGB_ADD)
-        layer.set_clip(clip)
 
     @staticmethod
-    def _add_rim(surface, picture, at, board):
+    def _rim(board):
+        """The board's rim around the grid, as four strips: top, bottom, left, right."""
+        return (pygame.Rect(board.x, board.y, board.width, GRID.y - board.y),
+                pygame.Rect(board.x, GRID.bottom, board.width, board.bottom - GRID.bottom),
+                pygame.Rect(board.x, GRID.y, GRID.x - board.x, GRID.height),
+                pygame.Rect(GRID.right, GRID.y, board.right - GRID.right, GRID.height))
+
+    def _add_rim(self, surface, picture, at, board):
         """An effect's part on the board's rim around the grid, added into the canvas as before (only the board takes
-        it: SDL's add leaves the canvas's clear pixels clear). Most effects don't reach it."""
+        it: SDL's add leaves the canvas's clear pixels clear). Most sparks don't reach it."""
         reach = pygame.Rect(at, picture.get_size()).clip(board)
         if not reach.width or not reach.height or GRID.contains(reach):
             return
         clip = surface.get_clip()
-        for strip in (pygame.Rect(board.x, board.y, board.width, GRID.y - board.y),
-                      pygame.Rect(board.x, GRID.bottom, board.width, board.bottom - GRID.bottom),
-                      pygame.Rect(board.x, GRID.y, GRID.x - board.x, GRID.height),
-                      pygame.Rect(GRID.right, GRID.y, board.right - GRID.right, GRID.height)):
+        for strip in self._rim(board):
             part = strip.clip(reach)
             if part.width and part.height:
                 surface.set_clip(part)
                 surface.blit(picture, at, special_flags=pygame.BLEND_RGB_ADD)
         surface.set_clip(clip)
 
-    def _board_sheen(self, rect, game):
-        """minigame/metal's reflection, which crosses the board in the prototype: (its picture, where)."""
+    def _sheen_picture(self, rect):
         if self._sheen is None or self._sheen.get_height() != rect.height:
             self._sheen = pygame.Surface((rect.width // 2, rect.height))
             width = self._sheen.get_width()
             for x in range(width):
                 level = round(120 * (1 - abs(2 * x / width - 1)) ** 2)
                 pygame.draw.line(self._sheen, (level, level, level), (x, 0), (x, rect.height))
+        return self._sheen
+
+    def _board_sheen(self, rect, game):
+        """minigame/metal's reflection, which crosses the board in the prototype: (its picture, where)."""
+        self._sheen_picture(rect)
         into = game.now_ms % SHEEN_MS / SHEEN_MS
         x = rect.x - self._sheen.get_width() + round(into * (rect.width + self._sheen.get_width()))
         return self._sheen, (x, rect.y)
+
+    def _sheen_rim(self, surface, image, board, sheen, at):
+        """iOS's backend: the sheen on the board's rim. Each strip it reaches is the rim's own pixels with the sheen
+        added, worked out once for each SHEEN_RIM_STEP of its way across and put in the strip's place (over cleared
+        pixels that backend's blit is a copy; SDL's would darken the rim's see-through edge, so pygame adds directly).
+        The rim is partly see-through, so the backend's add is Python's: done every frame, it was most of a chain's
+        frame on the iPad (2026-11-18). The sheen is the same all the way down: a strip depends on how far across."""
+        step = board.x + round((at[0] - board.x) / SHEEN_RIM_STEP) * SHEEN_RIM_STEP
+        for index, strip in self._sheen_strips(board, sheen, step):
+            surface.fill((0, 0, 0, 0), strip)
+            surface.blit(self._sheen_piece(image, board, sheen, index, strip, step), strip.topleft)
+
+    def _sheen_strips(self, board, sheen, step):
+        """(index, strip) of the rim's strips the sheen reaches at `step` (the others keep the board's own rim)."""
+        reach = pygame.Rect(step, board.y, sheen.get_width(), board.height).clip(board)
+        return [(index, strip) for index, strip in enumerate(self._rim(board)) if strip.colliderect(reach)]
+
+    def _sheen_piece(self, image, board, sheen, index, strip, step):
+        if self._rim_board is not image:                # (the strips are this picture's)
+            self._rim_board, self._rim_cache, self._rim_todo = image, {}, None
+        key = index, step
+        piece = self._rim_cache.get(key)
+        if piece is None:
+            piece = pygame.Surface(strip.size, pygame.SRCALPHA)
+            piece.fill((0, 0, 0, 0))
+            piece.blit(image, (board.x - strip.x, board.y - strip.y))
+            piece.blit(sheen, (step - strip.x, board.y - strip.y), special_flags=pygame.BLEND_RGB_ADD)
+            self._rim_cache[key] = piece
+        return piece
+
+    def _warm_rim(self, spec):
+        """iOS's backend: one more of the sheen's rim strips a frame while the board isn't in a chain, so that its
+        first sweep needn't work them out as it goes (about 4 s of play for them all)."""
+        box = spec['placed']['board']
+        image = self._kept_board(spec['board_metal'], box)
+        board = image.get_rect(topleft=(GRID_LEFT + round(box[0] * CELL), GRID_TOP + round(box[1] * CELL)))
+        sheen = self._sheen_picture(board)
+        if self._rim_board is not image:
+            self._rim_board, self._rim_cache, self._rim_todo = image, {}, None
+        if self._rim_todo is None:
+            # (every step the sheen's left edge takes, from a sheen's width before the board to its far side)
+            self._rim_todo = [(index, strip, board.x + k * SHEEN_RIM_STEP)
+                              for k in range(-(sheen.get_width() // SHEEN_RIM_STEP) - 2, board.width // SHEEN_RIM_STEP + 2)
+                              for index, strip in self._sheen_strips(board, sheen, board.x + k * SHEEN_RIM_STEP)]
+        while self._rim_todo:
+            index, strip, step = self._rim_todo.pop()
+            if (index, step) not in self._rim_cache:
+                self._sheen_piece(image, board, sheen, index, strip, step)
+                return
 
     def _jewels(self, layer, spec, game):
         """The jewels and the clearing ones' glow, on the grid's layer (which is the grid's clip)."""
@@ -229,12 +294,34 @@ class X360PuzzleRenderer(X360SlotRenderer):
                 image = self._placed(frames[game.now_ms * len(frames) // spec['shine_ms'] % len(frames)], box)
                 layer.blit(image, (round(x + box[0] * CELL), round(y + box[1] * CELL)))
                 if piece['state'] == SELECTED:
-                    glow = self._glow(piece['index'])
-                    if pulse < 1:
-                        glow = glow.copy()
-                        level = round(255 * pulse)
-                        glow.fill((level, level, level), special_flags=pygame.BLEND_RGB_MULT)
+                    glow = self._glow_at(piece['index'], pulse)
                     layer.blit(glow, glow.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
+
+    def _glow_at(self, kind, pulse):
+        """The glow at its pulse's brightness, in steps of GLOW_STEP, each made once: a copy darkened every frame for
+        each clearing jewel was a new picture a frame for a phone's host to draw (2026-11-18)."""
+        level = min(255, GLOW_STEP * round(255 * pulse / GLOW_STEP))
+        if level >= 255:
+            return self._glow(kind)
+        key = kind, level
+        found = self._glow_levels.get(key)
+        if found is None:
+            found = self._glow(kind).copy()
+            found.fill((level, level, level), special_flags=pygame.BLEND_RGB_MULT)
+            self._glow_levels[key] = found
+        return found
+
+    def _spark(self, kind, age):
+        """A spark of `kind` `age` ms after its jewel cleared, in steps of SPARK_STEP_MS, each drawn once (as the glow)."""
+        age -= age % SPARK_STEP_MS
+        key = kind, age
+        found = self._sparks.get(key)
+        if found is None:
+            left = 1 - age / PARTICLE_MS
+            found = pygame.Surface((26, 26))
+            pygame.draw.circle(found, tuple(round(c * left) for c in COLOURS[kind - 1]), (13, 13), max(1, round(12 * left)))
+            self._sparks[key] = found
+        return found
 
     def _cleared(self, game):
         """destroy_piece_00N: five sparks in the jewel's colour, thrown out and fading in half a second, as
@@ -246,15 +333,12 @@ class X360PuzzleRenderer(X360SlotRenderer):
                 continue
             x, y = self._cell_centre(i, j)
             rng = random.Random(at * 31 + i * 7 + j)
-            left = 1 - age / PARTICLE_MS
-            colour = tuple(round(c * left) for c in COLOURS[kind - 1])
+            spark = self._spark(kind, age)
             for _ in range(PARTICLES):
                 angle, speed = rng.uniform(0, 2 * math.pi), rng.uniform(.5, 2.2) * CELL / (PARTICLE_MS / 1000)
                 seconds = age / 1000
                 px = x + math.cos(angle) * speed * seconds
                 py = y + math.sin(angle) * speed * seconds + 6 * CELL * seconds * seconds
-                spark = pygame.Surface((26, 26))
-                pygame.draw.circle(spark, colour, (13, 13), max(1, round(12 * left)))
                 sparks.append((spark, (round(px) - 13, round(py) - 13)))
         return sparks
 

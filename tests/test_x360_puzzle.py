@@ -588,11 +588,21 @@ class PlayerTests(unittest.TestCase):
         lit = d.raster(renderer.canvas.snapshot()).getpixel(centre)
         self.assertGreater(sum(lit[:3]), sum(plain[:3]))         # the glow is there
         self.assertEqual(lit[3], 255)
-        game.in_chain = True                                     # the sheen crosses the rim: only its strips are drawn here
+        # The sheen crosses the rim, which is partly see-through: its strips there are worked out once a step, a step a
+        # frame before any chain, and sent once.
+        game.cleared = []
+        for _ in range(400):
+            renderer.draw(session)
+        self.assertFalse(renderer._rim_todo)
+        game.in_chain = True
         game.now_ms += 1200
         renderer.draw(session)
-        pictures = [node for node in encoder.encode(renderer.canvas)['nodes'] if 'png' in node]
-        self.assertLessEqual(len(pictures), 5)
+        encoder.encode(renderer.canvas)
+        kept = len(renderer._rim_cache)
+        game.now_ms += 4                                         # (the same step)
+        renderer.draw(session)
+        self.assertEqual([node for node in encoder.encode(renderer.canvas)['nodes'] if 'png' in node], [])
+        self.assertEqual(len(renderer._rim_cache), kept)
 
     def test_cells_lie_under_the_pointer(self):
         from exp_runtime.desktop_x360_puzzle import CELL, GRID_LEFT, GRID_TOP, cell_at, on_board
