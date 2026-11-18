@@ -1264,6 +1264,8 @@ class EffectSound:
         self.mixer, self.data = mixer, data
         self.volume = 1.0
         self.channels = []
+        mixer.sound_ids += 1
+        self.ident = mixer.sound_ids            # the host's copy of `data` (Mixer.effect)
 
     def set_volume(self, volume):
         self.volume = volume
@@ -1315,6 +1317,8 @@ class Mixer:
         self.menu_music = Music(self, 'menu')
         self.sound_serial = 0
         self.effects = []               # the effect channels EffectSound.play started, oldest first
+        self.sound_ids = 0              # EffectSound.ident's last
+        self.held = OrderedDict()       # the sounds' data the host holds (`sound_data`), least recently played first
 
     def init(self):
         pass  # AVAudioSession is owned by the native host.
@@ -1334,11 +1338,23 @@ class Mixer:
         sound.length = _sound_length(raw)
         return sound
 
+    # Sounds whose data the host keeps (the player keeps 32 decoded per episode: Desktop.SOUNDS_KEPT, and the menus').
+    HELD_SOUNDS = 64
+
     def effect(self, sound):
+        # A sound's data goes to the host once and each play names it: sent with every play, the X360 puzzle's drag
+        # sound (12 KB) made each of its frames 39 ms on the iPad with the host's player setup (2026-11-18).
+        if sound.ident in self.held:
+            self.held.move_to_end(sound.ident)
+        else:
+            self.commands.append(dict(kind='sound_data', id=sound.ident, data=sound.data))
+            self.held[sound.ident] = True
+            while len(self.held) > self.HELD_SOUNDS:
+                self.commands.append(dict(kind='sound_forget', id=self.held.popitem(last=False)[0]))
         self.sound_serial += 1
         channel = Music(self, f'effect:{self.sound_serial}')
         channel.sound = sound
-        channel.command('load', data=sound.data)
+        channel.command('load', sound=sound.ident)
         channel.set_volume(sound.volume)
         channel.play()
         self.effects = [playing for playing in self.effects if playing.get_busy()] + [channel]

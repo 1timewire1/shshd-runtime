@@ -493,6 +493,13 @@
 
 ### Fixed
 
+- **iOS: sound effects and additive blends held up frames** (owner, 2026-11-18, found in the X360 jewel puzzle):
+  every effect sent its sound's whole data with the play, and the host set the audio session's category and made it
+  active again before each one, within the frame (every frame a sound started in took about 39 ms). A sound's data now
+  goes to the host once (`sound_data`, the least recently played let go past 64) and plays name it; the session is
+  set once, and again after an interruption or a return to the app. CoreGraphics' additive blend (plusLighter) drew a
+  puzzle's frame in 12-20 ms where the same frame without adds took about 1: the host now adds an unstretched,
+  whole-pixel picture into a drawing's bytes itself (SIMD, with saturation, alpha kept: SDL's RGB add exactly).
 - **The X360 jewel puzzle stuttering on the iPad** (owner, 2026-11-18): each clearing jewel's glow and sparks, and a
   chain's sheen, were added into the puzzle's see-through canvas, which iOS's drawing backend works out in Python and
   sends as a new picture every frame (a chain: 2.8 s a frame through the backend on a PC). The board's grid now draws on

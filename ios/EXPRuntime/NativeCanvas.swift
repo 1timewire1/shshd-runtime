@@ -194,6 +194,65 @@ final class NativeCanvas {
         return (ops[0], CGSize(width: size[0].doubleValue, height: size[1].doubleValue))
     }
 
+    /// SDL's RGB add of a picture into this node's pixels, done on its bytes with saturation (alpha kept): drawing.py
+    /// sends `add` only for an opaque picture over opaque pixels (the X360 puzzle's glow, sparks and sheen, the HD
+    /// loading art's fade). CoreGraphics' own blend for it (plusLighter) drew the puzzle's frame in 12-20 ms on the
+    /// iPad where the same frame without adds took about 1 (2026-11-18). False, for CoreGraphics to draw it, when the
+    /// source is stretched, the place is a fraction of a pixel, the alpha isn't whole or the context has no bytes.
+    private func addInPlace(_ op: [String: Any], at: [CGFloat], context: CGContext, size: [CGFloat]) throws -> Bool {
+        guard ((op["alpha"] as? NSNumber)?.intValue ?? 255) == 255, scaling(op) == nil,
+              at[0] == at[0].rounded(), at[1] == at[1].rounded(),
+              context.bitsPerPixel == 32, let base = context.data else { return false }
+        let source = try texture(op)
+        let ox = Int(at[0]), oy = Int(at[1])
+        var area = CGRect(x: ox, y: oy, width: source.width, height: source.height)
+            .intersection(CGRect(x: 0, y: 0, width: size[0], height: size[1]))
+        if let clip = op["clip"] { area = area.intersection(try rect(clip)) }
+        guard !area.isNull, !area.isEmpty else { return true }
+        // (The node's rows run top to bottom in memory as in its flipped drawing, and the texture's as its picture.)
+        let left = Int(area.minX.rounded(.up)), top = Int(area.minY.rounded(.up))
+        let right = Int(area.maxX.rounded(.down)), bottom = Int(area.maxY.rounded(.down))
+        guard right > left, bottom > top else { return true }
+        let rowBytes = context.bytesPerRow, count = (right - left) * 4
+        let destination = base.assumingMemoryBound(to: UInt8.self)
+        source.pixels.withUnsafeBytes { raw in
+            guard let pixels = raw.bindMemory(to: UInt8.self).baseAddress else { return }
+            for y in top..<bottom {
+                NativeCanvas.addSaturating(destination + y * rowBytes + left * 4,
+                                           pixels + ((y - oy) * source.width + (left - ox)) * 4, count)
+            }
+        }
+        return true
+    }
+
+    private static let alphaLanes: SIMDMask<SIMD16<Int8>> = {
+        var lanes = SIMD16<UInt8>(repeating: 0)
+        for lane in stride(from: 3, to: 16, by: 4) { lanes[lane] = 1 }
+        return lanes .== 1
+    }()
+
+    /// `count` bytes of RGBA: each colour channel of `to` plus `from`'s, at most 255; the alpha stays `to`'s.
+    private static func addSaturating(_ to: UnsafeMutablePointer<UInt8>, _ from: UnsafePointer<UInt8>, _ count: Int) {
+        var offset = 0
+        let full = SIMD16<UInt8>(repeating: 255)
+        while offset + 16 <= count {
+            let under = UnsafeRawPointer(to + offset).loadUnaligned(as: SIMD16<UInt8>.self)
+            let over = UnsafeRawPointer(from + offset).loadUnaligned(as: SIMD16<UInt8>.self)
+            var sum = under &+ over
+            sum.replace(with: full, where: sum .< under)
+            sum.replace(with: under, where: alphaLanes)
+            UnsafeMutableRawPointer(to + offset).storeBytes(of: sum, as: SIMD16<UInt8>.self)
+            offset += 16
+        }
+        while offset < count {
+            if offset % 4 != 3 {
+                let sum = Int(to[offset]) + Int(from[offset])
+                to[offset] = sum > 255 ? 255 : UInt8(sum)
+            }
+            offset += 1
+        }
+    }
+
     private func drawImage(_ image: CGImage, _ rect: CGRect, _ context: CGContext) {
         context.saveGState()
         context.translateBy(x: rect.minX, y: rect.maxY)
@@ -283,6 +342,7 @@ final class NativeCanvas {
             case "blit":
                 let at = try numbers(op["at"])
                 guard at.count == 2 else { throw CanvasError(message: "Invalid image position") }
+                if op["blend"] as? String == "add", try addInPlace(op, at: at, context: context, size: size) { break }
                 context.setAlpha(CGFloat((op["alpha"] as? NSNumber)?.doubleValue ?? 255) / 255)
                 if let scaled = scaling(op) {
                     let source = try image(scaled.source)

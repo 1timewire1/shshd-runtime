@@ -247,9 +247,30 @@ class SoundTests(unittest.TestCase):
         self.assertEqual((sound.get_num_channels(), mixer.get_num_channels()), (1, 1))
         self.assertIs(mixer.Channel(0), channel)
         kinds = [(command['kind'], command.get('volume')) for command in mixer.commands]
-        self.assertEqual(kinds, [('music_load', None), ('music_volume', .5), ('music_play', None)])
+        self.assertEqual(kinds, [('sound_data', None), ('music_load', None), ('music_volume', .5), ('music_play', None)])
+        self.assertEqual(mixer.commands[1]['sound'], mixer.commands[0]['id'])
         sound.stop()
         self.assertEqual((sound.get_num_channels(), mixer.get_num_channels()), (0, 0))
+
+    def test_a_sounds_data_goes_to_the_host_once_and_the_oldest_is_let_go(self):
+        """The host keeps each sound's data and a play names it: sent with every play, the X360 puzzle's drag sound
+        cost the iPad two frames each time (2026-11-18). Past HELD_SOUNDS the least recently played goes."""
+        mixer = drawing.Mixer()
+        sound = mixer.Sound(file=BytesIO(b'authored wave'))
+        sound.play()
+        mixer.commands.clear()
+        sound.play()
+        self.assertEqual([command['kind'] for command in mixer.commands], ['music_load', 'music_volume', 'music_play'])
+        with patch.object(drawing.Mixer, 'HELD_SOUNDS', 2):
+            others = [mixer.Sound(file=BytesIO(b'other %d' % n)) for n in range(2)]
+            mixer.commands.clear()
+            for other in others:
+                other.play()
+            forgotten = [command['id'] for command in mixer.commands if command['kind'] == 'sound_forget']
+            self.assertEqual(forgotten, [sound.ident])                  # the least recently played
+            mixer.commands.clear()
+            sound.play()                                                # sent again
+            self.assertEqual(mixer.commands[0], dict(kind='sound_data', id=sound.ident, data=sound.data))
 
     def test_an_intro_queues_its_loop_for_the_host(self):
         """MusicStream's intro into its loop uses pygame's music.queue; the iOS host swaps the loop in when the intro

@@ -342,6 +342,10 @@ final class GameCanvasView: UIView, UIKeyInput {
 }
 
 final class NativeAudio: NSObject, AVAudioPlayerDelegate {
+    private var soundData: [Int: Data] = [:]        // `sound_data`, by the Python sound's id
+    private var sessionReady = false                // the audio session's category set and active
+    /// After an interruption or a return to the foreground the session is set again with the next sound.
+    func resetSession() { sessionReady = false }
     private var tracks: [String: AVAudioPlayer] = [:]
     private var pausedTracks: Set<String> = []
     private var sounds: [AVAudioPlayer] = []
@@ -373,12 +377,32 @@ final class NativeAudio: NSObject, AVAudioPlayerDelegate {
             let track = command["track"] as? String ?? (kind.hasPrefix("menu_") ? "menu" : "music")
             let action = kind.hasPrefix("menu_") ? "music_" + kind.dropFirst(5) : kind
             switch action {
+            case "sound_data":
+                // A sound's data, kept for the plays that name it (drawing.Mixer.effect): sent with each play, a drag
+                // sound in the X360 puzzle cost two frames every time (2026-11-18).
+                guard let id = (command["id"] as? NSNumber)?.intValue, let encoded = command["data"] as? String,
+                      let data = Data(base64Encoded: encoded) else { throw CanvasError(message: "Invalid sound data") }
+                soundData[id] = data
+            case "sound_forget":
+                if let id = (command["id"] as? NSNumber)?.intValue { soundData.removeValue(forKey: id) }
             case "music_load", "music_queue", "sound":
-                guard let encoded = command["data"] as? String, let data = Data(base64Encoded: encoded) else {
-                    throw CanvasError(message: "Invalid audio data")
+                let data: Data
+                if let id = (command["sound"] as? NSNumber)?.intValue {
+                    guard let held = soundData[id] else { throw CanvasError(message: "Sound data not sent") }
+                    data = held
+                } else {
+                    guard let encoded = command["data"] as? String, let decoded = Data(base64Encoded: encoded) else {
+                        throw CanvasError(message: "Invalid audio data")
+                    }
+                    data = decoded
                 }
-                try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
-                try AVAudioSession.sharedInstance().setActive(true)
+                // The session once, and again after an interruption (resetSession): set at every sound, it held up
+                // the frame each one started in.
+                if !sessionReady {
+                    try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+                    try AVAudioSession.sharedInstance().setActive(true)
+                    sessionReady = true
+                }
                 let player = try AVAudioPlayer(data: data)
                 player.delegate = self
                 guard player.prepareToPlay() else { throw CanvasError(message: "Could not prepare audio playback") }
@@ -710,6 +734,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     @objc private func resume() {
+        audio.resetSession()            // (the system may have let the session go meanwhile)
         reportNext = true
         canvas.refreshComposed()
         activityGeneration += 1
@@ -720,6 +745,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     }
     @objc private func audioInterrupted(_ note: Notification) {
         guard let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
+        audio.resetSession()
         if type == AVAudioSession.InterruptionType.began.rawValue { suspend() }
         else if UIApplication.shared.applicationState == .active { resume() }
     }
