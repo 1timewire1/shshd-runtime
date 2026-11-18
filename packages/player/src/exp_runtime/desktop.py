@@ -1826,6 +1826,11 @@ class Desktop:
                 self.nr_arena_renderer.pad_cursor = self.x360_arena_renderer.pad_cursor = None   # (_arena_pad's)
         if action is not None and action.name == 'dialogue':
             self._prime_games()
+        leash = self.__dict__.get('x360_leash_renderer')
+        if (leash is not None and (action is None or action.name != 'x360_leash') and leash._cast_look is not None
+                and leash.holds_cast):
+            leash.drop_cast()                   # (the leash game's cast, about 64 MB decoded, once it has gone)
+            leash._cast_look = None
         if self.session.engine.panel.background_id >= 0:
             self.last_background_id = self.session.engine.panel.background_id
         self._sync_text_input()
@@ -2076,6 +2081,8 @@ class Desktop:
                             'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
                 if action.name in ('shs11_memory', 'shs11_reflex', 'x360_diss', 'x360_battle'):
                     self._warm_shs11_sounds(getattr(engine, action.name), action.name)
+                if action.name == 'x360_leash':
+                    self._leash_scene(renderer, action, engine)
                 renderer.draw(self.session)
                 self.story_layer = renderer.canvas
                 self.story_fills_frame = getattr(renderer, 'fills_frame', False)     # ('11's game in the Word Grid skin)
@@ -3174,6 +3181,21 @@ class Desktop:
             self.location_changing = None
             return None
         return dict(p=default_ease(max(0., t)), old=change['old'], **{'from': change['start']})
+
+    def _leash_scene(self, renderer, action, engine):
+        """For the leash game's cast (B1): its background, and where that whole picture lies this frame in the game's
+        canvas, as the background layer will draw it (_background_placement: the pound's pan, and its size in a taller
+        frame), so the cast stands on it wherever it is. The canvas is 768 wide and ends at the frame's bottom."""
+        background = action.details.get('background_id', engine.panel.background_id)
+        renderer.background_id, renderer.scene_placement = background, None
+        image = self.dialogue_renderer.image(background)
+        if image is None:
+            return
+        self.pending_background_origin = self.dialogue_renderer.background_origin(image, engine)
+        wide, tall = self.__dict__.get('_frame_width', FRAME_UNITS[0]), self.__dict__.get('_frame_tall', FRAME_UNITS[1])
+        height = 768 * tall / wide                      # the whole frame, in the canvas's pixels (768 wide)
+        x, y, w, h = self._background_placement(image, (768, height))
+        renderer.scene_placement = (x, y - (height - renderer.canvas_size()[1]), w, h)
 
     def _practice_scene_zoom(self):
         """J for the story's own screens on one of Monday Planner's Diss Practice round backgrounds (the practice's skip

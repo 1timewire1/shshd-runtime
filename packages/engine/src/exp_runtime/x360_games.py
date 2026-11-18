@@ -21,8 +21,16 @@ starts left and right and swaps with up and down every 2 to 5 seconds, picked on
 direction on the same axis as the last, reached within 0.1 s of that last one; any new direction restarts the 0.1 s.
 
 Changes from the prototype (owner, 2026-11-01): the clock waits for a press as the slot machine's does. A controller's stick
-keeps the 0.1 s; a D-pad, keys and a drag have SHAKE_WINDOW_MS, since the player has no stick to flick there. The
-animations that the level's turns play on the 3D Zack, doberman and collar are not here.
+keeps the 0.1 s; a D-pad, keys and a drag have SHAKE_WINDOW_MS, since the player has no stick to flick there.
+
+The 3D Zack, doberman and collar (B1, 2026-11-18): the game keeps RunSmashButtonMinigame's swings as its Lua has them
+(common_functions.lua). After each change of the level its highest and lowest follow it; more than 13 above the lowest,
+unless the last script run was "increase", runs dog_control/increase (MG1_TRAN1) and sets the highest to the level; more
+than 13 below the highest, unless the last was "decrease", runs dog_control/decrease (MG1_TRAN2) and sets the lowest. The
+end runs dog_control/win or lose (MG1_WIN, MG1_LOSE). The animation in play and how far into it are kept (`cast_anim`,
+`cast_ms`), with the one it blends from over BLEND_MS, so a save reopens on the same frame. The player draws them
+(desktop_x360_leash) and says so (`cast`): then the close holds them for WIN's 4 s or LOSE's 2.567 s, as the event lets
+them play under its next lines, while the bar and icon fade in 0.3 s; OK cuts it short. Without a cast it closes in 0.3 s.
 """
 from dataclasses import dataclass, field
 
@@ -56,6 +64,13 @@ LEVEL_DRAIN_PER_MS = 12                 # decreaseRate, 12 a second
 SHAKE_WINDOW_STICK_MS = 100             # the native check's 0.1 s
 SHAKE_WINDOW_MS = 250
 CLOSING_LEASH_MS = 300                  # (the prototype closes at once: the full or empty bar shows, then fades)
+LEVEL_SWING = 13000                     # levelDiffToRunScript
+CAST_IDLE, CAST_GAIN, CAST_LOSS, CAST_WIN, CAST_LOSE = 'MG1_IDLE2', 'MG1_TRAN1', 'MG1_TRAN2', 'MG1_WIN', 'MG1_LOSE'
+CAST_ANIMS = (CAST_IDLE, CAST_GAIN, CAST_LOSS, CAST_WIN, CAST_LOSE)
+CAST_HOLD_MS = {1: 4000, 0: 2567}       # MG1_WIN, MG1_LOSE (Zack's LOSE is 1.667 s, the doberman's and collar's 2.567)
+BLEND_MS = 300                          # BlendAnimation's 0.3 in dog_control's scripts
+CAST_CLOCK_MAX = 3600000                # a whole number of MG1_IDLE2's 2 s loops: its clock wraps there
+NO_SCRIPT, SCRIPT_INCREASE, SCRIPT_DECREASE = '', 'increase', 'decrease'
 
 
 def period_ms(slot):
@@ -173,15 +188,32 @@ class LeashGame:
     since_ms: int = 0                   # how long since the last direction was reached
     shook: bool = False                 # a shake this frame: it doesn't drain
     anim_ms: int = 0                    # the joystick icon's flipbook
+    level_max: int = LEVEL_START        # maxLevel
+    level_min: int = LEVEL_START        # minLevel
+    last_script: str = NO_SCRIPT        # lastExectureScript
+    cast_anim: str = CAST_IDLE          # what Zack, the doberman and the collar play
+    cast_ms: int = 0                    # how far into it
+    cast_from: str | None = None        # what it blends from, for its first BLEND_MS
+    cast_from_ms: int = 0               # how far into that one it was left
+    cast: bool = False                  # the player draws the cast: the close holds it (CAST_HOLD_MS)
 
     @property
     def result(self):
         """The story's `gameStats.choice`: dog_control/win's 1, dog_control/lose's 0."""
         return int(self.level >= LEVEL_FULL)
 
+    @property
+    def closing_total_ms(self):
+        """How long the close lasts once it has begun: the cast's WIN or LOSE where the player draws it, else the fade."""
+        return CAST_HOLD_MS[self.result] if self.cast else CLOSING_LEASH_MS
+
     def press(self):
         """OK: the go-ahead while it waits for one, and nothing else. As the slot machine's, it does nothing during the
-        opening, so one left over from the dialogue before can't start it unseen."""
+        opening, so one left over from the dialogue before can't start it unseen. During a close held for the cast it
+        cuts the hold short, to a last BLEND_MS for the cast to fade."""
+        if self.phase == CLOSING and self.cast and self.phase_ms > BLEND_MS:
+            self.phase_ms = BLEND_MS
+            return True
         return self.phase == READY and self.start()
 
     def start(self):
@@ -209,16 +241,43 @@ class LeashGame:
             return False
         self.level = min(LEVEL_FULL, self.level + LEVEL_GAIN)
         self.shook = True
+        self._swing()
         self._ended()
         return True
 
+    def _swing(self):
+        """After a change of the level: RunSmashButtonMinigame's highest and lowest, and the script a swing runs."""
+        self.level_max = max(self.level_max, self.level)
+        self.level_min = min(self.level_min, self.level)
+        if self.level - self.level_min > LEVEL_SWING and self.last_script != SCRIPT_INCREASE:
+            self.last_script, self.level_max = SCRIPT_INCREASE, self.level
+            self._play(CAST_GAIN)
+        elif self.level_max - self.level > LEVEL_SWING and self.last_script != SCRIPT_DECREASE:
+            self.last_script, self.level_min = SCRIPT_DECREASE, self.level
+            self._play(CAST_LOSS)
+
+    def _play(self, anim):
+        """BlendAnimation on the three: `anim` from its start, blending from what was showing. Two in one frame (a swing on
+        the frame that ends the game) blend from what showed before both."""
+        if self.cast_ms > 0 or self.cast_from is None:
+            self.cast_from, self.cast_from_ms = self.cast_anim, self.cast_ms
+        self.cast_anim, self.cast_ms = anim, 0
+
     def _ended(self):
         if not 0 < self.level < LEVEL_FULL:
-            self.phase, self.phase_ms = CLOSING, CLOSING_LEASH_MS
+            self._play(CAST_WIN if self.result else CAST_LOSE)
+            self.phase, self.phase_ms = CLOSING, self.closing_total_ms
 
     def tick(self, elapsed_ms):
         """One frame; True when the game has finished and the story goes on."""
         self.anim_ms = (self.anim_ms + elapsed_ms) % 60000
+        self.cast_ms += elapsed_ms
+        if self.cast_anim == CAST_IDLE:
+            self.cast_ms %= CAST_CLOCK_MAX
+        else:
+            self.cast_ms = min(self.cast_ms, CAST_CLOCK_MAX)
+        if self.cast_from is not None and self.cast_ms >= BLEND_MS:
+            self.cast_from, self.cast_from_ms = None, 0
         if self.phase == OPENING:
             self.phase_ms -= elapsed_ms
             if self.phase_ms <= 0:
@@ -237,6 +296,7 @@ class LeashGame:
             self.shook = False
         else:
             self.level = max(0, self.level - LEVEL_DRAIN_PER_MS * elapsed_ms)
+            self._swing()
             self._ended()
         self.swap_left_ms -= elapsed_ms
         if self.swap_left_ms <= 0:
@@ -247,5 +307,8 @@ class LeashGame:
     def validate(self):
         if (self.phase not in (OPENING, READY, RUNNING, CLOSING) or not 0 <= self.level <= LEVEL_FULL
                 or self.wanted not in (LEFT_RIGHT, UP_DOWN) or self.last not in (None, *AXIS) or self.swap_ms <= 0
-                or self.since_ms < 0):
+                or self.since_ms < 0 or not 0 <= self.level_min <= self.level_max <= LEVEL_FULL
+                or self.last_script not in (NO_SCRIPT, SCRIPT_INCREASE, SCRIPT_DECREASE)
+                or self.cast_anim not in CAST_ANIMS or self.cast_from not in (None, *CAST_ANIMS)
+                or not 0 <= self.cast_ms <= CAST_CLOCK_MAX or self.cast_from_ms < 0 or not isinstance(self.cast, bool)):
             raise ValueError('Invalid leash game state')

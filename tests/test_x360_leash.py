@@ -120,6 +120,98 @@ class RuleTests(unittest.TestCase):
         self.assertTrue(game.tick(200))
 
 
+def shaking(game, shakes):
+    """`shakes` scoring shakes, a frame each (LeftRight wanted throughout: a long interval)."""
+    if game.last is None:
+        game.shake(x.LEFT)
+    for _ in range(shakes):
+        game.shake(x.RIGHT if game.last == x.LEFT else x.LEFT)
+        if game.phase == x.RUNNING:
+            game.tick(1)
+
+
+class CastTests(unittest.TestCase):
+    """B1: RunSmashButtonMinigame's swings (common_functions.lua) and the cast's animation clock."""
+
+    def test_it_idles_from_the_start_and_the_idle_loops(self):
+        game = LeashGame(swap_ms=3000)
+        self.assertEqual((game.cast_anim, game.cast_ms, game.cast_from), (x.CAST_IDLE, 0, None))
+        game.tick(x.OPENING_MS)
+        game.tick(2100)
+        self.assertEqual((game.cast_anim, game.cast_ms), (x.CAST_IDLE, 2600))
+
+    def test_a_gain_of_more_than_13_from_the_lowest_plays_the_increase_once(self):
+        game = running(swap_ms=60000)
+        shaking(game, 1)                                        # 57 after its drain
+        self.assertEqual(game.cast_anim, x.CAST_IDLE)
+        shaking(game, 1)                                        # 64: 13.98 over the lowest, 50
+        self.assertEqual((game.cast_anim, game.last_script, game.level_max), (x.CAST_GAIN, 'increase', game.level))
+        self.assertEqual((game.cast_from, game.cast_from_ms, game.cast_ms), (x.CAST_IDLE, x.OPENING_MS + 1, 1))
+        shaking(game, 3)
+        self.assertEqual(game.cast_anim, x.CAST_GAIN)           # not again while the last was "increase"
+        self.assertEqual(game.level_max, game.level)            # (the highest follows the level)
+
+    def test_a_loss_of_more_than_13_from_the_highest_plays_the_decrease_then_the_increase_may_play_again(self):
+        game = running(swap_ms=60000)
+        shaking(game, 2)
+        high = game.level
+        game.tick(int(13000 / 12))                              # 13 below the highest: not more than
+        self.assertEqual(game.cast_anim, x.CAST_GAIN)
+        game.tick(2)
+        self.assertEqual((game.cast_anim, game.last_script, game.level_min), (x.CAST_LOSS, 'decrease', game.level))
+        self.assertGreater(high - game.level, x.LEVEL_SWING)
+        shaking(game, 3)                                        # (the first is too late to score, after the drain)
+        self.assertEqual(game.cast_anim, x.CAST_GAIN)
+
+    def test_the_lua_runs_the_first_swing_either_way_from_the_start(self):
+        game = running(swap_ms=60000)
+        game.tick(1084)                                         # 50 - 13.008
+        self.assertEqual((game.cast_anim, game.last_script), (x.CAST_LOSS, 'decrease'))
+
+    def test_a_blend_lasts_0_3_s(self):
+        game = running(swap_ms=60000)
+        shaking(game, 2)
+        game.tick(x.BLEND_MS - 2)                               # (shaking's frame was the first 1 ms)
+        self.assertEqual(game.cast_from, x.CAST_IDLE)
+        game.tick(1)
+        self.assertIsNone(game.cast_from)
+
+    def test_without_a_cast_drawn_the_close_is_the_bars_0_3_s(self):
+        game = running(swap_ms=60000)
+        shaking(game, 8)
+        self.assertEqual((game.phase, game.phase_ms, game.cast_anim), (x.CLOSING, x.CLOSING_LEASH_MS, x.CAST_WIN))
+        self.assertFalse(game.press())
+
+    def test_with_the_cast_drawn_the_close_holds_win_or_lose_and_ok_cuts_it_short(self):
+        won = running(swap_ms=60000)
+        won.cast = True
+        shaking(won, 8)
+        self.assertEqual((won.phase, won.phase_ms, won.cast_anim, won.result), (x.CLOSING, 4000, x.CAST_WIN, 1))
+        self.assertEqual(won.cast_from, x.CAST_GAIN)            # (the swing on the same frame: from what showed before)
+        self.assertFalse(won.tick(3999))
+        self.assertTrue(won.tick(1))
+        lost = running(swap_ms=60000)
+        lost.cast = True
+        for _ in range(500):
+            if lost.phase != x.RUNNING:
+                break
+            lost.tick(10)
+        self.assertEqual((lost.phase, lost.phase_ms, lost.cast_anim), (x.CLOSING, 2567, x.CAST_LOSE))
+        lost.tick(500)
+        self.assertTrue(lost.press())
+        self.assertEqual(lost.phase_ms, x.BLEND_MS)             # a last 0.3 s for the cast to fade
+        self.assertFalse(lost.press())
+        self.assertTrue(lost.tick(x.BLEND_MS))
+
+    def test_the_cast_fields_are_checked(self):
+        for name, value in (('cast_anim', 'DANCE_01'), ('cast_from', 'x'), ('last_script', 'win'), ('level_min', 60000),
+                            ('cast_ms', -1)):
+            game = running()
+            setattr(game, name, value)
+            with self.assertRaises(ValueError):
+                game.validate()
+
+
 class ServiceTests(unittest.TestCase):
     def play(self):
         session = Session(resources(), ephemeral=True)
@@ -158,10 +250,23 @@ class ServiceTests(unittest.TestCase):
         session.answer(None)
         session.engine.x360_leash.shake(x.LEFT)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 41)
+        self.assertEqual(state['version'], 42)
         again = Session.from_snapshot(resources(), state)
         self.assertEqual(again.engine.x360_leash, session.engine.x360_leash)
         self.assertEqual(again.pending.name, 'x360_leash')
+
+    def test_a_version_41_game_in_progress_takes_its_level_as_its_swings_and_the_cast_idling(self):
+        session = self.play()
+        session.engine.x360_leash.start()
+        session.tick(600)
+        state = json.loads(json.dumps(session.snapshot()))
+        state['version'] = 41
+        for name in ('level_max', 'level_min', 'last_script', 'cast_anim', 'cast_ms', 'cast_from', 'cast_from_ms', 'cast'):
+            del state['engine']['x360_leash'][name]
+        game = Session.from_snapshot(resources(), state).engine.x360_leash
+        level = session.engine.x360_leash.level
+        self.assertEqual((game.level, game.level_max, game.level_min, game.last_script), (level, level, level, ''))
+        self.assertEqual((game.cast_anim, game.cast_ms, game.cast_from, game.cast), (x.CAST_IDLE, 0, None, False))
 
     def test_a_damaged_save_is_refused(self):
         state = json.loads(json.dumps(self.play().snapshot()))
@@ -190,7 +295,13 @@ class PlayerTests(unittest.TestCase):
         pygame.display.set_mode((64, 64))
         self.pygame = pygame
 
-    def skin(self):
+    CAST_COLOURS = {x.CAST_IDLE: (200, 0, 200, 255), x.CAST_GAIN: (0, 0, 220, 255), x.CAST_LOSS: (0, 220, 220, 255),
+                    x.CAST_WIN: (240, 240, 0, 255), x.CAST_LOSE: (120, 60, 0, 255)}
+
+    def skin(self, cast=False, ms3=False):
+        """A stand-in skin; with `cast`, B1's leash.cast: each animation an atlas of one colour, three 100 x 50 frames
+        (the last darker), boxed 350-450 x 450-500 about feet at (400, 500) in a 960 x 540 frame, placed on the pound
+        (26109) at half its size, feet at (400, 1000)."""
         import exp_runtime.desktop_nr_arena_x360 as arena
         pygame = self.pygame
         out = {}
@@ -208,6 +319,19 @@ class PlayerTests(unittest.TestCase):
                                                for ch in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz !'})),
                     leash=dict(fill=png(3, (220, 30, 20, 255), (32, 8)), arrows=dict(leftright=png(4), updown=png(5)),
                                stick=dict(leftright=png(6), updown=png(7))))
+        if cast:
+            build = dict(size=[960, 540], fps=10, anchor=[400, 500], animations={})
+            for i, (name, colour) in enumerate(self.CAST_COLOURS.items()):
+                atlas = pygame.Surface((300, 50), pygame.SRCALPHA)
+                atlas.fill(colour)
+                atlas.fill(tuple(c // 2 for c in colour[:3]) + (255,), pygame.Rect(200, 0, 100, 50))
+                buffer = io.BytesIO()
+                pygame.image.save(atlas, buffer, 'x.png')
+                out[100 + i] = buffer.getvalue()
+                build['animations'][name] = dict(atlas=100 + i, loop=name == x.CAST_IDLE, frames=[
+                    dict(rect=[100 * k, 0, 100, 50], box=[350, 450, 450, 500]) for k in range(3)])
+            spec['leash']['cast'] = dict(shot=[2560, 1440], places={'26109': dict(scale=.5, feet=[400, 1000])},
+                                         ms4=build)
         archive = SimpleNamespace(read=out.__getitem__)
         real = arena.addon_skin
         arena.addon_skin = lambda _: (spec, archive)
@@ -242,6 +366,100 @@ class PlayerTests(unittest.TestCase):
         self.assertEqual(renderer.canvas.get_at((x0, BAR_CENTRE[1] - BAR_SIZE[1] // 2 + 20))[:3], red)
         game.phase, game.phase_ms = x.CLOSING, 150
         self.assertAlmostEqual(renderer.alpha(game), .5)
+
+    def cast_renderer(self, cast=True):
+        from exp_runtime.desktop_x360_leash import X360LeashRenderer
+        renderer = X360LeashRenderer(self.skin(cast))
+        renderer.background_id, renderer.scene_placement = 26109, (-96., -337., 960., 1440.)
+        game = LeashGame(swap_ms=60000)
+        return renderer, game, SimpleNamespace(engine=SimpleNamespace(x360_leash=game))
+
+    # Frame pixel (350, 450) -> picture (400 + (350 - 400) x 4/3, 1000 + (450 - 500) x 4/3) -> canvas (-96, -337) on:
+    # the frame's 100 x 50 lands at (237, 596), 133 x 67.
+    CAST_POINT = (304, 630)
+
+    def test_the_cast_stands_on_the_picture_where_its_placement_puts_it_and_says_so(self):
+        renderer, game, session = self.cast_renderer()
+        game.tick(x.OPENING_MS)
+        game.cast_ms = 0                                # (its first frame)
+        renderer.draw(session)
+        self.assertTrue(game.cast)
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT), self.CAST_COLOURS[x.CAST_IDLE])
+        self.assertEqual(renderer.canvas.get_at((self.CAST_POINT[0], 590))[3], 0)        # (above its top)
+        renderer.scene_placement = (-192., -337., 960., 1440.)                            # panned flush right
+        renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at((self.CAST_POINT[0] - 96, self.CAST_POINT[1])),
+                         self.CAST_COLOURS[x.CAST_IDLE])
+        # A taller frame's: twice the size, (267, 667) to (533, 800), but for the icon over it (259-509 across)
+        renderer.scene_placement = (-400., -1200., 1920., 2880.)
+        renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at((520, 680)), self.CAST_COLOURS[x.CAST_IDLE])
+        self.assertEqual(renderer.canvas.get_at((520, 790)), self.CAST_COLOURS[x.CAST_IDLE])
+
+    def test_an_older_addon_or_another_background_draws_no_cast_and_the_close_stays_short(self):
+        for cast, background in ((False, 26109), (True, 26100)):
+            renderer, game, session = self.cast_renderer(cast)
+            renderer.background_id = background
+            game.tick(x.OPENING_MS)
+            renderer.draw(session)
+            self.assertFalse(game.cast)
+            self.assertEqual(renderer.canvas.get_at(self.CAST_POINT)[3], 0)
+
+    def test_the_animation_its_frame_and_the_blend_follow_the_game(self):
+        renderer, game, session = self.cast_renderer()
+        game.tick(x.OPENING_MS)
+        game.press()
+        game.cast_ms = 250                              # IDLE2's third frame (of three), then it loops
+        renderer.draw(session)
+        dark = tuple(c // 2 for c in self.CAST_COLOURS[x.CAST_IDLE][:3])
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT)[:3], dark)
+        game.cast_ms = 350
+        renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT), self.CAST_COLOURS[x.CAST_IDLE])
+        game.cast_anim, game.cast_ms = x.CAST_GAIN, 900                  # held on its last frame
+        renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT)[:3], tuple(c // 2 for c in self.CAST_COLOURS[x.CAST_GAIN][:3]))
+        game.cast_from, game.cast_from_ms, game.cast_ms = x.CAST_IDLE, 0, 75   # a quarter in: the new one at half
+        renderer.draw(session)
+        mixed = renderer.canvas.get_at(self.CAST_POINT)
+        self.assertEqual(mixed[3], 255)                 # (the pair never shows through)
+        self.assertTrue(0 < mixed[2] < 255 and 0 < mixed[0] < 200)
+
+    def test_the_atlases_load_a_frame_at_a_time_idle_first_and_go_with_the_game(self):
+        renderer, game, session = self.cast_renderer()
+        game.tick(x.OPENING_MS)
+        renderer.draw(session)
+        self.assertEqual(len(renderer._cast_atlases()), 2)        # IDLE2's to draw, then the next one preloaded
+        for _ in range(5):
+            renderer.draw(session)
+        self.assertEqual(len(renderer._cast_atlases()), 5)
+        self.assertTrue(renderer.holds_cast)
+        renderer.drop_cast()
+        self.assertFalse(renderer.holds_cast)
+
+    def test_with_the_cast_the_close_holds_it_while_the_bar_fades_then_fades_it(self):
+        from exp_runtime.desktop_x360_leash import BAR_CENTRE
+        renderer, game, session = self.cast_renderer()
+        game.tick(x.OPENING_MS)
+        game.press()
+        renderer.draw(session)
+        game.level = 5
+        game.tick(10)
+        self.assertEqual((game.phase, game.phase_ms, game.cast_anim), (x.CLOSING, 2567, x.CAST_LOSE))
+        self.assertIsNone(renderer.alpha(game))
+        renderer.draw(session)
+        self.assertGreater(renderer.canvas.get_at(BAR_CENTRE)[3], 200)                    # the bar, still whole
+        game.tick(150)
+        renderer.draw(session)
+        self.assertTrue(60 < renderer.canvas.get_at(BAR_CENTRE)[3] < 200)                 # half faded
+        game.tick(200)
+        renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at(BAR_CENTRE)[3], 0)
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT)[3], 255)                 # the cast, held
+        game.press()
+        game.tick(150)
+        renderer.draw(session)
+        self.assertTrue(60 < renderer.canvas.get_at(self.CAST_POINT)[3] < 200)            # its last 0.3 s
 
     def test_the_stick_reads_past_three_quarters_and_left_and_right_come_first(self):
         from exp_runtime.desktop_x360_leash import stick_direction

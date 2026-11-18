@@ -99,6 +99,9 @@ def main(argv=None):
     xb.add_argument('--puzzle', type=Path,
                     help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
                          'cursor and boards')
+    xb.add_argument('--leash', type=Path,
+                    help="with --story addon: the leash game's cast (Additional Resources/x360-leash-cast: cast/ and "
+                         "cast_ms3/ from reference tools x360_leashbooth.py)")
     xb.add_argument('--ms3', type=Path, help="with --story addon: the MS3 prototype's data.pak, for the Title Screen Look")
     xb.add_argument('--out', type=Path, required=True)
     s11 = sub.add_parser('shs11', help="SHS '11, the J2ME game: its addon (shs11.py) or, with --story, a story (shs11_story.py)")
@@ -333,7 +336,8 @@ def translate_x360(args):
     if args.story == 'addon':
         import x360_arena_art
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
-                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle)
+                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle,
+                                         leash_folder=args.leash)
         opening = x360_arena_art.opening(proto.files, x360.pcm_wav, args.opening)
         look = {}
         if args.ms3:                # the Title Screen Look: MS3's Nicole and boy stand with MS4's three

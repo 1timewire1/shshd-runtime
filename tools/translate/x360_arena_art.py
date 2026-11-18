@@ -64,6 +64,18 @@ DANCE_BASE, DANCE_ATLAS_WIDTH = 26794, 2048     # Josh's dance behind that deck,
 DANCE_ROOMS_BASE = 26806
 PUZZLE_BASE = 26436                     # the jewel puzzle (Puzzle Test; exp_runtime.x360_puzzle, desktop_x360_puzzle)
 LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
+# ...and Zack, the doberman and the collar-and-lead behind it (B1, 2026-11-18; reference tools x360_leashbooth.py): an atlas
+# per animation, MS4's five then MS3's (the MS3 Characters switch: its Zack's own body texture). Revision 21.
+LEASH_CAST_BASE = 26810
+LEASH_CAST_BUILDS = (('ms4', 'cast'), ('ms3', 'cast_ms3'))     # (spec key, the booth folder's subfolder)
+LEASH_CAST_ANIMS = ('MG1_IDLE2', 'MG1_TRAN1', 'MG1_TRAN2', 'MG1_WIN', 'MG1_LOSE')
+LEASH_CAST_ATLAS_WIDTH = 2048
+LEASH_CAST_SHOT = (2560, 1440)          # the background shots' size: the pound's picture is its columns 800-1760, 1:1
+# Where they stand on each background they play over, by background ID (x360.SCENES' dogpound): `scale`, their size against
+# their true size in the shot (cameras/general, the pound's own), and `feet`, where characters/pos_002 goes, in the 960 x
+# 1440 picture's pixels. At its true size the three span wider than the picture, so they stand smaller and nearer, left of
+# the bar and above the icon wherever the pan leaves the picture.
+LEASH_CAST_PLACES = {'26109': dict(scale=.5, feet=[400.0, 1000.0])}
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
 # Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.
 SLOT_ICONS = (('bulb', 1), ('cross', 0), ('question', 3), ('off', 2))
@@ -398,6 +410,39 @@ def leash(files):
     return resources, entry
 
 
+def leash_cast(folder):
+    """{resource ID: bytes} and the leash spec's `cast` entry from the leash booth's folder (reference tools
+    x360_leashbooth.py, run once per build into `cast/` and `cast_ms3/`: <animation>/<i>.png, cropped, and leash.json with
+    their boxes in the camera's frame, the feet's place there (`anchor`), the frame's size and fps). Each animation's frames
+    go on shelves in one atlas; each keeps its box, so the player can put it where the camera saw it."""
+    from pathlib import Path
+    folder = Path(folder)
+    resources, entry = {}, dict(shot=list(LEASH_CAST_SHOT), places=LEASH_CAST_PLACES)
+    next_id = LEASH_CAST_BASE
+    for key, sub in LEASH_CAST_BUILDS:
+        info = json.loads((folder / sub / 'leash.json').read_text(encoding='utf-8'))
+        build = dict(size=info['size'], fps=info['fps'], anchor=info['anchor'], animations={})
+        for name in LEASH_CAST_ANIMS:
+            found = info['animations'][name]
+            cells = [Image.open(folder / sub / name / f'{i}.png').convert('RGBA') for i in range(len(found['boxes']))]
+            placed, x, y, shelf = [], 0, 0, 0
+            for cell in cells:
+                if x + cell.width > LEASH_CAST_ATLAS_WIDTH:
+                    x, y, shelf = 0, y + shelf, 0
+                placed.append([x, y, cell.width, cell.height])
+                x, shelf = x + cell.width, max(shelf, cell.height)
+            atlas = Image.new('RGBA', (LEASH_CAST_ATLAS_WIDTH, y + shelf), (0, 0, 0, 0))
+            for cell, rect in zip(cells, placed):
+                atlas.paste(cell, tuple(rect[:2]))
+            resources[next_id] = _png(atlas)
+            build['animations'][name] = dict(atlas=next_id, duration_ms=found['duration_ms'],
+                                             loop=name in info.get('loops', ()),
+                                             frames=[dict(rect=rect, box=box) for rect, box in zip(placed, found['boxes'])])
+            next_id += 1
+        entry[key] = build
+    return resources, entry
+
+
 PUZZLE_FILLS = (('fill_red', 'red_bar_fl.jpg'), ('fill_purple', 'purple_bar_fl.jpg'))
 PUZZLE_SOUNDS = ('data/sound/fx/move.wav', 'data/sound/fx/move3.wav')       # at x360_puzzle.SOUND_DRAG, SOUND_CLEAR
 PUZZLE_JEWELS = PUZZLE_BASE + 14                                            # then each jewel's shine frames
@@ -567,11 +612,12 @@ def title(files):
     return resources, entry
 
 
-def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None, puzzle_folder=None):
+def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None, puzzle_folder=None,
+               leash_folder=None):
     """{resource ID: bytes} for the X360 skin from the prototype's files (x360.Prototype.files); `items_source` (the
     New Rules X1i jar's resources, nr_art.load) adds New Rules' item pictures outlined; `pcm_wav` is the translator's
     IMA ADPCM decoder (x360.pcm_wav); `music` False leaves the music out (no ffmpeg); `booth_folder` adds what the
-    Xenia booth shot (booth)."""
+    Xenia booth shot (booth); `leash_folder` the leash game's cast (leash_cast)."""
     import nr_art
     resources, spec = {}, dict(format=FORMAT, version=VERSION, pictures={}, items={}, fonts={}, sounds={},
                                sound_tracks={}, music_track={})
@@ -623,6 +669,9 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
     if 'data/art/hud/stick_shake_side.jpg' in files:
         made, spec['leash'] = leash(files)
         resources.update(made)
+        if leash_folder is not None:
+            made, spec['leash']['cast'] = leash_cast(leash_folder)
+            resources.update(made)
     if puzzle_folder is not None:
         made, spec['puzzle'] = puzzle(files, pcm_wav, puzzle_folder)
         resources.update(made)

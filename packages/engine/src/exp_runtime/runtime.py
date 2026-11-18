@@ -1407,7 +1407,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=41,
+        return dict(format='shs-runtime-save', version=42,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1461,8 +1461,19 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 42):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 43):
                 raise SaveError('Unsupported save format or version')
+            # Version 42 gives the X360 leash game its swings and its cast's animation (B1, x360_games.LeashGame). An open
+            # game takes its level as its highest and lowest, no script run yet, and the cast idling, not drawn: a close
+            # already under way keeps its 0.3 s.
+            if state['version'] < 42 and isinstance((state.get('engine') or {}).get('x360_leash'), dict):
+                state = deepcopy(state)
+                leash = state['engine']['x360_leash']
+                level = leash.get('level', 50000)
+                for name, value in (('level_max', level), ('level_min', level), ('last_script', ''),
+                                    ('cast_anim', 'MG1_IDLE2'), ('cast_ms', 0), ('cast_from', None), ('cast_from_ms', 0),
+                                    ('cast', False)):
+                    leash.setdefault(name, value)
             # New Rules' arena, saved open (as it opens, for Undo, or as the app is left): its key queue's depth was
             # `unknown_768` before 2026-11-17, and the info box's clock (`info_ms`) came 2026-11-18. By key, not version.
             arena = (state.get('engine') or {}).get('nr_arena') if isinstance(state.get('engine'), dict) else None

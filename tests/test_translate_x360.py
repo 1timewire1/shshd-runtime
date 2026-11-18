@@ -1030,10 +1030,11 @@ QuitGame()
         # Revision 15 only adds the main menu's tune (MENU_MUSIC), which no story plays; 16, Day of Diss's opening for taller
         # frames, is what it needs now; 17 only the main menu's Title Screen Look; 18 the Diss Battle's music, which the
         # Planner needs; 19 only Spike's taunts, which the battle does without; 20 only redraws the dance under each room's
-        # lights, which every story can do without.
+        # lights, which every story can do without; 21 only adds the leash game's cast, which Dating Beth's leash draws
+        # when it's there.
         self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 18)
         self.assertEqual(x360.MONDAY_PLANNER.addon_revision, 18)
-        self.assertEqual(x360.ADDON_REVISION, 20)
+        self.assertEqual(x360.ADDON_REVISION, 21)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
     def test_the_practice_rounds_backgrounds_are_the_ones_the_player_knows(self):

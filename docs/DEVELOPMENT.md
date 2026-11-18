@@ -133,8 +133,8 @@ does not establish complete episode playback or pixel/timing equivalence.
 Save JSON and library schemas do not contain Python module paths; their
 resource IDs and content hashes remain unchanged by the rename. New imports
 use the game-aware `exp-content-library` v1 schema; legacy SHS v1–3 manifests
-remain readable. Saves use the `shs-runtime-save` format at version 41, and
-versions 1-41 load; upstream's `exp-runtime-save` saves are not accepted. Existing SHS save filenames are retained.
+remain readable. Saves use the `shs-runtime-save` format at version 42, and
+versions 1-42 load; upstream's `exp-runtime-save` saves are not accepted. Existing SHS save filenames are retained.
 Older IPA dialogue checkpoints reflow at their saved read offset for the
 shared v0.1.3 dialogue layout, without executing the pending VM call.
 The launcher remembers each game's location separately, in its own `SHSHD Runtime` data folder; it never
