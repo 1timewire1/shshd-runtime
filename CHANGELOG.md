@@ -9,8 +9,9 @@
   its collar and lead behind the power bar, as the prototype stages it in the pound: its idle tug, the gain and loss
   animations on each swing of 13 in the level (RunSmashButtonMinigame's own tracking), and the win or loss at the end,
   held for its 4 s or 2.6 s while the bar fades (OK cuts it short). Rendered from the prototype's models at the pound
-  background's own camera, with their floor shadow, in MS4's look or MS3's (MS3 Characters); they follow the pound's
-  pan and fill taller frames with it. Save version 42; an older add-on plays the game as before, without them.
+  background's own camera, with their floor shadow, in MS4's look or MS3's (MS3 Characters); moved back on the floor in
+  front of the doors at the size the camera gives them there, they follow the pound's pan and fill taller frames with it.
+  Save version 42; an older add-on plays the game as before, without them.
 - **SHS '11 in Italian** (owner, 2026-11-17; [SHS11.md](docs/SHS11.md#italian)): the five '11 stories (version 2) carry
   '11's own Italian inside their files, a new episode languages record (resource 6,
   [SCHEMA.md](docs/SCHEMA.md#episode-languages-extension-shshd-runtime)), shown with **'11 Language** (English /

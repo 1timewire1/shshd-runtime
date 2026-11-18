@@ -73,9 +73,14 @@ LEASH_CAST_ATLAS_WIDTH = 2048
 LEASH_CAST_SHOT = (2560, 1440)          # the background shots' size: the pound's picture is its columns 800-1760, 1:1
 # Where they stand on each background they play over, by background ID (x360.SCENES' dogpound): `scale`, their size against
 # their true size in the shot (cameras/general, the pound's own), and `feet`, where characters/pos_002 goes, in the 960 x
-# 1440 picture's pixels. At its true size the three span wider than the picture, so they stand smaller and nearer, left of
-# the bar and above the icon wherever the pan leaves the picture.
-LEASH_CAST_PLACES = {'26109': dict(scale=.5, feet=[400.0, 1000.0])}
+# 1440 picture's pixels. At pos_002 (the event's own spot, near the camera) the three are wider than the picture, so they
+# are moved back on the floor, and both come from the camera for the spot they're moved to (reference tools
+# x360_leashbooth.py --place X Z): its projection, and pos_002's depth over its own. Owner, 2026-11-18: a size picked by eye
+# (half, with their feet by the back wall) made Zack taller than the doors. Moved to (0.45, 0.0), in front of the doors,
+# placed for the pan the leash game opens on (the picture flush right, as its last line leaves it): every frame of the five
+# between the frame's left edge and the bar, Zack's head below the door frame; the icon over their feet, as the
+# prototype's HUD lies over its scene.
+LEASH_CAST_PLACES = {'26109': dict(scale=.461, feet=[400.1, 1030.5], floor=[.45, 0.])}
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
 # Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.
 SLOT_ICONS = (('bulb', 1), ('cross', 0), ('question', 3), ('off', 2))
