@@ -54,6 +54,9 @@ PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 2                       # 2: badges for one line only, never on a title card (owner, 2026-11-17)
+# The Campaign chapters whose title card shows no date (owner, 2026-11-17): chapter 1's stories all fall on Wednesday,
+# November 20 by their setups, which reads wrong before 2.1's Friday, November 9.
+UNDATED_CHAPTERS = frozenset({1})
 ADDON_EPISODE = 9999
 TITLE_SUFFIX_07, TITLE_SUFFIX_08 = ' (SHS07)', ' (SHS08)'
 FIRST_SCRIPT, STORY_SCRIPT, BREW_STORY_SCRIPT = 25001, 25002, 26000
@@ -3386,6 +3389,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
     card = title_card(card, title, spec)
     title += title_extra
     date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
+    if pack == PACK_CAMPAIGN and not calendar and episode // 100 in UNDATED_CHAPTERS:
+        date = None                     # (UNDATED_CHAPTERS: the card shows the title alone)
     scripts = sorted(rid for rid, data in archive_resources.items() if data[:4] == b'kiwi')
     # The story script is 26000, or 25002 in a story without one (the M.A.S.H. packs, whose setup schedules 25002; Stage 4): a
     # Classic event runs the story script whichever its number (calendar_step), so only where it goes changes. A Classic story
