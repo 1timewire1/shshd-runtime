@@ -497,7 +497,7 @@ native players and upstream exp-runtime never read resource 6.
 
 | Member | Contract |
 | --- | --- |
-| `setting` | The switch that picks the language: `shs11_language` ("'11 Language": `off` or `it`) |
+| `setting` | The switch that picks the language: `shs11_language` ("'11 Language": `off` or `it`), or `story_language` ("Story Language", an episode made in the Creator: `off`, `en`, `fr`, `it`, `de` or `es`) |
 | `languages` | `{code: name}` of the languages it carries (`{"it": "Italiano"}`) |
 | `titles` | `{code: title}`: the episode's title in each, for the episode list |
 | `lines`, `context`, `menu`, `words` | The DSiWare add-on's table shape ([ADDONS.md](ADDONS.md#the-translations)): `{key: {code: text}}`, a line found by its key (lower case, letters, digits and name tokens), a line translated two ways by the line before it (`context: {key: {previous key: {code: text}}}`), names and titles in `menu`, a word grid's words and letters in `words` |
@@ -512,4 +512,7 @@ episode shows passes through it as DSi Language's lines do
 formatted lines (services 0 and 22 translate the format and its texts before
 filling them in), Memory's words and the '11 games' boxes. A save keeps a line
 as shown and loads in either language. The SHS '11 translator writes it
-(`tools/translate/shs11_italian.py`).
+(`tools/translate/shs11_italian.py`), and the Creator writes one from a project's
+Translations (`creator/features.languages_record`). A choice's options joined
+with `|`, or an option and its detail line, that have no entry of their own
+take each part's.

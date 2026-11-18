@@ -158,3 +158,41 @@ def text_fields(project):
 
 def translated(project, key, fallback):
     return project.locales.get(project.language, {}).get(key, fallback)
+
+
+def languages_record(project):
+    """The episode's own translations (resource 6, exp_runtime.episode_languages; owner, 2026-11-17): every language of
+    the project's Translations but the one it's exported in, so one file plays in all of them, picked by the player's
+    "Story Language". Each field's text as compiled (the export language's) maps to its translation: names in `menu`, a
+    word grid's words and letters in `words`, the title in `titles`, everything else a line. A field left empty falls
+    back to the compiled text, as it does in a single-language export. None when there's nothing to carry."""
+    from exp_runtime.episode_languages import GRID, STORY_LANGUAGES, line_key
+    if project.native:
+        return None
+    fields = text_fields(project)
+    names = {f'character.{character.id}.name' for character in project.characters}
+    languages = [code for code in STORY_LANGUAGES if code != project.language
+                 and any(value for value in project.locales.get(code, {}).values())]
+    if not languages:
+        return None
+    lines, menu, words, titles = {}, {}, {}, {}
+    for code in languages:
+        own = project.locales[code]
+        for key, original in fields.items():
+            target = own.get(key)
+            shown = translated(project, key, original)
+            if not target or not shown or target == shown:
+                continue
+            if key == 'title':
+                titles[code] = target
+            elif key in names:
+                menu.setdefault(line_key(shown), {})[code] = target
+            elif GRID.fullmatch(shown):
+                words.setdefault(shown, {})[code] = target
+            elif line_key(shown):
+                lines.setdefault(line_key(shown), {})[code] = target
+    record = dict(setting='story_language', languages={code: STORY_LANGUAGES[code] for code in languages},
+                  lines=lines, menu=menu, words=words)
+    if titles:
+        record['titles'] = titles
+    return record

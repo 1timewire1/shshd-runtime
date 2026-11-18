@@ -858,6 +858,7 @@ class ContentLibrary:
         self.dsi_pixels = 'sharp'       # ...enlarged 'sharp' (nearest neighbour) or 'smooth'
         self.dsi_language = 'off'       # ...and its stories' lines in 'fr', 'it', 'de' or 'es' (HD only), or 'off'
         self.shs11_language = 'off'     # "'11 Language": SHS '11's episodes in their own Italian ('it'; HD only)
+        self.story_language = 'off'     # "Story Language": Creator episodes in another of their languages (HD only)
         self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}

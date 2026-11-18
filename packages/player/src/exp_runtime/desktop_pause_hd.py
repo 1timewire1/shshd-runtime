@@ -74,6 +74,10 @@ DSI_LANGUAGE_NAMES = {'off': 'Off', 'fr': 'Français', 'it': 'Italiano', 'de': '
 # episode_languages.py; HD presentation only)
 SHS11_LANGUAGE_LABEL = "'11 Language"
 SHS11_LANGUAGE_NAMES = {'off': 'English', 'it': 'Italiano'}
+# "Story Language" (owner, 2026-11-17): an episode made in the Creator in another of its project's languages, carried in
+# the episode (resource 6); Off is the language it was exported in. HD presentation only.
+STORY_LANGUAGE_LABEL = 'Story Language'
+STORY_LANGUAGE_NAMES = {'off': 'Off', 'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
 SMARTPHONE_MUSIC_LABEL = 'Smartphone Music'     # translated SHS '11 episodes: the smartphone's music, else none
 WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD word game's look (with its art imported)
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
@@ -170,17 +174,20 @@ CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'title_language': LANGUAGE_NAMES, 
                 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
                 'dsi_pixels': DSI_PIXELS_NAMES,
-                'dsi_language': DSI_LANGUAGE_NAMES, 'shs11_language': SHS11_LANGUAGE_NAMES}
+                'dsi_language': DSI_LANGUAGE_NAMES, 'shs11_language': SHS11_LANGUAGE_NAMES,
+                'story_language': STORY_LANGUAGE_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
                  'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL,
-                 'dsi_language': DSI_LANGUAGE_LABEL, 'shs11_language': SHS11_LANGUAGE_LABEL}
+                 'dsi_language': DSI_LANGUAGE_LABEL, 'shs11_language': SHS11_LANGUAGE_LABEL,
+                 'story_language': STORY_LANGUAGE_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'title_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
                   'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_pixels': 'options:addons',
-                  'dsi_language': 'options:addons', 'shs11_language': 'options:addons'}
+                  'dsi_language': 'options:addons', 'shs11_language': 'options:addons',
+                  'story_language': 'options:addons'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language', 'shs11_language')
+PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language', 'shs11_language', 'story_language')
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).

@@ -14,6 +14,7 @@ interface text (SHS '11's Memory and Reflex). Native players and upstream exp-ru
 """
 import gzip
 import json
+import re
 
 from .exp import ContentError
 
@@ -21,7 +22,15 @@ RESOURCE = 6
 MAGIC = b'SHSHD-LANGUAGES\0'
 FORMAT = 'shshd-languages'
 VERSION = 1
-SETTINGS = ('shs11_language',)          # the switches a record may answer to
+SETTINGS = ('shs11_language', 'story_language')     # the switches a record may answer to: "'11 Language" (SHS '11's
+# Italian) and "Story Language" (an episode made in the Creator, with its project's translations; owner, 2026-11-17)
+STORY_LANGUAGES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
+GRID = re.compile(r'[a-z]+(\|[a-z]+)*')   # a word grid's words or letters (as dsi.GRID)
+
+
+def line_key(text):
+    """A line as the tables key it (as dsi.key): lower case, letters, digits and name tokens."""
+    return ' '.join(re.findall(r'[a-z0-9$]+', text.lower()))
 TABLES = ('lines', 'context', 'menu', 'words')
 OFF = 'off'
 

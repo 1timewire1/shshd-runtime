@@ -16,10 +16,11 @@ from exp_runtime.shs11_services import SHS11_MINIGAMES_QUERY
 from exp_runtime.brew_services import BREW_MINIGAMES_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RESOURCE, version_bytes
+from exp_runtime.episode_languages import RESOURCE as LANGUAGES_RESOURCE, languages_bytes
 from exp_runtime.presentation import RESOURCE as PRESENTATION_RESOURCE, presentation_bytes
 from .model import (EMOTICONS, Project, ProjectError, atomic_write, is_audio, is_image, is_mp3, project_record,
                     validate_structure)
-from .features import DEFAULTS, INPUT_GATES, parameters, translated
+from .features import DEFAULTS, INPUT_GATES, languages_record, parameters, translated
 from . import expressions, minigames
 
 VARIABLE_OWNER = -30000
@@ -1159,6 +1160,11 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
     resources.pop(VERSION_RESOURCE, None)                  # (an imported episode's own, which the project now holds)
     if project.episode_version is not None:
         resources[VERSION_RESOURCE] = version_bytes(project.episode_version)
+    # Its other languages, carried in the file (owner, 2026-11-17): the player's Story Language shows them.
+    resources.pop(LANGUAGES_RESOURCE, None)
+    languages = languages_record(project)
+    if languages is not None:
+        resources[LANGUAGES_RESOURCE] = languages_bytes(languages)
     return Compilation(encode_exp(resources), locations, variables, shared,
                        {key: value for key, value in characters.items() if isinstance(key, str)})
 

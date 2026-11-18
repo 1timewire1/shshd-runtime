@@ -11,6 +11,10 @@
   formatted lines, the closing page, Memory's own words and Memory's and Reflex's boxes. The stand-in word games and
   grids, which have no Italian original, are this fork's translation. Message pages (service 33) and formatted lines
   (services 0 and 22) now follow DSi Language too.
+- **Creator episodes carry all their languages** (owner, 2026-11-17; [CREATOR.md](docs/CREATOR.md)): an export
+  keeps the project's other translations (French, Italian, German, Spanish, English) in the file, resource 6 as SHS
+  '11's Italian, and the player's new **Story Language** shows them in the HD presentation. Diagnostics warns about text
+  in any language that Latin-1 can't hold.
 - **A rebuild that changes only data keeps its saves** (owner, 2026-11-17;
   [SCHEMA.md](docs/SCHEMA.md#episode-version-extension-shshd-runtime)): when a newer version's scripts are byte for byte
   the copy's it replaces, its saved games, undo chain and Decision Tree move to the new copy without asking (the Add

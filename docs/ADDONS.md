@@ -426,6 +426,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | DSi Backgrounds, DSi Pixels | DSi | With `shsdsi` imported; in play, an episode whose backgrounds the DSi drew |
 | DSi Language | DSi | With `shsdsi` and the HD bundle; in play, one of the DSi's eight stories in the HD presentation |
 | '11 Language | SHS11 | An episode carrying '11's Italian (resource 6) and the HD bundle; in play, such an episode in the HD presentation |
+| Story Language | — | An episode made in the Creator carrying other languages (resource 6) and the HD bundle; in play, such an episode in the HD presentation |
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

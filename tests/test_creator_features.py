@@ -51,6 +51,29 @@ class CreatorFeatureTests(unittest.TestCase):
         self.assertEqual(s.answer('Alex').details['text'], 'Bonjour, Alex!')
         self.assertEqual(ExpArchive(compile_project(p)).metadata().titles[1], 'Une histoire')
 
+    def test_one_export_carries_its_other_languages_for_story_language(self):
+        # Owner, 2026-11-17: as SHS '11's Italian, a project's translations travel in the exported file (resource 6), and
+        # the player's Story Language picks one; the export language is the one compiled.
+        from exp_runtime.dsi import Translation
+        from exp_runtime.episode_languages import episode_languages
+        p = sequence(Node('talk', character='alex', text='Hello there!'),
+                     Node('pick', 'choice', text='Where to?', options=[Choice('Park', 'end'), Choice('Mall', 'end')]))
+        p.characters = [Character('alex', 'Alex', None, 1, [None] * 5)]
+        p.locales = {'fr': {'title': 'Une histoire', 'node.talk.text': 'Bonjour !', 'character.alex.name': 'Alexis',
+                            'node.pick.option.0': 'Parc', 'node.pick.option.1': 'Centre commercial'},
+                     'es': {'node.talk.text': '¡Hola!'}, 'de': {}}
+        record = episode_languages(ExpArchive(compile_project(p)))
+        self.assertEqual((record['setting'], record['languages']),
+                         ('story_language', {'fr': 'Français', 'es': 'Español'}))         # (German has nothing yet)
+        self.assertEqual(record['titles'], {'fr': 'Une histoire'})
+        fr, es = Translation(record, 'fr'), Translation(record, 'es')
+        self.assertEqual((fr.line('Hello there!'), es.line('Hello there!')), ('Bonjour !', '¡Hola!'))
+        self.assertEqual(fr.line('Alex'), 'Alexis')
+        self.assertEqual(fr.line('Park|Mall'), 'Parc|Centre commercial')     # a choice's options, part by part
+        self.assertEqual(es.line('Park|Mall'), 'Park|Mall')                  # a field left empty keeps the export's
+        p.locales = {}
+        self.assertIsNone(episode_languages(ExpArchive(compile_project(p))))
+
     def test_audio_native_properties_and_character_expression_banks(self):
         p = sequence(Node('music', 'music', params={'loop': True}), Node('sfx', 'sound'),
                      Node('score', 'score', params={'owner': 12, 'key': 81, 'value': 9}),

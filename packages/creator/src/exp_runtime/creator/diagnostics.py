@@ -61,6 +61,15 @@ def diagnose(project):
                     issue('text_encoding', 'Text cannot be encoded in native Latin-1', node=node_id, field=key,
                           suggestion='Use Latin-1 characters in the selected export language.')
             for language, translations in project.locales.items():
+                # The other languages travel in the file too (Story Language), drawn by the HD faces, which hold Latin-1.
+                for key, value in translations.items():
+                    if language == project.language or key not in texts or not value:
+                        continue
+                    try: value.encode('latin-1')
+                    except (AttributeError, UnicodeError):
+                        node_id = next((n.id for n in project.nodes if key.startswith(f'node.{n.id}.')), None)
+                        issue('text_encoding', f'{language}: text cannot be shown in Latin-1', node=node_id, field=key,
+                              severity='warning', suggestion='Use Latin-1 characters; the player shows these in Story Language.')
                 for key in translations.keys() - texts.keys():
                     issue('unused_translation', f'{language}: unknown translation key', field=key, severity='warning',
                           suggestion='Remove or rename this translation to match a current field key.')

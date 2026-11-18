@@ -239,6 +239,12 @@ class Translation:
         if not found:
             return text
         translated = self._entry(found, remember)
+        if translated is None:
+            # shshd-runtime: a string built of parts (a choice's options `a|b`, an option and its detail line), with no
+            # entry of its own, takes each part's (an episode made in the Creator keys its fields one by one).
+            for separator in ('\x1f', '|'):
+                if separator in text:
+                    return separator.join(self.line(part, remember=False) for part in text.split(separator))
         return text if translated is None else translated
 
     def token(self, name, value):
