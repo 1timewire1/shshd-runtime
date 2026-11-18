@@ -471,7 +471,14 @@ release (`variant`) match. An episode with a version:
 - is left out when the library holds a newer copy;
 - never replaces a built-in episode or the one being played.
 
-A copy that would be replaced but has a game in progress (an autosave or a
+A copy whose scripts the new one has unchanged, byte for byte (a rebuild
+that adds only data, as SHS '11's Italian did; owner, 2026-11-17), keeps its
+progress: its saved games, screenshot, undo chain and Decision Tree move to
+the new copy without asking, and the new record lists the builds it carries
+(`carries`), whose saves it accepts (`EpisodeResources.same_content`; each
+scene's script hash is still checked). Its preview is drawn again.
+
+Otherwise, a copy that would be replaced but has a game in progress (an autosave or a
 saved game) is asked about first: the import stops before writing anything,
 and the player chooses Replace or No (keep it beside the new one). A save
 only loads into the build it was made in, so it can't move to the new

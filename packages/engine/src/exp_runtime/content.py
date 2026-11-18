@@ -1238,6 +1238,52 @@ class ContentLibrary:
         return any(path.is_file() and not _finished_save(path)
                    for path in (saves / (record['id'] + suffix) for suffix in ('.shs-auto.json', '.shs-save.json')))
 
+    def _same_scripts(self, old, archive):
+        """shshd-runtime: whether a held copy's scripts are byte for byte the ones in `archive` (the same KiWi resources,
+        the same bytes), so a save made in it plays on in the new build. False when its file can't be read."""
+        try:
+            held = ExpArchive((self.directory / old['file']).read_bytes())
+        except (OSError, KeyError, ContentError):
+            return False
+        def scripts(source):
+            return {rid: source.read(rid) for rid in source.entries if source.read(rid).startswith(b'kiwi')}
+        try:
+            return scripts(held) == scripts(archive)
+        except ContentError:
+            return False
+
+    def move_episode_files(self, old, new):
+        """shshd-runtime: an older copy's own files moved to the copy replacing it, whose scripts are the same
+        (`_same_scripts`): its saved games and screenshot, its undo chain and its Decision Tree with its scenes' saves.
+        They stay as they were written, under the old build's identity, which the new copy accepts (`carries`,
+        EpisodeResources.same_content). Its preview is dropped, to be drawn again. (The menu's selection is the app's
+        to move: `last_carried`.)"""
+        from types import SimpleNamespace
+        from .runtime import Session
+        from .undo import directory as undo_directory
+        saves = self.directory / 'saves'
+        for suffix in ('.shs-auto.json', '.shs-save.json', '.shs-shot.jpg'):
+            source = saves / (old['id'] + suffix)
+            if source.exists():
+                source.replace(saves / (new['id'] + suffix))
+        chain = undo_directory(self.directory, old['id'])
+        if chain.is_dir():
+            target = undo_directory(self.directory, new['id'])
+            shutil.rmtree(target, ignore_errors=True)
+            chain.rename(target)
+        for suffix in ('.jpg', '.none'):
+            (self.directory / 'thumbs' / (old['id'] + suffix)).unlink(missing_ok=True)
+        def tree(record):
+            return Session.tree_files(SimpleNamespace(library=self, record=record,
+                                                      identity={'episode_sha256': record['sha256']}))
+        if not Session.original_tree(SimpleNamespace(record=old)):
+            (old_tree, old_scenes), (new_tree, new_scenes) = tree(old), tree(new)
+            if old_tree.exists():
+                old_tree.replace(new_tree)
+            if old_scenes.is_dir():
+                shutil.rmtree(new_scenes, ignore_errors=True)
+                old_scenes.rename(new_scenes)
+
     def forget_episode_files(self, record):
         """shshd-runtime: an episode's own files beside its content (Delete Episodes, or a newer version replacing it):
         its saved games and screenshot, its undo chain, its preview, and its Decision Tree with its scenes' saves.
@@ -1504,6 +1550,7 @@ class ContentLibrary:
         raises ReplaceSavedEpisodes naming them; True replaces them too, False keeps them beside the new one.
         `last_replaced`, `last_kept` and `last_older` say what happened."""
         self.last_replaced, self.last_kept, self.last_older = [], [], []
+        self.last_carried = []                  # (old copy, new) whose scripts are the same: its progress moves over
         records = {e['id']: e for e in self.episodes if e['id'] not in drop}
         addons = {a['addon']: a for a in self.addons}
         catalog = self.catalog.merge(catalog) if catalog is not None else self.catalog
@@ -1564,6 +1611,14 @@ class ContentLibrary:
                         if old['id'] in keep:
                             self.last_kept.append(old)
                             continue
+                        if old not in additions and self._same_scripts(old, archive):
+                            # shshd-runtime (owner, 2026-11-17): a rebuild that changes only data (SHS '11's Italian,
+                            # resource 6) keeps the copy's saves, undo chain and tree: they move to the new copy, which
+                            # accepts saves made in the builds it carries (same_content).
+                            record['carries'] = sorted({*old.get('carries', ()), old['sha256']})
+                            self.last_carried.append((old, record))
+                            del records[old['id']]
+                            continue
                         if self.has_saved_game(old) and replace_saved is not True:
                             (asking if replace_saved is None else self.last_kept).append(old)
                             continue
@@ -1580,7 +1635,7 @@ class ContentLibrary:
             store_sha = digest(store) if store is not None else None
             for record in repairs:
                 (stage / (record['id'] + '.exp')).replace(self.directory / record['file'])
-            if (not additions and not addon_additions and not drop and not self.last_replaced
+            if (not additions and not addon_additions and not drop and not self.last_replaced and not self.last_carried
                     and list(records.values()) == self.episodes
                     and catalog.entries == self.catalog.entries
                     and (store is None or self.manifest.get('store', {}).get('sha256') == store_sha)):
@@ -1613,6 +1668,9 @@ class ContentLibrary:
             for record in self.last_replaced:                       # an older version of an episode just imported
                 self.forget_episode_files(record)
                 (self.directory / record['file']).unlink(missing_ok=True)
+            for old, new in self.last_carried:                      # ...whose scripts the new one has unchanged
+                self.move_episode_files(old, new)
+                (self.directory / old['file']).unlink(missing_ok=True)
             self._store = None
             self.catalog = catalog
             self.last_addons_added = len(addon_additions)
@@ -1865,6 +1923,10 @@ class EpisodeResources:
         layout and opens under its IPA's own (ContentLibrary.__init__), so the saves made before carry the recorded
         profile with the same IPA and episode."""
         if content == self.identity:
+            return True
+        # shshd-runtime: a save made in an older build of this episode with the same scripts, carried over at import
+        # (ContentLibrary.move_episode_files; owner, 2026-11-17)
+        if any(content == dict(self.identity, episode_sha256=old) for old in (self.record or {}).get('carries', ())):
             return True
         recorded = getattr(self.library, 'recorded_profile', self.library.profile)
         return recorded != self.library.profile and content == dict(self.identity, profile=recorded)

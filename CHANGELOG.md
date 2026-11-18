@@ -11,6 +11,10 @@
   formatted lines, the closing page, Memory's own words and Memory's and Reflex's boxes. The stand-in word games and
   grids, which have no Italian original, are this fork's translation. Message pages (service 33) and formatted lines
   (services 0 and 22) now follow DSi Language too.
+- **A rebuild that changes only data keeps its saves** (owner, 2026-11-17;
+  [SCHEMA.md](docs/SCHEMA.md#episode-version-extension-shshd-runtime)): when a newer version's scripts are byte for byte
+  the copy's it replaces, its saved games, undo chain and Decision Tree move to the new copy without asking (the Add
+  Episodes notice says so), and its saves load there. The SHS '11 Italian builds (version 2) carry players' games on.
 - **SHSHD Runtime Creator downloads** (owner, 2026-11-17; [DISTRIBUTION.md](docs/DISTRIBUTION.md#creator-downloads)): the
   episode creator as its own app for Windows, macOS and Linux, built on version tags beside the player. It finds the
   player's library, previews in the bundled player and runs as an MCP server (`--mcp --workspace FOLDER`). Before it,

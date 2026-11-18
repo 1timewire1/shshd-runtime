@@ -667,6 +667,10 @@ class Application:
             [f'{addons} add-on{"s" if addons != 1 else ""}'] if addons else [])
         text = f'Added {" and ".join(parts)}.' if parts else 'No new episodes were added.'
         replaced, kept, older = (len(getattr(library, name, ())) for name in ('last_replaced', 'last_kept', 'last_older'))
+        carried = len(getattr(library, 'last_carried', ()))
+        if carried:
+            text += (f' {carried} older cop{"ies were" if carried != 1 else "y was"} updated; '
+                     f'{"their" if carried != 1 else "its"} saved games carry on.')
         if replaced:
             text += f' {replaced} older cop{"ies were" if replaced != 1 else "y was"} replaced.'
         if kept:
@@ -2806,6 +2810,11 @@ class Application:
                     self.message = (f'Added {result} missing music tracks.' if result
                                     else 'No missing music tracks to add.')
                 else:
+                    for old, new in getattr(self.library, 'last_carried', ()):
+                        # shshd-runtime: an updated copy kept its saves (move_episode_files); the selection follows it
+                        if self.state.selected == old['id']:
+                            self.state.selected = new['id']
+                            self._attempt(self.state.persist)
                     self.refresh_saves()
                     self.scope, self.query, self.history = 'all', '', ['main']
                     self.episode_scroll = self.scroll = 0

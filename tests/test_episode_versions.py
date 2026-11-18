@@ -12,8 +12,10 @@ from test_content import FAKE_NATIVE, archive, make_apk, metadata
 from test_vm import program
 
 
-def episode(version=None, *, pack=31000, number=206, text=b'one', title='2.6 Wendy vs. Lenny'):
-    records = {1: Metadata(pack, number, (title,) * 5).to_bytes(), 25001: program(0x33).to_bytes(), 26000: text}
+def episode(version=None, *, pack=31000, number=206, text=b'one', title='2.6 Wendy vs. Lenny', data=None):
+    """`text` is in its script too, so two texts are two builds; `data` changes only its picture (a data-only rebuild)."""
+    records = {1: Metadata(pack, number, (title,) * 5).to_bytes(), 25001: program(0x33, words=list(text)).to_bytes(),
+               26000: text if data is None else data}
     if version is not None:
         records[5] = version_bytes(version)
     return archive(records)
@@ -135,6 +137,50 @@ class ImportTests(unittest.TestCase):
         with self.assertRaises(ReplaceSavedEpisodes):
             self.add(episode(1, text=b'three'))
 
+    def test_a_rebuild_with_the_same_scripts_keeps_the_saves_tree_and_undo_chain(self):
+        # Owner, 2026-11-17 (SHS '11's Italian, resource 6): nothing to ask, the progress moves to the new copy.
+        from exp_runtime.runtime import Session
+        old = digest(episode(1, text=b'one'))
+        self.add(episode(1, text=b'one'))
+        saves = self.target / 'saves'
+        saves.mkdir(exist_ok=True)
+        (saves / f'{old}.shs-auto.json').write_text('{"pending": {"name": "choice", "details": {}}}', encoding='utf-8')
+        (saves / f'{old}.shs-shot.jpg').write_bytes(b'shot')
+        (saves / f'{old}.shs-undo').mkdir()
+        (saves / f'{old}.shs-undo' / '1.json.gz').write_bytes(b'undo')
+        scenes = self.target / Session.TREE_STATE_DIRECTORY / old
+        scenes.mkdir(parents=True)
+        (scenes / '1.json.gz').write_bytes(b'scene')
+        (self.target / 'dtview').mkdir()
+        (self.target / 'dtview' / f'{old}.json').write_text('{}', encoding='utf-8')
+        count, library = self.add(episode(2, text=b'one', data=b'italian too'))
+        new = digest(episode(2, text=b'one', data=b'italian too'))
+        self.assertEqual((count, [(a['id'], b['id']) for a, b in library.last_carried], library.last_replaced), (1, [(old, new)], []))
+        self.assertEqual(list(self.ids()), [new])
+        self.assertEqual((saves / f'{new}.shs-auto.json').read_text(encoding='utf-8')[:12], '{"pending": ')
+        self.assertTrue((saves / f'{new}.shs-shot.jpg').exists() and (saves / f'{new}.shs-undo' / '1.json.gz').exists())
+        self.assertTrue((self.target / Session.TREE_STATE_DIRECTORY / new / '1.json.gz').exists())
+        self.assertTrue((self.target / 'dtview' / f'{new}.json').exists())
+        self.assertFalse(any(path.name.startswith(old) for path in saves.iterdir()))
+        self.assertFalse((self.target / 'content' / f'{old}.exp').exists())
+        record = next(e for e in ContentLibrary(self.target).episodes if e['id'] == new)
+        self.assertEqual(record['carries'], [old])
+        # A later data-only rebuild carries both older builds.
+        self.add(episode(3, text=b'one', data=b'more'))
+        record = next(e for e in ContentLibrary(self.target).episodes if e['pack_id'] == 31000)
+        self.assertEqual(record['carries'], sorted([old, new]))
+
+    def test_a_save_from_a_carried_build_loads(self):
+        from types import SimpleNamespace
+        from exp_runtime.content import EpisodeResources
+        identity = dict(profile='shs', apk_sha256='p' * 64, episode_sha256='b' * 64)
+        resources = SimpleNamespace(record=dict(carries=['a' * 64]), library=SimpleNamespace(profile='shs'),
+                                    identity=identity)
+        same = lambda content: EpisodeResources.same_content(resources, content)
+        self.assertTrue(same(dict(identity, episode_sha256='a' * 64)))
+        self.assertFalse(same(dict(identity, episode_sha256='c' * 64)))
+        self.assertFalse(same(dict(identity, apk_sha256='q' * 64, episode_sha256='a' * 64)))
+
     def test_the_episode_being_played_stays(self):
         old = digest(episode(text=b'one'))
         self.add(episode(text=b'one'))
@@ -167,10 +213,13 @@ class AppQuestionTests(unittest.TestCase):
         self.app.add_episode_files.assert_called_once_with(['a.exp'], replace_saved=False)
 
     def test_the_result_says_what_was_replaced_kept_and_left_out(self):
-        self.app.library = Mock(last_addons_added=0, last_replaced=[1, 2], last_kept=[1], last_older=[1])
+        self.app.library = Mock(last_addons_added=0, last_replaced=[1, 2], last_kept=[1], last_older=[1], last_carried=[])
         self.assertEqual(self.Application.added_text(self.app, 3),
                          'Added 3 episodes. 2 older copies were replaced. 1 older copy with a saved game was kept. '
                          '1 older version was left out: a newer one is here.')
+        self.app.library = Mock(last_addons_added=0, last_replaced=[], last_kept=[], last_older=[], last_carried=[1])
+        self.assertEqual(self.Application.added_text(self.app, 1),
+                         'Added 1 episode. 1 older copy was updated; its saved games carry on.')
 
 
 class CreatorTests(unittest.TestCase):
