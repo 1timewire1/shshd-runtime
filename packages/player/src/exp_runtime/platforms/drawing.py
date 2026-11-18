@@ -888,9 +888,18 @@ def _raster_ops(node):
             layer.paste(blend(layer.crop(box), piece, flags), box)
         elif kind == 'blit':
             source = raster(op['source'])
+            x, y = op['at']
+            if x < 0 or y < 0 or x + source.width > layer.width or y + source.height > layer.height:
+                # Only what lands on this node: Pillow composites the whole source, so a region's strip of a big
+                # picture (the X360 puzzle's board rim, 689 x 8 out of 689 x 687) took the whole picture's time.
+                left, top = max(0, -x), max(0, -y)
+                right, bottom = min(source.width, layer.width - x), min(source.height, layer.height - y)
+                source = source.crop((left, top, max(left, right), max(top, bottom)))
+                x, y = x + left, y + top
             if op['alpha'] != 255:
                 source.putalpha(source.getchannel('A').point(lambda a: a * op['alpha'] // 255))
-            layer.alpha_composite(source, op['at'])
+            if source.width and source.height:
+                layer.alpha_composite(source, (x, y))
         elif kind in ('textured_quad', 'depth_quad'):
             from ..projection import warp, depth_mask
             x, y, w, h = op['bounds']

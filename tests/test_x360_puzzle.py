@@ -553,6 +553,47 @@ class PlayerTests(unittest.TestCase):
         game.cleared = [[4, 4, 1, game.now_ms - 100]]
         renderer.draw(session)                                   # (and it draws with one gone)
 
+    def test_on_a_phone_the_effects_are_the_hosts_own_add_not_new_pictures(self):
+        """iOS's drawing backend: the clearing jewels' glow and sparks are added into the grid's opaque layer, which the
+        host blends itself; added into the see-through canvas each was a new picture every frame (owner, 2026-11-18:
+        a chain took seconds a frame). Only the board's rim, partly see-through, still takes them in Python."""
+        import tempfile
+        from PIL import Image
+        from exp_runtime import graphics
+        from exp_runtime.platforms import drawing as d
+        from exp_runtime.desktop_x360_puzzle import CELL, GRID_LEFT, GRID_TOP, X360PuzzleRenderer
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        icon = Path(folder.name) / 'icon.png'
+        Image.new('RGBA', (2, 2)).save(icon)
+        skin = self.skin()
+        previous = graphics.install(d.Backend(SimpleNamespace(request=lambda *a, **k: {}), icon))
+        self.addCleanup(graphics.install, previous)
+        renderer = X360PuzzleRenderer(skin)
+        game = laid_out(STRIPES)
+        session = SimpleNamespace(engine=SimpleNamespace(x360_puzzle=game))
+        encoder = d.FrameEncoder()
+        for frame in range(2):                                  # (every jewel's frame and the board sent once)
+            game.now_ms = 2500 * frame
+            renderer.draw(session)
+            encoder.encode(renderer.canvas)
+        centre = (GRID_LEFT + 3 * CELL + CELL // 2, GRID_TOP + 3 * CELL + CELL // 2)
+        plain = d.raster(renderer.canvas.snapshot()).getpixel(centre)
+        for i, j in ((4, 3), (4, 4), (4, 5), (4, 6)):
+            game._at(i, j)['state'] = x.SELECTED
+        game.cleared = [[4, 4, 1, game.now_ms - 100]]
+        renderer.draw(session)
+        packet = encoder.encode(renderer.canvas)
+        self.assertEqual([node for node in packet['nodes'] if 'png' in node], [])
+        lit = d.raster(renderer.canvas.snapshot()).getpixel(centre)
+        self.assertGreater(sum(lit[:3]), sum(plain[:3]))         # the glow is there
+        self.assertEqual(lit[3], 255)
+        game.in_chain = True                                     # the sheen crosses the rim: only its strips are drawn here
+        game.now_ms += 1200
+        renderer.draw(session)
+        pictures = [node for node in encoder.encode(renderer.canvas)['nodes'] if 'png' in node]
+        self.assertLessEqual(len(pictures), 5)
+
     def test_cells_lie_under_the_pointer(self):
         from exp_runtime.desktop_x360_puzzle import CELL, GRID_LEFT, GRID_TOP, cell_at, on_board
         self.assertEqual(cell_at(GRID_LEFT + 1, GRID_TOP + 1), (1, 1))
