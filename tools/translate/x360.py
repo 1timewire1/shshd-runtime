@@ -45,13 +45,18 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 21   # 21: the leash game's cast (leash.cast); 20: Josh's dance under each room's own lights (rooms); 19: Spike's Diss Battle taunts (skin spec battle.taunts); 18: the Diss Battle's music (dissdown); 17: the Title Screen Look (with --ms3); 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 22   # 22: Josh's dance and the leash game's cast moved to the animations add-on; 21: the leash game's cast (leash.cast); 20: Josh's dance under each room's own lights (rooms); 19: Spike's Diss Battle taunts (skin spec battle.taunts); 18: the Diss Battle's music (dissdown); 17: the Title Screen Look (with --ms3); 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 1
 STORY_ADDON_REVISION = 3                # what a story needs unless it says (Story.addon_revision), so that one which
                                         # doesn't use a later revision's art isn't rebuilt, and keeps its saves
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
+# The animations add-on (owner, 2026-11-18): Josh's dance and the leash game's cast, apart from the X360 add-on so that one
+# stays about half the size. No story requires it; with it the dance and the cast show, without it the games play as
+# before them (x360_arena_art.build_animations, desktop_nr_arena_x360.addon_animations).
+ANIMATIONS_ID, ANIMATIONS_TITLE, ANIMATIONS_REVISION = 'shsx360anim', 'Surviving High School (Xbox 360 prototype): animations', 1   # 1: the dance and the cast at 15 fps
+ANIMATIONS_FILE, ANIMATIONS_EPISODE = 'X360_Addon_Animations', 99
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog',     # at PORTRAIT_BASE + 5 x index
            'mrpibb', 'mom_ryan', 'mrsfaulkner', 'spike', 'spud', 'dexter', 'andy')      # from LATER_RENDER_BASE
@@ -1557,6 +1562,16 @@ def build_addon(stories, skin=None):
             raise TranslateError(f'skin resource {resource_id} is already a story resource')
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
+    return encode_exp(resources)
+
+
+def build_animations_addon(resources):
+    """The animations add-on's `.exp` bytes from x360_arena_art.build_animations' {id: bytes}."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+    from exp_runtime.exp import Metadata, encode_exp
+    resources = dict(resources)
+    resources[ADDON_RECORD] = provides_bytes(ANIMATIONS_ID, ANIMATIONS_TITLE, ANIMATIONS_REVISION)
+    resources[1] = Metadata(PACK_ID, ANIMATIONS_EPISODE, (ANIMATIONS_TITLE + ' (addon)',) * 5).to_bytes()
     return encode_exp(resources)
 
 

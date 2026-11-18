@@ -21,7 +21,7 @@ as a minigame library, a renderer's skin or an optional art pack.
 | Kind | Who asks for it | Without it | Examples |
 | --- | --- | --- | --- |
 | **Required** | The episode, in its `requires` record | The episode opens for indexing and previews, but starting it shows a message naming the addon | `shsnr` and `shsx360` for their own stories |
-| **Optional** | The player, through `ContentLibrary.addon(id)` | Everything works, and the addon's switches aren't offered | `shsx360` as New Rules' arena skin; `chslim` in Cause of Death; `shshw` in the Surviving Hollywood Preview |
+| **Optional** | The player, through `ContentLibrary.addon(id)` | Everything works, and the addon's switches aren't offered | `shsx360` as New Rules' arena skin; `chslim` in Cause of Death; `shshw` in the Surviving Hollywood Preview; `shsx360anim` in the X360 stories (Josh's dance, the leash game's cast) |
 
 An addon can be both: New Rules' stories never declare `shsx360`, but the X360 Arena Skin reads it when it's there, and the X360
 stories require it.
@@ -110,9 +110,10 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 20, about 76 MB.
-Revision 20 lights Josh's dance by each room's own lights ([X360.md](X360.md#joshs-dance)), about 20 MB of it; no story
-needs it.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 22, about 48 MB.
+Revision 22 moves Josh's dance and the leash game's cast into their own add-on, [`shsx360anim`](#shsx360anim-the-x360-animations)
+(owner, 2026-11-18), so this one is about half the size; no story needs them. Revision 21 added the leash game's cast (89 MB
+with it), revision 20 the dance under each room's own lights ([X360.md](X360.md#joshs-dance)).
 Revision 17 adds the main menu's [Title Screen Look](#settings), which needs the MS3 prototype's data.pak too (`--ms3`); no story asks for it.
 Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settings). Revision 16 rebuilds Day of Diss's opening for taller frames (storyboard spec version 2; [X360.md](X360.md#day-of-disss-opening)), which Day of Diss now asks for. Revision 18 adds the Diss Battle's tune, which Monday Planner asks for; revision 19 adds Spike's
 taunts, which no story needs. The other stories ask for what they did.
@@ -128,9 +129,8 @@ taunts, which no story needs. The other stories ask for what they did.
 | 26400–26418 | The deck, digits and title-screen backdrop, shot in an emulator |
 | 26420–26435 | The slot machine and leash game |
 | 26436–26749 | The jewel puzzle |
-| 26790–26795 | Diss Practice's notes and Josh's dance |
+| 26790–26793 | Diss Practice's notes (Josh's dance, 26794–26795, is `shsx360anim`'s from revision 22) |
 | 26796–26805 | Day of Diss's opening: its timeline, stills, card and whip |
-| 26806–26809 | Josh's dance under the hallway's and his room's own lights, MS4's then MS3's (revision 20, `dance.rooms`) |
 | 26900–26914 | Music, each track mixed with its ambience |
 | 26960–26963 | The Title Screen Look (revision 17): its spec, MS4's sky with its clouds, the roof scene (MS4's splash, two schools, the city, and five on the roof: MS3's girl and boy, MS4's Kim, Josh and Ryan), kept above the buttons, and the logo with its splat and tapes, which in taller frames moves down to stay centred in the sky |
 | 26982–26995 | Sound effects and emoticons |
@@ -143,6 +143,23 @@ python tools/translate/translate.py x360 DATA_PAK --story addon --pud RES_LARGE_
     --portraits PORTRAIT_CATALOG --backgrounds BACKGROUNDS --dbp DECK_SHOTS --puzzle PUZZLE_SHOTS --opening OPENING_STILLS \
     --ms3 MS3_DATA_PAK --out OUT_DIR
 ```
+
+
+### `shsx360anim`: the X360 animations
+
+Read optionally by the [X360](X360.md) stories: Josh's dance behind Diss Practice's deck and Zack, the doberman and the
+collar behind the leash game's bar. No story requires it; without it the games play as they did before the animations.
+Split out of `shsx360` at its revision 22 (owner, 2026-11-18). Revision 1, about 47 MB.
+
+| Resources | What |
+| --- | --- |
+| 26300 | Its spec: `dance`, `dance_ms3` and `leash_cast` (format `shshd-x360-animations` 1) |
+| 26794–26795 | Josh's dance on the steps, MS4's then MS3's (the MS3 Characters switch) |
+| 26806–26809 | The dance under the hallway's and his room's own lights, MS4's then MS3's (`dance.rooms`) |
+| 26810–26819 | The leash game's cast at 15 fps: an atlas per animation, MS4's five then MS3's (`leash_cast`) |
+
+`translate.py x360 --story addon` writes it beside `shsx360` when given `--dbp` or `--leash` (the cast's frames, from
+reference tools `x360_leashbooth.py` at `--size 960 540 --fps 15`, LOSE with `--pad 48`).
 
 ### `shs11`: Surviving High School '11
 

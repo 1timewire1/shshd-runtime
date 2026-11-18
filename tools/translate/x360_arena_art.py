@@ -15,6 +15,8 @@ import subprocess
 from PIL import Image, ImageChops, ImageFilter, ImageOps
 
 FORMAT, VERSION = 'shshd-arena-skin-x360', 1
+# The animations add-on's spec (build_animations), at SPEC in that add-on: Josh's dance and the leash game's cast.
+ANIMATIONS_FORMAT, ANIMATIONS_VERSION = 'shshd-x360-animations', 1
 SPEC = 26300
 SKIN_IDS = range(26300, 26900)
 PICTURE_BASE = 26301                    # PICTURES then New Rules' outlined items, in order
@@ -65,7 +67,7 @@ DANCE_ROOMS_BASE = 26806
 PUZZLE_BASE = 26436                     # the jewel puzzle (Puzzle Test; exp_runtime.x360_puzzle, desktop_x360_puzzle)
 LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
 # ...and Zack, the doberman and the collar-and-lead behind it (B1, 2026-11-18; reference tools x360_leashbooth.py): an atlas
-# per animation, MS4's five then MS3's (the MS3 Characters switch: its Zack's own body texture). Revision 21.
+# per animation, MS4's five then MS3's (the MS3 Characters switch: its Zack's own body texture). In the animations add-on.
 LEASH_CAST_BASE = 26810
 LEASH_CAST_BUILDS = (('ms4', 'cast'), ('ms3', 'cast_ms3'))     # (spec key, the booth folder's subfolder)
 LEASH_CAST_ANIMS = ('MG1_IDLE2', 'MG1_TRAN1', 'MG1_TRAN2', 'MG1_WIN', 'MG1_LOSE')
@@ -321,6 +323,17 @@ def booth(folder):
             resources[NOTES_BASE + i] = (folder / notes['kinds'][kind]['file']).read_bytes()
             kinds[kind] = dict(id=NOTES_BASE + i, anchor=notes['kinds'][kind]['anchor'], depth=notes['kinds'][kind]['depth'])
         entry['notes'] = dict(kinds=kinds, frame=notes['frame'], height=notes['height'], wheel=notes['wheel'], out=notes['out'])
+    return resources, entry
+
+
+def dances(folder):
+    """{resource ID: bytes} and the animations add-on's `dance` / `dance_ms3` entries from the Diss Practice booth's
+    folder (booth.json's `dance` and `dance_ms3`, with their rooms): Josh's dance behind the deck, in the animations add-on
+    from the X360 add-on's revision 22 (ANIMATIONS_ADDON)."""
+    from pathlib import Path
+    folder = Path(folder)
+    info = json.loads((folder / 'booth.json').read_text(encoding='utf-8'))
+    resources, entry = {}, {}
     if 'dance' in info:
         resources[DANCE_BASE], entry['dance'] = dance_atlas(folder, info['dance'])
     if 'dance_ms3' in info:                     # the MS3 Characters switch's, in the same places
@@ -620,12 +633,29 @@ def title(files):
     return resources, entry
 
 
-def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None, puzzle_folder=None,
-               leash_folder=None):
+def build_animations(booth_folder=None, leash_folder=None):
+    """{resource ID: bytes} of the X360 animations add-on (ANIMATIONS_ADDON, owner 2026-11-18): Josh's dance from the
+    Diss Practice booth's folder (dances) and the leash game's cast from its folder (leash_cast), with their spec at
+    SPEC: {format, version, dance, dance_ms3, leash_cast}. The X360 add-on itself holds neither from its revision 22; the
+    renderers read them from this one when it's there (desktop_nr_arena_x360.addon_animations)."""
+    resources, spec = {}, dict(format=ANIMATIONS_FORMAT, version=ANIMATIONS_VERSION)
+    if booth_folder is not None:
+        made, entries = dances(booth_folder)
+        resources.update(made)
+        spec.update(entries)
+    if leash_folder is not None:
+        made, spec['leash_cast'] = leash_cast(leash_folder)
+        resources.update(made)
+    resources[SPEC] = json.dumps(spec, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    assert all(i in SKIN_IDS for i in resources)
+    return resources
+
+
+def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=None, puzzle_folder=None):
     """{resource ID: bytes} for the X360 skin from the prototype's files (x360.Prototype.files); `items_source` (the
     New Rules X1i jar's resources, nr_art.load) adds New Rules' item pictures outlined; `pcm_wav` is the translator's
     IMA ADPCM decoder (x360.pcm_wav); `music` False leaves the music out (no ffmpeg); `booth_folder` adds what the
-    Xenia booth shot (booth); `leash_folder` the leash game's cast (leash_cast)."""
+    Xenia booth shot (booth). Josh's dance and the leash game's cast are the animations add-on's (build_animations)."""
     import nr_art
     resources, spec = {}, dict(format=FORMAT, version=VERSION, pictures={}, items={}, fonts={}, sounds={},
                                sound_tracks={}, music_track={})
@@ -677,9 +707,6 @@ def build_skin(files, items_source=None, *, pcm_wav, music=True, booth_folder=No
     if 'data/art/hud/stick_shake_side.jpg' in files:
         made, spec['leash'] = leash(files)
         resources.update(made)
-        if leash_folder is not None:
-            made, spec['leash']['cast'] = leash_cast(leash_folder)
-            resources.update(made)
     if puzzle_folder is not None:
         made, spec['puzzle'] = puzzle(files, pcm_wav, puzzle_folder)
         resources.update(made)

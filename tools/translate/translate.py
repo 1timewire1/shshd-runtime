@@ -100,7 +100,7 @@ def main(argv=None):
                     help="with --story addon: the jewel puzzle's art (Additional Resources/x360-puzzle-booth): its jewels, "
                          'cursor and boards')
     xb.add_argument('--leash', type=Path,
-                    help="with --story addon: the leash game's cast (Additional Resources/x360-leash-cast: cast/ and "
+                    help="with --story addon: the leash game's cast, for the animations add-on written beside it (Additional Resources/x360-leash-cast-15fps: cast/ and "
                          "cast_ms3/ from reference tools x360_leashbooth.py)")
     xb.add_argument('--ms3', type=Path, help="with --story addon: the MS3 prototype's data.pak, for the Title Screen Look")
     xb.add_argument('--out', type=Path, required=True)
@@ -336,8 +336,7 @@ def translate_x360(args):
     if args.story == 'addon':
         import x360_arena_art
         skin = x360_arena_art.build_skin(proto.files, nr_art.load(args.x1i) if args.x1i else None,
-                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle,
-                                         leash_folder=args.leash)
+                                         pcm_wav=x360.pcm_wav, booth_folder=args.dbp, puzzle_folder=args.puzzle)
         opening = x360_arena_art.opening(proto.files, x360.pcm_wav, args.opening)
         look = {}
         if args.ms3:                # the Title Screen Look: MS3's Nicole and boy stand with MS4's three
@@ -351,6 +350,12 @@ def translate_x360(args):
         target.write_bytes(data)
         print(f'addon: {x360.ADDON_TITLE!r} revision {x360.ADDON_REVISION} -> {target} ({len(data) // 1024} KB, '
               f'{len(ExpArchive(data).entries)} resources, {len(skin)} of them the arena skin)')
+        if args.dbp or args.leash:          # Josh's dance and the leash game's cast: the animations add-on beside it
+            data = x360.build_animations_addon(x360_arena_art.build_animations(args.dbp, args.leash))
+            target = args.out / f'{x360.ANIMATIONS_FILE}.exp'
+            target.write_bytes(data)
+            print(f'addon: {x360.ANIMATIONS_TITLE!r} revision {x360.ANIMATIONS_REVISION} -> {target} '
+                  f'({len(data) // 1024} KB)')
 
 
 # Dancing Queen's smartphone version, Homecoming Queen, as a library holds it: the capitals it learns from.

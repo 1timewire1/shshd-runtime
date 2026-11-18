@@ -77,6 +77,46 @@ def addon_skin(resources):
     return spec, found[1]
 
 
+# The animations add-on (owner, 2026-11-18; tools/translate x360.ANIMATIONS_ID): Josh's dance and the leash game's cast,
+# apart from the X360 add-on from its revision 22. Optional: no story requires it.
+ANIMATIONS_ADDON = 'shsx360anim'
+ANIMATIONS_FORMAT, ANIMATIONS_VERSION = 'shshd-x360-animations', 1
+
+
+def addon_animations(resources):
+    """The animations add-on's spec ({dance, dance_ms3, leash_cast}) and an archive to read it from, from the library the
+    episode came from, or None (not there, damaged, or another format)."""
+    library = getattr(resources, 'library', None)
+    if library is None or not hasattr(library, 'addon'):
+        return None
+    try:
+        found = library.addon(ANIMATIONS_ADDON)
+        if found is None or SPEC not in found[1].entries:
+            return None
+        spec = json.loads(found[1].read(SPEC))
+    except Exception:                                   # a damaged add-on: the games without the animations
+        return None
+    if spec.get('format') != ANIMATIONS_FORMAT or spec.get('version') != ANIMATIONS_VERSION:
+        return None
+    return spec, found[1]
+
+
+def animation_source(resources, skin):
+    """Where Josh's dance and the leash game's cast come from: the animations add-on, or else the X360 add-on itself (`skin`,
+    addon_skin's result), which held them up to its revision 21. ({dance, dance_ms3, leash_cast}, archive), or None."""
+    found = addon_animations(resources)
+    if found is not None:
+        return found
+    if skin is None:
+        return None
+    spec, archive = skin
+    booth, leash = spec.get('booth') or {}, spec.get('leash') or {}
+    own = {key: booth[key] for key in ('dance', 'dance_ms3') if key in booth}
+    if 'cast' in leash:
+        own['leash_cast'] = leash['cast']
+    return own, archive
+
+
 def library_has_skin(library):
     """Whether `library` holds the X360 addon with its arena skin (for the "X360 Arena Look" switch)."""
     if library is None or not hasattr(library, 'addon'):

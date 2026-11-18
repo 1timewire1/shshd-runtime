@@ -830,3 +830,38 @@ class X360SwitchTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class AnimationSourceTests(unittest.TestCase):
+    """Josh's dance and the leash game's cast: from the animations add-on (owner, 2026-11-18), or else the X360 add-on's own
+    copy, which it held up to its revision 21 (desktop_nr_arena_x360.animation_source)."""
+
+    def setUp(self):
+        from exp_runtime import desktop_nr_arena_x360
+        self.module = desktop_nr_arena_x360
+
+    @staticmethod
+    def archive(spec):
+        files = {26300: json.dumps(spec).encode()}
+        return SimpleNamespace(entries=files, read=files.__getitem__)
+
+    def resources(self, addons):
+        return SimpleNamespace(library=SimpleNamespace(addon=lambda addon_id: ({'addon': addon_id}, addons[addon_id])
+                                                       if addon_id in addons else None))
+
+    def test_the_animations_addon_comes_first_and_the_x360_addons_own_copy_after_it(self):
+        module = self.module
+        old_skin = ({'booth': {'dance': {'atlas': 1}}, 'leash': {'cast': {'shot': [1, 1]}}}, 'x360 archive')
+        anim = self.archive(dict(format=module.ANIMATIONS_FORMAT, version=module.ANIMATIONS_VERSION,
+                                 dance={'atlas': 2}, leash_cast={'shot': [2, 2]}))
+        spec, archive = module.animation_source(self.resources({module.ANIMATIONS_ADDON: anim}), old_skin)
+        self.assertEqual((spec['dance'], spec['leash_cast'], archive), ({'atlas': 2}, {'shot': [2, 2]}, anim))
+        spec, archive = module.animation_source(self.resources({}), old_skin)          # an X360 add-on up to revision 21
+        self.assertEqual((spec, archive), ({'dance': {'atlas': 1}, 'leash_cast': {'shot': [1, 1]}}, 'x360 archive'))
+        other = self.archive(dict(format='something else', version=1, dance={'atlas': 3}))
+        self.assertEqual(module.animation_source(self.resources({module.ANIMATIONS_ADDON: other}), old_skin)[1],
+                         'x360 archive')                                                 # a format it doesn't know
+        spec, _ = module.animation_source(self.resources({}), ({'booth': {}, 'leash': {}}, 'x360 archive'))
+        self.assertEqual(spec, {})                                                       # revision 22 alone: no animations
+        self.assertIsNone(module.animation_source(self.resources({}), None))

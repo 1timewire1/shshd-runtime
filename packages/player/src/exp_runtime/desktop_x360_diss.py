@@ -6,10 +6,11 @@ notes stand where the game's camera sees them on the record, with its depth, as 
 camera as the record turns, as the X360's do. Their smoke, sparks and flames are drawn here, as they move. Nothing here
 decides anything in the game.
 """
+import io
 import math
 
 from . import graphics as pygame
-from .desktop_nr_arena_x360 import BMFont, addon_skin
+from .desktop_nr_arena_x360 import BMFont, addon_skin, animation_source
 from .desktop_x360_deck import FX, SCORE_BOX, X360Deck
 from .desktop_x360_slot import X360SlotRenderer
 from .x360_diss import (BAD, BLANK, COUNTDOWN, COUNTDOWN_MS, COUNTDOWN_STEPS_MS, CLOSING_MS, DOUBLE, ENDED, ELEMENTS, FIRE,
@@ -73,6 +74,7 @@ class X360DissRenderer(X360Deck):
         self._dance_from = None
         self._josh_frame = None, None
         self._josh_atlas = None
+        self._anim = None               # (resources, animation_source's result): read once
 
     def x360(self):
         if self._x360 is None:
@@ -165,11 +167,13 @@ class X360DissRenderer(X360Deck):
         on the front's steps. The hallway's and his room's marks are off this frame's deck, so he stays on this side there,
         at the size their backgrounds need (the spec's `places`, by background: scale, about his feet, and where those
         are). The loop's jump where it wraps is the game's."""
-        booth = self.x360()[0]['booth']
-        dance = booth.get('dance')
+        # From the animations add-on (owner, 2026-11-18), or the X360 add-on itself up to its revision 21.
+        found = self._animations()
+        dances = found[0] if found is not None else {}
+        dance = dances.get('dance')
         if getattr(getattr(self.resources, 'library', None), 'ms3_characters', False):
-            dance = booth.get('dance_ms3', dance)       # the April build's Josh, in Zack's model and his own dance
-        if dance is None:                               # an addon from before he danced
+            dance = dances.get('dance_ms3', dance)      # the April build's Josh, in Zack's model and his own dance
+        if dance is None:                               # no animations add-on, and an X360 add-on without him
             return
         # The room's own lights (owner, 2026-11-17: shsx360 revision 20): the hallway's and his room's frames are an atlas
         # of the front steps' layout each; an addon without them draws the front steps' everywhere.
@@ -187,7 +191,7 @@ class X360DissRenderer(X360Deck):
         place = dance.get('places', {}).get(str(background))
         zoom = self.scene_zoom
         if place is None and zoom == 1:
-            image = self.image(atlas).subsurface(pygame.Rect(cell['rect']))
+            image = self._anim_image(atlas).subsurface(pygame.Rect(cell['rect']))
         else:
             scale = 1
             if place is not None:
@@ -203,11 +207,29 @@ class X360DissRenderer(X360Deck):
             return
         surface.blit(image, (round(x * self.k), round(y * self.k)))
 
+    def _animations(self):
+        """({dance, dance_ms3, leash_cast}, archive) for this episode's library, or None (animation_source)."""
+        if self._anim is None or self._anim[0] is not self.resources:
+            try:
+                skin = self.x360()
+            except ValueError:
+                skin = None
+            self._anim = (self.resources, animation_source(self.resources, skin))
+        return self._anim[1]
+
+    def _anim_image(self, resource):
+        """One of the animations' atlases, from the archive they come from (kept with the skin's pictures)."""
+        found = self._images.get(resource)
+        if found is None:
+            found = pygame.image.load(io.BytesIO(self._animations()[1].read(resource)), 'x360.png').convert_alpha()
+            self._images[resource] = found
+        return found
+
     def _josh_scaled(self, atlas, cell, scale):
         """A frame at a place's size, kept for the draws it stays up: only the last one, as 171 of them would be a lot."""
         key = atlas, cell['rect'][0], cell['rect'][1], scale
         if self._josh_frame[0] != key:
-            image = self.image(atlas).subsurface(pygame.Rect(cell['rect']))
+            image = self._anim_image(atlas).subsurface(pygame.Rect(cell['rect']))
             size = round(image.get_width() * scale), round(image.get_height() * scale)
             self._josh_frame = key, pygame.transform.smoothscale(image, size)
         return self._josh_frame[1]

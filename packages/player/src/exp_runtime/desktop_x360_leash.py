@@ -7,12 +7,14 @@ the icon of the wanted shake at the bottom, its joystick flipbook over the arrow
 game. The inputs the player reads for it are here too, as far as they are geometry: where a stick and a drag point.
 
 Behind them, Zack, the doberman and the collar-and-lead (B1, 2026-11-18): frames rendered offline at the pound background's
-own camera (reference tools x360_leashbooth.py), an atlas per animation in the addon (spec `leash.cast`, by build: MS4's,
-or MS3's for the MS3 Characters switch). The spec places them on the background (`places`, by background: their size
+own camera (reference tools x360_leashbooth.py), an atlas per animation in the animations add-on (`shsx360anim`, spec
+`leash_cast`; the X360 add-on's own `leash.cast` up to its revision 21), by build: MS4's, or MS3's for the MS3 Characters
+switch. The spec places them on the background (`places`, by background: their size
 against the shot's and where their feet go, in the 960 x 1440 picture's pixels), and the player says where the picture is
 this frame (`scene_placement`), so they follow its pan and its size in a taller frame. The game says which animation and
-how far in (LeashGame.cast_anim, cast_ms), and what it blends from over 0.3 s. An addon from before them draws none."""
+how far in (LeashGame.cast_anim, cast_ms), and what it blends from over 0.3 s. Without them the game plays as before."""
 from . import graphics as pygame
+from .desktop_nr_arena_x360 import animation_source
 from .desktop_x360_slot import FRAME, X360SlotRenderer
 from .x360_games import (BLEND_MS, CAST_ANIMS, CAST_IDLE, CLOSING, CLOSING_LEASH_MS, DOWN, LEFT, LEVEL_FULL, OPENING,
                          OPENING_MS, READY, RIGHT, RUNNING, UP)
@@ -72,10 +74,27 @@ class X360LeashRenderer(X360SlotRenderer):
         return None
 
     # -- the cast ----------------------------------------------------------------------------------------------
+    def _animations(self):
+        """({dance, dance_ms3, leash_cast}, archive): the animations add-on (owner, 2026-11-18), or the X360 add-on itself up
+        to its revision 21 (animation_source); None without either."""
+        anim = getattr(self, '_anim', None)
+        if anim is None or anim[0] is not self.resources:
+            anim = self._anim = (self.resources, animation_source(self.resources, self._spec()))
+        return anim[1]
+
+    def _anim_image(self, resource):
+        """One of the cast's atlases, from the archive it comes from (kept with the skin's pictures)."""
+        found = self._images.get(resource)
+        if found is None:
+            import io
+            found = self._images[resource] = pygame.image.load(io.BytesIO(self._animations()[1].read(resource)),
+                                                               'x360.png').convert_alpha()
+        return found
+
     def cast_build(self):
-        """(the spec's `leash.cast`, this look's build of it), or None for an addon without them."""
-        found = self._spec()
-        cast = found[0].get('leash', {}).get('cast') if found is not None else None
+        """(the cast's spec, `leash_cast`, and this look's build of it), or None without them."""
+        found = self._animations()
+        cast = found[0].get('leash_cast') if found is not None else None
         if not cast:
             return None
         ms3 = getattr(getattr(self.resources, 'library', None), 'ms3_characters', False)
@@ -91,7 +110,7 @@ class X360LeashRenderer(X360SlotRenderer):
         return [a['atlas'] for b in builds for a in b['animations'].values() if a['atlas'] in self._images]
 
     def drop_cast(self, keep=None):
-        """Forget the cast's atlases (about 64 MB decoded a look) but `keep`'s: once the game has gone (Desktop), or the
+        """Forget the cast's atlases (about 114 MB decoded a look at 15 fps) but `keep`'s: once the game has gone (Desktop), or the
         other look's after the MS3 Characters switch."""
         kept = set(self._cast_atlases(keep)) if keep is not None else set()
         for atlas in self._cast_atlases():
@@ -112,12 +131,12 @@ class X360LeashRenderer(X360SlotRenderer):
         return None if place is None else (found[0], found[1], place)
 
     def _preload_step(self, build):
-        """One atlas not yet loaded, MG1_IDLE2's first, so the cast's first frames don't wait on all five (about 50 MB
+        """One atlas not yet loaded, MG1_IDLE2's first, so the cast's first frames don't wait on all five (about 114 MB
         decoded): a step a frame as the game opens, rather than a stall."""
         for name in (CAST_IDLE, *CAST_ANIMS):
             atlas = build['animations'].get(name, {}).get('atlas')
             if atlas is not None and atlas not in self._images:
-                self.image(atlas)
+                self._anim_image(atlas)
                 return
 
     def _cast_cell(self, build, name, ms):
@@ -132,9 +151,9 @@ class X360LeashRenderer(X360SlotRenderer):
         key = atlas, tuple(cell['rect']), size
         found = self._cast_frames.get(key)
         if found is None:
-            image = self.image(atlas).subsurface(pygame.Rect(cell['rect']))
+            image = self._anim_image(atlas).subsurface(pygame.Rect(cell['rect']))
             found = image if image.get_size() == size else pygame.transform.smoothscale(image, size)
-            if len(self._cast_frames) >= 2:             # (the blend's two: one scaled frame each, at 10 fps)
+            if len(self._cast_frames) >= 2:             # (the blend's two: one scaled frame each)
                 self._cast_frames.pop(next(iter(self._cast_frames)))
             self._cast_frames[key] = found
         return found

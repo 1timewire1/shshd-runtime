@@ -428,6 +428,10 @@
 
 ### Changed
 
+- **The X360 add-on splits in two** (owner, 2026-11-18; [ADDONS.md](docs/ADDONS.md#shsx360anim-the-x360-animations)):
+  Josh's dance and the leash game's cast move into an optional animations add-on, `shsx360anim` (about 47 MB), so the X360
+  add-on itself (revision 22) is about 48 MB instead of 89. No story requires the animations; without them Diss Practice
+  and the leash play as they did before them. The leash's cast is now rendered at 15 fps (it was 10), as the dance is.
 - **BREW badges get the icons they were missing** (owner's badge review, 2026-11-18; BREW add-on revision 13,
   [BREW.md](docs/BREW.md)): ten named events BREW leaves without an icon show one of BREW's small pictures (the owner's
   picks), and the events BREW gives its heart, badger or lizard show them rather than the cell phone (*Sadie Hawkins
