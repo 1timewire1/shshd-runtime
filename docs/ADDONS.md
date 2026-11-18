@@ -109,7 +109,9 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 19, about 56 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 20, about 76 MB.
+Revision 20 lights Josh's dance by each room's own lights ([X360.md](X360.md#joshs-dance)), about 20 MB of it; no story
+needs it.
 Revision 17 adds the main menu's [Title Screen Look](#settings), which needs the MS3 prototype's data.pak too (`--ms3`); no story asks for it.
 Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settings). Revision 16 rebuilds Day of Diss's opening for taller frames (storyboard spec version 2; [X360.md](X360.md#day-of-disss-opening)), which Day of Diss now asks for. Revision 18 adds the Diss Battle's tune, which Monday Planner asks for; revision 19 adds Spike's
 taunts, which no story needs. The other stories ask for what they did.
@@ -127,6 +129,7 @@ taunts, which no story needs. The other stories ask for what they did.
 | 26436–26749 | The jewel puzzle |
 | 26790–26795 | Diss Practice's notes and Josh's dance |
 | 26796–26805 | Day of Diss's opening: its timeline, stills, card and whip |
+| 26806–26809 | Josh's dance under the hallway's and his room's own lights, MS4's then MS3's (revision 20, `dance.rooms`) |
 | 26900–26914 | Music, each track mixed with its ambience |
 | 26960–26963 | The Title Screen Look (revision 17): its spec, MS4's sky with its clouds, the roof scene (MS4's splash, two schools, the city, and five on the roof: MS3's girl and boy, MS4's Kim, Josh and Ryan), kept above the buttons, and the logo with its splat and tapes, which in taller frames moves down to stay centred in the sky |
 | 26982–26995 | Sound effects and emoticons |

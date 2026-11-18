@@ -420,6 +420,9 @@
 
 ### Changed
 
+- **Josh's dance under each room's own lights** (owner, 2026-11-17; X360 add-on revision 20,
+  [X360.md](docs/X360.md#joshs-dance)): Diss Practice in the hallway and in his room draws him lit as the prototype
+  lights those rooms, not as on the school's steps; MS3 Characters' dancer too.
 - **Releases carry the Android APK and the unsigned iOS IPA** (`shshd-runtime-<tag>-android.apk`,
   `shshd-runtime-<tag>-ios-arm64-unsigned.ipa`), with their checksums, beside the desktop downloads and wheels. A
   version tag's Builds run builds the APK too, and the release waits for both ([DISTRIBUTION.md](docs/DISTRIBUTION.md)).

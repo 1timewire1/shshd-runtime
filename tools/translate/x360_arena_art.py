@@ -59,6 +59,9 @@ OPENING_SUBTITLE_MARGIN = 16
 NOTES_BASE = 26790                      # Diss Practice's notes (the Monday Planner; desktop_x360_diss), past the later renders
 NOTE_KINDS = ('note', 'bad', 'swap', 'double')
 DANCE_BASE, DANCE_ATLAS_WIDTH = 26794, 2048     # Josh's dance behind that deck, one atlas; MS3's the next
+# ...and under the other rooms' own lights (reference tools x360_dbpdance_rooms.py; owner's A5, 2026-11-17): by background,
+# MS4's then MS3's, each an atlas of the front steps' layout. Revision 20.
+DANCE_ROOMS_BASE = 26806
 PUZZLE_BASE = 26436                     # the jewel puzzle (Puzzle Test; exp_runtime.x360_puzzle, desktop_x360_puzzle)
 LEASH_BASE = 26431                      # the leash game (Dating Beth; exp_runtime.x360_games, desktop_x360_leash)
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
@@ -303,6 +306,15 @@ def booth(folder):
     if 'dance_ms3' in info:                     # the MS3 Characters switch's, in the same places
         resources[DANCE_BASE + 1], entry['dance_ms3'] = dance_atlas(
             folder, dict(info['dance_ms3'], places=info['dance'].get('places', {})), 'dance_ms3', DANCE_BASE + 1)
+    next_id = DANCE_ROOMS_BASE
+    for key in ('dance', 'dance_ms3'):          # each room's lights, an atlas of the same layout, by background
+        rooms = {}
+        for background, name in sorted(info.get(key, {}).get('rooms', {}).items()):
+            resources[next_id], _ = dance_atlas(folder, info[key], name, next_id)
+            rooms[background] = next_id
+            next_id += 1
+        if rooms:
+            entry[key]['rooms'] = rooms
     return resources, entry
 
 

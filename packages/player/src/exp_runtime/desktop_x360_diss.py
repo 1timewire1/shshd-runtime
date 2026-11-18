@@ -171,9 +171,12 @@ class X360DissRenderer(X360Deck):
             dance = booth.get('dance_ms3', dance)       # the April build's Josh, in Zack's model and his own dance
         if dance is None:                               # an addon from before he danced
             return
-        if self._josh_atlas != dance['atlas']:          # the switch: the other one's frames aren't needed now
+        # The room's own lights (owner, 2026-11-17: shsx360 revision 20): the hallway's and his room's frames are an atlas
+        # of the front steps' layout each; an addon without them draws the front steps' everywhere.
+        atlas = dance.get('rooms', {}).get(str(background), dance['atlas'])
+        if self._josh_atlas != atlas:                   # the switch or the room: the other frames aren't needed now
             self._images.pop(self._josh_atlas, None)
-            self._josh_atlas = dance['atlas']
+            self._josh_atlas = atlas
         ms = self._dance_ms(game)
         if ms is None:
             cell = dance['stand']
@@ -184,7 +187,7 @@ class X360DissRenderer(X360Deck):
         place = dance.get('places', {}).get(str(background))
         zoom = self.scene_zoom
         if place is None and zoom == 1:
-            image = self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect']))
+            image = self.image(atlas).subsurface(pygame.Rect(cell['rect']))
         else:
             scale = 1
             if place is not None:
@@ -193,18 +196,18 @@ class X360DissRenderer(X360Deck):
                 to_x, to_y = place.get('feet', (feet_x, feet_y))
                 x, y = to_x + (x - feet_x) * place['scale'], to_y + (y - feet_y) * place['scale']
                 scale = place['scale']
-            image = self._josh_scaled(dance, cell, scale * zoom)
+            image = self._josh_scaled(atlas, cell, scale * zoom)
         if zoom != 1:
             # The 3:4 scene scaled by J about the frame's top-left (this canvas is the whole frame then).
             surface.blit(image, (round(x * self.k * zoom), round(y * self.k * zoom)))
             return
         surface.blit(image, (round(x * self.k), round(y * self.k)))
 
-    def _josh_scaled(self, dance, cell, scale):
+    def _josh_scaled(self, atlas, cell, scale):
         """A frame at a place's size, kept for the draws it stays up: only the last one, as 171 of them would be a lot."""
-        key = dance['atlas'], cell['rect'][0], cell['rect'][1], scale
+        key = atlas, cell['rect'][0], cell['rect'][1], scale
         if self._josh_frame[0] != key:
-            image = self.image(dance['atlas']).subsurface(pygame.Rect(cell['rect']))
+            image = self.image(atlas).subsurface(pygame.Rect(cell['rect']))
             size = round(image.get_width() * scale), round(image.get_height() * scale)
             self._josh_frame = key, pygame.transform.smoothscale(image, size)
         return self._josh_frame[1]
