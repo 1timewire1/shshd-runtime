@@ -337,6 +337,9 @@ class Skin:
 
 class NRArenaRenderer:
     frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
+    # Native pixels of the frame's top under a phone's status bar (Desktop): a bubble keeps below them (owner's g54,
+    # 2026-11-18: the tutorial's top bubbles, at New Rules' screen top, were partly under it)
+    top_pad = 0
     spread = (0, 0, 0)                  # (height added, top group's move, lower group's move): draw sets it
 
     def __init__(self, resources):
@@ -967,6 +970,8 @@ class NRArenaRenderer:
                     x = slot_x - 18 - 24
                 elif slot_x + 18 > x + box_width - 24:
                     x = slot_x + 18 + 24 - box_width
+        if self.top_pad and not pointer:
+            y = max(y, self.top_pad + 4)                            # (below a phone's status bar; one that points stays)
         self.skin().layout(surface, 70, pygame.Rect(x, y, box_width, height))
         font.draw(surface, text, x + 15, y + 17, box_width - 30)
         if pointer and flags & 1:

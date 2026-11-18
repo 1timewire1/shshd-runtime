@@ -503,6 +503,10 @@
 
 ### Fixed
 
+- **New Rules' tutorial bubbles under a phone's status bar** (owner's g54, 2026-11-18): the bubbles at New Rules'
+  screen top ("In this game and others...") were drawn where Android puts its status bar. The arena now takes the
+  status bar's share of the frame's top, as the HD games' HUDs do, and a bubble keeps below it (one that points at
+  something stays where it points), in both looks.
 - **The X360 leash game stalled as it opened, and the X360 games' art outlived them** (owner's g54, 2026-11-18): the cast's
   five atlases were decoded in the game's first frames (677 ms on the g54); they now decode on a thread from when the game
   is due, its skip prompt included (worst frame 69 ms). Josh's dance atlas stayed loaded after Diss Practice, and an

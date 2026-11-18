@@ -1140,7 +1140,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 card = TUTORIAL_CARDS.get(int(name.split('/')[1])) if name else None
         # Clear of the bottom label (box 2's: "bling rhymes with...") when it shows, else of the gear's bar.
         bottom = LABEL_BOTTOM.y + self.spread[2] - 4 if arena.labels[2] else NATIVE[1] + self.spread[0] - 70
-        y = min(max(4, y), bottom - h)
+        y = min(max(self.top_pad + 4, y), bottom - h)                # (below a phone's status bar: top_pad)
         self._nine(surface, art, x, y, w, h, edges)
         top = y + box_top + 6
         for image in images:

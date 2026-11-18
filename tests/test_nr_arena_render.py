@@ -134,6 +134,22 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(renderer.hit((280, 650)), ('arena_key', -3))
         self.assertIsNone(renderer.hit((20, 20)))
 
+    def test_a_bubble_keeps_below_a_phones_status_bar_unless_it_points(self):
+        # Owner's g54, 2026-11-18: the tutorial's bubbles at New Rules' screen top were partly under the status bar.
+        from unittest import mock
+        renderer = self.renderer()
+        arena = SimpleNamespace(slots=[0])
+        surface = self.pygame.Surface((489, 652), self.pygame.SRCALPHA)
+        drawn = []
+        with mock.patch.object(renderer, '_point', return_value=(240, 30)), \
+                mock.patch.object(type(renderer.skin()), 'layout', lambda skin, target, layout, rect, **k: drawn.append(rect)):
+            for top_pad, flags in ((0, 1 | 2), (40, 1 | 2), (40, 1 | 2 | 4)):
+                renderer.top_pad = top_pad
+                renderer._bubble(surface, arena, None, 'A line above its anchor.', 0, flags, 0)
+        self.assertLess(drawn[0].y, 4)                          # (where the anchor puts it, without a status bar)
+        self.assertEqual(drawn[1].y, 44)                        # below the status bar
+        self.assertEqual(drawn[2].y, drawn[0].y - 30)           # one that points stays where it points (its gap)
+
     def test_a_taller_frame_spreads_the_arena_through_it(self):
         # Owner, 2026-11-17 (option b): the top group a little down, the lower group in the middle, the legs stretched.
         from exp_runtime.nr_arena import NRArena

@@ -1818,6 +1818,10 @@ class Desktop:
         for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
             if game is not None:
                 game.top_pad = round(self._top_pad * 768 / width)       # (in its canvas's points)
+        from .desktop_nr_arena import NATIVE
+        for arena in (getattr(self, 'nr_arena_renderer', None), getattr(self, 'x360_arena_renderer', None)):
+            if arena is not None:
+                arena.top_pad = round(self._top_pad * NATIVE[0] / width)  # (in its native pixels)
         for card in (getattr(self, 'title_hd', None), getattr(self, 'title_cod', None),
                      getattr(self, 'cutscene_renderer', None), getattr(self, 'x360_arena_renderer', None),
                      getattr(self, 'nr_arena_renderer', None), getattr(self, 'football_hd', None),
