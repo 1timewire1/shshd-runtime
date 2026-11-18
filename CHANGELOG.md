@@ -141,6 +141,12 @@
   portrait (Mom, Dad, the cop, the kid, Myra, the telemarketer...) now wear one of the low-end 1.0.4 demo's eight
   silhouettes in their portrait ring, matched by the owner (`shshw` revision 6, built with that demo's jar too); the
   voices with no one behind them (Phone, Advice Column, Reel Times, Instructions) keep the named box.
+- ***The Bright Lights* version 2, final** (owner's g54 notes and second casing read, 2026-11-17;
+  [HOLLYWOOD.md](docs/HOLLYWOOD.md)): badges show for their one screen and never over a title or date card; the journal's
+  badge is the demo's phone; silhouettes face the middle (`shshw` revision 8 adds them turned and the phone); the player's
+  `You` pages are her own lines with her portrait; the street kid who says `You're bootyful!` is a girl. Lines the casing
+  rules can't get right are written out whole (`tools/translate/shw_casing_fixes.json`, after two full reads in context),
+  with a joining word after `...` kept lowercase.
 - **Surviving Hollywood: The Bright Lights (Lite)** (owner, 2026-11-14; `tools/translate/shw_lite.py`): the 1.0.4 demo's
   Chapter 1 as an episode under its own SHW badge and Surviving Hollywood group, in the demo's painted art, frame, sounds
   and catch game (the peanut-butter dodge, behind Use Translated Mini-Games, else a word game; its instructions open it as

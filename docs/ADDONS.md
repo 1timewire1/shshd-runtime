@@ -195,14 +195,14 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 ### `shshw`: Surviving Hollywood
 
 Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required by Surviving Hollywood's own chapters
-(pack 31700, below: the lite revision 4, the full chapter revision 6). Revision 7 (the Title Screen Look), about 4.1 MB. Built from the Surviving
-Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as the frame, its music, its
-catch game's look and its status bar's moon and sun (revision 5: the full chapter's daytime badges); and from the low-end
-1.0.4 (88K) demo's jar, its eight silhouettes (revision 6: the full chapter's people with no portrait).
-Phase 1 of the owner's three-phase plan (`reference/Other Games/docs/SURVIVING_HOLLYWOOD_ADDON_PLAN.md`, 2026-11-13); the demo's
-chapters, if translated, will require it at later revisions, so its numbers stay as they are. Revision 1 had the portraits at 4
-times and no frame, music or turned faces; revision 2 had no catch skin or moon; revision 3 had no numbered star or star badge;
-revision 4 no sun; revision 5 no silhouettes.
+(pack 31700, [HOLLYWOOD.md](HOLLYWOOD.md): the Lite revision 4, *The Bright Lights* revision 8). Revision 8, about 4.1 MB.
+Built from the Surviving Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as
+the frame, its music, its catch game's look, its status bar's moon and sun (revision 5: the full chapter's daytime badges) and
+its soft key's phone (revision 8: the journal's badge); and from the low-end 1.0.4 (88K) demo's jar, its eight silhouettes
+(revision 6: the full chapter's people with no portrait; revision 8 adds them turned). Its numbers stay as they are. Revision
+1 had the portraits at 4 times and no frame, music or turned faces; revision 2 had no catch skin or moon; revision 3 had no
+numbered star or star badge; revision 4 no sun; revision 5 no silhouettes; revision 6 no Title Screen Look; revision 7 no
+turned silhouettes or phone.
 
 | Resources | What |
 | --- | --- |
@@ -212,7 +212,9 @@ revision 4 no sun; revision 5 no silhouettes.
 | 26631 | Its status bar's moon (sprite 43) as a time badge icon, BREW's icons' size |
 | 26633 | Its status bar's sun (sprite 67), the same way: the full chapter's daytime badges |
 | 27200-27207 | The 1.0.4 demo's eight silhouettes (its sprite sheet 3000: a waving boy, a small girl, a man in a cap, a broad man, a heavy man, a rocker with a guitar, a posing woman, a woman in a dress) as portraits: their pedestal shadow left off, at 6 times, the head where the whole figure at 4.5 times would put it, the rest running down past the ring. Built only when that jar is given (`--lite-demo-jar`) |
+| 27208-27215 | The same silhouettes turned the other way (revision 8), worn for the sprites the full chapter shows turned (`shw_full.TURNED_SILHOUETTES`) |
 | 26632 | The star (sprite 59) as a badge icon, the same way: the lite chapter's place badges |
+| 26634 | The soft key's phone (sprite 57) as a badge icon, the same way (revision 8): the full chapter's *Quest journal updated* badge |
 | 26701-26745 | Its 45 icons (2501-2545) as catch pictures, at 3 times |
 | 26012-26110 | Backgrounds 1504-1536, at 26000 + 3 × (picture − 1500) + BREW's sky mode (day, night, sunset), each over the demo's own sky strip, 6 times their pixels. A picture with no sky window is the same under all three |
 | 26960-26964 | The [Title Screen Look](#settings) (revision 7): its spec; the main menu's layout 9 (the spotlight panel, rims, film strip and round logo, which stays under the photo) as a top, a two-row middle and a bottom, built at the frame's height; and the city map (1100, its sky filled; its middle doubled exactly, a little smaller in the 3:4 frame so the logo shows) as a photo |
@@ -250,7 +252,7 @@ python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR --out OUT_
 ```
 
 **Surviving Hollywood's chapters** (pack 31700, badge SHW in the logo's gold, filed under Surviving Hollywood; owner,
-2026-11-14). Phase 2 is *The Bright Lights (Lite)*, the 1.0.4 demo's retelling of Chapter 1
+2026-11-14; [HOLLYWOOD.md](HOLLYWOOD.md) has the whole story). Phase 2 is *The Bright Lights (Lite)*, the 1.0.4 demo's retelling of Chapter 1
 (`tools/translate/shw_lite.py`). It requires `shshw` only, never the BREW add-on, and takes from it, through the profile's
 pack tables: the frame (26990), the catch game's skin with its pictures by number (`TRANSLATED_CATCH_ADDON`, so
 `desktop_brew_catch` reads this spec instead of BREW's), the demo's main-menu tune for Title Screen Music (`shw`, 26907),

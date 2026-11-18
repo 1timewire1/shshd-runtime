@@ -5,7 +5,8 @@ SHA-256 `b17aa4c71bc46666d414cafae6fac92bbcd755f3dcccd73975cf05f4a119665b`.
 Addresses below are Ghidra virtual addresses with image base `0x10000`.
 The three mini-game families in this dispatcher are services **71, 94, 96**.
 Translated games add their own: [New Rules' arena](NEW_RULES.md), the
-[X360 games](X360.md#minigames) and [SHS '11's](SHS11.md#minigames).
+[X360 games](X360.md#minigames) and [SHS '11's](SHS11.md#minigames);
+[Surviving Hollywood's](HOLLYWOOD.md) play as these and BREW's catch game.
 Their rules run independently of pygame and return results to the original
 KiWi instruction stream. This is an implemented subset of the original engine,
 not a claim of complete episode support or verified pixel/frame equivalence.
