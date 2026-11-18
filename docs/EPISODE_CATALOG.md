@@ -292,3 +292,7 @@ Tests cover both validated envelopes, truncation and corrupt counts/strings,
 native alias IDs, ambiguous categories, atomic catalog/EXP imports, persistence,
 original corpus coverage, category-based season boundaries, collapsible search,
 scrolled/resized pointer targets, and navigation back to the same list position.
+
+Some EXPs hold several episodes behind a menu (a season's pack, a set). The episode splitter that would list each as
+its own entry is planned for after v1.1.0; its survey of those packs, and the test split that comes first, are in
+[EPISODE_SPLITTER.md](EPISODE_SPLITTER.md).

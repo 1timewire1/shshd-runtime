@@ -29,6 +29,8 @@ it's done, so real clocks (fades, timers) run as in play.
                                 `set dsi_pixels sharp|smooth`, `set preferred_language en|fr|it|de|es` (the titles,
                                 and the DSi's, '11's and the Creator's stories where they have it)
     aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
+    resize W H                  a computer's window resized to W x H pixels, as a drag would (with `aspect fit`, any
+                                shape: 9:20 is `resize 540 1200`); not on a phone, whose window is its screen
     game shs|cod                pick a game, as the game picker does (`open` needs one picked)
     import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
     window yes|no|ok|LABEL|N    press a button of the menu's open window (`state` shows it as `window`), or the Nth
@@ -504,6 +506,21 @@ class Commands:
             return dict(ok=False, error=f'aspect is one of {", ".join(CHOICES)} or default')
         self.app.set_aspect_ratio(None if choice == 'default' else choice)
         return dict(ok=True, aspect=self.app.settings.aspect(self.app.fixed_window))
+
+    def do_resize(self, rest):
+        """A computer's window at W x H, as a user's drag leaves it: the app and the open story draw into it from the next
+        frame (they read its size each frame). For shapes past the Aspect Ratio choices (2026-11-18: 9:20)."""
+        try:
+            width, height = (int(value) for value in rest.split())
+        except ValueError:
+            return dict(ok=False, error='resize W H')
+        if getattr(self.app, 'fixed_window', False) or not (100 <= width <= 8192 and 100 <= height <= 8192):
+            return dict(ok=False, error="a phone's window is its screen" if getattr(self.app, 'fixed_window', False)
+                        else 'W and H are 100 to 8192')
+        self.app.window = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+        if self.app.game is not None:
+            self.app.game.window = self.app.window
+        return dict(ok=True, window=list(self.app.window.get_size()))
 
     def do_game(self, rest):
         key = rest.strip().lower()
