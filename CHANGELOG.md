@@ -453,6 +453,11 @@
 
 ### Fixed
 
+- **A freeze when music paused as a sound effect ended** (the owner's g54, 2026-11-17, changing settings): pygame's
+  `music.pause`/`unpause` wait for SDL's audio lock holding Python's, while the audio thread, as a sound ends, holds that
+  lock waiting for Python's. Music now pauses through SDL_mixer by ctypes, which lets Python's lock go
+  (`sdl_audio.pause_music`); every other pygame call that takes the audio lock already did. Desktop too: a stress test
+  hung within seconds before.
 - **Phones draw less each frame** (Moto g54 profiles, 2026-11-17): the X360 games read their skin once rather than
   every frame; translated episodes skip the black under their opaque frame backdrop; outlined glyphs share their shapes
   across colours; HD menus keep their layout walks; the quiz and timed menus keep their still panel while only the clock

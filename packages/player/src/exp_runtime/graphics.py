@@ -127,7 +127,22 @@ def set_music_repeat(repeat, *, start_ms=0, paused=False):
         position = music_position(start_ms)
         music.play(loops=loops, start=position / 1000)
         if paused:
-            music.pause()
+            pause_music(True)
+
+
+def pause_music(pause):
+    """Pause (True) or resume the music stream. pygame's own music pauses through `sdl_audio.pause_music`, which
+    releases the interpreter's lock (its `music.pause` could deadlock with a sound effect ending); a host's mixer
+    pauses itself."""
+    music = __getattr__('mixer').music
+    if getattr(music, '__name__', '') == 'pygame.mixer_music':
+        from .platforms.sdl_audio import pause_music as native
+        try:
+            if native(pause):
+                return
+        except (OSError, AttributeError):
+            pass
+    (music.pause if pause else music.unpause)()
 
 
 def faded(surface, alpha):

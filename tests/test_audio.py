@@ -64,6 +64,60 @@ os._exit(0)
                 self.fail('music.pause hung')
         self.assertIn('played', result.stdout, result.stderr)
 
+    def test_pausing_while_sounds_end_never_hangs_the_player(self):
+        # The owner's g54 froze, 2026-11-17: pygame's `music.pause` waits for SDL's audio lock holding the interpreter,
+        # while the audio thread, as a sound effect ends, holds that lock in `endsound_callback` waiting for the
+        # interpreter. Through pygame's own call this hung within seconds on the desktop too.
+        script = '''
+import os, sys, time
+os.environ['SDL_VIDEODRIVER'] = 'dummy'
+import pygame
+from exp_runtime.music_stream import MusicStream
+pygame.mixer.init(22050, -16, 2, 256)
+pygame.mixer.set_num_channels(32)
+data = open(sys.argv[1], 'rb').read()
+stream = MusicStream()
+stream.play(1, 1, lambda music_id: (data, 0), 0)
+tiny = pygame.mixer.Sound(buffer=bytes(22050 * 4 * 3 // 1000))
+end, pauses = time.monotonic() + 4, 0
+while time.monotonic() < end:
+    for _ in range(8):
+        tiny.play()
+    stream._pause_stream(pauses % 2 == 0)
+    pauses += 1
+stream.reset()
+print('played', pauses, flush=True)
+os._exit(0)
+'''
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cue.wav'
+            path.write_bytes(silent_wav(4000, 22050))
+            env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p),
+                       TMPDIR=folder, TEMP=folder, TMP=folder)
+            try:
+                result = subprocess.run([sys.executable, '-c', script, str(path)], capture_output=True, text=True,
+                                        timeout=40, env=env)
+            except subprocess.TimeoutExpired:
+                self.fail('music.pause hung as a sound ended')
+        self.assertIn('played', result.stdout, result.stderr)
+
+    def test_pygames_own_music_pauses_through_sdl_mixer_and_a_hosts_through_its_own_call(self):
+        from exp_runtime import graphics
+        host = SimpleNamespace(pause=Mock(), unpause=Mock())
+        with patch.object(graphics, '__getattr__', lambda name: SimpleNamespace(music=host), create=True), \
+                patch('exp_runtime.platforms.sdl_audio.pause_music') as native:
+            graphics.pause_music(True)
+            graphics.pause_music(False)
+        native.assert_not_called()
+        host.pause.assert_called_once_with()
+        host.unpause.assert_called_once_with()
+        pygames = SimpleNamespace(__name__='pygame.mixer_music', pause=Mock(), unpause=Mock())
+        with patch.object(graphics, '__getattr__', lambda name: SimpleNamespace(music=pygames), create=True), \
+                patch('exp_runtime.platforms.sdl_audio.pause_music', return_value=True) as native:
+            graphics.pause_music(True)
+        native.assert_called_once_with(True)
+        pygames.pause.assert_not_called()
+
     def test_pygames_stream_takes_a_file_and_a_hosts_mixer_the_bytes(self):
         from exp_runtime.music_stream import CueFiles, cue_source
         import exp_runtime.music_stream as module

@@ -30,6 +30,25 @@ def position_ms():
     return None
 
 
+def pause_music(pause):
+    """shshd-runtime: pause or resume the music stream with the interpreter's lock released; False when SDL_mixer can't
+    be reached (the caller then uses pygame's own call).
+
+    pygame's `music.pause`/`unpause` call Mix_PauseMusic/Mix_ResumeMusic holding the interpreter's lock, and both take
+    SDL_mixer's audio lock. SDL's audio thread holds that lock while it mixes, and when a sound ends there pygame's
+    `endsound_callback` waits for the interpreter's lock: a pause landing as a sound effect ends hangs the player (the
+    owner's g54 froze changing settings, 2026-11-17: main thread in Mix_PauseMusic -> Mix_LockAudio, audio thread in
+    endsound_callback). A ctypes call releases the interpreter's lock for its duration. Every other pygame call that
+    takes the audio lock already releases it (pygame 2.5's mixer, read from its Android build)."""
+    library = decoder()
+    function = None if library is None else getattr(library, 'Mix_PauseMusic' if pause else 'Mix_ResumeMusic', None)
+    if function is None:
+        return False
+    function.argtypes, function.restype = [], None
+    function()
+    return True
+
+
 class Sound:
     """A seekable decoded effect; SDL channels expose no decoder playhead."""
     def __init__(self, stream, start_ms=0):

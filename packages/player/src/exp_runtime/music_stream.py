@@ -333,7 +333,7 @@ class MusicStream:
     def _pause_stream(self, pause):
         self.paused = pause
         try:
-            (pygame.mixer.music.pause if pause else pygame.mixer.music.unpause)()
+            pygame.pause_music(pause)
         except pygame.error as error:
             logging.warning('Music cannot change pause state: %s', error)
 
