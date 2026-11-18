@@ -304,6 +304,15 @@ same. See [X360.md](X360.md#the-x360-arena-skin).
 
 ## Known limits
 
-- The WinMo panel's property code wasn't compared with the Java's.
-- The menu and info box's own layouts aren't decoded.
-- HUD box words 3 and 4 are inferred.
+Settled 2026-11-17 (reference/Other Games/docs/NR_ARENA.md, SHS_NEW_RULES_ENGINE.md): the WinMo panel's property code
+agrees with the Java's; HUD box words 3 and 4 are the mirror flag and the expression; 764 is a preload, 767 an unused
+list, 768 the key queue's depth (now `NRArena.key_limit`: 1, Sequences 6). The arena's "max" now restarts on every point
+at full, and presses while the number keys show only queue, as in both builds. Every engine service and stream command
+has its meaning. What's still different:
+
+- **The info box** (every game's intro text) is the bubble's box, narrower and in the item font, with no hourglass, and
+  the first OK closes it. New Rules draws a full-width bordered dialog (layout 23) in font 61 with pack 73's hourglass,
+  and ignores OK for about 2.4 s. Its layouts are decoded, not built.
+- **A character the stage hides** (service 46 or stream command 14, y of 10 or more) can go on speaking out of view;
+  here their portrait shows. About 63 lines: Dancing Queen's fall and King of Diss's blanket scene, and 8 downloads
+  (02: As Time Goes By's sinking pair among them).

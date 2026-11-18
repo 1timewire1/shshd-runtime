@@ -121,7 +121,10 @@ class NRArena:
     keypad_flash: int = -1              # 766
     keypad_flash_ms: int = 0
     soft_key: bool = False              # 771
-    unknown_768: int = 1                # 768 (field_591), not drawn
+    # 768 (X1i field_596): how many presses the queue holds; a press past it replaces the newest (method_374), so only
+    # the last press survives a wait. 1 as the panel opens; Sequences sets 6 (2026-11-17: ours queued 19, and presses
+    # piled up in the library's waits went on to dismiss its next "press ok" bubbles).
+    key_limit: int = 1
     popups: list[Popup] = field(default_factory=list)                   # at most POPUPS
     bubbles: list = field(default_factory=lambda: [None, None])         # 762/763: [text, slot, flags]
     keys: list = field(default_factory=list)                            # queued key bits, at most KEYS
@@ -249,6 +252,14 @@ class NRArena:
         if bits is None or self.time_up == 1:
             return
         button = -1
+        if self.keypad:
+            # While the number keys show (Sequences), OK and the arrows only queue: no lit button, no cut-short 708
+            # colour, no ring step (X1i method_374 case 25; 2026-11-17).
+            if len(self.keys) < min(max(1, self.key_limit), KEYS - 1):
+                self.keys.append(bits)
+            elif self.keys:
+                self.keys[-1] = bits
+            return
         if bits in (16, 32):
             button, self.feedback = 0, 0
         elif bits in (4, 8):
@@ -268,8 +279,10 @@ class NRArena:
             if button == 0:
                 self.button_ms[1] = 0
                 self.buttons |= 64
-        if len(self.keys) < KEYS - 1:
+        if len(self.keys) < min(max(1, self.key_limit), KEYS - 1):
             self.keys.append(bits)
+        elif self.keys:
+            self.keys[-1] = bits                    # the queue is full: the newest press is replaced
 
     def _next_key(self, numbers: bool) -> int:
         if not self.keys:
@@ -373,8 +386,8 @@ class NRArena:
         elif prop == 714:
             self.score = v1
         elif prop == 715:
-            if self.meter < 9 and v1 == 10:
-                self.max_ms = 0
+            if v1 == 10:
+                self.max_ms = 0                     # every write of 10 restarts "max" (X1i 4678, WinMo the same)
             self.meter = v1 - 1
         elif prop == 716:
             self.target_marker = v1 - 1
@@ -447,7 +460,7 @@ class NRArena:
             if v1 not in self.pictures and len(self.pictures) < 20:
                 self.pictures.append(v1)
         elif prop == 768:
-            self.unknown_768 = v1
+            self.key_limit = v1
         elif prop == 769:
             self.ok_shown = v1 != 0
             self.buttons = self.buttons | 2 if v1 else self.buttons & ~2
@@ -519,6 +532,8 @@ class NRArena:
     @classmethod
     def from_data(cls, data: dict) -> 'NRArena':
         data = dict(data)
+        if 'unknown_768' in data:                   # (saves before 2026-11-17 named it so; it was never read)
+            data['key_limit'] = data.pop('unknown_768')
         data['popups'] = [Popup(**popup) for popup in data.get('popups', [])]
         arena = cls(**data)
         arena.validate()

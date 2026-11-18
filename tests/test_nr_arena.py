@@ -36,6 +36,7 @@ class ArenaModelTests(unittest.TestCase):
     def test_keys_queue_for_the_library_and_stepped_rings_follow_the_arrows(self):
         arena = NRArena.opened(False, False)
         arena.set(0, 729, 4)
+        arena.set(0, 768, 6)                                # Sequences' queue depth
         for key in (-5, -6, -7, -1, 51):                    # fire, left soft, right soft, up, the 3 key
             arena.press(key)
         self.assertEqual([arena.get(707) for _ in range(4)], [1, 1, 2, 3])
@@ -63,6 +64,32 @@ class ArenaModelTests(unittest.TestCase):
         arena.set(0, 729, 1)                                # insert a slot
         self.assertEqual(len(arena.slots), 5)
         self.assertTrue(arena.set(0, 718, 0))               # 718 closes it
+
+    def test_the_queue_holds_as_many_presses_as_768_says_and_a_full_one_keeps_the_newest(self):
+        # X1i method_374 / WinMo the same (2026-11-17): 1 as the panel opens, so only the last press survives a wait.
+        arena = NRArena.opened(False, False)
+        arena.set(0, 729, 4)
+        for key in (-5, -6, -7):
+            arena.press(key)
+        self.assertEqual([arena.get(707), arena.get(707)], [2, -1])  # the right soft key, the last one, alone
+        arena.set(0, 768, 2)
+        for key in (-5, -6, -7):
+            arena.press(key)
+        self.assertEqual([arena.get(707) for _ in range(3)], [1, 2, -1])
+        old = dict(arena.to_data(), unknown_768=6)
+        del old['key_limit']
+        self.assertEqual(NRArena.from_data(old).key_limit, 6)      # a save from before the name
+
+    def test_max_restarts_on_every_10_and_the_number_keys_light_nothing(self):
+        arena = NRArena.opened(False, False)
+        arena.set(0, 729, 4)
+        arena.set(0, 715, 10)
+        arena.tick(500)
+        arena.set(0, 715, 10)
+        self.assertEqual(arena.max_ms, 0)                   # each point at full restarts its "max"
+        arena.set(0, 765, 1)
+        arena.press(-5)
+        self.assertEqual((arena.buttons & 0x60, arena.keys), (0, [16]))   # queued, no lit OK
 
     def test_the_code_after_the_panel_opens_says_whether_the_game_shows_the_number_keys(self):
         def vm(*operands):
