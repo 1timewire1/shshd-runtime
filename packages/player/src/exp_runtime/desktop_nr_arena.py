@@ -26,6 +26,9 @@ SCREEN_WIDTH, SCREEN_HEIGHT = 480, 650     # the game area (class_6.field_325 / 
 # class_13.field_618: sin(0..90 degrees) x 65536, truncated, with the table's own three roundings.
 SINE = tuple({30: 32768, 47: 47930, 90: 65535}.get(d, int(math.sin(math.radians(d)) * 65536)) for d in range(91))
 KEYPAD = '541236'                       # field_617: the number keys around the ring (765), slot order
+# The info box (layout 23, shsnr revision 5): its top-level nodes are frame 57, the text area, the scroll plate and
+# the hourglass's place (0-based); in the Java's numbering the text area is 17, the plate 18 and the hourglass 29.
+INFO_LAYOUT, INFO_TEXT_NODE, INFO_PLATE_NODE, INFO_HOURGLASS_NODE = 23, 1, 2, 3
 ITEM_FONT = 56                          # field_450 as the arena keeps it (field_229)
 # class_6's boot: font 56 swaps to 59 at '~' and to the score font 61 at '`'; 61 back to 56 at ';' and to 59 at '~';
 # 59 back at ';' and to 61 at '`'.
@@ -268,23 +271,32 @@ class Skin:
         found = self.sprites.get(name)
         return found[0].get_size() if found else (0, 0)
 
-    def layout(self, target, layout_id, rect, replace=None):
+    def layout(self, target, layout_id, rect, replace=None, hide=frozenset(), _first=1):
         """A layout drawn into `rect` (class_0.method_14): visible nodes (flag 16), images tiled (from the right with
-        flag 64, the bottom with 128), colour fills, outlines and nested layouts."""
+        flag 64, the bottom with 128), colour fills, outlines and nested layouts. `hide`: nodes left out, numbered as the
+        Java numbers them (`w.a(int, short[])`: 1 the first node, a nested layout's own nodes following it), such as
+        the info box's scroll plate. Returns how many nodes it numbered."""
         layout = self.layouts[layout_id]
         design_w, design_h = layout['size']
         x0, y0, w, h = rect
         dx, dy = w - design_w, h - design_h
+        index = _first
         for node in layout['nodes']:
-            if not node['flags'] & 16:
-                continue
+            kind, payload = node['kind'], node['payload']
+            shown = bool(node['flags'] & 16) and index not in hide
             base, rel = node['base'], node['relative']
             x1, y1 = x0 + base[0] + (dx * rel[0] >> 12), y0 + base[1] + (dy * rel[1] >> 12)
             x2, y2 = x0 + base[2] + (dx * rel[2] >> 12), y0 + base[3] + (dy * rel[3] >> 12)
             child = pygame.Rect(x1, y1, x2 - x1, y2 - y1)
-            if child.width <= 0 or child.height <= 0:
+            if kind == 7:
+                if shown and child.width > 0 and child.height > 0:
+                    index += 1 + self.layout(target, payload[0], child, replace, hide, index + 1)
+                else:
+                    index += 1 + self._count(payload[0])
                 continue
-            kind, payload = node['kind'], node['payload']
+            index += 1
+            if not shown or child.width <= 0 or child.height <= 0:
+                continue
             if kind == 1:
                 found = self.sprites.get(f'slot/{payload[0]}/{payload[1]}')
                 if found is not None:
@@ -297,8 +309,15 @@ class Skin:
                     pygame.draw.rect(target, rgb(colour), child, 1)
                 else:
                     target.fill(rgb(colour), child)
-            elif kind == 7:
-                self.layout(target, payload[0], child, replace)
+        return index - _first
+
+    def _count(self, layout_id):
+        return sum(1 + (self._count(n['payload'][0]) if n['kind'] == 7 else 0) for n in self.layouts[layout_id]['nodes'])
+
+    def number(self, layout_id, top):
+        """The Java's number (`w.a(int, short[])`) of a layout's top-level node `top` (0-based), nested nodes counted."""
+        nodes = self.layouts[layout_id]['nodes'][:top]
+        return 1 + sum(1 + (self._count(n['payload'][0]) if n['kind'] == 7 else 0) for n in nodes)
 
     @staticmethod
     def tile_rect(target, image, rect, from_right=False, from_bottom=False):
@@ -532,7 +551,10 @@ class NRArenaRenderer:
             self._paint(surface, arena, session, now)
         if action is not None and action.name in ('arena_menu', 'arena_info') and overlay:
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
-            self._overlay(surface, action, now)
+            if action.name == 'arena_info' and self.holds_info:
+                self._info_box(surface, action, arena)
+            else:
+                self._overlay(surface, action, now)
         k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
         size = (native[0] * k, native[1] * k)
         direct = hd_scale.S == 1
@@ -950,6 +972,51 @@ class NRArenaRenderer:
         if pointer and flags & 1:
             self.skin().blit(surface, f'pointer/{0 if above else 1}/{now // 250 % 4}', slot_x - 39,
                              y + height - 4 if above else y)
+
+    @property
+    def holds_info(self):
+        """Whether the info box is New Rules' own (layout 23 and the hourglass, in the shsnr addon from revision 5),
+        which holds OK until its hourglass has run (Desktop, nr_arena.info_ready); an older addon draws the bubble."""
+        try:
+            skin = self.skin()
+        except (KeyError, ValueError, OSError):
+            return False
+        return INFO_LAYOUT in skin.layouts and 'hourglass/0' in skin.sprites
+
+    def _info_box(self, surface, action, arena):
+        """New Rules' info box (service 10; class_13.method_425 and method_356 case 2, class_6.method_236 and
+        method_239): layout 23 across the game area's whole width, as tall as its text needs but its text area never
+        under 161 pixels (whole lines; the text centred in it), centred in layout 86's node 59 (y 74 to the soft-key
+        bar), the scroll plate (node 18) left out as it doesn't scroll, the text in the item font (field_229) centred,
+        and pack 73's hourglass at node 29, emptying as the box's clock runs. Drawn at the arena's own pixels, so it
+        scales whole with the rest of the arena."""
+        skin, font = self.skin(), self.font(ITEM_FONT)
+        design_w, design_h = skin.layouts[INFO_LAYOUT]['size']
+        text_base = skin.layouts[INFO_LAYOUT]['nodes'][INFO_TEXT_NODE]['base']      # (61, 22, 215, 183) of 240 x 240
+        left, top = text_base[0], text_base[1]
+        right, bottom = design_w - text_base[2], design_h - text_base[3]
+        least = text_base[3] - text_base[1]                                       # 161: the text area at its design
+        width = SCREEN_WIDTH - left - right
+        text = action.details.get('text') or ''
+        row = font.height + font.gap                                              # method_88
+        shown = font.block_height(len(font.lines(text, width)))                   # method_91
+        area = max(-(-least // row) * row, shown)
+        height = top + bottom + area
+        zone = skin.nodes.get('info_area', pygame.Rect(OX, 74, SCREEN_WIDTH, 576))
+        span = self.screen_height - zone.y + 1                                     # method_236: y to y + h, inclusive
+        # Across the frame's few columns either side of New Rules' 480 too, as the bands and table are, so the ring
+        # doesn't show past its ends; the text keeps New Rules' width, centred where its area is.
+        box = pygame.Rect(0, zone.y + (span - height) // 2, NATIVE[0], height)
+        skin.layout(surface, INFO_LAYOUT, box, hide=frozenset((skin.number(INFO_LAYOUT, INFO_PLATE_NODE),)))
+        text_x = box.x + left + (box.width - left - right - width) // 2
+        clip = surface.get_clip()
+        surface.set_clip(pygame.Rect(text_x, box.y + top, width, area).clip(clip))
+        font.draw(surface, text, text_x, box.y + top + (area - shown) // 2, width, 3)
+        surface.set_clip(clip)
+        glass = self._layout_node(INFO_LAYOUT, box, INFO_HOURGLASS_NODE + 1)
+        step = arena.hourglass_step if arena is not None else 0
+        skin.blit(surface, f'hourglass/{step}', glass.x, glass.y)
+        self.targets.append((surface.get_rect(), ('arena_answer', 0)))           # a tap anywhere is its OK
 
     def _overlay(self, surface, action, now):
         """New Rules' menu (9) and info box (10) over the arena. Approximate (docs/NEW_RULES.md): the bubble's box and

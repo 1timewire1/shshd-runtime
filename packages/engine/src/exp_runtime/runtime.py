@@ -1021,7 +1021,11 @@ class Session:
             self.vm.resume(value)
             self.pending = None
         elif action.name == 'arena_info':
-            self.vm.resume(0)                               # New Rules' info box (its 10): OK closes it
+            # New Rules' info box (its 10): OK closes it. The player holds OK until nr_arena.info_ready, as New Rules
+            # does; a script's or Skip Ahead's answer goes through at once.
+            if self.engine.nr_arena is not None:
+                self.engine.nr_arena.info_ms = -1
+            self.vm.resume(0)
             self.pending = None
         elif action.name == 'arena_skip':
             # Before an arena game (213): -1 plays it; another value is the result its story reads instead.
@@ -1459,6 +1463,15 @@ class Session:
         try:
             if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 42):
                 raise SaveError('Unsupported save format or version')
+            # New Rules' arena, saved open (as it opens, for Undo, or as the app is left): its key queue's depth was
+            # `unknown_768` before 2026-11-17, and the info box's clock (`info_ms`) came 2026-11-18. By key, not version.
+            arena = (state.get('engine') or {}).get('nr_arena') if isinstance(state.get('engine'), dict) else None
+            if isinstance(arena, dict) and ('unknown_768' in arena or 'info_ms' not in arena):
+                state = deepcopy(state)
+                arena = state['engine']['nr_arena']
+                if 'unknown_768' in arena:
+                    arena['key_limit'] = arena.pop('unknown_768')
+                arena.setdefault('info_ms', -1)
             # Version 38 adds the BREW games' catch game (brew_catch.py); an older save never had one open.
             if state['version'] < 38 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)

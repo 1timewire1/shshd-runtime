@@ -241,6 +241,46 @@ class ArenaServiceTests(unittest.TestCase):
             self.assertIsNone(machine.engine.nr_arena)                  # then the script goes on
             self.assertTrue(machine.vm.pending.kind.name == 'HALT')
 
+    def test_the_info_box_runs_its_hourglass_and_saves_from_before_it_still_load(self):
+        # Service 10's box (class_13.method_425): 200 ms, then 1,999 counted down, the hourglass emptying over the count;
+        # the player holds OK until then (nr_arena.info_ready), a script's answer goes through at once.
+        words, (title, options, info) = text_words('tutorial?', 'yes|no', 'press ok!')
+        story = program(*host_call(200, 0, 1), *host_call(210, title, options, 0), *host_call(211, info),
+                        *host_call(208), 0x33, words=words)
+        session = Session(resources(story))
+        session.advance()
+        for _ in range(8):
+            session.tick(250)
+        self.assertEqual(session.answer(1).name, 'arena_info')
+        arena = session.engine.nr_arena
+        self.assertEqual((arena.info_ms, arena.info_ready, arena.hourglass_step), (0, False, 0))
+
+        def run(ms):                                                        # 50 ms frames (a tick is capped)
+            for _ in range(ms // 50):
+                session.tick(50)
+            if ms % 50:
+                session.tick(ms % 50)
+        run(200)
+        self.assertEqual(arena.hourglass_step, 0)                           # the count starts after the opening
+        run(1000)
+        self.assertEqual((arena.info_ready, arena.hourglass_step), (False, 4))      # 9 x (2000 - 999) / 2000
+        run(998)
+        self.assertFalse(arena.info_ready)
+        run(1)
+        self.assertEqual((arena.info_ready, arena.hourglass_step), (True, 8))
+        run(5000)
+        self.assertEqual(arena.info_ms, 2199)                               # it stops at the end
+        # A save from before the clock, and from before 768 had its name, still loads (by key, not version).
+        snapshot = json.loads(json.dumps(session.snapshot()))
+        old = snapshot['engine']['nr_arena']
+        old['unknown_768'] = old.pop('key_limit')
+        del old['info_ms']
+        restored = Session.from_snapshot(resources(story), snapshot)
+        self.assertEqual((restored.engine.nr_arena.key_limit, restored.engine.nr_arena.info_ms), (1, -1))
+        self.assertTrue(restored.engine.nr_arena.info_ready)               # a box open in an old save: OK closes it
+        self.assertEqual(session.answer().name, 'arena_frame')
+        self.assertEqual(arena.info_ms, -1)                                 # closed
+
     def test_ask_to_skip_waits_before_an_arena_game_and_hands_the_story_its_answer(self):
         # 213 (the translator puts it before each arena game): -1 plays the game. Without Ask to Skip Mini-Games it
         # answers that at once; with it the story waits on 'arena_skip' (saved like the arena's other screens) for

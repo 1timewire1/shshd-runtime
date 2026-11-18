@@ -555,6 +555,8 @@ class EngineState:
                 title=self.resolve_text(vm, args[0]), options=options, selected=max(0, args[2])))
         if y == 211:                                            # 10: an info box over the panel; waits for OK
             need(1)
+            if arena is not None:
+                arena.open_info()                               # its hourglass and OK's hold (nr_arena.INFO_*)
             return EngineAction('arena_info', request, False, dict(text=self.resolve_text(vm, args[0])))
         if y == 212:                                            # 32: the build query
             need(1)

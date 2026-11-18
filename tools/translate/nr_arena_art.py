@@ -202,7 +202,12 @@ def background_tile(source):
 # Layouts the player draws itself, at sizes that change: the text item box (25, `o.a(25)`), the bubble (70) and the
 # dials (33 timer, 34 score), with the layouts they nest; 27 is a menu's highlighted row (class_6.method_239).
 # 11 (the table), 66 (the top band) and 67 (the bottom band, with the stand) for the entrance (class_13.method_383).
-DRAWN_LAYOUTS = (11, 25, 27, 33, 34, 66, 67, 70)
+# 23 is the info box (service 10; class_13.method_425, class_6.method_236 with layout 23 and nodes -1, 17, 17, 24, 25):
+# frame 57 over the whole, the text area (node 17), the scroll plate (layout 18, node 18, shown only when it scrolls)
+# and the hourglass's place (node 29). Shown full width, fit to its text, centred in layout 86's node 59 (INFO_AREA).
+DRAWN_LAYOUTS = (11, 23, 25, 27, 33, 34, 66, 67, 70)
+INFO_LAYOUT, INFO_TEXT_NODE, INFO_PLATE_NODE, INFO_HOURGLASS_NODE = 23, 17, 18, 29
+HOURGLASS_SLOT = 9                      # pack 73 (class_6.field_206): its sequence 0, nine steps, at node 29
 # Layout 31's nodes the panel places things at (node_rect numbering), and layout 66's.
 ARENA_NODES = {'field': 76, 'wide': 88, 'band': 47, 'bottom_band': 14, 'table': 69,
                'ok': 77, 'second': 72, 'left': 78, 'right': 79, 'hint': 87,
@@ -223,10 +228,12 @@ BUBBLE_SLOT = 8                         # pack 123 (class_6.field_209): the bubb
 # The panel's fonts (class_6's boot sequence: t.a(InputStream, extra)), resource -> the extra pixels each glyph
 # advances.
 # 56 is field_229 and, after the boot swaps it in, field_231 too; 61 is field_232 (the score digits); 59 is field_230;
-# 57 is field_234 (the info box). An item's font byte picks 0 -> 56, 1 -> 61, 2 -> 59, 3 -> 56 (o.a(t)).
+# 57 is field_234. An item's font byte picks 0 -> 56, 1 -> 61, 2 -> 59, 3 -> 56 (o.a(t)). The info box's text is 56:
+# its widget is handed field_232 (61), but the row painter (class_6.method_239) measures and draws with field_229
+# (checked 2026-11-18; the emulator's info box matches the bubbles' letters).
 FONTS = {56: 0, 57: 0, 59: 1, 61: 0}
 ITEM_FONTS = (56, 61, 59, 56)
-SCORE_FONT, INFO_FONT = 61, 57
+SCORE_FONT, INFO_FONT = 61, 56
 
 
 def read_font(data):
@@ -297,6 +304,9 @@ def build_skin(source, backdrop=None):
     band_rect = Rect(0, band.y, width, band.height)
     nodes = {name: node_rect(original, ARENA_LAYOUT, index, screen) for name, index in ARENA_NODES.items()}
     nodes.update({name: node_rect(original, BAND_LAYOUT, index, band_rect) for name, index in BAND_NODES.items()})
+    # The info box's area (class_6.method_236: layout 86's node 59 on the X1i's whole 480 x 800 screen): y 74 down to
+    # the soft-key bar at 650.
+    nodes['info_area'] = node_rect(original, 86, 59, Rect(0, 0, width, 800))
     sprites, images = {}, []
 
     def add(name, found):
@@ -347,6 +357,9 @@ def build_skin(source, backdrop=None):
     dials = nr_art.Pack(source[DIAL_PACK], source)
     for f in range(min(2, len(dials.frames))):
         add(f'dial/{f}', _group_image(dials, f))       # 0 the score dial's face, 1 the timer's
+    hourglass = packs.get(HOURGLASS_SLOT)
+    for step, index in enumerate(hourglass.sequences[0] if hourglass is not None and hourglass.sequences else ()):
+        add(f'hourglass/{step}', _group_image(hourglass, index))   # the info box's, emptying over its 2 s
     bubble = packs[BUBBLE_SLOT]
     for s, sequence in enumerate(bubble.sequences[:2]):
         for step, index in enumerate(sequence):

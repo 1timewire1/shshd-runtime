@@ -86,8 +86,9 @@ Replacing an episode adds a new record beside the old one, as an episode's id is
 
 ### `shsnr`: New Rules
 
-Required by every [New Rules](NEW_RULES.md) translation. Revision 4, about 45 MB; the stories ask for revision 3, since 4
-adds only the main menu's art.
+Required by every [New Rules](NEW_RULES.md) translation. Revision 5, about 45 MB; the stories ask for revision 3, since 4
+adds only the main menu's art and 5 only the arena's own info box (layout 23 and its hourglass in the skin;
+[NEW_RULES.md](NEW_RULES.md)), which an older revision draws as a bubble.
 
 | Resources | What |
 | --- | --- |

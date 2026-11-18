@@ -26,6 +26,10 @@ SHAKE = 790                             # shshd-runtime's own property: shake th
 # before the score's own jingle (#05, the library's).
 TIME_UP_SOUND = 26982
 TIME_UP_MS = 2000                     # how long "Time's up!" shows before the panel presses its OK (time_up)
+# The info box (service 10; class_13.method_425): it opens with transition 6, 200 ms (its clock starts at 200 of 400), then
+# counts 1,999 ms down; OK closes it only once that has run out (method_374 case 2), and the hourglass empties over the
+# count, step min(8, 9 (2000 - left) / 2000) of pack 73's sequence 0 (method_356 case 2).
+INFO_DELAY_MS, INFO_COUNTDOWN_MS, HOURGLASS_STEPS = 200, 1999, 9
 
 # Nokia key codes (the Vivaz/J2ME canvas) as the panel queues them (class_22.method_546), and how 707 and 772 read
 # them. The player passes these codes: OK / fire, soft keys, the arrows, and the number keys 0-9.
@@ -143,6 +147,7 @@ class NRArena:
     shake_ms: int = 0
     shake_base: int = 100               # 722 as the library set it; the ring's size between shakes
     shake_seed: int = 1
+    info_ms: int = -1                   # how long the open info box (service 10) has shown; -1: none open
 
     # -- opening and the clock ---------------------------------------------------------------------------------------
     @classmethod
@@ -170,9 +175,26 @@ class NRArena:
         self.exit_ms = min(EXIT_MS, max(0, self.exit_ms) + max(0, elapsed_ms))
         return self.exit_ms >= EXIT_MS
 
+    def open_info(self) -> None:
+        """An info box opens over the panel (service 10): its clock starts."""
+        self.info_ms = 0
+
+    @property
+    def info_ready(self) -> bool:
+        """Whether OK closes the open info box yet: after its opening and its 1,999 ms (method_374 case 2)."""
+        return self.info_ms < 0 or self.info_ms >= INFO_DELAY_MS + INFO_COUNTDOWN_MS
+
+    @property
+    def hourglass_step(self) -> int:
+        """The info box's hourglass, 0 (full) to 8 (run out): min(8, 9 (2000 - left) / 2000), `left` the countdown."""
+        left = INFO_COUNTDOWN_MS - max(0, self.info_ms - INFO_DELAY_MS)
+        return min(HOURGLASS_STEPS - 1, max(0, HOURGLASS_STEPS * (2000 - left) // 2000))
+
     def tick(self, elapsed_ms: int) -> None:
         """One frame (h's update, case 25 state 11)."""
         dt = elapsed_ms
+        if self.info_ms >= 0:
+            self.info_ms = min(INFO_DELAY_MS + INFO_COUNTDOWN_MS, self.info_ms + max(0, dt))
         self.blink_clock_ms -= dt
         if self.blink_clock_ms < 0:
             self.blink_clock_ms += BLINK_FREE_MS
@@ -547,5 +569,6 @@ class NRArena:
                 or len(self.popups) > POPUPS or len(self.keys) > KEYS or len(self.bubbles) != 2 or len(self.sounds) > 4
                 or not 0 <= self.angle < 360 or self.direction not in (-1, 0, 1) or self.motion not in MOTIONS
                 or self.item_kind not in (PORTRAIT, PICTURE, TEXT) or self.time_up not in (0, 1, 2)
-                or self.time_up_ms < -1 or self.shake_ms < 0 or self.shake_base < 3):
+                or self.time_up_ms < -1 or self.shake_ms < 0 or self.shake_base < 3
+                or not -1 <= self.info_ms <= INFO_DELAY_MS + INFO_COUNTDOWN_MS):
             raise ValueError('Invalid New Rules arena state')

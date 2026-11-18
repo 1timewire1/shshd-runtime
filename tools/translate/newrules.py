@@ -46,7 +46,7 @@ FRAME_BACKDROP = 26999
 # shared by every translation that declares it instead of each carrying its own copies (owner, 2026-10-30). Raise the
 # revision when an ID above changes meaning; episodes need at least the revision they were built against.
 # Revision 2 adds the minigame library and the arena's skin; 3 the arena's copy of the dialogue screens' frame.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 4    # 4: the Title Screen Look
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsnr', 'Surviving High School: New Rules', 5    # 5: the arena's own info box (layout 23, hourglass); 4: the Title Screen Look
 STORIES_NEED = 3        # what a story asks for: revision 4 added only the main menu's art, which no story uses
 ADDON_EPISODE = 0                       # the addon's metadata episode number (no story has 0)
 # New Rules' minigame arena drawn from the X1i build's art (nr_arena_art.build_skin), after the backgrounds (26000-26173)

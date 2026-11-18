@@ -9,9 +9,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 
-def skin_files(pygame, frame=None):
+def skin_files(pygame, frame=None, info=False):
     """A small skin in the addon's format: one atlas of plain blocks, every node and layout the renderer reads, and
-    with `frame` (an RGB colour) a frame picture of that colour."""
+    with `frame` (an RGB colour) a frame picture of that colour. With `info`, the info box of revision 5: a stand-in
+    layout 23 (a frame of colour 1, the text area, a scroll plate of colour 4, the hourglass's place) and the
+    hourglass's nine steps, each its own colour in a second atlas row."""
     names = ['button/ok', 'button/second', 'button/left', 'button/right', 'meter/0/0', 'meter/0/1', 'dial/0',
              'dial/1', 'menu/bullet', 'icon/0', 'frame/4/22', *(f'timer/{i}' for i in range(17)),
              *(f'menu/arrow/{i}' for i in range(6))]
@@ -24,8 +26,13 @@ def skin_files(pygame, frame=None):
         for ch in chars:
             sprites[f'font/{resource}/{ord(ch)}'] = dict(rect=[x, 0, 6, 10], offset=[0, 0])
             x += 7
-    atlas = pygame.Surface((x, 10), pygame.SRCALPHA)
+    steps = 9 if info else 0
+    for i in range(steps):
+        sprites[f'hourglass/{i}'] = dict(rect=[i * 9, 11, 8, 30], offset=[0, 0])
+    atlas = pygame.Surface((max(x, 81), 41), pygame.SRCALPHA)
     atlas.fill((200, 40, 40, 255))
+    for i in range(steps):
+        atlas.fill((10 * i, 250, 10, 255), (i * 9, 11, 8, 30))
     nodes = dict(field=[0, 300, 480, 120], wide=[0, 330, 480, 90], band=[0, 98, 480, 74],
                  bottom_band=[0, 479, 480, 70], table=[-23, 294, 526, 152], ok=[208, 400, 64, 32], second=[216, 297, 49, 24],
                  left=[154, 396, 48, 34], right=[278, 396, 48, 34], hint=[227, 404, 26, 22], timer=[28, 102, 60, 60],
@@ -38,6 +45,17 @@ def skin_files(pygame, frame=None):
     dial = dict(kind=1, flags=17, payload=[4, -1], base=[0, 0, 10, 10], relative=[0, 0, 4096, 4096])
     layouts = {str(i): dict(size=[10, 10], nodes=[fill] if i in (25, 27, 70) else [dial, face])
                for i in (11, 25, 27, 33, 34, 66, 67, 70)}
+    if info:
+        nodes['info_area'] = [0, 74, 480, 576]
+        frame57 = dict(kind=2, flags=18, payload=[1], base=[0, 0, 10, 10], relative=[0, 0, 4096, 4096])
+        plate = dict(kind=2, flags=18, payload=[4], base=[0, 0, 10, 10], relative=[0, 0, 4096, 4096])
+        layouts['57'] = dict(size=[10, 10], nodes=[frame57])
+        layouts['18'] = dict(size=[10, 10], nodes=[plate])
+        layouts['23'] = dict(size=[240, 240], nodes=[
+            dict(kind=7, flags=23, payload=[57], base=[0, 0, 240, 206], relative=[0, 0, 4096, 4096]),
+            dict(kind=6, flags=6, payload=[], base=[61, 22, 215, 183], relative=[0, 0, 4096, 4096]),
+            dict(kind=7, flags=23, payload=[18], base=[73, 188, 168, 233], relative=[2048, 4096, 2048, 4096]),
+            dict(kind=1, flags=1, payload=[9, -1], base=[25, 53, 53, 152], relative=[0, 2048, 0, 2048])])
     font = dict(space=4, gap=0, track=-2, height=10, extra=0)
     spec = dict(format='shshd-nr-arena-skin', version=1, screen=[480, 650], nodes=nodes, layouts=layouts,
                 colors=[0x5E3365, 0xFFFFFF, 0, 0xE7A64A, 0x75FC84, 0, 0xE76110], sprites=sprites,
@@ -237,6 +255,33 @@ class ArenaRenderTests(unittest.TestCase):
         renderer.draw(None, self.session(arena), now_ms=0)
         self.assertFalse([command for _, command in renderer.targets if command[1] >= 48])
 
+    def test_new_rules_own_info_box_fills_the_width_hides_its_plate_and_runs_its_hourglass(self):
+        # Revision 5's skin: layout 23 across the frame, fit to its text but its text area 161 pixels at least, centred
+        # in y 74-650 (here: 79 + 170, whole 10-pixel lines, so 249 tall at y 238), the plate hidden, the hourglass at
+        # node 29 at the box's step; an older skin keeps the bubble and takes OK at once.
+        from exp_runtime.nr_arena import NRArena
+        self.assertFalse(self.renderer().holds_info)
+        files = skin_files(self.pygame, info=True)
+        by_id = {resource: files[name] for name, resource in self.module.SKIN.items()}
+        renderer = self.module.NRArenaRenderer(SimpleNamespace(raw_asset=by_id.__getitem__, exists=by_id.__contains__))
+        self.assertTrue(renderer.holds_info)
+        arena = NRArena.opened(False, False)
+        arena.open_info()
+        for _ in range(48):
+            arena.tick(25)                                  # 1,200 ms: 1,000 of the count, step 4
+        surface = self.pygame.Surface(self.module.NATIVE, self.pygame.SRCALPHA)
+        renderer.targets = []
+        renderer._info_box(surface, SimpleNamespace(details=dict(text='AB')), arena)
+        white = (255, 255, 255, 255)
+        self.assertEqual(surface.get_at((0, 300)), white)                           # the frame, from the left edge
+        self.assertEqual(surface.get_at((self.module.NATIVE[0] - 1, 300)), white)   # to the right
+        self.assertEqual(surface.get_at((244, 237))[3], 0)                          # above the box: y 238
+        self.assertEqual(surface.get_at((244, 238)), white)
+        self.assertEqual(surface.get_at((244, 238 + 249 - 20))[3], 0)                 # no scroll plate below it
+        glass = surface.get_at((25 + 2, 238 + 53 + (249 - 240) // 2 + 2))
+        self.assertEqual(glass[:3], (40, 250, 10))                                  # step 4
+        self.assertEqual(renderer.targets[-1][1], ('arena_answer', 0))
+
     def test_a_tap_anywhere_closes_the_info_box(self):
         from exp_runtime.nr_arena import NRArena
         renderer = self.renderer()
@@ -351,6 +396,21 @@ class ArenaKeyTests(unittest.TestCase):
         ui = self.desktop('arena_info', text='')
         self.key(ui, pygame.K_RETURN)
         self.assertEqual(ui.command.call_args.args[0], ('arena_answer', 0))
+
+    def test_new_rules_own_info_box_holds_ok_until_its_hourglass_has_run(self):
+        from exp_runtime.nr_arena import NRArena
+        ui = self.desktop('arena_info', text='')
+        arena = ui.session.engine.nr_arena = NRArena.opened(False, False)
+        arena.open_info()
+        ui.nr_arena_renderer = SimpleNamespace(holds_info=True)
+        ui._arena_renderer = lambda: ui.nr_arena_renderer
+        self.assertTrue(ui._arena_info_held(ui.session.pending))
+        for _ in range(88):
+            arena.tick(25)                                  # 2,200 ms: the opening and the count
+        self.assertFalse(ui._arena_info_held(ui.session.pending))
+        arena.info_ms = 0
+        ui.nr_arena_renderer = SimpleNamespace(holds_info=False)          # an older skin, or the X360 look
+        self.assertFalse(ui._arena_info_held(ui.session.pending))
 
     def test_a_tap_on_the_arena_is_its_ok_key_and_the_gear_pauses(self):
         ui = self.desktop('arena_frame')

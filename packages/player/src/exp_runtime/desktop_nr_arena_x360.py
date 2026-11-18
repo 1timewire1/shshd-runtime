@@ -183,6 +183,7 @@ def plain_runs(text):
 
 
 class X360ArenaRenderer(X360Deck, NRArenaRenderer):
+    holds_info = False                  # its own info box (_overlay_x360) has no hourglass, so OK closes it at once
     frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
 
     @property

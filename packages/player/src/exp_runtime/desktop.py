@@ -4089,8 +4089,17 @@ class Desktop:
             elif kind == 'arena_key' and action and action.name == 'arena_frame':
                 self.session.arena_press(command[1])
             elif kind == 'arena_answer' and action and action.name in ('arena_menu', 'arena_info'):
-                self._attempt(lambda: self.session.answer(command[1]))
+                if not self._arena_info_held(action):
+                    self._attempt(lambda: self.session.answer(command[1]))
         self._sync_text_input()
+
+    def _arena_info_held(self, action):
+        """Whether OK on New Rules' info box is ignored yet: until its hourglass has run (nr_arena.info_ready, about
+        2.2 s), where the look draws New Rules' own box (owner, 2026-11-18), so OK mashed after "view tutorial?"
+        can't skip the intro, as in New Rules (class_13.method_374 case 2)."""
+        arena = self.session.engine.nr_arena
+        return (action.name == 'arena_info' and arena is not None and not arena.info_ready
+                and getattr(self._arena_renderer(), 'holds_info', False))
 
     def _continue_guarded(self, action):
         """Whether a continue tap lands in a dialogue line's or page's first CONTINUE_GUARD_MS (ignored)."""

@@ -420,6 +420,11 @@
 
 ### Changed
 
+- **New Rules' arena shows its own info box** (owner, 2026-11-18; New Rules add-on revision 5,
+  [NEW_RULES.md](docs/NEW_RULES.md)): each game's intro text is in New Rules' full-width bordered box with its hourglass,
+  in place of a speech bubble, and as in New Rules OK closes it only once the hourglass has run (about 2.2 s), so OK
+  pressed after "view tutorial?" no longer skips the intro. An older add-on, and the X360 Arena Skin, keep the bubble.
+  Also, a save holding an open arena from before 2026-11-17 loads again (the key queue's depth was renamed then).
 - **Josh's dance under each room's own lights** (owner, 2026-11-17; X360 add-on revision 20,
   [X360.md](docs/X360.md#joshs-dance)): Diss Practice in the hallway and in his room draws him lit as the prototype
   lights those rooms, not as on the school's steps; MS3 Characters' dancer too.

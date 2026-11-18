@@ -220,8 +220,16 @@ area, widened to 489 × 652 for exactly 3:4, then scales up by the smallest whol
   frame is wider than New Rules' screen.
 - **Taller frames** (owner, 2026-11-17): the arena is spread through the frame's own shape rather than drawn as a 3:4 picture at its bottom. Its top group (the band with the timer and score, HUD box 0) moves down 15% of the height added, its lower group (the table, ring, buttons, HUD boxes 1-2, the bottom band) 70%, and the legs stretch over the rest to the player's bar and gear (`SPREAD_TOP`, `SPREAD_LOWER`, `node()`). Popups, bubbles, the number keys and taps follow the same layout; the X360 look does the same through its deck and HUD (`desktop_nr_arena_x360._deck`). At 3:4 nothing moves.
 - **Back to the story:** the arena's last picture fades out over the next screen in 400 ms (`ARENA_HANDOVER_MS`). New Rules shows it at once.
-- **The menu** ("view tutorial?") is SHS's own choice over the arena (`arena_menu_prompt`), and the info box uses the bubble's box. New Rules' own dialog layouts
-  haven't been decoded.
+- **The menu** ("view tutorial?") is SHS's own choice over the arena (`arena_menu_prompt`).
+- **The info box** (every game's intro text, service 10) is New Rules' own (owner, 2026-11-18; addon revision 5): layout
+  23 across the frame's width, fit to its text with its text area never under 161 pixels (whole lines, the text centred
+  in it), centred between y 74 and the soft-key bar, in the item font (the row painter draws with font 56, though the
+  widget is handed 61), and pack 73's hourglass at its left emptying over the box's count. As in New Rules, OK closes it
+  only after 200 ms and 1,999 ms (`NRArena.info_ms`, `info_ready`): a key, click or tap before then does nothing
+  (`Desktop._arena_info_held`); a script's answer and Skip Ahead go through at once. The scroll plate (layout 18) never
+  shows, as no intro is long enough to scroll. It runs on past New Rules' 480 pixels to the frame's edges, as the bands
+  do. It's drawn at the arena's own pixels and scaled with the rest of it. An older addon keeps the bubble, and OK closes
+  it at once; so does the X360 Arena Skin, whose box has no hourglass.
 - **Not drawn:** portrait items (no wired game uses them), and pictures other than the 29 item icons.
 
 ### Sound
@@ -308,11 +316,8 @@ Settled 2026-11-17 (reference/Other Games/docs/NR_ARENA.md, SHS_NEW_RULES_ENGINE
 agrees with the Java's; HUD box words 3 and 4 are the mirror flag and the expression; 764 is a preload, 767 an unused
 list, 768 the key queue's depth (now `NRArena.key_limit`: 1, Sequences 6). The arena's "max" now restarts on every point
 at full, and presses while the number keys show only queue, as in both builds. Every engine service and stream command
-has its meaning. What's still different:
+has its meaning. The info box is New Rules' own since 2026-11-18 (above). What's still different:
 
-- **The info box** (every game's intro text) is the bubble's box, narrower and in the item font, with no hourglass, and
-  the first OK closes it. New Rules draws a full-width bordered dialog (layout 23) in font 61 with pack 73's hourglass,
-  and ignores OK for about 2.4 s. Its layouts are decoded, not built.
 - **A character the stage hides** (service 46 or stream command 14, y of 10 or more) can go on speaking out of view;
   here their portrait shows. About 63 lines: Dancing Queen's fall and King of Diss's blanket scene, and 8 downloads
   (02: As Time Goes By's sinking pair among them). Kept on purpose (owner, 2026-11-18): SHS lays its scenes out with
