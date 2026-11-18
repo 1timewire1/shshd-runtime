@@ -489,7 +489,7 @@ writes a project's **Version** when it has one.
 
 ## Episode languages extension (shshd-runtime)
 
-An episode may contain resource **6** beginning with `SHSHD-LANGUAGES `,
+An episode may contain resource **6** beginning with `SHSHD-LANGUAGES\0`,
 followed by gzip'd UTF-8 JSON with `format: "shshd-languages"`, `version: 1`
 (`episode_languages.py`; owner, 2026-11-17): the episode's text in other
 languages, carried in the episode itself. This is SHSHD Runtime metadata;
