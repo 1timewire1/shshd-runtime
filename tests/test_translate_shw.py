@@ -57,6 +57,20 @@ class TranslatorRuleTests(unittest.TestCase):
         for source, written in shw_full.CASING_FIXES.items():
             self.assertEqual((written.lower(), len(written)), (source.lower(), len(source)), source)
         self.assertEqual(shw_full.case_text('in seaside as an executive assistant'), 'in Seaside as an executive assistant')
+        for lines in shw_full.CASING_BY_SCRIPT.values():
+            for source, written in lines.items():
+                self.assertEqual((written.lower(), len(written)), (source.lower(), len(source)), source)
+
+    def test_a_second_read(self):
+        # Owner, 2026-11-17: a line used as a fragment in one script and a sentence in another; joining words after `...`;
+        # the phone's keys.
+        import shw_full
+        line = 'you could win a small town beauty pageant.'
+        self.assertEqual(shw_full.case_text(line, rid=10005), 'You could win a small town beauty pageant.')
+        self.assertEqual(shw_full.case_text(line, rid=11003), line)
+        self.assertEqual(shw_full.case_text('thanks... but i can\'t afford it. so... so long.'),
+                         "Thanks... but I can't afford it. So... So long.")
+        self.assertEqual(shw_full.case_text('use the d-pad. use the ok button.'), 'Use the D-pad. Use the OK button.')
 
     def test_its_scripts_keep_their_numbers_apart(self):
         import shw_full

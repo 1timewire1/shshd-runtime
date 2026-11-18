@@ -269,6 +269,14 @@ CASING_WORDS.update({**{m.lower(): m for m in ('Jan', 'Feb', 'Apr', 'Jun', 'Jul'
 # Lines the rules can't case, from reading every line in context (owner's g54 notes, 2026-11-17): {the demo's text, lowercase as
 # stored (after tidy): how it's written}. Only the case may differ (checked in tests/test_translate_shw.py).
 CASING_FIXES = json.loads((Path(__file__).resolve().parent / 'shw_casing_fixes.json').read_text(encoding='utf-8'))
+# Lines whose text is also used elsewhere as a fragment (CASING_FIXES keeps those lowercase), written whole in one script only:
+# {the demo's script: {text: written}}. The looks table (10005) says them as sentences of their own, beside capitalised
+# siblings; 11003 puts them after `%s` (a second read of every line, 2026-11-17).
+CASING_BY_SCRIPT = {10005: {'you could win a small town beauty pageant.': 'You could win a small town beauty pageant.',
+                            'you stand out like a high class actress.': 'You stand out like a high class actress.'}}
+# A joining word after `...` carries the sentence on, so it stays lowercase (owner, 2026-11-17: `I hate to admit it... but
+# that did feel kind of nice`): `Thanks... But I can't afford it.` was capitalised in about 40 lines (a second read).
+ELLIPSIS_JOIN = re.compile(r"(?<=\.\.\. )(?:And|But|Because|Since|Or|Nor)\b")
 # The theatre's opening hours (`mon-wed 12-9pm`): days written short, in a place's description only (`hot sun` elsewhere).
 HOURS_DAY = re.compile(r'(?<![A-Za-z])(mon|tue|wed|thu|fri|sat|sun)(?=[-, \n])')
 # Names of more than one word, any of whose words is an everyday one ("tad small", "hot joe's hot dogs"), matched whole.
@@ -281,7 +289,9 @@ CASING_PHRASES = ('The Jeff', 'Tad Small', 'Club Franken-Stein', 'Franken-Stein'
                   'Tue. - Fri. at', 'Sat. at',        # the rehearsal schedule's days, short (not sentence ends)
                   # the map's districts in running text (`in the uplands`, `in studio central`; the owner's g54 notes,
                   # 2026-11-17), the Sistine Chapel, and a boom operator's microphone, which isn't Mike
-                  'Studio Central', 'Entertainment Strip', 'Uplands', 'Seaside', 'Sistine Chapel', 'boom mike')
+                  'Studio Central', 'Entertainment Strip', 'Uplands', 'Seaside', 'Sistine Chapel', 'boom mike',
+                  # the phone's keys in the minigames' help (a second read, 2026-11-17)
+                  'D-pad', 'OK button')
 # A lone `i` (not in CASING_WORDS: casing.apply would read `is` as its plural, `Is`), also just inside a quote (`'i told`).
 LONE_I = re.compile(r"(?<![A-Za-z$])(?<![A-Za-z]')i(?![A-Za-z'])")
 CASING_QUOTED = re.compile(r"(?<=')jellyfish [ab]\b", re.I)    # the screenplay's roles: 'Jellyfish A', 'Jellyfish B' (the lite's)
@@ -298,7 +308,7 @@ PHRASE = re.compile('|'.join(r'(?<![A-Za-z])' + re.escape(p) + r'(?![A-Za-z])' f
                                                                                                     reverse=True)), re.I)
 
 
-def recase(program, title_addresses=(), unknown=None):
+def recase(program, title_addresses=(), unknown=None, rid=None):
     """The program with its text cased in place (the same length): names (`title_addresses`, the cast's) title-cased, the rest
     by casing.apply with CASING_WORDS, then CASING_PHRASES. Only text (is_text)."""
     words = list(program.main_words)
@@ -309,14 +319,14 @@ def recase(program, title_addresses=(), unknown=None):
         if address in title_addresses:
             cased = casing.title_case(text)
         else:
-            cased = case_text(text, unknown)
+            cased = case_text(text, unknown, rid)
         if cased != text:
             raw = cased.encode('latin-1')
             data[address * 2:address * 2 + len(raw)] = raw
     return replace(program, main_words=tuple(struct.unpack(f'>{len(words)}H', bytes(data))))
 
 
-def case_text(text, unknown=None):
+def case_text(text, unknown=None, rid=None):
     """A line of the demo's (lowercase) text as written: casing.apply with CASING_WORDS, then the phrases, a lone `i`, line starts,
     the opening hours' days, quoted roles and titles, the word after an opening stage direction, and last CASING_FIXES, the lines
     read one by one. The same length."""
@@ -337,7 +347,8 @@ def case_text(text, unknown=None):
     titles = {t.lower(): t for t in QUOTED_TITLES}
     cased = QUOTED_TITLE.sub(lambda m: titles[m.group().lower()], cased)
     cased = AFTER_DIRECTION.sub(lambda m: m.group()[:-1] + m.group()[-1].upper(), cased)
-    return CASING_FIXES.get(text, cased)
+    cased = CASING_BY_SCRIPT.get(rid, {}).get(text) or CASING_FIXES.get(text, cased)
+    return ELLIPSIS_JOIN.sub(lambda m: m.group().lower(), cased)
 
 
 def _phrase(text, match, written):
@@ -349,8 +360,8 @@ def _phrase(text, match, written):
     return form
 
 
-def program_of(raw, title_addresses=(), unknown=None):
-    return recase(brew.rewrite_strings(decode_program(brew.upgrade(raw)), tidy), title_addresses, unknown)
+def program_of(raw, title_addresses=(), unknown=None, rid=None):
+    return recase(brew.rewrite_strings(decode_program(brew.upgrade(raw)), tidy), title_addresses, unknown, rid)
 
 
 # -- the setup's constants ---------------------------------------------------------------------------------------------------
@@ -786,7 +797,7 @@ def stat_page(s, tables, title, value, signed):
 class Script:
     def __init__(self, rid, raw, story):
         self.rid, self.story = rid, story
-        self.program = program_of(raw, story.setup['cast_addresses'] if rid == SETUP_SCRIPT else (), story.unknown)
+        self.program = program_of(raw, story.setup['cast_addresses'] if rid == SETUP_SCRIPT else (), story.unknown, rid)
         self.words = self.program.main_words
         self.r = Rewriter(self.program, zero_gap=True)
         self.t = Tables(self.r, story)
