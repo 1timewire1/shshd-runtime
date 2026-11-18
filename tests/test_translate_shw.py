@@ -40,6 +40,24 @@ class TranslatorRuleTests(unittest.TestCase):
         self.assertIsNone(shw_full.tidy(b'\x06c\x07['))                          # the setup's cast table
         self.assertEqual(shw_full.tidy(b"hi, $usr! { press '1' to view."), b"hi, $USR! pause to view it.")
 
+    def test_its_casing_rules(self):
+        import shw_full
+        case = shw_full.case_text
+        self.assertEqual(case("(he whispers) you better get on it."), "(He whispers) You better get on it.")
+        self.assertEqual(case("he was so hot in 'last love'. the sequel is 'last love 2'."),
+                         "He was so hot in 'Last Love'. The sequel is 'Last Love 2'.")
+        self.assertEqual(case("i'm 'jellyfish a.' you're 'jellyfish b.'"), "I'm 'Jellyfish A.' You're 'Jellyfish B.'")
+        self.assertEqual(case('tony talks to the boom mike operator. mike calls.'), 'Tony talks to the boom mike operator. Mike calls.')
+        self.assertEqual(case('a studio in studio central, in la.'), 'A studio in Studio Central, in LA.')
+        self.assertEqual(case("you said, 'i told you.'"), "You said, 'I told you.'")
+
+    def test_its_read_lines_change_only_case(self):
+        import shw_full
+        self.assertGreater(len(shw_full.CASING_FIXES), 150)
+        for source, written in shw_full.CASING_FIXES.items():
+            self.assertEqual((written.lower(), len(written)), (source.lower(), len(source)), source)
+        self.assertEqual(shw_full.case_text('in seaside as an executive assistant'), 'in Seaside as an executive assistant')
+
     def test_its_scripts_keep_their_numbers_apart(self):
         import shw_full
         self.assertEqual([shw_full.shs_script(r) for r in (10002, 10017, 11000, 11007)], [25002, 25017, 25100, 25107])
@@ -153,6 +171,48 @@ class FullChapterTests(unittest.TestCase):
         self.assertGreater(max(journal), 3)                                     # the pause menu's journal fills in
         self.assertTrue(any(r['kind'] == 'message' and r['title'] == 'Stat changes' for r in record))
 
+    def test_badges_portraits_and_silhouettes_follow_the_owners_notes(self):
+        """A badge for the one screen after it and never on a title card; the player's every line with her portrait; the
+        silhouettes turned to face the middle; the street kid of 11002 a girl (owner's g54 notes, 2026-11-17)."""
+        import playthrough
+        import shw
+        import shw_full
+        session = playthrough.session(self.data, addons=[self.addon])
+        session.engine.random.state = 2
+        rng = random.Random(2)
+
+        class Record(list):
+            def append(self, r):
+                badge = session.engine.scene_badge
+                r['badge'] = badge.text if badge else None
+                if r['kind'] == 'line':
+                    r['art'] = session.engine.character_art_bases.get(r['character'])
+                super().append(r)
+        record = Record()
+
+        class Answers:
+            def __len__(self):
+                return 1
+
+            def pop(self, _):
+                return rng.randrange(len(record[-1].get('options') or ['']))
+        playthrough.steps(session, Answers(), 'Kate', 20000, record)
+        self.assertEqual(record[-1]['kind'], 'exit')
+        self.assertFalse([r for r in record if r['kind'] == 'title' and r['badge']])
+        stale = [(a['badge'], b) for a, b in zip(record, record[1:]) if a['badge'] and a['badge'] == b['badge']
+                 and a['kind'] != 'title']
+        self.assertFalse(stale)
+        you = [r for r in record if r['kind'] == 'line' and r['speaker'] == 'You']
+        self.assertTrue(you)
+        self.assertEqual({r['character'] for r in you}, {shw_full.PLAYER})
+        mom = {r['art'] for r in record if r['kind'] == 'line' and r['speaker'] == 'Mom'}
+        self.assertEqual(mom, {shw.TURNED_SILHOUETTE_BASE + 7})
+        self.assertIn('turned_silhouettes', self.spec)
+        self.assertIn(shw.PHONE_BADGE, self.addon.entries)
+        journal = [r for r in record if r['badge'] == shw_full.JOURNAL_UPDATED]
+        self.assertTrue(journal)
+        self.assertEqual(shw_full.JOURNAL_ICON, shw.PHONE_BADGE)
+
     def test_every_person_without_a_portrait_wears_a_silhouette(self):
         import shw
         import shw_full
@@ -185,7 +245,7 @@ class FullChapterTests(unittest.TestCase):
         names = {casing_name(n) for n in ('mom', 'dad', 'cop', 'telemarketer', 'kid', 'vendor', 'girl', 'guy')}
         lines = [r for r in record if r['kind'] == 'line' and r.get('speaker') in names]
         self.assertTrue(lines)
-        pictures = {shw.SILHOUETTE_BASE + k for k in range(shw.SILHOUETTES)}
+        pictures = {base + k for base in (shw.SILHOUETTE_BASE, shw.TURNED_SILHOUETTE_BASE) for k in range(shw.SILHOUETTES)}
         for r in lines:
             self.assertIn(session.engine.character_art_bases.get(r['character']), pictures, r)
             self.assertEqual(r['expression'], 0)                    # the next silhouette is no expression of this one

@@ -1334,7 +1334,9 @@ class BrewShimTests(unittest.TestCase):
             else:
                 seen.append((stop.yield_id, tuple(args)))
             vm.resume(0x7FF5 if stop.yield_id == 17 else 0)
-        self.assertEqual(seen, [(17, 'Enter your name', '', 'Jenny'), (46, self.brew.EVENT_TEXT, 0x7FF5), (99, (1,))])
+        # (55: is a badge up? one goes after the entry it came with, brew.badge_off)
+        self.assertEqual(seen, [(17, 'Enter your name', '', 'Jenny'), (55, (self.brew.BADGE_UP_KEY,)),
+                                (46, self.brew.EVENT_TEXT, 0x7FF5), (99, (1,))])
 
     def test_a_big_casts_setup_stays_within_the_sessions_budget(self):
         """Quiz 3's setup, 16 characters of 23 entries, once ran out searching the look table at every write."""

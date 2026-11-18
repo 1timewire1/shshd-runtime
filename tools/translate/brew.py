@@ -53,7 +53,7 @@ ADDON_REQUIRED = 7                      # what a story needs: rev 8 only redraws
 PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
-STORY_VERSION = 1
+STORY_VERSION = 2                       # 2: badges for one line only, never on a title card (owner, 2026-11-17)
 ADDON_EPISODE = 9999
 TITLE_SUFFIX_07, TITLE_SUFFIX_08 = ' (SHS07)', ' (SHS08)'
 FIRST_SCRIPT, STORY_SCRIPT, BREW_STORY_SCRIPT = 25001, 25002, 26000
@@ -645,6 +645,17 @@ def dots(s, shown, context):
     s.label(plain)
 
 
+def badge_off(s):
+    """Take a time badge away (BADGE_UP_KEY). A badge stays for one line only and never shows on a title card (owner, 2026-11-07
+    and 2026-11-17: Fall '06's Free Time badge stayed through its menus and the Grades page): say() takes it after its line, this
+    after a menu, page, text entry or minigame it came with, and before a title card."""
+    done = s.label()
+    get_global(s, BADGE_UP_KEY); s.jump_if_zero(done)
+    s.push(-1); s.push(-1); s.call(90, 2)
+    set_global(s, BADGE_UP_KEY, lambda: s.push(0))
+    s.label(done)
+
+
 def say(s, text, speaker, expression, context):
     """SHS's dialogue for `text` under BREW's speaker (callables pushing them): no speaker or Event is the narrator, a character with no
     picture says it under its name with none (service 76), and anyone else with their face. A whole line in brackets loses them: it's
@@ -930,6 +941,7 @@ def wait(rewriter, pc, argc, context):
             s.label(shown)
             s.text(PORTRAIT_TITLE); s.emit(0x40, portraits); s.emit(0x40, portraits + 1); s.call(78, 3)
             s.push_result()
+            badge_off(s)
             set_word(s, portraits, lambda: s.push(-1))
             set_global(s, FIELD_KEY, lambda: s.emit(0x41, 0))
             s.push(FIELD_KEY); s.call(55, 1)
@@ -965,6 +977,7 @@ def wait(rewriter, pc, argc, context):
         s.push(-2 if context['player'] else NARRATOR); s.push(-1); s.push(CHOICE_PORTRAIT)
         s.call(1, 8)
         s.push_result()
+        badge_off(s)
         set_word(s, context['menu'] + 1, lambda: s.push(-1))
         set_global(s, FIELD_KEY, lambda: s.emit(0x41, 0))
         s.push(FIELD_KEY); s.call(55, 1)
@@ -1186,6 +1199,7 @@ def catch_game(rewriter, pc, argc, context):
         s.push(WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(WORD_GAME_REFRESH_MS)
         s.call(71, 8)
         s.push_result()                                     # local 3: the result
+        badge_off(s)
         set_word(s, page + 1, lambda: s.push(-1))
         short, scored, kept_score = s.label(), s.label(), s.label()
         s.emit(0x41, 3); s.push(WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
@@ -1214,7 +1228,7 @@ def catch_game(rewriter, pc, argc, context):
         s.arg(sprite_arg); s.arg(list_arg); s.push(context['catch_sizes']); s.push(context['catch_sizes_count'])
         s.push(cut_table)
         s.call(BREW_CATCH, 12)
-        s.push_result(); s.emit(0x04)
+        s.push_result(); badge_off(s); s.emit(0x04)
         s.label(done)
         s.result(0)
     rewriter.redirect(pc, ('catch', context['rid'], service, reads, None if cuts is None else tuple(cuts)), build)
@@ -1355,6 +1369,7 @@ def word_game(rewriter, start, context):
         s.push(good); s.push(bad); s.push(WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(WORD_GAME_REFRESH_MS)
         s.call(71, 8)
         s.push_result()                                     # local 2: the result
+        badge_off(s)
         set_word(s, page + 1, lambda: s.push(-1))
         # A pass is the best total; anything less, its share. Compared before multiplying: the skip prompt's Win is 32767
         # (Session.skip_minigame), which times the rounds and the best score overflowed a word into a loss (1.1, 2026-11-05).
@@ -2104,6 +2119,7 @@ def week_card(s, context, card):
     s.label(written)
     s.push(context['week_buffer']); s.text(WEEK_TITLE); s.emit(0x40, week); push_week(s, lambda: get_global(s, LAST_DAY_KEY))
     s.call(22, 4)
+    badge_off(s)
     s.push(context['week_buffer']); s.push(context['date_range_buffer']); s.push(card); s.push(0); s.call(8, 4)
     s.label(shown)
 
@@ -2691,6 +2707,7 @@ def text_entry(rewriter, pc, argc, context):
     def build(s):
         s.arg(1); s.text(''); s.arg(2); s.call(17, 3)
         s.push_result()                                     # a local: the next call replaces R
+        badge_off(s)
         s.text(EVENT_TEXT); s.emit(0x41, 0); s.call(46, 2)
         s.result(1)
     rewriter.redirect(pc, 'text_entry', build)
@@ -2704,12 +2721,13 @@ def title_line(rewriter, pc, argc, context):
 
 def titled_page(rewriter, pc, argc, context):
     """12: (title, text) -> SHS 33."""
-    rewriter.redirect(pc, 'titled_page', lambda s: (s.arg(1), s.arg(2), s.push(0), s.call(33, 3)))
+    rewriter.redirect(pc, 'titled_page', lambda s: (s.arg(1), s.arg(2), s.push(0), s.call(33, 3), s.push_result(), badge_off(s),
+                                                    s.emit(0x04)))
 
 
 def the_end(rewriter, pc, argc, context):
     """70: the smartphone's closing message and the episode's exit."""
-    rewriter.redirect(pc, ('end', context['rid']), lambda s: (s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3),
+    rewriter.redirect(pc, ('end', context['rid']), lambda s: (badge_off(s), s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3),
                                                               s.call(7, 0)))
 
 
@@ -3456,10 +3474,11 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         elif calendar and script == story_script:
             # The title card has the day the first event runs on (CS Idol's setup schedules its last school day last, Stage 5).
             rewriter.prologue(lambda s, context=context: calendar_step(
-                s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)),
+                s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)), badge_off(s),
                                      s.text(title), s.push(context['date_buffer']), s.push(card), s.push(0), s.call(8, 4)),
-                lambda: (s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0), s.emit(0x33)),
-                lambda: (s.text(title), s.push(context['date_buffer']), push_day_card(s, days or {}, card), s.push(0),
+                lambda: (badge_off(s), s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0),
+                         s.emit(0x33)),
+                lambda: (badge_off(s), s.text(title), s.push(context['date_buffer']), push_day_card(s, days or {}, card), s.push(0),
                          s.call(8, 4))))
         elif calendar:
             pass                                            # an event's own script: the driver already showed its card or badge
@@ -3505,7 +3524,8 @@ def season_driver(name, spec, table, title, card, own_missing):
         new_day = lambda: (week_card(s, context, card), day_line(s, context))
         season_step(
             s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)), new_day()),
-            lambda: (s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0), s.emit(0x33)),
+            lambda: (badge_off(s), s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0),
+                     s.emit(0x33)),
             new_day)
     rewriter.prologue(step)
     return rewriter.finish().to_bytes()

@@ -93,6 +93,12 @@ class Plays(unittest.TestCase):
             'Done.',                                     # the After node, its badge gone
             'END'])
 
+    def test_a_badge_stays_for_one_line(self):
+        nodes = [Node('class', text='Class on day {day()}.', next='c2'), Node('c2', text='Still in class.', next='b1')]
+        seen = play(story(class_nodes=nodes))
+        start = seen.index('Class on day 0. [9:00 AM - Class]')
+        self.assertEqual(seen[start + 1], 'Still in class.')
+
     def test_a_condition_true_when_its_turn_comes_lets_it_run(self):
         seen = play(story(met=1))
         self.assertIn('Secret! [3:00 PM - Secret]', seen)
@@ -141,8 +147,8 @@ class WhilePlaying(unittest.TestCase):
                  Node('k3', text='Back in class at {minute()}.', next='b1')]
         seen = play(story(class_nodes=nodes))
         start = seen.index('Class on day 0. [9:00 AM - Class]')
-        self.assertEqual(seen[start + 1:start + 3], ['Lunch. [9:00 AM - Class]', 'Back in class at 760. [9:00 AM - Class]'])
-        self.assertEqual(seen.count('Lunch. [9:00 AM - Class]') + seen.count('Lunch. [12:00 PM - Lunch]'), 1)
+        self.assertEqual(seen[start + 1:start + 3], ['Lunch.', 'Back in class at 760.'])     # Class's badge went with its line
+        self.assertEqual(seen.count('Lunch.') + seen.count('Lunch. [12:00 PM - Lunch]'), 1)
 
     def test_run_a_scene_and_come_back(self):
         nodes = [Node('class', text='Class.', next='k1'),
@@ -151,7 +157,7 @@ class WhilePlaying(unittest.TestCase):
         extra = [Node('aside', text='An aside.', next='r', scene=25002), Node('r', 'return_scene', scene=25002)]
         seen = play(story(*extra, class_nodes=nodes))
         start = seen.index('Class. [9:00 AM - Class]')
-        self.assertEqual(seen[start + 1:start + 3], ['An aside. [9:00 AM - Class]', 'After the aside. [9:00 AM - Class]'])
+        self.assertEqual(seen[start + 1:start + 3], ['An aside.', 'After the aside.'])
 
 
 class Functions(unittest.TestCase):

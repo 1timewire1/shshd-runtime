@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 5: the status bar's sun as the full chapter's daytime time badge icon (SUN; shw_full.py; owner, 2026-11-14)
 # 6: the 1.0.4 (88K) demo's eight silhouettes as portraits (SILHOUETTE_BASE), for the full chapter's speakers with no face of
 #    their own (shw_full.SILHOUETTES; owner, 2026-11-15); built only when that demo's jar is given (build_addon lite_jar)
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 7     # 7: the Title Screen Look
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 8     # 8: turned silhouettes, the phone badge; 7: the Title Screen Look
 PACK_ID = 31700                         # its metadata's pack: the demo's chapters (shw_lite.py, Phase 2)
 SPEC = 26998                            # what the addon holds, JSON
 SPEC_FORMAT, SPEC_VERSION = 'shshw', 1
@@ -62,6 +62,7 @@ PORTRAIT_CANVAS, PORTRAIT_LIFT = (256, 300), 7
 # shadow left off, at 6 times (12 with no smoothing, then halved), the head where the whole figure at 4.5 times would put it, and
 # the rest running down past the ring, which cuts it as it does a painted bust. SILHOUETTE_BASE + the sprite (0-7).
 SILHOUETTE_SHEET, SILHOUETTE_BASE, SILHOUETTES = 3000, 27200, 8
+TURNED_SILHOUETTE_BASE = SILHOUETTE_BASE + SILHOUETTES   # + the sprite: each turned the other way (revision 8)
 SILHOUETTE_SCALE2, SILHOUETTE_PLACE2 = 12, 9
 SHADOW = frozenset({5, 6, 7})
 FRAME = 26990
@@ -86,6 +87,9 @@ SUN, SUN_SPRITE = 26633, 67
 # travel cards). The catch star also by a number of its own, as an episode's catch list names its pictures (BREW's service
 # 221): no demo resource has it.
 STAR_BADGE, STAR_SPRITE = 26632, CATCH_STAR_SPRITE
+# The soft key's phone (sprite 57), which the demo's tutorial says flashes when a quest is added: the journal badge's icon
+# (revision 8; owner's g54 notes, 2026-11-17).
+PHONE_BADGE, PHONE_SPRITE = 26634, 57
 CATCH_STAR_PICTURE = 2499
 BACKGROUND_BASE, SKY_MODES = 26000, 3   # + SKY_MODES x (the demo's background ID - 1500) + BREW's sky mode
 BACKGROUNDS = range(1504, 1537)
@@ -95,8 +99,8 @@ MAGENTA = (255, 0, 255)
 
 # -- the Preview (owner's picks, 2026-11-13: reference/screenshots/verify/surviving_hollywood/addon_phase1/) -------------------
 PREVIEW_FILE = 'clsc_073_Hollywood.exp'     # brew.build_classic's name for it
-PREVIEW_VERSION = 4                     # 1 had no Hollywood art; 3 added the frame and music, portraits turned case by case; 4 the
-                                        # catch game's skin and the moon
+PREVIEW_VERSION = 5                     # 1 had no Hollywood art; 3 added the frame and music, portraits turned case by case; 4 the
+                                        # catch game's skin and the moon; 5 BREW's badges for one line only (brew.badge_off)
 # Each speaker's look, by a hash of the look's list (brew.py's spec key: its 23 entries, comma-joined), to the demo's portrait and
 # whether it's turned: every one but the player speaks on the right, where the player mirrors it, so a face drawn turned to its
 # left would look away from the middle (owner, 2026-11-13, case by case). Every speaker in the Preview has one look. Event (the
@@ -386,13 +390,18 @@ def build_addon(jar, music=True, lite_jar=None):
     spec['star_badge'] = STAR_BADGE
     resources[SUN] = png(moon_icon(sprites, SUN_SPRITE))
     spec['sun'] = SUN
+    resources[PHONE_BADGE] = png(moon_icon(sprites, PHONE_SPRITE))
+    spec['phone_badge'] = PHONE_BADGE
     if lite_jar is not None:
         figures = sheet_pictures(jar_resources(lite_jar).get(SILHOUETTE_SHEET, b''), SHADOW)
         if len(figures) != SILHOUETTES:
             raise ValueError(f'{lite_jar}: not the 1.0.4 (88K) demo ({len(figures)} silhouettes)')
         for k, figure in enumerate(figures):
-            resources[SILHOUETTE_BASE + k] = png(silhouette(figure))
+            drawn = silhouette(figure)
+            resources[SILHOUETTE_BASE + k] = png(drawn)
+            resources[TURNED_SILHOUETTE_BASE + k] = png(drawn.transpose(Image.FLIP_LEFT_RIGHT))
         spec['silhouettes'] = [SILHOUETTE_BASE + k for k in range(SILHOUETTES)]
+        spec['turned_silhouettes'] = [TURNED_SILHOUETTE_BASE + k for k in range(SILHOUETTES)]
     for number in MUSIC if music else ():
         resources[MUSIC_BASE + number - 3000] = render_music(found[number])
         spec['music'][str(number)] = MUSIC_BASE + number - 3000

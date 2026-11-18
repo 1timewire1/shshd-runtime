@@ -62,9 +62,9 @@ from exp_runtime.exp import Metadata, encode_exp  # noqa: E402
 from exp_runtime.vm import KiwiVM, StopKind  # noqa: E402
 from kiwi_rewrite import Rewriter  # noqa: E402
 
-PACK, EPISODE, VERSION = 31700, 1, 1    # episode 1: the lite moves to 2 (owner, 2026-11-14)
+PACK, EPISODE, VERSION = 31700, 1, 2    # episode 1: the lite moves to 2 (owner, 2026-11-14); 2: the owner's g54 notes (2026-11-17)
 TITLE, SUFFIX = 'The Bright Lights', ' (SHW)'
-ADDON_REQUIRED = 6                      # shshw: the sun as the daytime badge's icon (5), the silhouettes (6)
+ADDON_REQUIRED = 8                      # shshw: the sun as the daytime badge's icon (5), the silhouettes (6), turned (8)
 DRIVER = 25001
 SETUP_SCRIPT, SETUP_ENTRY, SCHEDULE = 10002, 32001, 10000
 SLEEP_SCRIPT, QUEST_SCRIPT = 10007, 10005           # 49's, as 10002 names them (checked in setup_tables)
@@ -103,6 +103,16 @@ SILHOUETTES = {38: 0,                                          # the Kid
                47: 5,                                          # the Musician
                48: 6, 3: 6, 29: 6,                             # Myra, April, Girl
                46: 7, 59: 7, 30: 7}                            # Mom, Sandra, Girl 2
+# Silhouettes shown turned, so that on the right of the box (where the player mirrors a portrait) each faces the middle as 1.0.4
+# draws it there (Mike/The Jeff 3, Tony/Lou 4, Chelsea 6 and the Secretary 7 all stood on its right): the owner's g54 notes,
+# 2026-11-17 (Mom faced away). The man in the cap (2) and the rocker (5, 1.0.4's player, on its left) already face the middle
+# mirrored; the kids (0, 1) are turned as the boy's feet point the other way.
+TURNED_SILHOUETTES = frozenset({0, 1, 3, 4, 6, 7})
+# Lines whose speaker wears another silhouette than their entry's, for that line only: {(script, the line's pc): sprite}. The
+# street kid of 11002 (`You're bootyful!`, `Bye, bye, pretty ladies.`) is a girl: her mother answers `She means 'beautiful'`
+# (owner's g54 notes, 2026-11-17); the Kid of 11000 is the boy (`the wrong boy`, `my son`).
+LINE_SILHOUETTES = {(11002, 225): 1, (11002, 260): 1}
+KID = 38
 NO_BADGE = 629                                       # SHS character key: 1 hides the relationship icon (owner: hidden)
 THEME = 651                                          # SHS character key: the box's colours (unset, a broken mix: owner, 2026-11-14)
 BLUE, PINK, GREY = 1, 2, 3                           # as the lite's (shw_lite.CAST_THEMES)
@@ -146,6 +156,9 @@ WHERE_TITLE = 'Where to?'
 JOURNAL_OPTION, STATS_OPTION, BACK_OPTION = 100, 101, -1
 JOURNAL_TITLE, STATS_TITLE, CHANGES_TITLE = 'Quest Journal', 'Stats', 'Stat changes'
 JOURNAL_UPDATED = 'Quest journal updated'
+# The badge's icon: the soft key's phone, which the demo's tutorial says flashes when a quest is added (owner, 2026-11-17: it was
+# the star).
+JOURNAL_ICON = shw.PHONE_BADGE
 MAX_QUESTS = 16
 KEY_WORDS, OPTION_WORDS, BADGE_WORDS, TEXT_WORDS = 8, 100, 40, 400
 WEEKDAYS = brew.WEEKDAYS
@@ -251,7 +264,11 @@ CASING_NAMES = ('Tony', 'Mike', 'Lou', 'Jeff', 'Kate', 'Glamlet', 'Sergei', 'Seb
                 'Viagrin', 'Tigerbath', 'Lolola', 'Protoman', 'Natalia', 'Dustin', 'Mento', 'Fiance', 'Donna', 'Dan', 'Xavier',
                 'Gregor', 'George', 'Beanstalk', 'Texas', 'Kansas', 'Barcelona', 'Angeles', 'Los')
 CASING_WORDS = {w.lower(): w for w in (*CASING_LIBRARY, *CASING_NAMES)}
-CASING_WORDS.update({**{m.lower(): m for m in ('Jan', 'Feb', 'Apr', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec')}, "i'm": "I'm", "i'll": "I'll", "i've": "I've", "i'd": "I'd"})
+CASING_WORDS.update({**{m.lower(): m for m in ('Jan', 'Feb', 'Apr', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec')}, "i'm": "I'm", "i'll": "I'll", "i've": "I've", "i'd": "I'd",
+                     'la': 'LA'})
+# Lines the rules can't case, from reading every line in context (owner's g54 notes, 2026-11-17): {the demo's text, lowercase as
+# stored (after tidy): how it's written}. Only the case may differ (checked in tests/test_translate_shw.py).
+CASING_FIXES = json.loads((Path(__file__).resolve().parent / 'shw_casing_fixes.json').read_text(encoding='utf-8'))
 # The theatre's opening hours (`mon-wed 12-9pm`): days written short, in a place's description only (`hot sun` elsewhere).
 HOURS_DAY = re.compile(r'(?<![A-Za-z])(mon|tue|wed|thu|fri|sat|sun)(?=[-, \n])')
 # Names of more than one word, any of whose words is an everyday one ("tad small", "hot joe's hot dogs"), matched whole.
@@ -261,10 +278,22 @@ CASING_PHRASES = ('The Jeff', 'Tad Small', 'Club Franken-Stein', 'Franken-Stein'
                   'Pillary Fluff', 'Lord Chatterley', 'Chez Expensif', 'Battlefield Galaga', 'Citizen Krane', 'Princess Vespa',
                   'Return of the Jedi', 'Jellyfish Jamboree', 'Chelsea Lemon', 'Ms. Lemon', 'Lemon-ade', 'Los Angeles',
                   'Myra Spanks',      # the supermodel (Tyra Banks); owner, 2026-11-14
-                  'Tue. - Fri. at', 'Sat. at')        # the rehearsal schedule's days, short (not sentence ends)
-# A lone `i` (not in CASING_WORDS: casing.apply would read `is` as its plural, `Is`).
-LONE_I = re.compile(r"(?<![A-Za-z'$])i(?![A-Za-z'])")
-CASING_QUOTED = re.compile(r"(?<=')jellyfish [ab]\b")     # the screenplay's roles: 'Jellyfish A', 'Jellyfish B' (the lite's)
+                  'Tue. - Fri. at', 'Sat. at',        # the rehearsal schedule's days, short (not sentence ends)
+                  # the map's districts in running text (`in the uplands`, `in studio central`; the owner's g54 notes,
+                  # 2026-11-17), the Sistine Chapel, and a boom operator's microphone, which isn't Mike
+                  'Studio Central', 'Entertainment Strip', 'Uplands', 'Seaside', 'Sistine Chapel', 'boom mike')
+# A lone `i` (not in CASING_WORDS: casing.apply would read `is` as its plural, `Is`), also just inside a quote (`'i told`).
+LONE_I = re.compile(r"(?<![A-Za-z$])(?<![A-Za-z]')i(?![A-Za-z'])")
+CASING_QUOTED = re.compile(r"(?<=')jellyfish [ab]\b", re.I)    # the screenplay's roles: 'Jellyfish A', 'Jellyfish B' (the lite's)
+# Films, shows and the like, written in single quotes: title-cased there only ("hit the wall" stays as it is). From reading every
+# line (owner, 2026-11-17).
+QUOTED_TITLES = ('Last Love 2', 'Last Love', 'The Wall', 'Cheerleading Death Camp IV', 'Return of the Franchise',
+                 'Battlefield Galaga: Behind the Scenes', 'Rudolph the Red-Nosed Reindeer', 'Hamlet', 'Them Weekly',
+                 'The Rodents That Ate Wisconsin', 'Would You Rather', 'Buns of Iron', 'Last Optician Standing')
+QUOTED_TITLE = re.compile(r"(?<=')(?:" + '|'.join(re.escape(t) for t in sorted(QUOTED_TITLES, key=len, reverse=True))
+                          + r")(?=[',.!?])", re.I)
+# A stage direction opening a sentence, `(he whispers) you better...`: the word after it starts the sentence.
+AFTER_DIRECTION = re.compile(r"(?:^|(?<=[.!?] )|(?<=\n))\([^()]+\) [a-z]")
 PHRASE = re.compile('|'.join(r'(?<![A-Za-z])' + re.escape(p) + r'(?![A-Za-z])' for p in sorted(CASING_PHRASES, key=len,
                                                                                                     reverse=True)), re.I)
 
@@ -274,30 +303,41 @@ def recase(program, title_addresses=(), unknown=None):
     by casing.apply with CASING_WORDS, then CASING_PHRASES. Only text (is_text)."""
     words = list(program.main_words)
     data = bytearray(struct.pack(f'>{len(words)}H', *words))
-    written = {p.lower(): p for p in CASING_PHRASES}
     for address, text in casing.strings(program):
         if not is_text(text.encode('latin-1')):
             continue
         if address in title_addresses:
             cased = casing.title_case(text)
         else:
-            own, casing.OWN_NAMES = casing.OWN_NAMES, {}          # New Rules' own names (`rob`) aren't Hollywood's
-            try:
-                cased = casing.apply(text, CASING_WORDS, (), unknown)
-            finally:
-                casing.OWN_NAMES = own
-            cased = PHRASE.sub(lambda m: _phrase(cased, m, written), cased)
-            cased = LONE_I.sub('I', cased)
-            # a line of its own starts with a capital (the journal's `Monday Feb. 2\nday 2 of 29`, `...\ntarget word: charm`)
-            cased = re.sub(r'(?<=\n)[a-z]', lambda m: m.group().upper(), cased)
-            if 'hours:' in cased.lower():
-                cased = '\n'.join(HOURS_DAY.sub(lambda m: m.group().capitalize(), line) if re.search(r'\d', line) else line
-                                  for line in cased.split('\n'))
-            cased = CASING_QUOTED.sub(lambda m: m.group()[:-1] + m.group()[-1].upper(), cased)
+            cased = case_text(text, unknown)
         if cased != text:
             raw = cased.encode('latin-1')
             data[address * 2:address * 2 + len(raw)] = raw
     return replace(program, main_words=tuple(struct.unpack(f'>{len(words)}H', bytes(data))))
+
+
+def case_text(text, unknown=None):
+    """A line of the demo's (lowercase) text as written: casing.apply with CASING_WORDS, then the phrases, a lone `i`, line starts,
+    the opening hours' days, quoted roles and titles, the word after an opening stage direction, and last CASING_FIXES, the lines
+    read one by one. The same length."""
+    written = {p.lower(): p for p in CASING_PHRASES}
+    own, casing.OWN_NAMES = casing.OWN_NAMES, {}          # New Rules' own names (`rob`) aren't Hollywood's
+    try:
+        cased = casing.apply(text, CASING_WORDS, (), unknown)
+    finally:
+        casing.OWN_NAMES = own
+    cased = PHRASE.sub(lambda m: _phrase(cased, m, written), cased)
+    cased = LONE_I.sub('I', cased)
+    # a line of its own starts with a capital (the journal's `Monday Feb. 2\nday 2 of 29`, `...\ntarget word: charm`)
+    cased = re.sub(r'(?<=\n)[a-z]', lambda m: m.group().upper(), cased)
+    if 'hours:' in cased.lower():
+        cased = '\n'.join(HOURS_DAY.sub(lambda m: m.group().capitalize(), line) if re.search(r'\d', line) else line
+                          for line in cased.split('\n'))
+    cased = CASING_QUOTED.sub(lambda m: m.group().title(), cased)
+    titles = {t.lower(): t for t in QUOTED_TITLES}
+    cased = QUOTED_TITLE.sub(lambda m: titles[m.group().lower()], cased)
+    cased = AFTER_DIRECTION.sub(lambda m: m.group()[:-1] + m.group()[-1].upper(), cased)
+    return CASING_FIXES.get(text, cased)
 
 
 def _phrase(text, match, written):
@@ -484,11 +524,20 @@ def table_get(s, table, index):
 
 
 def clear_badge(s):
+    """Take a badge away (BADGE_UP_KEY): a badge stays for one line only, and never on a title card (owner, 2026-11-14/17). Also
+    after whatever else it came with, a menu, a page or a minigame, and before a title card."""
     done = s.label()
     get_global(s, BADGE_UP_KEY); s.jump_if_zero(done)
     s.push(-1); s.push(-1); s.call(90, 2)
     set_global(s, BADGE_UP_KEY, lambda: s.push(0))
     s.label(done)
+
+
+def screen_done(s):
+    """After a menu, page or minigame: its badge goes (clear_badge), the answer in B kept (through RESULT_KEY)."""
+    set_global(s, RESULT_KEY, lambda: s.push_result())
+    clear_badge(s)
+    s.push(RESULT_KEY); s.call(55, 1)
 
 
 def push_face(s, portrait, entry):
@@ -510,10 +559,15 @@ def push_face(s, portrait, entry):
     for e, sprite in sorted(SILHOUETTES.items()):
         other = s.label()
         entry(); s.push(e); s.emit(0x0a); s.jump_if_zero(other)
-        s.push(shw.SILHOUETTE_BASE + sprite); s.jump(end)
+        s.push(silhouette(sprite)); s.jump(end)
         s.label(other)
     s.push(-1)
     s.label(end)
+
+
+def silhouette(sprite):
+    """The shshw picture of the 1.0.4 silhouette `sprite`, turned for TURNED_SILHOUETTES."""
+    return (shw.TURNED_SILHOUETTE_BASE if sprite in TURNED_SILHOUETTES else shw.SILHOUETTE_BASE) + sprite
 
 
 def music(s, cue):
@@ -725,6 +779,7 @@ def stat_page(s, tables, title, value, signed):
         get_global(s, GLOBAL_BASE + g)
     s.call(22, 2 + (6 if signed else 4))
     s.text(title); s.push(tables.text()); s.push(0); s.call(33, 3)
+    clear_badge(s)
 
 
 # -- a script's host calls -----------------------------------------------------------------------------------------------------
@@ -746,6 +801,8 @@ class Script:
         if pc in self.page_lines:
             return self.absorbed(pc, argc)
         speaker, address = self.constant(pc, 2)
+        if (self.rid, pc) in LINE_SILHOUETTES:
+            return self.other_silhouette(pc, speaker, LINE_SILHOUETTES[self.rid, pc])
         text = string_at(self.words, address) if address is not None else None
         whole = text is not None and text.startswith(b'(') and text.endswith(b')') and text.count(b'(') == 1
         bare = self.r.text(text[1:-1].decode('cp1252')) if whole else None
@@ -793,6 +850,18 @@ class Script:
             key = 'line'
         self.r.redirect(pc, key, build)
 
+    def other_silhouette(self, pc, speaker, sprite):
+        """A line (LINE_SILHOUETTES) whose speaker wears silhouette `sprite` for it: their face (72) changed for the line and back."""
+        if speaker not in SILHOUETTES:
+            raise brew.StoryError(f'{self.rid} pc {pc}: speaker {speaker} has no silhouette to change')
+
+        def build(s):
+            s.push(speaker); s.push(silhouette(sprite)); s.call(72, 2)
+            s.arg(2); s.push(speaker); s.push(0); s.call(13, 3)
+            s.push(speaker); s.push(silhouette(SILHOUETTES[speaker])); s.call(72, 2)
+            clear_badge(s); s.result(0)
+        self.r.redirect(pc, ('silhouette', speaker, sprite), build)
+
     def faceless(self, s, text, done):
         """A speaker with no portrait and no silhouette (the demo's -2, a voice: none speak through here today) says `text()` in
         SHS's named box with no portrait (76), under their name, and jumps to `done`; SHS's own line (13) would show some other
@@ -812,22 +881,40 @@ class Script:
         self.r.redirect(pc, 'plate', lambda s: (set_global(s, PLATE_KEY, lambda: s.arg(1)), s.result(0)))
 
     def page(self, pc, argc):
-        """15: (text) a page in the dialogue box: a named box under 14's plate, coloured as its speaker's line would be (the plate
-        is a cast name: `You` pink, `Event` gray, anyone else blue)."""
+        """15: (text) a page in the dialogue box under 14's plate (a cast name). The player's (`You`: the map scripts' `I'm beat. Time
+        to go home...`) is her own line, with the portrait she picked, and a page wholly in brackets her thought, bare (owner's g54
+        notes, 2026-11-17); Event's is the narrator's; anyone else's a named box, coloured as their line would be (blue)."""
+        bracketed = self.bracketed()
+
         def build(s):
-            colour = s.label()
-            for plate, theme in ((casing.title_case(self.story.setup['cast'][PLAYER]), PINK),
-                                 (casing.title_case(self.story.setup['cast'][EVENT]), GREY)):
-                other = s.label()
-                get_global(s, PLATE_KEY); s.text(plate); s.call(24, 2); s.push_result(); s.jump_if_zero(other)
-                s.push(theme); s.jump(colour)
-                s.label(other)
-            s.push(BLUE)
-            s.label(colour)                                 # local 0: the colour
-            set_global(s, NAMED_THEME_KEY, lambda: s.emit(0x41, 0))
+            other, narrated, done = s.label(), s.label(), s.label()
+            get_global(s, PLATE_KEY); s.text(casing.title_case(self.story.setup['cast'][EVENT])); s.call(24, 2); s.push_result()
+            s.jump_if_nonzero(narrated)
+            get_global(s, PLATE_KEY); s.text(casing.title_case(self.story.setup['cast'][PLAYER])); s.call(24, 2); s.push_result()
+            s.jump_if_zero(other)
+            for address, bare in bracketed:
+                spoken = s.label()
+                s.arg(1); s.push(address); s.emit(0x0a); s.jump_if_zero(spoken)
+                s.push(-2); s.push(bare); s.push(PLAYER); s.push(0); s.call(13, 4); s.jump(done)
+                s.label(spoken)
+            s.arg(1); s.push(PLAYER); s.push(0); s.call(13, 3); s.jump(done)
+            s.label(narrated)
+            s.arg(1); s.push(NARRATOR); s.call(13, 2); s.jump(done)
+            s.label(other)
+            set_global(s, NAMED_THEME_KEY, lambda: s.push(BLUE))
             get_global(s, PLATE_KEY); s.arg(1); s.call(76, 2)
+            s.label(done)
             clear_badge(s); s.result(0)
         self.r.redirect(pc, 'page', build)
+
+    def bracketed(self):
+        """(address, the text without its brackets) of each string of this script's data wholly in one pair of brackets."""
+        out = []
+        for address, text in casing.strings(self.program):
+            raw = text.encode('latin-1')
+            if is_text(raw) and raw.startswith(b'(') and raw.endswith(b')') and raw.count(b'(') == 1:
+                out.append((address, self.r.text(text[1:-1])))
+        return out
 
     def menu(self, pc, argc):
         """18: (title, `a|b|c`, speaker, timer ms): SHS's choice, its answer the option's index. With options greyed out (17), SHS's
@@ -856,6 +943,7 @@ class Script:
             s.push_result()                                 # local 2: the answer
             for k in range(16):
                 set_global(s, MASK_BASE + k, lambda: s.push(0))
+            clear_badge(s)
             set_result(s, lambda: s.emit(0x41, 2))
         self.r.redirect(pc, 'menu', build)
 
@@ -938,6 +1026,7 @@ class Script:
         def build(s):
             s.arg(1); s.arg(2); s.push(-1); s.arg(4); s.push(0); s.arg(5); s.push(-1); s.push(brew.CHOICE_PORTRAIT)
             s.call(1, 8)
+            screen_done(s)
         self.r.redirect(pc, 'action_menu', build)
 
     # minigames
@@ -993,6 +1082,7 @@ class Script:
             s.label(pushed)
             s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS)
             s.call(71, 8)
+            screen_done(s)
         self.r.redirect(pc, ('word_association', pc), build)
 
     def each(self, s, local, count, body):
@@ -1075,6 +1165,7 @@ class Script:
             s.push(shw.CATCH_STAR_PICTURE); s.arg(list_arg); s.push(table); s.push(count); s.push(cut_table)
             s.call(BREW_CATCH, 12)
             s.label(done)
+            screen_done(s)
         self.r.redirect(pc, ('catch', pc), build)
 
     def spelling_lists(self):
@@ -1129,6 +1220,7 @@ class Script:
                 s.label(other)
             s.result(0)
             s.label(done)
+            screen_done(s)
         self.r.redirect(pc, ('spelling', pc), build)
 
     def quiz_routine(self):
@@ -1200,6 +1292,7 @@ class Script:
             s.push(brew.WORD_GAME_MS); s.push(PLAYER); s.push(1); s.push(brew.WORD_GAME_REFRESH_MS)
             s.call(71, 8)
             s.push_result()                                 # local 7: the result
+            clear_badge(s)
             short, returned = s.label(), s.label()
             s.emit(0x41, 7); s.push(brew.WORD_GAME_PASS); s.emit(0x0d); s.jump_if_zero(short)
             rounds(); s.emit(0x41, 1); s.emit(0x52); s.jump(returned)
@@ -1215,6 +1308,7 @@ class Script:
             s.arg(1); s.text(''); s.arg(2); s.call(17, 3)
             s.push_result()
             s.text('$SHWENTRY'); s.emit(0x41, 0); s.call(46, 2)
+            clear_badge(s)
             s.result(0)
         self.r.redirect(pc, 'name_entry', build)
 
@@ -1240,7 +1334,7 @@ class Script:
 
     def photo(self, pc, argc):
         """21: (count, list of cast entries): SHS's portrait picker (78) over their faces."""
-        self.r.redirect(pc, 'photo', lambda s: (s.text(brew.PORTRAIT_TITLE), s.arg(1), s.arg(2), s.call(78, 3)))
+        self.r.redirect(pc, 'photo', lambda s: (s.text(brew.PORTRAIT_TITLE), s.arg(1), s.arg(2), s.call(78, 3), screen_done(s)))
 
     def cast_picture(self, pc, argc):
         """30: (entry) its portrait."""
@@ -1450,7 +1544,7 @@ class Script:
     def chapter(self, pc, argc):
         """73: (`chapter 1`, `the bright lights`): SHS's title card, the story's name over the chapter's."""
         p = shw.BACKGROUND_BASE + shw.SKY_MODES * (CITY - 1500) + SUNSET_SKY
-        self.r.redirect(pc, 'chapter', lambda s: (s.text(TITLE), s.text('Chapter 1'), s.push(p), s.push(0), s.call(8, 4),
+        self.r.redirect(pc, 'chapter', lambda s: (clear_badge(s), s.text(TITLE), s.text('Chapter 1'), s.push(p), s.push(0), s.call(8, 4),
                                                   s.result(0)))
 
     def sound(self, pc, argc):
@@ -1489,7 +1583,7 @@ class Script:
 
     def the_end(self, pc, argc):
         """34: the chapter is over: the smartphone's closing message and the episode's exit."""
-        self.r.redirect(pc, 'end', lambda s: (s.text(brew.END_TITLE), s.text(brew.END_TEXT), s.push(brew.END_ARGUMENT),
+        self.r.redirect(pc, 'end', lambda s: (clear_badge(s), s.text(brew.END_TITLE), s.text(brew.END_TEXT), s.push(brew.END_ARGUMENT),
                                               s.call(33, 3), s.call(7, 0), s.emit(0x33)))
 
     # stats and quests
@@ -1549,7 +1643,7 @@ class Script:
             refresh_quests(s)
             set_global(s, ENTRY_KEY, lambda: s.emit(0x41, 0))
             music(s, lambda: s.push(JOURNAL_CUE))
-            s.push(shw.STAR_BADGE); s.text(JOURNAL_UPDATED); s.call(90, 2)
+            s.push(JOURNAL_ICON); s.text(JOURNAL_UPDATED); s.call(90, 2)
             set_global(s, BADGE_UP_KEY, lambda: s.push(1))
             s.result(0)
         self.r.redirect(pc, 'journal_updated', build)
@@ -1685,6 +1779,7 @@ class Driver:
             set_global(s, SLOT_KEY, lambda: s.push(0))
             set_global(s, BED_KEY, lambda: s.push(0))
             get_global(s, DAY_KEY); s.push(sched['days']); s.emit(0x0d); s.jump_if_nonzero(finished)
+            clear_badge(s)                                  # (the bedtime card's, when the sleep script said nothing)
             s.text(TITLE); table_get(s, t.dates(), lambda: get_global(s, DAY_KEY))
             s.push(shw.BACKGROUND_BASE + shw.SKY_MODES * (HOME_PICTURE - 1500) + DAY_SKY); s.push(0); s.call(8, 4)
             s.jump(the_map)
@@ -1746,6 +1841,7 @@ class Driver:
 
             # Past the month's last day (34 normally ends it first).
             s.label(finished)
+            clear_badge(s)
             s.text(brew.END_TITLE); s.text(brew.END_TEXT); s.push(brew.END_ARGUMENT); s.call(33, 3); s.call(7, 0)
             s.emit(0x33)
         self.r.prologue(body)
@@ -1779,6 +1875,7 @@ class Driver:
         s.text(STATS_TITLE); s.push(STATS_OPTION); s.push(1); s.call(3, 3)
         s.push(0); s.call(4, 1)
         set_word(s, self.pick, lambda: s.push_result())
+        clear_badge(s)
 
     def journal(self, s, the_map):
         """The quest journal: a choice of the quests' titles (and Back), each opening its page of lines."""
@@ -1794,11 +1891,13 @@ class Driver:
         s.text('Back'); s.push(BACK_OPTION); s.push(1); s.call(3, 3)
         s.push(0); s.call(4, 1)
         set_word(s, self.pick, lambda: s.push_result())
+        clear_badge(s)
         back = s.label()
         s.emit(0x40, self.pick); s.push(0); s.emit(0x0e); s.jump_if_nonzero(back)
         stored(s, t, QUEST_TITLE, lambda: s.emit(0x40, self.pick), -1)
         stored(s, t, QUEST_LINES, lambda: s.emit(0x40, self.pick), -2)
         s.push(0); s.call(33, 3)
+        clear_badge(s)
         s.jump(top)
         s.label(back)
         set_global(s, PHASE_KEY, lambda: s.push(AFTER))

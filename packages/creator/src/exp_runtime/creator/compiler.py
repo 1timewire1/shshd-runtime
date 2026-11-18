@@ -769,7 +769,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
     from .nr_arena import LIBRARY_CODE, LIBRARY_DATA
     linked_library = any(entry['id'] == 'shsnr' for entry in project.addons)
     from . import calendar as calendars
-    from .calendar_driver import KINDS as CALENDAR_KINDS, ENDS as CALENDAR_ENDS, Context as CalendarContext, driver, emit_node
+    from .calendar_driver import (KINDS as CALENDAR_KINDS, ENDS as CALENDAR_ENDS, Context as CalendarContext, badge_off,
+                                  badge_owned, driver, emit_node)
     calendar_context = CalendarContext(project, parameters, ordinals, lambda node_id: scripts[nodes[node_id].scene],
                                        25002 + len(scenes) if project.calendars else None,
                                        lambda key, fallback: translated(project, key, fallback))
@@ -907,6 +908,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 else:
                     asm.call(13, text('text'), 0, 0)
                 for key, _ in marks: asm.call(54, key, 0)
+                if project.calendars: badge_off(asm)
             elif kind == 'choice':
                 asm.call(52, 0, 651, node.theme)
                 asm.call(2, text('speaker'), text('text'), node.timeout_ms, node.timeout_option, character(), 0)
@@ -924,6 +926,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.emit(0x33)  # Preserve unexpected native outcomes; no invented answer.
                 for i, option in enumerate(node.options):
                     asm.labels[('choice', node.id, i)] = len(asm.code)
+                    if project.calendars: badge_off(asm)
                     route(asm, scene, option.target)
             elif kind == 'background':
                 asm.call(11, p['variant'], node.asset)
@@ -961,8 +964,13 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'input':
                 asm.call(17, text('speaker'), text('prompt'), text('default'))
                 asm.call(46, asm.text(text_key(p['result'])), 0x7ff5)
-            elif kind == 'title': asm.call(8, text('text'), text('subtitle'), p['background'], p['flag'])
-            elif kind == 'message': asm.call(33, text('title'), text('text'), p['flag'])
+                if project.calendars: badge_off(asm)
+            elif kind == 'title':
+                if project.calendars: badge_off(asm)
+                asm.call(8, text('text'), text('subtitle'), p['background'], p['flag'])
+            elif kind == 'message':
+                asm.call(33, text('title'), text('text'), p['flag'])
+                if project.calendars: badge_off(asm)
             elif kind == 'notice': asm.call(88, text('text'))
             elif kind == 'emphasis': asm.call(89)
             elif kind == 'scene_label':
@@ -971,6 +979,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                     asm.emit(0x1f, 90 << 8 | 2)
                 else:
                     asm.call(90, p['icon'], text('text') if node.text else -1)
+                if project.calendars: badge_owned(asm)
             elif kind in CALENDAR_KINDS:
                 emit_node(asm, calendar_context, node, p, expression)
             elif kind == 'nr_arena':
@@ -987,6 +996,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
             elif kind == 'journal_updated':
                 if p['sound'] != -1: asm.call(79, p['sound'])
                 asm.call(90, p['icon'], text('text', node.text or JOURNAL_UPDATED))
+                if project.calendars: badge_owned(asm)
             elif kind == 'pan': asm.call(97, int(p['automatic']), p['alignment'])
             elif kind == 'transition': asm.call(16, p['selector'])
             elif kind == 'close_dialogue': asm.call(39)

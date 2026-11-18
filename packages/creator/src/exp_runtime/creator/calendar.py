@@ -26,6 +26,7 @@ UNTIMED = -1                    # an occurrence's duration when it runs any time
 # The state (owner -30000).
 CAL, START, DAY, CLOCK, TIMED, SHOWN_DAY, SHOWN_WEEK, COUNT, WAITING_LEFT, CHECK, NEST = range(-2, -13, -1)
 WEEKDAY0, START_DOY, LAST_DAY, DAY_START, DAY_END, MASK = range(-13, -19, -1)
+BADGE_UP = -19                  # an event's badge is up: it goes after the next line, choice, message or entry, and before a title
 FIRST_OF = -100                 # - template: the First setting it was last scheduled with
 OCCURRENCE, FIELDS = -1000, 5   # occurrence n (from 1): OCCURRENCE - FIELDS * n - field
 TEMPLATE_F, DAY_F, MINUTE_F, STATE_F, FIRST_F = range(5)

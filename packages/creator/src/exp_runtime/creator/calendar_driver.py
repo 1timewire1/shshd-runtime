@@ -1,6 +1,6 @@
 """shshd-runtime: the calendar's driver script and its nodes' code (calendar.py has the model and the emitter;
 CREATOR_CALENDAR_DESIGN.md "How it plays")."""
-from .calendar import (CAL, CANCELLED, CLOCK_ICON, CHECK, CLOCK, COUNT, CUMULATIVE, DAY, DAY_END, DAY_START, DONE, FIRST_F, LAST_DAY,
+from .calendar import (BADGE_UP, CAL, CANCELLED, CLOCK_ICON, CHECK, CLOCK, COUNT, CUMULATIVE, DAY, DAY_END, DAY_START, DONE, FIRST_F, LAST_DAY,
                        MASK, MINUTE_F, MONTHS, NEST, PENDING, SHOWN_DAY, SHOWN_WEEK, SLOT, START, START_DOY, STATE_F,
                        TEMPLATE_F, TIMED, WAITING, WAITING_LEFT, WEEKDAY0, WEEKDAYS, day_of_year, emitter, last_index,
                        occurrences, templates)
@@ -168,6 +168,7 @@ def driver(asm, ctx):
     e.num(DAY); e.num(SHOWN_DAY); e.op(0x0a); e.jump_if(shown)
     e.set(SHOWN_DAY, lambda: e.num(DAY))
     asm.call(90, -1, -1)                                        # (yesterday's badge off before the new day's cards)
+    e.set(BADGE_UP, 0)
     cards(e, ctx)
     e.mark(shown)
     badge(e, ctx, B)
@@ -186,6 +187,7 @@ def driver(asm, ctx):
     e.store('ended', lambda: e.num(CAL))
     e.set(CAL, 0)
     asm.call(90, -1, -1)                                        # the last event's badge goes with the calendar
+    e.set(BADGE_UP, 0)
     for index, calendar in enumerate(project.calendars, 1):
         if not calendar['after']:
             continue
@@ -385,8 +387,26 @@ def badge(e, ctx, B):
     e.asm.emit(0x1f, 22 << 8 | 7)
     e.mark(shown)
     e.read_table('icons', icons, template); e.push(buffer); e.asm.emit(0x1f, 90 << 8 | 2)
+    e.set(BADGE_UP, 1)
     e.mark(done)
 
+
+def badge_off(asm):
+    """An event's badge stays for one line only and never shows on a title card (the owner's rule for the translated calendars,
+    2026-11-17): the compiler emits this after a line, a choice's answer, a message or an entry, and before a title, in a project
+    with a calendar. A badge the story sets itself (Scene label, Journal updated) is the story's to take away."""
+    e = emitter(asm)
+    done = e.label()
+    e.num(BADGE_UP); e.jump_unless(done)
+    asm.call(90, -1, -1)
+    e.set(BADGE_UP, 0)
+    e.mark(done)
+
+
+
+def badge_owned(asm):
+    """A badge the story set itself replaced the event's: it stays until the story takes it away."""
+    emitter(asm).set(BADGE_UP, 0)
 
 def emit_node(asm, ctx, node, p, expression):
     """A calendar node's code; `expression(text)` pushes an expression's value in this script."""
