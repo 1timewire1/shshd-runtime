@@ -40,7 +40,7 @@ An import can hold addons and the episodes that need them together, in any order
 ([staged_import.py](../packages/engine/src/exp_runtime/staged_import.py)). The library they go to is the one that folder fills, so
 `chslim` goes under `cod_episodes`.
 
-**Sync Devices** sends them with the episodes ([below](#sync-devices)). The iOS and Android builds don't support addons yet.
+**Sync Devices** sends them with the episodes ([below](#sync-devices)). The iOS and Android builds take them the same way.
 
 ### Lookup
 
@@ -109,9 +109,10 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 17, about 56 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 19, about 56 MB.
 Revision 17 adds the main menu's [Title Screen Look](#settings), which needs the MS3 prototype's data.pak too (`--ms3`); no story asks for it.
-Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settings). Revision 16 rebuilds Day of Diss's opening for taller frames (storyboard spec version 2; [X360.md](X360.md#day-of-disss-opening)), which Day of Diss now asks for; the other stories ask for what they did.
+Revision 15 adds the prototype's main menu tune for [Title Screen Music](#settings). Revision 16 rebuilds Day of Diss's opening for taller frames (storyboard spec version 2; [X360.md](X360.md#day-of-disss-opening)), which Day of Diss now asks for. Revision 18 adds the Diss Battle's tune, which Monday Planner asks for; revision 19 adds Spike's
+taunts, which no story needs. The other stories ask for what they did.
 
 | Resources | What |
 | --- | --- |
@@ -189,7 +190,7 @@ the middle; 9 the Kid lowered onto the ring; 10 the badge icons at the smartphon
 the Title Screen Looks.
 
 ```sh
-python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --java-08 JAVA_08_JAR --store-art STORE_ART_FOLDER --out OUT_DIR
+python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODULE_07_FOLDER --casts BREW_CASTS_JSON --java-08 JAVA_08_JAR --store-art STORE_ART_FOLDER --shs-hd-episodes SHS_HD_EPISODES_FOLDER --out OUT_DIR
 ```
 
 ### `shshw`: Surviving Hollywood
@@ -242,7 +243,8 @@ The mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`, `shw
   (owner, 2026-11-13): the player's face (151) is the star, the smile (152) 2522, the laughing face (128) 2525, the lightning
   (130) 2534's "pow", each centred on BREW's place. The game itself is BREW's: the demo's catch game is the same one.
 
-The Preview is version 4 from this change (3 had no catch skin or moon; 2 only the portraits and backgrounds).
+The Preview was version 4 from this change and is 5 now, with badges for one line only (3 had no catch skin or moon; 2 only
+the portraits and backgrounds).
 
 **Switch:** "Hollywood Art", with the '07 tag, on by default: on the Add-Ons page in the Preview, and on Per-Game Settings when
 the library holds `shshw`.
@@ -436,8 +438,9 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | --- | --- | --- | --- |
 | '07 / '08 | `shsbrew` | 26906 | Track 8006, the MIDI both games share |
 | New Rules | `shsnr` | 26988 | Track 8 |
-| X360 | `shsx360` (revision 16) | 26996 | `music/main_menu` |
+| X360 | `shsx360` (revision 15) | 26996 | `music/main_menu` |
 | '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
+| Surviving Hollywood | `shshw` | 26907 | Cue 3007, the main menu's tune |
 
 **Title Screen Look** (SHS's HD main menu only, under Add-Ons; owner, 2026-11-16) chooses its art the same way: Default, Auto,
 or a translated game's own title art from its addon, offered when the addon carries it (`TITLE_LOOKS` in the SHS profile). The

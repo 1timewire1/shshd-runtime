@@ -152,12 +152,12 @@ you close the app.
 ### Options
 
 With the SHS HD IPA (and for Cause of Death), Options lists **General**,
-**Sound**, **Extras** and, on the main menu, **Data Management**. Extras holds
-the play aids: Disable Choice Timer, Choice Hints, Ask to Skip Mini-Games,
-Allow Skip Ahead and Use '11's Memory for Word Grid (the Android menus do not
-offer those last two).
-Without it, SHS uses the original Android menus, where the same switches sit
-under **Options** and **Options → Cheats**.
+**Sound**, **Controller** (with a controller), **Extras**, **Add-Ons** (when a
+translated game or add-on needs it) and, on the main menu, **Data Management**.
+Extras holds the play aids: Disable Choice Timer, Choice Hints, Ask to Skip
+Mini-Games, Allow Skip Ahead, Allow Undo and Use '11's Memory for Word Grid.
+Without it, SHS uses the original Android menus: **Options → Cheats** has
+Answer hints, Skip mini-games, Skip ad intros and Skip upsell intros only.
 
 - **Choice hints** optionally marks recognized near-term score/relationship
   gains or correct quiz answers green, losses/wrong answers or no-gain
@@ -178,6 +178,8 @@ under **Options** and **Options → Cheats**.
   card. The ad's own "Play the Surviving High School episode!" choice also
   offers to turn it on. It is off by default, and listed in the main menu's
   Options only, since it acts as an episode starts.
+- **Skip Upsell Intros** skips the store plugs some episodes open with. Off by
+  default.
 - **Episode Titles** (main menu) selects English, French, Italian, German or
   Spanish names where the EXP includes them. Story text remains in the language
   supplied by each episode.
@@ -282,11 +284,11 @@ branching, minigames, characters, audio, translations, debugging and native
 `.exp` export with optional imported assets for EXP Runtime
 and the original games. Native loader/VM checks pass; full original-app
 playback remains unverified. New in v0.6.0, it is available as a standalone
-desktop download or through pip. Launch a pip install with `exp-creator`,
+desktop download or through pip. Launch a pip install with `shshd-creator`,
 or run it from this checkout:
 
 ```sh
-uv run --locked --extra creator exp-creator
+uv run --locked --extra creator shshd-creator
 ```
 
 The creator automatically finds your player's imported library for the selected
@@ -296,7 +298,7 @@ optional; ordinary player and iOS downloads keep their existing dependencies.
 An optional [MCP server](docs/MCP.md) exposes the same authoring tools without Qt:
 
 ```sh
-uv run --locked --extra creator-mcp exp-creator-mcp --workspace /path/to/stories
+uv run --locked --extra creator-mcp shshd-creator-mcp --workspace /path/to/stories
 ```
 
 Open a saved project from that workspace in the creator to edit alongside a

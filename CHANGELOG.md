@@ -2493,7 +2493,7 @@ The native presentation audit and remaining parity gaps are recorded in
   Audited across the real 195-episode HD library: HD background coverage
   went from 53% to 100% of episodes once an HD ipa was imported, with the
   same driver and zero decode errors either way. See
-  [Content library contract](docs/RUNTIME.md#content-library-contract-version-1).
+  [Content library contract](docs/RUNTIME.md#content-library-contract).
 - DTView side-panel nodes now record a label for every result slot they
   offer, not just the one actually taken (`DTNode.choice_labels`), sourced
   from the game's separate choice-presentation syscalls rather than

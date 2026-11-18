@@ -4,7 +4,7 @@
 > Death screens run on iOS through `exp_runtime.graphics`'s iOS backend (`platforms/drawing.py` and the Swift
 > host), with frames composited on the GPU. It was tested on an iPad mini 5 (a 50-minute soak through 15
 > episodes of every kind: 54-60 fps, memory steady) and in the simulator, with iPhone shapes checked through
-> the safe-area insets. The catch-up is described in `reference/IOS_CATCHUP_PLAN.md`. Builds produce an
+> the safe-area insets. The catch-up is described in `reference/IOS_CATCHUP_PLAN.md` (the owner's private notes, outside this repository). Builds produce an
 > unsigned IPA that users sign themselves; releases carry it from v1.1.0.
 
 Introduced in **v0.4.0**. The v0.3.0 release supports importing
@@ -93,7 +93,7 @@ Files. Multiple selection lets SHS users choose an IPA and its optional APK
 asset supplement together. IPA assets take precedence. Each game keeps a
 separate content library and progress.
 
-**Options → Update checks** controls the automatic GitHub release check at
+**Options → General → Check for Updates** controls the automatic GitHub release check at
 launch. It defaults to On and is shared by both games, including the chooser's
 Options screen. A newer release shows that it is available and how to install it
 (download the new IPA on a computer, then sign and install it), with a single
@@ -110,7 +110,7 @@ filters for folders. This addresses first-open graying reported with the CoD
 IPA; cold picker behavior across physical-device providers remains a manual
 check.
 
-**Options → Add Episodes** accepts EXP files, ZIP/RAR collections, episode folders
+**Options → Data Management → Episodes → Add Episodes** accepts EXP files, ZIP/RAR collections, episode folders
 and the selected game's catalog file. Choose an archive directly in Files; its
 subfolders are scanned for EXPs and the selected game's catalog. Imported
 episodes persist in the app's library after closing or relaunching, and the
@@ -127,8 +127,9 @@ intact. Imports use a worker and the shared atomic publication rules.
 Tap to continue or choose an option. Swipe to scroll episode lists and long
 choices. Name entry uses the iOS keyboard and the same native validation as
 desktop. The lower-left game control opens the original pause menu with Resume,
-Options, Help & About and Main Menu. Manual Save/Load is in paused Options.
-**Options → Cheats → Choice hints** optionally marks recognized score and
+then Skip Ahead, Undo and Quest Journal when they are offered, Options,
+Help & About and Main Menu. Manual Save/Load is in paused Options.
+**Options → Extras → Choice Hints** optionally marks recognized score and
 relationship effects, classroom and timed word answers, and short sequences
 with deferred rewards. Uncertain consequences remain unmarked. Pause rows and
 choice options highlight under a held finger; releasing on the same row

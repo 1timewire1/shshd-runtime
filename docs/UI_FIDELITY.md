@@ -11,6 +11,9 @@ its native timer, name-entry and football differences, installed-font lookup
 and user-requested system-default fallback. The Android bitmap-font evidence
 below does not establish identical iOS font metrics or rasterization.
 
+Save version numbers here are upstream exp-runtime's unless marked as this
+fork's; [RUNTIME.md](RUNTIME.md#runtime-save-schema) maps them to this fork's.
+
 As of 2026-10-05, the owner selected **v0.1.3's SHS dialogue display** as the
 best available presentation reference for both SHS and CoD. Their APK/IPA
 adapters supply artwork and fonts to the same dialogue layout and renderer.
@@ -34,7 +37,7 @@ identify evidence, not permission to package the native code or resources.
 | Dialogue body/name/portrait | Android `000a8544`/`000aa0a0`; both iOS outline-font paths in [IPA.md](IPA.md#dialogue-text-placement); shared skin, native regions, mask, pagination, saved cross-label kerning and choice/title font history | Substitute system fonts and GPU rasterization cannot be certified pixel-identical; startup/menu and other unmodeled bitmap updates remain outside the tracked story-label order |
 | Dialogue entrances/Continue/shake | iOS bubble 120+200 ms owner override, 250 ms Continue, delayed expression art and retained panel lifecycle | Device traces of nominal typing cadence and uncommon reuse paths |
 | Expression transitions/decorations | Both iOS portrait-layer paths: retained art fades, independent effect clocks, pause cancellation; Android `0009d918`/`0009d8ac`/`0009cdcc` decoration variant | No original-device frame comparison; Android/iOS differences are kept explicit below |
-| Relationships/notices/background | Android `000a916c`, `0009c814`/`0009c750`, `000a92f4`; native icon mappings, ordered cues, Android notice motion, background pan, resource 1013's width correction and frozen suppressed portrait children | iOS notices use separate per-letter position/bounds/opacity keyframes that are not implemented; original-device frame/audio comparison; retained children are Android-only, as both iOS games explicitly clear them |
+| Relationships/notices/background | Android `000a916c`, `0009c814`/`0009c750`, `000a92f4`; native icon mappings, ordered cues, Android notice motion, background pan, resource 1013's width correction and frozen suppressed portrait children; SHS HD's and CoD's per-letter notice keyframes (`dialogue_notice.py`) | An SHS iPhone IPA library still uses Android's notice motion; original-device frame/audio comparison; retained children are Android-only, as both iOS games explicitly clear them |
 | Ordinary and timed choices | Android `000d9038`/`000d6afc`, CoD `000405e0`; original skin, signed portrait insets, alternate left/right headers, title repairs, timer, 250 ms attachment/input gate and IPA fade | Common outer geometry follows supplied screenshots, not every native header-height branch; oversized-text fitting is an adaptation, with no choice scrolling |
 | Title, message, loading, name entry, appearance picker | Recovered layout/font/gate paths in [TITLE_SCREENS.md](TITLE_SCREENS.md), [NAME_INPUT.md](NAME_INPUT.md) and [STORY_SERVICES.md](STORY_SERVICES.md); native iOS cursor offset, immediate keyboard-panel attachment, held checkmark art, story-label assignment order and loading runner cadence (70 ms IPA / 500 ms APK per frame) | Some mutable font/layout history remains; the verified uninitialized Android message-padding field uses deterministic zero |
 | Main menu and pause | Android info/gear/row/strip departure, concurrent submenu zooms and 200 ms slides, bronze pause tint; iOS 400 ms zoom/slide transitions, captured sepia background, pressed artwork and row sounds | Full original-device transition comparison; library/search/cheat content is authored |
@@ -42,9 +45,9 @@ identify evidence, not permission to package the native code or resources.
 | Timed word choices | Theme panels, 37-pixel rows, timer/score art, 200 ms label transition and per-game answer cues | Original-device frame/audio comparison still required |
 | Word/picture grid | Restored ring pulse, point flights, countdown opacity/shuffle, per-cell clocks, deferred generation, float32 fragment ticks, shared per-pixel depth and iOS exit fade | GL depth precision/edge sampling and original-device frame comparison |
 | Football | Restored 50-star home-touchdown effect and 450 engine RNG draws; native field/HUD/help/targets, retained shadow frames, final-message cue and iOS exit fade | Full audio timeline and device rasterization; the apparent extra score-flight routine is not a reachable feature in the inspected iOS override |
-| Music and sound | CoD linear fades/repeated requests, saved music/effect playheads, IPA pause/menu store/fade/restore handoffs, iOS repeat updates in place; verified menu/gear/row/relationship/minigame cue IDs | SDL's repeat-only change restarts its decoder at the current position, effect playheads use a host clock, and device output latency remains unverified |
+| Music and sound | CoD linear fades/repeated requests, iOS repeat updates in place; verified menu/gear/row/relationship/minigame cue IDs | Upstream's saved music/effect playheads and IPA pause/menu store/fade/restore handoffs are not used: this fork's music is `music_stream.py`'s; SDL's repeat-only change restarts its decoder at the current position, effect playheads use a host clock, and device output latency remains unverified |
 | Vibration | SHS iOS `000762e8` and CoD `0004334c`; one system vibration alert per script request, independent saved preference and enable-preview, iPhone/activity gates, no save or hint replay | Physical sensation and device settings need an iPhone check; simulator verifies routing only |
-| Whole-screen scene transitions | CoD blinds/opacity, delayed callbacks, intermediate VM pauses, outgoing animation clocks and menu-to-story fade; Android's nonvisual tick boundary; retained per-game process RNG/font state | Original-device frame/audio comparison and native widget lifetimes beyond the retained streams/fonts |
+| Whole-screen scene transitions | CoD's and SHS HD's blinds/opacity, delayed callbacks, intermediate VM pauses and outgoing animation clocks; Android's nonvisual tick boundary; retained per-game process RNG/font state | Original-device frame/audio comparison and native widget lifetimes beyond the retained streams/fonts |
 
 The latest follow-up adds the 250 ms ordinary-choice attachment gate/fade,
 including rejection of fingers pressed before attachment; shared footer roles;
@@ -60,7 +63,7 @@ the shared native menu skin before each supported minigame, with frozen clocks
 and a saved Play decision. Its success/failure overrides are authored cheats;
 ordinary timed choices retain their original behavior.
 
-The current full suite completes 674 tests with four optional-content skips.
+At that follow-up the full suite completed 674 tests with four optional-content skips.
 Component wheel/source audits and eleven isolated pip-install combinations
 pass. Both simulator and unsigned device builds succeed. The iOS 27.0
 three-profile simulator verification passes 109 checks: import/VM/saves, CoreGraphics pixels,
@@ -89,8 +92,12 @@ the next UI across bytecode/debugger pauses, then settles and reveals it.
 A title skips fade-in. Both halves and the independent random stream survive
 save/load. Isolated ARM checks cover queue selection and callback/input flag
 ordering, with UIKit completion and VM execution stubbed; authored tests cover
-shared drawing and actual VM/save continuation. See [COD.md](COD.md#scene-transitions).
-SHS retains the Android policy of no visible layers: the queued answer waits
+shared drawing and actual VM/save continuation. See [COD.md](COD.md#native-ui-and-audio-bindings).
+This fork runs the same blinds and black layer for SHS with an HD bundle
+(`fade_transition.FadeTransition`, the SHS profile's `HD_SCENE_TRANSITION`). Its
+black fade-in holds black for 1.2 s and clears over the last 0.3 s (1.4.7
+`0005cbce`, `scene_fade.py`). SHS without an HD bundle retains the Android
+policy of no visible layers: the queued answer waits
 for the next tick, then the incoming UI is released on a subsequent tick.
 Debug pauses preserve the intermediate wakeup state. Both games retain their
 random generators and speaker-font banks across new episodes in the same
@@ -99,10 +106,11 @@ state. Standalone headless sessions remain isolated unless attached to a
 `RuntimeProcess`.
 
 CoD `fadeToGame` **0000f9d8**, app-mode dispatch **000201d4** and tick path
-**000250f4** also establish the menu-entry fade. A menu Start/Resume request
-now covers the old screen with selector 6, switches at 1500 ms, and reveals
-the story for another 1500 ms. It neither posts a story callback nor consumes
-random values. This is separate from a script's queued transition.
+**000250f4** also establish the menu-entry fade: selector 6 covers the old
+screen, switches at 1500 ms and reveals the story for another 1500 ms, with no
+story callback or random values. exp-runtime v0.6.x plays it on a menu
+Start/Resume; this fork does not, as its main menu's entry is application.py's
+(see [COD.md](COD.md#native-ui-and-audio-bindings)).
 
 The alternate Android narration anchor is tied to the advertising flag,
 not another dialogue presentation mode: **000ab4c4**, **00092b3c** and the
@@ -375,7 +383,7 @@ placing a fresh Mr. Russell label 47.25 logical pixels too low.
 `Session` advances name-font state once per dialogue. Rendering and page turns
 use a copy of the state before that dialogue, so their frequency cannot change
 future placement. Save version 10 retains both banks and validates the current
-layout against them; see [RUNTIME.md](RUNTIME.md#runtime-save-schema-version-13).
+layout against them; see [RUNTIME.md](RUNTIME.md#runtime-save-schema).
 
 **Compatibility correction, not verified native behavior:** applying these
 native rules with the current imported-font renderer still permits overlaps.
@@ -439,8 +447,7 @@ Return on the keyboard is the verified submission path. This panel does not
 attach the portrait-selector checkmark or common gear. The desktop host menu
 is accessible through Escape. Full coordinates, title/cursor font-origin
 details, the error alert, input limits, and remaining uncertainties are in
-[NAME_INPUT.md](NAME_INPUT.md). This supersedes the provisional screen
-identification in `CONTINUING.md`.
+[NAME_INPUT.md](NAME_INPUT.md).
 
 ### Story text and wrapping
 
@@ -632,8 +639,9 @@ of drawing it in directly. The title screen additionally tracks
 `pending_background_alpha` for its background fade-in/out, applied to the
 window-resolution copy after scaling rather than to the canvas-resolution
 one. Football has no per-episode background (its field art is fixed game
-chrome, not `panel.background_id`), and the main menu only ever reads from
-the Android APK bank, so neither needed this treatment.
+chrome, not `panel.background_id`), and the main menus draw their art in
+their own frame (Android's bank, or HD's in `desktop_main_hd.py`), so neither
+needed this treatment.
 
 The default window is 3:4 (`DEFAULT_WINDOW_SIZE`), not 2:3 like the UI
 canvas (`SIZE`). HD's own main game view is a fixed 768×1024 in every
@@ -643,9 +651,10 @@ resize, confirmed from `SHSViewController::setupLocalInterfaceOrientation:`
 window gives the separately-composited background layer real room to show
 more of the actual scene, while the Android-authored 2:3 chrome keeps its
 own proven-correct proportions and position, centered and unchanged inside
-that wider window. `_draw_background_layer`'s crop widens from 320 to 360
-game units (480 × 3/4) around the same horizontal focal point for this
-reason; the UI canvas's own crop/scale math is untouched.
+that wider window. `_background_placement` crops HD's 384 × 512-unit frame
+(`FRAME_UNITS`) around the same focal point, offset by `HD_BG_SHIFT`; the UI
+canvas's own crop/scale math is untouched. General's Aspect Ratio can give the
+frame another shape (`frame_shape.py`, `_shaped_placement`).
 
 `FUN_000ab048` and `FUN_000ab344` select these presentation modes:
 
@@ -738,10 +747,11 @@ which uses an undeciphered, Android-incompatible layout (see
 portrait mask specifically turned out not to need that workaround at all
 (see below).
 
-The clipped result is always scaled back down to `ANDROID_MASK_SIZE`
-(128×150, a fixed constant in `desktop_dialogue.py`) divided by the same
-factor the mask needed scaling up by -- never to whatever size the mask
-object actually in hand happens to be. Every ring, border and panel around
+The clipped result is scaled to its logical size (measured against
+`ANDROID_MASK_SIZE`, 128×150, a fixed constant in `desktop_dialogue.py`)
+times the canvas's density (`portrait(..., density)`): a 2x canvas keeps the
+HD pixels, a 1x one gets the Android-sized cutout -- never whatever size the
+mask object actually in hand happens to be. Every ring, border and panel around
 a portrait is still Android-sized, so leaving an HD portrait at its own
 native pixel count made it render comically oversized relative to
 everything else -- confirmed and fixed against a real HD choice screen,
@@ -992,7 +1002,7 @@ newlines and color controls consume source indices even though some have no
 visible glyph. Full layout precedes reveal, so line breaks, indents, colors
 and box size never change as letters appear. The native cursor scans the
 whole remaining substring, including source indices beyond the visible page.
-The iOS builds (SHS HD and CoD, this fork) type only the visible lines
+The iOS builds (SHS HD, and an SHS or CoD IPA library, this fork) type only the visible lines
 (`-[SHSTextLayer addTypingAnimations:lineTime:]`), so there the reveal runs
 over the page's own indices (`Session._typed_length`).
 After its last index, another callback marks completion. A finish request
@@ -1149,10 +1159,11 @@ is milliseconds, not a second. `loopTimerCallback` multiplies the elapsed
 seconds by 1000 before `SHSEngine::onTick` (SHS HD **0001af9c**, CoD
 **0001988c**), which hands the same value to `GameModel::tick` and on to the
 dialog (SHS HD **00044654**, CoD **0003b370**); HD's autosave limit, 60000,
-is in the same unit. So SHS HD and CoD request the expression on the dialog's
-first tick (`IOS_EXPRESSION_MS`), and the new art is in at 400–600 ms of the
-line, not 1400–1600 ms. Android SHS keeps the 1000 ms until its own timing is
-checked. Saves are version 28: each line keeps its request time
+is in the same unit. So the iOS builds (SHS HD, and SHS or CoD IPA libraries:
+`Session._ios_dialogue`) request the expression on the dialog's first tick
+(`IOS_EXPRESSION_MS`), and the new art is in at 400–600 ms of the line, not
+1400–1600 ms. Android SHS keeps the 1000 ms until its own timing is checked.
+This fork's save version 28 adds each line's request time
 (`DialogueAnimation.expression_ms`); older saves made it at 1000 ms.
 
 SHS `SHSPortrait::changeExpression:` **0006ad38** / CoD **00044dc8** use two
@@ -1163,8 +1174,8 @@ independent fill-both opacity tracks after that request:
 | New expression | 400 ms | 0 to 1 over 200 ms |
 | Old expression | 600 ms | 1 to 0 over 800 ms |
 
-Thus new art appears at dialogue time 1400–1600 ms; the old art finishes
-fading at 2400 ms. The cache changes at the request, before the visual fade.
+Thus on Android new art appears at dialogue time 1400–1600 ms and the old
+art finishes fading at 2400 ms; on iOS, 400–600 ms and 1400 ms. The cache changes at the request, before the visual fade.
 Outgoing portraits use the cached identity, as the native cached layer does.
 
 The **2026-10-16 expression follow-up** distinguishes the per-line UI clock
@@ -1192,7 +1203,8 @@ dispose the old scene. Both games' `loadScript09NoGUI` (SHS **00020ab0**, CoD
 bytes. Names, art bindings and the hidden global portrait position survive.
 
 Expressions **6–9** now add native decorations, above the ring and below the
-character. The clock starts at `changeExpression`, 1000 ms into dialogue:
+character. The clock starts at `changeExpression`, 1000 ms into dialogue on
+Android (on iOS, the dialog's first tick):
 
 | Expression | Common atlas layer | Motion after the request |
 | --- | --- | --- |
@@ -1297,9 +1309,9 @@ the imported APK without extracting paths or entering the numeric resource bank.
 `ui_assets.py` decodes the original layout and image packs. `dialogue.py`
 computes native dialogue geometry and page breaks without pygame;
 `desktop_dialogue.py` composes the original borders, masked portraits and text.
-The scene is scaled 1.5 times for the default 480 × 720 window. Ordinary choices
-now use the screenshot-based reconstruction described below. Title screens
-and the full original menus remain provisional. The extra dialogue checkmark
+The scene is drawn 1.5 times onto the 480 × 720 UI canvas (`SIZE`) inside the
+default 540 × 720 window (`DEFAULT_WINDOW_SIZE`). Ordinary choices
+now use the screenshot-based reconstruction described below. The extra dialogue checkmark
 has been removed: layout 18 contains the footer (common frame 47), gear (49),
 and two hit/layout rectangles, but no confirmation image. Native common frame
 41 is constructed for portrait selection by `000d2238`/`000d2dcc`; it remains
@@ -1428,7 +1440,9 @@ table's top or bottom edge shows there are more options that way
 (`desktop_choice.draw_hd_more`; owner, 2026-11-09). A drag never presses the
 option it started on.
 
-The gear opens the recovered Resume/Options/Help & About/Main Menu panel;
+The gear opens the recovered Resume/Options/Help & About/Main Menu panel (the
+HD pause menu adds Skip Ahead and Undo when they are allowed in Extras, and a
+translated game's Quest Journal);
 its remaining transition limits are in [MAIN_MENU.md](MAIN_MENU.md#pause-menu-and-choice-hints).
 Opening it suspends timer ticks, and keyboard choice shortcuts do not bypass
 it. Dialogue, choices and the appearance picker
@@ -1535,6 +1549,9 @@ command/string IDs, additional resource schemas, transition evidence, checkpoint
 contract, executable startup and the remaining animation/list/options differences.
 The presentation retains the shared 320×480 logical coordinate system and the
 60 Hz desktop redraw loop. Menu transitions do not advance the suspended VM.
+With an HD bundle the HD main menu replaces this one
+(`desktop_main_hd.HdMainMenu`, in the 768 × 1024 frame); Cause of Death has its
+own (`desktop_cod_main.CodMainMenu`). See MAIN_MENU.md.
 
 ## What to implement early
 
@@ -1753,10 +1770,14 @@ unitsPerEm, drawing is per-glyph `CGContextShowGlyphsAtPoint`, and there is no
 kerning.
 
 `vector_text.VectorFont` is a `BitmapFont` with those advances and ink boxes,
-so `layout_text` (wrapping, indents, ink bounds) runs unchanged and vertical
-placement keeps the Android font's own line height and baseline, which the
-panel calibrations were taken against. It is used only when an HD app bundle is
-imported; otherwise the Android bitmap fonts are kept. The Android `Arial
+so `layout_text` (wrapping, indents, ink bounds) runs unchanged and the
+dialogue body's vertical placement keeps the Android font's own line height and
+baseline, which the panel calibrations were taken against. Speaker names
+(`speaker_names.hd_speaker_label`) and the HD choice panel (`hd_choice.py`)
+place their text by the font's cap height (`vector_text.cap_height`) instead,
+as CSFont does. It is used when an HD app bundle is imported (and in Cause of
+Death with the SHS HD art source, whose emphasis switch fonts are always
+vector); otherwise the Android bitmap fonts are kept. The Android `Arial
 Rounded` atlases carry `info face="Dialog.bold"`: they were generated from a
 generic Java font, so their advances differ from HD's. With real advances, the
 "parking ticket" choice wraps exactly as the HD screenshot does, which it did
@@ -1764,35 +1785,37 @@ not with the atlases.
 
 Font files come from the player's machine, in this order: an override
 (`SHS_ARIAL_ROUNDED_FONT`, `SHS_ARIAL_FONT`, `SHS_TREBUCHET_BOLD_FONT`,
-`SHS_TREBUCHET_ITALIC_FONT`), then Arial Rounded MT Bold (macOS ships it,
+`SHS_TREBUCHET_ITALIC_FONT`), then a file of the same family name in the
+library's own `fonts/` folder (`ArialRoundedMTBold.ttf` for the main face),
+then Arial Rounded MT Bold (macOS ships it,
 Office installs it on Windows), then the nearest Arial-metric face (Arial Bold
 on Windows/macOS, Liberation Sans / Arimo Bold on Linux). Those fallbacks are
 about 4-6% wider than Arial Rounded and have square terminals. Set
 `SHS_VECTOR_TEXT=0` to keep the bitmap fonts.
 
-Wrap widths, checked against HD screenshots with real advances: option text in
-the choice panel wraps at Android's 264 (the "parking ticket" choice breaks
-exactly as `IMG_0085` does), and the dialogue body wraps at the 246 it is
-*measured* at rather than the 260 box width (the "Um... You're... I / mean...
-Um... Let's do / that kissing thing?" line in `IMG_0069`). Android's bitmap
-fonts keep their own 260. Portrait art in HD is drawn at its own 2x size (226 x
-256 = 113 x 128 units), which with the 12-row crop spans exactly the outer
-ring's top to the inner ring's bottom in that screenshot.
+Wrap widths, checked against HD screenshots with real advances: option text
+wraps in `SHSMenu`'s label, the table's width less its label padding on each
+side (`hd_choice.py`; the "parking ticket" choice breaks as `IMG_0085` does),
+and the dialogue body wraps at the 246 it is *measured* at rather than the 260
+box width (the "Um... You're... I / mean... Um... Let's do / that kissing
+thing?" line in `IMG_0069`). Android's bitmap fonts keep their own 260. HD
+portraits are composed by `DialogueRenderer.hd_portrait()` (see UI_ASSETS.md,
+"Portrait mask"), with no 12-row crop.
 
 Text placement: the Android font descriptors' `common base` is not a baseline
 (it says 26 for nearly every font), so a vector font's baseline is the bitmap's
 own capital-H bottom less its padding row; Pajama Hip keeps its descriptor base
-(26), which matched HD. Against `IMG_0069` and `IMG_0070` the dialogue body
-origin moves (+6, +6) for vector text (lines then sit 24, 46 and 67 below the
-box's top line, the first starting 17 from its left edge), the portrait ring's
+(26), which matched HD. The dialogue body sits at node 8's own x with
+`SHSUIDialog`'s line offsets (`IMG_0075`), and 6 units below Android's origin
+(`HD_TEXT_SHIFT`; against `IMG_0069` and `IMG_0070` lines sit 24, 46 and 67
+below the box's top line, whatever the title's height), the portrait ring's
 center sits 5 units below the top line (`_HD_PORTRAIT_VERTICAL_OFFSET`), and the
 ring frames are drawn under the body text. The bottom bar's hint is bank-13
 string 36 (dialogue), 38 (choice) or 40 (timed choice), all seen in HD.
 
-Not converted, on purpose: Pajama Hip `S26` (the Strength Up notice, red
-`244,65,31` with a baked white outline) and `mainmenu` (Android: Comic Sans MS
-Bold Italic). HD's `initFonts` has no Comic Sans and no red Pajama Hip; its
-only red text face is Trebuchet Italic 40 (`0xf0513c`, strokes 3 and 9), which
-may be the notice's real face but has no HD screenshot to confirm. They stay
-bitmap until there is evidence. Not verified: HD's line pitch beyond these
+The Strength Up notice (Android's `PajamaHipS26`, red with a baked white
+outline) is drawn as HD's Trebuchet Italic 40 (`0xf0513c`, strokes 9 and 3),
+which the HD photos confirm: HD's `initFonts` has no red Pajama Hip. Only
+`mainmenu` (Android: Comic Sans MS Bold Italic) stays bitmap; HD's main menu
+uses its own glyph fonts. Not verified: HD's line pitch beyond these
 samples and any dialogue with fewer than three lines.

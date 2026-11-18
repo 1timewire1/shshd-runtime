@@ -10,7 +10,7 @@ The project became EXP Runtime (upstream:
 and `exp-runtime` / `exp-tool` entry points.
 
 **SHSHD Runtime** ([1timewire1/shshd-runtime](https://github.com/1timewire1/shshd-runtime)) is a fork
-of it, last merged at upstream v0.5.0. It adds SHS HD's iPad presentation and plays Cause of Death in
+of it, last merged at upstream v0.6.1. It adds SHS HD's iPad presentation and plays Cause of Death in
 it, as a separate app (`SHSHD Runtime` data folder, `org.shshd.runtime`, `shshd-runtime` distributions
 and commands; upstream's commands and `shs` / `shs-tool` remain aliases). It keeps the inherited MIT
 license and copyright notice. Its HD work rests on a user-supplied SHS HD (iPad) 1.4.38 IPA and Cause
@@ -39,7 +39,9 @@ separate BSD-licensed archive decoder. Apple platforms use the OS library.
 Windows/Linux desktop builds use the pinned upstream **3.8.9** release from
 `tools/build_rar.py`; build output includes its COPYING text and individual
 source copyright/license headers. Decoder sources/binaries remain in ignored
-build output and are not copied into the authored source package. Tests
+build output and are not copied into the authored source package. The Android
+APK builds the same 3.8.9 release (`android/recipes/libarchive`) and carries
+its notices. Tests
 construct their own stored RAR4/RAR5 bytes; no original game archive is bundled.
 
 ## Evidence notes

@@ -17,20 +17,22 @@ tests without game content, builds the player, audits its bundle
 and tests the extracted desktop downloads. It also calls the reusable
 [iOS workflow](../.github/workflows/ios-builds.yml), which verifies the shared
 engine and native presentation in a simulator before packaging the unsigned
-device app. Third-party actions are pinned to verified commit hashes.
+device app. The desktop and iOS workflows pin third-party actions to verified
+commit hashes; the Android APK workflow uses version tags.
 
 The Python packaging job builds all component wheels and source archives,
 then checks isolated pip installs on Python 3.10 and 3.14. Its
 `python-packages` Actions artifact contains the component distributions and their
-checksums. Version-tag runs also publish these tested wheels and source
-archives to PyPI after all checks pass. See [PyPI publishing](#pypi-publishing)
-for the required one-time setup and [SDK.md](SDK.md) for component installs.
+checksums. Version-tag runs attach these tested wheels, with their checksums,
+to the GitHub release; this fork publishes nothing to PyPI
+([PyPI publishing](#pypi-publishing-upstream-only)). See [SDK.md](SDK.md) for
+component installs.
 
 | Download target | GitHub runner | Archive |
 | --- | --- | --- |
 | `windows-x64` | `windows-2022` | ZIP containing the full executable directory |
 | `linux-x64` | `ubuntu-22.04` | tar.gz preserving executable modes and links |
-| `macos-arm64` | `macos-14` | ZIP containing the Apple Silicon app |
+| `macos-arm64` | `macos-15` | ZIP containing the Apple Silicon app |
 | `macos-x64` | `macos-15-intel` | ZIP containing the Intel app |
 | `ios-arm64-unsigned` | `macos-26` | Unsigned IPA for users to sign and install |
 | `shshd-runtime-android` | `ubuntu-24.04` | Android APK, signed with the release key (version tags only) |
@@ -45,8 +47,8 @@ These artifacts expire after 30 days. GitHub requires
 sign-in and repository read access for [Actions artifact downloads](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
 
 The owner can publish a version by pushing a tag such as `v1.0.0`. The tag
-must be exactly `v` followed by the version shared by all six `pyproject.toml`
-files; a mismatch fails before building Python distributions. Once all
+must be exactly `v` followed by the version shared by all seven `pyproject.toml`
+files (the root and six components); a mismatch fails before building Python distributions. Once all
 four desktop builds and the Python packaging checks pass, the release job
 requires all four desktop downloads and their checksum files, verifies the
 checksums, and publishes the desktop archives and wheels with their checksums
@@ -72,8 +74,8 @@ The prepared release notes ([RELEASE.md](../RELEASE.md)) describe this fork's **
 earlier releases remain documented in the changelog.
 
 exp-runtime v0.6.0 added an optional seventh distribution, the episode creator (`shshd-runtime-creator` here). Its wheel
-is built and audited with the others; the player downloads do not include Qt or the editor, and this fork
-builds no standalone Creator downloads.
+is built and audited with the others; the player downloads do not include Qt or the editor; the Creator has its own
+downloads ([Creator downloads](#creator-downloads)).
 
 Rerunning a version-tag workflow updates matching assets on an existing
 release using `gh release upload --clobber`, then publishes any draft left by
@@ -82,7 +84,7 @@ new version tag instead. The workflow does not commit,
 push code or create a tag; the release command requires the tag to exist.
 
 Workflow changes take effect for tags containing the updated files. Local
-validation does not replace a successful GitHub run on all five targets.
+validation does not replace a successful GitHub run on all six targets (four desktop builds, iOS and Android).
 
 ### PyPI publishing (upstream only)
 
@@ -281,4 +283,4 @@ The first time each app opens:
 
 The creator contains Qt and the shared preview player; player and iOS downloads
 exclude the creator and MCP dependencies. The separately installable
-`exp-runtime[creator-mcp]` extra runs the headless stdio server.
+`shshd-runtime[creator-mcp]` extra runs the headless stdio server.

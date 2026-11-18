@@ -1,14 +1,16 @@
 # SHS engine service ABI and dispatcher inventory
 
-Revision: 2026-09-13. Companion to [VM_SPEC.md](VM_SPEC.md) and [SCHEMA.md](SCHEMA.md). The core VM is specified separately because a numeric yield is a call into a game engine, not a display opcode.
+Revision: 2026-11-17. Companion to [VM_SPEC.md](VM_SPEC.md) and [SCHEMA.md](SCHEMA.md). The core VM is specified separately because a numeric yield is a call into a game engine, not a display opcode.
 
 This document inventories **every explicit service ID 0–100** in Android 1.0.9 `FUN_0009fe3c`. It includes verified state contracts and unresolved helper calls. Rows marked unresolved are research boundaries, not implemented semantics. Android default cases must not automatically be assumed to have the same meaning in an iOS build.
 
 The launcher selects the game's host profile from its validated
 library. SHS-specific handlers live in `exp_runtime/shs/services.py`;
 [COD.md](COD.md) records CoD's separate handlers and native evidence. Both games
-support service 15's named dialogue; SHS also implements its verified optional
-negative prefix. Their service-100 paths differ and must not be interchanged.
+support service 15's named dialogue; Android-profile SHS also implements its
+verified optional negative prefix, while SHS HD's own case 0xf reads its first two
+words as CoD does. Their native service-100 paths differ; here both complete with 0
+and keep a URL argument for the host (section 2).
 
 ## 1. Shared calling convention and notation
 
@@ -41,49 +43,49 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 | 3 (`03`) | T(1), a2, bool(a3) | Adds an option, mapped return value (-999 selects its index), and enabled flag; `FUN_000ae6c8`. | 0 | C |
 | 4 (`04`) | bool(a1) | Attaches incremental choices, clears the builder pointer, and waits. Nonzero a1 shuffles labels and return mappings using the shared native LCG; see section 4.6. | mapped selection | P |
 | 5 (`05`) | a1, low byte of a2 | Writes a byte at game-state offset a1 via `FUN_00095d48`; service 13 reads these bytes as character expression defaults. | 0 | C (expression byte) |
-| 6 (`06`) | a1, a2 destination | Gets the named character string via `FUN_00096c64`; writes to VM address a2 or, for negative a2, dynamic slot `~a2`. | address / handle | X |
+| 6 (`06`) | a1, a2 destination | Gets the named character string via `FUN_00096c64`; writes to VM address a2 or, for negative a2, dynamic slot `~a2`. | address / handle | C (SHS: entity name; CoD stops) |
 | 7 (`07`) | none read; all supplied words ignored | Ends the episode through `0007e614`: dispose panels, reset hosts/numeric state, cancel scheduled scripts and retire native resume progress. [Contract](STORY_SERVICES.md#episode-exit-services-7-and-63). | terminal scene exit | P (terminal) |
 | 8 (`08`) | a1 title ref, T(2), a3, a4 | Episode/week title card, UI type 16; negative a1 means empty title, a3 is the background asset, a4 a retained flag. Original fonts, layout, entrance and input gate; Android promotional branches remain unmodeled. See [TITLE_SCREENS.md](TITLE_SCREENS.md). | 0 on acknowledgement | P |
 | 9 (`09`) | poll ID, upload type (0 text, 1 number, 2 array), upload value or array address, upload count, results type, results buffer address, results count (HD `getPollURL` 0003c984 appends words 0-4 and 6 to the URL as pollID, upType, upValue(s), upSize, resultsType, resultsSize; `finishPollDownload` writes the results through word 5) | Android: `0009f0cc` builds then discards the poll parameters, returns `EMPTY`; sender `0007b448` is empty in Android 1.0.9. HD: poll download (`getPollURL`, `pollID=&upType=&upValue(s)=`), the "Loading / Please wait..." bar, waits for the request; on failure `finishPollDownload(false)` returns 0. Type 2 with a verified script continuation completes offline with a local receipt ([contract](STORY_SERVICES.md#offline-surveys-service-9), `survey_confirmation`); any other call shows the bar for `POLL_WAIT_MS` (1 s) and returns 0 (`download_poll`). | native waits; offline R=0 | P (offline) |
 | 10 (`0a`) | a1, bool(a2) | Schedules script resource a1 and its flag through `FUN_0007b44c`; LIFO consumption after HALT. | 0 | C |
 | 11 (`0b`) | a1, a2 | Sets panel background base a2, variant a1 through `FUN_000a92f4`, then requests speaker-side alignment. | 0 | C (background and pan) |
-| 12 (`0c`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 12 (`0c`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
 | 13 (`0d`) | optional negative mode, text, character, optional override | Dialogue path; raw text reference is subsequently substituted by the panel. Section 4 describes argument positions. | pending | P |
 | 14 (`0e`) | none required by case; supplied words ignored | Explicit native default path, verified in Android and SHS iOS; ordinary completion removes the supplied frame without changing panel/game state. | 0 | C |
 | 15 (`0f`) | optional negative prefix, then T(speaker), T(body); extra words ignored | Named dialogue in panel mode 3; prefix is skipped without applying service-13 text styling. Shares presentation and callback with 76. [Contract](STORY_SERVICES.md#shs-service-15). | 0 on acknowledgement | P |
 | 16 (`10`) | a1 | Queues a screen-transition selector at scene `+0x1c1c`. Title, message and dialogue panels (8/13/33/65/76) consume it on final acknowledgement; selector 20 draws a libc random bit for transition 1/2. Other panel paths remain partial. | 0 | C (queue; callbacks partial) |
 | 17 (`11`) | T(1), T(2), T(3) | Text input: title, prompt, initial value; UI factory type 15, same as 40. | string handle 0x7ff5 | P |
 | 18 (`12`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (zero args) |
-| 19 (`13`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 20 (`14`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 19 (`13`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 20 (`14`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
 | 21 (`15`) | none required by case; supplied words ignored | Same verified Android/SHS iOS default completion as 14; no panel, score or random effect. | 0 | C |
-| 22 (`16`) | destination a1, format t(2), values... | Formats `%d` / `%s` into packed VM memory via `FUN_0009f838`; destination capacity is caller-managed. | 0 | X |
-| 23 (`17`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 22 (`16`) | destination a1, format t(2), values... | Formats `%d` / `%s` into packed VM memory via `FUN_0009f838`; destination capacity is caller-managed. | 0 | C (SHS: `my_sprintf`; CoD stops) |
+| 23 (`17`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
 | 24 (`18`) | t(1), t(2) | String equality through `FUN_0009f56c` / `FUN_0005edd8`. | 0 / 1 | C |
 | 25 (`19`) | t(1), t(2) | Copies both strings, concatenates and writes packed words back to a1; dynamic-slot destinations are invalid. `FUN_0009f4d8`. | 0 | C |
-| 26 (`1a`) | t(1) | Calls `atoi` helper `FUN_0009f498`; dispatcher pseudocode discards its result and takes void completion. Do not assume the parsed integer is returned. | 0 shown; inspect before port | X |
+| 26 (`1a`) | t(1) | Calls `atoi` helper `FUN_0009f498`; dispatcher pseudocode discards its result and takes void completion. Do not assume the parsed integer is returned. | 0 shown; inspect before port | C (SHS: no-op; CoD stops) |
 | 27 (`1b`) | a1 bound | Positive bound: absolute remainder from the shared native LCG stream. Otherwise 0 without consuming randomness. `FUN_0009ea28`. | integer | C |
 | 28 (`1c`) | destination a1 | Copies last input into packed VM memory, high byte first, including NUL and zero padding. `FUN_00056b78`. | 0 | C |
 | 29 (`1d`) | a1 index | Reads signed word at host `+0x60 + 2*a1`; choice callbacks write cell 0. Other cell meanings remain unresolved. | word | C (initialized cells only) |
-| 30 (`1e`) | a1 | Calls application virtual slot `+0x1e8`; effect unresolved. | 0 | X |
-| 31 (`1f`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 32 (`20`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 30 (`1e`) | a1 | Calls application virtual slot `+0x1e8`; effect unresolved. | 0 | C (SHS: sound effect; CoD stops) |
+| 31 (`1f`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 32 (`20`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: `addMaster`; CoD stops) |
 | 33 (`21`) | t(1) title, t(2) body, a3 retained | Raw-text message panel, UI type 2. Requires 1000 ms active reading time, then acknowledgement; a3 does not set the initial delay. See [STORY_SERVICES.md](STORY_SERVICES.md#message-panel-service-33). | 0 on acknowledgement | P |
 | 34 (`22`) | a1, a2 | If panel type 3 is absent, creates it and sets background `(a2,a1)`; otherwise default completion. | 0 | C (background/pan; lifecycle partial) |
 | 35 (`23`) | a1..a4 | If panel 3 exists, character/expression update `(a1,a4)` via `FUN_000ab048`, then background `(a3,a2)`. | 0 | C (background/pan; other side effects partial) |
-| 36 (`24`) | t(1) | Sets a panel text field through `FUN_000aa028`. | 0 | X |
-| 37 (`25`) | t(1) | Sets dialogue text through `FUN_000a9f84`, starts display, and waits. | pending | X |
-| 38 (`26`) | a1, a2 | Panel operation `FUN_000a927c(panel3,a1,a2,0,-1,-1,-1,-1)`; semantics partial. | 0 | X |
+| 36 (`24`) | t(1) | Sets a panel text field through `FUN_000aa028`. | 0 | C (SHS: dialogue title; CoD stops) |
+| 37 (`25`) | t(1) | Sets dialogue text through `FUN_000a9f84`, starts display, and waits. | pending | P (SHS: dialogue text, waits; CoD stops) |
+| 38 (`26`) | a1, a2 | Panel operation `FUN_000a927c(panel3,a1,a2,0,-1,-1,-1,-1)`; semantics partial. | 0 | C (SHS: status icons; CoD stops) |
 | 39 (`27`) | none read; supplied arguments ignored | Closes dialogue panel 3 through `FUN_000a7cd0`, setting its removal flag at +0x0c. Completes without a UI callback. See [STORY_SERVICES.md](STORY_SERVICES.md#dialogue-panel-close-service-39). | 0 | C |
 | 40 (`28`) | T(1), T(2), T(3) | Text input, same as 17. | string handle 0x7ff5 | P |
-| 41 (`29`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 42 (`2a`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 43 (`2b`) | t(1) | Stores a replacement string under the fixed key at `0x0025b268`; key meaning not established here. | 0 | X |
+| 41 (`29`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 42 (`2a`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 43 (`2b`) | t(1) | Stores a replacement string under the fixed key at `0x0025b268`; the key is `$USR` (HD `setNameReplacement`). | 0 | C (SHS: sets `$USR`; CoD stops) |
 | 44 (`2c`) | key, value | Global numeric write; alias of 54. | 0 | C |
 | 45 (`2d`) | key | Global numeric read, missing value 0; alias of 55. | word | C |
 | 46 (`2e`) | t(key), t(value) | Stores a raw text substitution through `FUN_00097644`. | 0 | C |
 | 47 (`2f`) | t(key), t(default), negative slot selector | Reads stored string or initializes default, copies into dynamic slot, returns its handle. Native also invokes a persistence helper on default initialization. | handle | C |
-| 48 (`30`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 48 (`30`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
 | 49 (`31`) | character, t(name), case flag | Assigns character name; optional native byte-case conversion. See section 3. | 0 | C |
 | 50 (`32`) | owner a1, key a2, bit a3, value a4 | Set a bit only when a4==1; otherwise clear it. Uses the shared 32-bit numeric map. `FUN_000965bc`. | 0 | C |
 | 51 (`33`) | owner a1, key a2, bit a3 | Returns a bit from the shared 32-bit numeric map; missing entries read zero. `FUN_00095ca0`. | 0 / 1 | C |
@@ -91,53 +93,55 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 | 53 (`35`) | owner, key | Numeric read through `FUN_00095bdc`, missing value 0. | word | C |
 | 54 (`36`) | key, value | Global numeric write, owner 0; alias of 44. | 0 | C |
 | 55 (`37`) | key | Global numeric read, owner 0; alias of 45. | word | C |
-| 56 (`38`) | a1..a3 | Calls `FUN_0009783c`; state collection meaning unresolved. | 0 | X |
-| 57 (`39`) | a1..a3 | Calls `FUN_00096fd0`; narrows result to signed word. | word | X |
-| 58 (`3a`) | a1, a2 | Calls `FUN_00096fbc`; state query unresolved. | word | X |
-| 59 (`3b`) | a1..a3 | Calls `FUN_00096f9c`; state mutation unresolved. | 0 | X |
-| 60 (`3c`) | t(1) | Name/string lookup through `FUN_000966bc`; domain and missing-value behavior unresolved. | word | X |
-| 61 (`3d`) | character a1, destination a2 | Copies character name from `FUN_00096c64` to packed VM word memory. | 0 | X |
-| 62 (`3e`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 56 (`38`) | a1..a3 | Calls `FUN_0009783c`; state collection meaning unresolved. | 0 | C (SHS: per-entity int array; CoD stops) |
+| 57 (`39`) | a1..a3 | Calls `FUN_00096fd0`; narrows result to signed word. | word | C (SHS: per-entity int array; CoD stops) |
+| 58 (`3a`) | a1, a2 | Calls `FUN_00096fbc`; state query unresolved. | word | C (SHS: per-entity int array; CoD stops) |
+| 59 (`3b`) | a1..a3 | Calls `FUN_00096f9c`; state mutation unresolved. | 0 | C (SHS: per-entity int array; CoD stops) |
+| 60 (`3c`) | t(1) | Name/string lookup through `FUN_000966bc`; domain and missing-value behavior unresolved. | word | C (SHS: index of a registered name, or -1; CoD stops) |
+| 61 (`3d`) | character a1, destination a2 | Copies character name from `FUN_00096c64` to packed VM word memory. | 0 | C (SHS: entity name; CoD stops) |
+| 62 (`3e`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
 | 63 (`3f`) | none read; all supplied words ignored | Same episode-exit path as 7, including scene teardown and resume retirement. | terminal scene exit | P (terminal) |
 | 64 (`40`) | character, t(name) | Assigns raw character name via `FUN_00096144`, without service 49 case conversion. | 0 | C |
 | 65 (`41`) | character a1, t(2), override a3 | Updates panel character/expression and dialogue, then waits. Has Android promotional-text special cases and an early-return path. | pending / special early return | P (ordinary dialogue path) |
-| 66 (`42`) | all arguments as weights | Weighted random selection: sum weights, PRNG remainder, return first index whose cumulative sum exceeds the remainder; invalid weights not specified. | zero-based index | X |
-| 67 (`43`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 68 (`44`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 69 (`45`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 70 (`46`) | a1 selector; extra words ignored | Android build query: 2→2, 3→6, 6→0x7ff5, 9→1; remaining selectors return 0 except 11, which compares native current/weekly-episode objects and stays unsupported. [Contract](STORY_SERVICES.md#build-and-application-query-service-70). | word | C (fixed selectors); X (11) |
+| 66 (`42`) | all arguments as weights | Weighted random selection: sum weights, PRNG remainder, return first index whose cumulative sum exceeds the remainder; invalid weights not specified. | zero-based index | C (SHS; a total of 0 or less returns the last index; CoD stops) |
+| 67 (`43`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 68 (`44`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 69 (`45`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 70 (`46`) | a1 selector; extra words ignored | Android build query: 2→2, 3→6, 6→0x7ff5, 9→1; remaining selectors return 0 except 11, which compares native current/weekly-episode objects and stays unsupported on Android-profile SHS. HD answers 10→2 and 11→0 (6 its app version), CoD 10→1 and 11→0; shshd-runtime's selectors 200–205 are in section 5. [Contract](STORY_SERVICES.md#build-and-application-query-service-70). | word | C (fixed selectors; HD, CoD 11); X (Android 11) |
 | 71 (`47`) | 8 words: title, description, good/bad lists, duration ms, character, portrait mode, refresh ms | Timed word choices; raw text, libc random deals, ±1 scoring clamped at zero. See [mini-game schema](MINIGAMES.md#3-service-71-timed-word-choices). | score in R and UI cell 0 | P |
 | 72 (`48`) | character, art base ID | Initializes five character-art slots, probes IDs base+1..base+4 and falls back to base when absent. | 0 | C (resource probes in Session) |
 | 73 (`49`) | a1 character | Returns first art word at game state `+0xb1c + 10*a1` via `FUN_00095c48`. | word | C |
 | 74 (`4a`) | a1 | Stores numeric UI default `DAT_002af012` via `FUN_000a7d14`; not a fade opcode. | 0 | C |
 | 75 (`4b`) | a1 | Stores numeric UI default `DAT_002af010` via `FUN_000a7cf8`; not a fade opcode. | 0 | C |
 | 76 (`4c`) | T(1) speaker, T(2) dialogue; extra words ignored | Named dialogue in panel mode 3, no portrait, theme -1. Uses ordinary name layout, text reveal, paging and final callback. See [STORY_SERVICES.md](STORY_SERVICES.md#named-dialogue-without-a-portrait-service-76). | 0 on final acknowledgement | P |
-| 77 (`4d`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 78 (`4e`) | T(1), count a2, word-address a3 | Portrait selector copies 1–5 IDs; separate confirmation returns the chosen original array index. See section 4.3. | index in R and UI cell 0 | P |
+| 77 (`4d`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 78 (`4e`) | T(1), count a2, word-address a3 | Portrait selector copies 1–5 IDs (a translated pack's layout up to 10); separate confirmation returns the chosen original array index. See section 4.3. | index in R and UI cell 0 | P |
 | 79 (`4f`) | a1 resource | Selects music request for 8201–8232, otherwise SFX path; native playback through `FUN_000a3bc8`. | 0 | C (basic audio) |
 | 80 (`50`) | a1 resource, bool(a2) | Stores music resource and flag through `FUN_0007b550`; repeat/fade flag meaning unresolved. | 0 | C (basic audio; flag retained) |
 | 81 (`51`) | a1 | Calls audio stop helper `FUN_000a3260(audio,a1,1)`; Python stops requested music, with simplified channel handling. | 0 | C |
-| 82 (`52`) | none | Optional 1000 ms Android vibration via `FUN_000a3040`; iPhone uses the iOS system vibration alert (exp-runtime's device contract, the iOS host only). The desktop has no vibrator, so it can sound a synthesized buzz instead (opt-in, unsaved `vibration_serial`). Music/SFX unchanged. [Device contract](STORY_SERVICES.md#optional-device-request-and-native-stub-services-82-99). | 0 | C (iPhone hardware; desktop buzz) |
-| 83 (`53`) | none read here | Audio helper `FUN_000a3208`; detailed effect unresolved. | 0 | X |
-| 84 (`54`) | none read here | Audio helper `FUN_000a31bc`; detailed effect unresolved. | 0 | X |
-| 85 (`55`) | none read here | Scene helper `FUN_0007b494`; effect unresolved. | 0 | X |
+| 82 (`52`) | none | Optional 1000 ms Android vibration via `FUN_000a3040`; iPhone uses the iOS system vibration alert. Here General's Vibration drives the device's vibrator (Android, iPhone, a desktop controller's rumble), and Sound's Simulated Vibration Sound plays a synthesized buzz on any host (both opt-in; unsaved `vibration_serial`). Music/SFX unchanged. [Device contract](STORY_SERVICES.md#optional-device-request-and-native-stub-services-82-99). | 0 | C (device vibrator; optional simulated buzz) |
+| 83 (`53`) | none read here | Audio helper `FUN_000a3208`; detailed effect unresolved. | 0 | C (SHS: pause music; CoD stops) |
+| 84 (`54`) | none read here | Audio helper `FUN_000a31bc`; detailed effect unresolved. | 0 | C (SHS: resume music; CoD stops) |
+| 85 (`55`) | none read here | Scene helper `FUN_0007b494`; effect unresolved. | 0 | C (SHS: no-op; CoD stops) |
 | 86 (`56`) | a1, a2, a3 flag | If a3==0, invokes `FUN_0007b488`, then background helper `FUN_000a92f4(panel,a1,a2)`. | 0 | C (background/pan; flag effect unresolved) |
-| 87 (`57`) | none read here | Reads scene field `+0x264` and narrows to a word; meaning unresolved. | word | X |
+| 87 (`57`) | none read here | Reads scene field `+0x264` and narrows to a word; meaning unresolved. | word | C (SHS: 0; CoD stops) |
 | 88 (`58`) | T(1) | Queues substituted notification in panel-3 `+0xf0`; next dialogue consumes it. Original notice font, portrait-relative letter motion, length-based fade and tap dismissal; see [notification contract](STORY_SERVICES.md#dialogue-notifications-service-88). | 0 | C |
 | 89 (`59`) | none | Sets a one-shot flag for the next dialogue. Shared presentation uses the recovered iOS hold/scale/rotation and +400 ms reveal delay; older saves retain the Android rotation. [Timing](UI_FIDELITY.md#shake-and-reveal-input). | 0 | C |
 | 90 (`5a`) | icon a1, optional T(2) when a2!=-1 | Nonblocking scene badge: -1 removes it; otherwise icon/text, layout 67 and 200 ms entrance. `FUN_0007b97c`. | 0 | C |
 | 91 (`5b`) | bool(stack[SP-argc]), even when argc=0 | Loading overlay gates VM execution until active time >3000 ms. A zero wait value completes the supplied frame immediately; nonzero retains it until `FUN_0009ea70` clears the overlay. Zero-argument calls read retained backing at SP. [Contract](STORY_SERVICES.md#loading-overlay-service-91). | R=0; UI cells unchanged | P |
-| 92 (`5c`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
-| 93 (`5d`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | X |
+| 92 (`5c`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
+| 93 (`5d`) | none required by case | Explicit native default/no-op path; ordinary completion still removes the supplied argument frame. | 0 | C (SHS: native default; CoD stops) |
 | 94 (`5e`) | 22 words; six weighted play tables and six instruction references | Football: nine changing targets, drives, halves and sudden death. [Frame and rules](MINIGAMES.md#4-service-94-football); [presentation](FOOTBALL_UI.md). | home minus away; saves both scores | P |
 | 95 (`5f`) | a1 selector | Last football home score if a1==1, otherwise away score; scene `+0x1c0c/+0x1c10`. Python rejects uninitialized score reads. | word | C |
 | 96 (`60`) | 20 words; ten-word problems, seventeen-word tutorials, two-word symbols | Word/picture grids, timers, tutorial branches, path scoring. [Frame and rules](MINIGAMES.md#5-service-96-word-and-picture-grids). | score >= target as 0/1; UI cells unchanged | P |
 | 97 (`61`) | bool(a1), a2; extra words ignored | `FUN_0007b8d4` stores automatic/fixed background-pan policy and immediately requests alignment a2 (1=left, 2=center, 3=right; other values hold position). [Contract](UI_FIDELITY.md#background-panning). | 0 | C |
-| 98 (`62`) | none read here | `FUN_000843c8` clears the application loading overlay, resets its timer and restores input. The service itself is not yet dispatched. | 0 | X |
+| 98 (`62`) | none read here | `FUN_000843c8` clears the application loading overlay, resets its timer and restores input. HD dismisses a non-blocking loading screen. | 0 | C (SHS: `hideLoadingBar`; CoD stops) |
 | 99 (`63`) | bool(a1) | `FUN_00082adc` is exactly `mov r0,#0; bx lr` in this release; ordinary completion, no host +0x118 flag. | 0 | C |
-| 100 (`64`) | t(1), bool(a2) | Optionally sets scene `+0x1b`, invokes application helper, then passes text to `FUN_000db5e0`; effect unresolved. | 0 | X |
+| 100 (`64`) | t(1), bool(a2) | Optionally sets scene `+0x1b`, invokes application helper, then passes text to `FUN_000db5e0`; SHS HD and CoD 1.4.7 save and open the URL. Here it completes with 0 and a `://` link is kept for the host to offer behind Exit Game. | 0 | C (SHS and CoD: 0, link kept) |
 
-IDs beyond 100 take the inspected dispatcher's default path. Their original meanings and presence in other builds are unknown. The Python host intentionally does not treat unknown IDs as successful no-ops.
+shshd-runtime completes the rows marked "SHS" with the HD build's `SHSScript::syscall` behaviour (`engine.SHS_HD_YIELDS`), for both SHS editions; Cause of Death still stops at them.
+
+IDs beyond 100 take the inspected Android dispatcher's default path. The HD build's 101-120 are in section 6 and shshd-runtime's own 200-224 in sections 5.1-5.6a; any other unknown ID stays an explicit stop. The Python host intentionally does not treat unknown IDs as successful no-ops.
 
 ### Imported SHS corpus follow-up
 
@@ -156,17 +160,20 @@ sentinel to R=0 and removes the frame. Neither default implements the dialogue
 or diagnostic operation that its caller's arguments might suggest. Only these
 explicitly verified SHS IDs were enabled; unknown IDs still retain their frames.
 
-SHS service 100 has 23 calls across 15 supplied episodes and remains pending.
+SHS service 100 has 23 calls across 15 supplied episodes. shshd-runtime now
+completes it with 0 for SHS and CoD alike; a URL argument is kept for the host to
+offer behind Exit Game (`engine.store_link`). The save, the scene flag `+0x1f` and
+leaving the app are not modelled. The native evidence follows.
 It is not CoD 1.3.4's default path: SHS reads a URL and flag, sets a scene flag
 when requested, and saves state before platform handoff. SHS iOS names the
 helpers `saveGame` and `exitAndShowURL`; Android calls `0008b618` and `000db5e0`.
-Its external-application lifecycle and resume flag still need implementation.
+Its external-application lifecycle and resume flag are not modelled.
 The follow-up trace confirms iOS **000061ac** uses `UIApplication.openURL:`
 and returns. Scene flag `+0x1f` is tested by **00022440/00022a28** when ticking
 and deciding whether queued scripts can continue. This is more than a URL
 string or a return-zero stub. The bounded choice-tree audit encounters it in
-Game of Cones and Conned Artist promotional branches; hints stop at the call
-without opening a URL or changing the live save.
+Game of Cones and Conned Artist promotional branches; it completes there without
+opening a URL or changing the live save.
 
 ## 3. Verified state-service contracts
 
@@ -202,7 +209,7 @@ service 47: (key_ref, default_ref, selector) -> handle
     return 0x7ff5 + slot
 ```
 
-These are raw references; substitution is not implicitly applied to key/value arguments. An existing empty value invokes the default just like a missing value. Native default initialization also calls `FUN_0008b2a8`; the Python host does not implement native persistence.
+These are raw references; substitution is not implicitly applied to key/value arguments. An existing empty value invokes the default just like a missing value. Native default initialization also calls `FUN_0008b2a8`; the Python host doesn't call it, but keeps the shared names table across episodes in `player.json` (section 6, `Session.share_names`).
 
 Runtime handles are mutable references to slots, not immutable strings or inverted indices into a static string list. Services can overwrite the slot before a later use. The slot selector in this contract must not be generalized to service 0's distinct formatting convention.
 
@@ -210,7 +217,7 @@ Runtime handles are mutable references to slots, not immutable strings or invert
 
 Service 64 `(character_id, name_ref)` stores `t(name_ref)`. Service 49 adds a third case-conversion flag. With that flag set, its native byte conversion preserves names beginning with `$`; otherwise it changes case at literal spaces using ASCII and specific extended-byte ranges. The current `_format_name()` models those ranges. This is not Unicode title-casing.
 
-Service 72 `(character_id, base_id)` records five art slots natively. For positive bases it stores the base in slot 0 and probes base+1 through base+4; each missing variant falls back to the base. Nonpositive bases are copied across the five slots. Variant numbers are not yet assigned verified expression names. Session supplies resource-bank probes; standalone tracing without a resource bank records base fallbacks. Service 73 returns the stored first art word. Reading an uninitialized character's art is an explicit Python error.
+Service 72 `(character_id, base_id)` records five art slots natively. For positive bases it stores the base in slot 0 and probes base+1 through base+4; each missing variant falls back to the base. Nonpositive bases are copied across the five slots. Variant numbers are not yet assigned verified expression names. Session supplies resource-bank probes; standalone tracing without a resource bank records base fallbacks. Service 73 returns the stored first art word, or 0 for a character never given art (the native table is zero-filled).
 
 Service 5 stores a signed low byte at the game-state offset given by a1. Service 13 reads that character byte as its default expression. Native helper `FUN_00095c60` selects art slot `expression % 5`. Panel helper `FUN_000ab048` also uses separate bytes at character+200, prior panel state, and relationship properties. NPC relationship icons, cache writes to owned keys 3000/3001, gain/loss sounds, and their animation delays are implemented; see [UI_FIDELITY.md](UI_FIDELITY.md#npc-relationship-indicators). Other expression and panel-lifecycle exceptions remain partial.
 
@@ -278,8 +285,9 @@ the renderer reads the mapped source and passes seconds to SDL_mixer's
 `music.play(start=...)`. Different cues sharing a source still restart at
 their distinct offsets. SFX and episode resource IDs are not remapped.
 Existing libraries work without reimport because the complete source APK was
-retained. Version-22 host saves also retain the actual cue/playhead, repeat
-flag, outgoing fade and active effects; older saves start their requested cue.
+retained. Saves keep the requested cue and repeat flag; the playback fields
+(this fork's save version 27, upstream's 22) stay empty in this player (see
+Music below), so a loaded save starts its requested cue.
 Android's exact codec seek precision remains unverified.
 
 #### Music
@@ -435,7 +443,7 @@ Service 78 selects UI type 5. Its factory copies `(text_ref, count, array_word_a
 
 ### 4.4 Service 0: formatting selector exception
 
-`FUN_0009f5cc(..., 0)` uses argument 1 as a raw format reference when nonnegative and returns slot 0. Otherwise argument 2 is the format and the destination is `1-a1`: -1 selects slot 2, and -9 selects slot 10. The runtime supports the native `%c`, `%d`, `%s` scanner and its aliasing scratch slot 10. See [STORY_SERVICES.md](STORY_SERVICES.md#formatting-and-packed-strings-services-0-24-25-28) for bounds, literal percent handling and memory writes. Service 22 remains separate and unsupported.
+`FUN_0009f5cc(..., 0)` uses argument 1 as a raw format reference when nonnegative and returns slot 0. Otherwise argument 2 is the format and the destination is `1-a1`: -1 selects slot 2, and -9 selects slot 10. The runtime supports the native `%c`, `%d`, `%s` scanner and its aliasing scratch slot 10. See [STORY_SERVICES.md](STORY_SERVICES.md#formatting-and-packed-strings-services-0-24-25-28) for bounds, literal percent handling and memory writes. Service 22 (`my_sprintf`) is separate: only `%s` and `%d` are formats, another `%x` keeps x without the percent sign, and the result is written to VM memory at a1.
 
 ### 4.5 Complex UI/minigame frames
 
@@ -568,7 +576,7 @@ other state/panel services, native save/resource extensions, audio and outstandi
 mini-game presentation. The corpus's presence of a service does not prove the
 Android helper matches its original iOS semantics.
 
-## 5.1 New Rules' minigame arena (shshd-runtime services 200–212)
+## 5.1 New Rules' minigame arena (shshd-runtime services 200–213)
 
 These are not native SHS services. Episodes translated from SHS: New Rules
 (`tools/translate`) call them, as does New Rules' own minigame library, which
@@ -603,7 +611,7 @@ the game. With Ask to Skip Mini-Games on, it waits for the player's choice and
 answers the result the game would have left instead
 ([NEW_RULES.md](NEW_RULES.md#skipping)).
 
-## 5.2 The X360 minigames (shshd-runtime services 214–217)
+## 5.2 The X360 minigames (shshd-runtime services 214–217 and 222)
 
 These are not native SHS services either. Episodes translated from the cancelled
 Xbox 360 game call them after **70 selector 201** answers 1, which it does only
@@ -736,17 +744,21 @@ and every case below is now backed by a real, verified data model.
 
 | ID decimal (hex) | Native selector / behavior | Python |
 | --- | --- | --- |
-| 101 (`65`) | `objc_msgSend(g_engineDTView, @selector(scriptEnable))`. Bare. | C (no-op) |
+| 101 (`65`) | `objc_msgSend(g_engineDTView, @selector(scriptEnable))`. Bare. | C (`dt_view.enabled`) |
 | 102 (`66`) | `addNode:innerLabel:upperLabel:lowerLabel:exw:` on `g_engineDTView`. | Modeled: `DTView.add_node(args[0], read_text(args[1]), exw=0)` -- see 6.2 |
 | 103 (`67`) | `addNode:innerLabel:upperLabel:lowerLabel:exw:` on `g_engineDTView`, different argument shape. | Modeled: `DTView.add_node(args[0], read_text(args[1]), exw=args[2])` -- see 6.2 |
+| 104 (`68`), 105 (`69`) | `addNode` with three labels (type, inner, upper, lower); exw not passed. | Modeled: `DTView.add_node(args[0], read_text(args[3]), exw=0)` |
 | 106 (`6a`) | `addResult:exitLabel:` on `g_engineDTView`, dynamic exit-label string. | Modeled: `DTView.add_result(args[0], read_text(args[1]))` -- see 6.2 |
 | 107 (`6b`) | `addResult:exitLabel:` on `g_engineDTView`, sprintf-formatted exit-label. | Modeled: `DTView.add_result(args[0], str(args[0]))` -- see 6.2 |
 | 108 (`6c`) | `objc_msgSend(g_engineDTView, @selector(clearGlobalAccumulator), <value>)`. | C (`setIntProperty(entity id, 0x197, 0)` for an id below 600, else `setIntProperty(0, id, 0)`, and the id joins `DTView.accumulators` -- see `dt_state.py`) |
+| 109 (`6d`), 110 (`6e`) | The tree's update and save. | C (`dt_update`, `dt_save`) |
+| 111 (`6f`) | `addBranchNode:condition:innerLabel:upperLabel:lowerLabel:exw:` = addNode, then the node's branch condition. | Modeled: `DTView.add_node(args[0], read_text(args[4]), exw=0)`, `condition = args[1]` |
+| 112 (`70`) | `addNode(0x4c8, "", "", "")`: a join node. | Modeled: `DTView.add_node(0x4c8, '', exw=0)`, joining the node that owns the repeated ids |
 | 113 (`71`) | t(key), t(value): stores key = value only while `$USR` is empty, then `setNeedsDisplay` on `g_engineFSView`. | C |
-| 114 (`72`) | `objc_msgSend(g_engineFSView, @selector(scriptEnable))`. Bare. | C (no-op) |
-| 115 (`73`) | `incomingMessage:from:expression:` on `g_engineFSView`. | Modeled: `FaceplaceWall.incoming_message(read_text(args[0]), args[1], args[2])` -- see 6.2 |
-| 116 (`74`) | `incomingContinuationMessageText:url:` on `g_engineFSView`. | Modeled: `FaceplaceWall.incoming_continuation_text(read_text(args[0]), read_text(args[1]))` -- see 6.2 |
-| 117 (`75`) | `incomingContinuationMessageImage:url:` on `g_engineFSView`, **and** `incomingContinuationMessageText:url:` on the same call -- see 6.2. | Modeled: `FaceplaceWall.incoming_continuation_image(args[0], read_text(args[1]), read_text(args[2]))` -- see 6.2 |
+| 114 (`72`) | `objc_msgSend(g_engineFSView, @selector(scriptEnable))`. Bare. | C (`faceplace.enabled`) |
+| 115 (`73`) | `incomingMessage:from:expression:` on `g_engineFSView`. | Modeled: `FaceplaceWall.incoming_message(resolve_text(args[0]), args[1], args[2])` -- see 6.2 |
+| 116 (`74`) | `incomingContinuationMessageText:url:` on `g_engineFSView`. | Modeled: `FaceplaceWall.incoming_continuation_text(resolve_text(args[0]), read_text(args[1]))` -- see 6.2 |
+| 117 (`75`) | `incomingContinuationMessageImage:url:` on `g_engineFSView`, **and** `incomingContinuationMessageText:url:` on the same call -- see 6.2. | Modeled: `FaceplaceWall.incoming_continuation_image(args[0], resolve_text(args[1]), read_text(args[2]))` -- see 6.2 |
 | 118 (`76`) | `objc_msgSend(g_engineFSView, @selector(clearWall))`. Bare. | Modeled: `FaceplaceWall.clear()` |
 | 119 (`77`) | `objc_msgSend(g_engineFSView, @selector(nameChosen:))`. Observed with zero pushed arguments despite the colon. | C (no-op) |
 | 120 (`78`) | `objc_msgSend(g_engineFSView, @selector(faceChosen:))`. Same as 119. | C (no-op) |
@@ -783,8 +795,10 @@ pre-existing, unrelated systems). The run only stops because a driver
 without interactive input can't *play* those minigames, not from any
 remaining engine gap.
 
-One real, still-open gap remains: `VMError("Art requested for uninitialized
-character 0")`. Root-caused (not just observed): diffing every yield
+A gap found then is now closed: service 73 for a character never given art
+returns 0, as the native table is zero-filled (`engine.py`), so HD's Football
+Star runs on from there. The original finding, kept for its history, was
+`VMError("Art requested for uninitialized character 0")`. Root-caused (not just observed): diffing every yield
 instruction in HD's `25001` against Android's copy of the same script shows
 both are byte-identical through instruction 182, after which HD inserts a
 new block (the `scriptEnable` calls, then character-art queries for ids
@@ -874,7 +888,8 @@ Services 102/103/106/107 (DTView) and 115/116/117/118 (Faceplace) are now
 implemented, modeling this real content -- see section 6.2. Reference:
 `reference/ghidra_scripts/dtview_faceplace_decompile_report.txt` (raw
 decompiles) and `legacy/findings.md`'s DTView/Faceplace layout section (the
-layout half of this same investigation).
+layout half of this same investigation). Both are the owner's private notes,
+kept outside this repository.
 
 ### 6.2 DTView/Faceplace real per-argument mapping (from raw Thumb disassembly)
 
@@ -901,7 +916,7 @@ selector strings and register arguments -- bypassing the decompiler
 entirely, the same rigor already used for yields 101/114/119/120. Full
 per-case traces live in this investigation's working notes
 (`legacy/findings.md`, "DTView/Faceplace: real per-argument mapping from
-raw disassembly").
+raw disassembly"; the owner's private notes, outside this repository).
 
 **The key structural finding:** `getStringFromStackNoTranslation(dest, this,
 index)` -- called at every DTView/Faceplace string argument -- reads
@@ -947,6 +962,10 @@ against HD's own Football Star before this session):
   changed to `need(3)` this session** to match.
 - Case `0x76` (yield 118, `need(0)`): bare `clearWall`.
 
+The engine now reads the message (115), the continuation text (116) and the
+caption (117) with `resolve_text`, which substitutes `$USR` (a real-device
+correction); the URLs and the tree's labels stay raw `read_text`.
+
 **Verified against real content, not just in theory:** running HD's own
 Football Star (`tools/audit_hd_football.py`) with this mapping wired into
 `engine.py` produces a `DTView` tree whose node labels read as a real,
@@ -962,13 +981,9 @@ resolved `args[i]` position -- not garbage, not empty, not a type error --
 is strong independent confirmation the index mapping above is correct, on
 top of the register-level disassembly it was derived from.
 
-**Not modeled:** native's full tree persistence/backtracking (`_cur_node`
-result-slot reuse, `warpToNode:animatedScroll:`, `tree_<serial>.sav`
-auto-save) -- this engine's `DTView` always creates a fresh child rather
-than reusing one from a prior save when a script revisits an already-built
-branch; no real content traced so far exercises that path. Also still
-unmodeled: the actual on-screen diagram/wall layout and drawing routines
-(`layoutNodeInSubview:withParent:`, `drawMessage:index:atX:atY:
-withWidth:portraitMode:isTouched:`, `drawFace:expr:withScale:hflip:atX:
-atY:`) -- not yet decompiled. The data captured above is real and content-
-accurate; nothing renders it on screen yet.
+**Since implemented:** the tree's per-node saves (`tree_<serial>`, numbered in
+`dtview_faceplace.py`; `native_tree.py`) and the warp to a node
+(`Session.warp`), the tree's layout ported from the app's `DTNode` classes
+(`dt_layout.py`), and the drawing of the tree (`desktop_panels.py`,
+`desktop_tree_zoom.py`) and of the Faceplace wall (`drawMessage`/`drawFace`,
+`desktop_faceplace_alert.py`).

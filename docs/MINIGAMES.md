@@ -45,16 +45,17 @@ application offsets `+0x6aaec/+0x6aaf0`, which correspond to scene offsets
 
 ### Optional minigame skips
 
-**Options → Cheats → Minigame skips** is an authored feature, disabled by
-default and saved separately from Answer hints. Before **each** service-71,
-94 or 96 minigame, the shared desktop/iOS player uses the native system-menu
-skin to offer **Skip with success**, **Skip with failure**, and **Play minigame**.
+**Options › Extras › Ask to Skip Mini-Games** (Options → Cheats → Skip
+mini-games in the Android menus) is an authored feature, disabled by default
+and saved separately from Choice Hints. Before **each** service-71, 94 or 96
+minigame, the shared player (desktop, iOS and Android) uses the native
+system-menu skin to offer **Win**, **Lose** and **Play** (or each outcome the
+story has; see below).
 Timers, introductory animation and game input wait for this decision. A native
 scene reveal may finish first. Choosing Play releases the original entry gate
 and saves that decision for the current call; resuming it does not prompt
 again. The next minigame gets a new prompt, even in the same scene. Existing
-saves already in play are not interrupted. Both skips remain available from
-the pause menu while that minigame is active and the preference is enabled.
+saves already in play are not interrupted.
 
 shshd-runtime: where the prompt offers each outcome its story has (word games,
 the BREW catch game, the New Rules arena, the X360 slot machine, SHS '11's

@@ -370,8 +370,8 @@ episode again files a copy added before this rule.
 An episode may contain resource **3** beginning with `SHSHD-PRESENTATION\0`,
 followed by UTF-8 JSON with `format: "shshd-presentation"` and `version: 1`.
 This is SHSHD Runtime metadata, not a recovered native format: it opts the
-episode in to four presentation features this fork added for its translated
-games (`presentation.py`). No original archive uses an ID below 25000 other
+episode in to presentation features and settings this fork added for its
+translated games and Creator episodes (`presentation.py`). No original archive uses an ID below 25000 other
 than 1, and creator exports use 2, so native players and upstream
 exp-runtime never read 3. Every member is optional:
 
@@ -401,7 +401,7 @@ behind it.
 
 The runtime honours the record in the SHS profile (`PRESENTATION_RECORD`;
 `content.presentation_feature`). Episodes translated by `tools/translate`
-(packs 31000-31600) keep their settings in the profile's `TRANSLATED_*`
+(packs 31000-31700) keep their settings in the profile's `TRANSLATED_*`
 tables, which take precedence. An episode naming a primary add-on reads the
 tables of that add-on's translated pack (`ADDON_FEATURE_PACKS`:
 `content.feature_pack`), but only for the settings that need the add-on's
@@ -457,7 +457,7 @@ addon: every background in every time-of-day mode (26000–26173), the music
 
 ## Episode version extension (shshd-runtime)
 
-An episode may contain resource **5** beginning with `SHSHD-EPISODE `,
+An episode may contain resource **5** beginning with `SHSHD-EPISODE\0`,
 followed by UTF-8 JSON with `format: "shshd-episode"`, `version: 1` and
 `revision`, the episode's version (1–65535; `episode_version.py`; owner,
 2026-11-06). This is SHSHD Runtime metadata, not a recovered native format;

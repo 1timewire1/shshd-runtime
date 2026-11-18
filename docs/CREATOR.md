@@ -5,9 +5,10 @@ Runtime and the original games. It exports the native CSPUD `.exp` container
 with KiWi v2 bytecode. Authored scripts pass checks against the original
 SHS Android, SHS iOS and CoD iOS loaders and interpreters; full playback in
 the original apps remains unverified. See the compatibility details below.
-The creator came from exp-runtime v0.6.0. This fork has no standalone Creator
-app yet (it needs work for the HD features first), so install it from a
-release's Python wheels (Python 3.10 or newer; pip fetches Qt):
+The creator came from exp-runtime v0.6.0. From v1.1.0, releases carry a
+standalone **SHSHD Runtime Creator** download
+([Standalone builds and MCP](#standalone-builds-and-mcp)). It also installs from
+a release's Python wheels (Python 3.10 or newer; pip fetches Qt):
 
 ```sh
 python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.0.2"
@@ -201,7 +202,7 @@ in formatted lines, title cards with the date first, word games of three words, 
 
 Every episode made in the Creator keeps the Creator's own names table, apart from the smartphone stories' and every translation's
 (a name typed in one is the one the others use). It shows in the episode lists as itself, not as the primary's game. Projects using
-the translators' packs (31000-31699) get none of this: their game's own tables apply.
+the translators' packs (31000-31799) get none of this: their game's own tables apply.
 
 The `.expproj` keeps the primary as `primary` and `edition` on its `addons` entry, and the settings as `options`; projects saved
 before them have neither. In MCP: `project_set_primary_addon` (library, addon or null, edition), and `project_update` takes
@@ -301,7 +302,7 @@ up and clears them after it, so score and property-flag nodes cannot use those
 owner-0 keys in an episode that uses the matching option. An intro always runs
 into the same loop. The emoticon images are part of the project (format
 version 3; older projects upgrade on opening). Bring your own images: the
-creator ships none. The iOS app does not yet run an intro into its loop.
+creator ships none.
 
 ### Surviving Hollywood's journal, details and stat pages
 
@@ -433,7 +434,7 @@ uv run --locked python -m exp_runtime.creator story.expproj \
   --language fr --export story-fr.exp
 ```
 
-The project schema is version 2 and migrates version 1 documents on read.
+The project schema is version 3 and migrates version 1 and 2 documents on read.
 Exports include optional resource 2 with `EXP-RUNTIME-AUTHORED\0` followed by
 versioned JSON: graph, source locations and variable/character mappings.
 Embedded image bytes stay in their own resource records; private library paths

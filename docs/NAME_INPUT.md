@@ -56,20 +56,17 @@ initial lowercase ASCII character and preserves subsequent case. Shared
 desktop/iOS typing follows that CoD rule; programmatic answers retain their
 exact supplied case, and SHS retains the Android rule above.
 
-CoD additionally accepts ASCII spaces as a deliberate owner-requested
-convenience. This is not required to solve the inspected puzzles: the cited
-Volume One names trigger a wrong-guess branch, while Volume Four accepts
-single-word alternatives. Spaces count toward existing length and width limits;
-space-only answers, tabs, Unicode whitespace and punctuation remain rejected.
-No trimming or rewriting changes the submitted string. `name_input_metrics()`
-shares the space policy with typing, player confirmation and `Session.answer()`,
-so the desktop and iOS paths agree with headless callers. Saved drafts preserve
-their contents and remain subject to validation on confirmation.
+exp-runtime v0.6.0 accepts ASCII spaces in CoD as its owner's convenience;
+this fork keeps the native filter (`allow_space=False`, see "Cause of Death"
+below). `name_input_metrics()` shares that policy with typing, player
+confirmation and `Session.answer()`, so every host agrees with headless
+callers. Saved drafts preserve their contents and remain subject to validation
+on confirmation.
 
 ### Optional answer hints
 
-**Options → Cheats → Answer hints** also covers CoD text puzzles on desktop
-and iOS. With the preference enabled, an empty entry field can show one
+**Options › Extras › Choice Hints** also covers CoD text puzzles on every
+platform. With the preference enabled, an empty entry field can show one
 accepted spelling at alpha 96/255 in its normal input font. The hint fits and
 clips to the entry region. Script defaults such as “Guess” remain visible;
 clear them to see the hint. Any typed character hides it. Empty Return still
@@ -220,9 +217,9 @@ places and differs in a few:
 
 The panel is positioned at `x = (0x300 - width) / 2`, `y = 0x13a - promptHeight`
 in the HD layer's own units (0x300 = 768, the iPad point width), and enters
-with `GameModel::setBubbleSex(1)`. Those units differ from this frontend's
-320 x 480 layout space, and the HD layout bank's geometry is not decoded, so
-the on-screen placement here still comes from Android's layout 46/15/43.
+with `GameModel::setBubbleSex(1)`. This frontend draws layout 46 from the HD
+bank with HD's own frames and fonts (`desktop_input._draw_hd`), centred in the
+384-unit frame by the same rule.
 
 The runtime applies the HD rules (`text_input.accept_name_character(hd=True)`,
 `validate_name(hd=True)`) whenever an HD app bundle is imported, and Android's

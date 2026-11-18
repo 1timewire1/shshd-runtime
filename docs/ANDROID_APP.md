@@ -95,13 +95,16 @@ SHS users can select both the APK and optional HD IPA together. Files are
 copied to private staging on a worker, validated by the shared importer and
 removed after the import job finishes. Source files stay untouched.
 
-Use ZIP or individual EXP files for this first build. The desktop RAR decoder
-is not yet bundled for Android. External library-folder selection is also not
-implemented; the app explains how to import the original game files instead.
+ZIP, RAR4/RAR5 and individual EXP files all import: the APK carries its own
+libarchive build (`android/recipes/libarchive`). External library-folder
+selection is not implemented; the app explains how to import the original game
+files instead.
 
 Libraries, settings and saves stay in private app storage. Do not clear app
-data or uninstall if you want to retain them; export/backup UI is not part of
-this proof of concept. No broad storage permission is requested. Internet
+data or uninstall if you want to retain them. Options → Data Management backs up
+progress and exports episodes into the app's external files folder
+(`Android/data/<package>/files`), which a computer can reach over USB, and Sync
+Devices sends them to another device. No broad storage permission is requested. Internet
 access supports the existing optional update check.
 
 Touch uses SDL's primary-finger mouse mapping, including drags and scrolling.

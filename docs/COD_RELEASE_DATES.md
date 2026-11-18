@@ -18,8 +18,8 @@ is recoverable from the IPA's code. Compiled 2026-10-08 for the HD player's Now 
 ## Two release stages
 
 Every chapter shipped twice: **On Demand** (paid, first) and **Now Airing** (free, normally a week later; two weeks
-or more in the biweekly era). Premium Content packs were On Demand only. Both dates are kept; which one the picker
-shows as "Airdate" is a presentation decision.
+or more in the biweekly era). Premium Content packs were On Demand only. Both dates are kept; the picker shows the
+first release as "Airdate" (`cod/episodes.py` `RELEASE_DATES`).
 
 ## Schedule history (from the posts)
 

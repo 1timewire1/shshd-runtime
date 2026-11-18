@@ -56,8 +56,9 @@ division by zero, and opcodes above the verified range also raise, instead
 of reproducing native undefined behavior. Break-only opcodes in the native
 switch are explicitly represented as no-ops.
 
-Linked/previous segments are retained by the decoder but not yet supported
-by the executor. None of the 987 audited scripts sets that flag.
+Linked segments run beside a script (`KiwiVM(linked=...)`, `vm.linked_layout`);
+New Rules' minigame library is the one in use ([VM_SPEC.md](VM_SPEC.md#23-linked-segments)).
+None of the 987 audited SHS scripts sets that flag.
 
 ## Pending actions
 

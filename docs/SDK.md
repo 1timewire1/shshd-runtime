@@ -13,7 +13,7 @@ adds Qt and the existing player. Player and iOS bundles exclude it.
 
 ## Choose an install
 
-This fork does not publish to PyPI. Each version-tag release attaches all six wheels (with SHA-256
+This fork does not publish to PyPI. Each version-tag release attaches all seven wheels, the umbrella and six components (with SHA-256
 checksums) to its GitHub release; download them into one folder (`./wheels` below) and select the parts
 you need:
 

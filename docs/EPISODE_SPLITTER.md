@@ -81,7 +81,7 @@ One story with jumps to its acts, not separate episodes. Whether it splits is th
 | Story Vote Ticket | A genre vote (the survey confirmation) |
 | Special: April Fools | A joke "rate this pack" menu before the episode's card (its three parodies follow in a row: see Sequential packs) |
 | Love Potion Fun Pack | Activities after its card (trivia, a quiz, matching couples) |
-| Day of Diss, Dating Beth (Xbox 360 translations) | Ordinary story choices before any card |
+| Day of Diss, Dating Beth (Xbox 360 translations) | Ordinary story choices before any card (Dating Beth has opened on a title card since 2026-11-11) |
 
 ### Not reached
 

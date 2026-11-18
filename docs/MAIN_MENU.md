@@ -5,7 +5,8 @@ Reference: SHS Android 1.0.9, `libshs09.so`, SHA-256
 Addresses below refer to that loaded binary. The Android interface is the
 working reference for the shared interface described by the user.
 
-SHSHD Runtime first presents an asset-free game chooser (or, on a first launch, Bulk Import). SHS and CoD each open
+SHSHD Runtime opens the game last played (General → Start In), or, when there is none, an asset-free game chooser (on
+a first launch, Bulk Import). SHS and CoD each open
 their own validated library and game menu; the SHS evidence below does not
 establish complete CoD presentation parity. [COD.md](COD.md) records its bindings.
 
@@ -30,7 +31,7 @@ yield IDs and must never be fed into the engine-service dispatcher.
 | 10004 | NowAiring | 127 | Locally imported episode list |
 | 10003 | OnDemand | 91 | All local episodes |
 | 10005 | MoreGames | 252 or 253, depending on ad state | Switch Game; checkpoint progress and open the other installed game, or the chooser if absent |
-| 1006 | Options | Gear artwork | Music/Sound, update checks, episode title language and library controls |
+| 1006 | Options | Gear artwork | General, Sound, Controller, Extras, Add-Ons and Data Management (HD), or the Android menus' Music/Sound, update checks, episode title language and library controls |
 | 10007 | Help/About | Info artwork | Player controls, runtime version and GitHub project link |
 | 10008 | DisableAds | 300 | Omitted; no advertising or purchase system |
 
@@ -329,7 +330,7 @@ and reports the write error. See the [exit contract](STORY_SERVICES.md#episode-e
 | --- | --- |
 | `player.json` | `{version:1, selected:SHA256, music:bool, sound:bool, order:"episode"\|"title", title_language:"en"\|"fr"\|"it"\|"de"\|"es"}`; old files default to episode order and English titles. `names` (object of `$KEY` to string, at most 4096) is the name table every episode shares ([RUNTIME.md](RUNTIME.md#names-shared-across-episodes)) |
 | `saves/<episode-sha>.shs-save.json` | Existing manual F5/F9 slot, [runtime save schema](RUNTIME.md#runtime-save-schema-version-13) |
-| `settings.json` (the app's data folder, not a library) | `{version:1, check_for_updates:bool, preferences:{...}, start_in:"auto"\|"games"\|"shs"\|"cod" (default "auto"), last_game:"shs"\|"cod"\|null}`. `preferences` holds the Options both games share (`menu.SHARED_PREFERENCES`), which override `player.json`'s copies; an older file with only `check_for_updates` still reads |
+| `settings.json` (the app's data folder, not a library) | `{version:1, check_for_updates:bool, preferences:{...}, start_in:"auto"\|"games"\|"shs"\|"cod" (default "auto"), last_game:"shs"\|"cod"\|null}`. `preferences` holds the Options both games share (`menu.SHARED_PREFERENCES`), which override `player.json`'s copies; an older file with only `check_for_updates` still reads. Also `aspect_ratio` ("3:4"\|"2:3"\|"9:16"\|"fit"\|null: General's Aspect Ratio, this device's own), `backup_folder` and `export_folder` (Data Management's folders, null for the default) and the hidden `test_channel` port |
 | `saves/<episode-sha>.shs-auto.json` | Automatic checkpoint on menu return and application exit, same schema |
 
 Preferences and saves use temporary files plus atomic replacement. Resume after
@@ -394,8 +395,8 @@ clock starts afterward. Library/search/cheat screens retain authored content
 within these shared transitions, not original store behavior.
 
 IPA submenus use the recovered 400 ms UIKit
-zoom/slide transitions. CoD Start/Resume additionally uses its native black
-menu-to-story fade, described in [COD.md](COD.md#scene-transitions).
+zoom/slide transitions. CoD's native menu-to-story fade (`fadeToGame`) is not
+used: the menu's entry is application.py's ([COD.md](COD.md#native-ui-and-audio-bindings)).
 
 ## 5. Executable and content boundary
 
@@ -496,7 +497,7 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   0.4 s ease-in/out, with no delay. Both kinds wait 0.4 s while a loading
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
-  this player adds (General / Sound / Extras / Data Management) slide like native pages.
+  this player adds (General / Sound / Controller / Extras / Add-Ons / Data Management) slide like native pages.
 - **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Episode Titles and Start In,
   the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
   letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
@@ -598,15 +599,9 @@ followed by release dispatch. Normal alternating RGBA colors are
 Shared menu buttons use their supplied pressed artwork. Dragging off, scrolling,
 losing focus, replacing a panel or redealing a timed quiz cancels the old press.
 
-**Options → Cheats → Minigame skips** is a separate, default-off per-game
-preference. It prompts before every football, word-grid or four-option
-word-selection game, holding the timer until **Skip with success**, **Skip
-with failure**, or **Play minigame** is selected. A saved Play decision applies
-only to that call; the next minigame prompts again. The pause menu also offers
-both skips after play starts. Ordinary timed choices are excluded. Football
-and grids are SHS-only; word selection also occurs in CoD. The prompt and pause
-rows share the original system-menu artwork and held/released selection.
-See [the skip contract](MINIGAMES.md#optional-minigame-skips) for callback values.
+In the Android menus, **Options → Cheats → Skip mini-games** is the same
+switch as Ask to Skip Mini-Games below (Win, Lose or Play). See
+[the skip contract](MINIGAMES.md#optional-minigame-skips) for callback values.
 
 **Options → Cheats → Answer hints** (formerly **Choice hints**), added in v0.4.0, is an
 authored, opt-in per-game preference, off by default. Green marks recognized
@@ -669,9 +664,8 @@ Everything is skipped, read or not. Skipping only what the player has seen is a 
 **Quest Journal** (pause menu, under Resume, Skip Ahead and Undo; owner, 2026-11-14): in a story that keeps a quest journal (the game profile's `TRANSLATED_JOURNALS`: Surviving Hollywood's *The Bright Lights*, whose demo opened it with key 1 or from its pause menu), while it holds a quest. It lists the story's stats first (Money, Looks, Body, Stress, as they stand), then the quests' titles; each opens a page of its lines (`quest_journal.py`, pages as Data Management's). The translation rebuilds the journal whenever the story says it changed and at each map turn, so it's current mid-scene.
 
 In Cause of Death the Choice Hints switch is named **Choice & Answer Hints**, since only CoD has the typed puzzles
-whose faint answers it also shows. On a device that can vibrate (exp-runtime's iOS host), the Sound page's last
-switch is the game's own **Vibration** (string 11) and the device vibrates; elsewhere it is Simulated Vibration
-Sound.
+whose faint answers it also shows. A device or controller that can vibrate gets General's **Vibration** switch (on
+the Controller page when only a controller vibrates); Sound keeps **Simulated Vibration Sound**, this player's buzz.
 
 CoD answer-entry puzzles also show a faint accepted spelling when the field
 is empty. Existing defaults and typed text stay unchanged; confirmation still
@@ -769,14 +763,17 @@ yet established. Known adaptations and gaps:
 
 - Local episode lists, search, setup, file picker, help content and library
   controls replace server/purchase/platform flows.
-- Options implements audio, episode title language and content management, not all original native
-  settings. Original episode preview/download details are not reconstructed.
+- Options implements audio, episode title language, aspect ratio, controller, autoplay, play aids, add-ons and
+  content management, not all original native settings. Original episode preview/download details are not reconstructed.
 - Entrance models the one-second photo scale, title at 1.1s, menu backdrop at
   1.6s, and staggered 250/500/750/1000ms buttons starting at 2s. Native
   `000dede4`/`000df168` subsequently fade the info button over 300 ms from
   3s, then grow the gear from .1 to 1 over 250 ms. Those two stages are now
-  implemented. Returning main menu uses a 500ms slide;
-  submenus use a 200ms crossfade rather than the full native panel movement.
+  implemented. Submenus use exp-runtime v0.6.0's recovered transitions
+  (`Application._menu_transition`): on Android, a zoom from or back over the
+  main rows (300 ms for Options, otherwise 400 ms) and a 200 ms slide between
+  submenus; an IPA library's 400 ms UIKit zoom or slide. Screens with no
+  library open crossfade over 200 ms.
 - Save formats and automatic checkpoints are compatible-runtime features,
   not emulation of the original binary `.sav` files.
 
@@ -861,5 +858,4 @@ Add Episodes, Add APK Music, and the Backups and Exports folders. It is a tall c
 Opened from an HD library, it wears that game's own card (`shell.pause`, SHS's or CoD's art and colours) over its main
 menu without the buttons, as On Demand does. Before a library it wears the app's card on the dark backdrop.
 
-A host with its own drawing backend (`graphics.native()`, iOS) keeps the SD versions for now. The standard edition's
-own SD menus stay as they are.
+iOS draws these screens the same way. The standard edition's own SD menus stay as they are.

@@ -172,7 +172,10 @@ speaker type 3, compares the first word at `0006f928`, selects its first text
 index at `0006f930`, and increments that index for the body at `0006f974`.
 Ghidra's pseudocode omits those iOS index arguments; the MCP assembly and raw
 bytes at `0006f918` confirm them. The Android bytes at `000a1c04` were checked
-as well. No separate iOS presentation is introduced.
+as well. No separate iOS presentation is introduced. SHS HD's own case 0xf
+(shared with 0x4c) reads its first two words as CoD does: a negative first word
+there gives an empty speaker (`engine.py`; Android-profile SHS keeps the prefix
+rule above, `shs/services.py`).
 
 The imported SHS corpus contains 396 service-15 calls in 62 episodes, with
 four to seven frame words. All first words can be recovered from immediate
@@ -376,8 +379,9 @@ flag at panel `+0x0d`; service 39 does not suspend the VM for user input.
 The ordinary dispatcher completion returns zero and removes the entire pending
 argument frame. It does not choose or schedule another script.
 
-The compatible host clears the dialogue panel's background, speaker, text,
-portrait and animation state, plus its active/queued notice (service 88 stores
+The compatible host clears the dialogue panel's speaker, text, portrait and
+animation state (the scene background stays: `engine.py`, a real-device
+correction after football's black background), plus its active/queued notice (service 88 stores
 the queued text at panel `+0xf0`). A subsequent panel starts without an outgoing
 portrait or stale speaker name. Character definitions, relationship properties
 and caches, other numeric/string state, result cells, randomness, audio requests
@@ -455,7 +459,7 @@ The prompt uses the existing `DAT_002ae910` PajamaHip26 node at GL (180,390),
 size 300 × 45, nominal height 16, initial gap -16, white modulation. The
 checkmark is common frame 41 at GL (240,111). Its release hit regions combine
 the native explicit rectangle and transformed sprite rectangle. Footer text
-comes from string-bank 13 entry 37. Desktop keys 1–5 select original indices;
+comes from string-bank 13 entry 37. Desktop keys 1–9 (and 0 for a tenth) select original indices;
 Enter/Space confirms. The gear pauses motion; focus loss cancels a pending
 pointer gesture. Subpixel rasterization and the native pressed-checkmark tint
 remain presentation refinements.
@@ -491,8 +495,9 @@ literal and the following byte is scanned normally. Extra arguments are removed
 with the original frame but ignored by formatting; missing required arguments
 fail. Destinations are bounded to the eleven known slots (0–10); selector -10
 and below are rejected instead of writing past native storage. Width/precision
-modifiers are not invented. Service 22 has different scanning behavior and
-remains unsupported.
+modifiers are not invented. Service 22 (`my_sprintf`) is separate: only `%s`
+and `%d` are formats, another `%x` keeps x without the percent sign, and the
+result is written to VM memory at a1.
 
 Service 24 compares two raw texts and returns 1 for equality, otherwise 0.
 Service 25 copies both raw texts, concatenates them, and writes to the first
@@ -764,6 +769,11 @@ the operating system running the app.
 | 11 | Pointer identity comparison described below | Explicit pending stop; no fabricated result |
 | Every other signed-word selector, including 10 | 0 | Complete with 0 |
 
+This table is Android's. SHS HD answers 6 with its app version in slot 0, 10
+with 2 and 11 with 0; Cause of Death answers 10 with 1 and 11 with 0. Selectors
+200-205 are shshd-runtime's own (whether a translated game's real minigames or
+cutscenes play: [ENGINE_ABI.md](ENGINE_ABI.md) section 5).
+
 Selector 6 does not initialize or replace dynamic slot 0 and does not copy
 `last_input` into it. The returned handle refers to that mutable slot just as
 other `0x7ff5` handles do. The meanings of the fixed numeric selectors are not
@@ -791,8 +801,9 @@ back to that separate object if its numeric identity matches.
 The compatible launcher imports local files and does not model the native
 weekly-download slot or its identity/lifetime. A local episode's imported
 status, bundled status, selected filename or largest episode ID cannot safely
-stand in for that comparison. Selector 11 therefore retains its full VM
-frame as `unhandled_yield`, with the selector and reason exposed. It requires
+stand in for that comparison. On Android-profile SHS, selector 11 therefore
+retains its full VM frame as `unhandled_yield`, with the selector and reason
+exposed (HD and CoD answer 0). It requires
 further application-state modeling before it can return a faithful boolean.
 See the [main-menu contract](MAIN_MENU.md#1-native-application-states-and-commands).
 
@@ -816,12 +827,20 @@ player's route to that point; original game assets are not test fixtures.
 ## Optional device request and native stub (services 82, 99)
 
 `FUN_000a3040` requests 1000 ms from the optional vibrator, gated by device and
-settings availability. The desktop has no vibrator backend and completes
-without altering music, sound or saved state. In its place the desktop player
-sounds a shorter synthesized buzz (400 ms, `vibration.BUZZ_MS`; not an original
-asset) at the Sound FX volume while Sound and the Options Vibration switch (string 11,
-`MenuState.vibration`, shown in this player though the iPad hid it) are on; the engine counts requests in the
-unsaved `EngineState.vibration_serial`. Android's vibrator implementation is
+settings availability. Here the call completes without altering music, sound
+or saved state, and the engine counts requests in the unsaved
+`EngineState.vibration_serial`. The player answers them two ways, each with its
+own switch, both off by default:
+
+- **General → Vibration** (`device_vibration`) drives the device's own vibrator:
+  an Android phone's (`platforms/android.py`), an iPhone's, or a connected
+  controller's rumble on a desktop (`gamepad.py`). With only a controller to
+  vibrate, the switch sits on the Controller page.
+- **Sound → Simulated Vibration Sound** (`MenuState.vibration`, the games' string
+  11) sounds a shorter synthesized buzz (400 ms, `vibration.BUZZ_MS`; not an
+  original asset) at the Sound FX volume while Sound is on, on any host.
+
+Android's vibrator implementation is
 constructed by `FUN_00102f1c` / `FUN_00108188`, using VibratorAndroidDelegate.
 
 The iPhone host implements the separate native iOS contract: SHS
@@ -833,14 +852,15 @@ not a custom one-second pattern. The actual sensation is controlled by iOS
 and the device. SHS **00050e40** and CoD **00018c38** also invoke the alert
 when their Vibration setting is enabled.
 
-Options exposes Vibration when the Swift host reports an iPhone. It defaults
-on for existing libraries and persists independently of Music and Sound in
+General's Vibration is offered when the host can vibrate (the Swift host
+reports an iPhone). It persists independently of Music and Sound in
 `player.json`. The shared player consumes each live service-82 request once;
 the transient request count is excluded from saves. Isolated choice previews
 cannot emit hardware feedback. Disabled, paused or inactive requests are
 discarded, and Swift rechecks application activity before calling AudioToolbox
 on the main thread. A response from before a background/resume cycle is also
-discarded. iPad and desktop receive no alert or substitute sound.
+discarded. An iPad, or a desktop with no controller, has no vibrator; only the
+simulated buzz plays there.
 Simulator checks exercise the bridge and native alert ID/device/activity gates;
 they cannot measure physical vibration.
 
@@ -854,7 +874,7 @@ verified native behavior, not a general policy of ignoring unknown services.
 | Field | Contract |
 | --- | --- |
 | `engine.character_picker` | Null, or the selector model; required exactly when pending service 78 |
-| `characters` | 1–5 signed character IDs copied from the pending VM arguments |
+| `characters` | 1–5 signed character IDs copied from the pending VM arguments (up to 10 under a translated pack's layout) |
 | `order` | Permutation of original indices; first entry is selected |
 | `portraits` | One motion object per original character, independent of order |
 | motion `start`, `end` | Triples of finite `(x,y,scale)` floats within the native positions/scales |
@@ -876,6 +896,7 @@ not write VM results or advance clocks. Pausing/focus loss stops active time.
 ```text
 arguments : poll ID, upType, upValue(s), upSize, resultsType, results buffer, resultsSize (s16 each)
 supported : upload type 2 and the verified not-uploaded response below
+otherwise : the Loading bar for 1 s, then 0 (download_poll)
 questions : original service-1 choices, including the option to decline
 receipt   : Survey / Thanks for taking the survey!
 input     : 1000 ms active reading time, then acknowledgement
@@ -908,8 +929,9 @@ At dispatch, `survey.script_response` copies the VM and runs at most 128 KiWi
 instructions with the not-uploaded result. Its first stop must be service 65
 with exactly three arguments and the exact connection-error text above.
 Another host service, pause, instruction limit, VM error or unfamiliar text
-leaves an explicit unsupported stop with the original frame and live state
-intact. The probe does not dispatch host services or consume either random
+finds no verified continuation: the call then shows the Loading bar for one
+second and returns 0 (`download_poll`, `POLL_WAIT_MS`), as HD does when its
+poll download fails. The probe does not dispatch host services or consume either random
 stream. It identifies the actual response frame rather than hard-coding an
 episode, scene number, PC or jump target.
 
@@ -1087,5 +1109,5 @@ Prince Holiday, Bringing Home Christmas and The Storm Part 1 have fewer). This
 player's buzz (PR #10) works in both games: the "Simulated Vibration Sound"
 switch at the end of Options -> Sound, off by default, buzzing once when
 switched on (`SHSEngine::setVibrationEnabled` calls `vibrate` the same way).
-Real device vibration could later use the same calls and the games' own
-Vibration switch (string 11).
+Real device vibration uses the same calls, behind General's own Vibration
+switch (the phone's vibrator, an iPhone's, or a controller's rumble).

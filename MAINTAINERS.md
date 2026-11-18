@@ -249,10 +249,12 @@ versions and exact component dependency pins, `uv.lock`, both Xcode
 `MARKETING_VERSION` settings in `ios/EXPRuntime.xcodeproj/project.pbxproj`, and
 the intended release tag consistent. The macOS bundle and command-line iOS
 build read the package version; direct Xcode builds use the project settings.
-The workflow publishes player and creator downloads, the unsigned IPA and all
-seven wheels with their checksums to GitHub Releases, and all seven Python
-distributions to PyPI after all four desktop builds, iOS verification and
-isolated Python package checks pass for a pushed version tag. The tag must
+The workflow publishes player and creator downloads, the Android APK, the
+unsigned IPA and all seven wheels with their checksums to GitHub Releases
+after the four desktop builds, the iOS and Android builds and the isolated
+Python package checks pass for a pushed version tag. This fork publishes
+nothing to PyPI; the disabled `publish-pypi` job is kept from upstream for
+merges. The tag must
 equal `v` plus the common package version. Ordinary pushes, pull requests
 and ordinary manual builds produce development artifacts without publishing.
 Manual release recovery uses artifacts from an already tested version-tag run.
@@ -263,10 +265,3 @@ run `tools/test_packages.py` through the locked build environment with
 engine, single-game, full-player and headless/GUI/MCP creator combinations.
 All seven distributions are one release; the scripts never publish them.
 See [SDK.md](docs/SDK.md) for local wheel installation and component boundaries.
-The `exp-runtime-creator` project, introduced in v0.6.0, needs its own publisher
-alongside the other six projects with the
-[`desktop-builds.yml` Trusted Publisher and `pypi` environment](docs/DISTRIBUTION.md#pypi-publishing).
-The publish job uses short-lived OIDC credentials, not a stored API token.
-PyPI rejects existing filenames; the workflow skips matching published files
-after checking their hashes. Retry partial uploads with the same tested
-artifacts and use a new version for changed packages.

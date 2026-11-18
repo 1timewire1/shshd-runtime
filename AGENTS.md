@@ -53,14 +53,15 @@ attach them). The commands are `shshd-runtime` / `shshd-tool`, with upstream's
 - `engine.py`, `runtime.py`: host services, panel state, clocks, choices,
   mini games and versioned JSON saves.
 - `application.py`, `desktop*.py`: shared launcher, menu, rendering and input.
-- `graphics.py`, `platforms/`, `ios/`: pygame/native drawing primitives and the
-  Swift iOS host; keep game layout and behavior in the shared Python code.
+- `graphics.py`, `platforms/`, `ios/`, `android/`: pygame/native drawing
+  primitives, the Swift iOS host and the python-for-android build; keep game
+  layout and behavior in the shared Python code.
 - `fonts.py`, `ui_assets.py`, `atlas.py`: native asset and layout contracts.
 - `creator/`: optional desktop story graph, portable authoring documents and
   native EXP compiler; preview reuses the player with temporary saves. Keep
-  creator/Qt out of ordinary player and iOS bundles.
+  creator/Qt out of ordinary player, Android and iOS bundles.
 
-Follow SCHEMA.md, VM_SPEC.md and docs/ENGINE_ABI.md. Unknown services must
+Follow docs/SCHEMA.md, docs/VM_SPEC.md and docs/ENGINE_ABI.md. Unknown services must
 remain explicit stops with their pending arguments intact. Never invent a
 score, result, scene link or random value to bypass them. The heuristic AST
 parser and Ren'Py experiments belong to the original research project.

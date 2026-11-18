@@ -1,8 +1,8 @@
 # KiWi bytecode and virtual machine specification
 
-Revision: 2026-09-13. Companion to [SCHEMA.md](SCHEMA.md), the EXP container specification. This defines the complete recovered **KiWi v2 core instruction set** in Android SHS 1.0.9 and the host-call boundary needed to execute scripts. [ENGINE_ABI.md](ENGINE_ABI.md) inventories all dispatcher IDs 0–100, including services whose gameplay semantics remain unresolved.
+Revision: 2026-11-17. Companion to [SCHEMA.md](SCHEMA.md), the EXP container specification. This defines the complete recovered **KiWi v2 core instruction set** in Android SHS 1.0.9 and the host-call boundary needed to execute scripts. [ENGINE_ABI.md](ENGINE_ABI.md) inventories the Android dispatcher's IDs 0–100, the HD build's 101–120 and shshd-runtime's own 200–224, including services whose gameplay semantics remain unresolved.
 
-This is a reverse-engineered specification, not an original vendor document. A complete core VM does not imply a complete game engine. Rendering, choices, minigames, audio, persistence, and resource banks belong to host services. The Python executor currently supports standalone v2 programs and a verified subset of those services.
+This is a reverse-engineered specification, not an original vendor document. A complete core VM does not imply a complete game engine. Rendering, choices, minigames, audio, persistence, and resource banks belong to host services. The Python executor supports standalone v2 programs, a script running beside a linked segment (New Rules' minigame library, section 2.3), and a verified subset of those services.
 
 ## 1. Evidence and conventions
 
@@ -447,7 +447,7 @@ retains the final call frame as a nonresumable audit record for its terminal
 checkpoint, rather than serializing the discarded native VM's reset memory.
 See [episode exit](STORY_SERVICES.md#episode-exit-services-7-and-63).
 
-Game variables, character names/art, replacement strings, audio/UI state, and the schedule live outside the core data array. They survive ordinary scene changes in the current host model. A faithful port needs both VM and host state when saving a pending choice. The reimplementation now saves that modeled state in a versioned JSON format, including complete stack backing and a pending input frame; see [runtime save schema](RUNTIME.md#runtime-save-schema-version-13). Neither that format nor `load_next()` specifies the original native save-file format. Native serialization, missing host state, and full renderer/rollback behavior remain open.
+Game variables, character names/art, replacement strings, audio/UI state, and the schedule live outside the core data array. They survive ordinary scene changes in the current host model. A faithful port needs both VM and host state when saving a pending choice. The reimplementation now saves that modeled state in a versioned JSON format, including complete stack backing and a pending input frame; see [runtime save schema](RUNTIME.md#runtime-save-schema). Neither that format nor `load_next()` specifies the original native save-file format. Native serialization, missing host state, and full renderer/rollback behavior remain open.
 
 ## 10. Conformance examples and validation
 
@@ -491,7 +491,7 @@ The historical bounded corpus trace executed 501,556 instructions across 274 arc
 
 | Area | Defined / implemented | Remaining limit |
 | --- | --- | --- |
-| v2 binary layout | Exact standalone decoding and round trips | Linked lifecycle and legacy versions unverified |
+| v2 binary layout | Exact standalone decoding and round trips | Linked lifecycle verified only for New Rules' minigame library (section 2.3); legacy versions unverified |
 | Core opcodes `00`–`62` | Complete table and executor | Native undefined memory/error behavior is not emulated |
 | Yield argument/result boundary | Verified and implemented | Individual callbacks and many host services unresolved |
 | Strings | Packed bytes and dynamic slot addresses verified | Full multilingual KiWi text/rendering behavior unverified |

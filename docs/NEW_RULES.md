@@ -8,7 +8,7 @@ Nothing here runs original game code except New Rules' own KiWi scripts. No New 
 reads the player's files and writes `.exp` files.
 
 **In the library:** 50 stories, pack 31300, tagged NR and filed under their own "New Rules" category. Save version and service details
-are in [RUNTIME.md](RUNTIME.md) and [ENGINE_ABI.md](ENGINE_ABI.md#51-new-rules-minigame-arena-shshd-runtime-services-200212).
+are in [RUNTIME.md](RUNTIME.md) and [ENGINE_ABI.md](ENGINE_ABI.md#51-new-rules-minigame-arena-shshd-runtime-services-200213).
 
 ## The game
 
@@ -21,7 +21,7 @@ are in [RUNTIME.md](RUNTIME.md) and [ENGINE_ABI.md](ENGINE_ABI.md#51-new-rules-m
 
 **King of Diss Lite** (episode 100) is the condensed one-script retelling in the Lite Java builds.
 
-The Windows Mobile and Java releases share the engine design, the KiWi host ABI (services 1–67) and the resource IDs. Java keeps text in
+The Windows Mobile and Java releases share the engine design, the KiWi host ABI (services 1–66, and 67 in Java only) and the resource IDs. Java keeps text in
 string tables (25051–25057, 25151–25156, 25250) rather than inline.
 
 ### Formats
@@ -39,7 +39,7 @@ string tables (25051–25057, 25151–25156, 25250) rather than inline.
 ## Building
 
 ```sh
-python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I_JAR --out OUT_DIR
+python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I_JAR --store-art STORE_ART_FOLDER --out OUT_DIR
 python tools/translate/translate.py newrules EPISODE.expd --pud RES_LARGE_PUD --x1i X1I_JAR --library LIBRARY \
     --addon OUT_DIR/NR_Addon_New_Rules.exp --arena --out OUT_DIR
 ```
@@ -256,6 +256,7 @@ Each site is found by the shape of the code round it (`arena_shape`), checked to
 | --- | --- |
 | Enter, Space, a controller's confirm, a tap anywhere | OK |
 | Arrow keys, D-pad | The joystick |
+| A controller's D-pad or stick, while Sequences' number keys show | Moves a highlight round them; confirm presses it (OK before the first move, and while a bubble waits) (`_arena_pad`) |
 | Backspace | The right soft key (back) |
 | 0–9; with the keypad labels shown, a tap on an item | Number keys |
 | Escape, a controller's Start | The pause menu, as ever |

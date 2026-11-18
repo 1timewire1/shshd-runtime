@@ -176,11 +176,12 @@ Batch operations share the following vocabulary:
 
 | `op` | Fields and behavior |
 | --- | --- |
-| `project` | Patch `changes`: title/game/IDs/start/language/locales/library/emoticons (six image IDs or null). |
+| `project` | Patch `changes`: title/game/IDs/start/language/locales/library/emoticons (six image IDs or null), `episode_version`, `options`, `journal`, `optional_art`, `calendars`. |
 | `node`, `character` | Supply `id` and `changes`, or `remove: true`. |
 | `connect` | Set `source`, `target`, and `field`: `next`, `otherwise` or `options.N.target`. |
 | `rename_node` | Set `id` and `new_id`; update edges, start and translation keys. |
 | `image` | Embed a workspace PNG/JPEG at `source`. |
+| `audio` | Embed a workspace MP3/WAV at `source`. |
 | `library_image` | Supply `library`, exact `resource` ID and optional `episode`. |
 | `asset_label` | Give integer asset `id` a user-defined `label`. |
 | `layout` | Arrange nodes without changing execution connections. |
@@ -189,7 +190,8 @@ Nodes use model defaults when created. Forward references within a batch work;
 removing a node or character requires reconnecting references in that batch.
 Use `schema_get` for node-specific fields. Focused single-edit tools remain
 available: `project_update`, `graph_edit_node`, `character_edit`,
-`graph_arrange`, `asset_import_image` and `asset_import_library_image`.
+`graph_arrange`, `asset_import_image`, `asset_import_audio` and
+`asset_import_library_image`.
 
 `checkpoint_create`, `checkpoint_list` and `checkpoint_restore` support named
 save points and undo. The newest 40 snapshots per project persist in

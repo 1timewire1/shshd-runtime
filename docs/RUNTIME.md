@@ -3,10 +3,10 @@
 Revision: 2026-10-05. This is an experimental implementation of the shared SHS/CoD EXP engine.
 CoD-specific support and limits are in [COD.md](COD.md); the fidelity notes
 below describe the SHS reference.
-It executes original KiWi instructions and reuses original assets. It currently
-plays the opening of **The New Girl**, including real branching choices and its
-first mini game, and implements timed words, word/picture grids and football; it
-does not yet play complete episodes.
+It executes original KiWi instructions and reuses original assets. It plays SHS
+(including the HD release) and Cause of Death episodes, and the translated
+games, from their original bytecode; complete 1:1 equivalence is still being
+verified.
 
 ## Fidelity target and implementation order
 
@@ -102,7 +102,8 @@ uv run --locked --extra desktop shshd-runtime
 ```
 
 `shshd-runtime` (or `shshd-tool play` without `--library` / `--game`) opens the
-game chooser. Choose SHS or Cause of Death, then import its assets or open its
+game last played (General → Start In), or the game chooser when there is none.
+In the chooser, choose SHS or Cause of Death, then import its assets or open its
 existing library. Options accepts additional episodes for the selected game;
 drag-and-drop also works. **Options → Switch Game** checkpoints the current
 story and opens the other installed game, or the chooser if it is absent.
@@ -172,7 +173,10 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | Hold and drag across grid cells | Trace a word or picture sequence, including diagonal steps; no repeated cell |
 | Click a football target or press 1–9 | Commit that play; targets change over time |
 | Tap football help / Enter / Space | Continue after its native reading delay |
-| Gear on title, dialogue, choice or mini-game screens | Open the pause menu (Resume, Options, Help & About, Main Menu); active game time and music pause |
+| Gear on title, dialogue, choice or mini-game screens | Open the pause menu (Resume, then Skip Ahead, Undo and Quest Journal where offered, Options, Help & About, Main Menu); active game time and music pause |
+| N | Skip Ahead to the next stop (with Extras → Allow Skip Ahead on; not while a name is typed) |
+| U | Undo back to the last stop kept (with Extras → Allow Undo on; not while a name is typed) |
+| Tab | Show or hide the side panels |
 | Type, Backspace, Enter | Edit a name (up to 16 ASCII letters/digits, subject to native font width); Enter submits a nonempty name or dismisses its alert |
 | F5 (also Pause → Options → Save without the HD app, and the fallback screen's Save button) | Replace the current episode's manual save slot |
 | F9 (also Pause → Options → Load, and its Load button) | Restore that slot |
@@ -491,8 +495,9 @@ while data and PC/SP/FP reset according to the core VM contract.
 <a id="runtime-save-schema-version-24"></a>
 <a id="runtime-save-schema-version-25"></a>
 <a id="runtime-save-schema-version-26"></a>
+<a id="runtime-save-schema"></a>
 
-## Runtime save schema, version 30
+## Runtime save schema, version 41
 
 This is a new format for the reimplementation. No pickle, object deserialization,
 or original executable code is used.
@@ -511,18 +516,19 @@ the animation's `expression_committed`, the portraits' `from_asset_id`); the
 animation keeps this fork's uncapped `age_ms` for HD's emotion effects. An HD build's saved notice clock may also run past Android's
 lifetime, to the HD letters' start plus their own lifetime. Version 26 adds
 `engine.notice_mode`, the portrait side (1 or 2) those letters started on, which they keep on later lines; older
-saves load with 0, following the current portrait. Version 36 adds SHS '11's games, and version 37 Memory's `grid`, for one that stands in for a word grid. Version 27 adds exp-runtime v0.6.x's fields (upstream's own versions 22-26, described below in their terms): music and effect playheads (`music_serial`, `music_stop_ms`, `music_playback`, `sound_playback`), the scene-transition state and its random stream, bitmap/widget text history, the choice entrance clock, expression layers and the minigame effects; older saves take their defaults without inventing missing history, and an IPA library's older save reflows its typography. This fork's player does not fill the audio playheads yet (its music is `music_stream.py`'s). The scene transition is the session's: Android SHS's tick boundary, or with an HD bundle (and in CoD) `fade_transition.FadeTransition`, whose fields (`selector`, `phase`, `elapsed_ms`, `result`, `random_state`) are saved; the player only draws it. Version 28 adds each dialogue line's expression request time (`dialogue_animation.expression_ms`: 1 ms in SHS HD and CoD, whose dialog requests the expression on its first tick, issue #2; 1000 ms on Android); older saves take 1000 ms, the time they were made with. Version 29 adds an open portrait picker's slot positions (`character_picker.positions`), which a translated pack may set its own way (the SHS profile's `TRANSLATED_PICKER_LAYOUTS`); older saves take the native slots. Version 30 adds New Rules' minigame arena while it is open (`engine.nr_arena`, `nr_arena.py`) and, for a story running beside a linked segment (New Rules' minigame library), that segment's data (`vm.linked_data`); older saves never had an arena open. The fork keeps the `shs-runtime-save` marker; upstream's
+saves load with 0, following the current portrait. Version 27 adds exp-runtime v0.6.x's fields (upstream's own versions 22-26, described below in their terms): music and effect playheads (`music_serial`, `music_stop_ms`, `music_playback`, `sound_playback`), the scene-transition state and its random stream, bitmap/widget text history, the choice entrance clock, expression layers and the minigame effects; older saves take their defaults without inventing missing history, and an IPA library's older save reflows its typography. This fork's player does not fill the audio playheads yet (its music is `music_stream.py`'s). The scene transition is the session's: Android SHS's tick boundary, or with an HD bundle (and in CoD) `fade_transition.FadeTransition`, whose fields (`selector`, `phase`, `elapsed_ms`, `result`, `random_state`) are saved; the player only draws it. Version 28 adds each dialogue line's expression request time (`dialogue_animation.expression_ms`: 1 ms in SHS HD and CoD, whose dialog requests the expression on its first tick, issue #2; 1000 ms on Android); older saves take 1000 ms, the time they were made with. Version 29 adds an open portrait picker's slot positions (`character_picker.positions`), which a translated pack may set its own way (the SHS profile's `TRANSLATED_PICKER_LAYOUTS`); older saves take the native slots. Version 30 adds New Rules' minigame arena while it is open (`engine.nr_arena`, `nr_arena.py`) and, for a story running beside a linked segment (New Rules' minigame library), that segment's data (`vm.linked_data`); older saves never had an arena open. Version 31 adds the X360 translations' slot machine (`engine.x360_slot`), 32 the leash game (`x360_leash`), 33 the jewel puzzle (`x360_puzzle`), 34 Diss Practice (`x360_diss`) and 35 a storyboard cutscene (`cutscene`). Version 36 adds SHS '11's Memory and Reflex (`shs11_memory`, `shs11_reflex` and their tutorial flags), and version 37 Memory's `grid`, for one that stands in for a word grid. Version 38 adds the BREW games' catch game (`brew_catch`), 39 the scripts waiting for a nested one to end (the top-level `nested`, service 223), 40 the Monday Planner's Diss Battle (`x360_battle`) and 41 the word grid's part score (`grid_part_score`, `word_grid.part_score`, service 224). An older save never had any of them open. The fork keeps the `shs-runtime-save` marker; upstream's
 `exp-runtime-save` saves are not accepted, because the same version numbers
 describe different fields there. Version-number references below that concern
 IPA libraries and survey receipts are upstream's numbering. JSON fields are:
 
 | Field | Contract |
 | --- | --- |
-| `format`, `version` | `"shs-runtime-save"`, `27` |
+| `format`, `version` | `"shs-runtime-save"`, `41` |
 | `content` | `profile`, `apk_sha256`, `episode_sha256`; must exactly match loaded content |
 | `scene` | Unsigned current script resource ID |
 | `script_sha256` | Hash of the losslessly encoded current program |
 | `vm` | Full mutable machine state, defined below |
+| `nested` | The scripts waiting for a nested one to end (service 223), outermost first: `{scene, script_sha256, vm}` each; empty when none |
 | `engine` | All current `EngineState` dataclass fields, including panel, speaker font history, dialogue/title animation, choice builder, random streams and any active mini game |
 | `pending` | Null, or `{name, details}` for the suspended screen/service or terminal episode exit |
 | `remaining_ms` | Null for no timer; otherwise the remaining active choice time in milliseconds. Zero is still pending; the next positive active tick expires it. The visible circular timer derives from this value. |
@@ -629,7 +635,7 @@ Version 22 adds:
   1 waiting for the next UI, 3 in) and the deferred signed-word `result`.
   CoD also stores `elapsed_ms` and its separate libc `random_state`; SHS's
   nonvisual boundary uses successive ticks. Restoring checks the phase and retained
-  result against the pending VM/UI; [CoD](COD.md#scene-transitions) describes
+  result against the pending VM/UI; [CoD](COD.md#native-ui-and-audio-bindings) describes
   durations, callback order and remaining limits.
 - Football `touchdown_stars`, up to 50 finite position/velocity, angle/spin,
   delay and opacity/fade records. Creation consumes 450 engine RNG draws;
@@ -794,7 +800,7 @@ They retain the saved VM frame and, for version 2/3, the page offset.
 
 Version 5 adds `character_picker`, `scene_badge`, `next_dialogue_wobble`, and dialogue animation `wobble_direction`. These hold copied character IDs, their index permutation, per-portrait 50 ms motions, the 200 ms scene-label entrance, and the next dialogue rotation. The complete typed field schema is in [STORY_SERVICES.md](STORY_SERVICES.md#save-schema-additions-version-5). Older saves receive null/false/zero defaults; a retained unsupported service-78 frame upgrades to a working selector without replaying earlier choices. Existing dialogue checkpoints retain their progress.
 
-For portrait selection, click and release a portrait, then click the checkmark. Keys 1–5 select the original portrait index, Left / Right the previous / next one; Enter/Space confirms. `Session.answer(index)` selects without completing, and `Session.answer()` confirms. Animation freezes while paused or unfocused.
+For portrait selection, click and release a portrait, then click the checkmark. Keys 1–9 (and 0 for a tenth) select the original portrait index, Left / Right the previous / next one; Enter/Space confirms. `Session.answer(index)` selects without completing, and `Session.answer()` confirms. Animation freezes while paused or unfocused.
 
 Version 6 adds the service-91 loading gate and relationship indicator animation
 state. A loading screen continues automatically only when active time exceeds
@@ -912,7 +918,7 @@ recomputed from the retained `page_start`. Pre-v15 IPA saves also use the
 earlier history migration above. VM memory, pending arguments, random state,
 panel state and animation clocks remain unchanged. Version-16 page ends are
 strictly validated; APK version-10+ validation is unchanged.
-Upstream accepts versions 1–15 and the legacy `shs-runtime-save` marker; this fork accepts `shs-runtime-save` 1–23.
+Upstream accepts versions 1–15 and the legacy `shs-runtime-save` marker; this fork accepts `shs-runtime-save` 1–41.
 See [IPA dialogue](IPA.md#dialogue-text-placement) for geometry and font limits.
 
 Saves stopped at unsupported service 4 now validate the retained choice builder
@@ -1061,7 +1067,7 @@ Run `uv run --locked python -m unittest discover -s tests`.
 
 Remaining compatibility work includes other scene/state services, remaining
 mini-game presentation and global random-state
-lifetimes, linked KiWi, native
+lifetimes, linked KiWi beyond New Rules' minigame library, native
 saves, grouped resources, remaining texture/composite animation formats, and
 iOS/Android differences. Dialogue uses the original fonts, layout bank, box
 artwork, masked portrait placement and paging. Narration hides the configured

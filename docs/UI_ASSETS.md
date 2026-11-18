@@ -253,19 +253,15 @@ composition, decompiled".
 
 Imported `SHS_The_New_Girl.exp` includes 256 × 256 and 226 × 256 indexed PNG
 portraits, larger than the Android mask. The EXP metadata has no density field,
-and the available Android PNG loader does not rescale them. The desktop renderer
-therefore applies an explicit compatibility conversion before masking: an
-oversized RGBA portrait with even dimensions that fits within twice the mask's
-dimensions is reduced by two on both axes. Pillow's BOX resampling uses
-premultiplied alpha, preserving aspect ratio without mixing hidden RGB into
-visible edges. These variants become 128 × 128 and 113 × 128, respectively.
-The subsequent native 12-row crop yields 128 × 116 and 113 × 116 textures.
-Normalization leaves native-size portraits byte-for-byte unchanged; other
-oversized images still fail explicitly with their dimensions and modes.
-Normalization does not modify imported resources. The 2× scale and resampling
-filter are compatibility inferences, not verified behavior from an original
-release supporting these larger variants. The native mask alignment and binary
-rule then apply normally.
+and the available Android PNG loader does not rescale them. Upstream halves
+them before masking; this fork does not. Art that fits within twice the mask is
+treated as 2x art (`DialogueRenderer._episode_portrait_size`) and clipped by
+the mask scaled to cover it (`_scaled_mask`), so it keeps its extra pixels; the
+cutout is then scaled to its logical size times the canvas's density. Larger
+art also scales the mask to cover it rather than failing.
+`Raster.normalize_portrait`, upstream's halving, stays in the reader, but the
+renderer doesn't use it. Imported resources are never modified. See
+[UI_FIDELITY.md](UI_FIDELITY.md#box-portrait-and-text-placement).
 
 ## Sprite atlases and glyph fonts
 

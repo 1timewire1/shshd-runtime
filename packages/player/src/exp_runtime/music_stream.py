@@ -14,7 +14,7 @@
     and drops it otherwise (`restartFromLoad` `000535e8`).
 
 Fades are linear in time (`-[SHSSound getFadeLevel]`). The mixer is pygame's music stream. Whatever a host's mixer lacks
-(the iOS host has no volume or busy state) is skipped.
+is skipped (the iOS host's `music_volume` command sets its volume).
 
 shshd-runtime: a translated pack can make a cue an intro that runs into a loop (`chain`, the game profile's
 TRANSLATED_MUSIC_LOOPS: the X360 prototype's `dont_trust_me` and `dont_trust_me_loop`). The intro plays once with the

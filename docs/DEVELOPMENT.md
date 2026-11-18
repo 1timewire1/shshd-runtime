@@ -55,7 +55,7 @@ bounded diagnostic, not an automated episode playthrough.
 | Layer | Modules |
 | --- | --- |
 | Content and local import | `content`, `shs.content`, `shs.builtin_episode`, `cod.content`, `cod.store`, `episode_catalog`, `staged_import` |
-| RAR episode decoding | `rar` (OS libarchive on Apple, bundled decoder in Windows/Linux builds) |
+| RAR episode decoding | `rar` (OS libarchive on Apple, bundled decoder in Windows/Linux builds and the Android APK) |
 | KiWi decoding and execution | `decode.bytecode`, `vm`, `trace` |
 | Host services and saved sessions | `engine`, `runtime`, `shs.services`, `cod.services` |
 | Dialogue, choices and panel clocks | `dialogue`, `choice`, `dialogue_animation`, `relationships`, `loading` |
@@ -98,8 +98,8 @@ uv run --locked --extra desktop python tools/audit_hd_football.py --apk /path/to
 decoding) unlike the other audit tools. It drives each episode through as
 much automated content as a generic input strategy allows and records
 whether the backgrounds/portraits it actually used were genuine HD-density
-art or a shared standard-density fallback -- see `legacy/findings.md`,
-"Full HD episode audit" for what a real run against the 195-episode HD
+art or a shared standard-density fallback -- see `legacy/findings.md` (the
+owner's private notes, outside this repository), "Full HD episode audit" for what a real run against the 195-episode HD
 library found.
 
 `audit_hd_football.py` covers a genuinely different thing that sweep
@@ -109,10 +109,11 @@ itself, not a file on disk), the one piece of real content closest to the
 DTView/Faceplace services (see `docs/ENGINE_ABI.md` section 6, and section
 6.2 for the real per-argument mapping recovered from raw disassembly --
 this content is what verified that mapping against real game text). It
-needs one test-only seed for a real, pre-existing, deliberately-unfixed gap
-(character art queried for ids 0/13/14 before this engine ever sets it --
-see `legacy/findings.md`, "Art requested for uninitialized character 0");
-the tool documents and applies that seed itself.
+still applies one test-only seed for character art queried for ids 0/13/14
+before the script ever sets it (`legacy/findings.md`, "Art requested for
+uninitialized character 0", in the owner's private notes). The engine no
+longer needs it: service 73 now reads 0 for a character with no art, as the
+native table is zero-filled.
 
 Treat generated JSON as local evidence; traces can include original dialogue
 and player data. The specifications distinguish native contracts, historical
@@ -132,8 +133,8 @@ does not establish complete episode playback or pixel/timing equivalence.
 Save JSON and library schemas do not contain Python module paths; their
 resource IDs and content hashes remain unchanged by the rename. New imports
 use the game-aware `exp-content-library` v1 schema; legacy SHS v1–3 manifests
-remain readable. Save version 15 accepts both the `shs-runtime-save` and
-`exp-runtime-save` format markers. Existing SHS save filenames are retained.
+remain readable. Saves use the `shs-runtime-save` format at version 41, and
+versions 1-41 load; upstream's `exp-runtime-save` saves are not accepted. Existing SHS save filenames are retained.
 Older IPA dialogue checkpoints reflow at their saved read offset for the
 shared v0.1.3 dialogue layout, without executing the pending VM call.
 The launcher remembers each game's location separately, in its own `SHSHD Runtime` data folder; it never

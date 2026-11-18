@@ -56,8 +56,9 @@ The compact layout comes from the PR contributor's inspected free IPA. The
 multilingual layout comes from the
 [1.4.7 `.bv` review report](https://github.com/joshrmcdaniel/exp-runtime/pull/1#issuecomment-6193379821).
 Both have authored import/reopen fixtures, including identical bundle IDs and
-versions, relocation, missing assets and conflicting manifests. Full original
-1.4.7 playback has not been independently verified here. Required payloads must
+versions, relocation, missing assets and conflicting manifests. This fork plays
+the owner's 1.4.7 library throughout; complete routes are still not verified (see
+"Services and current coverage"). Required payloads must
 parse correctly; sentinel filenames, version strings or bundle suffixes alone
 cannot make an incompatible archive pass.
 
@@ -287,8 +288,7 @@ starts a cue queued by `playMusic` only once the faded sound has stopped, and
 these rules for both games (SHS HD's case 0x51 makes the same call; see
 ENGINE_ABI.md, "Music"; the fade time is playback state and is not saved). Negative shorts other than -1 would make the native fade never finish.
 The runtime stops at once for these instead (unverified in scripts). The iOS
-host's mixer has no volume control, so there the cue plays at full volume for
-the fade time and then stops.
+host fades the same way (its `music_volume` command).
 
 exp-runtime v0.6.0 models CoD's scene blinds and black fades in the session (selectors 1, 2, 6 and 20,
 `setupQueuedFade` `0000f998`, `tickFade` `0000ee5c`). This fork runs that model for CoD and for SHS HD, whose
@@ -352,9 +352,10 @@ The CoD dispatcher is `SHSScript::syscall` at `0003354c`.
   immediately, ignores extra words and completes with zero. Other alignments
   retain the current position. The policy and active movement are saved.
 - **100:** the supplied 1.3.4 runtime takes the same default completion through
-  its out-of-range branch, without reading its arguments. The desktop follows
-  that verified behavior for the observed promotional-link calls; no external
-  browser or app is launched. See the service-100 audit below.
+  its out-of-range branch, without reading its arguments. The runtime completes
+  with R=0 too; a web link is kept and offered behind CoD's "Exit Game?" prompt,
+  where Yes opens it in the browser (see "The Exit Game? prompt"). See the
+  service-100 audit below.
 - **9, 91, 95:** remain unsupported CoD stops, with their original arguments
   intact. Their native behavior was audited separately below; SHS's survey,
   loading and score handlers must not be enabled wholesale for CoD.
@@ -558,7 +559,7 @@ Android page.
     point.
   - IMG_0406 (portrait, two-line description) and IMG_0482 (timed): same layout. Side-by-side images are in
     `reference/screenshots/verify/cod_choice_*`.
-- **Not yet ported:** the rapid-fire quiz (service 71) still uses the Android page.
+- **The rapid-fire quiz** (service 71) uses this panel too (see "The quiz").
 
 ## Speaker names
 
@@ -597,6 +598,9 @@ Service 88's notice is SHS HD's letter effect, not Android's typed notice (`cod.
 **Native.** CoD's iPhone screen shows a scene's 480x720 art at 1 px per point. In IMG_0483 the screen starts at the
 art's (0, 180), exactly `background_origin`'s focal point. Its chapter card (`SHSUIChapterScreen::animate`: bounds
 320 x 480 at (160, 240)) shows the whole picture fitted to the screen (IMG_0479: the art at 2/3, error 2.0 of 255).
+
+These describe the 3:4 frame, a computer's default. Options › General › Aspect Ratio can make it 2:3, 9:16 or the
+screen's own shape (phones start in Fit Screen; `frame_shape.py`, 2026-11-11).
 
 **In the 3:4 frame (owner's choice, 2026-10-14).** Backgrounds behave as SHS's SD backgrounds do, filling the frame:
 - **Scenes** pan with the speaker (`location_pan`, the art's width given as 960 HD points) with `HD_BG_SHIFT`'s
@@ -637,7 +641,7 @@ backgrounds never ran past the art in a 20-episode sample (0 of 2,974 frames).
 
 Many of CoD's portraits are Claire Hart Classic's, downscaled about 4.17 times. The optional `chslim` addon holds the
 sharper originals and the green backdrop, with the map from CoD's pictures to them. With it imported, Options › Add-Ons
-offers CH-tagged HD Portraits in CoD and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
+(on the main menu, Add-Ons › Per-Game Settings) offers CH-tagged HD Portraits in CoD and Backdrop switches. See [ADDONS.md](ADDONS.md#chslim-claire-hart-slim).
 
 ## HD backgrounds from SHS HD (this fork)
 
@@ -876,18 +880,22 @@ CoD's colours (`cod/hd_art.positional_frames`).
   not draw on the device. One is drawn as SHS HD's is.
 - **Options categories (2026-10-14, both games).** Options lists categories, laid out like Help & About's list, and
   each opens a page of its own rows (`desktop_pause_hd.OPTION_CATEGORIES`):
-  - **General:** Side Panels (in a story, SHS only), Autoplay Dialogue, Skip Ad Intros (SHS only) and Skip Upsell
+  - **General:** Side Panels (SHS only), Vibration (on a device that can vibrate), Aspect Ratio (both games, 2026-11-11;
+    see "The background window"), Autoplay Dialogue, Skip Ad Intros (SHS only) and Skip Upsell
     Intros (both games, main menu only: they act as an episode starts), SHS HD Backdrop (both games, where a collage
     exists) and Check for Updates (main menu). In CoD, Skip Upsell Intros passes the bundle, Facebook and Claire Hart
     plugs that open 38 episodes (owner, 2026-11-17, line by line); plugs after a chapter menu or a story line, as in
     the volume sets, wait for line-level skipping.
-  - **Sound:** Game Music and Sound FX, with their sliders. On the main menu, **Skip Sound Prompt** last (owner,
+  - **Sound:** Game Music and Sound FX, with their sliders, and Simulated Vibration Sound. On the main menu, **Skip Sound Prompt** last (owner,
     2026-10-29): the launch goes on without "Play with sound?", Music and Sound as they are set.
   - **Extras** (owner, 2026-10-21): the play aids, Disable Choice Timer, Choice Hints (CoD: Choice & Answer Hints),
     Ask to Skip Mini-Games (CoD's word quizzes too), Allow Skip Ahead and Allow Undo (docs/MAIN_MENU.md). On the main menu, SHS adds **Unlock Warping** while its
     story tree is still locked (owner, 2026-10-29): an action row that clears the lock Football Season clears, shows
     the app's own notice (menu 29, "Options Unlocked", string 272, zooming in) and then is gone. Finishing Football Season shows the same
     notice when the main menu next comes up, as `SHSEngine::setAppMode` does (flag +0x6490b).
+  - **Controller** (while one is connected): Confirm Button and Word Grid Controls.
+  - **Add-Ons** (when the library has an addon or translated game that needs a switch): CoD's are HD Portraits in CoD
+    and Backdrop. On the main menu they sit one page in, under Per-Game Settings.
   - **On the main menu only:**
     - **Episode Titles** ends General. Its row shows the current language under its name, in smaller letters as
       the episode lists' airdates, and opens a page of the title languages, the current one ticked; picking one sets
@@ -898,13 +906,14 @@ CoD's colours (`cod/hd_art.positional_frames`).
       in; the default, the game chooser until there is one), Choose a Game, Surviving High School or Cause of
       Death. The app opens there when it is not told a game
       or library; a game without a library opens the chooser instead.
-    - **Data Management** (owner, 2026-10-29) lists three pages, then Reset Settings:
+    - **Data Management** (owner, 2026-10-29) lists four pages, then Add-Ons and Reset Settings:
       - **Library:** Library Info, Storage (what each part of the library takes, and the drive's free space),
         Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library, Delete Library.
         Delete Library asks twice, then deletes the library's own parts (`application.LIBRARY_PARTS`, never
         anything else in its folder) and goes to the game chooser.
-      - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Reset Decision Tree.
-      - **Progress:** Back Up Progress, Restore Progress, Reset Names, Delete All Saves.
+      - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Exports Folder, Reset Decision Tree.
+      - **Progress:** Back Up Progress, Restore Progress, Backups Folder, Reset Names, Delete All Saves.
+      - **Sync Devices:** Send to Another Device, Receive from Another Device.
       - **Add-Ons** (with any in the library; [ADDONS.md](ADDONS.md#data-management)).
 
       **Back Up Progress** writes a progress bundle (`progress_bundle.py`) to `Downloads/SHSHD Runtime Backups`. The
@@ -986,7 +995,7 @@ as in SHS HD).
   - the two release stages (On Demand, then Now Airing), with episodes listed by their first release;
   - why most dates are exact: the Cause of Death Facebook page announced each release. The few it never announced are
     approximated from the weekly schedule, the wiki or the App Store listing (docs/COD_RELEASE_DATES.md);
-  - the tile grid selector behind Play/Resume, which is planned for CoD;
+  - the tile grid selector behind Play/Resume;
   - no SD tag, which is SHS-only.
 - **Introduction, Controls and Network** keep CoD's own text.
 - **About** is the owner's: CoD's credits plus this project's credits, the fan-preservation disclaimer SHS's page has,
@@ -1122,12 +1131,15 @@ season from SHS's pack numbering. So CoD uses its catalogue's own categories:
 | Premium Content | with A Fallon Family Christmas | catalogue; owner's placement (1.3.4 filed its byte copy `1_1_Magic_School.exp` under "Interlude") |
 | Now Airing Special | the free Now Airing promo, captioned "Now Airing Special" | no catalogue lists it; 1.4.7's store listing gives it this category and name (product 840878). Owner, 2026-10-15: follow the store (it was first in Side Stories as "Now Airing Special: Just Another Day") |
 
-Anything else uncatalogued goes to Premium Content, SHS's fallback.
+An episode that carries its own category keeps it (`content.py`, set on import): a Creator export is filed under
+User-Created Episodes (its authoring record, `content.authored_fields`; 2026-11-17) and a translated Claire Hart episode
+(`(CHC)`) under Claire Hart (`cod/profile.py` `LEGACY_GAMES`). Anything else uncatalogued goes to Premium Content, SHS's
+fallback.
 
 **Order.**
 - **Categories:** the volumes by number first, then Side Stories, then Premium Content, as SHS HD's rule puts its
   seasons before the generic categories, then any other category (Now Airing Special). CoD's own list and 1.4.7's
-  catalogue put Premium Content and Side Stories right after Volume One instead.
+  catalogue put Premium Content and Side Stories right after Volume One instead. User-Created Episodes come last.
 - **Episodes in a category** go by first release, which is the order the owner listed Premium Content in.
 
 **Now Airing.** Episodes are grouped by the year of their first release (docs/COD_RELEASE_DATES.md); a Volume set takes
@@ -1140,9 +1152,11 @@ its Chapter One's date, as SHS's season bundles do. Nothing is set apart:
 library's `thumbs/`. Volume One's "Prologue" card is black with the title, as on the device (IMG_0474). A Volume set
 shows its Chapter One card.
 
-Two episodes have no preview and keep the picker's flat card, because the capture can't reach a title card:
-- Volume 16's Chapter Seven: Sunset reaches a quiz before its card, and the capture doesn't answer quizzes.
-- Fourth of July Special, Part 2's opening fight loops on the first choice.
+Two episodes needed help to get a preview:
+- Volume 16's Chapter Seven: Sunset reaches a quiz before its card; the capture now skips minigames and paces choices
+  (`episode_thumbnails`, marker 3).
+- Fourth of July Special, Part 2 has no title card of its own, so it shows Part 1's picture with its own subtitle
+  (`episode_thumbnails.BORROWED_CARDS`; owner, 2026-10-21).
 
 **Styling.** The structure is SHS HD's; only these parts are CoD's:
 

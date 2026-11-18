@@ -1,8 +1,8 @@
 # SHS IPA assets
 
 The desktop runtime can import a player-supplied SHS IPA instead of the Android
-APK. Choose **Choose Game** during setup, drop the IPA onto the setup window,
-or run:
+APK. Choose **Choose Game Files** during setup (**Choose Game** in the
+Android-style menus), drop the IPA onto the setup window, or run:
 
 ```sh
 uv run --locked exp-tool import --ipa /path/to/game.ipa --library /path/to/ios-library
@@ -288,6 +288,8 @@ by each game; narrator and complete animation parity remain separate
 fidelity limits. Original installed/bundled fonts still take precedence over
 system fallback. Native font rules do not establish pixel-identical rendering.
 
+Save version numbers here are upstream exp-runtime's;
+[RUNTIME.md](RUNTIME.md#runtime-save-schema) maps them to this fork's.
 Save version **26** reflows older IPA pages from their saved `page_start`,
 including the new emphasis-face advances. Version-15+ checkpoints preserve
 and validate both name-history banks; earlier

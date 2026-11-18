@@ -212,15 +212,16 @@ be added explicitly through the episode file picker, drag/drop, or
 `ContentLibrary.add_episodes([path])` without adding any new EXPs. The sidecar
 is optional; the selected game's APK/IPA and EXP inputs remain sufficient to play.
 
-Episode ZIPs use the same import path on desktop, iOS and the CLI, during
+Episode ZIPs and RARs use the same import path on desktop, iOS, Android and the CLI, during
 initial setup or later additions. The importer scans every subfolder inside
 the archive for EXPs and the selected game's catalog, and also finds ZIPs
 inside selected filesystem folders. A ZIP containing just a catalog can
 update existing categories. ZIPs nested inside another ZIP are not expanded.
 `__MACOSX` entries and AppleDouble `._` files are ignored.
 
-Members are read individually and stored under their EXP hashes; archive paths
-are never extracted. The library remains usable after the source ZIP is removed
+Members are read individually and stored under their EXP hashes; ZIP paths
+are never extracted, and a RAR's members are unpacked into a temporary folder
+that is deleted afterwards (`content._episode_rar_inputs`). The library remains usable after the source ZIP is removed
 or the library is relocated. Duplicate paths, absolute/traversing paths,
 links, encrypted/unreadable members and invalid EXPs/catalogs reject the batch
 without changing the library. ZIP limits are 10,000 entries, 64 MiB per EXP,
@@ -237,7 +238,9 @@ CatalogEntry := {
     episode_id: u16,
     title: string,
     category: string,
-    filename: string
+    filename: string,
+    source: "" | "hd" | "standard"   -- which release's catalog; "" for libraries
+                                      -- imported before releases were told apart
 }
 ```
 
@@ -246,7 +249,7 @@ keys. No catalog path is opened. A matching filename handles native synthetic
 IDs; an exact ID/title match handles renamed EXPs. Identical EXPs imported under
 different filenames retain those names in the existing episode's `aliases`
 field, and catalog matching considers those aliases too. Conflicting category
-matches remain unknown. New catalog records replace the same ID/title/filename key;
+matches remain unknown. New catalog records replace the same ID/title/filename/source key;
 unrelated entries remain available for episodes imported later.
 
 Catalog and episode changes publish together by the existing atomic manifest
