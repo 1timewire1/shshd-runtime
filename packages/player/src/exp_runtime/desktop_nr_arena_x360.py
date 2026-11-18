@@ -660,6 +660,8 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             y = cell.y - PANEL_LABEL + 1 if top else cell.bottom - 3
             self.blit(surface, image, cell.centerx, y, anchor='midtop')
             area = cell.union(pygame.Rect(cell.x, y, cell.width, PANEL_LABEL))
+            if self.pad_cursor == i:
+                self._pad_outline(surface, area.inflate(8, 8))
             self.targets.append((area, ('arena_key', 48 + int(ch))))
 
     def _panel_clock(self, surface, arena, dy):
@@ -1034,7 +1036,17 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             image = self.text_surface('badaboom_white' if not flashing else 'badaboom', ch, 24,
                                       None if not flashing else (255, 200, 40))
             self.blit(surface, image, x - 14, y + 2, anchor='midtop')
+            if self.pad_cursor == i:
+                w, h = image.get_width() / self.k, image.get_height() / self.k
+                self._pad_outline(surface, pygame.Rect(round(x - 14 - w / 2 - 6), round(y - 2), round(w + 12), round(h + 6)))
             self.targets.append((pygame.Rect(x - 24, y - 12, 48, 48), ('arena_key', 48 + int(ch))))
+
+    def _pad_outline(self, surface, rect):
+        """The controller's highlight on a number key (Desktop._arena_pad): a rounded yellow outline, the lit key's
+        colour, round native `rect` (owner, 2026-11-17: the lit key alone read as a press)."""
+        k = self.k
+        area = pygame.Rect(round(rect.x * k), round(rect.y * k), round(rect.width * k), round(rect.height * k))
+        pygame.draw.rect(surface, (255, 200, 40), area, max(2, round(3 * k)), border_radius=max(2, round(8 * k)))
 
     def _popups_x360(self, surface, arena, ring):
         count = len(arena.slots)

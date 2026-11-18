@@ -814,6 +814,11 @@ class NRArenaRenderer:
             if 2 <= i <= 4:
                 y -= self.item_height + score_font.height
             font = score_font if self.key_lit(arena, i) else self.font(ITEM_FONT)
+            if self.pad_cursor == i:
+                # The controller's highlight (Desktop._arena_pad): New Rules' own highlighted-row box behind the key
+                # (layout 27, its menu's), so it reads apart from a pressed key's flash (owner, 2026-11-17).
+                width = font.advance(ch)
+                self.skin().layout(surface, 27, pygame.Rect(x - width - 7, y - 5, width + 14, font.height + 10))
             font.draw_line(surface, ch, x - font.advance(ch), y)
             self.targets.append((pygame.Rect(x - 24, y - 12, 48, 48), ('arena_key', 48 + int(ch))))
 
