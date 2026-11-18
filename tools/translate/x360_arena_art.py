@@ -85,6 +85,9 @@ LEASH_CAST_SHOT = (2560, 1440)          # the background shots' size: the pound'
 # dog bigger than the crate beside it, Zack tall), so they stand at 0.41 about the same feet, as at the camera's back wall.
 # Then moved to (0.65, 0.0), 49 px right: in 9:16 and 9:20, which show less of the picture's width, Zack leaned out past
 # the frame's left edge as MG1_WIN starts (owner, 2026-11-18).
+# The frames' shadow is cut to the picture's floor for this place (reference tools x360_leashbooth.py --floor-mask, the
+# cast folder's pound_floor.json, animations add-on revision 2): a new place needs the mask's `place` changed and the
+# cast re-rendered.
 LEASH_CAST_PLACES = {'26109': dict(scale=.41, feet=[448.6, 1030.0], floor=[.65, 0.])}
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
 # Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.

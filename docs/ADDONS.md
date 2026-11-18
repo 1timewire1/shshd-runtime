@@ -149,7 +149,8 @@ python tools/translate/translate.py x360 DATA_PAK --story addon --pud RES_LARGE_
 
 Read optionally by the [X360](X360.md) stories: Josh's dance behind Diss Practice's deck and Zack, the doberman and the
 collar behind the leash game's bar. No story requires it; without it the games play as they did before the animations.
-Split out of `shsx360` at its revision 22 (owner, 2026-11-18). Revision 1, about 47 MB.
+Split out of `shsx360` at its revision 22 (owner, 2026-11-18). Revision 2, about 47 MB: revision 1 with the cast's
+shadow kept to the pound's floor, off its desk and crate (the dance byte for byte).
 
 | Resources | What |
 | --- | --- |
@@ -159,7 +160,9 @@ Split out of `shsx360` at its revision 22 (owner, 2026-11-18). Revision 1, about
 | 26810–26819 | The leash game's cast at 15 fps: an atlas per animation, MS4's five then MS3's (`leash_cast`) |
 
 `translate.py x360 --story addon` writes it beside `shsx360` when given `--dbp` or `--leash` (the cast's frames, from
-reference tools `x360_leashbooth.py` at `--size 960 540 --fps 15`, LOSE with `--pad 48`).
+reference tools `x360_leashbooth.py` at `--size 960 540 --fps 15 --floor-mask pound_floor.json`, LOSE with `--pad 48`).
+The mask (in the cast's folder) is the pound picture's floor in its pixels, less the crate, with the place it was cut
+for; it must match `LEASH_CAST_PLACES`.
 
 ### `shs11`: Surviving High School '11
 

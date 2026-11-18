@@ -55,7 +55,7 @@ ADDON_EPISODE = 0                       # the addon's metadata episode number (n
 # The animations add-on (owner, 2026-11-18): Josh's dance and the leash game's cast, apart from the X360 add-on so that one
 # stays about half the size. No story requires it; with it the dance and the cast show, without it the games play as
 # before them (x360_arena_art.build_animations, desktop_nr_arena_x360.addon_animations).
-ANIMATIONS_ID, ANIMATIONS_TITLE, ANIMATIONS_REVISION = 'shsx360anim', 'Surviving High School (Xbox 360 prototype): animations', 1   # 1: the dance and the cast at 15 fps
+ANIMATIONS_ID, ANIMATIONS_TITLE, ANIMATIONS_REVISION = 'shsx360anim', 'Surviving High School (Xbox 360 prototype): animations', 2   # 2: the cast's shadow only on the pound's floor (off its desk and crate); 1: the dance and the cast at 15 fps
 ANIMATIONS_FILE, ANIMATIONS_EPISODE = 'X360_Addon_Animations', 99
 ADDON_FILE = 'X360_Addon_Xbox_360'
 RENDERS = ('josh', 'kim', 'ryan', 'nicole', 'hector', 'zack', 'beth', 'moondog',     # at PORTRAIT_BASE + 5 x index
