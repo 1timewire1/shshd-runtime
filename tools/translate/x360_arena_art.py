@@ -81,7 +81,9 @@ LEASH_CAST_SHOT = (2560, 1440)          # the background shots' size: the pound'
 # between the frame's left edge and the bar, Zack's head below the door frame; the icon over their feet, as the
 # prototype's HUD lies over its scene. There the camera gives them 0.461; the owner found that still a little large (the
 # dog bigger than the crate beside it, Zack tall), so they stand at 0.41 about the same feet, as at the camera's back wall.
-LEASH_CAST_PLACES = {'26109': dict(scale=.41, feet=[400.1, 1030.5], floor=[.45, 0.])}
+# Then moved to (0.65, 0.0), 49 px right: in 9:16 and 9:20, which show less of the picture's width, Zack leaned out past
+# the frame's left edge as MG1_WIN starts (owner, 2026-11-18).
+LEASH_CAST_PLACES = {'26109': dict(scale=.41, feet=[448.6, 1030.0], floor=[.65, 0.])}
 SLOT_BASE = 26420                       # the slot machine (Dating Beth; exp_runtime.x360_games, desktop_x360_slot)
 # Cells of hud/icons (bubbles/minigames/slot_machine's menus/icons pictures): 64 x 64, four to a row.
 SLOT_ICONS = (('bulb', 1), ('cross', 0), ('question', 3), ('off', 2))
