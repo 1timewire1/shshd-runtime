@@ -315,4 +315,5 @@ has its meaning. What's still different:
   and ignores OK for about 2.4 s. Its layouts are decoded, not built.
 - **A character the stage hides** (service 46 or stream command 14, y of 10 or more) can go on speaking out of view;
   here their portrait shows. About 63 lines: Dancing Queen's fall and King of Diss's blanket scene, and 8 downloads
-  (02: As Time Goes By's sinking pair among them).
+  (02: As Time Goes By's sinking pair among them). Kept on purpose (owner, 2026-11-18): SHS lays its scenes out with
+  the speaker's portrait, and the smartphone counterparts of these stories show portraits there too.
