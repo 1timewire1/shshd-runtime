@@ -198,12 +198,14 @@ class LeashGame:
         self.swap_left_ms = self.swap_ms
 
     def shake(self, direction, window_ms=SHAKE_WINDOW_MS):
-        """The input has reached `direction`. True if that scored: the native check, with the input's own window."""
+        """The input has reached `direction`. True if that scored: the native check, with the input's own window. As the
+        native flag, a frame scores one shake at most (two keys or a quick drag between ticks used to add two)."""
         if self.phase != RUNNING or direction == self.last:
             return False
         last, self.last = self.last, direction
         within, self.since_ms = self.since_ms < window_ms, 0
-        if not within or last is None or AXIS[last] != AXIS[direction] or AXIS[direction] != self.wanted:
+        if (self.shook or not within or last is None or AXIS[last] != AXIS[direction]
+                or AXIS[direction] != self.wanted):
             return False
         self.level = min(LEVEL_FULL, self.level + LEVEL_GAIN)
         self.shook = True

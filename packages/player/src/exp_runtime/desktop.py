@@ -4873,12 +4873,15 @@ class Desktop:
         return True
 
     def _leash_stick(self):
-        """The leash game, each frame: a controller's stick, read as the prototype reads it."""
+        """The leash game, each frame: a controller's sticks, read as the prototype reads its one. The prototype reads the
+        right stick only (MS4 `FUN_82141778`, input/aim* bound to sThumbRX/RY; 2026-11-17); the left one shakes too, as it
+        did here before, a convenience. One shake counts a frame (LeashGame.shake), as natively."""
         if not self._leash_ready():
             self.leash_anchor = None
             return
         pads = pygame.gamepads()
-        for x, y in pads.sticks.values() if pads is not None else ():
+        sticks = [*pads.right_sticks.values(), *pads.sticks.values()] if pads is not None else []
+        for x, y in sticks:
             direction = stick_direction(x, y)
             if direction is not None:
                 self.session.engine.x360_leash.shake(direction, SHAKE_WINDOW_STICK_MS)

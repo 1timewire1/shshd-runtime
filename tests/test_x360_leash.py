@@ -112,6 +112,8 @@ class RuleTests(unittest.TestCase):
         game.shake(x.LEFT)
         for turn in range(8):
             game.shake(x.RIGHT if turn % 2 == 0 else x.LEFT)
+            if game.phase == x.RUNNING:
+                game.tick(1)                                    # a shake a frame (the native flag)
         self.assertEqual((game.phase, game.level, game.result), (x.CLOSING, x.LEVEL_FULL, 1))
         self.assertFalse(game.shake(x.LEFT))
         self.assertFalse(game.tick(100))
@@ -332,7 +334,7 @@ class PlayerTests(unittest.TestCase):
     def test_a_stick_is_read_each_frame_with_the_prototypes_window(self):
         import tempfile
         from exp_runtime import desktop
-        pads = SimpleNamespace(sticks={1: [-.9, 0.]})
+        pads = SimpleNamespace(sticks={1: [-.9, 0.]}, right_sticks={})
         with tempfile.TemporaryDirectory() as temporary:
             ui, game = self.desktop(temporary)
             game.press()
@@ -349,6 +351,27 @@ class PlayerTests(unittest.TestCase):
             game.since_ms = 100                                 # a key or a drag would still have time; a stick hasn't
             ui._leash_stick()
             self.assertEqual((game.last, game.level), (x.LEFT, x.LEVEL_START + x.LEVEL_GAIN))
+
+    def test_the_right_stick_shakes_it_as_the_prototypes_and_a_frame_scores_once(self):
+        # MS4 FUN_82141778 reads input/aim*, bound to sThumbRX/RY: the right stick only (2026-11-17). The left one still
+        # shakes it here. The native flag lets one shake count a frame, however many inputs come.
+        import tempfile
+        from exp_runtime import desktop
+        pads = SimpleNamespace(sticks={}, right_sticks={1: [-.9, 0.]})
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, game = self.desktop(temporary)
+            game.press()
+            real = desktop.pygame.gamepads
+            desktop.pygame.gamepads = lambda: pads
+            self.addCleanup(setattr, desktop.pygame, 'gamepads', real)
+            ui._leash_stick()
+            pads.right_sticks[1] = [.9, 0.]
+            ui._leash_stick()
+            self.assertEqual((game.last, game.level), (x.RIGHT, x.LEVEL_START + x.LEVEL_GAIN))
+            self.assertFalse(game.shake(x.LEFT))                 # the same frame: it moves, but scores nothing more
+            self.assertEqual((game.last, game.level), (x.LEFT, x.LEVEL_START + x.LEVEL_GAIN))
+            game.tick(16)
+            self.assertTrue(game.shake(x.RIGHT))
 
     def test_nothing_shakes_it_under_the_menu(self):
         import tempfile

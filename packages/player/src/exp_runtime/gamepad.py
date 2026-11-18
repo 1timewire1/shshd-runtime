@@ -105,6 +105,9 @@ class Gamepads:
         self.confirm = 'south'          # the confirm button: 'south', or 'east' for a Nintendo layout (CONFIRM)
         self.pads = {}                  # SDL instance id -> Controller
         self.sticks = {}                # SDL instance id -> [x, y], each -1..1
+        # The right stick, read but never turned into presses: the X360 leash game reads it, as the prototype's
+        # input/aim* bindings do (2026-11-17).
+        self.right_sticks = {}
         self.stick_held = {}            # SDL instance id -> the direction its stick holds
         self.triggers = set()           # (SDL instance id, 'lt' / 'rt') held past STICK_PRESS
         self.down = set()               # (SDL instance id, button) of the buttons held now (pressed, not yet let go)
@@ -207,6 +210,7 @@ class Gamepads:
         else:
             pad = self.pads.pop(event.instance_id, None)
             self.sticks.pop(event.instance_id, None)
+            self.right_sticks.pop(event.instance_id, None)
             self.triggers = {held for held in self.triggers if held[0] != event.instance_id}
             self.down = {held for held in self.down if held[0] != event.instance_id}
             if self.stick_held.pop(event.instance_id, None) is not None:
@@ -225,6 +229,10 @@ class Gamepads:
                 return [self._press(trigger, now)]
             if held in self.triggers and value <= STICK_RELEASE:
                 self.triggers.discard(held)
+            return []
+        if event.axis in (pygame.CONTROLLER_AXIS_RIGHTX, pygame.CONTROLLER_AXIS_RIGHTY):
+            right = self.right_sticks.setdefault(event.instance_id, [0., 0.])
+            right[event.axis == pygame.CONTROLLER_AXIS_RIGHTY] = max(-1., event.value / AXIS_RANGE)
             return []
         if event.axis not in (pygame.CONTROLLER_AXIS_LEFTX, pygame.CONTROLLER_AXIS_LEFTY):
             return []
