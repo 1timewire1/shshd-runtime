@@ -75,7 +75,22 @@ class HdLayouts:
         units, translated by `origin`. `hidden`/`shown` are 1-based node numbers
         (in flattened walk order) forced invisible/visible, as
         `CSLightWeightWidget::setVisible` does; a hidden reference hides its
-        whole subtree."""
+        whole subtree.
+
+        shshd-runtime: kept per bank and arguments (the bank never changes once read): menus and panels asked for the
+        same nodes every frame, about 2 ms of a main-menu frame on a phone (g54, 2026-11-17)."""
+        bank = self.bank()
+        key = (id(bank), layout_id, tuple(origin), None if size is None else tuple(size), frozenset(hidden),
+               frozenset(shown))
+        kept = self.__dict__.setdefault('_nodes', {})
+        found = kept.get(key)
+        if found is None:
+            if len(kept) > 512:
+                kept.clear()
+            found = kept[key] = self._nodes_walked(layout_id, origin, size=size, hidden=hidden, shown=shown)
+        return list(found)
+
+    def _nodes_walked(self, layout_id, origin=(0, 0), *, size=None, hidden=(), shown=()):
         bank = self.bank()
         if bank is None:
             return []

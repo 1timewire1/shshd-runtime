@@ -447,6 +447,10 @@
 
 ### Fixed
 
+- **Phones draw less each frame** (Moto g54 profiles, 2026-11-17): the X360 games read their skin once rather than
+  every frame; translated episodes skip the black under their opaque frame backdrop; outlined glyphs share their shapes
+  across colours; HD menus keep their layout walks; the quiz and timed menus keep their still panel while only the clock
+  and the score's rising effect move. Word game 29 -> 55 fps, jewel puzzle 39 -> 58, main menu 53 -> 60.
 - **Choice Hints no longer freeze a choice as it opens.** Working out the hints took 20 ms to 0.8 s on a PC (about
   five times that on a phone) in the frame the choice came up. They are now worked out beside the frames on every
   platform, and the choice's first frame takes as long as with hints off (25-30 ms where it took 165-350 ms); the

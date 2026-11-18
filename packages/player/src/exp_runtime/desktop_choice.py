@@ -498,8 +498,9 @@ class ChoiceRenderer:
         rest = None
         # shshd-runtime: a timed menu and the quiz too, while only their timer moves (the wheel and the running man are
         # on the overlay, redrawn alone): the whole panel every frame was about 26 ms of the quiz's frame on a phone
-        # (g54, 2026-11-17: 20-29 fps). The quiz's score is in the key; its effect and its labels' flights are not still.
-        still_game = game is None or (not game.effect_ms and not game.fly_off_ms and game.fly_off_row < 0)
+        # (g54, 2026-11-17: 20-29 fps). The quiz's score is in the key, its effect is the overlay's; its labels' flights
+        # are not still.
+        still_game = game is None or (not game.fly_off_ms and game.fly_off_row < 0)
         if (target is None and still_game and all(self.label_home(row, game) >= 1 for row in page.rows)):
             table = page.table
             if game is not None:
@@ -739,6 +740,7 @@ class ChoiceRenderer:
             if image is not None:
                 # g_layerRunningMan's frames are centred on the layer, a point below the wheel's centre.
                 self.overlay.blit(image, image.get_rect(center=(round(cx * k), round((cy + g.running_drop / d) * k))))
+            self._draw_hd_effect(page, game)
         elif page.timer_center is not None and session.remaining_ms is not None:
             self.draw_hd_timer(page.timer_center, session.remaining_ms, session.pending.details['timeout_ms'], g)
 
@@ -754,21 +756,33 @@ class ChoiceRenderer:
         layout, origin = text_in_region(FontMetrics(score_font, cap_height(score_font), 0), str(game.score),
                                         Rect(ux, uy, w / d, h / d), 10, (255, 255, 255), density=d)
         self.text.draw_layout(self.canvas, 'HD_QUIZ_SCORE', layout, origin[0] * k, origin[1] * k, scale=k)
-        if game.effect_ms:
-            # doScoreEffectAnimation: opacity 0, 1, 1, 0 at 0, 0.1, 0.9, 1 of 1 s while rising 30 points.
-            t = 1 - game.effect_ms / game.HD_EFFECT_MS
-            alpha = t / .1 if t < .1 else 1 if t < .9 else (1 - t) / .1
-            x, y, w, h = g.effect_box
-            ux, uy = g.units(g.panel_x + x, page.footer_top + y - g.effect_rise * t)
-            delta = game.last_delta
-            color = (8, 133, 31) if delta >= 0 else (244, 17, 17)
-            layout, origin = text_in_region(FontMetrics(effect_font, cap_height(effect_font), 0),
-                                            f'+{delta}' if delta >= 0 else str(delta),
-                                            Rect(ux, uy, w / d, h / d), 10, color, density=d)
-            layer = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA).convert_alpha()
-            self.text.draw_layout(layer, 'HD_QUIZ_EFFECT', layout, origin[0] * k, origin[1] * k, scale=k)
-            layer = faded(layer, round(255 * max(0., min(1., alpha))))
-            self.canvas.blit(layer, (0, 0))
+
+    def _draw_hd_effect(self, page, game):
+        """The score's rising effect ("+2"), on the overlay with the timer (_draw_hd_clock): so a frame of it leaves the
+        still panel as it was (owner, 2026-11-17; it redrew the whole quiz for its second after each answer). Drawn on
+        a surface the size of its text, at a whole-pixel offset, so its glyphs fall on the same pixels."""
+        from .hd_choice import FontMetrics, text_in_region
+        from .vector_text import cap_height
+        if not game.effect_ms:
+            return
+        k, g = self.scale, page.geometry
+        d = g.density
+        _, effect_font = self.quiz_fonts()
+        # doScoreEffectAnimation: opacity 0, 1, 1, 0 at 0, 0.1, 0.9, 1 of 1 s while rising 30 points.
+        t = 1 - game.effect_ms / game.HD_EFFECT_MS
+        alpha = t / .1 if t < .1 else 1 if t < .9 else (1 - t) / .1
+        x, y, w, h = g.effect_box
+        ux, uy = g.units(g.panel_x + x, page.footer_top + y - g.effect_rise * t)
+        delta = game.last_delta
+        color = (8, 133, 31) if delta >= 0 else (244, 17, 17)
+        layout, origin = text_in_region(FontMetrics(effect_font, cap_height(effect_font), 0),
+                                        f'+{delta}' if delta >= 0 else str(delta),
+                                        Rect(ux, uy, w / d, h / d), 10, color, density=d)
+        margin = round(40 * k)
+        left, top = int(ux * k) - margin, int(uy * k) - margin
+        layer = pygame.Surface((round(w / d * k) + 2 * margin, round(h / d * k) + 2 * margin), pygame.SRCALPHA)
+        self.text.draw_layout(layer, 'HD_QUIZ_EFFECT', layout, origin[0] * k - left, origin[1] * k - top, scale=k)
+        self.overlay.blit(faded(layer, round(255 * max(0., min(1., alpha)))), (left, top))
 
     def draw_hd_timer(self, center, remaining_ms, timeout_ms, geometry=None):
         """SHSCircleTimerLayer over the timed footer's notch: resource 155's frames 12-27 (CoD: its common pack 126's
