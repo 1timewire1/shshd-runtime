@@ -9,7 +9,7 @@ The x360 command reads the cancelled Xbox 360 prototype's (MS4) data.pak and wri
 projects and .exp files (x360.py); nr_looks.json is the New Rules portrait catalog's, for the cast's looks.
 
     python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR --sounds KG800_JAR --out OUT_DIR
-    python tools/translate/translate.py shs11 --english N73_JAR --story "The New Girl" --twin THE_NEW_GIRL_EXP --out OUT_DIR
+    python tools/translate/translate.py shs11 --english N73_JAR --story "The New Girl" --twin THE_NEW_GIRL_EXP --italian IT_480X800_JAR --out OUT_DIR
 
 The shs11 command writes SHS '11's addon (shs11.py): every background, look and interface picture, and its music.
 
@@ -107,6 +107,8 @@ def main(argv=None):
     s11.add_argument('--sounds', type=Path, help='a jar with all 11 tracks, for the music: KG800')
     s11.add_argument('--story', help="with --twin: a story to translate instead of the addon, by title: 'The New Girl', 'Best Party Ever', 'Foreign Exchange', 'Lost Recipe' or 'Secret Ingredient'")
     s11.add_argument('--twin', type=Path, help="the story's smartphone .exp, for the minigames' words")
+    s11.add_argument('--italian', type=Path, help="with --story: an Italian build's jar (1.36.76 480x800), for the Italian "
+                                                 "the episode carries ('11 Language)")
     s11.add_argument('--out', type=Path, required=True)
     br = sub.add_parser('brew', help="the BREW games ('07, '08): the addon (brew.py) or, with --story, a story")
     br.add_argument('--base-08', type=Path, help="the '08 game's folder, with game/SHS/res_xlarge.pud and addons/")
@@ -221,7 +223,8 @@ def translate_shs11(args):
         import shs11_story
         if not args.twin:
             raise SystemExit('--story needs --twin')
-        name, data = shs11_story.build(shs11.jar_file(args.english), args.story, args.twin)
+        italian = shs11.jar_file(args.italian) if args.italian else None
+        name, data = shs11_story.build(shs11.jar_file(args.english), args.story, args.twin, italian)
         (args.out / name).write_bytes(data)
         print(f'{args.out / name}: {len(data) / 1024:.0f} KB')
         return 0

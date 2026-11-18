@@ -2,7 +2,7 @@
 `reflex`; tools/translate/shs11.py reflex_ui). Its frame is Memory's (desktop_shs11_memory.py), with the grid 7 of N73's rows
 higher (`av`.j) and the gauge at (8, 69) of N73's in the banner's place. As there, nothing here decides anything in the game."""
 from . import graphics as pygame
-from .desktop_shs11_memory import ART, FRAME, Shs11MemoryRenderer
+from .desktop_shs11_memory import ART, FRAME, Shs11MemoryRenderer, translated_text
 from .shs11_games import (AGE, BARS, BARS_SHOWN, DELAY, ENTER, ENTER_MS, FLASH_MS_WORD, GAUGE, GOAL, OWN_ICON, PENALTY, PICTURE,
                           READY, RIGHT_PICTURE, SELECT, SHUTTING, SKULL, TIME_UP, WRONG_PICTURE)
 
@@ -116,7 +116,7 @@ class Shs11ReflexRenderer(Shs11MemoryRenderer):
 
     def draw_game(self, session, surface):
         game = session.engine.shs11_reflex
-        text = self._reflex()['text']
+        text = translated_text(self.resources, 'reflex', self._reflex()['text'])
         surface.fill((0, 0, 0, 0))
         self.draw_clock(surface, game)
         self.draw_score(surface, game)
@@ -129,5 +129,6 @@ class Shs11ReflexRenderer(Shs11MemoryRenderer):
         self.draw_floats(surface, game)
         if game.phase == TIME_UP:
             self.box(surface, 620, 190, x=60, width=648)
-            self.centred(surface, 'letters', self._spec()[0]['text']['time_up'].upper(), (FRAME[0] // 2, 715), 1.1)
+            time_up = translated_text(self.resources, 'memory', self._spec()[0]['text'])['time_up']
+            self.centred(surface, 'letters', time_up.upper(), (FRAME[0] // 2, 715), 1.1)
 

@@ -20,10 +20,10 @@ Those counts are floors, from a harness that took a few random paths rather than
 
 ```sh
 python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR --sounds KG800_JAR --out OUT_DIR
-python tools/translate/translate.py shs11 --english N73_JAR --story "The New Girl" --twin THE_NEW_GIRL_EXP --out OUT_DIR
+python tools/translate/translate.py shs11 --english N73_JAR --story "The New Girl" --twin THE_NEW_GIRL_EXP --italian IT_480X800_JAR --out OUT_DIR
 ```
 
-The first writes the addon (`shs11.py`). All the big builds hold the same art at different sizes and the images hold no text, so the sharpest build serves every language, here the Italian 480 × 800 one. Its English text comes from the N73 build and its sounds from the KG800 build. The second writes a story (`shs11_story.py`), and needs the smartphone twin for the fallbacks below.
+The first writes the addon (`shs11.py`). All the big builds hold the same art at different sizes and the images hold no text, so the sharpest build serves every language, here the Italian 480 × 800 one. Its English text comes from the N73 build and its sounds from the KG800 build. The second writes a story (`shs11_story.py`), and needs the smartphone twin for the fallbacks below; with `--italian`, it carries '11's Italian too ([below](#italian)). Stories are at version 2 (version 1 had no Italian).
 
 ## How a story is translated
 
@@ -33,6 +33,14 @@ The first writes the addon (`shs11.py`). All the big builds hold the same art at
 - **Relationships.** '11's values 0-3 show 4-1 skulls and 4-7 show 1-4 smileys, or hearts for one chosen character. SHS's key 407 shows the same icons from negative numbers up.
 - **Minigames.** Each game plays [Memory or Reflex](#minigames) with Use Translated Mini-Games on. Otherwise it plays what the smartphone has at that spot, or a letter grid of '11's words.
 - **Sound.** Effects stay '11's own, along with its one sound channel and its relationship sounds and icons. With **Smartphone Music** on, the smartphone's music plays too, placed by the lines it comes before. '11's own music is almost nothing: one real tune and ten short cues.
+
+## Italian
+
+Each story carries '11's own Italian inside its file (resource 6, [SCHEMA.md](SCHEMA.md#episode-languages-extension-shshd-runtime); owner, 2026-11-17), shown with **'11 Language** (English or Italiano, SHS11 tag) on the pause menu's Add-Ons and the main menu's Per-Game Settings, in the HD presentation only, as DSi Language is. The episode list shows the Italian titles (*Un party memorabile*, *La nuova ragazza*, *Scambio culturale*, *La ricetta perduta*, *L'ingrediente segreto*), and switching takes effect from the next line.
+
+`shs11_italian.py` reads an Italian build (1.36.76 480 × 800; 1.37.32 has the same text). Its scripts are the N73's programs with translated text: 24 of the 30 match instruction for instruction, and six differ by one instruction each. The two are aligned by what they push (a text's address can be packed in one build and a word in the other), and each text an aligned push reads is paired; a table's texts (a shop's priced options, a quiz's questions) pair in order between those. A line translated two ways takes the second by the line before it. From the same build: the cast's names (`Zia Cathy`, `Presentatore`), the titles and blurbs, Memory's own words (`ELFO`), Memory's and Reflex's boxes and the look picker's title. A name entry's default stays as it is (the Italian build's is a placeholder).
+
+What has no Italian original is this fork's own translation (`OWN`, `GRIDS` in `shs11_italian.py`): the stand-in word games and grids from the smartphone twins (Use Translated Mini-Games off), each grid's words within its 16-letter board, and the translator's own few strings (`Fai la tua scelta!`, the closing page). Played headless on six random paths each, every line the stories showed in Italian was translated but for names and interjections that read the same.
 
 ## Minigames
 
@@ -64,6 +72,5 @@ With the skin, sounds are HD's word game sounds, chosen by ear by the owner (`GR
 
 ## Not done
 
-- **Italian.** '11's Italian text isn't used, although the addon's art comes from an Italian build.
 - **Lost downloads.** President's Day and Fitting In don't survive.
 - **Hidden code mode.** '11 has one (hold 0 for 3 seconds). This fork's [Skip Ahead](MAIN_MENU.md) is an all-games version of its code 4687. Its others aren't ported.

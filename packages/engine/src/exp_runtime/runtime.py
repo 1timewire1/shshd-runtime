@@ -239,11 +239,14 @@ class Session:
         library = getattr(self.resources, 'library', None)
         version = library.hd_app_version() if hasattr(library, 'hd_app_version') else None
         self.engine.hd_version = version
-        # shshd-runtime: the DSiWare add-on's translations, asked for as each line is shown (the language can change)
-        source = getattr(self.resources, 'dsi_translation', None)
+        # shshd-runtime: the episode's own translations (resource 6: SHS '11's Italian), else the DSiWare add-on's,
+        # asked for as each line is shown (the language can change)
+        own = getattr(self.resources, 'own_languages', None)
+        record = own() if callable(own) else None
+        source = getattr(self.resources, 'episode_translation' if record is not None else 'dsi_translation', None)
         if source is not None:
-            from .dsi import Source
-            source = Source(source)
+            from .dsi import LANGUAGES, Source
+            source = Source(source, tuple(record['languages']) if record is not None else LANGUAGES)
         self.engine.translation_source = source
 
     @staticmethod

@@ -45,6 +45,18 @@ def memory_spec(resources):
     return dict(spec['memory'], reflex=spec.get('reflex')), found[1]
 
 
+def translated_text(resources, game, text):
+    """shshd-runtime: a '11 game's interface text (`game`: 'memory' or 'reflex'; `text`: the addon's, English) with the
+    episode's own translation over it (resource 6's `ui`, episode_languages.py) while its switch picks one: '11's own
+    Italian, from its Italian build ("'11 Language", owner, 2026-11-17; HD only, as the story's lines)."""
+    own = getattr(resources, 'episode_translation', None)
+    translation = own() if callable(own) else None
+    if translation is None or getattr(getattr(resources, 'library', None), 'hd_ipa', None) is None:
+        return text
+    found = (resources.own_languages() or {}).get('ui', {}).get(translation.language, {}).get(game)
+    return dict(text, **found) if found else text
+
+
 class Shs11MemoryRenderer:
     # shshd-runtime (General's Aspect Ratio, owner 2026-11-12): in a frame of another shape the canvas is 768 points
     # across and the frame's shape, see-through over the scene; N73's screen (rings, box, grid) is drawn whole in its
@@ -318,7 +330,7 @@ class Shs11MemoryRenderer:
 
     def draw_game(self, session, surface):
         game = session.engine.shs11_memory
-        text = GRID_TEXT if game.grid else self._spec()[0]['text']
+        text = GRID_TEXT if game.grid else translated_text(self.resources, 'memory', self._spec()[0]['text'])
         surface.fill((0, 0, 0, 0))
         self.draw_clock(surface, game)
         self.draw_score(surface, game)

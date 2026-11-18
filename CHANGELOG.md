@@ -4,6 +4,13 @@
 
 ### Added
 
+- **SHS '11 in Italian** (owner, 2026-11-17; [SHS11.md](docs/SHS11.md#italian)): the five '11 stories (version 2) carry
+  '11's own Italian inside their files, a new episode languages record (resource 6,
+  [SCHEMA.md](docs/SCHEMA.md#episode-languages-extension-shshd-runtime)), shown with **'11 Language** (English /
+  Italiano, SHS11 tag) in the HD presentation: lines, choices, names, title cards and titles in the episode list,
+  formatted lines, the closing page, Memory's own words and Memory's and Reflex's boxes. The stand-in word games and
+  grids, which have no Italian original, are this fork's translation. Message pages (service 33) and formatted lines
+  (services 0 and 22) now follow DSi Language too.
 - **SHSHD Runtime Creator downloads** (owner, 2026-11-17; [DISTRIBUTION.md](docs/DISTRIBUTION.md#creator-downloads)): the
   episode creator as its own app for Windows, macOS and Linux, built on version tags beside the player. It finds the
   player's library, previews in the bundled player and runs as an MCP server (`--mcp --workspace FOLDER`). Before it,

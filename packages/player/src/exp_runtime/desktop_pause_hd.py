@@ -70,6 +70,10 @@ DSI_PIXELS_LABEL = 'DSi Pixels'                 # ...enlarged with nearest neigh
 DSI_PIXELS_NAMES = {'sharp': 'Sharp', 'smooth': 'Smooth'}
 DSI_LANGUAGE_LABEL = 'DSi Language'             # ...and the DSi's translations of its eight stories (HD presentation only)
 DSI_LANGUAGE_NAMES = {'off': 'Off', 'fr': 'Français', 'it': 'Italiano', 'de': 'Deutsch', 'es': 'Español'}
+# "'11 Language" (owner, 2026-11-17): translated SHS '11 episodes in '11's own Italian, carried in each episode (resource 6,
+# episode_languages.py; HD presentation only)
+SHS11_LANGUAGE_LABEL = "'11 Language"
+SHS11_LANGUAGE_NAMES = {'off': 'English', 'it': 'Italiano'}
 SMARTPHONE_MUSIC_LABEL = 'Smartphone Music'     # translated SHS '11 episodes: the smartphone's music, else none
 WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD word game's look (with its art imported)
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
@@ -79,7 +83,7 @@ ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X36
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
 # 2026-10-26): key -> the tag in a game profile's LEGACY_GAMES. The switch itself is offered only when such episodes
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
-SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
+SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'shs11_language': 'SHS11', 'arena_skin': 'SHSNR',
                  'ch_portraits': 'CHC',
                  'ch_backdrop': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
@@ -166,17 +170,17 @@ CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'title_language': LANGUAGE_NAMES, 
                 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
                 'dsi_pixels': DSI_PIXELS_NAMES,
-                'dsi_language': DSI_LANGUAGE_NAMES}
+                'dsi_language': DSI_LANGUAGE_NAMES, 'shs11_language': SHS11_LANGUAGE_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'title_language': TITLE_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
                  'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL,
-                 'dsi_language': DSI_LANGUAGE_LABEL}
+                 'dsi_language': DSI_LANGUAGE_LABEL, 'shs11_language': SHS11_LANGUAGE_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'title_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
                   'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_pixels': 'options:addons',
-                  'dsi_language': 'options:addons'}
+                  'dsi_language': 'options:addons', 'shs11_language': 'options:addons'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language')
+PER_GAME_CHOICES = ('dsi_pixels', 'dsi_language', 'shs11_language')
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -946,7 +950,7 @@ class HdPauseMenu:
 
     @staticmethod
     def addon_choices(settings):
-        """The add-on options that are one of a few values, after the switches: DSi Pixels and DSi Language."""
+        """The add-on options that are one of a few values, after the switches: DSi Pixels, DSi Language and '11 Language."""
         return [('choice', CHOICE_LABELS[key], key) for key in PER_GAME_CHOICES if key in settings]
 
     def check(self, layer, right, middle):

@@ -26,7 +26,8 @@ it's done, so real clocks (fades, timers) run as in play.
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...);
-                                `set dsi_pixels sharp|smooth`, `set dsi_language off|fr|it|de|es`
+                                `set dsi_pixels sharp|smooth`, `set dsi_language off|fr|it|de|es`,
+                                `set shs11_language off|it`
     aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
     game shs|cod                pick a game, as the game picker does (`open` needs one picked)
     import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
@@ -313,7 +314,7 @@ class Commands:
             out['prompt'] = dict(title=game.host_prompt['session'].pending.details['title'],
                                  text=game.host_prompt['session'].pending.details['text'],
                                  options=list(game.host_prompt['options']))
-        out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'dsi_language', 'skip_minigames',
+        out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'dsi_language', 'shs11_language', 'skip_minigames',
                                                                 'choice_hints', 'autoplay') if hasattr(game, key)}
         chain = game._undo_for(session)
         out['undo_saves'] = chain.numbers() if chain is not None else None
@@ -481,7 +482,7 @@ class Commands:
                 return dict(ok=False, error=f'{key} is one of {", ".join(choices[key])}')
             setattr(state, key, value.strip())
             state.persist()
-            if key.startswith('dsi_'):
+            if key.startswith('dsi_') or key == 'shs11_language':
                 self.app.apply_dsi()
             return dict(ok=True, key=key, value=getattr(state, key))
         if state is None or type(getattr(state, key, None)) is not bool:

@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, SHS11_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
@@ -354,6 +354,8 @@ class HdShell:
             settings['dsi_pixels'] = DSI_PIXELS_NAMES[state.dsi_pixels]
         if self.app.dsi_language_offered():
             settings['dsi_language'] = DSI_LANGUAGE_NAMES[state.dsi_language]
+        if self.app.shs11_language_offered():
+            settings['shs11_language'] = SHS11_LANGUAGE_NAMES[state.shs11_language]
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
@@ -468,7 +470,7 @@ class HdShell:
         elif key == 'title_look':
             state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
             self.app._attempt(state.persist)
-        elif key in ('dsi_pixels', 'dsi_language'):
+        elif key in ('dsi_pixels', 'dsi_language', 'shs11_language'):
             setattr(state, key, value)
             self.app._attempt(state.persist)
             self.app.apply_dsi()

@@ -26,6 +26,7 @@ from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
 from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS, game_id
 from .addons import IDENTIFIER as ADDON_IDENTIFIER, addon_record
+from .episode_languages import import_fields as language_fields
 from .episode_version import episode_revision
 from .presentation import EFFECTS, presentation_record
 
@@ -856,6 +857,7 @@ class ContentLibrary:
         self.dsi_backgrounds = False    # with `shsdsi`: the DSiWare game's two screens for the backgrounds (dsi.py)
         self.dsi_pixels = 'sharp'       # ...enlarged 'sharp' (nearest neighbour) or 'smooth'
         self.dsi_language = 'off'       # ...and its stories' lines in 'fr', 'it', 'de' or 'es' (HD only), or 'off'
+        self.shs11_language = 'off'     # "'11 Language": SHS '11's episodes in their own Italian ('it'; HD only)
         self._portrait_addon_map = None, None
         self._twins = None
         self.hd_ipa, self.hd_members = None, {}
@@ -1550,6 +1552,7 @@ class ContentLibrary:
                               **episode_index_fields(archive, programs))
                 record.update(legacy_fields(record['titles'], self.game_id, meta.episode_id))
                 record.update(authored_fields(archive, record))
+                record.update(language_fields(archive))
                 revision = episode_revision(archive)
                 if revision is not None:
                     record['revision'] = revision
@@ -1955,6 +1958,34 @@ class EpisodeResources:
         from .dsi import translation
         language = getattr(self.library, 'dsi_language', 'off') if language is None else language
         return translation(self, language)
+
+    def own_languages(self):
+        """shshd-runtime: this episode's own translations (episode_languages.py, resource 6), or None. Read once."""
+        if not hasattr(self, '_own_languages'):
+            from .episode_languages import episode_languages
+            try:
+                self._own_languages = episode_languages(self.archive)
+            except (ContentError, KeyError, OSError) as error:
+                logging.warning("This episode's translations cannot be read: %s", error)
+                self._own_languages = None
+        return self._own_languages
+
+    def episode_translation(self, language=None):
+        """shshd-runtime: this episode's lines in `language` (default: the one its record's switch picks, as the library
+        holds it: library.shs11_language) from its own record (dsi.Translation), or None ('off', or a language it
+        doesn't have)."""
+        record = self.own_languages()
+        if record is None:
+            return None
+        if language is None:
+            language = getattr(self.library, record['setting'], 'off')
+        if language not in record['languages']:
+            return None
+        made = self.__dict__.setdefault('_own_translations', {})
+        if language not in made:
+            from .dsi import Translation
+            made[language] = Translation(record, language)
+        return made[language]
 
     def dsi_screens(self, picture):
         """shshd-runtime: the (left, right) screens of a DSi picture, as PNG bytes, or None."""

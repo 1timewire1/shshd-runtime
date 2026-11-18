@@ -457,7 +457,8 @@ class EngineState:
         from .dsi import LANGUAGE_OFF, LANGUAGES
         forms = {self.substitute(text, display=False), self.substitute(text)}
         if self.translation_source is not None:
-            forms |= {self.substitute(text, language=language, remember=False) for language in (LANGUAGE_OFF, *LANGUAGES)}
+            languages = getattr(self.translation_source, 'languages', LANGUAGES)
+            forms |= {self.substitute(text, language=language, remember=False) for language in (LANGUAGE_OFF, *languages)}
         return forms
 
     def substitute(self, text: str, *, display=True, language=None, remember=True) -> str:
@@ -665,6 +666,11 @@ class EngineState:
                 raise VMError('Formatting destination is outside the native string slots')
             at_least(format_at + 1)
             pattern = self.read_text(vm, args[format_at])  # Copy before clearing aliased scratch slot 10.
+            translation = self.translation()
+            shown = (lambda text: text) if translation is None else (lambda text: translation.line(text, remember=False))
+            # shshd-runtime: the format and the texts it takes in the language picked, so the line it makes is too
+            # (SHS '11's Italian: "%s has %d dollars!", a shop's "%s ($%d).")
+            pattern = shown(pattern)
             self.dynamic_strings[10] = ''
             position, argument = 0, format_at + 1
             while position < len(pattern):
@@ -672,7 +678,7 @@ class EngineState:
                 if char == '%' and position + 1 < len(pattern) and pattern[position + 1] in 'cds':
                     at_least(argument + 1)
                     spec, value = pattern[position + 1], args[argument]
-                    char = (self.read_text(vm, value) if spec == 's' else str(signed16(value))
+                    char = (shown(self.read_text(vm, value)) if spec == 's' else str(signed16(value))
                             if spec == 'd' else chr(value & 0xff))
                     position += 1
                     argument += 1
@@ -877,6 +883,11 @@ class EngineState:
             # signed value); any other `%x` drops the percent sign and keeps x. An empty format writes nothing.
             at_least(2)
             pattern = self.read_text(vm, args[1])
+            translation = self.translation()
+            shown = (lambda text: text) if translation is None else (lambda text: translation.line(text, remember=False))
+            if pattern:
+                # shshd-runtime: the format and its texts in the language picked, so the line it makes is too
+                pattern = shown(pattern)
             if pattern:
                 out, argument, keep_last, index = '', 2, True, 0
                 while index < len(pattern) - 1:
@@ -886,7 +897,7 @@ class EngineState:
                         keep_last = index != len(pattern) - 2
                         if following == 's':
                             at_least(argument + 1)
-                            out += self.read_text(vm, args[argument])
+                            out += shown(self.read_text(vm, args[argument]))
                             argument += 1
                             index += 1
                         elif following == 'd':
@@ -1072,8 +1083,10 @@ class EngineState:
             return EngineAction('presentation', request, False, self.title_details(vm, args))
         if y == 33:
             at_least(3)
-            # 0009f420, not 0009f9fc: these two texts are NOT substituted.
-            panel = MessagePanel(self.read_text(vm, args[0]), self.read_text(vm, args[1]), args[2])
+            # 0009f420, not 0009f9fc: these two texts are NOT substituted. shshd-runtime: they are put in the language
+            # picked (translated_raw, tokens kept), as a story's lines are: the '11 stories' closing page in Italian.
+            panel = MessagePanel(self.translated_raw(self.read_text(vm, args[0])),
+                                 self.translated_raw(self.read_text(vm, args[1])), args[2])
             panel.validate()
             self.message_panel = panel
             return EngineAction('message_panel', request, False)
@@ -1163,9 +1176,15 @@ class EngineState:
         if y == SHS11_MEMORY:                                   # (likewise): seconds, target, rounds, their table, the player
             need(5)
             rounds = []
+            translation = self.translation()
             for k in range(args[2]):
                 cue, word, *numbers = [vm.read_word(args[3] + ROUND_WORDS * k + i) for i in range(ROUND_WORDS)]
-                rounds.append([self.resolve_text(vm, cue), self.read_text(vm, word), *numbers])
+                word = self.read_text(vm, word)
+                if translation is not None:
+                    # shshd-runtime: the word in the language shown (SHS '11's Italian Memory has words of its own: ELFO)
+                    found = translation.words.get(word.lower(), {}).get(translation.language)
+                    word = found.upper() if found else word
+                rounds.append([self.resolve_text(vm, cue), word, *numbers])
             self.shs11_memory = MemoryGame.opened(rounds, args[0], args[1], tutorial=self.shs11_tutorial_due('shs11_tutorial_seen', MemoryGame.KIND))
             return EngineAction('shs11_memory', request, False, _shs11_details(args[4]))
         if y == SHS11_REFLEX:                                   # (likewise)

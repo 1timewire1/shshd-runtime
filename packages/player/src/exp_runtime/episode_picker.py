@@ -147,6 +147,12 @@ class PickerModel:
     def label(self, record):
         if self.cod is not None:
             return self.cod.label(record, bundled=is_bundled)
+        own = (record.get('languages') or {})
+        language = getattr(self.library, own.get('setting', ''), 'off') if own else 'off'
+        if language != 'off' and getattr(self.library, 'hd_ipa', None) is not None and own.get('titles', {}).get(language):
+            # shshd-runtime: an episode carrying its own translations (resource 6: SHS '11's Italian), under its title in
+            # the language its switch picks (owner, 2026-11-17).
+            return own['titles'][language]
         language = getattr(self.library, 'dsi_language', 'off')
         if language != 'off' and getattr(self.library, 'hd_ipa', None) is not None:
             # shshd-runtime: a story the DSiWare game ported, under its title in the DSi's language (owner, 2026-11-15).

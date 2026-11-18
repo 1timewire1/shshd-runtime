@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import re
 
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, requires_bytes
+from exp_runtime.episode_languages import RESOURCE as LANGUAGES_RECORD, languages_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_bytes
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
@@ -33,7 +34,7 @@ import shs11
 
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
-STORY_VERSION = 1
+STORY_VERSION = 2                       # 2: '11's own Italian inside (resource 6, shs11_italian.py; owner, 2026-11-17)
 FIRST_SCRIPT = 25001                    # where SHS starts an episode
 TITLE_SUFFIX = ' (SHS11)'
 NARRATOR = 199                          # '11 narrates with no speaker; SHS needs a character (as newrules.NARRATOR)
@@ -902,8 +903,31 @@ def cast_of(res, story):
     return cast
 
 
-def translate(res, story, twin_archive):
-    """The story's SHS `.exp` bytes, from the English jar's resources and the smartphone twin's archive, for its games."""
+def fallback_texts(story, twin):
+    """The text each of the story's stand-in games shows ([{kind, ...}]), for shs11_italian: a twin word game's description
+    and lists, a twin grid's labels and rows (heading, board title, words, letters), an own word game's."""
+    found = []
+    for (rid, pc), plan in story.fallbacks.items():
+        if isinstance(plan, OwnWords):
+            found.append(dict(kind='own', description=plan.description, good=plan.good, bad=plan.bad))
+        elif isinstance(plan, (TwinWords, TwinGrid)):
+            source = twin(plan.script)
+            arguments = call_arguments(source.program, plan.pc)
+            text = lambda ref: shs11.text_at(source.memory, ref)
+            if isinstance(plan, TwinWords):
+                found.append(dict(kind='words', description=text(arguments[1]), good=text(arguments[2]),
+                                  bad=text(arguments[3])))
+            else:
+                table, count = arguments[12], arguments[11]
+                rows = [[text(source.memory[table + 10 * k + f]) for f in range(2, 6)] for k in range(count)]
+                found.append(dict(kind='grid', success=text(arguments[14]), failure=text(arguments[15]), rows=rows))
+    return found
+
+
+def translate(res, story, twin_archive, italian=None):
+    """The story's SHS `.exp` bytes, from the English jar's resources and the smartphone twin's archive, for its games.
+    `italian`: (an Italian build's resources, its gamelib entries, the English build's gamelib entries), for the record
+    of '11's own Italian the episode carries (shs11_italian.py)."""
     twins = {}
 
     def twin(script):
@@ -941,6 +965,11 @@ def translate(res, story, twin_archive):
         resources[FIRST_SCRIPT + script - story.scripts[0]] = rewriter.finish().to_bytes()
     resources[ADDON_RECORD] = requires_bytes([(shs11.ADDON_ID, shs11.STORIES_NEED)])
     resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
+    if italian is not None:
+        import shs11_italian
+        italian_res, italian_gamelib, english_gamelib = italian
+        resources[LANGUAGES_RECORD] = languages_bytes(shs11_italian.record(
+            res, italian_res, italian_gamelib, english_gamelib, story, fallback_texts(story, twin), cast_of))
     resources[1] = Metadata(shs11.PACK_ID, story.number, (story.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources)
 
@@ -949,7 +978,10 @@ def file_name(story):
     return re.sub(r'\W+', '_', story.title) + '_SHS11.exp'
 
 
-def build(english, story_title, twin_path):
-    """(file name, bytes) of a story, from the open English jar and the path of its smartphone twin."""
+def build(english, story_title, twin_path, italian=None):
+    """(file name, bytes) of a story, from the open English jar and the path of its smartphone twin; `italian`, an open
+    Italian build's jar, for the Italian it carries."""
     story = STORIES[story_title]
-    return file_name(story), translate(shs11.resources(english), story, ExpArchive(twin_path.read_bytes()))
+    languages = None if italian is None else (shs11.resources(italian), shs11.gamelib_entries(italian),
+                                              shs11.gamelib_entries(english))
+    return file_name(story), translate(shs11.resources(english), story, ExpArchive(twin_path.read_bytes()), languages)

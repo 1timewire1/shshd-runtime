@@ -479,3 +479,30 @@ version. Menus without a confirmation window, and Sync Devices, keep it.
 An episode without a version imports as before: distinct copies stay side by
 side. The translators (`tools/translate`) write version 1, and the creator
 writes a project's **Version** when it has one.
+
+## Episode languages extension (shshd-runtime)
+
+An episode may contain resource **6** beginning with `SHSHD-LANGUAGES `,
+followed by gzip'd UTF-8 JSON with `format: "shshd-languages"`, `version: 1`
+(`episode_languages.py`; owner, 2026-11-17): the episode's text in other
+languages, carried in the episode itself. This is SHSHD Runtime metadata;
+native players and upstream exp-runtime never read resource 6.
+
+| Member | Contract |
+| --- | --- |
+| `setting` | The switch that picks the language: `shs11_language` ("'11 Language": `off` or `it`) |
+| `languages` | `{code: name}` of the languages it carries (`{"it": "Italiano"}`) |
+| `titles` | `{code: title}`: the episode's title in each, for the episode list |
+| `lines`, `context`, `menu`, `words` | The DSiWare add-on's table shape ([ADDONS.md](ADDONS.md#the-translations)): `{key: {code: text}}`, a line found by its key (lower case, letters, digits and name tokens), a line translated two ways by the line before it (`context: {key: {previous key: {code: text}}}`), names and titles in `menu`, a word grid's words and letters in `words` |
+| `ui` | `{code: {game: {name: text}}}`: a translated game's own interface text (SHS '11's Memory and Reflex) |
+
+The library keeps `setting`, the language names and the titles in the
+episode's record at import (`languages`), so the menus and the episode list
+know without opening it. While the switch picks one of its languages, and in
+the HD presentation only (SD's bitmap fonts have no accents), everything the
+episode shows passes through it as DSi Language's lines do
+(`Engine.substitute`): lines, choices, names, title cards, message pages,
+formatted lines (services 0 and 22 translate the format and its texts before
+filling them in), Memory's words and the '11 games' boxes. A save keeps a line
+as shown and loads in either language. The SHS '11 translator writes it
+(`tools/translate/shs11_italian.py`).

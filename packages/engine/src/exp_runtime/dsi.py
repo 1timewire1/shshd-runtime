@@ -255,8 +255,9 @@ class Source:
     """The engine's way to its episode's translation (EpisodeResources.dsi_translation), shared, never copied: a save's
     restore deep-copies the engine, and the resources hold open files."""
 
-    def __init__(self, function):
+    def __init__(self, function, languages=None):
         self.function = function
+        self.languages = LANGUAGES if languages is None else tuple(languages)      # those it can give, for shown_forms
 
     def __call__(self, language=None):
         return self.function(language)

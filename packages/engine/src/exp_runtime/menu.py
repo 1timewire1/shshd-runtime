@@ -73,7 +73,7 @@ SHARED_PREFERENCES = dict(
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
     side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
-    dsi_language=('off', 'fr', 'it', 'de', 'es'),
+    dsi_language=('off', 'fr', 'it', 'de', 'es'), shs11_language=('off', 'it'),
     order=('episode', 'title'), title_language=TITLE_LANGUAGES, title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     title_look=('default', 'auto') + TITLE_LOOK_GAMES, last_title_look=('default',) + TITLE_LOOK_GAMES)
@@ -176,6 +176,8 @@ class MenuState:
                     self.dsi_pixels = data['dsi_pixels']
                 if data.get('dsi_language') in ('off', 'fr', 'it', 'de', 'es'):
                     self.dsi_language = data['dsi_language']
+                if data.get('shs11_language') in ('off', 'it'):
+                    self.shs11_language = data['shs11_language']
                 if type(data.get('smartphone_music')) is bool:
                     self.smartphone_music = data['smartphone_music']
                 if type(data.get('word_grid_skin')) is bool:
@@ -279,6 +281,8 @@ class MenuState:
         self.dsi_backgrounds = False
         self.dsi_pixels = 'sharp'
         self.dsi_language = 'off'      # ...and its stories in its French, Italian, German or Spanish (HD only)
+        # "'11 Language": SHS '11's episodes in their own Italian, carried in each episode (resource 6; HD only)
+        self.shs11_language = 'off'
         # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
         self.ch_portraits = True
         self.ch_backdrop = True
@@ -373,7 +377,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, dsi_language=self.dsi_language, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, dsi_language=self.dsi_language, shs11_language=self.shs11_language, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls,

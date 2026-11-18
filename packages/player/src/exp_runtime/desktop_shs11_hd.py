@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 from . import graphics as pygame
 
-from .desktop_shs11_memory import memory_spec
+from .desktop_shs11_memory import memory_spec, translated_text
 from .desktop_word_hd import (ATLAS, EFFECT_SLOTS, FRAME, HEADING_LINES, HEADING_SLIDE, SHARDS, TOP_FACE, EffectState, HdWordRenderer, Shard,
                               keyword_pose, turn_ms)
 from .graphics import opaque
@@ -386,7 +386,7 @@ class Shs11HdRenderer(HdWordRenderer):
             if reflex:                          # now, not in the middle of its first set
                 self.warm_icons(game)
         spec = None if (game.grid if not reflex else False) or not self.has_addon() else self._spec()[0]
-        texts = GRID_TEXT if spec is None else spec['text']
+        texts = GRID_TEXT if spec is None else translated_text(self.resources, 'memory', spec['text'])
         background = session.pending.details.get('background_id', session.engine.panel.background_id)
         size = self.canvas_size()
         if size == FRAME:
@@ -435,7 +435,8 @@ class Shs11HdRenderer(HdWordRenderer):
         if reflex:
             key = REFLEX_BOXES.get(game.phase) if game.tutorial and game.wait_ms <= 0 else None
             if key is not None:
-                self.box(POPUP_TITLES[name], (spec['reflex']['text'] if spec is not None else REFLEX_TEXT)[key])
+                self.box(POPUP_TITLES[name], (translated_text(self.resources, 'reflex', spec['reflex']['text'])
+                                              if spec is not None else REFLEX_TEXT)[key])
         else:
             key = MEMORY_BOXES.get(game.phase) if game.tutorial or game.phase == GOAL else None
             if game.tutorial and game.phase == DEAL:
