@@ -36,7 +36,8 @@
     location's whole picture, so nothing pans), and from 9:16 the frame is the story's 320-unit column wide, as SD SHS
     and Cause of Death fill an iPhone.
   - Title and chapter cards cover the whole frame; choices, narration, notices and name entry are placed for it.
-  - Every minigame is laid out for it: HD football and the word game, New Rules' arena in both skins, '11's Memory and
+  - Every minigame is laid out for it: HD football and the word game, New Rules' arena in both skins (spread through
+    the frame: timer and score high, the table and ring in the middle, the gear on the frame's corner), '11's Memory and
     Reflex, the X360 games (Diss Practice scales its scene with Josh) and the BREW catch game.
   - So are the menus: SHS HD's (main menu, picker, lists, windows), Cause of Death's and the app's own screens, clear
     of a phone's status and navigation bars.

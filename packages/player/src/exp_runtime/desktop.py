@@ -4215,9 +4215,11 @@ class Desktop:
         asking = self.host_prompt is not None and self.host_prompt['action'] is action
         if (action and action.name in ARENA_ACTIONS and not self.menu_open and not self.error and not asking
                 and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
-            frame = self.picture_frame
+            # A spread arena (desktop_nr_arena SPREAD_TOP) is the whole frame; else its 3:4 picture at the frame's bottom.
+            spread = getattr(self._arena_renderer(), 'spread', (0,))[0]
+            frame = self.bg_viewport if spread else self.picture_frame
             command = self._arena_tap(action, (event.pos[0] - frame.x) * 768 / frame.width,
-                                      (event.pos[1] - frame.y) * 1024 / frame.height)
+                                      (event.pos[1] - frame.y) * 768 / frame.width, 768 * frame.height / frame.width)
             if command is not None:
                 self.command(command)
             return True
@@ -4645,13 +4647,14 @@ class Desktop:
             renderer.target_height = viewport.height
         return renderer
 
-    def _arena_tap(self, action, x, y):
-        """The command for a click at (x, y) in frame pixels (768 x 1024) on New Rules' arena: the gear, bottom left,
-        opens the pause menu as on football's frame; Sequences' items (their number keys, 765) and the info box take
-        clicks. Anywhere else a tap is the OK key, the only key the turning games play by (owner, 2026-10-31)."""
-        if 0 <= x < 150 and 880 <= y <= 1024:
+    def _arena_tap(self, action, x, y, height=1024):
+        """The command for a click at (x, y) in frame pixels (768 wide, `height` tall: 1024 at 3:4) on New Rules' arena:
+        the gear, bottom left, opens the pause menu as on football's frame; Sequences' items (their number keys, 765) and
+        the info box take clicks. Anywhere else a tap is the OK key, the only key the turning games play by (owner,
+        2026-10-31)."""
+        if 0 <= x < 150 and height - 144 <= y <= height:
             return ('menu',)
-        if not (0 <= x <= 768 and 0 <= y <= 1024):
+        if not (0 <= x <= 768 and 0 <= y <= height):
             return None
         command = self._arena_renderer().hit((x, y))
         if command is None and action.name == 'arena_frame':

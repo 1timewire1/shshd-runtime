@@ -116,6 +116,34 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(renderer.hit((280, 650)), ('arena_key', -3))
         self.assertIsNone(renderer.hit((20, 20)))
 
+    def test_a_taller_frame_spreads_the_arena_through_it(self):
+        # Owner, 2026-11-17 (option b): the top group a little down, the lower group in the middle, the legs stretched.
+        from exp_runtime.nr_arena import NRArena
+        arena = NRArena.opened(False, True)
+        arena.set(-10, 729, 4)
+        arena.item_kind = 3
+        for slot, word in enumerate(('AB', 'BC', 'CA', 'AC')):
+            arena.set_text_item(slot, word)
+        renderer = self.renderer()
+        self.assertFalse(renderer.fills_frame)
+        self.assertEqual(renderer.spread_for((384, 512)), (0, 0, 0))
+        renderer.frame_units = (320, 711)                   # the g54's Fit Screen
+        added, top, lower = renderer.spread_for(renderer.frame_units)
+        self.assertEqual(added, round(489 * 711 / 320) - 652)
+        self.assertEqual((top, lower), (round(added * .15), round(added * .70)))
+        self.assertTrue(renderer.fills_frame)
+        self.assertIsNone(renderer.band_picture())
+        renderer.draw(None, self.session(arena), now_ms=1234)
+        width, height = renderer.canvas.get_size()
+        self.assertAlmostEqual(height / width, (652 + added) / 489, places=2)    # the frame's own shape
+        base = self.module.NRArenaRenderer(self.resources)
+        for name, move in (('timer', top), ('band', top), ('ok', lower), ('table', lower), ('bottom_band', lower)):
+            self.assertEqual(renderer.node(name).y, base.node(name).y + move, name)
+        # The OK button's click moved down with it: (379, 655) at 3:4 becomes that plus the move, in frame pixels.
+        dy = lower * 768 / 489
+        self.assertEqual(renderer.hit((379, 655 + dy)), ('arena_key', -5))
+        self.assertIsNone(renderer.hit((379, 655)) if lower > 60 else None)
+
     def test_the_arena_stands_on_the_dialogue_screens_frame_when_the_skin_has_it(self):
         from exp_runtime.nr_arena import NRArena
         files = skin_files(self.pygame, frame=(10, 200, 30))
@@ -330,6 +358,9 @@ class ArenaKeyTests(unittest.TestCase):
         self.assertEqual(ui._arena_tap(action, 400, 100), ('arena_key', -5))
         self.assertEqual(ui._arena_tap(action, 40, 950), ('menu',))
         self.assertIsNone(ui._arena_tap(action, 900, 100))                 # outside the frame
+        # A spread arena (a taller frame) is the whole frame: its gear is at that frame's bottom left.
+        self.assertEqual(ui._arena_tap(action, 40, 1550, 1600), ('menu',))
+        self.assertEqual(ui._arena_tap(action, 40, 950, 1600), ('arena_key', -5))
         ui = self.desktop('arena_entrance')
         self.assertIsNone(ui._arena_tap(ui.session.pending, 400, 100))       # New Rules takes no keys meanwhile
 

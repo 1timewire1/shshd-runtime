@@ -38,6 +38,14 @@ HUD_BOXES = ((('hud0_label', 'hud0_label_alt', 'hud0_text'), ('hud0_item', 'hud0
 BUTTON_NODES = ('ok', 'second', 'left', 'right')
 BUTTON_KEYS = {'ok': -5, 'second': -5, 'left': -3, 'right': -4}
 ANCHORS = {-15: 'meter_frame', -7: 'second', -6: 'ok', -5: 'meter', -4: 'timer'}   # method_461
+# shshd-runtime: the arena spread through a frame taller than 3:4 (owner, 2026-11-17, option (b) of
+# reference/screenshots/verify/arena_shapes): its top group (the band with the timer and score, the first HUD box) a
+# little down from the top, its lower group (the table, the ring, its buttons, the other HUD boxes, the bottom band) in
+# the middle and lower part, and the table's legs stretched down to the player's bar. Shares of the height added.
+SPREAD_TOP, SPREAD_LOWER = .15, .70
+TOP_NODES = frozenset({'band', 'timer', 'meter', 'meter_frame', *HUD_BOXES[0][0], *HUD_BOXES[0][1]})
+STATIC_SPLIT = 233                      # a row of the settled picture between its top band (98-172) and the table (294-)
+STATIC_LEGS = 552                       # where the legs start, under the bottom band: they stretch
 TEXT_TINT = 0x75FC84                    # the text box colour 751's tint replaces (o.a(v, ..., int)'s field_555)
 UNICODE = str.maketrans({'‘': "'", '’': "'", '“': '"', '”': '"', '…': '...',
                          '–': '-', '—': '-'})
@@ -310,6 +318,7 @@ class Skin:
 
 class NRArenaRenderer:
     frame_units = (384, 512)            # the frame's shape in layout units (Desktop sets it)
+    spread = (0, 0, 0)                  # (height added, top group's move, lower group's move): draw sets it
 
     def __init__(self, resources):
         self.resources = resources
@@ -324,10 +333,37 @@ class NRArenaRenderer:
         self.menu_focus = None            # (the action, the focused option) on New Rules' menu
         self._skin = None
         self.targets = []                 # (native rect, command) for clicks, from the last frame
+        self.spread = (0, 0, 0)           # (height added, top group's move, lower group's move) in native pixels
+
+    @property
+    def fills_frame(self):
+        """In a frame of another shape the arena is spread through the frame's own shape (SPREAD_TOP), so Desktop lays
+        its canvas over the whole frame."""
+        return self.frame_units != (384, 512)
+
+    def spread_for(self, frame_units):
+        """(height added, the top group's move, the lower group's move) in native pixels for a frame's shape."""
+        wide, tall = frame_units
+        added = max(0, round(NATIVE[0] * tall / wide) - NATIVE[1])
+        return added, round(added * SPREAD_TOP), round(added * SPREAD_LOWER)
+
+    def node(self, name):
+        """A layout node where this frame's shape puts it (spread: its group's move)."""
+        rect = pygame.Rect(self.skin().nodes[name])
+        rect.y += self.spread[1] if name in TOP_NODES else self.spread[2]
+        return rect
+
+    @property
+    def screen_height(self):
+        """New Rules' 650-pixel game area, as tall as the frame's shape makes it."""
+        return SCREEN_HEIGHT + self.spread[0]
 
     def band_picture(self):
         """What a taller frame shows above the arena (Desktop._draw_picture_band, owner 2026-11-11): the frame's
-        picture it stands on (New Rules' backdrop without the bars), lengthened; None without one (an older addon)."""
+        picture it stands on (New Rules' backdrop without the bars), lengthened; None without one (an older addon), or
+        when the arena is spread through the frame (fills_frame), its canvas then covering it."""
+        if self.fills_frame:
+            return None
         try:
             return self.skin().frame
         except (ContentError, KeyError, ValueError, pygame.error):
@@ -352,7 +388,7 @@ class NRArenaRenderer:
     def _field(self, arena):
         """field_557: the ring's rectangle, the field node narrowed by an item's width (field_598)."""
         skin = self.skin()
-        field = pygame.Rect(skin.nodes['wide' if arena.wide else 'field'])
+        field = self.node('wide' if arena.wide else 'field')
         if arena.margins:                               # method_431 with field_597
             left = max(field.x - OX, 15)
             field.width = min(field.width, SCREEN_WIDTH - 30)
@@ -360,7 +396,7 @@ class NRArenaRenderer:
         item_width, self.item_height = self._item_size(arena)
         ring = pygame.Rect(field.x + (item_width >> 1), field.y, field.width - item_width, field.height)
         if arena.wide:
-            meter = skin.nodes['meter']
+            meter = self.node('meter')
             ring.width = field.width - 2 * meter.width
             ring.x = OX + (SCREEN_WIDTH - ring.width) // 2
         return ring
@@ -417,15 +453,15 @@ class NRArenaRenderer:
         """method_461: a layout rectangle a popup flies to or sits on."""
         skin = self.skin()
         if anchor in ANCHORS:
-            return skin.nodes[ANCHORS[anchor]]
+            return self.node(ANCHORS[anchor])
         if -3 <= anchor <= -1:
             box = -1 - anchor
             labels, items = HUD_BOXES[box]
             variant = arena.hud[box][2]
             if variant in (1, 2):
-                return skin.nodes[items[variant - 1]]
-            return skin.nodes[labels[min(variant, 2)]]
-        return pygame.Rect(OX, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+                return self.node(items[variant - 1])
+            return self.node(labels[min(variant, 2)])
+        return pygame.Rect(OX, 0, SCREEN_WIDTH, self.screen_height)
 
     def _point(self, arena, ring, place, vertical=1, x_from=0, y_from=0):
         """method_462: a slot's point, or an anchor's (its centre, its bottom with vertical 1)."""
@@ -436,7 +472,7 @@ class NRArenaRenderer:
         if place == -12:
             return x_from, 0
         if place == -11:
-            return x_from, SCREEN_HEIGHT - 22
+            return x_from, self.screen_height - 22
         rect = self._anchor(arena, place)
         y = rect.y + (rect.height if vertical == 1 else rect.height // 2 if vertical == 0 else 0)
         return rect.x + rect.width // 2, y
@@ -466,6 +502,11 @@ class NRArenaRenderer:
         now = pygame.time.get_ticks() if now_ms is None else now_ms
         skin = self.skin()
         self.targets = []
+        self.spread = self.spread_for(self.frame_units)
+        native = (NATIVE[0], NATIVE[1] + self.spread[0])
+        if self.layer.get_size() != native:
+            self.native = pygame.Surface(native).convert()
+            self.layer = pygame.Surface(native, pygame.SRCALPHA)
         moving = arena is not None and (arena.entering or arena.leaving)
         if skin.frame is not None:
             surface = self.layer
@@ -474,7 +515,7 @@ class NRArenaRenderer:
             # method_358: the background tile, scrolling a pixel each 100 ms over its 128.
             surface = self.native
             step = now // 100 % 128
-            Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, NATIVE[0] + 256, NATIVE[1] + 256))
+            Skin.tile_rect(surface, skin.tile, pygame.Rect(-(128 - step), -step, native[0] + 256, native[1] + 256))
         # The table and the bands run on past New Rules' 480 x 650 screen to the frame's edges (its few columns either
         # side, and the base's added row: nr_arena_art._extend_base), rather than stopping short of them.
         if moving and arena.leaving:
@@ -486,20 +527,20 @@ class NRArenaRenderer:
             # With the panel closed (the library waits a frame or two after its exit) only the frame shows: the
             # exit took the rest away, and that picture fades out over the next screen (owner, 2026-10-31).
             origin = skin.spec.get('static_origin', (0, 0))
-            surface.blit(skin.static, (OX + origin[0], origin[1]))
+            self._static(surface, (OX + origin[0], origin[1]))
         if arena is not None and not moving:
             self._paint(surface, arena, session, now)
         if action is not None and action.name in ('arena_menu', 'arena_info') and overlay:
             self.targets = []                           # the menu or box takes the clicks, not the arena under it
             self._overlay(surface, action, now)
         k = max(1, -(-self.target_height // NATIVE[1]))          # the smallest whole scale that reaches the window
-        size = (NATIVE[0] * k, NATIVE[1] * k)
+        size = (native[0] * k, native[1] * k)
         direct = hd_scale.S == 1
         if direct:
             # A phone can't afford a second pass over every pixel each frame, on clocks that drop once a frame misses
             # its budget (a g54 held 20 fps): one pass straight to the frame's size, a touch softer, at 60.
             height = max(4, round(max(FRAME[1], self.target_height) / 4) * 4)
-            size = (height * 3 // 4, height)
+            size = (height * 3 // 4, round(height * 3 / 4 * native[1] / native[0]))
         if self.canvas.get_size() != size:
             self.canvas = pygame.Surface(size).convert()
         if skin.frame is None:
@@ -518,19 +559,66 @@ class NRArenaRenderer:
             if (wide, tall) != (384, 512):
                 from .backdrop_fit import extend
                 long = extend(picture, round(picture.get_height() * tall / (wide * 4 / 3)))
-                picture = long.subsurface((0, long.get_height() - picture.get_height(), *picture.get_size()))
-            self._frame_scaled = ((size, self.frame_units), pygame.transform.smoothscale(picture, size))
+                # spread (fills_frame): the whole lengthened picture behind the whole frame
+                picture = long if self.fills_frame else long.subsurface(
+                    (0, long.get_height() - picture.get_height(), *picture.get_size()))
+            scaled = pygame.transform.smoothscale(picture, size)
+            # Wholly opaque (New Rules' backdrop is), it is drawn as a copy: blended, the frame's whole height every
+            # frame was most of a spread arena's 61 ms on the g54 (2026-11-17). The same pixels.
+            mask = getattr(pygame, 'mask', None)
+            if (mask is not None and scaled.get_masks()[3]
+                    and mask.from_surface(scaled, 254).count() == size[0] * size[1]):
+                scaled = scaled.convert()
+            self._frame_scaled = ((size, self.frame_units), scaled)
         self.canvas.blit(self._frame_scaled[1], (0, 0))
         if self._layer_scaled is None or self._layer_scaled.get_size() != size:
             self._layer_scaled = pygame.Surface(size, pygame.SRCALPHA, surface)
         if direct:
             # Premultiplied, or the faint edges of sprites come out at full colour (the notes' sparks went pink).
             pygame.transform.smoothscale(surface.premul_alpha(), size, self._layer_scaled)
-            self.canvas.blit(self._layer_scaled, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)
+            for area in self._drawn_areas(surface, size):
+                self.canvas.blit(self._layer_scaled, area.topleft, area, special_flags=pygame.BLEND_PREMULTIPLIED)
         else:
             pygame.transform.scale(surface, size, self._layer_scaled)
             self.canvas.blit(self._layer_scaled, (0, 0))
         return []
+
+    def _drawn_areas(self, layer, size):
+        """Where the scaled layer has anything, in canvas pixels: the whole canvas at 3:4; spread, what each half holds
+        (above and below the gap between the groups). A clear pixel blended premultiplied leaves the canvas as it was, so
+        the result is the same; a phone blends a whole frame of pixels slowly (g54, 2026-11-17: 60 ms a frame)."""
+        whole = pygame.Rect((0, 0), size)
+        added, top, lower = self.spread
+        if not added:
+            return [whole]
+        width, height = layer.get_size()
+        split = (172 + top + 275 + lower) // 2        # between the top band's bottom and the HUD box over the ring
+        sx, sy = size[0] / width, size[1] / height
+        pad = int(max(sx, sy)) + 2                    # what smoothscale carries past a pixel's edge
+        areas = []
+        for y0, y1 in ((0, split), (split, height)):
+            found = layer.subsurface((0, y0, width, y1 - y0)).get_bounding_rect()
+            if found.width and found.height:
+                areas.append(pygame.Rect(int(found.x * sx) - pad, int((found.y + y0) * sy) - pad,
+                                         int(found.width * sx) + 2 * pad, int(found.height * sy) + 2 * pad).clip(whole))
+        return areas
+
+    def _static(self, surface, position):
+        """The settled table and bands (the skin's static picture): whole at 3:4; spread, its top band with the top group,
+        the table and bottom band with the lower group, and the legs under it stretched down to the frame's bottom."""
+        static = self.skin().static
+        added, top, lower = self.spread
+        if not added:
+            surface.blit(static, position)
+            return
+        x, y = position
+        width, height = static.get_size()
+        surface.blit(static, (x, y + top), pygame.Rect(0, 0, width, STATIC_SPLIT))
+        surface.blit(static, (x, y + STATIC_SPLIT + lower),
+                     pygame.Rect(0, STATIC_SPLIT, width, STATIC_LEGS - STATIC_SPLIT))
+        legs = static.subsurface((0, STATIC_LEGS, width, height - STATIC_LEGS))
+        surface.blit(pygame.transform.scale(legs, (width, height - STATIC_LEGS + added - lower)),
+                     (x, y + STATIC_LEGS + lower))
 
     def _entrance(self, surface, ms, table_curve=6):
         """New Rules' entrance (class_13.method_383, transition -3; class_6.method_191 draws its tracks) over the frame:
@@ -539,7 +627,7 @@ class NRArenaRenderer:
         size (400-1600 ms). Each is its layout redrawn in the moving box, so the pictures tile rather than stretch.
         The exit (transition -4) draws the same tracks with `ms` running back from the end."""
         skin = self.skin()
-        nodes = {name: pygame.Rect(skin.nodes[name]) for name in ('bottom_band', 'band', 'table')}
+        nodes = {name: self.node(name) for name in ('bottom_band', 'band', 'table')}
         duration = ENTRANCE_MS * 2 // 5
         for layout_id, name, offset in (
                 (67, 'bottom_band', (nodes['bottom_band'].bottom * 100 // nodes['bottom_band'].height)),
@@ -555,7 +643,7 @@ class NRArenaRenderer:
         if ms >= start:
             box = nodes['table']
             progress = 100 if ms >= end else eased(table_curve, ms - start, end - start)
-            tall = (SCREEN_HEIGHT - box.y + box.height // 2) * 100 // box.height
+            tall = (self.screen_height - box.y + box.height // 2) * 100 // box.height
             width = box.width * (300 + jdiv((100 - 300) * progress, 100)) // 100
             height = box.height * (tall + jdiv((100 - tall) * progress, 100)) // 100
             box.x += (box.width - width) // 2
@@ -589,7 +677,7 @@ class NRArenaRenderer:
         labels, items = HUD_BOXES[box]
         if variant in (1, 2):
             hidden = arena.hud[box][5] & 1 and now // 350 % 2 == 0
-            rect = pygame.Rect(skin.nodes[items[variant - 1]])
+            rect = self.node(items[variant - 1])
             if not hidden and item_id != -1:
                 if kind == 2:
                     rect.y, rect.height = rect.bottom - 74, 74
@@ -603,7 +691,7 @@ class NRArenaRenderer:
                     if text:
                         self.font(self.skin().spec['score_font']).draw_box(surface, text, rect, 26)
                 # kind 1, a portrait: New Rules' paper dolls come with the addon's portraits (not yet).
-        rect = pygame.Rect(skin.nodes[labels[min(variant, 2)]])
+        rect = self.node(labels[min(variant, 2)])
         if box == 2:
             rect.x, rect.width = OX, SCREEN_WIDTH
         text = arena.labels[box]
@@ -611,7 +699,7 @@ class NRArenaRenderer:
         if flash is not None and arena.flash_ms[box] > 0:
             text = flash if arena.flash_ms[box] // 350 % 2 else None
         if text:
-            rect.height = min(rect.height, SCREEN_HEIGHT - rect.y)
+            rect.height = min(rect.height, self.screen_height - rect.y)
             clip = surface.get_clip()
             surface.set_clip(rect)
             self.font(ITEM_FONT).draw_box(surface, text, rect, 26)
@@ -627,7 +715,7 @@ class NRArenaRenderer:
     def _score(self, surface, arena):
         """The score dial (layout 34 at the band's node 20): the meter's fill, the markers and the score."""
         skin = self.skin()
-        rect = skin.nodes['meter_frame']
+        rect = self.node('meter_frame')
         x, y = rect.topleft
         skin.layout(surface, 34, rect)
         face = self._layout_node(34, rect, 2)
@@ -658,7 +746,7 @@ class NRArenaRenderer:
     def _timer(self, surface, arena):
         """The timer dial (layout 33 at the band's node 16) and its 17-step pie (method_364)."""
         skin = self.skin()
-        rect = skin.nodes['timer']
+        rect = self.node('timer')
         face = self._layout_node(33, rect, 2)
         w, h = skin.size('dial/1')
         skin.blit(surface, 'dial/1', face.x + (face.width - w) // 2, face.y + (face.height - h) // 2, origin=False)
@@ -696,14 +784,14 @@ class NRArenaRenderer:
                 colour = colours['alternate']
             else:
                 colour = colours['pressed' if state == 0 else 'idle']
-            rect = skin.nodes[name]
+            rect = self.node(name)
             surface.fill(rgb(colour), rect)
             skin.blit(surface, f'button/{name}', rect.x, rect.y, origin=False)
             self.targets.append((pygame.Rect(rect), ('arena_key', BUTTON_KEYS[name])))
             if arena.buttons & 1 and state == 0 and not any(arena.bubbles):
                 hint = True
         if hint:
-            rect = skin.nodes['hint']
+            rect = self.node('hint')
             skin.blit(surface, 'frame/4/22', rect.x, rect.y, origin=False)
 
     # shshd-runtime (owner, 2026-11-17): a controller has no number keys, so in Sequences its D-pad moves a highlight around
@@ -840,7 +928,7 @@ class NRArenaRenderer:
         height = font.block_height(len(lines)) + 33
         box_width = max((font.line_width(line) for line in lines), default=0) + 30
         x = OX + (SCREEN_WIDTH - box_width) // 2
-        y = (SCREEN_HEIGHT - height) // 2
+        y = (SCREEN_HEIGHT - height) // 2 + self.spread[2]         # (over the ring, which the spread moves down)
         pointer, above = bool(flags & 4), bool(flags & 2)
         slot_x = 0
         if flags & 1 and (slot < 0 or slot < len(arena.slots)):
@@ -870,7 +958,7 @@ class NRArenaRenderer:
         row = font.height + font.gap                       # method_88
         height = font.block_height(len(lines)) + 33 + (len(options) * row + 8 if options else 0)
         box_width = width + 30
-        x, y = OX + (SCREEN_WIDTH - box_width) // 2, (SCREEN_HEIGHT - height) // 2
+        x, y = OX + (SCREEN_WIDTH - box_width) // 2, (self.screen_height - height) // 2
         self.skin().layout(surface, 70, pygame.Rect(x, y, box_width, height))
         font.draw(surface, title or '', x + 15, y + 17, width, 3)
         top = y + 17 + font.block_height(len(lines)) + 8
@@ -892,7 +980,7 @@ class NRArenaRenderer:
                 self.font(59).draw(surface, option, start + 17, rect.y, width)
             self.targets.append((rect, ('arena_answer', i)))
         if not options:
-            self.targets.append((pygame.Rect((0, 0), NATIVE), ('arena_answer', 0)))     # a tap anywhere is its OK
+            self.targets.append((surface.get_rect(), ('arena_answer', 0)))     # a tap anywhere is its OK
 
     # -- input ------------------------------------------------------------------------------------------------------
     def focus(self, action):

@@ -218,6 +218,7 @@ area, widened to 489 × 652 for exactly 3:4, then scales up by the smallest whol
   clock doesn't run and it takes no keys. Leaving runs the same tracks backwards.
 - **Base and edges:** the table's legs are extended to the frame's bottom (`_extend_base`), and the static screen keeps 8 columns either side, since the 3:4
   frame is wider than New Rules' screen.
+- **Taller frames** (owner, 2026-11-17): the arena is spread through the frame's own shape rather than drawn as a 3:4 picture at its bottom. Its top group (the band with the timer and score, HUD box 0) moves down 15% of the height added, its lower group (the table, ring, buttons, HUD boxes 1-2, the bottom band) 70%, and the legs stretch over the rest to the player's bar and gear (`SPREAD_TOP`, `SPREAD_LOWER`, `node()`). Popups, bubbles, the number keys and taps follow the same layout; the X360 look does the same through its deck and HUD (`desktop_nr_arena_x360._deck`). At 3:4 nothing moves.
 - **Back to the story:** the arena's last picture fades out over the next screen in 400 ms (`ARENA_HANDOVER_MS`). New Rules shows it at once.
 - **The menu** ("view tutorial?") is SHS's own choice over the arena (`arena_menu_prompt`), and the info box uses the bubble's box. New Rules' own dialog layouts
   haven't been decoded.

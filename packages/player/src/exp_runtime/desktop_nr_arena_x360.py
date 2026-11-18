@@ -365,6 +365,12 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         return found
 
     # -- geometry ---------------------------------------------------------------------------------------------------
+    def _deck(self):
+        """The deck as X360Deck places it, moved down with the arena's lower group when it is spread through a taller
+        frame (desktop_nr_arena SPREAD_LOWER; owner, 2026-11-17)."""
+        u, cx, cy, rx, ry, record_cx, record_cy = super()._deck()
+        return u, cx, cy + self.spread[2], rx, ry, record_cx, record_cy
+
     def _field(self, arena):
         """The ring's rectangle: the record's top face, so the items ride its rim (the selector, at 90 degrees, is the
         needle at its front)."""
@@ -391,19 +397,19 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         if anchor == -4:
             if self._panel_on:
                 return pygame.Rect(0, 0, PANEL_CLOCK_SIZE, PANEL_CLOCK_SIZE).move(
-                    PANEL_CLOCK[0] - PANEL_CLOCK_SIZE // 2, PANEL_CLOCK[1] - PANEL_CLOCK_SIZE // 2)
+                    PANEL_CLOCK[0] - PANEL_CLOCK_SIZE // 2, PANEL_CLOCK[1] - PANEL_CLOCK_SIZE // 2 + self.spread[2])
             return self._time_rect()
         if anchor == -5:                   # New Rules' score dial: here the score's digits (where "+3" flies)
-            return self._score_rect()
+            return self._score_rect().move(0, self.spread[1])
         if anchor == -15:                   # the dial's frame, with the meter round it: here the power bar
-            return pygame.Rect(METER_BOX)
+            return METER_BOX.move(0, self.spread[1])
         if anchor in (-6, -7):
             ring = self._field(arena)
             return pygame.Rect(ring.centerx - 20, ring.bottom - 10, 40, 20)
         if anchor == -1:
-            return pygame.Rect(LABEL_TOP)
+            return LABEL_TOP.move(0, self.spread[1])
         if anchor == -3:
-            return pygame.Rect(LABEL_BOTTOM)
+            return LABEL_BOTTOM.move(0, self.spread[2])
         if anchor == -2:
             ring = self._field(arena)
             return pygame.Rect(ring.centerx - 60, ring.centery - 24, 120, 48)
@@ -427,14 +433,15 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         if self.canvas.get_size() != whole_size:
             self.canvas = pygame.Surface(whole_size).convert()
         whole = self.canvas
-        surface = whole if whole_size == size else whole.subsurface((0, whole_size[1] - size[1], *size))
-        if whole is not surface:
-            whole.fill((0, 0, 0))
+        # Spread through a taller frame (desktop_nr_arena SPREAD_TOP; owner, 2026-11-17): drawn on the whole canvas, its
+        # HUD and its deck each moved with their group, rather than as the 3:4 game at the canvas's bottom.
+        self.spread = self.spread_for(self.frame_units) if whole_size != size else (0, 0, 0)
+        surface = whole
         self.targets = []
         skin = self.skin()
         if skin.frame is not None:
-            if self._frame_scaled is None or self._frame_scaled[0] != size:
-                self._frame_scaled = (size, pygame.transform.smoothscale(skin.frame, size))
+            if self._frame_scaled is None or self._frame_scaled[0] != whole_size:
+                self._frame_scaled = (whole_size, pygame.transform.smoothscale(skin.frame, whole_size))
             surface.blit(self._frame_scaled[1], (0, 0))
         else:
             surface.fill((0, 0, 0))
@@ -525,12 +532,12 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         image = self.image(booth['places']['school_front_diss_002'])
         u, cx, cy, _, _, record_cx, record_cy = self._deck()
         frame_w, frame_h = booth['frame']
-        scale = max(NATIVE[1] / frame_h, u)                      # at least the deck's scale, filling the height
+        scale = max((NATIVE[1] + self.spread[0]) / frame_h, u)  # at least the deck's scale, filling the height
         w, h = frame_w * scale, frame_h * scale
         x = cx - record_cx * scale
         y = cy - record_cy * scale
         x = min(0, max(NATIVE[0] - w, x))
-        y = min(0, max(NATIVE[1] - h, y))
+        y = min(0, max(NATIVE[1] + self.spread[0] - h, y))
         self.blit(surface, image, x, y, w, h, alpha=round(255 * alpha))
 
     def _paint_x360(self, surface, arena, session, now, hud_dy, deck_dy, moving):
@@ -549,12 +556,12 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
             away = 2 * into if into < .5 else 2 - 2 * into
             dy = PANEL_SWITCH_DROP * away * away
             self._look_x360(surface, arena, booth, dy, now)
-            self._hud_x360(surface, arena, session, now, 0, dy)
+            self._hud_x360(surface, arena, session, now, self.spread[1], dy)
             self._panel_on = panel
             return
         self._look_x360(surface, arena, booth, deck_dy, now)
         if moving:
-            self._hud_x360(surface, arena, session, now, hud_dy, deck_dy)
+            self._hud_x360(surface, arena, session, now, hud_dy + self.spread[1], deck_dy)
             return
         ring = self._field(arena)
         self._buttons_x360(arena, ring)
@@ -569,7 +576,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         self._label_x360(surface, arena, session, 1, now)
         self._ring_x360(surface, arena, ring, count // 2, count)
         self._hit_effects(surface, arena, ring, now)
-        self._hud_x360(surface, arena, session, now, 0)
+        self._hud_x360(surface, arena, session, now, self.spread[1])
         self._popups_x360(surface, arena, ring)
         prompt = False
         for bubble in arena.bubbles:
@@ -633,7 +640,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
     def _panel_x360(self, surface, arena, dy):
         """The panel and its windows, one for each of the six places."""
         art, edges, _, _, _ = self.panel_art(see_through=True)
-        self._nine(surface, art, PANEL_BOX.x, PANEL_BOX.y + dy, PANEL_BOX.width, PANEL_BOX.height, edges)
+        self._nine(surface, art, PANEL_BOX.x, PANEL_BOX.y + dy + self.spread[2], PANEL_BOX.width, PANEL_BOX.height, edges)
         window = self.image(self.x360()[0]['slot']['window'])
         ring = self._field(arena)
         for slot in range(6):
@@ -664,7 +671,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         key = (step, size)
         if self._panel_face[0] != key:
             self._panel_face = (key, clock_face(step, max(1, round(size * CLOCK_FACE_SHARE))))
-        cx, cy = round(PANEL_CLOCK[0] * k), round((PANEL_CLOCK[1] + dy) * k)
+        cx, cy = round(PANEL_CLOCK[0] * k), round((PANEL_CLOCK[1] + dy + self.spread[2]) * k)
         face = self._panel_face[1]
         surface.blit(face, face.get_rect(center=(cx, cy + round(size * CLOCK_DROP_SHARE))))
         ring = self.scaled(self.image(self.x360()[0]['slot']['clock']), (size, size))
@@ -793,7 +800,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 y = LABEL_TOP.y + 4 + line_no * 24 + dy
             else:                                           # along the bottom, centred
                 image = self.text_surface('badaboom_white', line, 34, None, EMPHASIS)
-                x, y = LABEL_BOTTOM.centerx, LABEL_BOTTOM.y + 4 + line_no * 32
+                x, y = LABEL_BOTTOM.centerx, LABEL_BOTTOM.y + self.spread[2] + 4 + line_no * 32
             w, h = image.get_width() / self.k, image.get_height() / self.k
             if w > SCREEN_WIDTH - 20:
                 ratio = (SCREEN_WIDTH - 20) / w
@@ -1068,7 +1075,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         inner_h = sum(im.get_height() / k - 8 for im in images)
         w = min(SCREEN_WIDTH - 8, max(narrowest, inner_w + 36))
         h = box_top + inner_h + below                       # the flourish or tail above the box, then text
-        x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
+        x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2 + self.spread[2]
         above = bool(flags & 2)
         card = None
         if flags & 1 and (slot < 0 or slot < len(arena.slots)):
@@ -1079,7 +1086,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
                 name = self._picture_name(arena.slots[slot])
                 card = TUTORIAL_CARDS.get(int(name.split('/')[1])) if name else None
         # Clear of the bottom label (box 2's: "bling rhymes with...") when it shows, else of the gear's bar.
-        bottom = LABEL_BOTTOM.y - 4 if arena.labels[2] else NATIVE[1] - 70
+        bottom = LABEL_BOTTOM.y + self.spread[2] - 4 if arena.labels[2] else NATIVE[1] + self.spread[0] - 70
         y = min(max(4, y), bottom - h)
         self._nine(surface, art, x, y, w, h, edges)
         top = y + box_top + 6
@@ -1127,7 +1134,7 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         k = self.k
         w = min(SCREEN_WIDTH - 12, max((im.get_width() / k for im in images), default=200) + 50)
         h = sum(im.get_height() / k - 8 for im in images) + 46 + len(options) * 30      # (dark text vanishes on its ink)
-        x, y = OX + (SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2
+        x, y = OX + (SCREEN_WIDTH - w) / 2, (self.screen_height - h) / 2
         self._nine(surface, self.trimmed("info_box"), x, y, w, h, 18)
         top = y + 14
         for image in images:
