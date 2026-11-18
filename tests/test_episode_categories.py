@@ -1,5 +1,5 @@
 """Where unlisted episodes are filed (owner, 2026-11-17): the Creator's episodes under User-Created Episodes (their
-authoring record, resource 2), last, and the novel's Extended adaptation (pack 31500) with Special SHS Novel Content,
+authoring record, resource 2), last, and the novel's Extended adaptation (pack 32000) with Special SHS Novel Content,
 rather than Premium Content, the fallback for an episode no catalog knows."""
 import json
 from pathlib import Path

@@ -1005,10 +1005,10 @@ class NovelPatchTests(unittest.TestCase):
         from exp_runtime.exp import ExpArchive, Metadata, encode_exp
         from novel_patch import apply
         exp = encode_exp({1: Metadata(9, 1, ('T',) * 5).to_bytes(), 25001: self.script().to_bytes()})
-        data, _ = apply(dict(ops=ops, pack_id=31500, title='T (Extended)', cast={'Emily': 7},
+        data, _ = apply(dict(ops=ops, pack_id=32000, title='T (Extended)', cast={'Emily': 7},
                              renames=renames or {}), exp, self.chapters)
         archive = ExpArchive(data)
-        self.assertEqual((archive.metadata().pack_id, archive.metadata().titles[0]), (31500, 'T (Extended)'))
+        self.assertEqual((archive.metadata().pack_id, archive.metadata().titles[0]), (32000, 'T (Extended)'))
         return decode_program(archive.read(25001))
 
     @staticmethod

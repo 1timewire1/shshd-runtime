@@ -22,9 +22,10 @@ PREMIUM_LABEL = 'Premium Content'
 # shshd-runtime (owner, 2026-11-17): episodes made in the Creator (its authoring record, resource 2: content.py
 # authored_fields) are listed under a category of their own, last, rather than falling back to Premium Content.
 USER_CREATED_LABEL = 'User-Created Episodes'
-# The SHS novel's Extended adaptation (tools/translate/novel_patch.py, pack 31500) is listed with the novel's other
-# bonus content (owner, 2026-11-17).
-NOVEL_PACK = 31500
+# The SHS novel's Extended adaptation (tools/translate/novel_patch.py) is listed with the novel's other bonus content
+# (owner, 2026-11-17). Pack 32000 since 2026-11-18, past the translated games' 31000-31999 (it was 31500, which Claire
+# Hart's translation takes; owner): the novel's later parts take its next episode numbers.
+NOVEL_PACK = 32000
 VOTE_PACKS = (1000, 2000, 3000, 4000, 5000)
 # Pack ids of the season packs: 101 = Season 1, 201 = Season 2 ... 1201 = Season 12 (100 per season, +1).
 _SEASON_PACK = re.compile(r'^(\d+)01$')
