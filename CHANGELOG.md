@@ -428,6 +428,10 @@
 
 ### Changed
 
+- **BREW badges get the icons they were missing** (owner's badge review, 2026-11-18; BREW add-on revision 13,
+  [BREW.md](docs/BREW.md)): ten named events BREW leaves without an icon show one of BREW's small pictures (the owner's
+  picks), and the events BREW gives its heart, badger or lizard show them rather than the cell phone (*Sadie Hawkins
+  Day*, Fall '06's dates and quest events). The cell phone stays where BREW itself shows it. Ten '07 stories rebuilt.
 - **New Rules' arena shows its own info box** (owner, 2026-11-18; New Rules add-on revision 5,
   [NEW_RULES.md](docs/NEW_RULES.md)): each game's intro text is in New Rules' full-width bordered box with its hourglass,
   in place of a speech bubble, and as in New Rules OK closes it only once the hourglass has run (about 2.2 s), so OK

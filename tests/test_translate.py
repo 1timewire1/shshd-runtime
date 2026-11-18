@@ -1081,6 +1081,23 @@ class BrewShimTests(unittest.TestCase):
         self.assertEqual(brew.title_card(29000, 'Theme Park', {'card_pictures': {'theme_park': 26980}}), 26980)
         self.assertEqual(brew.CARD_PICTURES['theme_park'][0], 26980)
 
+    def test_badge_icon_fixes_pick_brews_own_pictures_and_leave_other_stories_alone(self):
+        # The owner's badge review (2026-11-18): every icon shown is one of BREW's small pictures the add-on carries; the heart,
+        # badger and lizard need revision 13; Kidnap Badger takes the badger; a story the review doesn't name gets no change.
+        brew = self.brew
+        for title, fixes in brew.EVENT_ICON_FIXES.items():
+            for name, (before, after) in fixes.items():
+                self.assertTrue(after in brew.EVENT_ICONS or after in brew.EXTRA_EVENT_ICONS, (title, name))
+                self.assertNotEqual(before, brew.NO_ICON_BADGE, (title, name))     # BREW's own cell phone stays
+        self.assertEqual(brew.EVENT_ICON_FIXES[brew.SEASON_TITLE]['Kidnap Badger'], (279, 276))
+        self.assertEqual(brew.extra_icons(brew.SEASON_TITLE), [80, 276, 279])
+        self.assertEqual(brew.extra_icons('Sadie Hawkins Day'), [80])
+        self.assertEqual(brew.extra_icons('Bowling Team'), [])
+        self.assertGreaterEqual(brew.ADDON_REVISION, brew.EXTRA_EVENT_ICONS_REVISION)
+        icon = object()
+        self.assertIs(brew.fixed_icon(None, {}, icon, None), icon)                 # no fixes: the same code as before
+        self.assertIs(brew.fixed_icon(None, {'icon_fixes': []}, icon, None), icon)
+
     def test_a_date_card_shows_the_pick_for_the_scene_its_day_opens_on(self):
         # Owner, 2026-11-11: an '07 story's date cards each show the pick for their day's first scene (day_pictures finds them)
         brew = self.brew

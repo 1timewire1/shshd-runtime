@@ -46,7 +46,7 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 import newrules  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 12   # 12: the Title Screen Looks ('07, '08); 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 13   # 13: BREW's heart, badger and lizard as badge icons (EXTRA_EVENT_ICONS); 12: the Title Screen Looks ('07, '08); 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
 # 4: Classic stories' own backgrounds; 5: '08's redraws of them; 6: the stories' own catch picture (OWN_CATCH_PICTURES); 7: that
 # picture as an event icon too (OWN_ICON_BASE), and King of the Road's Michael centred (CENTRE_OWN_BODY)
 ADDON_REQUIRED = 7                      # what a story needs: rev 8 only redraws the TV, so the stories built for 7 stay as they are
@@ -54,6 +54,7 @@ PACK_CAMPAIGN, PACK_CLASSIC, PACK_SEASON = 31000, 31100, 31200
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 2                       # 2: badges for one line only, never on a title card (owner, 2026-11-17)
+FIXED_ICONS_VERSION = 3                 # 3: the stories EVENT_ICON_FIXES names, their badges' icons as the owner picked (2026-11-18)
 # The Campaign chapters whose title card shows no date (owner, 2026-11-17): chapter 1's stories all fall on Wednesday,
 # November 20 by their setups, which reads wrong before 2.1's Friday, November 9.
 UNDATED_CHAPTERS = frozenset({1})
@@ -192,6 +193,27 @@ SLOT_MINUTES, DAY_MINUTES = 30, 1440
 # An event with no icon of BREW's own shows its cell phone (143, the add-on's 26543) for now; it took the smartphone's location badge
 # (3104) before (owner, 2026-11-09: to be assigned in the badge review).
 NO_ICON_BADGE = 143
+# The owner's badge review (2026-11-18; reference/BREW_BADGE_PICKS.md): by story and event name, the icon BREW gives the event ->
+# the one its badge shows. An event with no icon (-1; BREW's planner leaves its row blank) gets one of BREW's small pictures. The
+# heart (80), the badger (276) and the lizard (279) are BREW's own small pictures outside EVENT_ICONS: the add-on carries them from
+# revision 13 (EXTRA_EVENT_ICONS), and the events BREW gives them show them, as BREW does; Kidnap Badger shows the badger rather
+# than BREW's lizard (owner). Every other event, those BREW gives the cell phone (143) among them, stays as it was.
+EVENT_ICON_FIXES = {
+    'Artistic Differences': {'Watercolors...': (-1, 102)},
+    'Nerd Kingdom': {'School': (-1, 108)},
+    'Teaching is Tricky': {'First day': (-1, 137), 'At School ': (-1, 108)},
+    'Playing Hooky': {'Dad day afternoon.': (-1, 109)},
+    'Mr Mymoppy': {'Flagpole ': (-1, 151)},
+    'Bad Meatloaf': {'Patient  Zero.': (-1, 115)},
+    'Blood Drive': {'Vampires like blood ': (-1, 154), 'Bloody meeting': (-1, 154)},
+    'School Nurse': {'Hot Nurse': (-1, 133)},
+    'Sadie Hawkins Day': {'Pining for a date...': (80, 80)},
+    "Fall '06 Football Season": {'Raven date': (80, 80), 'Movie date': (80, 80), 'Dinner date': (80, 80),
+                                 'Shopping date': (80, 80), 'Study date': (80, 80), 'Find Lyle': (279, 279),
+                                 'Kidnap Badger': (279, 276), 'Mascot Swap': (276, 276)},
+}
+EXTRA_EVENT_ICONS = (80, 276, 279)
+EXTRA_EVENT_ICONS_REVISION = 13
 SCENE_LOCATION_KEY, SCENE_SKY_KEY = 31030, 31050    # + depth
 # A season's scene stack has room of its own (Stage 6): Fall '06 opens more scenes than it closes (BREW only counts them), about
 # one level every two school days, and past 20 the Classic places (31030, 31050 + depth) run into the calendar's own numbers.
@@ -1541,9 +1563,42 @@ def push_event_script(s, context, script):
     s.label(end)
 
 
+def icon_fixes(program, title):
+    """[(name's data address, BREW's icon, the icon shown)] of the story's EVENT_ICON_FIXES that change an icon, for this
+    script: each name as its 33/34 call passes it, a string in the script's own data."""
+    wanted = {text.encode('latin-1'): pair for text, pair in EVENT_ICON_FIXES.get(title, {}).items() if pair[0] != pair[1]}
+    return [(address, *wanted[text]) for address, text, _ in data_strings(program) if text in wanted]
+
+
+def extra_icons(title):
+    """The pictures outside EVENT_ICONS the story's badges may show (EVENT_ICON_FIXES' icons among EXTRA_EVENT_ICONS)."""
+    return sorted({shown for _, shown in EVENT_ICON_FIXES.get(title, {}).values() if shown in EXTRA_EVENT_ICONS})
+
+
+def fixed_icon(s, context, icon, name):
+    """`icon` (a callable pushing BREW's icon for the event) with the story's fixes (context `icon_fixes`, from icon_fixes): where
+    the event's name is one of theirs and BREW's icon is the one they change, the icon they give. Unchanged without fixes."""
+    fixes = context.get('icon_fixes') or []
+    if not fixes:
+        return icon
+
+    def push():
+        done = s.label()
+        for address, before, after in fixes:
+            skip = s.label()
+            name(); s.push(address); s.emit(0x0a); s.jump_if_zero(skip)
+            icon(); s.push(before); s.emit(0x0a); s.jump_if_zero(skip)
+            s.push(after); s.jump(done)
+            s.label(skip)
+        icon()
+        s.label(done)
+    return push
+
+
 def add_event(s, context, script, minute, duration, icon, flag, text, name, day):
     """A new event on the list (EVENTS_KEY up by one), waiting, with no fields yet; its text and name kept under its number."""
     buffer, field, fields_done = context['key_buffer'], s.label(), s.label()
+    icon = fixed_icon(s, context, icon, name)
     set_global(s, EVENTS_KEY, lambda: (get_global(s, EVENTS_KEY), s.push(1), s.emit(0x50)))
     number = lambda: get_global(s, EVENTS_KEY)
     for offset, value in ((EVENT_MINUTE, minute), (EVENT_DURATION, duration), (EVENT_ICON, icon), (EVENT_FLAG, flag)):
@@ -1867,6 +1922,8 @@ def run_event(s, context, B, title_card, date_card, driver):
             event_get(s, B, EVENT_ICON); s.push(picture); s.emit(0x0a); s.jump_if_zero(not_own)
             set_global(s, BADGE_ICON_KEY, lambda n=n: s.push(OWN_ICON_BASE + n)); s.jump(chosen)
             s.label(not_own)
+    for picture in context.get('extra_icons', ()):    # BREW's own small pictures outside EVENT_ICONS (EVENT_ICON_FIXES)
+        event_get(s, B, EVENT_ICON); s.push(picture); s.emit(0x0a); s.jump_if_nonzero(icon)
     event_get(s, B, EVENT_ICON); s.push(EVENT_ICONS.start); s.emit(0x0e)
     event_get(s, B, EVENT_ICON); s.push(EVENT_ICONS.stop); s.emit(0x0d); s.emit(0x11); s.jump_if_zero(icon)
     set_global(s, BADGE_ICON_KEY, lambda: s.push(EVENT_ICON_BASE + NO_ICON_BADGE)); s.jump(chosen)
@@ -3386,6 +3443,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
             raise StoryError(f'{name}: two looks have the same hash')
     season = calendar == 'season'
     title = title or clean_title(title_of(archive_resources[1]))
+    story_title = title                 # (as EVENT_ICON_FIXES names it, before any title_extra)
     card = title_card(card, title, spec)
     title += title_extra
     date = event_date(archive_resources) if FIRST_SCRIPT in archive_resources else None
@@ -3434,6 +3492,7 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         context['kind'] = 'season' if season else 'calendar' if calendar else 'single'
         context['program'], context['script_map'] = program, script_map
         context['own_missing'] = own_missing
+        context['icon_fixes'], context['extra_icons'] = icon_fixes(program, story_title), extra_icons(story_title)
         if calendar:
             context.update(calendar_words(rewriter))
         if season:
@@ -3495,9 +3554,11 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         resources[DRIVER_SCRIPT] = season_driver(name, spec, table, title, card, own_missing)
         resources[NEST_SCRIPT] = season_script(spec, table, own_missing, nest_runner)
     # A card on a picture the add-on carries (CARD_PICTURES, rev 11) needs that revision; the rest stay as they are
-    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, CARD_PICTURES_REVISION if card in {r for r, _, _ in CARD_PICTURES.values()}
-                                                         else ADDON_REQUIRED)])
-    resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
+    needs = CARD_PICTURES_REVISION if card in {r for r, _, _ in CARD_PICTURES.values()} else ADDON_REQUIRED
+    if extra_icons(story_title):        # BREW's heart, badger or lizard on its badges: the add-on's revision 13
+        needs = max(needs, EXTRA_EVENT_ICONS_REVISION)
+    resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, needs)])
+    resources[VERSION_RECORD] = version_bytes(FIXED_ICONS_VERSION if story_title in EVENT_ICON_FIXES else STORY_VERSION)
     if name == 'clsc_073_Hollywood.exp':
         # The Surviving Hollywood demo's art, while `shshw` is there and "Hollywood Art" is on (shw.py; owner, 2026-11-13)
         import shw
@@ -3519,6 +3580,7 @@ def season_driver(name, spec, table, title, card, own_missing):
              if int(picture) not in own_missing}
     context = script_context(rewriter, DRIVER_SCRIPT, table, True, program, sizes)
     context.update(kind='season', program=program, script_map={}, own_missing=own_missing)
+    context['extra_icons'] = extra_icons(title)
     context.update(calendar_words(rewriter))
     context.update(season_words(rewriter))
     context.update(week_words=rewriter.words([0] * 5), week_buffer=rewriter.words([0] * 12),
@@ -3842,6 +3904,7 @@ def build_addon(casts, games, render_music=None, java_jar=None, shs_hd_episodes=
                 resources[MUSIC_BASE + track] = render_music(data)
     resources.update(badge_pictures(art08))
     resources.update(event_icons(art08))
+    resources.update(event_icons(art07, {picture: EVENT_ICON_BASE + picture for picture in EXTRA_EVENT_ICONS}))   # (rev 13)
     own_art = {}
     for entry in casts:
         packs = loaded.get(entry['file']) or story_packs(entry, games, bases)
