@@ -179,20 +179,20 @@ class DesktopTests(unittest.TestCase):
             for _ in range(19):
                 ui.render()
                 self.assertIsNone(ui.error)
-                frames.add(pygame.image.tobytes(ui.canvas, 'RGB'))
+                frames.add(pygame.image.tobytes(ui.window, 'RGB'))
                 ui.tick(16)
             self.assertGreaterEqual(len(frames), 15)
             self.assertEqual(session.vm.snapshot(), before_vm)
             saved = session.snapshot()
             ui.render()
-            pixels = pygame.image.tobytes(ui.canvas, 'RGB')
+            pixels = pygame.image.tobytes(ui.window, 'RGB')
             self.assertEqual(session.snapshot(), saved)  # Drawing never advances clocks.
             ui.session = Session.from_snapshot(resources, saved)
             ui.render()
-            self.assertEqual(pygame.image.tobytes(ui.canvas, 'RGB'), pixels)
+            self.assertEqual(pygame.image.tobytes(ui.window, 'RGB'), pixels)
             ui.command(('menu',)); ui.tick(2000)
             self.assertEqual(ui.session.snapshot(), saved)
-            ui.command(('resume',))
+            ui.command(('resume',)); ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(2000)
             self.assertEqual(ui.session.snapshot(), saved)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
@@ -205,7 +205,7 @@ class DesktopTests(unittest.TestCase):
             ui.tick(1000)
             ui.render()
             self.assertIsNone(ui.error)
-            self.assertNotEqual(pygame.image.tobytes(ui.canvas, 'RGB'), pixels)
+            self.assertNotEqual(pygame.image.tobytes(ui.window, 'RGB'), pixels)
             self.assertTrue(ui.session.engine.dialogue_animation.complete)
             self.assertEqual(ui.session.vm.snapshot(), before_vm)
 
@@ -271,7 +271,7 @@ class DesktopTests(unittest.TestCase):
                 saved = s.snapshot()
                 ui.command(('menu',)); ui.tick(1000)
                 self.assertEqual(s.snapshot(), saved)
-                ui.command(('resume',))
+                ui.command(('resume',)); ui.tick(400)          # Resume's zoom-out (PAUSE_OPEN_MS) ends before input returns
                 ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(1000)
                 self.assertEqual(s.snapshot(), saved)
                 ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
@@ -1865,7 +1865,7 @@ class DesktopTests(unittest.TestCase):
             saved = ui.session.snapshot()
             for choice in (0, 1):
                 ui.session = Session.from_snapshot(resources, saved)
-                ui.session.answer(choice)
+                answer_screen(ui.session, choice)          # past the choice's 250 ms attachment
                 ui.render()
                 self.assertIsNone(ui.error)
                 self.assertEqual(ui.session.pending.name, 'dialogue')

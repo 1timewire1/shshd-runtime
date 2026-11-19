@@ -253,7 +253,7 @@ class NamedDialogueTests(unittest.TestCase):
             ui.session = Session.from_snapshot(s.resources, saved)
             ui.render()
             self.assertEqual(pygame.image.tobytes(ui.canvas, 'RGB'), before)
-            ui.command(('menu',)); ui.tick(5000); ui.command(('resume',))
+            ui.command(('menu',)); ui.tick(5000); ui.command(('resume',)); ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(5000)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             self.assertEqual(ui.session.snapshot(), saved)

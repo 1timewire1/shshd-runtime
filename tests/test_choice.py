@@ -482,6 +482,7 @@ class ChoiceTests(unittest.TestCase):
         self.assertEqual(ui.choice_focus, 1)                    # 'No' is disabled, only 'Yes' takes the focus
         ui.render()
         self.assertNotEqual(pygame.image.tobytes(ui.choice_renderer.canvas, 'RGBA'), plain)
+        ui.tick(250)                                            # past the menu's 250 ms attachment (choice_ready)
         ui.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
         for _ in range(10):                                     # an HD menu fades out before it answers
             ui.tick(100)

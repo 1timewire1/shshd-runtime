@@ -412,7 +412,7 @@ class HomecomingQueenTests(unittest.TestCase):
         self.assertEqual(s.engine.character_picker.selected, 4)
         ui.command(('menu',)); ui.tick(1000)
         self.assertEqual(s.engine.character_picker.portraits[4].elapsed_ms, 0)
-        ui.command(('resume',)); ui.tick(25); ui.render()
+        ui.command(('resume',)); ui.tick(400); ui.tick(25); ui.render()  # Resume's zoom out (PAUSE_OPEN_MS)
         self.assertIsNone(ui.error)
         click((240, 365), pygame.MOUSEBUTTONDOWN)
         click((240, 365), pygame.MOUSEBUTTONUP)

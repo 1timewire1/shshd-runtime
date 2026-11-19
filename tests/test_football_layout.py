@@ -256,6 +256,7 @@ class FootballLayoutTests(unittest.TestCase):
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(1000)
             self.assertEqual(ui.session.snapshot(), saved)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
+            ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
             ui.window = pygame.display.set_mode((800, 600), pygame.RESIZABLE); ui.render()
             pos = (ui.viewport.x + 60 * ui.viewport.width / 320,
                    ui.viewport.y + 200 * ui.viewport.height / 480)

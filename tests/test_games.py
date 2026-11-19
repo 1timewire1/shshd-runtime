@@ -333,7 +333,9 @@ class LibraryLocationTests(unittest.TestCase):
                 (root / name).mkdir()
                 originals[name] = json.dumps(data)
                 (root / name / 'launcher.json').write_text(originals[name])
-            with patch('exp_runtime.launcher.user_data_directory', return_value=root / APP_NAME):
+            # As an installed app: in a source checkout a `.shs-library` there (the original-content tests' library) is the SHS
+            # default, by design (launcher.default_library).
+            with patch('exp_runtime.launcher.user_data_directory', return_value=root / APP_NAME),                     patch('exp_runtime.launcher.sys.frozen', True, create=True):
                 self.assertEqual(default_library('shs'), root / APP_NAME / 'libraries' / 'shs')
                 self.assertEqual(default_library('cod'), root / APP_NAME / 'libraries' / 'cod')
                 remember_library(root / 'my-cod', 'cod')

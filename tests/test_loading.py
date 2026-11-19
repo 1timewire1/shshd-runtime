@@ -229,6 +229,7 @@ class LoadingTests(unittest.TestCase):
             ui.command(('menu',)); ui.tick(5000); ui.command(('resume',))
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(5000)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
+            ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
             self.assertEqual(ui.session.snapshot(), saved)
             ui.session = Session.from_snapshot(r, saved)
             ui.render(); self.assertIsNone(ui.error)

@@ -272,6 +272,7 @@ class GridLayoutTests(unittest.TestCase):
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(1000)
             self.assertEqual(ui.session.snapshot(), saved)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
+            ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
             s = ui.session
             play_phase(s); s.answer(); play_phase(s)
             ui.window = pygame.display.set_mode((800, 600), pygame.RESIZABLE)

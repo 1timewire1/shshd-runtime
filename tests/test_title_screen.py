@@ -226,11 +226,11 @@ class TitleRendererTests(unittest.TestCase):
                     ui.render()
                     self.assertIsNone(ui.error)
                     self.assertEqual(s.vm.snapshot(), held)
-                    before = pygame.image.tobytes(ui.canvas, 'RGB')
+                    before = pygame.image.tobytes(ui.window, 'RGB')     # with the background, its own layer since 1.0.0
                     frames.add(before)
                     ui.session = Session.from_snapshot(s.resources, s.snapshot())
                     ui.render()
-                    self.assertEqual(pygame.image.tobytes(ui.canvas, 'RGB'), before)
+                    self.assertEqual(pygame.image.tobytes(ui.window, 'RGB'), before)
                     ui.session = s
                 self.assertGreaterEqual(len(frames), 5)
                 saved = s.snapshot()
@@ -242,6 +242,7 @@ class TitleRendererTests(unittest.TestCase):
                 ui.tick(5000)
                 self.assertEqual(s.snapshot(), saved)
                 ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
+                ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
                 ui.window = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
                 ui.render()
                 point = ui.viewport.center

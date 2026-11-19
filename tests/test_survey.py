@@ -236,14 +236,17 @@ class SurveyTests(unittest.TestCase):
             ui.render(); self.assertIsNone(ui.error)
             self.assertEqual(s.snapshot(), before)
             pixels = pygame.image.tobytes(ui.canvas, 'RGB')
+            receipt = pygame.image.tobytes(ui.message_renderer.canvas, 'RGBA')    # the receipt itself (the scene is black)
             ui.command(('continue',))  # Still behind the reading gate.
             ui.command(('menu',)); ui.tick(5000); ui.command(('resume',))
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(5000)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             self.assertEqual(s.snapshot(), before)
             ui.session = Session.from_snapshot(r, json.loads(json.dumps(before)))
+            ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
             ui.render(); self.assertIsNone(ui.error)
             self.assertEqual(pygame.image.tobytes(ui.canvas, 'RGB'), pixels)
+            self.assertEqual(pygame.image.tobytes(ui.message_renderer.canvas, 'RGBA'), receipt)
             for _ in range(10):
                 ui.tick(100)
             ui.command(('continue',))

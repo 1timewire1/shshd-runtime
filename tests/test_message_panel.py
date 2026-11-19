@@ -156,7 +156,7 @@ class MessagePanelTests(unittest.TestCase):
             before = pygame.image.tobytes(ui.message_renderer.canvas, 'RGBA')
             saved = s.snapshot()
             ui.command(('continue',))
-            ui.command(('menu',)); ui.tick(5000); ui.command(('resume',))
+            ui.command(('menu',)); ui.tick(5000); ui.command(('resume',)); ui.tick(400)  # Resume's zoom out (PAUSE_OPEN_MS) ends before input and the story return
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSLOST)); ui.tick(5000)
             ui.handle_event(pygame.event.Event(pygame.WINDOWFOCUSGAINED))
             self.assertEqual(s.snapshot(), saved)
